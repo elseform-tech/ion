@@ -7,8 +7,14 @@ export type Ctx = { store: EventStore; configFile: string; startedAt: number; ve
 /** Errors whose message is safe and useful to show the user. */
 export class UserError extends Error {}
 
+/** Commands that start or stop runs; the run manager handles them (Plan 02, Task 7). */
+type RunCommand = "ask" | "run.interrupt";
+
 type Handlers = {
-  [C in Exclude<Command, "events.subscribe">]: (args: Commands[C]["args"], ctx: Ctx) => Commands[C]["result"];
+  [C in Exclude<Command, "events.subscribe" | RunCommand>]: (
+    args: Commands[C]["args"],
+    ctx: Ctx,
+  ) => Commands[C]["result"];
 };
 
 export const handlers: Handlers = {

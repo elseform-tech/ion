@@ -87,9 +87,56 @@ export const RUN_END_STATUSES = ["done", "failed", "interrupted", "capped"] as c
 export type RunEndStatus = (typeof RUN_END_STATUSES)[number];
 
 /** Data schemas for types whose payload the daemon relies on. Other types accept any object. */
+export const TOOL_KINDS = ["read", "edit", "command", "search", "web", "mcp", "other"] as const;
+export type ToolKind = (typeof TOOL_KINDS)[number];
+export const DECISIONS = ["allow", "allow_always", "deny"] as const;
+export type Decision = (typeof DECISIONS)[number];
+
+const text = z.object({ text: z.string() });
+const count = z.number().int().min(0);
+
 export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "chat.created": z.object({ title: z.string(), projectId: z.string().nullable() }),
-  "run.started": z.object({ harness: z.string(), model: z.string(), effort: z.string().nullable() }),
+  "run.started": z.object({
+    harness: z.string(),
+    model: z.string(),
+    effort: z.string().nullable(),
+    authMethod: z.string().nullable(),
+  }),
+  "message.delta": text,
+  "message.completed": text,
+  "thinking.delta": text,
+  "tool.started": z.object({
+    toolId: z.string(),
+    name: z.string(),
+    kind: z.enum(TOOL_KINDS),
+    summary: z.string(),
+  }),
+  "tool.output": z.object({ toolId: z.string(), text: z.string() }),
+  "tool.finished": z.object({ toolId: z.string(), ok: z.boolean(), summary: z.string().nullable() }),
+  "file.changed": z.object({
+    path: z.string(),
+    change: z.enum(["add", "modify", "delete"]),
+    added: count.nullable(),
+    removed: count.nullable(),
+  }),
+  "approval.requested": z.object({
+    requestId: z.string(),
+    toolId: z.string(),
+    kind: z.string(),
+    summary: z.string(),
+  }),
+  "approval.resolved": z.object({
+    requestId: z.string(),
+    decision: z.enum(DECISIONS),
+    by: z.enum(["you", "policy", "ion"]),
+  }),
+  "usage.reported": z.object({
+    model: z.string(),
+    inputTokens: count,
+    outputTokens: count,
+    costUsd: z.number().min(0).nullable(),
+  }),
   "run.finished": z.object({ status: z.enum(RUN_END_STATUSES) }),
   error: z.object({ code: z.string(), retryable: z.boolean(), message: z.string() }),
 };
