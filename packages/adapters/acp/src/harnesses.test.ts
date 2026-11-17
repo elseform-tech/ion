@@ -25,5 +25,7 @@ describe("opencode environment", () => {
     const env = GROK_BUILD.env!();
     expect(JSON.parse(env.GROK_CONFIG!)).toEqual({ ui: { permission_mode: "ask" } });
     expect(env.GROK_ASK_LOCAL_READS).toBe("false");
+    // The CLI's name for ask mode is "default" (it has no "ask"); it outranks the user's config.toml.
+    expect(GROK_BUILD.args).toEqual(["--permission-mode", "default", "agent", "stdio"]);
   });
 });
