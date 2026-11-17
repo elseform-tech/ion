@@ -9,7 +9,11 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/schema` | The contract: event envelope, event types, capabilities, wire protocol. Imports nothing. |
 | `packages/config` | Config files and paths (`config.toml`, projects). |
 | `packages/client` | Typed WebSocket client for the CLI and the desktop app. |
-| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event. |
+| `packages/adapter-kit` | Harness contract, shared contract tests (`/contract`), event queue, delta batching, PATH/version helpers. |
+| `packages/adapters/claude-code` | Claude Code via the Agent SDK; Claude login only. |
+| `packages/adapters/acp` | Any ACP agent: Grok Build (`grok agent stdio`), opencode (`opencode acp`). |
+| `packages/adapters/fake` | Scripted harness for tests (`ION_ALLOW_FAKE=1`). |
+| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs and applies the approval policy; `src/adapters/registry.ts` is the only place adapters load. |
 | `apps/cli` | The `ion` command. |
 | `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`). |
 
@@ -30,7 +34,7 @@ child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter
 ## Rules
 
 - Test first. Every bug fix adds a test named `regression/<issue>-<slug>.test.ts`.
-- No real model calls in tests.
+- No real model calls in tests. Live tests are opt-in: `ION_LIVE=1` (opencode, free model), `ION_LIVE_GROK=1`, `ION_LIVE_CLAUDE=1` (only when the Claude adapter changed).
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints.
 - Before committing: `pnpm check && pnpm build`.
 - Keep `docs/README.md` (the index) and this file current when you add a package or a doc.

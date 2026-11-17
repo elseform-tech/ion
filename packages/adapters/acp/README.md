@@ -10,6 +10,8 @@ Protocol notes: `docs/research/acp-and-harnesses.md`.
 
 - `auth.status()` opens a session without sending a prompt; `-32000` from the agent means signed out. No quota used.
 - Model and effort are set through the session's config options (`category: "model"` / `"thought_level"`).
+- ion makes each agent ask before tools run: opencode gets `permission: ask` for edit, bash and webfetch through
+  `OPENCODE_CONFIG_CONTENT`; Grok Build sessions open with `yoloMode`/`autoMode` off. Your own configs aren't changed.
 - Permission requests go to the daemon's `decide()`; ion picks the matching `allow_once` / `allow_always` / `reject_once` option.
 - One agent process per turn; `interrupt()` sends `session/cancel`, then stops the process after 3 s.
 
