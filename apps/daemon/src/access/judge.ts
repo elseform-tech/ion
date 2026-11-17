@@ -19,18 +19,20 @@ export function judgePrompt(i: JudgeInput): string {
   ].join("\n\n");
 }
 
-/** The first JSON object with a boolean "allow" and a string "reason", or null. */
+/** The last JSON object with a boolean "allow" and a string "reason", or null. */
 export function parseVerdict(text: string): { allow: boolean; reason: string } | null {
+  // The last verdict is the model's own: an earlier one may be an echo of the action's text.
+  let found: { allow: boolean; reason: string } | null = null;
   for (const m of text.matchAll(/\{[^{}]*\}/g)) {
     try {
       const v = JSON.parse(m[0]) as { allow?: unknown; reason?: unknown };
       if (typeof v.allow === "boolean" && typeof v.reason === "string")
-        return { allow: v.allow, reason: v.reason.slice(0, 200) };
+        found = { allow: v.allow, reason: v.reason.slice(0, 200) };
     } catch {
       // not this one
     }
   }
-  return null;
+  return found;
 }
 
 /** A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. */

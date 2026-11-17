@@ -26,7 +26,8 @@ export function createAccess(o: { judge: Judge; home: string; ionDirs: string[] 
       if (known) return known;
       const v = await o.judge({ projectId: at.projectId, text: at.text, req });
       const verdict: Verdict = { decision: v.allow ? "allow" : "deny", reason: v.reason };
-      cache.set(key, verdict);
+      // A judge that couldn't decide (slow, signed out) is asked again next time.
+      if (!v.reason.startsWith("ion couldn't decide")) cache.set(key, verdict);
       return verdict;
     },
   };

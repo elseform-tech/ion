@@ -18,8 +18,8 @@ The always-on service that owns all state.
   access mode (`ion ask --access`, else the project's `access`, else `[access] default`, which is `"auto"`).
   **Full access** allows it. **Auto** never pauses: your secrets (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, gh,
   gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
-  by rule; read-only commands that stay in the worktree are allowed; anything else goes to a judge, a quick model on
-  `ion.quick` with no tools, which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
+  by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (default `claude-code:haiku`, a bare session
+  with no tools), which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
   per action and request in a chat. Limitation: Grok Build runs its own read-only commands (`cat`, `ls`, `grep`…)
   without asking anyone, so in Auto it can still read files ion would deny.
 - `src/needs`: questions only you can answer (`need.raised`, answered once with `ion needs allow|deny <id>`;

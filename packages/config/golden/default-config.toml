@@ -8,6 +8,7 @@ useDeep = "auto"
 
 [access]
 default = "auto"
+judge = "claude-code:haiku"
 
 [resources]
 max_runs = "auto"

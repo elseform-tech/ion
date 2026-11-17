@@ -192,7 +192,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
     });
 
     it("Auto: ion decides, the run never pauses, and the chat says what it decided", async () => {
-      writeFileSync(join(home, "config.toml"), '[ion]\nquick = "fake"\n');
+      writeFileSync(join(home, "config.toml"), '[access]\njudge = "fake"\n');
       await setup();
       const r = await ion("ask", "shell", "-p", "app", "--harness", "fake");
       expect(r.out).toContain("· Allowed by ion: Run pnpm test");

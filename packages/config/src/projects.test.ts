@@ -41,6 +41,8 @@ describe("addProject", () => {
 describe("access", () => {
   it("defaults to Auto, and a project can have its own", () => {
     expect(DEFAULT_CONFIG.access.default).toBe("auto");
+    // The judge is a small model by default: it runs for every new action in Auto.
+    expect(DEFAULT_CONFIG.access.judge).toBe("claude-code:haiku");
     const c = addProject(DEFAULT_CONFIG, repo("app"));
     expect(c.projects[0]!.access).toBeUndefined();
     expect(setProjectAccess(c, "app", "full").projects[0]!.access).toBe("full");

@@ -120,8 +120,17 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     settingSources: [],
     permissionMode: "default",
     systemPrompt: { type: "preset", preset: "claude_code", ...appendFor(opts) },
+    ...(opts.bare ? BARE : {}),
   };
 }
+
+/** A bare session (ion's judge): no tools, a short system prompt, one turn, no thinking. */
+const BARE = {
+  tools: [],
+  maxTurns: 1,
+  thinking: { type: "disabled" },
+  systemPrompt: "Answer exactly in the format you are asked for, and nothing else.",
+};
 
 /** Feeds SDK messages through the mapper; a throw or an early end still finishes the run exactly once. */
 async function pump(

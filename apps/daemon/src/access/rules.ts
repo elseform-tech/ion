@@ -36,9 +36,27 @@ const READ_ONLY = new Set([
   "stat",
   "file",
 ]);
-const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "branch", "rev-parse", "ls-files", "blame"]);
-/** A path in any text: absolute, ~ or $HOME. */
-const PATH = /(?:~|\$\{?HOME\}?)?\/[^\s'"`|;&<>()]+/g;
+const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "blame"]);
+/** Secret folders and files named anywhere in an action (any case) are denied: they never belong to a project. */
+const SECRET_NAMES = [
+  ".ssh",
+  ".aws",
+  ".gnupg",
+  ".kube",
+  ".password-store",
+  "keychains",
+  ".config/gh",
+  ".config/gcloud",
+  ".config/op",
+  ".docker/config",
+  ".git-credentials",
+  ".netrc",
+  ".pypirc",
+];
+/** A plain relative path or word: no absolute or home paths, no shell syntax. */
+const PLAIN = /^[\w.\-/@+=:,%]+$/;
+/** A path in any text: absolute, ~ or $HOME, at the start of a word (not "/a.ts" inside "src/a.ts"). */
+const PATH = /(?<=^|[\s'"=:(])(?:~|\$\{?HOME\}?)?\/[^\s'"`|;&<>()]+/g;
 
 function* strings(v: unknown): Generator<string> {
   if (typeof v === "string") yield v;
@@ -59,38 +77,46 @@ const expand = (p: string, home: string) => p.replace(/^(~|\$\{?HOME\}?)/, home)
 function pathsIn(req: ApprovalRequest, c: RuleCtx): string[] {
   const out: string[] = [];
   for (const s of strings(req.input)) for (const m of s.matchAll(PATH)) out.push(expand(m[0], c.home));
+  // Every argument of a command is a path from the worktree (where commands run): a link named "key" counts too.
   const command = typeof req.input.command === "string" ? req.input.command : "";
   for (const t of command.split(/[\s|;&]+/))
-    if (
-      t &&
-      !t.startsWith("-") &&
-      !t.startsWith("/") &&
-      !/^[~$]/.test(t) &&
-      (t.includes("/") || t.startsWith("."))
-    )
+    if (t && !t.startsWith("-") && !t.startsWith("/") && !/^[~$]/.test(t))
       out.push(resolve(c.roots[0] ?? "/", t));
   return out.map((p) => realish(resolve(p)));
 }
 
 /** A read-only command the rule can fully read: a plain chain or pipe of read-only commands, nothing else. */
 function readOnly(command: string): boolean {
-  if (/[\n\r<>`$(){}]/.test(command) || /(^|[^&])&([^&]|$)/.test(command) || command.includes(".."))
+  // Anything the shell would expand or unquote (globs, quotes, escapes) is left to the judge.
+  if (/[\n\r<>`$(){}*?[\]'"\\]/.test(command) || /(^|[^&])&([^&]|$)/.test(command) || command.includes(".."))
     return false;
   return command.split(/&&|\|\||;|\|/).every((part) => {
-    const [word, sub] = part.trim().split(/\s+/);
+    const [word, sub, ...rest] = part.trim().split(/\s+/);
+    // Every argument is a flag or a plain relative path ("/", "~" and the like go to the judge).
+    const args = word === "git" ? rest : [sub, ...rest].filter((x): x is string => x !== undefined);
+    if (!args.every((t) => t.startsWith("-") || (PLAIN.test(t) && !t.startsWith("/")))) return false;
+    if (word === "tail" && /\s(-[a-zA-Z]*[fF]|--follow)/.test(part)) return false;
     return word === "git"
       ? READ_ONLY_GIT.has(sub ?? "") && !/--output|--ext-diff/.test(part)
       : READ_ONLY.has(word ?? "");
   });
 }
 
+// macOS folders ignore case by default: ~/.SSH is ~/.ssh.
+const fold = (p: string) => (process.platform === "darwin" ? p.toLowerCase() : p);
 const isSecret = (p: string, home: string) =>
-  SECRETS.some((s) => (s.endsWith("/") ? under(p, realish(join(home, s))) : p === realish(join(home, s))));
+  SECRETS.some((s) => {
+    const secret = fold(realish(join(home, s)));
+    return s.endsWith("/") ? under(fold(p), secret) : fold(p) === secret;
+  });
+const namesSecret = (req: ApprovalRequest) =>
+  [...strings(req.input)].some((v) => SECRET_NAMES.some((n) => v.toLowerCase().includes(n)));
 
 /** The rules Auto applies before asking the judge; null means "ask the judge". */
 export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
   const paths = pathsIn(req, c);
-  if (paths.some((p) => isSecret(p, c.home))) return { decision: "deny", reason: "Touches your secrets" };
+  if (namesSecret(req) || paths.some((p) => isSecret(p, c.home)))
+    return { decision: "deny", reason: "Touches your secrets" };
   const inWorktree = (p: string) => c.roots.some((r) => under(p, realish(r)));
   if (paths.some((p) => !inWorktree(p) && c.ionDirs.some((d) => under(p, realish(d)))))
     return { decision: "deny", reason: "Touches ion's own files" };
