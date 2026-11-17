@@ -60,18 +60,27 @@ describe("decideByPolicy", () => {
     expect(decide("edit", { target_path: join(project, "a.ts") })).toBe("allow");
   });
 
-  it("fails closed for searches without a path, and checks absolute paths in any field", () => {
+  it("fails closed for searches without a path, and checks ~ paths", () => {
     expect(decide("search", { pattern: "foo" })).toBe("deny");
-    expect(decide("edit", { file_path: join(project, "a.ts"), extra: "/etc/passwd" })).toBe("deny");
-    expect(decide("read", { file_path: join(project, "a.ts"), target: "../../etc/passwd" })).toBe("deny");
     expect(decide("read", { file_path: "~/.ssh/id_rsa" })).toBe("deny");
+    expect(decide("edit", { file_path: join(project, "a/../../x.ts") })).toBe("deny");
   });
 
-  it("checks paths nested in objects and arrays, and bare .. segments", () => {
-    expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ target: "/etc/hosts" }] })).toBe(
+  // Regression (final review I1): file content and patterns aren't paths.
+  it("allows ordinary edits and searches whose content looks like a path", () => {
+    expect(decide("edit", { file_path: join(project, "a.ts"), content: "// header\nexport {};" })).toBe(
+      "allow",
+    );
+    expect(
+      decide("edit", { file_path: join(project, "a.ts"), old_string: "// TODO", new_string: "// done" }),
+    ).toBe("allow");
+    expect(decide("search", { pattern: "/api/users", path: project })).toBe("allow");
+  });
+
+  it("checks declared path fields however deeply nested", () => {
+    expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ file_path: "/etc/hosts" }] })).toBe(
       "deny",
     );
-    expect(decide("read", { file_path: join(project, "a.ts"), opts: { dir: ".." } })).toBe("deny");
-    expect(decide("read", { file_path: join(project, "a.ts"), note: "fix the bug" })).toBe("allow");
+    expect(decide("edit", { locations: [join(project, "a.ts"), "/etc/hosts"] })).toBe("deny");
   });
 });

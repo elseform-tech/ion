@@ -3,10 +3,6 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest, Decision } from "@ion/adapter-kit";
 
-/** Absolute, home-relative, or containing a `..` segment (either separator). */
-const looksLikePath = (v: string) =>
-  v.startsWith("/") || v.startsWith("~") || v.split(/[\\/]/).includes("..");
-
 /** Every string in the input, however deeply nested, with the key it sits under. */
 function* strings(value: unknown, key = ""): Generator<[string, string]> {
   if (typeof value === "string") yield [key, value];
@@ -16,12 +12,12 @@ function* strings(value: unknown, key = ""): Generator<[string, string]> {
 }
 
 /**
- * Every path a request names: strings under a key ending in "path" or "locations", plus any string anywhere
- * that looks like a path (absolute, ~, or with a `..` segment).
+ * Every path a request names: strings under a key ending in "path" (file_path, notebook_path, filePath, …)
+ * or "locations", at any depth. File content, patterns and queries are never treated as paths.
  */
 function pathsOf(req: ApprovalRequest): string[] {
   const out: string[] = [];
-  for (const [k, v] of strings(req.input)) if (/(path|locations)$/i.test(k) || looksLikePath(v)) out.push(v);
+  for (const [k, v] of strings(req.input)) if (/(path|locations)$/i.test(k)) out.push(v);
   return out;
 }
 

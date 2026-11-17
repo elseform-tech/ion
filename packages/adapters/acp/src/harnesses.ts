@@ -48,6 +48,18 @@ function opencodeAskEnv(): Record<string, string> {
   } catch {
     // ignore an unreadable inline config; ion's permissions still apply
   }
-  const permission = { ...((base.permission as object) ?? {}), edit: "ask", bash: "ask", webfetch: "ask" };
-  return { OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...base, permission }) };
+  const ask = { edit: "ask", bash: "ask", webfetch: "ask" };
+  const permission = { ...((base.permission as object) ?? {}), ...ask };
+  // Agent-level permissions win over top-level ones, so set them too.
+  const baseAgents = (base.agent ?? {}) as Record<string, Record<string, unknown>>;
+  const agent = {
+    ...baseAgents,
+    build: { ...baseAgents.build, permission: { ...(baseAgents.build?.permission as object), ...ask } },
+    plan: { ...baseAgents.plan, permission: { ...(baseAgents.plan?.permission as object), ...ask } },
+  };
+  return {
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...base, permission, agent }),
+    // A repo's own opencode.json could set permissions back to "allow" (verified): don't load it.
+    OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+  };
 }

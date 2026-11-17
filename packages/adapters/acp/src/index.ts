@@ -23,7 +23,7 @@ const CAPABILITIES: Capabilities = {
 /** One adapter for any agent that speaks ACP over stdio (Grok Build, opencode, …). */
 export function createAcpAdapter(
   h: AcpHarness,
-  deps: { which?: (bin: string) => string | null } = {},
+  deps: { which?: (bin: string) => string | null; startTimeoutMs?: number } = {},
 ): HarnessAdapter {
   const which = deps.which ?? whichOnPath;
   const binary = () => which(h.bin);
@@ -39,8 +39,9 @@ export function createAcpAdapter(
       async status() {
         const path = binary();
         if (!path) return { signedIn: false, method: "Not installed" };
-        const ok = await probeSignedIn(h, path);
-        return { signedIn: ok, method: ok ? "Signed in" : "Not signed in" };
+        const probe = await probeSignedIn(h, path, deps.startTimeoutMs);
+        const method = { yes: "Signed in", no: "Not signed in", "not-responding": "Not responding" }[probe];
+        return { signedIn: probe === "yes", method };
       },
       login: () =>
         new Promise<void>((resolve, reject) => {
@@ -55,7 +56,7 @@ export function createAcpAdapter(
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);
-      const c = await connect(h, path, opts.cwd);
+      const c = await connect(h, path, opts.cwd, deps.startTimeoutMs);
       const model =
         (await setOption(c, "model", opts.model ?? h.defaultModel)) ?? h.defaultModel ?? "default";
       await setOption(c, "thought_level", opts.effort === "max" ? "high" : opts.effort);

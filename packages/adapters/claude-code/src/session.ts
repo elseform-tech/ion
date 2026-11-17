@@ -89,8 +89,9 @@ export function startSession(
     events: () => events,
     async interrupt() {
       state.interrupted = true;
-      await q.interrupt().catch(() => {});
+      // Arm the hard stop first: a wedged claude may never answer the interrupt request.
       setTimeout(() => abort.abort(), 3000).unref();
+      await q.interrupt().catch(() => {});
     },
     async close() {
       prompts.end();
@@ -112,8 +113,10 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     canUseTool,
     pathToClaudeCodeExecutable: binaryPath,
     env: loginOnlyEnv(),
-    // Only your own settings: a repo's .claude/ settings could pre-approve tools or run hooks.
-    settingSources: ["user"],
+    // ion decides permissions: no settings files (a repo's .claude/ or your own allow rules and default mode
+    // would skip canUseTool), and the default mode, so every non-read tool asks.
+    settingSources: [],
+    permissionMode: "default",
     systemPrompt: { type: "preset", preset: "claude_code", ...appendFor(opts) },
   };
 }

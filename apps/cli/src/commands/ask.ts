@@ -23,13 +23,26 @@ function follow(
 ): Promise<RunEnd> {
   const render = createRenderer();
   return new Promise((resolve) => {
-    void client.subscribe({ chatId: started.chatId }, (e) => {
-      if (e.runId !== started.runId) return;
-      if (json) process.stdout.write(`${JSON.stringify(e)}\n`);
-      const r = render(e);
-      if (!json && r.text) process.stdout.write(r.text);
-      if (r.end) resolve(r.end);
-    });
+    let done = false;
+    const lost = () => {
+      if (done) return;
+      done = true;
+      process.stderr.write("\nLost the connection to ion. The run may have stopped.\n");
+      resolve({ status: "failed", code: 1 });
+    };
+    client.onClose(lost);
+    client
+      .subscribe({ chatId: started.chatId }, (e) => {
+        if (done || e.runId !== started.runId) return;
+        if (json) process.stdout.write(`${JSON.stringify(e)}\n`);
+        const r = render(e);
+        if (!json && r.text) process.stdout.write(r.text);
+        if (r.end) {
+          done = true;
+          resolve(r.end);
+        }
+      })
+      .catch(lost);
   });
 }
 

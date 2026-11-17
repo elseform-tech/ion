@@ -15,6 +15,7 @@ export function fakeQuery(calls: FakeQueryCall[] = []) {
     const call: FakeQueryCall = { options, permissionResults: [] };
     calls.push(call);
     let interrupted = false;
+    let wedged = false;
     let wake: (() => void) | null = null;
     async function* run() {
       yield { type: "system", subtype: "init", model: "claude-haiku-5-5", session_id: "native-1" };
@@ -71,6 +72,12 @@ export function fakeQuery(calls: FakeQueryCall[] = []) {
             errors: [],
           };
           return;
+        } else if (text.startsWith("wedged")) {
+          // Never answers interrupt; only the abort controller can stop it.
+          wedged = true;
+          const signal = (options.abortController as AbortController).signal;
+          await new Promise<void>((r) => signal.addEventListener("abort", () => r()));
+          throw new Error("aborted");
         } else if (text.startsWith("crash")) {
           throw new Error("claude exited with code 1");
         }
@@ -90,9 +97,11 @@ export function fakeQuery(calls: FakeQueryCall[] = []) {
     }
     const it = run();
     return Object.assign(it, {
-      interrupt: async () => {
+      interrupt: () => {
+        if (wedged) return new Promise<void>(() => {});
         interrupted = true;
         wake?.();
+        return Promise.resolve();
       },
     });
   };

@@ -44,6 +44,8 @@ export interface IonClient {
   call<C extends Command>(cmd: C, args: Commands[C]["args"]): Promise<Commands[C]["result"]>;
   subscribe(q: Commands["events.subscribe"]["args"], onEvent: (e: IonEvent) => void): Promise<() => void>;
   close(): void;
+  /** Called when the connection to the daemon closes (the daemon stopped or crashed, or close() was called). */
+  onClose(fn: () => void): void;
 }
 
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
@@ -110,9 +112,11 @@ export async function connect(opts: { port: number; token: string; host?: string
     if (msg.ok) p.resolve(msg.result);
     else p.reject(new ApiCallError(msg.error.code, msg.error.message));
   });
+  const closeListeners = new Set<() => void>();
   ws.on("close", () => {
     for (const p of pending.values()) p.reject(new Error("Connection closed"));
     pending.clear();
+    for (const fn of closeListeners) fn();
   });
 
   const call: IonClient["call"] = (cmd, args) =>
@@ -143,5 +147,6 @@ export async function connect(opts: { port: number; token: string; host?: string
       return () => subs.delete(sub);
     },
     close: () => ws.close(),
+    onClose: (fn) => void closeListeners.add(fn),
   };
 }

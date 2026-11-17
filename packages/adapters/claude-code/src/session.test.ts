@@ -43,13 +43,14 @@ async function run(text: string, opts: { calls?: FakeQueryCall[]; exec?: Exec } 
 }
 
 describe("claude-code session", () => {
-  it("loads only your user settings, and passes the project's CLAUDE.md as instructions", async () => {
+  it("loads no settings files, asks for every permission, and passes the project's CLAUDE.md as instructions", async () => {
     const calls: FakeQueryCall[] = [];
     const { writeFileSync } = await import("node:fs");
     writeFileSync(join(cwd, "CLAUDE.md"), "Use tabs.");
     await run("hello", { calls });
     const o = calls[0]!.options as { settingSources: string[]; systemPrompt: { append?: string } };
-    expect(o.settingSources).toEqual(["user"]);
+    expect(o.settingSources).toEqual([]);
+    expect((o as unknown as { permissionMode: string }).permissionMode).toBe("default");
     expect(o.systemPrompt.append).toContain("Use tabs.");
   });
 
@@ -139,6 +140,23 @@ describe("claude-code session", () => {
     await s.send({ text: "hello" });
     expect((await drain(s)).length).toBeGreaterThan(0);
   }, 5000);
+
+  // Regression (final review I3): a wedged interrupt must still stop the run.
+  it("force-stops a run whose interrupt never answers", async () => {
+    const s = await make().start({
+      cwd,
+      model: null,
+      effort: null,
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.send({ text: "wedged" });
+    setTimeout(() => void s.interrupt(), 50);
+    const started = Date.now();
+    const events = await drain(s);
+    expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "interrupted" } });
+    expect(Date.now() - started).toBeLessThan(5000);
+  }, 8000);
 
   it("never passes Claude's suggested permission rules through on allow always", async () => {
     const calls: FakeQueryCall[] = [];

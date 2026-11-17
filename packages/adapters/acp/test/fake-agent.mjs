@@ -101,6 +101,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     waiting.delete(m.id);
     return;
   }
+  if (process.env.FAKE_ACP_HANG === "1") return; // never answers
   if (m.method === "initialize")
     return send({ id: m.id, result: { protocolVersion: 1, authMethods: [{ id: "login", name: "Login" }] } });
   if (m.method === "session/new") {

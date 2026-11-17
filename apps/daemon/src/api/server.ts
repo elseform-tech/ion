@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
+import { runsView } from "../views/runs.js";
 import { createAuth } from "./auth.js";
 import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
@@ -28,6 +29,7 @@ export async function startServer(opts: {
     startedAt: Date.now(),
     version: VERSION,
   };
+  ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   const auth = createAuth();
   const wss = new WebSocketServer({
     host: "127.0.0.1",
@@ -46,6 +48,7 @@ export async function startServer(opts: {
     port: typeof addr === "object" && addr ? addr.port : 0,
     token: auth.token,
     close: async () => {
+      await ctx.runs.shutdown();
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
       db.close();

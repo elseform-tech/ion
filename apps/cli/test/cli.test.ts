@@ -197,6 +197,51 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(r).toMatchObject({ code: 1, err: "Unknown project: nope" });
     });
 
+    // Regression (final review I7): the CLI hung when the daemon went away mid-run.
+    const askSlowThen = async (onRunning: () => void) => {
+      const child = spawn("node", [BIN, "ask", "slow", "-p", "app", "--harness", "fake"], {
+        env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1" },
+      });
+      let out = "";
+      let err = "";
+      child.stderr.on("data", (d) => {
+        err += d;
+      });
+      child.stdout.on("data", (d) => {
+        out += d;
+        if (out.includes("sleep 30")) onRunning();
+      });
+      const code = await new Promise<number | null>((r) => child.on("exit", r));
+      return { code, out, err };
+    };
+
+    it("reports the run as failed when ion is stopped mid-run", async () => {
+      await setup();
+      const r = await askSlowThen(() => void ion("daemon", "stop"));
+      expect(r.code).toBe(1);
+      expect(r.out).toContain("Failed: ion stopped");
+    });
+
+    it("says it lost the connection when ion crashes mid-run", async () => {
+      await setup();
+      const { pid } = JSON.parse(readFileSync(join(home, "data", "daemon.json"), "utf8"));
+      const r = await askSlowThen(() => process.kill(pid, "SIGKILL"));
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("Lost the connection to ion");
+    });
+
+    // Regression (final review I9): signed-out harness → the sign-in hint and exit 1.
+    it("shows the sign-in hint when the harness is signed out", async () => {
+      process.env.ION_FAKE_SIGNED_OUT = "1";
+      try {
+        await setup();
+        const r = await ion("ask", "hello", "-p", "app", "--harness", "fake");
+        expect(r).toMatchObject({ code: 1, err: "Fake isn't signed in. Run: ion fake login" });
+      } finally {
+        delete process.env.ION_FAKE_SIGNED_OUT;
+      }
+    });
+
     it("stops on Ctrl+C with exit 130", async () => {
       await setup();
       const child = spawn("node", [BIN, "ask", "slow", "-p", "app", "--harness", "fake"], {

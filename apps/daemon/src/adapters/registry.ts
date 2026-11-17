@@ -24,9 +24,13 @@ const ENTRIES: Record<string, () => HarnessEntry> = {
   }),
 };
 
-/** A harness by id, or null. The fake harness exists only for tests (ION_ALLOW_FAKE=1). */
+/** A harness by id, or null. The fake harness exists only for tests (ION_ALLOW_FAKE=1; ION_FAKE_SIGNED_OUT=1). */
 export function getHarness(id: string): HarnessEntry | null {
   if (id === "fake" && process.env.ION_ALLOW_FAKE === "1")
-    return { adapter: createFakeAdapter(), label: "Fake", loginHint: "nothing to do" };
+    return {
+      adapter: createFakeAdapter({ signedIn: process.env.ION_FAKE_SIGNED_OUT !== "1" }),
+      label: "Fake",
+      loginHint: "ion fake login",
+    };
   return ENTRIES[id]?.() ?? null;
 }

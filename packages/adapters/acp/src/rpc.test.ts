@@ -1,4 +1,4 @@
-import { PassThrough } from "node:stream";
+import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { createRpc, RpcError } from "./rpc.js";
 
@@ -53,5 +53,17 @@ describe("createRpc", () => {
     const p = rpc.request("session/prompt", {});
     fromAgent.end();
     await expect(p).rejects.toThrow("The agent stopped");
+  });
+
+  // Regression (final review I4): writing to an agent that closed its stdin raised an unhandled EPIPE.
+  it("survives a broken stdin and rejects further requests", async () => {
+    const broken = new Writable({
+      write(_chunk, _enc, cb) {
+        cb(Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+      },
+    });
+    const rpc = createRpc({ stdin: broken, stdout: new PassThrough() });
+    await expect(rpc.request("session/prompt", {})).rejects.toThrow("The agent stopped");
+    await expect(rpc.request("again", {})).rejects.toThrow("The agent stopped");
   });
 });

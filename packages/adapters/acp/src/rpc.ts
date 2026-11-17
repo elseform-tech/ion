@@ -64,11 +64,15 @@ export function createRpc(io: { stdin: Writable; stdout: Readable }): Rpc {
 
   const lines = createInterface({ input: io.stdout });
   lines.on("line", onLine);
-  lines.on("close", () => {
+  const stop = () => {
     closed = true;
     for (const p of pending.values()) p.reject(new Error("The agent stopped"));
     pending.clear();
-  });
+  };
+  lines.on("close", stop);
+  // An agent that closed its stdin (crashed, exiting) gives EPIPE on write: that ends the connection,
+  // never the daemon.
+  io.stdin.on("error", stop);
 
   return {
     request(method, params) {

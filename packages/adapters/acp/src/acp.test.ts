@@ -171,4 +171,24 @@ describe("acp adapter", () => {
   it("treats the agent cancelling on its own (after a refusal) as done, not interrupted", async () => {
     expect((await turn(fake, "refuse")).at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
   });
+
+  // Regression (final review I5): an agent that never answers startup used to hang ion forever.
+  it("gives up on an agent that never starts, and reports it", async () => {
+    process.env.FAKE_ACP_HANG = "1";
+    try {
+      const a = createAcpAdapter(fake, { which: () => process.execPath, startTimeoutMs: 300 });
+      await expect(
+        a.start({
+          cwd,
+          model: null,
+          effort: null,
+          signal: new AbortController().signal,
+          decide: async () => "allow",
+        }),
+      ).rejects.toThrow("Fake ACP didn't respond");
+      expect(await a.auth.status()).toEqual({ signedIn: false, method: "Not responding" });
+    } finally {
+      delete process.env.FAKE_ACP_HANG;
+    }
+  });
 });

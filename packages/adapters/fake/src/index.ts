@@ -24,12 +24,16 @@ const CAPABILITIES: Capabilities = {
 };
 
 /** A scripted harness for tests: the prompt's first word picks a scenario (hello, edit, approve, fail, slow). */
-export function createFakeAdapter(opts: { delayMs?: number } = {}): HarnessAdapter {
+export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean } = {}): HarnessAdapter {
+  const signedIn = opts.signedIn ?? true;
   const delayMs = opts.delayMs ?? 5;
   return {
     id: "fake",
     detect: async () => ({ installed: true, version: "0.0.0", path: "fake" }),
-    auth: { status: async () => ({ signedIn: true, method: "Fake" }), login: async () => {} },
+    auth: {
+      status: async () => ({ signedIn, method: signedIn ? "Fake" : "Not signed in" }),
+      login: async () => {},
+    },
     capabilities: async () => CAPABILITIES,
     start: async (start) => fakeSession(start, delayMs),
   };

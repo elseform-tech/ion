@@ -14,6 +14,9 @@ type Active = { chatId: string; session: Session };
 export class RunManager {
   private readonly active = new Map<string, Active>();
   private readonly requested = new Map<string, () => void>();
+  /** Chats with an ask in progress (before their run is active), so two asks can't race. */
+  private readonly reserved = new Set<string>();
+  private stopping = false;
 
   constructor(
     private readonly store: EventStore,
@@ -25,16 +28,53 @@ export class RunManager {
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     const chat = this.chatFor(args);
     const cwd = this.projectPath(args.projectId ?? chat.projectId);
-    if ([...this.active.values()].some((a) => a.chatId === chat.chatId))
+    if (this.stopping) throw new UserError("ion is stopping");
+    const key = chat.chatId;
+    if (key && (this.reserved.has(key) || [...this.active.values()].some((a) => a.chatId === key)))
       throw new UserError("This chat is already running");
-    await this.checkReady(h);
-    const chatId = chat.chatId ?? this.createChat(args);
-    const runId = `run_${randomUUID()}`;
-    const session = await this.start(h, { args, cwd, chatId, runId });
-    this.active.set(runId, { chatId, session });
+    if (key) this.reserved.add(key);
+    let started: { chatId: string; runId: string; session: Session };
+    try {
+      await this.checkReady(h);
+      const chatId = chat.chatId ?? this.createChat(args);
+      const runId = `run_${randomUUID()}`;
+      started = { chatId, runId, session: await this.start(h, { args, cwd, chatId, runId }) };
+      this.active.set(runId, { chatId, session: started.session });
+    } finally {
+      if (key) this.reserved.delete(key);
+    }
+    const { chatId, runId, session } = started;
     await session.send({ text: args.text });
     void this.pump(session, chatId, runId);
     return { chatId, runId };
+  }
+
+  /** ion is stopping: every active run ends as failed, and its harness session is closed. */
+  async shutdown(): Promise<void> {
+    this.stopping = true;
+    for (const [runId, { chatId, session }] of this.active) {
+      this.endFailed(chatId, runId, "daemon_stopped", "ion stopped");
+      await session.close().catch(() => {});
+    }
+    this.active.clear();
+  }
+
+  /** Runs a crash left without an end (still queued or running) are closed as failed. */
+  closeUnfinishedRuns(rows: { runId: string; chatId: string | null; status: string }[]): void {
+    for (const r of rows)
+      if (r.status === "running" || r.status === "queued")
+        this.endFailed(r.chatId, r.runId, "daemon_restarted", "ion stopped before this run finished");
+  }
+
+  private endFailed(chatId: string | null, runId: string, code: string, message: string): void {
+    this.store.append({
+      chatId,
+      runId,
+      origin: "daemon",
+      type: EV.error,
+      data: { code, retryable: false, message },
+    });
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
   }
 
   async interrupt(runId: string): Promise<void> {
@@ -126,6 +166,7 @@ export class RunManager {
     let finished = false;
     try {
       for await (const e of session.events()) {
+        if (this.stopping) break;
         const stored = this.store.append({ ...e, chatId, runId, origin: "adapter" });
         this.noteStored(stored);
         if (e.type === EV.runFinished) finished = true;
@@ -139,7 +180,7 @@ export class RunManager {
         data: { code: "adapter", retryable: false, message: (e as Error).message },
       });
     } finally {
-      if (!finished)
+      if (!finished && !this.stopping)
         this.store.append({
           chatId,
           runId,
