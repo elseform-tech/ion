@@ -53,4 +53,10 @@ describe("decideByPolicy", () => {
     for (const kind of ["command", "web", "mcp", "other"])
       expect(decide(kind, { file_path: join(project, "a") })).toBe("deny");
   });
+
+  it("fails closed for reads that name no path, and finds paths in any *path field", () => {
+    expect(decide("read", {})).toBe("deny");
+    expect(decide("edit", { filePath: "/etc/hosts" })).toBe("deny");
+    expect(decide("edit", { target_path: join(project, "a.ts") })).toBe("allow");
+  });
 });

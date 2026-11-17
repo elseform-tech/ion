@@ -100,7 +100,7 @@ export function startAcpSession(
 }
 
 /** Asks the daemon about one ACP permission request and picks the matching option. */
-export async function answerPermission(
+async function answerPermissionUnsafe(
   p: Record<string, unknown>,
   decide: StartOpts["decide"],
   emit: (e: AdapterEvent) => void,
@@ -130,7 +130,7 @@ type AcpToolCall = {
   toolCallId?: string;
   title?: string;
   kind?: string;
-  locations?: { path?: unknown }[];
+  locations?: unknown;
   rawInput?: unknown;
 };
 
@@ -140,8 +140,24 @@ function inputOf(tool: AcpToolCall): Record<string, unknown> {
     typeof tool.rawInput === "object" && tool.rawInput !== null
       ? (tool.rawInput as Record<string, unknown>)
       : {};
-  const locations = (tool.locations ?? [])
-    .map((l) => l.path)
+  const locs: unknown[] = Array.isArray(tool.locations) ? tool.locations : [];
+  const locations = locs
+    .map((l) => (l && typeof l === "object" ? (l as { path?: unknown }).path : undefined))
     .filter((p): p is string => typeof p === "string");
   return { ...raw, locations };
+}
+
+type PermissionOutcome = { outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" } };
+
+/** Asks the daemon about one ACP permission request. Any error refuses (fail closed). */
+export async function answerPermission(
+  p: Record<string, unknown>,
+  decide: StartOpts["decide"],
+  emit: (e: AdapterEvent) => void,
+): Promise<PermissionOutcome> {
+  try {
+    return await answerPermissionUnsafe(p, decide, emit);
+  } catch {
+    return { outcome: { outcome: "cancelled" } };
+  }
 }

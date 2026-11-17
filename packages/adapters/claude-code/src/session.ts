@@ -148,7 +148,8 @@ function projectInstructions(cwd: string): string | null {
   const file = join(cwd, "CLAUDE.md");
   let fd: number;
   try {
-    fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+    // O_NONBLOCK: a FIFO or device named CLAUDE.md must not block the daemon.
+    fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
     return null;
   }

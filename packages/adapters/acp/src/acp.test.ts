@@ -113,4 +113,30 @@ describe("acp adapter", () => {
     );
     expect(seen).toEqual({ file_path: "/repo/a.ts", locations: ["/repo/a.ts"] });
   });
+
+  it("tolerates malformed locations and refuses when deciding fails", async () => {
+    const { answerPermission } = await import("./session.js");
+    const p = {
+      toolCall: { toolCallId: "t", kind: "edit", locations: [null, 3, { path: "/r/a" }] },
+      options: [{ optionId: "y", kind: "allow_once" }],
+    };
+    let seen: Record<string, unknown> = {};
+    await answerPermission(
+      p,
+      async (r) => {
+        seen = r.input;
+        return "allow";
+      },
+      () => {},
+    );
+    expect(seen.locations).toEqual(["/r/a"]);
+    const failing = await answerPermission(
+      p,
+      async () => {
+        throw new Error("boom");
+      },
+      () => {},
+    );
+    expect(failing).toEqual({ outcome: { outcome: "cancelled" } });
+  });
 });

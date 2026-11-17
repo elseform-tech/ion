@@ -2,12 +2,10 @@ import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest, Decision } from "@ion/adapter-kit";
 
-const PATH_FIELDS = ["file_path", "notebook_path", "path"];
-
-/** Every path a request names: the usual input fields plus ACP `locations`. */
+/** Every path a request names: any input field whose name ends in "path" (file_path, filePath, …) plus ACP `locations`. */
 function pathsOf(req: ApprovalRequest): string[] {
   const out: string[] = [];
-  for (const f of PATH_FIELDS) if (typeof req.input[f] === "string") out.push(req.input[f] as string);
+  for (const [k, v] of Object.entries(req.input)) if (/path$/i.test(k) && typeof v === "string") out.push(v);
   const locations = req.input.locations;
   if (Array.isArray(locations)) for (const l of locations) if (typeof l === "string") out.push(l);
   return out;
@@ -48,8 +46,12 @@ export function decideByPolicy(
   opts: { allowEdits: boolean; roots: string[] },
 ): Decision {
   const paths = pathsOf(req);
-  if (req.kind === "read" || req.kind === "search") return allInside(paths, opts.roots) ? "allow" : "deny";
-  if (req.kind === "edit")
-    return opts.allowEdits && paths.length > 0 && allInside(paths, opts.roots) ? "allow" : "deny";
-  return "deny";
+  const named = paths.length > 0 && allInside(paths, opts.roots);
+  const rules: Record<string, boolean> = {
+    read: named,
+    // A search without a path searches the project (the agent's working folder).
+    search: allInside(paths, opts.roots),
+    edit: opts.allowEdits && named,
+  };
+  return rules[req.kind] === true ? "allow" : "deny";
 }

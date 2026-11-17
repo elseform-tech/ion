@@ -124,6 +124,22 @@ describe("claude-code session", () => {
     expect(append.trimEnd().endsWith("</project-instructions>")).toBe(true);
   });
 
+  it("doesn't hang on a CLAUDE.md that is a FIFO", async () => {
+    const { execFileSync: run2 } = await import("node:child_process");
+    const { mkdtempSync: mk } = await import("node:fs");
+    const fifoDir = mk(join(tmpdir(), "ion-cc-fifo-"));
+    run2("mkfifo", [join(fifoDir, "CLAUDE.md")]);
+    const s = await make().start({
+      cwd: fifoDir,
+      model: null,
+      effort: null,
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.send({ text: "hello" });
+    expect((await drain(s)).length).toBeGreaterThan(0);
+  }, 5000);
+
   it("never passes Claude's suggested permission rules through on allow always", async () => {
     const calls: FakeQueryCall[] = [];
     const session = await make(calls).start({
