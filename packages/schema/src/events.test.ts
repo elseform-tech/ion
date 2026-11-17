@@ -34,16 +34,23 @@ describe("parseEvent", () => {
   });
 
   it("accepts any object data for types without a data schema", () => {
-    expect(parseEvent({ ...valid, type: "tool.output", data: { chunk: "ok" } }).type).toBe("tool.output");
+    expect(parseEvent({ ...valid, type: "artifact.attached", data: { anything: 1 } }).type).toBe(
+      "artifact.attached",
+    );
   });
 
   it("rejects daemon-only types coming from an adapter", () => {
     expect(() => parseEvent({ ...valid, origin: "adapter", type: "approval.resolved", data: {} })).toThrow(
       /daemon-only/,
     );
-    expect(parseEvent({ ...valid, origin: "daemon", type: "approval.resolved", data: {} }).type).toBe(
-      "approval.resolved",
-    );
+    expect(
+      parseEvent({
+        ...valid,
+        origin: "daemon",
+        type: "approval.resolved",
+        data: { requestId: "q", decision: "allow", by: "you" },
+      }).type,
+    ).toBe("approval.resolved");
   });
 
   it("allows null chatId and runId for daemon-wide events", () => {

@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
+import { runsView } from "../views/runs.js";
 import { createAuth } from "./auth.js";
 import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
+import { RunManager } from "../runs/manager.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -19,12 +21,15 @@ export async function startServer(opts: {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
   const db = openDb(join(opts.dataDir, "ion.db"));
+  const store = new EventStore(db, allViews);
   const ctx: Ctx = {
-    store: new EventStore(db, allViews),
+    store,
+    runs: new RunManager(store, { configFile: opts.configFile }),
     configFile: opts.configFile,
     startedAt: Date.now(),
     version: VERSION,
   };
+  ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   const auth = createAuth();
   const wss = new WebSocketServer({
     host: "127.0.0.1",
@@ -43,6 +48,7 @@ export async function startServer(opts: {
     port: typeof addr === "object" && addr ? addr.port : 0,
     token: auth.token,
     close: async () => {
+      await ctx.runs.shutdown();
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
       db.close();

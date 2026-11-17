@@ -1,0 +1,74 @@
+[
+  {
+    "type": "run.started",
+    "data": {
+      "harness": "claude-code",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "authMethod": "Claude subscription"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "Hello"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " there"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": ", fri"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "end"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ly person"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " today"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "!"
+    }
+  },
+  {
+    "type": "message.completed",
+    "data": {
+      "text": "Hello there, friendly person today!"
+    }
+  },
+  {
+    "type": "usage.reported",
+    "data": {
+      "model": "claude-haiku-5-5",
+      "inputTokens": 2,
+      "outputTokens": 13,
+      "costUsd": 0.004711470000000001
+    }
+  },
+  {
+    "type": "run.finished",
+    "data": {
+      "status": "done"
+    }
+  }
+]

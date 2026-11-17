@@ -1,3 +1,4 @@
+import type { EffortLevel } from "./capabilities.js";
 import type { IonEvent } from "./events.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
@@ -20,6 +21,19 @@ export type Commands = {
   "projects.add": { args: { path: string }; result: ProjectInfo };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   "events.subscribe": { args: { chatId?: string; afterId?: string }; result: { sub: string } };
+  ask: {
+    args: {
+      text: string;
+      chatId?: string;
+      projectId?: string;
+      harness?: string;
+      model?: string;
+      effort?: EffortLevel;
+      allowEdits?: boolean;
+    };
+    result: { chatId: string; runId: string };
+  };
+  "run.interrupt": { args: { runId: string }; result: { ok: true } };
 };
 export type Command = keyof Commands;
 export const COMMANDS = [
@@ -28,6 +42,8 @@ export const COMMANDS = [
   "projects.add",
   "chat.create",
   "events.subscribe",
+  "ask",
+  "run.interrupt",
 ] as const;
 
 export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };

@@ -71,6 +71,11 @@ export default tseslint.config(
     },
   },
   {
+    // Manual developer scripts (e.g. transcript recording) call git and node from PATH on purpose.
+    files: ["**/scripts/**"],
+    rules: { "sonarjs/no-os-command-from-path": "off" },
+  },
+  {
     // RuleTester registers its cases itself; SonarJS can't see them.
     files: ["tools/lint-rules/**/*.test.js"],
     rules: { "sonarjs/no-empty-test-file": "off" },

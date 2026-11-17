@@ -49,6 +49,7 @@ tester.run("no-child-process", plugin.rules["no-child-process"], {
     at("apps/cli/src/daemon-control.ts", 'import { spawn } from "node:child_process";'),
     at("apps/daemon/src/workspace/git.ts", 'import { spawn } from "node:child_process";'),
     at("packages/adapters/claude-code/src/x.ts", 'import { execa } from "execa";'),
+    at("packages/adapter-kit/src/system.ts", 'import { execFile } from "node:child_process";'),
     at("apps/cli/test/cli.test.ts", 'import { execFile } from "node:child_process";'),
   ],
   invalid: [
@@ -70,6 +71,8 @@ tester.run("walls", plugin.rules.walls, {
     at("apps/daemon/src/api/server.test.ts", 'import { connect } from "@ion/client";'),
     at("packages/schema/src/index.ts", 'import { z } from "zod";'),
     at("apps/daemon/src/api/server.ts", 'import { EventStore } from "../store/index.js";'),
+    at("apps/daemon/src/adapters/registry.ts", 'import { createFakeAdapter } from "@ion/adapter-fake";'),
+    at("apps/daemon/src/runs/manager.ts", 'import { projectRoots } from "@ion/adapter-kit";'),
   ],
   invalid: [
     { ...at("apps/cli/src/index.ts", 'import { x } from "@ion/daemon";'), errors: [{ messageId: "wall" }] },
@@ -88,6 +91,10 @@ tester.run("walls", plugin.rules.walls, {
     {
       ...at("apps/desktop/src/app.ts", 'import { readFileSync } from "node:fs";'),
       errors: [{ messageId: "nodeInUi" }],
+    },
+    {
+      ...at("apps/daemon/src/runs/manager.ts", 'import { createFakeAdapter } from "@ion/adapter-fake";'),
+      errors: [{ messageId: "registryOnly" }],
     },
   ],
 });

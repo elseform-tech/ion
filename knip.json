@@ -16,6 +16,9 @@
     },
     "tools/health": {
       "project": ["src/**/*.js"]
+    },
+    "packages/adapters/*": {
+      "project": ["src/**/*.ts"]
     }
   }
 }
