@@ -1,0 +1,8 @@
+.remember/
+node_modules/
+dist/
+.turbo/
+coverage/
+*.db
+*.db-*
+.DS_Store
