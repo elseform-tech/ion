@@ -24,7 +24,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/policy` | `schema` | anything doing I/O |
 | `packages/schema` | nothing | everything |
 
-Also enforced: event type strings only in `packages/schema` (use `EV.*`); SQLite only in `apps/daemon/src/store`;
+Also enforced: the daemon imports adapters only in `apps/daemon/src/adapters/registry.ts`; event type strings only in `packages/schema` (use `EV.*`); SQLite only in `apps/daemon/src/store`;
 child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter-kit` and `apps/cli/src/daemon-control.ts`.
 
 ## Rules
