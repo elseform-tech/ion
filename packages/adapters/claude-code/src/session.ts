@@ -57,7 +57,7 @@ export function startSession(
   };
 
   const canUseTool: CanUseTool = async (name, input, o) => {
-    const summary = toolSummary(name, input, opts.cwd);
+    const summary = toolSummary(name, input, state.roots);
     const requestId = o.requestId ?? o.toolUseID;
     emit({
       type: EV.approvalRequested,

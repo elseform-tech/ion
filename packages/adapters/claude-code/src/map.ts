@@ -1,12 +1,23 @@
 import type { AdapterEvent } from "@ion/adapter-kit";
 import { EV, type EffortLevel } from "@ion/schema";
+import { realpathSync } from "node:fs";
 import { fileChange, toolKind, toolSummary } from "./tools.js";
+
+const projectRoots = (cwd: string): string[] => {
+  try {
+    const real = realpathSync(cwd);
+    return real === cwd ? [cwd] : [cwd, real];
+  } catch {
+    return [cwd];
+  }
+};
 
 type Obj = Record<string, unknown>;
 type Block = Obj & { type?: string };
 
 export type MapState = {
-  cwd: string;
+  /** The project folder as given and its real path (they differ under symlinks, e.g. macOS /var). */
+  roots: string[];
   effort: EffortLevel | null;
   authMethod: string;
   model: string | null;
@@ -20,7 +31,9 @@ export const createMapState = (o: {
   effort: EffortLevel | null;
   authMethod: string;
 }): MapState => ({
-  ...o,
+  roots: projectRoots(o.cwd),
+  effort: o.effort,
+  authMethod: o.authMethod,
   model: null,
   sessionId: null,
   interrupted: false,
@@ -73,7 +86,7 @@ function mapAssistant(msg: Obj, s: MapState): AdapterEvent[] {
           toolId: b.id,
           name: b.name,
           kind: toolKind(b.name),
-          summary: toolSummary(b.name, input, s.cwd),
+          summary: toolSummary(b.name, input, s.roots),
         },
       });
     }
@@ -89,7 +102,7 @@ function mapToolResults(msg: Obj, s: MapState): AdapterEvent[] {
     out.push({ type: EV.toolFinished, data: { toolId: b.tool_use_id, ok, summary: null } });
     const tool = s.tools.get(b.tool_use_id);
     if (ok && tool && toolKind(tool.name) === "edit") {
-      const change = fileChange(tool.name, tool.input, s.cwd);
+      const change = fileChange(tool.name, tool.input, s.roots);
       if (change) out.push({ type: EV.fileChanged, data: change });
     }
   }

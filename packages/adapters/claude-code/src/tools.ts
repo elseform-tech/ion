@@ -1,4 +1,4 @@
-import { relative } from "node:path";
+import { isAbsolute, relative } from "node:path";
 import type { ToolKind } from "@ion/schema";
 
 const KINDS: Record<string, ToolKind> = {
@@ -24,18 +24,21 @@ export function toolKind(name: string): ToolKind {
 
 const str = (x: unknown) => (typeof x === "string" ? x : null);
 
-/** The file a tool touches, relative to the working folder when inside it. */
-function toolPath(input: Record<string, unknown>, cwd: string): string | null {
+/** The file a tool touches, relative to the project when under any of its roots (as given, or real path). */
+function toolPath(input: Record<string, unknown>, roots: string[]): string | null {
   const p = str(input.file_path) ?? str(input.notebook_path) ?? str(input.path);
   if (!p) return null;
-  const rel = relative(cwd, p);
-  return rel && !rel.startsWith("..") ? rel : p;
+  for (const root of roots) {
+    const rel = relative(root, p);
+    if (rel && !rel.startsWith("..") && !isAbsolute(rel)) return rel;
+  }
+  return p;
 }
 
 /** A one-line description: the file, the command, the pattern or the URL. */
-export function toolSummary(name: string, input: Record<string, unknown>, cwd: string): string {
+export function toolSummary(name: string, input: Record<string, unknown>, roots: string[]): string {
   const text =
-    toolPath(input, cwd) ?? str(input.command) ?? str(input.pattern) ?? str(input.url) ?? str(input.query);
+    toolPath(input, roots) ?? str(input.command) ?? str(input.pattern) ?? str(input.url) ?? str(input.query);
   return (text ?? name).slice(0, 80);
 }
 
@@ -45,9 +48,9 @@ const lines = (s: unknown) => (typeof s === "string" && s.length ? s.split("\n")
 export function fileChange(
   name: string,
   input: Record<string, unknown>,
-  cwd: string,
+  roots: string[],
 ): { path: string; change: "add" | "modify"; added: number | null; removed: number | null } | null {
-  const path = toolPath(input, cwd);
+  const path = toolPath(input, roots);
   if (!path) return null;
   if (name === "Write") return { path, change: "add", added: lines(input.content), removed: null };
   if (name === "Edit")
