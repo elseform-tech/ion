@@ -60,7 +60,7 @@ describe("parseEvent", () => {
       runId: null,
       origin: "daemon",
       type: "memory.forgotten",
-      data: {},
+      data: { memoryId: "m1a2b3c" },
     });
     expect(e.runId).toBeNull();
   });

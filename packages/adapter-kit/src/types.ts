@@ -11,9 +11,14 @@ export type ApprovalRequest = {
   kind: string;
   summary: string;
   input: Record<string, unknown>;
+  /** For an MCP tool: the server it belongs to, when the harness says (ion's own is "ion"). */
+  mcpServer?: string | null;
 };
 
 export type { Decision };
+
+/** The harness couldn't continue the session it was given (gone, expired): start a new one instead. */
+export class ResumeFailed extends Error {}
 
 export type StartOpts = {
   cwd: string;
@@ -22,6 +27,8 @@ export type StartOpts = {
   instructions?: string;
   /** The harness's own session id, to continue a conversation. */
   resume?: string;
+  /** ion's MCP server for this run: history, needs and memory of its project. */
+  mcp?: { name: "ion"; url: string; headers: Record<string, string> };
   signal: AbortSignal;
   /** The daemon decides every permission prompt (policy now, a "Needs you" pin in Plan 3). */
   decide: (req: ApprovalRequest) => Promise<Decision>;

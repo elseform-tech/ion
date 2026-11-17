@@ -78,6 +78,7 @@ function mapInit(msg: Obj, s: MapState): AdapterEvent[] {
         model: s.model ?? "unknown",
         effort: s.effort,
         authMethod: s.authMethod,
+        sessionId: s.sessionId,
       },
     },
   ];

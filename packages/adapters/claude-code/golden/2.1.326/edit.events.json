@@ -5,7 +5,8 @@
       "harness": "claude-code",
       "model": "claude-haiku-5-5",
       "effort": "low",
-      "authMethod": "Claude subscription"
+      "authMethod": "Claude subscription",
+      "sessionId": null
     }
   },
   {

@@ -18,6 +18,7 @@ describe("mapSdkMessage", () => {
           model: "claude-haiku-5-5",
           effort: "high",
           authMethod: "Claude subscription",
+          sessionId: "s1",
         },
       },
     ]);

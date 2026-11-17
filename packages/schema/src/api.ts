@@ -40,6 +40,29 @@ export type Commands = {
   };
   "chats.list": { args: Record<string, never>; result: ChatInfo[] };
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
+  "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
+  "memory.forget": { args: { memoryId: string }; result: { ok: true } };
+  "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
+};
+
+export type HarnessInfo = {
+  id: string;
+  label: string;
+  installed: boolean;
+  signedIn: boolean;
+  /** From the harness itself when it's signed in; empty otherwise. */
+  models: { id: string; label: string }[];
+  defaultModel: string | null;
+};
+
+export type MemoryInfo = {
+  memoryId: string;
+  /** "you", or the project it belongs to. */
+  scope: string;
+  text: string;
+  /** "you", or the chat it came from. */
+  source: string;
+  writtenAt: string;
 };
 
 export type NeedInfo = {
@@ -75,6 +98,9 @@ export const COMMANDS = [
   "need.resolve",
   "chats.list",
   "chat.archive",
+  "memory.list",
+  "memory.forget",
+  "harnesses.list",
 ] as const;
 
 export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };

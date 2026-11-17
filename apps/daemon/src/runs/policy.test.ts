@@ -152,6 +152,18 @@ describe("decideByPolicy", () => {
     expect(glob("src/@(a|b)/*.ts")).toBe("allow");
   });
 
+  // Security review: only ion's five tools, by exact name, and only when this run was given ion's server.
+  it("allows ion's own MCP tools by exact name when the run has ion's server, and asks about anything else", () => {
+    const mcp = (toolName: string, mcpServer: string | null, ionMcp = true) =>
+      decideByPolicy({ ...req("mcp", {}), toolName, mcpServer }, { roots, ionMcp });
+    expect(mcp("mcp__ion__chat_history", "ion")).toBe("allow");
+    expect(mcp("ion__search_chats", "ion")).toBe("allow");
+    expect(mcp("mcp__ion__chat_history", "ion", false)).toBe("ask");
+    expect(mcp("mcp__ion__delete_everything", "ion")).toBe("ask");
+    expect(mcp("mcp__github__create_issue", "github")).toBe("ask");
+    expect(mcp("Bash", "ion")).toBe("ask");
+  });
+
   it("checks declared path fields however deeply nested", () => {
     expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ file_path: "/etc/hosts" }] })).toBe(
       "ask",

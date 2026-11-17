@@ -1,5 +1,10 @@
+import { getHarness, harnessIds } from "../adapters/registry.js";
+import type { HarnessInfo } from "@ion/schema";
+import { forgetMemory } from "../memory/index.js";
+import { memoryView } from "../views/memory.js";
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
+import type { Grants } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { RunManager } from "../runs/manager.js";
 import type { Db, EventStore } from "../store/index.js";
@@ -13,6 +18,7 @@ export type Ctx = {
   store: EventStore;
   db: Db;
   needs: NeedsService;
+  grants: Grants;
   runs: RunManager;
   configFile: string;
   startedAt: number;
@@ -29,6 +35,12 @@ type Handlers = {
 export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
+  "harnesses.list": () => Promise.all(harnessIds().map(harnessInfo)),
+  "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
+  "memory.forget": (a, ctx) => {
+    forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
+    return { ok: true as const };
+  },
   "chat.archive": async (a, ctx) => {
     await ctx.runs.archive(String(a.chatId ?? ""));
     return { ok: true as const };
@@ -79,3 +91,31 @@ export const handlers: Handlers = {
       data: { title: String(a.title ?? "New chat"), projectId: a.projectId ?? null },
     }),
 };
+
+/** A harness, whether it's ready, and (only when it is) its own model list. */
+async function harnessInfo(id: string): Promise<HarnessInfo> {
+  const h = getHarness(id)!;
+  // One harness that fails to answer shows as not ready; it doesn't break the list.
+  return readyInfo(id, h).catch(() => ({
+    id,
+    label: h.label,
+    installed: false,
+    signedIn: false,
+    models: [],
+    defaultModel: null,
+  }));
+}
+
+async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness>>): Promise<HarnessInfo> {
+  const installed = (await h.adapter.detect()).installed;
+  const signedIn = installed && (await h.adapter.auth.status()).signedIn;
+  const caps = signedIn ? await h.adapter.capabilities() : null;
+  return {
+    id,
+    label: h.label,
+    installed,
+    signedIn,
+    models: caps?.models ?? [],
+    defaultModel: caps?.defaultModel ?? null,
+  };
+}

@@ -69,6 +69,21 @@ function failureOf(e: Error): Failure {
   return { code: "agent", retryable: false, message: e.message };
 }
 
+function startedEvent(
+  run: { harness: string; model: string },
+  opts: StartOpts,
+  sessionId: string,
+): AdapterEvent {
+  const data = {
+    harness: run.harness,
+    model: run.model,
+    effort: opts.effort,
+    authMethod: "Signed in",
+    sessionId,
+  };
+  return { type: EV.runStarted, data };
+}
+
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
@@ -117,10 +132,7 @@ export function startAcpSession(
     id: randomUUID(),
     nativeId: c.sessionId,
     async send({ text: t }) {
-      emit({
-        type: EV.runStarted,
-        data: { harness: run.harness, model: run.model, effort: opts.effort, authMethod: "Signed in" },
-      });
+      emit(startedEvent(run, opts, c.sessionId));
       c.rpc
         .request("session/prompt", { sessionId: c.sessionId, prompt: [{ type: "text", text: t }] })
         .then((r) => {
@@ -157,12 +169,14 @@ async function answerPermissionUnsafe(
   const toolId = String(tool.toolCallId ?? "");
   const requestId = `${toolId}:${randomUUID().slice(0, 8)}`;
   const summary = String(tool.title ?? "A tool");
-  const kind = acpToolKind(tool.kind);
+  const mcp = mcpToolOf(tool);
+  const kind = mcp ? "mcp" : acpToolKind(tool.kind);
   emit({ type: EV.approvalRequested, data: { requestId, toolId, kind, summary } });
   const decision = await decide({
     requestId,
     toolId,
-    toolName: String(tool.kind ?? "tool"),
+    toolName: mcp?.name ?? String(tool.kind ?? "tool"),
+    mcpServer: mcp?.server ?? null,
     kind,
     summary,
     input: inputOf(tool),
@@ -183,6 +197,15 @@ type AcpToolCall = {
 };
 
 /** What the daemon's policy needs: the agent's raw input plus every path in `locations`. */
+/** An MCP tool call's server and full name: Grok sends `{ variant: "UseTool", tool_name: "<server>__<tool>" }`. */
+function mcpToolOf(tool: AcpToolCall): { server: string; name: string } | null {
+  const raw = (typeof tool.rawInput === "object" && tool.rawInput) || {};
+  const { variant, tool_name: name } = raw as { variant?: unknown; tool_name?: unknown };
+  if (variant !== "UseTool" || typeof name !== "string") return null;
+  const m = /^(.+?)__[^_]/.exec(name);
+  return m ? { server: m[1]!, name } : null;
+}
+
 function inputOf(tool: AcpToolCall): Record<string, unknown> {
   const raw =
     typeof tool.rawInput === "object" && tool.rawInput !== null

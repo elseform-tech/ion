@@ -7,7 +7,7 @@ import { EV } from "@ion/schema";
 import { loginOnlyEnv } from "./cli.js";
 import { createDeltaCoalescer } from "@ion/adapter-kit";
 import { createMapState, type MapState, mapSdkMessage } from "./map.js";
-import { toolKind, toolSummary } from "./tools.js";
+import { mcpServerOf, toolKind, toolSummary } from "./tools.js";
 
 type SdkUserMessage = { type: "user"; message: { role: "user"; content: string }; parent_tool_use_id: null };
 type PermissionResult =
@@ -68,6 +68,7 @@ export function startSession(
       requestId,
       toolId: o.toolUseID,
       toolName: name,
+      mcpServer: mcpServerOf(name),
       kind: toolKind(name),
       summary,
       input,
@@ -107,12 +108,13 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     ...(opts.model ? { model: opts.model } : {}),
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...(opts.resume ? { resume: opts.resume } : {}),
+    ...mcpOptions(opts),
     thinking: { type: "adaptive", display: "summarized" },
     includePartialMessages: true,
     abortController: abort,
     canUseTool,
     pathToClaudeCodeExecutable: binaryPath,
-    env: loginOnlyEnv(),
+    env: { ...loginOnlyEnv(), ...mcpEnv(opts) },
     // ion decides permissions: no settings files (a repo's .claude/ or your own allow rules and default mode
     // would skip canUseTool), and the default mode, so every non-read tool asks.
     settingSources: [],
@@ -184,4 +186,20 @@ function appendFor(opts: StartOpts): { append?: string } {
     );
   }
   return parts.length ? { append: parts.join("\n\n") } : {};
+}
+
+/** Header names for ion's MCP server: the SDK puts MCP servers on Claude Code's command line, which any local user
+ * can read with `ps`, so header values (the run's key) travel in the environment and the config only names them;
+ * Claude Code expands `${VAR}` in MCP headers. */
+const mcpVars = (opts: StartOpts) =>
+  Object.entries(opts.mcp?.headers ?? {}).map(([name, value], i) => ({ name, value, v: `ION_MCP_H${i}` }));
+
+function mcpOptions(opts: StartOpts) {
+  if (!opts.mcp) return {};
+  const headers = Object.fromEntries(mcpVars(opts).map((h) => [h.name, `\${${h.v}}`]));
+  return { mcpServers: { [opts.mcp.name]: { type: "http", url: opts.mcp.url, headers } } };
+}
+
+function mcpEnv(opts: StartOpts): Record<string, string> {
+  return Object.fromEntries(mcpVars(opts).map((h) => [h.v, h.value]));
 }

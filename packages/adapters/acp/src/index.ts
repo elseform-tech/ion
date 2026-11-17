@@ -1,14 +1,20 @@
 import { spawn } from "node:child_process";
-import { type HarnessAdapter, readVersion, whichOnPath } from "@ion/adapter-kit";
+import {
+  cachedCatalog,
+  capabilitiesWith,
+  type HarnessAdapter,
+  readVersion,
+  whichOnPath,
+} from "@ion/adapter-kit";
 import type { Capabilities } from "@ion/schema";
-import { connect, probeSignedIn, setOption } from "./connection.js";
+import { connect, probeModels, probeSignedIn, setOption } from "./connection.js";
 import type { AcpHarness } from "./harnesses.js";
 import { startAcpSession } from "./session.js";
 
 export { type AcpHarness, GROK_BUILD, OPENCODE } from "./harnesses.js";
 
-const CAPABILITIES: Capabilities = {
-  models: [],
+/** Everything but the model list, which comes from the agent itself. */
+const CAPABILITIES: Omit<Capabilities, "models" | "defaultModel" | "modelsLive"> = {
   effort: { levels: ["low", "medium", "high"], canDisableThinking: false },
   thinking: "summary",
   approvals: "interactive",
@@ -52,15 +58,32 @@ export function createAcpAdapter(
           );
         }),
     },
-    capabilities: async () => CAPABILITIES,
+    capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps.startTimeoutMs)),
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);
-      const c = await connect(h, path, opts.cwd, deps.startTimeoutMs);
+      const c = await connect(h, path, {
+        cwd: opts.cwd,
+        timeoutMs: deps.startTimeoutMs,
+        resume: opts.resume,
+        mcp: opts.mcp,
+      });
       const model =
         (await setOption(c, "model", opts.model ?? h.defaultModel)) ?? h.defaultModel ?? "default";
       await setOption(c, "thought_level", opts.effort === "max" ? "high" : opts.effort);
       return startAcpSession(c, opts, { harness: h.id, model });
     },
   };
+}
+
+/** The agent's models (from a session opened without a prompt), kept for 10 minutes. */
+function acpCatalog(h: AcpHarness, binary: () => string | null, timeoutMs?: number) {
+  return cachedCatalog(
+    async () => {
+      const path = binary();
+      if (!path) throw new Error(`${h.label} isn't installed`);
+      return probeModels(h, path, timeoutMs);
+    },
+    { fallback: { models: [], defaultModel: h.defaultModel } },
+  );
 }

@@ -18,6 +18,7 @@
   "daemon": [
     "chat.created",
     "chat.archived",
+    "message.sent",
     "run.queued",
     "run.waiting",
     "run.retrying",
@@ -46,6 +47,9 @@
     "needs.list",
     "need.resolve",
     "chats.list",
-    "chat.archive"
+    "chat.archive",
+    "memory.list",
+    "memory.forget",
+    "harnesses.list"
   ]
 }

@@ -15,8 +15,9 @@ const Project = z.object({
 const UserConfigSchema = z.looseObject({
   ion: z
     .looseObject({
-      quick: z.string().default("claude-code:Haiku 5.5"),
-      deep: z.string().default("claude-code:Opus 5.5"),
+      // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list.
+      quick: z.string().default("claude-code"),
+      deep: z.string().default("claude-code"),
       deepEffort: Effort.default("high"),
       useDeep: z.enum(["auto", "always", "never"]).default("auto"),
     })

@@ -6,6 +6,7 @@ import { addProject, DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import type { IonEvent } from "@ion/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UserError } from "../api/errors.js";
+import { createGrants } from "../mcp/index.js";
 import { NeedsService } from "../needs/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -72,13 +73,23 @@ describe("RunManager", () => {
   it("creates a chat with its own worktree and stores the run's events in order", async () => {
     const { chatId, runId } = await ask("hello");
     const types = (await finished(runId)).map((e) => e.type);
-    expect(types.slice(0, 2)).toEqual(["run.queued", "run.started"]);
+    expect(types.slice(0, 3)).toEqual(["message.sent", "run.queued", "run.started"]);
     expect(types.at(-1)).toBe("run.finished");
     expect(store.read({ chatId })[0]).toMatchObject({
       type: "chat.created",
       data: { worktree: expect.any(String) },
     });
     expect(existsSync(join(chatsView.worktree(db, chatId)!, "README.md"))).toBe(true);
+  });
+
+  it("stores what you asked, and the harness session of each run", async () => {
+    const { chatId, runId } = await ask("hello there");
+    const events = await finished(runId);
+    expect(events[0]).toMatchObject({ type: "message.sent", data: { text: "hello there" } });
+    expect(chatsView.session(db, chatId)).toEqual({
+      harness: "fake",
+      sessionId: expect.stringMatching(/^fake-/),
+    });
   });
 
   it("allows an edit inside the chat's worktree without asking; the file lands there, not in the checkout", async () => {
@@ -158,10 +169,10 @@ describe("RunManager", () => {
     limitTo(1);
     const a = await ask("slow");
     const b = await ask("hello");
-    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["run.queued"]);
+    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["message.sent", "run.queued"]);
     await runs.interrupt(a.runId);
     const types = (await finished(b.runId)).map((e) => e.type);
-    expect(types.slice(0, 2)).toEqual(["run.queued", "run.started"]);
+    expect(types.slice(0, 3)).toEqual(["message.sent", "run.queued", "run.started"]);
   });
 
   it("interrupting a queued run finishes it without starting the harness", async () => {
@@ -169,7 +180,11 @@ describe("RunManager", () => {
     const a = await ask("slow");
     const b = await ask("hello");
     await runs.interrupt(b.runId);
-    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["run.queued", "run.finished"]);
+    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual([
+      "message.sent",
+      "run.queued",
+      "run.finished",
+    ]);
     expect(store.read({ runId: b.runId }).at(-1)?.data).toEqual({ status: "interrupted" });
     await runs.interrupt(a.runId);
     await finished(a.runId);
@@ -258,6 +273,119 @@ describe("RunManager", () => {
     await finished(runId);
     const again = await ask("hello", { chatId, projectId: "nope" });
     expect((await finished(again.runId)).at(-1)?.data).toEqual({ status: "done" });
+  });
+
+  const said = (events: IonEvent[]) =>
+    events.filter((e) => e.type === "message.completed").map((e) => (e.data as { text: string }).text);
+  const sessionOf = (events: IonEvent[]) =>
+    events.filter((e) => e.type === "run.started").map((e) => (e.data as { sessionId: string }).sessionId);
+
+  it("continues a chat by resuming its session, sending just your message", async () => {
+    const first = await ask("echo one");
+    const a = await finished(first.runId);
+    const second = await ask("echo two", { chatId: first.chatId });
+    const b = await finished(second.runId);
+    expect(sessionOf(b)).toEqual(sessionOf(a));
+    expect(said(b)).toEqual(["echo two"]);
+  });
+
+  // Review Focus 1: a session the harness can't resume.
+  it("falls back to a new session with the chat's history when the session can't be resumed", async () => {
+    const first = await ask("echo one");
+    const a = await finished(first.runId);
+    process.env.ION_FAKE_RESUME_FAIL = "1";
+    try {
+      const second = await ask("echo two", { chatId: first.chatId });
+      const b = await finished(second.runId);
+      expect(sessionOf(b)).not.toEqual(sessionOf(a));
+      expect(said(b)[0]).toMatch(
+        /^<ion-data id="\w+" source="this chat's earlier messages">\nyou: "echo one"\nagent: "echo one"\n<\/ion-data id="\w+">\n\necho two$/,
+      );
+      expect(b.some((e) => e.type === "error")).toBe(false);
+      expect(b.at(-1)?.data).toEqual({ status: "done" });
+    } finally {
+      delete process.env.ION_FAKE_RESUME_FAIL;
+    }
+  });
+
+  it("replays the history when the chat has no session to resume", async () => {
+    process.env.ION_FAKE_START_FAIL = "1";
+    const first = await ask("echo one");
+    await finished(first.runId);
+    delete process.env.ION_FAKE_START_FAIL;
+    const b = await finished((await ask("echo two", { chatId: first.chatId })).runId);
+    expect(said(b)[0]).toMatch(/you: "echo one"\n<\/ion-data id="\w+">\n\necho two$/);
+  });
+
+  // Final review minor 3: a session that resumes but then fails for real doesn't trap the chat.
+  it("starts a new session with the history when the resumed one fails", async () => {
+    const first = await ask("echo one");
+    const a = await finished(first.runId);
+    process.env.ION_FAKE_RESUMED_FAILS = "1";
+    try {
+      const b = await finished((await ask("echo two", { chatId: first.chatId, effort: "low" })).runId);
+      expect(b.at(-1)?.data).toEqual({ status: "done" });
+      expect(sessionOf(b).at(-1)).not.toBe(sessionOf(a)[0]);
+      expect(said(b).at(-1)).toMatch(/you: "echo one"/);
+    } finally {
+      delete process.env.ION_FAKE_RESUMED_FAILS;
+    }
+  });
+
+  // Final review minor 5: interrupted while a resume is refused, no new session starts.
+  it("starts no new session when interrupted while the resume is refused", async () => {
+    const first = await ask("echo one");
+    await finished(first.runId);
+    process.env.ION_FAKE_RESUME_FAIL = "1";
+    process.env.ION_FAKE_START_MS = "120";
+    try {
+      const { runId } = await ask("echo two", { chatId: first.chatId });
+      await new Promise((r) => setTimeout(r, 40));
+      await runs.interrupt(runId);
+      const b = await finished(runId);
+      expect(b.at(-1)?.data).toEqual({ status: "interrupted" });
+      expect(b.some((e) => e.type === "run.started")).toBe(false);
+    } finally {
+      delete process.env.ION_FAKE_RESUME_FAIL;
+      delete process.env.ION_FAKE_START_MS;
+    }
+  });
+
+  it("resumes the failed try's session when it retries", async () => {
+    const events = await finished((await ask("flaky")).runId);
+    const ids = sessionOf(events);
+    expect(ids).toHaveLength(3);
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it("gives each run ion's MCP server with its own key, revoked when the run ends", async () => {
+    const grants = createGrants();
+    runs = new RunManager(
+      store,
+      { configFile, dataDir, random: () => 0, mcp: { grants, url: () => "http://127.0.0.1:9/mcp" } },
+      needs,
+      db,
+    );
+    const events = await finished((await ask("mcpinfo")).runId);
+    const info = JSON.parse(said(events)[0]!) as {
+      name: string;
+      url: string;
+      headers: { Authorization: string };
+    };
+    expect(info).toMatchObject({ name: "ion", url: "http://127.0.0.1:9/mcp" });
+    const key = info.headers.Authorization.replace("Bearer ", "");
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(grants.check(key)).toBeNull();
+  });
+
+  it("refuses a model the harness doesn't list, and runs one it does", async () => {
+    await expect(ask("hello", { model: "nope" })).rejects.toThrow(
+      new UserError("Unknown model for Fake: nope"),
+    );
+    const { runId } = await ask("hello", { model: "fake-big" });
+    expect((await finished(runId)).find((e) => e.type === "run.started")?.data).toMatchObject({
+      model: "fake-big",
+    });
   });
 
   it("stores a failed run and keeps working", async () => {

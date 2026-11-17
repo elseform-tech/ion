@@ -23,6 +23,7 @@ export const ADAPTER_EVENT_TYPES = [
 export const DAEMON_EVENT_TYPES = [
   "chat.created",
   "chat.archived",
+  "message.sent",
   "run.queued",
   "run.waiting",
   "run.retrying",
@@ -60,6 +61,7 @@ export const EV = {
   error: "error",
   chatCreated: "chat.created",
   chatArchived: "chat.archived",
+  messageSent: "message.sent",
   runQueued: "run.queued",
   runWaiting: "run.waiting",
   runRetrying: "run.retrying",
@@ -104,6 +106,16 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     worktree: z.string().nullable().optional(),
     branch: z.string().nullable().optional(),
   }),
+  /** What you asked: the text of an ask, stored before its run is queued. */
+  "message.sent": z.object({ text: z.string() }),
+  /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
+  "memory.written": z.object({
+    memoryId: z.string(),
+    scope: z.union([z.literal("you"), z.object({ projectId: z.string() })]),
+    text: z.string().min(1).max(2000),
+    source: z.union([z.literal("you"), z.object({ chatId: z.string(), runId: z.string() })]),
+  }),
+  "memory.forgotten": z.object({ memoryId: z.string() }),
   "need.raised": z.object({
     needId: z.string(),
     requestId: z.string(),
@@ -129,6 +141,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     model: z.string(),
     effort: z.string().nullable(),
     authMethod: z.string().nullable(),
+    /** The harness's own session id, to continue the chat later. */
+    sessionId: z.string().nullable().optional(),
   }),
   "message.delta": text,
   "message.completed": text,

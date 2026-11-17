@@ -160,7 +160,9 @@ describe("ion cli", { timeout: 20_000 }, () => {
   // Golden: the CLI is a public interface; help text and messages change only on purpose.
   it("help output", async () => {
     const help = await Promise.all(
-      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"]].map((a) => ion(...a, "--help")),
+      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"], ["memory"], ["harnesses"]].map((a) =>
+        ion(...a, "--help"),
+      ),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
   });
@@ -210,6 +212,34 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect((await ion("needs")).out).toBe("Nothing needs you");
     });
 
+    it("lists harnesses with their models, and refuses an unknown model", async () => {
+      await setup();
+      expect((await ion("harnesses")).out).toContain("fake  Signed in  fake (default), fake-big");
+      expect(await ion("ask", "hello", "-p", "app", "--harness", "fake", "--model", "nope")).toMatchObject({
+        code: 1,
+        err: "Unknown model for Fake: nope",
+      });
+    });
+
+    // Final review minor 8: one harness that fails to answer doesn't break the list.
+    it("lists the other harnesses when one fails to answer", async () => {
+      process.env.ION_FAKE_DETECT_FAIL = "1";
+      try {
+        await setup();
+        const r = await ion("harnesses");
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("fake  Not installed");
+      } finally {
+        delete process.env.ION_FAKE_DETECT_FAIL;
+      }
+    });
+
+    it("lists memory and says so for one it doesn't know", async () => {
+      await setup();
+      expect((await ion("memory", "ls", "-p", "app")).out).toBe("No memory");
+      expect(await ion("memory", "forget", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
+    });
+
     it("lists chats and archives one", async () => {
       await setup();
       const r = await ion("ask", "hello there", "-p", "app", "--harness", "fake", "--json");
@@ -226,7 +256,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
       await setup();
       const r = await ion("ask", "hello", "-p", "app", "--harness", "fake", "--json");
       const events = r.out.split("\n").map((l) => JSON.parse(l));
-      expect(events.slice(0, 2).map((e) => e.type)).toEqual(["run.queued", "run.started"]);
+      expect(events.slice(0, 3).map((e) => e.type)).toEqual(["message.sent", "run.queued", "run.started"]);
       expect(events.at(-1)).toMatchObject({ type: "run.finished", data: { status: "done" } });
     });
 

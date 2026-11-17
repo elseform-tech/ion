@@ -88,6 +88,14 @@ describe("claude-code capabilities", () => {
 });
 
 describe("loginOnlyEnv", () => {
+  // Security review: another run's MCP key never reaches Claude Code through an inherited environment.
+  it("drops ion MCP header variables it inherited", async () => {
+    const { loginOnlyEnv } = await import("./cli.js");
+    expect(loginOnlyEnv({ ION_MCP_H0: "Bearer old", ION_MCP_H1: "x", PATH: "/bin" })).toEqual({
+      PATH: "/bin",
+    });
+  });
+
   it("removes every variable that would bypass the Claude login, and keeps the rest", async () => {
     const { loginOnlyEnv } = await import("./cli.js");
     const env = loginOnlyEnv({

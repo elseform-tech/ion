@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ResumeFailed } from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { type FakeQueryCall, fakeQuery } from "../test/fake-query.js";
@@ -43,6 +44,82 @@ async function run(text: string, opts: { calls?: FakeQueryCall[]; exec?: Exec } 
 }
 
 describe("claude-code session", () => {
+  it("lists Claude Code's own models, and falls back to the aliases when it can't", async () => {
+    const listing = createClaudeCodeAdapter({
+      exec: signedIn,
+      which: () => "/bin/claude",
+      listModels: async () => [
+        { value: "default", displayName: "Default (recommended)" },
+        { value: "sonnet", displayName: "Sonnet" },
+        { value: "claude-haiku-5-5", displayName: "Haiku 5.5" },
+      ],
+    });
+    expect(await listing.capabilities()).toMatchObject({
+      models: [
+        { id: "sonnet", label: "Sonnet" },
+        { id: "claude-haiku-5-5", label: "Haiku 5.5" },
+      ],
+      defaultModel: null,
+      modelsLive: true,
+    });
+    const failing = createClaudeCodeAdapter({
+      exec: signedIn,
+      which: () => "/bin/claude",
+      listModels: async () => {
+        throw new Error("signed out");
+      },
+    });
+    expect(await failing.capabilities()).toMatchObject({
+      modelsLive: false,
+      models: [{ id: "opus" }, { id: "sonnet" }, { id: "haiku" }],
+    });
+  });
+
+  it("gives Claude Code ion's MCP server", async () => {
+    const calls: FakeQueryCall[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      mcp: { name: "ion", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer k" } },
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.close();
+    // Security review: the SDK passes MCP servers on the command line, so the key goes in the environment and the
+    // config only names it (Claude Code expands ${VAR} in MCP headers; checked live, Plan 04).
+    const o = calls.at(-1)?.options as { mcpServers: unknown; env: Record<string, string> };
+    expect(o.mcpServers).toEqual({
+      ion: { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "${ION_MCP_H0}" } },
+    });
+    expect(JSON.stringify(o.mcpServers)).not.toContain("Bearer k");
+    expect(o.env.ION_MCP_H0).toBe("Bearer k");
+  });
+
+  it("continues a session that exists, and says so when it's gone", async () => {
+    const calls: FakeQueryCall[] = [];
+    const known = (id: string) => Promise.resolve(id === "s-known");
+    const adapter = (sessionExists = known) =>
+      createClaudeCodeAdapter({
+        exec: signedIn,
+        which: () => "/bin/claude",
+        query: fakeQuery(calls) as never,
+        sessionExists,
+      });
+    const start = (resume: string) =>
+      adapter().start({
+        cwd,
+        model: null,
+        effort: null,
+        resume,
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+    await (await start("s-known")).close();
+    expect(calls.at(-1)?.options).toMatchObject({ resume: "s-known" });
+    await expect(start("s-gone")).rejects.toBeInstanceOf(ResumeFailed);
+  });
+
   it("loads no settings files, asks for every permission, and passes the project's CLAUDE.md as instructions", async () => {
     const calls: FakeQueryCall[] = [];
     const { writeFileSync } = await import("node:fs");

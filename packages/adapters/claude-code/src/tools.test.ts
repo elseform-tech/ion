@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileChange, toolSummary } from "./tools.js";
+import { fileChange, mcpServerOf, toolSummary } from "./tools.js";
 
 // Regression: macOS /var is a symlink to /private/var; Claude reports real paths.
 describe("tool paths", () => {
@@ -23,5 +23,11 @@ describe("tool paths", () => {
     expect(toolSummary("Bash", { command: long }, roots, { full: true })).toBe(
       `echo ${"x".repeat(100)} ⏎ rm -rf build`,
     );
+  });
+
+  it("names the MCP server a tool belongs to", () => {
+    expect(mcpServerOf("mcp__ion__chat_history")).toBe("ion");
+    expect(mcpServerOf("mcp__git_hub__x")).toBe("git_hub");
+    expect(mcpServerOf("Bash")).toBeNull();
   });
 });

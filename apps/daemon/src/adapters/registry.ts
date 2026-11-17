@@ -24,6 +24,11 @@ const ENTRIES: Record<string, () => HarnessEntry> = {
   }),
 };
 
+/** Every harness ion knows (the fake one only for tests). */
+export function harnessIds(): string[] {
+  return [...Object.keys(ENTRIES), ...(process.env.ION_ALLOW_FAKE === "1" ? ["fake"] : [])];
+}
+
 /** A harness by id, or null. The fake harness exists only for tests (ION_ALLOW_FAKE=1; ION_FAKE_SIGNED_OUT=1). */
 export function getHarness(id: string): HarnessEntry | null {
   if (id === "fake" && process.env.ION_ALLOW_FAKE === "1")
