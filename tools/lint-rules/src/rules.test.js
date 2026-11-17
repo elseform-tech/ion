@@ -49,6 +49,7 @@ tester.run("no-child-process", plugin.rules["no-child-process"], {
     at("apps/cli/src/daemon-control.ts", 'import { spawn } from "node:child_process";'),
     at("apps/daemon/src/workspace/git.ts", 'import { spawn } from "node:child_process";'),
     at("packages/adapters/claude-code/src/x.ts", 'import { execa } from "execa";'),
+    at("packages/adapter-kit/src/system.ts", 'import { execFile } from "node:child_process";'),
     at("apps/cli/test/cli.test.ts", 'import { execFile } from "node:child_process";'),
   ],
   invalid: [

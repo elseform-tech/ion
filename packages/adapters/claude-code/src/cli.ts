@@ -1,6 +1,4 @@
 import { execFile, spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
-import { delimiter, join } from "node:path";
 
 export type Exec = (
   file: string,
@@ -17,21 +15,6 @@ export const execNoShell: Exec = (file, args, opts) =>
       resolve({ code, stdout: String(stdout) });
     });
   });
-
-/** The first executable named `bin` on PATH, or null. Ignores shell functions and aliases by design. */
-export function whichOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
-    if (!dir) continue;
-    const candidate = join(dir, bin);
-    try {
-      accessSync(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // not here
-    }
-  }
-  return null;
-}
 
 /** Keys that would make Claude Code bill an API key instead of the user's Claude login. */
 const API_KEY_VARS = [

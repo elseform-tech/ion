@@ -1,7 +1,8 @@
 import type { HarnessAdapter } from "@ion/adapter-kit";
 import { CAPABILITIES, parseAuthStatus } from "./capabilities.js";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { type Exec, execNoShell, loginOnlyEnv, runLogin, whichOnPath } from "./cli.js";
+import { parseVersion, whichOnPath } from "@ion/adapter-kit";
+import { type Exec, execNoShell, loginOnlyEnv, runLogin } from "./cli.js";
 import { type QueryFn, startSession } from "./session.js";
 
 export type { Exec } from "./cli.js";
@@ -23,7 +24,7 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
       const path = binary();
       if (!path) return { installed: false };
       const { stdout } = await exec(path, ["--version"], { env: loginOnlyEnv() });
-      const version = /\b\d{1,4}\.\d{1,4}\.\d{1,6}\b/.exec(stdout)?.[0];
+      const version = parseVersion(stdout);
       return { installed: true, ...(version ? { version } : {}), path };
     },
     auth: {

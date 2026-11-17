@@ -25,7 +25,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/schema` | nothing | everything |
 
 Also enforced: event type strings only in `packages/schema` (use `EV.*`); SQLite only in `apps/daemon/src/store`;
-child processes only in `apps/daemon/src/workspace`, adapters and `apps/cli/src/daemon-control.ts`.
+child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter-kit` and `apps/cli/src/daemon-control.ts`.
 
 ## Rules
 

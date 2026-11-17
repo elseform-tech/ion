@@ -1,16 +1,6 @@
-import type { AdapterEvent } from "@ion/adapter-kit";
+import { type AdapterEvent, projectRoots } from "@ion/adapter-kit";
 import { EV, type EffortLevel } from "@ion/schema";
-import { realpathSync } from "node:fs";
 import { fileChange, toolKind, toolSummary } from "./tools.js";
-
-const projectRoots = (cwd: string): string[] => {
-  try {
-    const real = realpathSync(cwd);
-    return real === cwd ? [cwd] : [cwd, real];
-  } catch {
-    return [cwd];
-  }
-};
 
 type Obj = Record<string, unknown>;
 type Block = Obj & { type?: string };

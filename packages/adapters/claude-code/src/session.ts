@@ -3,7 +3,7 @@ import type { AdapterEvent, Decision, Session, StartOpts } from "@ion/adapter-ki
 import { createEventQueue } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 import { loginOnlyEnv } from "./cli.js";
-import { createDeltaCoalescer } from "./coalesce.js";
+import { createDeltaCoalescer } from "@ion/adapter-kit";
 import { createMapState, type MapState, mapSdkMessage } from "./map.js";
 import { toolKind, toolSummary } from "./tools.js";
 

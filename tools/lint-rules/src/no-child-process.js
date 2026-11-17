@@ -1,7 +1,12 @@
 import { isTest, onImports, repoPath, startsWithAny } from "./paths.js";
 
 const SPAWN = /^(node:)?child_process$|^execa$/;
-const ALLOWED = ["apps/daemon/src/workspace/", "packages/adapters/", "apps/cli/src/daemon-control.ts"];
+const ALLOWED = [
+  "apps/daemon/src/workspace/",
+  "packages/adapters/",
+  "packages/adapter-kit/",
+  "apps/cli/src/daemon-control.ts",
+];
 
 /** Processes start only where sandboxing and concurrency limits apply. */
 export default {
