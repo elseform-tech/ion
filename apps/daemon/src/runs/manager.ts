@@ -11,11 +11,14 @@ import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import { decideByPolicy } from "./policy.js";
+import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
 
 type AskArgs = Commands["ask"]["args"];
 type Active = { chatId: string; session: Session };
 type Chat = { chatId: string | null; projectId: string | null; title: string };
 type Launch = { h: HarnessEntry; args: AskArgs; chatId: string; runId: string; cwd: string };
+type Between = { chatId: string; interrupt: boolean; wake?: () => void };
+type TryEnd = { status: string; error: RunError | null };
 
 /** Starts runs on harnesses in each chat's own worktree, and stores everything they emit. One run per chat. */
 export class RunManager {
@@ -26,13 +29,13 @@ export class RunManager {
   /** Runs waiting for a free slot (resources.max_runs). */
   private readonly queued = new Map<string, { chatId: string; item: Queued }>();
   private readonly queue: ReturnType<typeof createRunQueue>;
-  /** Runs whose harness is starting; true once an interrupt arrived meanwhile. */
-  private readonly starting = new Map<string, { chatId: string; interrupt: boolean }>();
+  /** Runs that left the queue and haven't ended: interrupt flags, and how to cut a retry's wait short. */
+  private readonly between = new Map<string, Between>();
   private stopping = false;
 
   constructor(
     private readonly store: EventStore,
-    private readonly ctx: { configFile: string; dataDir: string },
+    private readonly ctx: { configFile: string; dataDir: string; random?: () => number },
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
@@ -68,25 +71,104 @@ export class RunManager {
     return { chatId: launch.chatId, runId: launch.runId };
   }
 
-  /** Starts a queued run; resolves when the run ends, which frees its slot. */
+  /**
+   * Runs a queued run to its end, retrying per the retry rule: each try is a new session in the same worktree
+   * with the original text. Resolves when the run ends, which frees its queue slot.
+   */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
-    if (this.stopping) return;
-    this.starting.set(l.runId, { chatId: l.chatId, interrupt: false });
+    const b: Between = { chatId: l.chatId, interrupt: false };
+    this.between.set(l.runId, b);
+    const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
+    try {
+      for (;;) {
+        if (this.stopping) return;
+        state.tries++;
+        const end = await this.tryOnce({ ...l, args: { ...l.args, effort: state.effort ?? undefined } }, b);
+        const retry = this.planRetry(l, state, end, b);
+        if (!retry) return this.finish(l, end.status);
+        if (!(await this.pause(b, retry.delayS))) return this.finish(l, "interrupted");
+      }
+    } finally {
+      this.between.delete(l.runId);
+    }
+  }
+
+  /** Whether a try that ended this way is retried; if so, records run.retrying and updates the effort. */
+  private planRetry(l: Launch, state: RetryState, end: TryEnd, b: Between): Retry | null {
+    if (end.status !== "failed" || b.interrupt) return null;
+    const retry = retryPlan(state, end.error, this.random);
+    if (!retry) return null;
+    if (retry.effort !== state.effort) state.effortRetried = true;
+    state.effort = retry.effort;
+    this.store.append({
+      chatId: l.chatId,
+      runId: l.runId,
+      origin: "daemon",
+      type: EV.runRetrying,
+      data: retry,
+    });
+    return retry;
+  }
+
+  private get random(): () => number {
+    return this.ctx.random ?? Math.random;
+  }
+
+  private finish(l: Launch, status: string): void {
+    if (!this.stopping)
+      this.store.append({
+        chatId: l.chatId,
+        runId: l.runId,
+        origin: "daemon",
+        type: EV.runFinished,
+        data: { status },
+      });
+  }
+
+  /** Waits a retry's delay; false if interrupted (or ion stopped) meanwhile. */
+  private pause(b: Between, delayS: number): Promise<boolean> {
+    if (b.interrupt || this.stopping) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve(true), delayS * 1000);
+      b.wake = () => {
+        clearTimeout(t);
+        resolve(false);
+      };
+    });
+  }
+
+  /** One try: start a session, send the text, store what it emits. A failed start is a failed try. */
+  private async tryOnce(l: Launch, b: Between): Promise<TryEnd> {
     let session: Session;
     try {
       session = await this.start(l);
-      this.active.set(l.runId, { chatId: l.chatId, session });
+    } catch (e) {
+      this.store.append({
+        chatId: l.chatId,
+        runId: l.runId,
+        origin: "daemon",
+        type: EV.error,
+        data: { code: "start", retryable: false, message: (e as Error).message },
+      });
+      return { status: "failed", error: null };
+    }
+    if (this.stopping) {
+      await session.close().catch(() => {});
+      return { status: "failed", error: null };
+    }
+    this.active.set(l.runId, { chatId: l.chatId, session });
+    if (b.interrupt) void session.interrupt();
+    try {
       await session.send({ text: l.args.text });
     } catch (e) {
       this.active.delete(l.runId);
-      this.endFailed(l.chatId, l.runId, "start", (e as Error).message);
-      return;
-    } finally {
-      if (this.starting.get(l.runId)?.interrupt) void this.active.get(l.runId)?.session.interrupt();
-      this.starting.delete(l.runId);
+      await session.close().catch(() => {});
+      const error = { code: "crash", retryable: true, message: (e as Error).message };
+      this.store.append({ chatId: l.chatId, runId: l.runId, origin: "daemon", type: EV.error, data: error });
+      return { status: "failed", error };
     }
-    await this.pump(session, l.chatId, l.runId);
+    return this.pump(session, l.chatId, l.runId);
   }
 
   async interrupt(runId: string): Promise<void> {
@@ -97,13 +179,12 @@ export class RunManager {
       this.store.append({ chatId: waiting.chatId, runId, origin: "daemon", type: EV.runFinished, data });
       return;
     }
-    const starting = this.starting.get(runId);
-    if (starting) {
-      starting.interrupt = true;
-      return;
-    }
+    const b = this.between.get(runId);
+    if (!b) throw new UserError("That run isn't running");
+    b.interrupt = true;
+    b.wake?.();
     const run = this.active.get(runId);
-    if (!run) throw new UserError("That run isn't running");
+    if (!run) return; // starting or waiting to retry: it stops there
     this.needs.supersedeRun(runId); // a waiting permission request gets "deny", so the harness can stop
     await run.session.interrupt();
   }
@@ -123,11 +204,12 @@ export class RunManager {
     for (const [runId, { chatId, item }] of this.queued)
       if (item.cancel()) this.endFailed(chatId, runId, "daemon_stopped", "ion stopped");
     this.queued.clear();
-    for (const [runId, { chatId, session }] of this.active) {
+    for (const [runId, b] of this.between) {
+      b.wake?.();
       this.needs.supersedeRun(runId);
-      this.endFailed(chatId, runId, "daemon_stopped", "ion stopped");
-      await session.close().catch(() => {});
+      this.endFailed(b.chatId, runId, "daemon_stopped", "ion stopped");
     }
+    for (const { session } of this.active.values()) await session.close().catch(() => {});
     this.active.clear();
   }
 
@@ -141,7 +223,7 @@ export class RunManager {
   }
 
   private runningIn(chatId: string): boolean {
-    const all = [...this.active.values(), ...this.queued.values(), ...this.starting.values()];
+    const all = [...this.queued.values(), ...this.between.values()];
     return all.some((a) => a.chatId === chatId);
   }
 
@@ -247,34 +329,28 @@ export class RunManager {
     } else this.requested.set(`seen:${id}`, () => {});
   }
 
-  private async pump(session: Session, chatId: string, runId: string): Promise<void> {
-    let finished = false;
+  /** Stores what a session emits, except its run.finished: whether the run ends or retries is decided above. */
+  private async pump(session: Session, chatId: string, runId: string): Promise<TryEnd> {
+    const end: TryEnd = { status: "failed", error: null };
     try {
       for await (const e of session.events()) {
         if (this.stopping) break;
+        if (e.type === EV.runFinished) {
+          end.status = String((e.data as { status: string }).status);
+          continue;
+        }
         this.noteStored(this.store.append({ ...e, chatId, runId, origin: "adapter" }));
-        if (e.type === EV.runFinished) finished = true;
+        if (e.type === EV.error) end.error = e.data as RunError;
       }
     } catch (e) {
-      this.store.append({
-        chatId,
-        runId,
-        origin: "daemon",
-        type: EV.error,
-        data: { code: "adapter", retryable: false, message: (e as Error).message },
-      });
+      // The harness stream broke (a crashed CLI): transient.
+      end.error = { code: "crash", retryable: true, message: (e as Error).message };
+      this.store.append({ chatId, runId, origin: "daemon", type: EV.error, data: end.error });
     } finally {
-      if (!finished && !this.stopping)
-        this.store.append({
-          chatId,
-          runId,
-          origin: "daemon",
-          type: EV.runFinished,
-          data: { status: "failed" },
-        });
       this.needs.supersedeRun(runId);
       this.active.delete(runId);
       await session.close().catch(() => {});
     }
+    return end;
   }
 }

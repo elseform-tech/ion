@@ -26,7 +26,7 @@ let dataDir: string;
 const limitTo = (n: number) => {
   const c = addProject(DEFAULT_CONFIG, repo);
   saveUserConfig(configFile, { ...c, resources: { max_runs: n } });
-  runs = new RunManager(store, { configFile, dataDir }, needs, db);
+  runs = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
 };
 
 beforeEach(() => {
@@ -46,7 +46,7 @@ beforeEach(() => {
   db = openDb(":memory:");
   store = new EventStore(db, allViews);
   needs = new NeedsService(store, db);
-  runs = new RunManager(store, { configFile, dataDir }, needs, db);
+  runs = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
 });
 
 async function until<T>(f: () => T | undefined, ms = 3000): Promise<T> {
@@ -173,6 +173,37 @@ describe("RunManager", () => {
     expect(store.read({ runId: b.runId }).at(-1)?.data).toEqual({ status: "interrupted" });
     await runs.interrupt(a.runId);
     await finished(a.runId);
+  });
+
+  it("retries a transient failure: twice rate-limited, then done", async () => {
+    const { runId } = await ask("flaky");
+    const events = await finished(runId);
+    expect(events.filter((e) => e.type === "run.retrying").map((e) => e.data)).toEqual([
+      { attempt: 1, delayS: 0, reason: "Rate limited", effort: null },
+      { attempt: 2, delayS: 0, reason: "Rate limited", effort: null },
+    ]);
+    expect(events.filter((e) => e.type === "run.started")).toHaveLength(3);
+    expect(events.filter((e) => e.type === "run.finished")).toHaveLength(1);
+    expect(events.at(-1)?.data).toEqual({ status: "done" });
+  });
+
+  it("stops after 4 tries of a transient failure, with the last error shown", async () => {
+    const { runId } = await ask("overloaded");
+    const events = await finished(runId);
+    expect(events.filter((e) => e.type === "run.started")).toHaveLength(4);
+    expect(events.filter((e) => e.type === "run.retrying")).toHaveLength(3);
+    expect(events.at(-2)).toMatchObject({ type: "error", data: { message: "Rate limited" } });
+    expect(events.at(-1)?.data).toEqual({ status: "failed" });
+  });
+
+  it("retries a real failure once at the next effort, and not above max", async () => {
+    const high = await finished((await ask("fail", { effort: "high" })).runId);
+    expect(
+      high.filter((e) => e.type === "run.started").map((e) => (e.data as { effort: string }).effort),
+    ).toEqual(["high", "max"]);
+    expect(high.at(-1)?.data).toEqual({ status: "failed" });
+    const max = await finished((await ask("fail", { effort: "max" })).runId);
+    expect(max.filter((e) => e.type === "run.started")).toHaveLength(1);
   });
 
   it("stores a failed run and keeps working", async () => {

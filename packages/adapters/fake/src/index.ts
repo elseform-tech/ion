@@ -25,6 +25,9 @@ const CAPABILITIES: Capabilities = {
 };
 
 /** A scripted harness for tests: the prompt's first word picks a scenario (hello, edit, approve, fail, slow). */
+/** Sessions started per working folder, so scenarios can behave differently on a retry. */
+const triesByCwd = new Map<string, number>();
+
 export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean } = {}): HarnessAdapter {
   const signedIn = opts.signedIn ?? true;
   const delayMs = opts.delayMs ?? 5;
@@ -53,6 +56,8 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
       };
     });
   let n = 0;
+  const tries = (triesByCwd.get(start.cwd) ?? 0) + 1;
+  triesByCwd.set(start.cwd, tries);
   const script: Script = {
     emit: (e) => queue.push(e),
     ask: (toolId, summary, req) => {
@@ -62,6 +67,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
       return start.decide({ requestId, toolId, toolName: r.toolName, kind: r.kind, summary, input: r.input });
     },
     write: (file, content) => writeFileSync(join(start.cwd, file), content),
+    tries: () => tries,
     wait: async (ms) => {
       await sleep(ms);
       return interrupted ? "interrupted" : "ok";

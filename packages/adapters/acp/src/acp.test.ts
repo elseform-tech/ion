@@ -172,6 +172,13 @@ describe("acp adapter", () => {
     expect((await turn(fake, "refuse")).at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
   });
 
+  it("marks a crashed agent and a rate limit as retryable, other agent errors not", async () => {
+    const errorOf = async (text: string) => (await turn(fake, text)).find((e) => e.type === "error")?.data;
+    expect(await errorOf("crash")).toMatchObject({ code: "crash", retryable: true });
+    expect(await errorOf("ratelimit")).toMatchObject({ code: "rate_limit", retryable: true });
+    expect(await errorOf("badinput")).toMatchObject({ code: "agent", retryable: false });
+  });
+
   // Regression (final review I5): an agent that never answers startup used to hang ion forever.
   it("gives up on an agent that never starts, and reports it", async () => {
     process.env.FAKE_ACP_HANG = "1";

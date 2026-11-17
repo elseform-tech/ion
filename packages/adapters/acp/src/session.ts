@@ -12,6 +12,7 @@ import {
 import { EV } from "@ion/schema";
 import type { Connection } from "./connection.js";
 import { acpToolKind, createAcpState, mapUpdate } from "./map.js";
+import { RpcError } from "./rpc.js";
 
 type Option = { optionId: string; kind: string };
 /** Acceptable option kinds per decision, best first. Never wider than asked: "allow" is never "always". */
@@ -57,6 +58,17 @@ function batchingEmitter(
 }
 
 /** One ACP prompt turn mapped to ion events. The agent process lives as long as the turn. */
+type Failure = { code: string; retryable: boolean; message: string };
+const CRASH: Failure = { code: "crash", retryable: true, message: "The agent stopped" };
+const RATE_LIMIT = /rate.?limit|\b429\b|overloaded|too many requests|timed? ?out/i;
+
+/** A transport error (the agent died) or a rate limit is transient; any other agent error is a real failure. */
+function failureOf(e: Error): Failure {
+  if (!(e instanceof RpcError)) return { ...CRASH, message: e.message };
+  if (RATE_LIMIT.test(e.message)) return { code: "rate_limit", retryable: true, message: e.message };
+  return { code: "agent", retryable: false, message: e.message };
+}
+
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
@@ -69,11 +81,11 @@ export function startAcpSession(
   const emit = batchingEmitter(events, () => finished);
   const finish = (
     status: "done" | "interrupted" | "failed",
-    message?: string,
+    failure?: Failure,
     usage: Usage | null = null,
   ) => {
     if (finished) return;
-    if (message) emit({ type: EV.error, data: { code: "agent", retryable: false, message } });
+    if (failure) emit({ type: EV.error, data: failure });
     if (state.costUsd !== null || usage)
       emit({
         type: EV.usageReported,
@@ -98,9 +110,7 @@ export function startAcpSession(
       ? Promise.resolve({ outcome: { outcome: "cancelled" } })
       : answerPermission(p, opts.decide, emit),
   );
-  c.child.on("exit", () =>
-    finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : "The agent stopped"),
-  );
+  c.child.on("exit", () => finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : CRASH));
   opts.signal.addEventListener("abort", () => c.child.kill());
 
   return {
@@ -116,10 +126,13 @@ export function startAcpSession(
         .then((r) => {
           const reason = String((r as { stopReason?: unknown }).stopReason);
           const status = statusOf(reason, interrupted);
-          finish(status ?? "failed", status ? undefined : `Stopped: ${reason}`, usageOf(r));
+          const failure = status
+            ? undefined
+            : { code: "agent", retryable: false, message: `Stopped: ${reason}` };
+          finish(status ?? "failed", failure, usageOf(r));
         })
         .catch((e: Error) =>
-          finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : e.message),
+          finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : failureOf(e)),
         );
     },
     events: () => events,

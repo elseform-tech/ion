@@ -10,6 +10,8 @@ export type Script = {
   ask(toolId: string, summary: string, req?: Asked): Promise<Decision>;
   /** Writes a file in the working folder (the run's cwd), like a real agent would. */
   write(file: string, content: string): void;
+  /** How many sessions have started in this working folder, this one included (retries are new sessions). */
+  tries(): number;
   wait(ms: number): Promise<"ok" | "interrupted">;
 };
 
@@ -26,6 +28,11 @@ const done = (s: Script, toolId: string, ok: boolean, summary: string | null = n
 
 const edited = (s: Script) =>
   s.emit({ type: EV.fileChanged, data: { path: "notes.md", change: "add", added: 1, removed: null } });
+
+const transient = async (s: Script) => {
+  s.emit({ type: EV.error, data: { code: "rate_limit", retryable: true, message: "Rate limited" } });
+  return "failed" as const;
+};
 
 export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" | "interrupted">> = {
   async hello(s) {
@@ -82,6 +89,16 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
       data: { code: "crash", retryable: false, message: "The fake harness crashed" },
     });
     return "failed";
+  },
+  /** Rate-limited twice, then fine: retries should get it through. */
+  async flaky(s) {
+    if (s.tries() < 3) return transient(s);
+    say(s, "Done after retrying.");
+    return "done";
+  },
+  /** Always rate-limited. */
+  async overloaded(s) {
+    return transient(s);
   },
   async slow(s) {
     tool(s, { toolId: "t1", name: "Bash", kind: "command", summary: "sleep 30" });

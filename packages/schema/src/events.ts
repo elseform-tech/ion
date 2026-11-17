@@ -165,7 +165,13 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     costUsd: z.number().min(0).nullable(),
   }),
   "run.finished": z.object({ status: z.enum(RUN_END_STATUSES) }),
-  error: z.object({ code: z.string(), retryable: z.boolean(), message: z.string() }),
+  error: z.object({
+    code: z.string(),
+    retryable: z.boolean(),
+    message: z.string(),
+    /** Seconds the harness asked us to wait before trying again (rate limits). */
+    retryAfterS: z.number().min(0).optional(),
+  }),
 };
 
 const Envelope = z.object({
