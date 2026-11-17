@@ -17,7 +17,11 @@ export function createAccess(o: { judge: Judge; home: string; ionDirs: string[] 
     async decide(at, req) {
       const rule = ruleFor(req, { roots: at.roots, home: o.home, ionDirs: o.ionDirs });
       if (rule) return rule;
-      const key = `${at.chatId}:${req.toolName}:${createHash("sha256").update(JSON.stringify(req.input)).digest("hex")}`;
+      // The same action for the same request in a chat: one judge call.
+      const hash = createHash("sha256")
+        .update(JSON.stringify([at.text, req.toolName, req.input]))
+        .digest("hex");
+      const key = `${at.chatId}:${hash}`;
       const known = cache.get(key);
       if (known) return known;
       const v = await o.judge({ projectId: at.projectId, text: at.text, req });

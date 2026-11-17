@@ -17,7 +17,12 @@ export type Connection = {
 };
 
 /** Spawns the agent (never through a shell), initializes ACP and opens a session in `cwd`. */
-export type ConnectOpts = { cwd: string; timeoutMs?: number; resume?: string | null; mcp?: StartOpts["mcp"] };
+export type ConnectOpts = {
+  cwd: string;
+  timeoutMs?: number;
+  resume?: string | null;
+  mcp?: StartOpts["mcp"];
+};
 
 export async function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
   const timeoutMs = o.timeoutMs ?? 30_000;

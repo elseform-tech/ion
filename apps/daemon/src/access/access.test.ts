@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
@@ -46,6 +46,46 @@ describe("ruleFor", () => {
   });
 });
 
+// Security review: commands the simple rule can't fully read go to the judge; paths are resolved for real.
+describe("ruleFor, hardened", () => {
+  it("never allows by rule what it can't fully read: newlines, background &, redirects, subshells, write flags, ..", () => {
+    for (const c of [
+      "ls\nrm -rf x",
+      "cat a & rm -rf b",
+      "sort -o out in",
+      "cat a > b",
+      "echo $(id)",
+      "rg --pre sh x",
+      "cat ../../etc/passwd",
+    ])
+      expect(ruleFor(cmd(c), ctx)?.decision).not.toBe("allow");
+  });
+
+  it("follows symlinks: a link inside the worktree that points at your secrets is denied", () => {
+    const fake = mkdtempSync(join(tmpdir(), "ion-home-"));
+    mkdirSync(join(fake, ".ssh"));
+    const tree = mkdtempSync(join(tmpdir(), "ion-wt-"));
+    symlinkSync(join(fake, ".ssh"), join(tree, "keys"));
+    const c = { roots: [tree], home: fake, ionDirs: [] };
+    expect(ruleFor(cmd("cat keys/id_rsa"), c)).toMatchObject({
+      decision: "deny",
+      reason: "Touches your secrets",
+    });
+  });
+
+  it("covers more of your secrets", () => {
+    for (const f of [
+      ".git-credentials",
+      ".kube/config",
+      ".config/gcloud/x",
+      ".npmrc",
+      ".pypirc",
+      ".password-store/x",
+    ])
+      expect(ruleFor(cmd(`cat ${home}/${f}`), ctx)?.decision).toBe("deny");
+  });
+});
+
 describe("judge", () => {
   it("labels the action and your request as data, and asks for JSON", () => {
     const p = judgePrompt({ projectId: "app", text: "fix the tests", req: cmd("pnpm test") });
@@ -80,6 +120,19 @@ describe("judge", () => {
       reason: "ion couldn't decide in time",
     });
     expect((await createJudge(async () => "maybe")(input)).allow).toBe(false);
+    // Security review: a slow judge is stopped, and its error is kept short.
+    let aborted = false;
+    await createJudge((_p, signal) => {
+      signal.addEventListener("abort", () => {
+        aborted = true;
+      });
+      return new Promise<string>(() => {});
+    }, 20)(input);
+    expect(aborted).toBe(true);
+    const long = await createJudge(async () => {
+      throw new Error("x".repeat(500));
+    })(input);
+    expect(long.reason.length).toBeLessThanOrEqual(140);
   });
 });
 
@@ -98,6 +151,9 @@ describe("createAccess", () => {
     expect(judge).toHaveBeenCalledTimes(1);
     await access.decide({ ...at, chatId: "c2" }, cmd("pnpm test"));
     expect(judge).toHaveBeenCalledTimes(2);
+    // Security review: a different request in the same chat asks again.
+    await access.decide({ ...at, text: "delete everything" }, cmd("pnpm test"));
+    expect(judge).toHaveBeenCalledTimes(3);
   });
 });
 

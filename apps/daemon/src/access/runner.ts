@@ -9,8 +9,8 @@ import { getHarness } from "../adapters/registry.js";
  * Runs a prompt on ion's quick harness (`ion.quick` = "<harness>" or "<harness>:<model>") in an empty folder,
  * with every tool denied, and returns what it said.
  */
-export function harnessRunner(configFile: string): (prompt: string) => Promise<string> {
-  return async (prompt) => {
+export function harnessRunner(configFile: string): (prompt: string, signal: AbortSignal) => Promise<string> {
+  return async (prompt, signal) => {
     const spec = loadUserConfig(configFile).config.ion.quick;
     const [id, model] = [spec.split(":")[0]!, spec.includes(":") ? spec.slice(spec.indexOf(":") + 1) : null];
     const h = getHarness(id);
@@ -20,9 +20,12 @@ export function harnessRunner(configFile: string): (prompt: string) => Promise<s
       cwd: dir,
       model,
       effort: null,
-      signal: new AbortController().signal,
+      signal,
       decide: async () => "deny",
     });
+    // Stopped when the judge gives up: the session closes and its folder goes.
+    const stop = () => void session.close().catch(() => {});
+    signal.addEventListener("abort", stop, { once: true });
     try {
       await session.send({ text: prompt });
       const said: string[] = [];

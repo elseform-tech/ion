@@ -72,7 +72,7 @@ function openState(opts: { dataDir: string; configFile: string }, mcpUrl: () => 
   const store = new EventStore(db, allViews);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
-  // Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own folders are never touched.
+  // Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own folders are always denied.
   const judge = createJudge(harnessRunner(opts.configFile));
   const access = createAccess({ judge, home: homedir(), ionDirs: [opts.dataDir, dirname(opts.configFile)] });
   const runCtx = { configFile: opts.configFile, dataDir: opts.dataDir, access, mcp: { grants, url: mcpUrl } };

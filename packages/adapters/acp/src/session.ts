@@ -47,12 +47,19 @@ function batchingEmitter(
 ): (e: AdapterEvent) => void {
   const text = createDeltaCoalescer((t) => events.push({ type: EV.messageDelta, data: { text: t } }));
   const thinking = createDeltaCoalescer((t) => events.push({ type: EV.thinkingDelta, data: { text: t } }));
+  // ACP streams text only: the whole message is sent as message.completed when it ends (before anything else).
+  let message = "";
   return (e) => {
     if (finished()) return;
-    if (e.type === EV.messageDelta) return text.push((e.data as { text: string }).text);
+    if (e.type === EV.messageDelta) {
+      message += (e.data as { text: string }).text;
+      return text.push((e.data as { text: string }).text);
+    }
     if (e.type === EV.thinkingDelta) return thinking.push((e.data as { text: string }).text);
     text.end();
     thinking.end();
+    if (message) events.push({ type: EV.messageCompleted, data: { text: message } });
+    message = "";
     events.push(e);
   };
 }

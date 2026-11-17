@@ -34,18 +34,29 @@ export function parseVerdict(text: string): { allow: boolean; reason: string } |
 }
 
 /** A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. */
-export function createJudge(run: (prompt: string) => Promise<string>, timeoutMs = TIMEOUT_MS): Judge {
+export function createJudge(
+  run: (prompt: string, signal: AbortSignal) => Promise<string>,
+  timeoutMs = TIMEOUT_MS,
+): Judge {
   return async (i) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // A judge that takes too long is stopped (its harness session closed), and the answer is deny.
+    const abort = new AbortController();
     const slow = new Promise<"slow">((r) => {
-      timer = setTimeout(() => r("slow"), timeoutMs);
+      timer = setTimeout(() => {
+        abort.abort();
+        r("slow");
+      }, timeoutMs);
     });
     try {
-      const out = await Promise.race([run(judgePrompt(i)), slow]);
+      const out = await Promise.race([run(judgePrompt(i), abort.signal), slow]);
       if (out === "slow") return { allow: false, reason: "ion couldn't decide in time" };
       return parseVerdict(out) ?? { allow: false, reason: "ion couldn't decide" };
     } catch (e) {
-      return { allow: false, reason: `ion couldn't decide: ${(e as Error).message}` };
+      return {
+        allow: false,
+        reason: `ion couldn't decide: ${(e as Error).message.split("\n")[0]!.slice(0, 100)}`,
+      };
     } finally {
       clearTimeout(timer);
     }

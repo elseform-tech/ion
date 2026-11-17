@@ -29,13 +29,9 @@ export const GROK_BUILD: AcpHarness = {
   env: grokAskEnv,
 };
 
-/**
- * The session meta alone doesn't stop a user's `permission_mode = "always-approve"` from running shell
- * commands unasked: GROK_CONFIG (above the user's config.toml) starts ion's sessions in ask mode, and
- * read-only commands ask too, since they can read outside the worktree.
- */
+/** Grok's local read-only tools (stat, find, du…) ask like other commands where Grok honours this. */
 function grokAskEnv(): Record<string, string> {
-  return { GROK_CONFIG: JSON.stringify({ ui: { permission_mode: "ask" } }), GROK_ASK_LOCAL_READS: "false" };
+  return { GROK_ASK_LOCAL_READS: "false" };
 }
 
 export const OPENCODE: AcpHarness = {

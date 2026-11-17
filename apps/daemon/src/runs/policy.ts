@@ -44,7 +44,7 @@ function pathsOf(req: ApprovalRequest): string[] {
 }
 
 /** The real path, resolving symlinks; for a file that doesn't exist yet, its nearest existing parent's. */
-function realish(p: string): string {
+export function realish(p: string): string {
   let dir = p;
   const tail: string[] = [];
   while (!existsSync(dir) && dirname(dir) !== dir) {
