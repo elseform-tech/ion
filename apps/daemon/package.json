@@ -1,0 +1,25 @@
+{
+  "name": "@ion/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0"
+  },
+  "dependencies": {
+    "@ion/schema": "workspace:*",
+    "better-sqlite3": "^13.2.0",
+    "ulid": "^3.0.2"
+  }
+}
