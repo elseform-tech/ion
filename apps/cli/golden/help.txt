@@ -1,0 +1,40 @@
+Usage: ion [options] [command]
+
+Options:
+  --json          Machine-readable output
+  -h, --help      display help for command
+
+Commands:
+  daemon          Start, stop or check the ion service
+  status          Is ion running, and how many projects
+  projects        Your projects
+  help [command]  display help for command
+
+---
+
+Usage: ion daemon [options] [command]
+
+Start, stop or check the ion service
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  start           Start ion
+  stop            Stop ion
+  status          Show the process and port
+  help [command]  display help for command
+
+---
+
+Usage: ion projects [options] [command]
+
+Your projects
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  ls              List your projects
+  add <path>      Add a git repo
+  help [command]  display help for command

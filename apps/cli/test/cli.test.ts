@@ -149,4 +149,10 @@ describe("ion cli", { timeout: 20_000 }, () => {
     await ion("daemon", "start");
     expect(JSON.parse((await ion("status", "--json")).out)).toMatchObject({ projects: 0, configError: null });
   });
+
+  // Golden: the CLI is a public interface; help text and messages change only on purpose.
+  it("help output", async () => {
+    const help = await Promise.all([[], ["daemon"], ["projects"]].map((a) => ion(...a, "--help")));
+    await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
+  });
 });

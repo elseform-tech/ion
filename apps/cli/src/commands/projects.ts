@@ -13,13 +13,13 @@ async function client() {
 
 export function projectCommands(program: Command, out: () => Out) {
   const p = program.command("projects").description("Your projects");
-  p.command("ls").action(async () => {
+  p.command("ls").description("List your projects").action(async () => {
     const c = await client();
     const list = await c.call("projects.list", {});
     c.close();
     print(out(), list.length ? list.map((x) => `${x.id}  ${x.path}`).join("\n") : "No projects", list);
   });
-  p.command("add <path>").action(async (path: string) => {
+  p.command("add <path>").description("Add a git repo").action(async (path: string) => {
     const c = await client();
     try {
       // Resolve here: the daemon's working folder isn't yours.

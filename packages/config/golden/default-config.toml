@@ -1,0 +1,7 @@
+projects = []
+
+[ion]
+quick = "claude-code:Haiku 5.5"
+deep = "claude-code:Opus 5.5"
+deepEffort = "high"
+useDeep = "auto"
