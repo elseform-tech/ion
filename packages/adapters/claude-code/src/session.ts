@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AdapterEvent, Decision, Session, StartOpts } from "@ion/adapter-kit";
 import { createEventQueue } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
@@ -22,12 +24,11 @@ export type QueryFn = (args: {
   options: Record<string, unknown>;
 }) => QueryHandle;
 
-const toResult = (d: Decision, input: Record<string, unknown>, suggestions?: unknown[]): PermissionResult => {
-  if (d === "deny") return { behavior: "deny", message: "Not allowed by ion" };
-  if (d === "allow_always" && suggestions)
-    return { behavior: "allow", updatedInput: input, updatedPermissions: suggestions };
-  return { behavior: "allow", updatedInput: input };
-};
+// "Always" is remembered by ion (Plan 3), never by writing Claude Code's own permission rules.
+const toResult = (d: Decision, input: Record<string, unknown>): PermissionResult =>
+  d === "deny"
+    ? { behavior: "deny", message: "Not allowed by ion" }
+    : { behavior: "allow", updatedInput: input };
 
 /** One Claude Code turn through the Agent SDK, mapped to ion events. */
 export function startSession(
@@ -57,7 +58,7 @@ export function startSession(
   };
 
   const canUseTool: CanUseTool = async (name, input, o) => {
-    const summary = toolSummary(name, input, state.roots);
+    const summary = toolSummary(name, input, state.roots, { full: true });
     const requestId = o.requestId ?? o.toolUseID;
     emit({
       type: EV.approvalRequested,
@@ -71,7 +72,7 @@ export function startSession(
       summary,
       input,
     });
-    return toResult(decision, input, o.suggestions);
+    return toResult(decision, input);
   };
 
   const q = deps.query({ prompt: prompts, options: sdkOptions(opts, deps.binaryPath, abort, canUseTool) });
@@ -111,12 +112,9 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     canUseTool,
     pathToClaudeCodeExecutable: binaryPath,
     env: loginOnlyEnv(),
-    settingSources: ["user", "project", "local"],
-    systemPrompt: {
-      type: "preset",
-      preset: "claude_code",
-      ...(opts.instructions ? { append: opts.instructions } : {}),
-    },
+    // Only your own settings: a repo's .claude/ settings could pre-approve tools or run hooks.
+    settingSources: ["user"],
+    systemPrompt: { type: "preset", preset: "claude_code", ...appendFor(opts) },
   };
 }
 
@@ -138,4 +136,16 @@ async function pump(
       emit({ type: EV.error, data: { code: "crash", retryable: false, message: (e as Error).message } });
     end();
   }
+}
+
+/** The project's CLAUDE.md (its instructions, without its settings) plus any instructions from ion. */
+function appendFor(opts: StartOpts): { append?: string } {
+  const parts: string[] = [];
+  try {
+    parts.push(readFileSync(join(opts.cwd, "CLAUDE.md"), "utf8"));
+  } catch {
+    // no CLAUDE.md
+  }
+  if (opts.instructions) parts.push(opts.instructions);
+  return parts.length ? { append: parts.join("\n\n") } : {};
 }

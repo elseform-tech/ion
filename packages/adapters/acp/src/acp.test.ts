@@ -67,4 +67,27 @@ describe("acp adapter", () => {
   it("reports not installed when the binary is missing", async () => {
     expect(await createAcpAdapter(fake, { which: () => null }).detect()).toEqual({ installed: false });
   });
+
+  it("never widens a decision: allow without an allow_once option is refused", async () => {
+    const { answerPermission } = await import("./session.js");
+    const opts = (kinds: string[]) => ({
+      toolCall: { toolCallId: "t" },
+      options: kinds.map((k) => ({ optionId: k, kind: k })),
+    });
+    const emit = () => {};
+    expect(await answerPermission(opts(["allow_always", "reject_once"]), async () => "allow", emit)).toEqual({
+      outcome: { outcome: "cancelled" },
+    });
+    expect(
+      await answerPermission(opts(["allow_once", "allow_always"]), async () => "allow_always", emit),
+    ).toEqual({
+      outcome: { outcome: "selected", optionId: "allow_always" },
+    });
+    expect(await answerPermission(opts(["allow_once"]), async () => "allow_always", emit)).toEqual({
+      outcome: { outcome: "selected", optionId: "allow_once" },
+    });
+    expect(await answerPermission(opts(["reject_always", "allow_once"]), async () => "deny", emit)).toEqual({
+      outcome: { outcome: "selected", optionId: "reject_always" },
+    });
+  });
 });

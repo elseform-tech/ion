@@ -35,11 +35,29 @@ function toolPath(input: Record<string, unknown>, roots: string[]): string | nul
   return p;
 }
 
-/** A one-line description: the file, the command, the pattern or the URL. */
-export function toolSummary(name: string, input: Record<string, unknown>, roots: string[]): string {
-  const text =
-    toolPath(input, roots) ?? str(input.command) ?? str(input.pattern) ?? str(input.url) ?? str(input.query);
-  return (text ?? name).slice(0, 80);
+/**
+ * What a tool is doing: the file, the command, the pattern or the URL, on one line (newlines shown as ⏎).
+ * Listings cut it at 80 characters with "…"; approvals pass `full` so nothing is hidden from the decision.
+ */
+export function toolSummary(
+  name: string,
+  input: Record<string, unknown>,
+  roots: string[],
+  opts: { full?: boolean } = {},
+): string {
+  const raw =
+    toolPath(input, roots) ??
+    str(input.command) ??
+    str(input.pattern) ??
+    str(input.url) ??
+    str(input.query) ??
+    name;
+  const oneLine = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .join(" ⏎ ");
+  if (opts.full || oneLine.length <= 80) return oneLine;
+  return `${oneLine.slice(0, 79)}…`;
 }
 
 const lines = (s: unknown) => (typeof s === "string" && s.length ? s.split("\n").length : 0);

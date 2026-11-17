@@ -37,6 +37,32 @@ async function run(text: string, opts: { calls?: FakeQueryCall[]; exec?: Exec } 
 }
 
 describe("claude-code session", () => {
+  it("loads only your user settings, and passes the project's CLAUDE.md as instructions", async () => {
+    const calls: FakeQueryCall[] = [];
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(join(cwd, "CLAUDE.md"), "Use tabs.");
+    await run("hello", { calls });
+    const o = calls[0]!.options as { settingSources: string[]; systemPrompt: { append?: string } };
+    expect(o.settingSources).toEqual(["user"]);
+    expect(o.systemPrompt.append).toContain("Use tabs.");
+  });
+
+  it("never passes Claude's suggested permission rules through on allow always", async () => {
+    const calls: FakeQueryCall[] = [];
+    const session = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      signal: new AbortController().signal,
+      decide: async () => "allow_always",
+    });
+    await session.send({ text: "approve" });
+    const seen = [];
+    for await (const e of session.events()) seen.push(e);
+    expect(seen.at(-1)?.type).toBe("run.finished");
+    expect(calls[0]!.permissionResults).toEqual([{ behavior: "allow", updatedInput: expect.any(Object) }]);
+  });
+
   it("passes safe options to the SDK", async () => {
     const calls: FakeQueryCall[] = [];
     process.env.ANTHROPIC_API_KEY = "sk-test";

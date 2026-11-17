@@ -8,11 +8,12 @@ type Opts = Record<string, unknown> & {
 };
 type UserMsg = { message: { content: string } };
 
-export type FakeQueryCall = { options: Opts };
+export type FakeQueryCall = { options: Opts; permissionResults?: unknown[] };
 
 export function fakeQuery(calls: FakeQueryCall[] = []) {
   return ({ prompt, options }: { prompt: AsyncIterable<UserMsg>; options: Opts }) => {
-    calls.push({ options });
+    const call: FakeQueryCall = { options, permissionResults: [] };
+    calls.push(call);
     let interrupted = false;
     let wake: (() => void) | null = null;
     async function* run() {
@@ -29,7 +30,16 @@ export function fakeQuery(calls: FakeQueryCall[] = []) {
             signal: new AbortController().signal,
             toolUseID: "tu1",
             requestId: "rq1",
-          });
+            suggestions: [
+              {
+                type: "addRules",
+                rules: [{ toolName: "Write" }],
+                behavior: "allow",
+                destination: "localSettings",
+              },
+            ],
+          } as never);
+          call.permissionResults!.push(r);
           const denied = r.behavior !== "allow";
           yield {
             type: "user",

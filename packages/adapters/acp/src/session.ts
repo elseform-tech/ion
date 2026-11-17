@@ -13,10 +13,11 @@ import type { Connection } from "./connection.js";
 import { acpToolKind, createAcpState, mapUpdate } from "./map.js";
 
 type Option = { optionId: string; kind: string };
-const WANT: Record<Decision, string> = {
-  allow: "allow_once",
-  allow_always: "allow_always",
-  deny: "reject_once",
+/** Acceptable option kinds per decision, best first. Never wider than asked: "allow" is never "always". */
+const ACCEPT: Record<Decision, string[]> = {
+  allow: ["allow_once"],
+  allow_always: ["allow_always", "allow_once"],
+  deny: ["reject_once", "reject_always"],
 };
 const STATUS: Record<string, "done" | "interrupted"> = { end_turn: "done", cancelled: "interrupted" };
 
@@ -99,7 +100,7 @@ export function startAcpSession(
 }
 
 /** Asks the daemon about one ACP permission request and picks the matching option. */
-async function answerPermission(
+export async function answerPermission(
   p: Record<string, unknown>,
   decide: StartOpts["decide"],
   emit: (e: AdapterEvent) => void,
@@ -119,9 +120,7 @@ async function answerPermission(
     input: {},
   });
   const options = (p.options ?? []) as Option[];
-  const prefix = decision === "deny" ? "reject" : "allow";
-  const chosen =
-    options.find((o) => o.kind === WANT[decision]) ?? options.find((o) => o.kind.startsWith(prefix));
+  const chosen = ACCEPT[decision].map((k) => options.find((o) => o.kind === k)).find(Boolean);
   return chosen
     ? { outcome: { outcome: "selected", optionId: chosen.optionId } }
     : { outcome: { outcome: "cancelled" } };

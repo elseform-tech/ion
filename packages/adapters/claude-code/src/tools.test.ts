@@ -14,4 +14,14 @@ describe("tool paths", () => {
   it("keeps paths outside the project absolute", () => {
     expect(toolSummary("Read", { file_path: "/etc/hosts" }, roots)).toBe("/etc/hosts");
   });
+
+  it("collapses newlines and marks cut-off text in one-line summaries", () => {
+    const long = `echo ${"x".repeat(100)}\nrm -rf build`;
+    const short = toolSummary("Bash", { command: long }, roots);
+    expect(short.endsWith("…")).toBe(true);
+    expect(short).not.toContain("\n");
+    expect(toolSummary("Bash", { command: long }, roots, { full: true })).toBe(
+      `echo ${"x".repeat(100)} ⏎ rm -rf build`,
+    );
+  });
 });
