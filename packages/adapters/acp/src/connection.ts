@@ -3,11 +3,12 @@ import type { Readable, Writable } from "node:stream";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ResumeFailed, type StartOpts } from "@ion/adapter-kit";
+import { type Catalog, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
 import type { AcpHarness } from "./harnesses.js";
 import { createRpc, type Rpc, RpcError } from "./rpc.js";
 
-type ConfigOption = { id: string; category?: string; currentValue?: unknown };
+type Choice = { value?: unknown; name?: unknown; options?: Choice[] };
+type ConfigOption = { id: string; category?: string; currentValue?: unknown; options?: Choice[] };
 export type Connection = {
   child: ChildProcessByStdio<Writable, Readable, null>;
   rpc: Rpc;
@@ -106,6 +107,25 @@ export async function probeSignedIn(
     return "yes";
   } catch (e) {
     return e instanceof NotResponding ? "not-responding" : "no";
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The agent's models: the choices of its model option (groups flattened), from a session opened without a prompt. */
+export async function probeModels(h: AcpHarness, bin: string, timeoutMs?: number): Promise<Catalog> {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ion-probe-")));
+  try {
+    const c = await connect(h, bin, { cwd: dir, timeoutMs });
+    c.child.kill();
+    const opt = c.options.find((o) => o.category === "model");
+    const flat = (cs: Choice[]): Choice[] =>
+      cs.flatMap((x) => (Array.isArray(x.options) ? flat(x.options) : [x]));
+    const models = flat(opt?.options ?? [])
+      .filter((x) => typeof x.value === "string")
+      .map((x) => ({ id: String(x.value), label: typeof x.name === "string" ? x.name : String(x.value) }));
+    const current = typeof opt?.currentValue === "string" ? opt.currentValue : null;
+    return { models, defaultModel: h.defaultModel ?? current };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

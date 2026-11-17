@@ -44,6 +44,37 @@ async function run(text: string, opts: { calls?: FakeQueryCall[]; exec?: Exec } 
 }
 
 describe("claude-code session", () => {
+  it("lists Claude Code's own models, and falls back to the aliases when it can't", async () => {
+    const listing = createClaudeCodeAdapter({
+      exec: signedIn,
+      which: () => "/bin/claude",
+      listModels: async () => [
+        { value: "default", displayName: "Default (recommended)" },
+        { value: "sonnet", displayName: "Sonnet" },
+        { value: "claude-haiku-5-5", displayName: "Haiku 5.5" },
+      ],
+    });
+    expect(await listing.capabilities()).toMatchObject({
+      models: [
+        { id: "sonnet", label: "Sonnet" },
+        { id: "claude-haiku-5-5", label: "Haiku 5.5" },
+      ],
+      defaultModel: null,
+      modelsLive: true,
+    });
+    const failing = createClaudeCodeAdapter({
+      exec: signedIn,
+      which: () => "/bin/claude",
+      listModels: async () => {
+        throw new Error("signed out");
+      },
+    });
+    expect(await failing.capabilities()).toMatchObject({
+      modelsLive: false,
+      models: [{ id: "opus" }, { id: "sonnet" }, { id: "haiku" }],
+    });
+  });
+
   it("gives Claude Code ion's MCP server", async () => {
     const calls: FakeQueryCall[] = [];
     const s = await make(calls).start({

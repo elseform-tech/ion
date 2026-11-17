@@ -169,14 +169,14 @@ async function answerPermissionUnsafe(
   const toolId = String(tool.toolCallId ?? "");
   const requestId = `${toolId}:${randomUUID().slice(0, 8)}`;
   const summary = String(tool.title ?? "A tool");
-  const mcpServer = mcpServerOf(tool);
-  const kind = mcpServer ? "mcp" : acpToolKind(tool.kind);
+  const mcp = mcpToolOf(tool);
+  const kind = mcp ? "mcp" : acpToolKind(tool.kind);
   emit({ type: EV.approvalRequested, data: { requestId, toolId, kind, summary } });
   const decision = await decide({
     requestId,
     toolId,
-    toolName: String(tool.kind ?? "tool"),
-    mcpServer,
+    toolName: mcp?.name ?? String(tool.kind ?? "tool"),
+    mcpServer: mcp?.server ?? null,
     kind,
     summary,
     input: inputOf(tool),
@@ -197,13 +197,13 @@ type AcpToolCall = {
 };
 
 /** What the daemon's policy needs: the agent's raw input plus every path in `locations`. */
-/** An MCP tool call's server: Grok sends `{ variant: "UseTool", tool_name: "<server>__<tool>" }`. */
-function mcpServerOf(tool: AcpToolCall): string | null {
+/** An MCP tool call's server and full name: Grok sends `{ variant: "UseTool", tool_name: "<server>__<tool>" }`. */
+function mcpToolOf(tool: AcpToolCall): { server: string; name: string } | null {
   const raw = (typeof tool.rawInput === "object" && tool.rawInput) || {};
   const { variant, tool_name: name } = raw as { variant?: unknown; tool_name?: unknown };
   if (variant !== "UseTool" || typeof name !== "string") return null;
   const m = /^(.+?)__[^_]/.exec(name);
-  return m ? m[1]! : null;
+  return m ? { server: m[1]!, name } : null;
 }
 
 function inputOf(tool: AcpToolCall): Record<string, unknown> {

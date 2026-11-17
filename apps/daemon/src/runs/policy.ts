@@ -17,6 +17,8 @@ function* strings(value: unknown, key = ""): Generator<[string, string]> {
  */
 const PATH_KEY = /(path|locations|destination|dest|target|source|src|dir|directory|cwd|root)$/i;
 
+/** ion's own MCP tools: `mcp__ion__<tool>` (Claude Code) or `ion__<tool>` (Grok). */
+const ION_TOOL = /^(mcp__)?ion__(chat_history|search_chats|open_needs|memory_list|memory_write)$/;
 const URL_LIKE = /^[a-z][a-z0-9+.-]+:/i;
 const REACHES_OUT = /(^[~/])|(\.\.)/;
 
@@ -73,9 +75,14 @@ const allInside = (paths: string[], roots: string[]) => paths.every((p) => insid
  * allowed: the worktree is the sandbox. Anything else (commands, web, MCP, paths outside, or an edit that
  * names no path) is "ask": it becomes a need you answer. Edits to git internals and agent config always ask.
  */
-export function decideByPolicy(req: ApprovalRequest, opts: { roots: string[] }): "allow" | "ask" {
-  // ion's own MCP tools answer only about this run's project (the server checks the run's key).
-  if (req.kind === "mcp") return req.mcpServer === "ion" ? "allow" : "ask";
+export function decideByPolicy(
+  req: ApprovalRequest,
+  opts: { roots: string[]; ionMcp?: boolean },
+): "allow" | "ask" {
+  // ion's own MCP tools answer only about this run's project (the server checks the run's key): allowed by
+  // exact name, and only when this run was given ion's server. Any other MCP tool asks.
+  if (req.kind === "mcp")
+    return opts.ionMcp && req.mcpServer === "ion" && ION_TOOL.test(req.toolName) ? "allow" : "ask";
   const paths = pathsOf(req);
   // A URL (https:, file:, …) in a path field is never "inside the worktree".
   const inWorktree = paths.length > 0 && !paths.some((p) => URL_LIKE.test(p)) && allInside(paths, opts.roots);

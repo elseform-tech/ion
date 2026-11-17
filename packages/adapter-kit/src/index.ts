@@ -11,3 +11,4 @@ export type {
 } from "./types.js";
 export { createDeltaCoalescer } from "./coalesce.js";
 export { parseVersion, projectRoots, readVersion, whichOnPath } from "./system.js";
+export { type Catalog, cachedCatalog, capabilitiesWith, type Model } from "./catalog.js";

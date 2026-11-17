@@ -359,7 +359,7 @@ export class RunManager {
   private async decide(l: Launch, req: ApprovalRequest, roots: string[]): Promise<Decision> {
     await this.waitForRequest(req.requestId);
     if (this.stopping || !this.active.has(l.runId)) return "deny"; // the run already ended
-    const byPolicy = decideByPolicy(req, { roots }) === "allow";
+    const byPolicy = decideByPolicy(req, { roots, ionMcp: Boolean(l.mcpKey) }) === "allow";
     const decision: Decision = byPolicy
       ? "allow"
       : await this.needs.raise({

@@ -13,7 +13,12 @@ import { type Capabilities, EV } from "@ion/schema";
 import { SCENARIOS, type Script } from "./scenarios.js";
 
 const CAPABILITIES: Capabilities = {
-  models: [{ id: "fake", label: "Fake" }],
+  models: [
+    { id: "fake", label: "Fake" },
+    { id: "fake-big", label: "Fake Big" },
+  ],
+  defaultModel: "fake",
+  modelsLive: true,
   effort: { levels: ["low", "medium", "high", "max"], canDisableThinking: true },
   thinking: "none",
   approvals: "interactive",

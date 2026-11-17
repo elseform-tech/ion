@@ -1,13 +1,15 @@
 import type { AuthStatus } from "@ion/adapter-kit";
 import type { Capabilities } from "@ion/schema";
 
-export const CAPABILITIES: Capabilities = {
-  // Aliases that always point at the current model; Plan 5 refreshes this from supportedModels().
-  models: [
-    { id: "opus", label: "Opus" },
-    { id: "sonnet", label: "Sonnet" },
-    { id: "haiku", label: "Haiku" },
-  ],
+/** When Claude Code can't list its models: aliases that always point at the current ones. */
+export const FALLBACK_MODELS = [
+  { id: "opus", label: "Opus" },
+  { id: "sonnet", label: "Sonnet" },
+  { id: "haiku", label: "Haiku" },
+];
+
+/** Everything but the model list, which comes from Claude Code itself (see index.ts). */
+export const CAPABILITIES: Omit<Capabilities, "models" | "defaultModel" | "modelsLive"> = {
   effort: { levels: ["low", "medium", "high", "max"], nativeName: "effort", canDisableThinking: true },
   thinking: "summary",
   approvals: "interactive",

@@ -95,10 +95,10 @@ describe("acp adapter", () => {
     );
     await ask({ variant: "UseTool", tool_name: "github__create_issue", tool_input: {} });
     await ask({ command: "ls" });
-    expect(seen.map((r) => [r.kind, r.mcpServer])).toEqual([
-      ["mcp", "ion"],
-      ["mcp", "github"],
-      ["other", null],
+    expect(seen.map((r) => [r.kind, r.mcpServer, r.toolName])).toEqual([
+      ["mcp", "ion", "ion__search_chats"],
+      ["mcp", "github", "github__create_issue"],
+      ["other", null, "other"],
     ]);
   });
 
@@ -218,6 +218,17 @@ describe("acp adapter", () => {
   it("says so when a session can't be continued", async () => {
     await expect(resumed("s-old", "none")).rejects.toBeInstanceOf(ResumeFailed);
     await expect(resumed("gone")).rejects.toBeInstanceOf(ResumeFailed);
+  });
+
+  it("lists the agent's own models from its model option", async () => {
+    expect(await make().capabilities()).toMatchObject({
+      models: [
+        { id: "fake-1", label: "Fake One" },
+        { id: "fake-2", label: "Fake Two" },
+      ],
+      defaultModel: "fake-1",
+      modelsLive: true,
+    });
   });
 
   it("gives the agent ion's MCP server", async () => {

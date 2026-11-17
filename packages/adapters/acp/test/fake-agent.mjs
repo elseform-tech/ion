@@ -160,7 +160,10 @@ function newSession(m) {
           category: "model",
           type: "select",
           currentValue: "fake-1",
-          options: [],
+          options: [
+            { value: "fake-1", name: "Fake One" },
+            { value: "fake-2", name: "Fake Two" },
+          ],
         },
       ],
     },
