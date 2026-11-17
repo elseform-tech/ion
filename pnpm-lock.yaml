@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  picomatch: 4.0.7
+
 patchedDependencies:
   picomatch@4.0.7:
     hash: 957dbc7a780b4fe6d3767a6deb4fc36f92db6d345093018d87b52090921bbef1
@@ -1139,7 +1142,7 @@ packages:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
     peerDependencies:
-      picomatch: ^3 || ^4
+      picomatch: 4.0.7
     peerDependenciesMeta:
       picomatch:
         optional: true
