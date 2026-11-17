@@ -11,7 +11,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/client` | Typed WebSocket client for the CLI and the desktop app. |
 | `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event. |
 | `apps/cli` | The `ion` command. |
-| `tools/lint-rules` | Custom ESLint rules that enforce the walls below. |
+| `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`). |
 
 ## Walls
 
@@ -24,7 +24,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/policy` | `schema` | anything doing I/O |
 | `packages/schema` | nothing | everything |
 
-Also enforced: event type strings only in `packages/schema`; SQLite only in `apps/daemon/src/store`;
+Also enforced: event type strings only in `packages/schema` (use `EV.*`); SQLite only in `apps/daemon/src/store`;
 child processes only in `apps/daemon/src/workspace`, adapters and `apps/cli/src/daemon-control.ts`.
 
 ## Rules

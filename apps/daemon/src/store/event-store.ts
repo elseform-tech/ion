@@ -99,14 +99,18 @@ export class EventStore {
   read(q: { chatId?: string; runId?: string; afterId?: string; limit?: number } = {}): IonEvent[] {
     const where: string[] = [];
     const params: unknown[] = [];
-    if (q.chatId !== undefined) where.push("chat_id = ?") && params.push(q.chatId);
-    if (q.runId !== undefined) where.push("run_id = ?") && params.push(q.runId);
+    const add = (clause: string, value: unknown) => {
+      where.push(clause);
+      params.push(value);
+    };
+    if (q.chatId !== undefined) add("chat_id = ?", q.chatId);
+    if (q.runId !== undefined) add("run_id = ?", q.runId);
     if (q.afterId !== undefined) {
       const at = this.db.prepare("SELECT rowid AS r FROM events WHERE id = ?").get(q.afterId) as
         | { r: number }
         | undefined;
       if (!at) throw new Error(`Unknown event id: ${q.afterId}`);
-      where.push("rowid > ?") && params.push(at.r);
+      add("rowid > ?", at.r);
     }
     const sql = `SELECT * FROM events ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY rowid LIMIT ?`;
     params.push(q.limit ?? 10_000);

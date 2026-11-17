@@ -10,15 +10,18 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
+    "lint": "eslint .",
     "format": "biome format --write .",
-    "check": "biome check . && turbo run lint typecheck test"
+    "check": "biome check . && pnpm build && eslint . && turbo run typecheck test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
+    "@ion/lint-rules": "workspace:*",
     "@types/node": "^24.19.2",
+    "eslint": "^9.39.5",
     "turbo": "^2.11.11",
     "typescript": "~5.9.3",
+    "typescript-eslint": "^8.73.0",
     "vitest": "^3.2.7"
   }
 }

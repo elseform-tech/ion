@@ -1,5 +1,5 @@
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
-import type { Command, Commands, IonEvent } from "@ion/schema";
+import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
 import type { EventStore } from "../store/index.js";
 
 export type Ctx = { store: EventStore; configFile: string; startedAt: number; version: string };
@@ -40,7 +40,7 @@ export const handlers: Handlers = {
       chatId: `chat_${crypto.randomUUID()}`,
       runId: null,
       origin: "daemon",
-      type: "chat.created",
+      type: EV.chatCreated,
       data: { title: String(a.title ?? "New chat"), projectId: a.projectId ?? null },
     }),
 };

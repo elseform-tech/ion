@@ -70,3 +70,12 @@ describe("event type sets", () => {
     expect(isDaemonOnly("tool.started")).toBe(false);
   });
 });
+
+describe("EV constants", () => {
+  it("has exactly one constant per event type, mapping to itself", async () => {
+    const { EV } = await import("./index.js");
+    expect(Object.values(EV).sort()).toEqual([...EVENT_TYPES].sort());
+    expect(EV.chatCreated).toBe("chat.created");
+    expect(EV.error).toBe("error");
+  });
+});

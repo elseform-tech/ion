@@ -28,3 +28,4 @@
 | `@ion/client` | `packages/client/README.md` |
 | `@ion/daemon` | `apps/daemon/README.md` |
 | `@ion/cli` | `apps/cli/README.md` |
+| `@ion/lint-rules` | `tools/lint-rules/README.md` |

@@ -42,6 +42,40 @@ export const DAEMON_EVENT_TYPES = [
 
 export const EVENT_TYPES = [...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES] as const;
 
+/** Use these instead of string literals outside this package (lint: ion/event-types-from-schema). */
+export const EV = {
+  runStarted: "run.started",
+  runFinished: "run.finished",
+  messageDelta: "message.delta",
+  messageCompleted: "message.completed",
+  thinkingDelta: "thinking.delta",
+  toolStarted: "tool.started",
+  toolOutput: "tool.output",
+  toolFinished: "tool.finished",
+  fileChanged: "file.changed",
+  approvalRequested: "approval.requested",
+  artifactAttached: "artifact.attached",
+  usageReported: "usage.reported",
+  error: "error",
+  chatCreated: "chat.created",
+  runQueued: "run.queued",
+  runWaiting: "run.waiting",
+  runRetrying: "run.retrying",
+  approvalResolved: "approval.resolved",
+  needRaised: "need.raised",
+  needResolved: "need.resolved",
+  routeSent: "route.sent",
+  claimChecked: "claim.checked",
+  checksFinished: "checks.finished",
+  routineProposed: "routine.proposed",
+  briefingWritten: "briefing.written",
+  signalRaised: "signal.raised",
+  proposalMade: "proposal.made",
+  proposalAnswered: "proposal.answered",
+  memoryWritten: "memory.written",
+  memoryForgotten: "memory.forgotten",
+} as const satisfies Record<string, EventType>;
+
 export type AdapterEventType = (typeof ADAPTER_EVENT_TYPES)[number];
 export type DaemonEventType = (typeof DAEMON_EVENT_TYPES)[number];
 export type EventType = (typeof EVENT_TYPES)[number];

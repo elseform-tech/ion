@@ -32,9 +32,11 @@ async function main() {
     writeFileSync(lock, String(process.pid));
   }
   const srv = await startServer({ dataDir, configFile });
-  writeFileSync(infoFile, JSON.stringify({ pid: process.pid, port: srv.port, token: srv.token }), {
-    mode: 0o600,
-  });
+  // Never follow a planted file or symlink: remove it, then create exclusively with 0600.
+  rmSync(infoFile, { force: true });
+  const fd = openSync(infoFile, "wx", 0o600);
+  writeFileSync(fd, JSON.stringify({ pid: process.pid, port: srv.port, token: srv.token }));
+  closeSync(fd);
   const stop = async () => {
     rmSync(infoFile, { force: true });
     rmSync(lock, { force: true });

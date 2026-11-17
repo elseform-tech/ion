@@ -1,5 +1,14 @@
-import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +78,22 @@ describe("ion cli", { timeout: 20_000 }, () => {
   it("writes daemon.json readable only by you", async () => {
     await ion("daemon", "start");
     expect(statSync(join(home, "data", "daemon.json")).mode & 0o777).toBe(0o600);
+  });
+
+  it("never writes through a planted daemon.json symlink", async () => {
+    const target = join(home, "elsewhere.txt");
+    writeFileSync(target, "keep me");
+    mkdirSync(join(home, "data"), { recursive: true });
+    symlinkSync(target, join(home, "data", "daemon.json"));
+    // Start the daemon itself (not through the CLI, which clears the file first).
+    spawn("node", [fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url))], {
+      env: { ...process.env, ION_HOME: home },
+      stdio: "ignore",
+    });
+    for (let i = 0; i < 50 && (await ion("status")).code !== 0; i++)
+      await new Promise((r) => setTimeout(r, 100));
+    expect(readFileSync(target, "utf8")).toBe("keep me");
+    expect(lstatSync(join(home, "data", "daemon.json")).isSymbolicLink()).toBe(false);
   });
 
   it("stops and removes daemon.json", async () => {

@@ -1,4 +1,4 @@
-import { type IonEvent, RUN_END_STATUSES } from "@ion/schema";
+import { EV, type IonEvent, RUN_END_STATUSES } from "@ion/schema";
 import type { Db, View } from "../store/index.js";
 
 export type RunRow = {
@@ -27,7 +27,7 @@ export const runsView: View & { rows(db: Db): RunRow[] } = {
   apply(db, e: IonEvent) {
     if (!e.runId) return;
     const d = e.data as Record<string, unknown>;
-    if (e.type === "run.queued" || e.type === "run.started") {
+    if (e.type === EV.runQueued || e.type === EV.runStarted) {
       db.prepare(
         `INSERT INTO view_runs (run_id, chat_id, status, harness, model, started_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (run_id) DO UPDATE SET status = excluded.status,
@@ -36,12 +36,12 @@ export const runsView: View & { rows(db: Db): RunRow[] } = {
       ).run(
         e.runId,
         e.chatId,
-        e.type === "run.started" ? "running" : "queued",
+        e.type === EV.runStarted ? "running" : "queued",
         (d.harness as string) ?? null,
         (d.model as string) ?? null,
-        e.type === "run.started" ? e.ts : null,
+        e.type === EV.runStarted ? e.ts : null,
       );
-    } else if (e.type === "run.finished" && ended.has(d.status as string)) {
+    } else if (e.type === EV.runFinished && ended.has(d.status as string)) {
       db.prepare("UPDATE view_runs SET status = ?, finished_at = ? WHERE run_id = ?").run(
         d.status,
         e.ts,
