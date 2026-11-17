@@ -1,15 +1,24 @@
 import { existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest, Decision } from "@ion/adapter-kit";
+
+const looksLikePath = (v: string) => v.startsWith("/") || v.startsWith("~") || v.includes("../");
 
 /** Every path a request names: any input field whose name ends in "path" (file_path, filePath, …) plus ACP `locations`. */
 function pathsOf(req: ApprovalRequest): string[] {
   const out: string[] = [];
-  for (const [k, v] of Object.entries(req.input)) if (/path$/i.test(k) && typeof v === "string") out.push(v);
-  const locations = req.input.locations;
-  if (Array.isArray(locations)) for (const l of locations) if (typeof l === "string") out.push(l);
-  return out;
+  for (const [k, v] of Object.entries(req.input)) {
+    if (typeof v !== "string") continue;
+    // Named path fields, plus anything that looks like a path elsewhere (absolute, home, or climbing out).
+    if (/path$/i.test(k) || looksLikePath(v)) out.push(v);
+  }
+  return [...out, ...locationsOf(req.input)];
 }
+
+/** ACP `locations`, as plain strings. */
+const locationsOf = (input: Record<string, unknown>): string[] =>
+  Array.isArray(input.locations) ? input.locations.filter((l): l is string => typeof l === "string") : [];
 
 /** The real path, resolving symlinks; for a file that doesn't exist yet, its nearest existing parent's. */
 function realish(p: string): string {
@@ -27,7 +36,8 @@ function realish(p: string): string {
 }
 
 function inside(p: string, roots: string[]): boolean {
-  const real = realish(resolve(roots[0] ?? "/", p));
+  const expanded = p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
+  const real = realish(resolve(roots[0] ?? "/", expanded));
   return roots.some((root) => {
     const rel = relative(realish(root), real);
     return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -49,8 +59,7 @@ export function decideByPolicy(
   const named = paths.length > 0 && allInside(paths, opts.roots);
   const rules: Record<string, boolean> = {
     read: named,
-    // A search without a path searches the project (the agent's working folder).
-    search: allInside(paths, opts.roots),
+    search: named,
     edit: opts.allowEdits && named,
   };
   return rules[req.kind] === true ? "allow" : "deny";

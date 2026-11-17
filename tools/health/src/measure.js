@@ -5,7 +5,12 @@ import { ESLint } from "eslint";
 /** Soft limits: crossing one isn't an error, but the count of crossings may never grow. */
 const SOFT = { fileLines: 400, functionLines: 50, cognitiveComplexity: 10 };
 
-const SOURCES = ["apps/*/src/**/*.{ts,js}", "packages/*/src/**/*.{ts,js}", "tools/*/src/**/*.{ts,js}"];
+const SOURCES = [
+  "apps/*/src/**/*.{ts,js}",
+  "packages/*/src/**/*.{ts,js}",
+  "packages/adapters/*/src/**/*.{ts,js}",
+  "tools/*/src/**/*.{ts,js}",
+];
 // This file names the patterns it counts; don't count it.
 const SELF = "tools/health/src/measure.js";
 const isTest = (f) => /\.test\.[jt]s$/.test(f);

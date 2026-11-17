@@ -16,7 +16,10 @@ export type Connection = {
 
 /** Spawns the agent (never through a shell), initializes ACP and opens a session in `cwd`. */
 export async function connect(h: AcpHarness, bin: string, cwd: string): Promise<Connection> {
-  const child = spawn(bin, h.args, { stdio: ["pipe", "pipe", "ignore"], env: process.env });
+  const child = spawn(bin, h.args, {
+    stdio: ["pipe", "pipe", "ignore"],
+    env: { ...process.env, ...(h.env?.() ?? {}) },
+  });
   const rpc = createRpc({ stdin: child.stdin, stdout: child.stdout });
   child.on("error", () => child.stdout.destroy());
   try {
@@ -25,7 +28,11 @@ export async function connect(h: AcpHarness, bin: string, cwd: string): Promise<
       clientCapabilities: {},
       clientInfo: { name: "ion", version: "0.0.0" },
     });
-    const s = (await rpc.request("session/new", { cwd, mcpServers: [] })) as {
+    const s = (await rpc.request("session/new", {
+      cwd,
+      mcpServers: [],
+      ...(h.sessionMeta ? { _meta: h.sessionMeta } : {}),
+    })) as {
       sessionId: string;
       configOptions?: ConfigOption[];
     };

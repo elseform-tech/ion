@@ -16,6 +16,10 @@ const VERB: Record<string, string> = {
 };
 
 type D = Record<string, unknown>;
+
+// C0/C1 control characters except newline and tab: agents' text must not drive the terminal.
+const CONTROL = new RegExp("[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f]", "g");
+const clean = (x: unknown): string => String(x ?? "").replace(CONTROL, "");
 export type RunEnd = { status: string; code: number };
 type Rendered = { text: string; end?: RunEnd };
 
@@ -54,20 +58,21 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
   [EV.runStarted]: (s, d, e) => {
     s.startedAt = Date.parse(e.ts);
     const label = HARNESS[String(d.harness)] ?? String(d.harness);
-    return { text: line(s, [label, d.authMethod, d.model].filter(Boolean).join(" · ")) };
+    return { text: line(s, [label, d.authMethod, d.model].filter(Boolean).map(clean).join(" · ")) };
   },
   [EV.messageDelta]: (s, d) => {
-    const text = String(d.text);
+    const text = clean(d.text);
     s.midLine = !text.endsWith("\n");
     return { text };
   },
   [EV.toolStarted]: (s, d) =>
-    d.kind === "edit" ? quiet : { text: line(s, `· ${VERB[String(d.kind)] ?? "Used"} ${d.summary}`) },
-  [EV.fileChanged]: (s, d) => ({
-    text: line(s, `· Edited ${d.path} (+${d.added ?? "?"} −${d.removed ?? 0})`),
-  }),
+    d.kind === "edit" ? quiet : { text: line(s, `· ${VERB[String(d.kind)] ?? "Used"} ${clean(d.summary)}`) },
+  [EV.fileChanged]: (s, d) => {
+    const counts = typeof d.added === "number" ? ` (+${d.added} −${d.removed ?? 0})` : "";
+    return { text: line(s, `· Edited ${clean(d.path)}${counts}`) };
+  },
   [EV.approvalRequested]: (s, d) => {
-    s.asks.set(String(d.requestId), String(d.summary));
+    s.asks.set(String(d.requestId), clean(d.summary));
     return quiet;
   },
   [EV.approvalResolved]: (s, d) =>
@@ -79,7 +84,7 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     return quiet;
   },
   [EV.error]: (s, d) => {
-    s.lastError = String(d.message);
+    s.lastError = clean(d.message);
     return quiet;
   },
   [EV.runFinished]: (s, d, e) => endLine(s, String(d.status), e.ts),

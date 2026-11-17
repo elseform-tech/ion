@@ -65,4 +65,35 @@ describe("mapUpdate", () => {
     expect(st.costUsd).toBeCloseTo(0.01);
     expect(mapUpdate({ sessionUpdate: "brand_new_thing" }, st)).toEqual([]);
   });
+
+  it("reports an edit from its locations when the agent sends no diff", () => {
+    const st = s();
+    mapUpdate(
+      { sessionUpdate: "tool_call", toolCallId: "w", title: "write", kind: "edit", locations: [] },
+      st,
+    );
+    mapUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "w",
+        status: "in_progress",
+        locations: [{ path: "/repo/notes.md" }],
+      },
+      st,
+    );
+    expect(
+      mapUpdate(
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "w",
+          status: "completed",
+          content: [{ type: "content", content: { type: "text", text: "ok" } }],
+        },
+        st,
+      ),
+    ).toEqual([
+      { type: "tool.finished", data: { toolId: "w", ok: true, summary: null } },
+      { type: "file.changed", data: { path: "notes.md", change: "modify", added: null, removed: null } },
+    ]);
+  });
 });

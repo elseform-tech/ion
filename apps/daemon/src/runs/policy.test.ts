@@ -25,7 +25,7 @@ const decide = (kind: string, input: Record<string, unknown>, allowEdits = true)
 describe("decideByPolicy", () => {
   it("allows reads and searches inside the project, denies them outside", () => {
     expect(decide("read", { file_path: join(project, "src/a.ts") })).toBe("allow");
-    expect(decide("search", { pattern: "foo" })).toBe("allow");
+    expect(decide("search", { pattern: "foo", path: project })).toBe("allow");
     expect(decide("read", { file_path: "/etc/passwd" })).toBe("deny");
   });
 
@@ -58,5 +58,12 @@ describe("decideByPolicy", () => {
     expect(decide("read", {})).toBe("deny");
     expect(decide("edit", { filePath: "/etc/hosts" })).toBe("deny");
     expect(decide("edit", { target_path: join(project, "a.ts") })).toBe("allow");
+  });
+
+  it("fails closed for searches without a path, and checks absolute paths in any field", () => {
+    expect(decide("search", { pattern: "foo" })).toBe("deny");
+    expect(decide("edit", { file_path: join(project, "a.ts"), extra: "/etc/passwd" })).toBe("deny");
+    expect(decide("read", { file_path: join(project, "a.ts"), target: "../../etc/passwd" })).toBe("deny");
+    expect(decide("read", { file_path: "~/.ssh/id_rsa" })).toBe("deny");
   });
 });

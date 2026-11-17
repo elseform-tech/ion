@@ -4,8 +4,42 @@ import { EV, type ToolKind } from "@ion/schema";
 
 type Json = Record<string, unknown>;
 
-export type AcpState = { roots: string[]; costUsd: number | null; tools: Set<string> };
-export const createAcpState = (roots: string[]): AcpState => ({ roots, costUsd: null, tools: new Set() });
+type ToolInfo = { kind: string; locations: string[] };
+export type AcpState = { roots: string[]; costUsd: number | null; tools: Map<string, ToolInfo> };
+export const createAcpState = (roots: string[]): AcpState => ({ roots, costUsd: null, tools: new Map() });
+
+const locationsOf = (u: Json): string[] =>
+  (Array.isArray(u.locations) ? u.locations : [])
+    .map((l) => (l && typeof l === "object" ? (l as { path?: unknown }).path : undefined))
+    .filter((p): p is string => typeof p === "string");
+
+/** Remembers what each update says about a tool (kind, files), since agents spread it across updates. */
+function remember(u: Json, s: AcpState, toolId: string): ToolInfo | undefined {
+  const t = s.tools.get(toolId);
+  if (!t) return undefined;
+  if (typeof u.kind === "string") t.kind = u.kind;
+  const locs = locationsOf(u);
+  if (locs.length) t.locations = locs;
+  return t;
+}
+
+function diffChanges(u: Json, s: AcpState): AdapterEvent[] {
+  const out: AdapterEvent[] = [];
+  for (const c of (Array.isArray(u.content) ? u.content : []) as Json[]) {
+    if (c.type !== "diff" || typeof c.path !== "string") continue;
+    const isNew = c.oldText === undefined || c.oldText === null;
+    out.push({
+      type: EV.fileChanged,
+      data: {
+        path: shorten(c.path, s.roots),
+        change: isNew ? "add" : "modify",
+        added: lines(c.newText),
+        removed: isNew ? null : lines(c.oldText),
+      },
+    });
+  }
+  return out;
+}
 
 const KINDS: Record<string, ToolKind> = {
   read: "read",
@@ -35,25 +69,20 @@ const textOf = (content: unknown) => {
 
 function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
   const toolId = String(u.toolCallId);
-  if (u.status !== "completed" && u.status !== "failed") return [];
-  if (!s.tools.delete(toolId)) return [];
+  const tool = remember(u, s, toolId);
+  if (!tool || (u.status !== "completed" && u.status !== "failed")) return [];
+  s.tools.delete(toolId);
   const ok = u.status === "completed";
   const out: AdapterEvent[] = [{ type: EV.toolFinished, data: { toolId, ok, summary: null } }];
   if (!ok) return out;
-  for (const c of (Array.isArray(u.content) ? u.content : []) as Json[]) {
-    if (c.type !== "diff" || typeof c.path !== "string") continue;
-    const isNew = c.oldText === undefined || c.oldText === null;
-    out.push({
-      type: EV.fileChanged,
-      data: {
-        path: shorten(c.path, s.roots),
-        change: isNew ? "add" : "modify",
-        added: lines(c.newText),
-        removed: isNew ? null : lines(c.oldText),
-      },
-    });
-  }
-  return out;
+  const diffs = diffChanges(u, s);
+  if (diffs.length || acpToolKind(tool.kind) !== "edit") return [...out, ...diffs];
+  // No diff (e.g. opencode): the edited files are the tool's locations.
+  const fromLocations: AdapterEvent[] = tool.locations.map((p) => ({
+    type: EV.fileChanged,
+    data: { path: shorten(p, s.roots), change: "modify", added: null, removed: null },
+  }));
+  return [...out, ...fromLocations];
 }
 
 /** Translates one ACP `session/update` into ion events. Pure apart from `state`. */
@@ -69,7 +98,7 @@ export function mapUpdate(u: Json, s: AcpState): AdapterEvent[] {
     }
     case "tool_call": {
       const toolId = String(u.toolCallId);
-      s.tools.add(toolId);
+      s.tools.set(toolId, { kind: String(u.kind ?? "other"), locations: locationsOf(u) });
       const title = typeof u.title === "string" ? u.title : "Tool";
       return [
         {

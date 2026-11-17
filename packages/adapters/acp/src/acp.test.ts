@@ -139,4 +139,36 @@ describe("acp adapter", () => {
     );
     expect(failing).toEqual({ outcome: { outcome: "cancelled" } });
   });
+
+  const turn = async (h: AcpHarness, text: string) => {
+    const s = await createAcpAdapter(h, { which: () => process.execPath }).start({
+      cwd,
+      model: null,
+      effort: null,
+      signal: new AbortController().signal,
+      decide: async () => "deny",
+    });
+    await s.send({ text });
+    const events = [];
+    for await (const e of s.events()) events.push(e);
+    return events;
+  };
+
+  it("passes the harness's env and session options, and reads token usage", async () => {
+    const h = { ...fake, env: () => ({ FAKE_ACP_ENV: "ask" }), sessionMeta: { yoloMode: false } };
+    const events = await turn(h, "whoami");
+    const said = events
+      .filter((e) => e.type === "message.delta")
+      .map((e) => (e.data as { text: string }).text)
+      .join("");
+    expect(JSON.parse(said)).toEqual({ meta: { yoloMode: false }, env: "ask" });
+    expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({
+      inputTokens: 7,
+      outputTokens: 3,
+    });
+  });
+
+  it("treats the agent cancelling on its own (after a refusal) as done, not interrupted", async () => {
+    expect((await turn(fake, "refuse")).at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
+  });
 });

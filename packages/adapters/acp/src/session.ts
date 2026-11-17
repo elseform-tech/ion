@@ -3,6 +3,7 @@ import {
   type AdapterEvent,
   createDeltaCoalescer,
   createEventQueue,
+  type EventQueue,
   type Decision,
   projectRoots,
   type Session,
@@ -19,7 +20,41 @@ const ACCEPT: Record<Decision, string[]> = {
   allow_always: ["allow_always", "allow_once"],
   deny: ["reject_once", "reject_always"],
 };
-const STATUS: Record<string, "done" | "interrupted"> = { end_turn: "done", cancelled: "interrupted" };
+type Usage = { inputTokens: number; outputTokens: number };
+
+/** Token counts from a prompt result: `usage` (ACP unstable) or `_meta` (Grok). */
+function usageOf(r: unknown): Usage | null {
+  const o = (r ?? {}) as { usage?: Record<string, unknown>; _meta?: Record<string, unknown> };
+  for (const src of [o.usage, o._meta]) {
+    if (src && typeof src.inputTokens === "number" && typeof src.outputTokens === "number")
+      return { inputTokens: src.inputTokens, outputTokens: src.outputTokens };
+  }
+  return null;
+}
+
+/** A "cancelled" turn is only an interrupt if ion asked for one; agents also end that way after a refusal. */
+const statusOf = (reason: string, interrupted: boolean): "done" | "interrupted" | null => {
+  if (reason === "end_turn") return "done";
+  if (reason === "cancelled") return interrupted ? "interrupted" : "done";
+  return null;
+};
+
+/** Pushes events, batching streamed text and thinking; nothing after the run has finished. */
+function batchingEmitter(
+  events: EventQueue<AdapterEvent>,
+  finished: () => boolean,
+): (e: AdapterEvent) => void {
+  const text = createDeltaCoalescer((t) => events.push({ type: EV.messageDelta, data: { text: t } }));
+  const thinking = createDeltaCoalescer((t) => events.push({ type: EV.thinkingDelta, data: { text: t } }));
+  return (e) => {
+    if (finished()) return;
+    if (e.type === EV.messageDelta) return text.push((e.data as { text: string }).text);
+    if (e.type === EV.thinkingDelta) return thinking.push((e.data as { text: string }).text);
+    text.end();
+    thinking.end();
+    events.push(e);
+  };
+}
 
 /** One ACP prompt turn mapped to ion events. The agent process lives as long as the turn. */
 export function startAcpSession(
@@ -31,23 +66,23 @@ export function startAcpSession(
   const state = createAcpState(projectRoots(opts.cwd));
   let finished = false;
   let interrupted = false;
-  const text = createDeltaCoalescer((t) => events.push({ type: EV.messageDelta, data: { text: t } }));
-  const thinking = createDeltaCoalescer((t) => events.push({ type: EV.thinkingDelta, data: { text: t } }));
-  const emit = (e: AdapterEvent) => {
-    if (finished) return;
-    if (e.type === EV.messageDelta) return text.push((e.data as { text: string }).text);
-    if (e.type === EV.thinkingDelta) return thinking.push((e.data as { text: string }).text);
-    text.end();
-    thinking.end();
-    events.push(e);
-  };
-  const finish = (status: "done" | "interrupted" | "failed", message?: string) => {
+  const emit = batchingEmitter(events, () => finished);
+  const finish = (
+    status: "done" | "interrupted" | "failed",
+    message?: string,
+    usage: Usage | null = null,
+  ) => {
     if (finished) return;
     if (message) emit({ type: EV.error, data: { code: "agent", retryable: false, message } });
-    if (state.costUsd !== null)
+    if (state.costUsd !== null || usage)
       emit({
         type: EV.usageReported,
-        data: { model: run.model, inputTokens: 0, outputTokens: 0, costUsd: state.costUsd },
+        data: {
+          model: run.model,
+          inputTokens: usage?.inputTokens ?? 0,
+          outputTokens: usage?.outputTokens ?? 0,
+          costUsd: state.costUsd,
+        },
       });
     emit({ type: EV.runFinished, data: { status } });
     finished = true;
@@ -80,8 +115,8 @@ export function startAcpSession(
         .request("session/prompt", { sessionId: c.sessionId, prompt: [{ type: "text", text: t }] })
         .then((r) => {
           const reason = String((r as { stopReason?: unknown }).stopReason);
-          const status = STATUS[reason];
-          finish(status ?? "failed", status ? undefined : `Stopped: ${reason}`);
+          const status = statusOf(reason, interrupted);
+          finish(status ?? "failed", status ? undefined : `Stopped: ${reason}`, usageOf(r));
         })
         .catch((e: Error) =>
           finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : e.message),

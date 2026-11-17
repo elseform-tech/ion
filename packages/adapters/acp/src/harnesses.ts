@@ -8,6 +8,10 @@ export type AcpHarness = {
   loginArgs: string[];
   loginHint: string;
   defaultModel: string | null;
+  /** Extra environment for the agent (e.g. making it ask before editing). */
+  env?: () => Record<string, string>;
+  /** `_meta` sent with `session/new` (agent-specific session options). */
+  sessionMeta?: Record<string, unknown>;
 };
 
 export const GROK_BUILD: AcpHarness = {
@@ -19,6 +23,8 @@ export const GROK_BUILD: AcpHarness = {
   loginArgs: ["login"],
   loginHint: "grok login",
   defaultModel: null,
+  // Always ask ion before tools run, whatever the user's own Grok permission mode is.
+  sessionMeta: { yoloMode: false, autoMode: false },
 };
 
 export const OPENCODE: AcpHarness = {
@@ -31,4 +37,17 @@ export const OPENCODE: AcpHarness = {
   loginHint: "opencode auth login",
   // A free model, so trying ion costs nothing.
   defaultModel: "opencode/big-pickle",
+  env: opencodeAskEnv,
 };
+
+/** opencode's own config with edits, shell and web fetches set to ask, merged into any inline config. */
+function opencodeAskEnv(): Record<string, string> {
+  let base: Record<string, unknown> = {};
+  try {
+    base = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "{}");
+  } catch {
+    // ignore an unreadable inline config; ion's permissions still apply
+  }
+  const permission = { ...((base.permission as object) ?? {}), edit: "ask", bash: "ask", webfetch: "ask" };
+  return { OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...base, permission }) };
+}

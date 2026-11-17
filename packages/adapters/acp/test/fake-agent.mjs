@@ -14,6 +14,7 @@ const ask = (method, params) =>
   });
 let cancel = null;
 const sessions = new Map();
+const metas = new Map();
 
 async function prompt(id, { sessionId, prompt: blocks }) {
   const text = blocks
@@ -69,6 +70,17 @@ async function prompt(id, { sessionId, prompt: blocks }) {
     });
     return send({ id, result: { stopReason: cancelled ? "cancelled" : "end_turn" } });
   }
+  if (text.startsWith("refuse")) return send({ id, result: { stopReason: "cancelled" } });
+  if (text.startsWith("whoami")) {
+    update(sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: {
+        type: "text",
+        text: JSON.stringify({ meta: metas.get(sessionId), env: process.env.FAKE_ACP_ENV ?? null }),
+      },
+    });
+    return send({ id, result: { stopReason: "end_turn", usage: { inputTokens: 7, outputTokens: 3 } } });
+  }
   update(sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Thinking" } });
   update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hi " } });
   update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "there" } });
@@ -95,6 +107,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     if (process.env.FAKE_ACP_SIGNED_OUT === "1")
       return send({ id: m.id, error: { code: -32000, message: "Authentication required" } });
     sessions.set("s1", m.params.cwd);
+    metas.set("s1", m.params._meta ?? null);
     return send({
       id: m.id,
       result: {
