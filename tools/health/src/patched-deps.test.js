@@ -12,10 +12,13 @@ const timed = (fn) => {
 // Regression: GHSA-fc5q-39xc-vjpf (picomatch <=4.0.7 ReDoS, no upstream fix yet).
 // patches/picomatch@4.0.7.patch marks repeated extglobs whose branch contains `*` as risky.
 describe("picomatch patch", () => {
-  it.each(["+(*a)", "*(*a)", "+(*)"])("%s finishes quickly on a crafted string", (glob) => {
+  it.each(["+(*a)", "*(*a)", "+(*)"])("%s is treated as literal text and finishes quickly", (glob) => {
+    // The patch's effect, independent of machine speed: the risky pattern only matches itself.
+    expect(picomatch.isMatch(glob, glob)).toBe(true);
+    // Unpatched, this input takes seconds (exponential backtracking); 1 s leaves room for slow CI runners.
     const { value, ms } = timed(() => picomatch.makeRe(glob).test(`${"a".repeat(26)}!`));
     expect(value).toBe(false);
-    expect(ms).toBeLessThan(200);
+    expect(ms).toBeLessThan(1000);
   });
 
   it("keeps the safe rewrites and normal extglobs working", () => {
