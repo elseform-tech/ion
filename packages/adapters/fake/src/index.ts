@@ -26,7 +26,7 @@ const CAPABILITIES: Capabilities = {
 };
 
 /** A scripted harness for tests: the prompt's first word picks a scenario (hello, edit, approve, fail, slow). */
-const HISTORY_END = "</ion-data>\n\n";
+const HISTORY_END = /<\/ion-data id="\w+">\n\n/;
 
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
@@ -90,8 +90,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     nativeId,
     async send({ text }) {
       // The scenario is the first word of your message, after any history ion put before it.
-      const end = text.lastIndexOf(HISTORY_END);
-      const own = end < 0 ? text : text.slice(end + HISTORY_END.length);
+      const own = text.split(HISTORY_END).at(-1) ?? text;
       const name = own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
       sent = text;

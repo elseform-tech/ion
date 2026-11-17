@@ -298,7 +298,7 @@ describe("RunManager", () => {
       const b = await finished(second.runId);
       expect(sessionOf(b)).not.toEqual(sessionOf(a));
       expect(said(b)[0]).toMatch(
-        /^<ion-data source="this chat's earlier messages">\nyou: echo one\nagent: echo one\n<\/ion-data>\n\necho two$/,
+        /^<ion-data id="\w+" source="this chat's earlier messages">\nyou: "echo one"\nagent: "echo one"\n<\/ion-data id="\w+">\n\necho two$/,
       );
       expect(b.some((e) => e.type === "error")).toBe(false);
       expect(b.at(-1)?.data).toEqual({ status: "done" });
@@ -313,7 +313,7 @@ describe("RunManager", () => {
     await finished(first.runId);
     delete process.env.ION_FAKE_START_FAIL;
     const b = await finished((await ask("echo two", { chatId: first.chatId })).runId);
-    expect(said(b)[0]).toMatch(/you: echo one\n<\/ion-data>\n\necho two$/);
+    expect(said(b)[0]).toMatch(/you: "echo one"\n<\/ion-data id="\w+">\n\necho two$/);
   });
 
   it("resumes the failed try's session when it retries", async () => {

@@ -6,7 +6,8 @@ export const HISTORY_CHARS = 24_000;
 
 /** The chat's earlier messages as a data block, to start a new session where the old one left off. */
 export function historyPreamble(messages: HistoryMessage[]): string {
-  const body = messages.map((m) => `${m.role}: ${m.text}`).join("\n");
+  // One JSON-encoded message per line: a message's own line breaks can't fake another turn.
+  const body = messages.map((m) => `${m.role}: ${JSON.stringify(m.text)}`).join("\n");
   return `${wrapData("this chat's earlier messages", body)}\n\n`;
 }
 
