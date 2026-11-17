@@ -8,6 +8,18 @@ function splitKey(key) {
   return at === -1 ? { name: key, ref: "" } : { name: key.slice(0, at), ref: key.slice(at + 1) };
 }
 
+/** Every resolved copy of `pkg` in snapshots: as a snapshot key, or as another package's dependency. */
+function* copiesOf(snapshots, pkg) {
+  for (const [key, snap] of Object.entries(snapshots)) {
+    const { name, ref } = splitKey(key);
+    if (name === pkg) yield { label: key, ref };
+    for (const field of DEP_FIELDS) {
+      const ref2 = snap?.[field]?.[pkg];
+      if (ref2 !== undefined) yield { label: `${key} → ${pkg} ${ref2}`, ref: ref2 };
+    }
+  }
+}
+
 /**
  * Resolved copies of `pkg` in pnpm-lock.yaml that don't carry exactly the hash declared under
  * `patchedDependencies`. Parses the YAML structurally and fails closed: throws when there are no
@@ -31,21 +43,7 @@ export function unpatched(lockText, pkg) {
     return hash !== undefined && hash === m[2];
   };
 
-  const bad = [];
-  let seen = 0;
-  for (const [key, snap] of Object.entries(snapshots)) {
-    const { name, ref } = splitKey(key);
-    if (name === pkg) {
-      seen++;
-      if (!isPatched(ref)) bad.push(key);
-    }
-    for (const field of DEP_FIELDS) {
-      const deps = snap?.[field] ?? {};
-      if (!(pkg in deps)) continue;
-      seen++;
-      if (!isPatched(deps[pkg])) bad.push(`${key} → ${pkg} ${deps[pkg]}`);
-    }
-  }
-  if (seen === 0) throw new Error(`Lockfile has no ${pkg} to check`);
-  return bad;
+  const copies = [...copiesOf(snapshots, pkg)];
+  if (copies.length === 0) throw new Error(`Lockfile has no ${pkg} to check`);
+  return copies.filter((c) => !isPatched(c.ref)).map((c) => c.label);
 }
