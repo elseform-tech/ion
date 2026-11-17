@@ -13,7 +13,7 @@
 |---|---|
 | [01 Foundation](superpowers/plans/2026-11-17-01-foundation.md) | Done |
 | [02 Adapters](superpowers/plans/2026-11-17-02-adapters.md): adapter kit, Claude Code, Grok Build and opencode (ACP), `ion ask` | Done |
-| 03 Workspace, scheduler, policy, approvals, needs, retries | Not written |
+| [03 Workspace and needs](superpowers/plans/2026-11-17-03-workspace-needs.md): worktree per chat, needs, run queue, retries | In progress |
 | 04 Desktop app and Chats screens | Not written |
 | 05 ion chief and Ions screens | Not written |
 | 06 Routines, Activity, Artifacts, Tools | Not written |
