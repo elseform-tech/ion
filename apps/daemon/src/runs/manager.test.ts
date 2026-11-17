@@ -344,6 +344,16 @@ describe("RunManager", () => {
     expect(grants.check(key)).toBeNull();
   });
 
+  it("refuses a model the harness doesn't list, and runs one it does", async () => {
+    await expect(ask("hello", { model: "nope" })).rejects.toThrow(
+      new UserError("Unknown model for Fake: nope"),
+    );
+    const { runId } = await ask("hello", { model: "fake-big" });
+    expect((await finished(runId)).find((e) => e.type === "run.started")?.data).toMatchObject({
+      model: "fake-big",
+    });
+  });
+
   it("stores a failed run and keeps working", async () => {
     const { runId } = await ask("fail");
     expect((await finished(runId)).at(-1)?.data).toEqual({ status: "failed" });

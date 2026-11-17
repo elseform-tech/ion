@@ -160,7 +160,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
   // Golden: the CLI is a public interface; help text and messages change only on purpose.
   it("help output", async () => {
     const help = await Promise.all(
-      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"], ["memory"]].map((a) =>
+      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"], ["memory"], ["harnesses"]].map((a) =>
         ion(...a, "--help"),
       ),
     );
@@ -210,6 +210,15 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(r.out).toContain("Tests pass.");
       expect(await ion("needs", "deny", id!)).toMatchObject({ code: 1, err: "That's already answered" });
       expect((await ion("needs")).out).toBe("Nothing needs you");
+    });
+
+    it("lists harnesses with their models, and refuses an unknown model", async () => {
+      await setup();
+      expect((await ion("harnesses")).out).toContain("fake  Signed in  fake (default), fake-big");
+      expect(await ion("ask", "hello", "-p", "app", "--harness", "fake", "--model", "nope")).toMatchObject({
+        code: 1,
+        err: "Unknown model for Fake: nope",
+      });
     });
 
     it("lists memory and says so for one it doesn't know", async () => {

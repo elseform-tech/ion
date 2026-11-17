@@ -98,3 +98,23 @@ tester.run("walls", plugin.rules.walls, {
     },
   ],
 });
+
+tester.run("no-model-names", plugin.rules["no-model-names"], {
+  valid: [
+    at("packages/adapters/claude-code/src/capabilities.ts", 'const m = "claude-haiku-5-5";'),
+    at("apps/daemon/src/runs/manager.test.ts", 'const m = "grok-4.7";'),
+    at("apps/daemon/src/x.ts", 'const h = "claude-code";'),
+    at("fixtures/x.ts", 'const m = "gpt-6";'),
+  ],
+  invalid: [
+    {
+      ...at("apps/daemon/src/x.ts", 'const m = "claude-haiku-5-5";'),
+      errors: [{ messageId: "fromHarness" }],
+    },
+    {
+      ...at("packages/config/src/x.ts", 'const m = "claude-code:Opus 5.5";'),
+      errors: [{ messageId: "fromHarness" }],
+    },
+    { ...at("apps/cli/src/x.ts", "const m = `grok-4.7`;"), errors: [{ messageId: "fromHarness" }] },
+  ],
+});

@@ -49,6 +49,7 @@
     "chats.list",
     "chat.archive",
     "memory.list",
-    "memory.forget"
+    "memory.forget",
+    "harnesses.list"
   ]
 }

@@ -82,4 +82,8 @@ describe("loadUserConfig", () => {
     writeFileSync(file, "[resources]\nmax_runs = 0\n");
     expect(loadUserConfig(file).error).toContain("max_runs");
   });
+
+  it("leaves the models to each harness by default", () => {
+    expect(DEFAULT_CONFIG.ion).toMatchObject({ quick: "claude-code", deep: "claude-code" });
+  });
 });

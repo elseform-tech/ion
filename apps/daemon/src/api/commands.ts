@@ -1,3 +1,5 @@
+import { getHarness, harnessIds } from "../adapters/registry.js";
+import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { memoryView } from "../views/memory.js";
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
@@ -33,6 +35,7 @@ type Handlers = {
 export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
+  "harnesses.list": () => Promise.all(harnessIds().map(harnessInfo)),
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
   "memory.forget": (a, ctx) => {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
@@ -88,3 +91,19 @@ export const handlers: Handlers = {
       data: { title: String(a.title ?? "New chat"), projectId: a.projectId ?? null },
     }),
 };
+
+/** A harness, whether it's ready, and (only when it is) its own model list. */
+async function harnessInfo(id: string): Promise<HarnessInfo> {
+  const h = getHarness(id)!;
+  const installed = (await h.adapter.detect()).installed;
+  const signedIn = installed && (await h.adapter.auth.status()).signedIn;
+  const caps = signedIn ? await h.adapter.capabilities() : null;
+  return {
+    id,
+    label: h.label,
+    installed,
+    signedIn,
+    models: caps?.models ?? [],
+    defaultModel: caps?.defaultModel ?? null,
+  };
+}

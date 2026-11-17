@@ -85,7 +85,7 @@ export class RunManager {
     if (key) this.reserved.add(key);
     let launch: Launch;
     try {
-      await this.checkReady(h);
+      await this.checkReady(h, args.model);
       const chatId = chat.chatId ?? `chat_${randomUUID()}`;
       const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
         throw new UserError(e.message);
@@ -317,10 +317,15 @@ export class RunManager {
     return p.path;
   }
 
-  private async checkReady(h: HarnessEntry): Promise<void> {
+  private async checkReady(h: HarnessEntry, model?: string): Promise<void> {
     if (!(await h.adapter.detect()).installed) throw new UserError(`${h.label} isn't installed`);
     if (!(await h.adapter.auth.status()).signedIn)
       throw new UserError(`${h.label} isn't signed in. Run: ${h.loginHint}`);
+    // A live model list is the harness's own: a name it doesn't list won't run.
+    if (!model) return;
+    const caps = await h.adapter.capabilities();
+    if (caps.modelsLive && !caps.models.some((x) => x.id === model))
+      throw new UserError(`Unknown model for ${h.label}: ${model}`);
   }
 
   private createChat(chatId: string, chat: Chat, wt: { path: string; branch: string }): void {

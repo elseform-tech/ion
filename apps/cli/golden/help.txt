@@ -12,6 +12,7 @@ Commands:
   needs                 What's waiting on you
   chats                 Your chats
   memory                What ion remembers
+  harnesses             Coding agents and their models
   help [command]        display help for command
 
 ---
@@ -96,3 +97,12 @@ Commands:
   ls [options]    List it
   forget <id>     Forget it
   help [command]  display help for command
+
+---
+
+Usage: ion harnesses [options]
+
+Coding agents and their models
+
+Options:
+  -h, --help  display help for command

@@ -34,6 +34,7 @@ export default tseslint.config(
       "ion/event-types-from-schema": "error",
       "ion/no-direct-db": "error",
       "ion/no-child-process": "error",
+      "ion/no-model-names": "error",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
 
       // Dead code (knip covers unused files, exports and dependencies across packages)
