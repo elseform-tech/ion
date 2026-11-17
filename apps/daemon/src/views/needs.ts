@@ -4,7 +4,12 @@ import type { Db, View } from "../store/index.js";
 type D = Record<string, unknown>;
 
 /** Open "Needs you" items. Applied after the chats view, so a need can carry its chat's project. */
-export const needsView: View & { open(db: Db, chatId?: string): NeedInfo[] } = {
+export const needsView: View & {
+  open(db: Db, chatId?: string): NeedInfo[];
+  find(db: Db, needId: string): { open: boolean; runId: string } | null;
+  openByKey(db: Db, chatId: string, dedupeKey: string): string | null;
+  openForRun(db: Db, runId: string): string[];
+} = {
   name: "needs",
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_needs (
@@ -33,6 +38,25 @@ export const needsView: View & { open(db: Db, chatId?: string): NeedInfo[] } = {
     } else if (e.type === EV.needResolved) {
       db.prepare("UPDATE view_needs SET open = 0 WHERE need_id = ?").run(String(d.needId));
     }
+  },
+  find(db, needId) {
+    const r = db.prepare("SELECT open, run_id AS runId FROM view_needs WHERE need_id = ?").get(needId) as
+      | { open: number; runId: string }
+      | undefined;
+    return r ? { open: r.open === 1, runId: r.runId } : null;
+  },
+  openByKey(db, chatId, dedupeKey) {
+    const r = db
+      .prepare("SELECT need_id AS id FROM view_needs WHERE open = 1 AND chat_id = ? AND dedupe_key = ?")
+      .get(chatId, dedupeKey) as { id: string } | undefined;
+    return r?.id ?? null;
+  },
+  openForRun(db, runId) {
+    return (
+      db.prepare("SELECT need_id AS id FROM view_needs WHERE open = 1 AND run_id = ?").all(runId) as {
+        id: string;
+      }[]
+    ).map((r) => r.id);
   },
   open(db, chatId) {
     const sql = `SELECT need_id AS needId, chat_id AS chatId, run_id AS runId, project_id AS projectId, kind, summary,

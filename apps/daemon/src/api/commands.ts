@@ -1,5 +1,6 @@
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
+import type { NeedsService } from "../needs/index.js";
 import type { RunManager } from "../runs/manager.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -11,14 +12,15 @@ export { UserError } from "./errors.js";
 export type Ctx = {
   store: EventStore;
   db: Db;
+  needs: NeedsService;
   runs: RunManager;
   configFile: string;
   startedAt: number;
   version: string;
 };
 
-/** Commands whose services arrive later in Plan 03 (needs: Task 3, archive: Task 4). */
-type PendingCommand = "need.resolve" | "chat.archive";
+/** Commands whose services arrive later in Plan 03 (archive: Task 4). */
+type PendingCommand = "chat.archive";
 
 type Handlers = {
   [C in Exclude<Command, "events.subscribe" | PendingCommand>]: (
@@ -30,6 +32,13 @@ type Handlers = {
 export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
+  "need.resolve": (a, ctx) => {
+    const decision = a.decision;
+    if (decision !== "allow" && decision !== "allow_always" && decision !== "deny")
+      throw new UserError("Answer allow or deny");
+    ctx.needs.resolve(String(a.needId ?? ""), decision, "you");
+    return { ok: true as const };
+  },
   ask: (a, ctx) => {
     if (typeof a.text !== "string" || !a.text.trim()) throw new UserError("Say what to do");
     return ctx.runs.ask(a);

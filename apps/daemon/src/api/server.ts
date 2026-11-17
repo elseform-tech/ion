@@ -8,6 +8,7 @@ import { runsView } from "../views/runs.js";
 import { createAuth } from "./auth.js";
 import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
+import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 
 export const VERSION = "0.0.0";
@@ -25,6 +26,7 @@ export async function startServer(opts: {
   const ctx: Ctx = {
     store,
     db,
+    needs: new NeedsService(store, db),
     runs: new RunManager(store, { configFile: opts.configFile }),
     configFile: opts.configFile,
     startedAt: Date.now(),
