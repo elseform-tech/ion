@@ -4,6 +4,7 @@
 |---|---|
 | [design/ion-design-lab.html](design/ion-design-lab.html) | The product spec: screens, design system, architecture, engineering, CLI (canvas v34). Open in a browser. |
 | [architecture/contract.md](architecture/contract.md) | Event envelope and types, adapter interface, retries, import walls. |
+| [research/acp-and-harnesses.md](research/acp-and-harnesses.md) | ACP protocol, how each coding agent is launched and signed in, quota policy for tests. |
 | [../AGENTS.md](../AGENTS.md) | How to work in this repo: layout, walls, rules. |
 
 ## Plans
