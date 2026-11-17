@@ -1,3 +1,5 @@
+import { forgetMemory } from "../memory/index.js";
+import { memoryView } from "../views/memory.js";
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
 import type { NeedsService } from "../needs/index.js";
@@ -29,6 +31,11 @@ type Handlers = {
 export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
+  "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
+  "memory.forget": (a, ctx) => {
+    forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
+    return { ok: true as const };
+  },
   "chat.archive": async (a, ctx) => {
     await ctx.runs.archive(String(a.chatId ?? ""));
     return { ok: true as const };

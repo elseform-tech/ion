@@ -47,6 +47,8 @@
     "needs.list",
     "need.resolve",
     "chats.list",
-    "chat.archive"
+    "chat.archive",
+    "memory.list",
+    "memory.forget"
   ]
 }

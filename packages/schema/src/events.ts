@@ -108,6 +108,14 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   }),
   /** What you asked: the text of an ask, stored before its run is queued. */
   "message.sent": z.object({ text: z.string() }),
+  /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
+  "memory.written": z.object({
+    memoryId: z.string(),
+    scope: z.union([z.literal("you"), z.object({ projectId: z.string() })]),
+    text: z.string().min(1).max(2000),
+    source: z.union([z.literal("you"), z.object({ chatId: z.string(), runId: z.string() })]),
+  }),
+  "memory.forgotten": z.object({ memoryId: z.string() }),
   "need.raised": z.object({
     needId: z.string(),
     requestId: z.string(),

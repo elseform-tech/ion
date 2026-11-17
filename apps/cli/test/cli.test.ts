@@ -160,7 +160,9 @@ describe("ion cli", { timeout: 20_000 }, () => {
   // Golden: the CLI is a public interface; help text and messages change only on purpose.
   it("help output", async () => {
     const help = await Promise.all(
-      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"]].map((a) => ion(...a, "--help")),
+      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"], ["memory"]].map((a) =>
+        ion(...a, "--help"),
+      ),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
   });
@@ -208,6 +210,12 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(r.out).toContain("Tests pass.");
       expect(await ion("needs", "deny", id!)).toMatchObject({ code: 1, err: "That's already answered" });
       expect((await ion("needs")).out).toBe("Nothing needs you");
+    });
+
+    it("lists memory and says so for one it doesn't know", async () => {
+      await setup();
+      expect((await ion("memory", "ls", "-p", "app")).out).toBe("No memory");
+      expect(await ion("memory", "forget", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
     });
 
     it("lists chats and archives one", async () => {

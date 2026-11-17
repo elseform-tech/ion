@@ -11,6 +11,7 @@ Commands:
   ask [options] <text>  Ask a coding agent to do something in a project
   needs                 What's waiting on you
   chats                 Your chats
+  memory                What ion remembers
   help [command]        display help for command
 
 ---
@@ -81,3 +82,17 @@ Options:
 
 Commands:
   archive <id>  Archive a chat; its branch stays
+
+---
+
+Usage: ion memory [options] [command]
+
+What ion remembers
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  ls [options]    List it
+  forget <id>     Forget it
+  help [command]  display help for command
