@@ -1,17 +1,12 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import {
-  type ApiError,
-  type IonEvent,
-  type Push,
-  type Reply,
-  type Request,
-  UNAUTHORIZED_CLOSE,
-} from "@ion/schema";
+import { type ApiError, type IonEvent, type Push, type Reply, type Request } from "@ion/schema";
+import type { IncomingMessage } from "node:http";
 import { WebSocketServer } from "ws";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
+import { readBacklog } from "./backlog.js";
 import { type Ctx, handlers, UserError } from "./commands.js";
 
 export const VERSION = "0.0.0";
@@ -39,16 +34,22 @@ export async function startServer(opts: {
   const wss = new WebSocketServer({
     host: "127.0.0.1",
     port: opts.port ?? 0,
+    maxPayload: 1024 * 1024,
+    // Refuse at the handshake, so unauthenticated peers never reach frame parsing.
+    verifyClient: (info: { req: IncomingMessage }) =>
+      authorized(
+        String(info.req.headers["sec-websocket-protocol"] ?? "")
+          .split(",")
+          .map((p) => p.trim()),
+      ),
     handleProtocols: (protocols) => (protocols.has("ion") ? "ion" : false),
   });
+  wss.on("error", () => {});
   await new Promise<void>((r) => wss.once("listening", r));
 
-  wss.on("connection", (ws, req) => {
-    const offered = String(req.headers["sec-websocket-protocol"] ?? "")
-      .split(",")
-      .map((p) => p.trim());
-    if (!authorized(offered)) return ws.close(UNAUTHORIZED_CLOSE, "Unauthorized");
-
+  wss.on("connection", (ws) => {
+    // A bad frame or oversized message is that socket's problem, never the daemon's.
+    ws.on("error", () => ws.terminate());
     const offs: (() => void)[] = [];
     let subN = 0;
     const send = (m: Reply | Push) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m));
@@ -73,7 +74,7 @@ export async function startServer(opts: {
         const off = store.onAppend((e) => (replaying ? live.push(e) : match(e) && send({ sub, event: e })));
         let backlog: IonEvent[];
         try {
-          backlog = store.read({ chatId: q.chatId, afterId: q.afterId });
+          backlog = readBacklog(store, q);
         } catch (e) {
           off();
           return fail(req.id, "invalid", (e as Error).message);

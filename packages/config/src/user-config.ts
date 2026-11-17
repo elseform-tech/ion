@@ -11,9 +11,10 @@ const Project = z.object({
   starred: z.boolean().default(false),
 });
 
-const UserConfigSchema = z.object({
+// Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
+const UserConfigSchema = z.looseObject({
   ion: z
-    .object({
+    .looseObject({
       quick: z.string().default("claude-code:Haiku 5.5"),
       deep: z.string().default("claude-code:Opus 5.5"),
       deepEffort: Effort.default("high"),

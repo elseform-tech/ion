@@ -1,36 +1,22 @@
-import { closeSync, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { ionPaths } from "@ion/config";
 import { startServer } from "./api/server.js";
+import { acquireDaemonLock } from "./store/index.js";
 
 export { startServer, VERSION } from "./api/server.js";
-
-const isAlive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 async function main() {
   const { dataDir, configFile } = ionPaths();
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  const infoFile = join(dataDir, "daemon.json");
-  const lock = join(dataDir, "daemon.lock");
-  // One daemon per data dir: the lock file holds the owner's pid; a dead owner's lock is taken over.
-  try {
-    writeFileSync(lock, String(process.pid), { flag: "wx" });
-  } catch {
-    const { readFileSync } = await import("node:fs");
-    const owner = Number(readFileSync(lock, "utf8"));
-    if (owner && owner !== process.pid && isAlive(owner)) {
-      console.log("Already running");
-      process.exit(0);
-    }
-    writeFileSync(lock, String(process.pid));
+  // One daemon per data folder; the OS releases this lock if the process dies.
+  const lock = acquireDaemonLock(dataDir);
+  if (!lock) {
+    console.log("Already running");
+    process.exit(0);
   }
+  const infoFile = join(dataDir, "daemon.json");
   const srv = await startServer({ dataDir, configFile });
   // Never follow a planted file or symlink: remove it, then create exclusively with 0600.
   rmSync(infoFile, { force: true });
@@ -39,12 +25,13 @@ async function main() {
   closeSync(fd);
   const stop = async () => {
     rmSync(infoFile, { force: true });
-    rmSync(lock, { force: true });
     await srv.close();
+    lock.release();
     process.exit(0);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) void main();
+const entry = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : "";
+if (import.meta.url === entry) void main();

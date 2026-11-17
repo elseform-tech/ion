@@ -96,6 +96,49 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect(lstatSync(join(home, "data", "daemon.json")).isSymbolicLink()).toBe(false);
   });
 
+  const DAEMON_MAIN = fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url));
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Regression (final review C2): two daemons could run on one data folder.
+  it("runs only one daemon when two start at the same moment", async () => {
+    const env = { ...process.env, ION_HOME: home };
+    const a = spawn("node", [DAEMON_MAIN], { env, stdio: "ignore" });
+    const b = spawn("node", [DAEMON_MAIN], { env, stdio: "ignore" });
+    await new Promise((r) => setTimeout(r, 1500));
+    const live = [a.pid!, b.pid!].filter(alive);
+    expect(live).toHaveLength(1);
+    expect((await ion("status")).code).toBe(0);
+  });
+
+  // Regression (final review C3): stop used to kill whatever process reused the daemon's old pid.
+  it("never stops a process that isn't ion", async () => {
+    const other = spawn("sleep", ["30"], { stdio: "ignore" });
+    mkdirSync(join(home, "data"), { recursive: true });
+    writeFileSync(join(home, "data", "daemon.json"), JSON.stringify({ pid: other.pid, port: 1, token: "x" }));
+    expect((await ion("daemon", "stop")).out).toBe("Not running");
+    expect(alive(other.pid!)).toBe(true);
+    other.kill();
+  });
+
+  // Regression (final review I1): a reused pid used to block start forever.
+  it("starts even when daemon.json names a live process that isn't ion", async () => {
+    const other = spawn("sleep", ["30"], { stdio: "ignore" });
+    mkdirSync(join(home, "data"), { recursive: true });
+    writeFileSync(join(home, "data", "daemon.json"), JSON.stringify({ pid: other.pid, port: 1, token: "x" }));
+    writeFileSync(join(home, "data", "daemon.lock"), String(other.pid));
+    expect((await ion("daemon", "start")).out).toBe("Started");
+    expect((await ion("status")).code).toBe(0);
+    expect(alive(other.pid!)).toBe(true);
+    other.kill();
+  });
+
   it("stops and removes daemon.json", async () => {
     await ion("daemon", "start");
     expect((await ion("daemon", "stop")).out).toBe("Stopped");

@@ -17,21 +17,22 @@ const isAlive = (pid: number) => {
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** A connected client when the daemon is up and answers within 1 s, else null. */
+/**
+ * A connected client when ion is up: daemon.json's pid is alive, the token works, and the daemon reports
+ * that same pid. A reused pid or an unrelated process never passes.
+ */
 export async function reach(dataDir: string): Promise<{ client: IonClient; info: DaemonInfo } | null> {
   const info = readDaemonInfo(dataDir);
   if (!info || !isAlive(info.pid)) return null;
+  const timeout = () => sleep(1000).then(() => Promise.reject(new Error("timeout")));
+  let client: IonClient | undefined;
   try {
-    const client = await Promise.race([
-      connect(info),
-      sleep(1000).then(() => Promise.reject(new Error("timeout"))),
-    ]);
-    await Promise.race([
-      client.call("status", {}),
-      sleep(1000).then(() => Promise.reject(new Error("timeout"))),
-    ]);
+    client = await Promise.race([connect(info), timeout()]);
+    const s = await Promise.race([client.call("status", {}), timeout()]);
+    if (s.pid !== info.pid) throw new Error("pid mismatch");
     return { client, info };
   } catch {
+    client?.close();
     return null;
   }
 }
@@ -42,7 +43,7 @@ export async function startDaemon(dataDir: string): Promise<"started" | "already
     up.client.close();
     return "already";
   }
-  rmSync(join(dataDir, "daemon.json"), { force: true });
+  // Leave daemon.json alone: the new daemon replaces it once it holds the lock.
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const log = openSync(join(dataDir, "daemon.log"), "a");
   const child = spawn(process.execPath, [DAEMON], {
@@ -62,15 +63,19 @@ export async function startDaemon(dataDir: string): Promise<"started" | "already
   return "failed";
 }
 
+/** Signals only a daemon that proved it is ion (see reach); anything else counts as not running. */
 export async function stopDaemon(dataDir: string): Promise<"stopped" | "not-running"> {
-  const info = readDaemonInfo(dataDir);
-  if (!info || !isAlive(info.pid)) {
-    rmSync(join(dataDir, "daemon.json"), { force: true });
+  const up = await reach(dataDir);
+  if (!up) {
+    const info = readDaemonInfo(dataDir);
+    if (info && !isAlive(info.pid)) rmSync(join(dataDir, "daemon.json"), { force: true });
     return "not-running";
   }
-  process.kill(info.pid, "SIGTERM");
-  for (let i = 0; i < 50 && isAlive(info.pid); i++) await sleep(100);
-  if (isAlive(info.pid)) process.kill(info.pid, "SIGKILL");
+  const { pid } = up.info;
+  up.client.close();
+  process.kill(pid, "SIGTERM");
+  for (let i = 0; i < 50 && isAlive(pid); i++) await sleep(100);
+  if (isAlive(pid)) process.kill(pid, "SIGKILL");
   rmSync(join(dataDir, "daemon.json"), { force: true });
   return "stopped";
 }

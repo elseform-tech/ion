@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { connect as tcp } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
@@ -28,16 +29,39 @@ describe("daemon api", () => {
     await srv.close();
   });
 
-  const closeCode = (ws: WebSocket) => new Promise<number>((r) => ws.on("close", (c) => r(c)));
+  const refused = (ws: WebSocket) =>
+    new Promise<number>((r) => ws.on("unexpected-response", (_req, res) => r(res.statusCode ?? 0)));
 
-  it("closes connections with a wrong token using 4401", async () => {
-    expect(await closeCode(new WebSocket(`ws://127.0.0.1:${srv.port}/`, ["ion", "ion.token.wrong"]))).toBe(
-      4401,
-    );
+  it("refuses a wrong token at the handshake", async () => {
+    expect(await refused(new WebSocket(`ws://127.0.0.1:${srv.port}/`, ["ion", "ion.token.wrong"]))).toBe(401);
   });
 
   it("doesn't accept the token in the URL", async () => {
-    expect(await closeCode(new WebSocket(`ws://127.0.0.1:${srv.port}/?token=${srv.token}`))).toBe(4401);
+    expect(await refused(new WebSocket(`ws://127.0.0.1:${srv.port}/?token=${srv.token}`))).toBe(401);
+  });
+
+  // Regression (final review C1): a malformed frame used to crash the daemon.
+  it("survives a malformed frame from an authenticated socket", async () => {
+    const sock = tcp(srv.port, "127.0.0.1");
+    await new Promise((r) => sock.once("connect", r));
+    sock.write(
+      "GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n" +
+        `Sec-WebSocket-Protocol: ion, ion.token.${srv.token}\r\n\r\n`,
+    );
+    await new Promise((r) => sock.once("data", r));
+    sock.write(Buffer.from([0x83, 0x80, 1, 2, 3, 4])); // reserved opcode
+    await new Promise((r) => setTimeout(r, 100));
+    sock.destroy();
+    expect(await client.call("status", {})).toMatchObject({ projects: 0 });
+  });
+
+  it("closes sockets that send oversized messages", async () => {
+    const big = await connect({ port: srv.port, token: srv.token });
+    await expect(big.call("projects.add", { path: "x".repeat(2 * 1024 * 1024) })).rejects.toThrow(
+      "Connection closed",
+    );
+    expect(await client.call("status", {})).toMatchObject({ projects: 0 });
   });
 
   it("tightens a data folder that already existed with loose permissions", async () => {

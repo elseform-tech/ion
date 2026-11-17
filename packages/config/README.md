@@ -22,3 +22,5 @@ id = "storefront"
 path = "/Users/me/code/storefront"
 starred = true
 ```
+
+Saving keeps keys ion doesn't know about, but not comments.

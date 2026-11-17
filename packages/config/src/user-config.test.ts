@@ -54,6 +54,18 @@ describe("loadUserConfig", () => {
     expect(statSync(join(f, "..")).mode & 0o777).toBe(0o700);
   });
 
+  // Regression (final review I3): saving used to erase keys this version doesn't know.
+  it("keeps keys it doesn't know when saving", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(f, '[ion]\nfutureKnob = "on"\n\n[notifications]\nbriefing = "08:30"\n');
+    const { config } = loadUserConfig(f);
+    saveUserConfig(f, { ...config, projects: [{ id: "api", path: "/code/api", starred: false }] });
+    const text = readFileSync(f, "utf8");
+    expect(text).toContain('futureKnob = "on"');
+    expect(text).toContain('briefing = "08:30"');
+    expect(text).toContain("[[projects]]");
+  });
+
   it("round-trips through saveUserConfig", () => {
     const f = join(tmp(), "nested", "config.toml");
     const c = { ...DEFAULT_CONFIG, projects: [{ id: "api", path: "/code/api", starred: true }] };
