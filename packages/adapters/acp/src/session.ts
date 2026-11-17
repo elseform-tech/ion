@@ -105,7 +105,7 @@ export async function answerPermission(
   decide: StartOpts["decide"],
   emit: (e: AdapterEvent) => void,
 ): Promise<{ outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" } }> {
-  const tool = (p.toolCall ?? {}) as { toolCallId?: string; title?: string; kind?: string };
+  const tool = (p.toolCall ?? {}) as AcpToolCall;
   const toolId = String(tool.toolCallId ?? "");
   const requestId = `${toolId}:${randomUUID().slice(0, 8)}`;
   const summary = String(tool.title ?? "A tool");
@@ -117,11 +117,31 @@ export async function answerPermission(
     toolName: String(tool.kind ?? "tool"),
     kind,
     summary,
-    input: {},
+    input: inputOf(tool),
   });
   const options = (p.options ?? []) as Option[];
   const chosen = ACCEPT[decision].map((k) => options.find((o) => o.kind === k)).find(Boolean);
   return chosen
     ? { outcome: { outcome: "selected", optionId: chosen.optionId } }
     : { outcome: { outcome: "cancelled" } };
+}
+
+type AcpToolCall = {
+  toolCallId?: string;
+  title?: string;
+  kind?: string;
+  locations?: { path?: unknown }[];
+  rawInput?: unknown;
+};
+
+/** What the daemon's policy needs: the agent's raw input plus every path in `locations`. */
+function inputOf(tool: AcpToolCall): Record<string, unknown> {
+  const raw =
+    typeof tool.rawInput === "object" && tool.rawInput !== null
+      ? (tool.rawInput as Record<string, unknown>)
+      : {};
+  const locations = (tool.locations ?? [])
+    .map((l) => l.path)
+    .filter((p): p is string => typeof p === "string");
+  return { ...raw, locations };
 }

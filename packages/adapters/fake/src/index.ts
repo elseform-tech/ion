@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import {
   type AdapterEvent,
   createEventQueue,
@@ -52,7 +53,14 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     ask: (toolId, summary) => {
       const requestId = `q${++n}`;
       queue.push({ type: EV.approvalRequested, data: { requestId, toolId, kind: "edit", summary } });
-      return start.decide({ requestId, toolId, toolName: "Write", kind: "edit", summary, input: {} });
+      return start.decide({
+        requestId,
+        toolId,
+        toolName: "Write",
+        kind: "edit",
+        summary,
+        input: { file_path: join(start.cwd, "notes.md") },
+      });
     },
     wait: async (ms) => {
       await sleep(ms);

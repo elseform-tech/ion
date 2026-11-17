@@ -90,4 +90,27 @@ describe("acp adapter", () => {
       outcome: { outcome: "selected", optionId: "reject_always" },
     });
   });
+
+  it("passes the agent's locations to the policy", async () => {
+    const { answerPermission } = await import("./session.js");
+    let seen: Record<string, unknown> = {};
+    const p = {
+      toolCall: {
+        toolCallId: "t",
+        kind: "edit",
+        locations: [{ path: "/repo/a.ts" }],
+        rawInput: { file_path: "/repo/a.ts" },
+      },
+      options: [],
+    };
+    await answerPermission(
+      p,
+      async (r) => {
+        seen = r.input;
+        return "deny";
+      },
+      () => {},
+    );
+    expect(seen).toEqual({ file_path: "/repo/a.ts", locations: ["/repo/a.ts"] });
+  });
 });

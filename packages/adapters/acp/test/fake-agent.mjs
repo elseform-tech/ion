@@ -31,7 +31,12 @@ async function prompt(id, { sessionId, prompt: blocks }) {
     });
     const res = await ask("session/request_permission", {
       sessionId,
-      toolCall: { toolCallId: "t1", title: "Write notes.md", kind: "edit" },
+      toolCall: {
+        toolCallId: "t1",
+        title: "Write notes.md",
+        kind: "edit",
+        locations: [{ path: `${cwd}/notes.md` }],
+      },
       options: [
         { optionId: "yes", name: "Allow", kind: "allow_once" },
         { optionId: "always", name: "Always", kind: "allow_always" },
