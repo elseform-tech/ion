@@ -16,7 +16,7 @@ const isAlive = (pid: number) => {
 
 async function main() {
   const { dataDir, configFile } = ionPaths();
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const infoFile = join(dataDir, "daemon.json");
   const lock = join(dataDir, "daemon.lock");
   // One daemon per data dir: the lock file holds the owner's pid; a dead owner's lock is taken over.

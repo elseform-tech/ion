@@ -21,7 +21,7 @@ export async function startServer(opts: {
   configFile: string;
   port?: number;
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
-  mkdirSync(opts.dataDir, { recursive: true });
+  mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   const db = openDb(join(opts.dataDir, "ion.db"));
   const store = new EventStore(db, allViews);
   const ctx: Ctx = { store, configFile: opts.configFile, startedAt: Date.now(), version: VERSION };

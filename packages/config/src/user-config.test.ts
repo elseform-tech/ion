@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -47,6 +47,13 @@ describe("loadUserConfig", () => {
     writeFileSync(f, '[ion]\nuseDeep = "never"\n');
     expect(loadUserConfig(f).config.ion).toEqual({ ...DEFAULT_CONFIG.ion, useDeep: "never" });
   });
+  it("saves the file readable only by you, in a private folder", () => {
+    const f = join(tmp(), "new-dir", "config.toml");
+    saveUserConfig(f, DEFAULT_CONFIG);
+    expect(statSync(f).mode & 0o777).toBe(0o600);
+    expect(statSync(join(f, "..")).mode & 0o777).toBe(0o700);
+  });
+
   it("round-trips through saveUserConfig", () => {
     const f = join(tmp(), "nested", "config.toml");
     const c = { ...DEFAULT_CONFIG, projects: [{ id: "api", path: "/code/api", starred: true }] };

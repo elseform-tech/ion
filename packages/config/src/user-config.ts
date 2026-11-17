@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
@@ -54,8 +54,9 @@ export function loadUserConfig(file: string): { config: UserConfig; error: strin
 
 /** Writes the config atomically (temp file, then rename). */
 export function saveUserConfig(file: string, c: UserConfig): void {
-  mkdirSync(dirname(file), { recursive: true });
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, stringify(UserConfigSchema.parse(c)));
+  writeFileSync(tmp, stringify(UserConfigSchema.parse(c)), { mode: 0o600 });
   renameSync(tmp, file);
+  chmodSync(file, 0o600);
 }

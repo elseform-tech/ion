@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
@@ -32,6 +32,10 @@ describe("daemon api", () => {
     const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/?token=wrong`);
     const code = await new Promise<number>((r) => ws.on("close", (c) => r(c)));
     expect(code).toBe(4401);
+  });
+
+  it("keeps its data folder private", () => {
+    expect(statSync(join(home, "data")).mode & 0o777).toBe(0o700);
   });
 
   it("reports status", async () => {
