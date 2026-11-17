@@ -69,6 +69,21 @@ function failureOf(e: Error): Failure {
   return { code: "agent", retryable: false, message: e.message };
 }
 
+function startedEvent(
+  run: { harness: string; model: string },
+  opts: StartOpts,
+  sessionId: string,
+): AdapterEvent {
+  const data = {
+    harness: run.harness,
+    model: run.model,
+    effort: opts.effort,
+    authMethod: "Signed in",
+    sessionId,
+  };
+  return { type: EV.runStarted, data };
+}
+
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
@@ -117,10 +132,7 @@ export function startAcpSession(
     id: randomUUID(),
     nativeId: c.sessionId,
     async send({ text: t }) {
-      emit({
-        type: EV.runStarted,
-        data: { harness: run.harness, model: run.model, effort: opts.effort, authMethod: "Signed in" },
-      });
+      emit(startedEvent(run, opts, c.sessionId));
       c.rpc
         .request("session/prompt", { sessionId: c.sessionId, prompt: [{ type: "text", text: t }] })
         .then((r) => {

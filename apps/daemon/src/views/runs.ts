@@ -16,6 +16,8 @@ const ended = new Set<string>(RUN_END_STATUSES);
 /** One row per run: its latest status. */
 export const runsView: View & { rows(db: Db): RunRow[] } = {
   name: "runs",
+  version: 1,
+  tables: ["view_runs"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_runs (
       run_id TEXT PRIMARY KEY, chat_id TEXT, status TEXT NOT NULL,

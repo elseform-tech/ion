@@ -72,13 +72,23 @@ describe("RunManager", () => {
   it("creates a chat with its own worktree and stores the run's events in order", async () => {
     const { chatId, runId } = await ask("hello");
     const types = (await finished(runId)).map((e) => e.type);
-    expect(types.slice(0, 2)).toEqual(["run.queued", "run.started"]);
+    expect(types.slice(0, 3)).toEqual(["message.sent", "run.queued", "run.started"]);
     expect(types.at(-1)).toBe("run.finished");
     expect(store.read({ chatId })[0]).toMatchObject({
       type: "chat.created",
       data: { worktree: expect.any(String) },
     });
     expect(existsSync(join(chatsView.worktree(db, chatId)!, "README.md"))).toBe(true);
+  });
+
+  it("stores what you asked, and the harness session of each run", async () => {
+    const { chatId, runId } = await ask("hello there");
+    const events = await finished(runId);
+    expect(events[0]).toMatchObject({ type: "message.sent", data: { text: "hello there" } });
+    expect(chatsView.session(db, chatId)).toEqual({
+      harness: "fake",
+      sessionId: expect.stringMatching(/^fake-/),
+    });
   });
 
   it("allows an edit inside the chat's worktree without asking; the file lands there, not in the checkout", async () => {
@@ -158,10 +168,10 @@ describe("RunManager", () => {
     limitTo(1);
     const a = await ask("slow");
     const b = await ask("hello");
-    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["run.queued"]);
+    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["message.sent", "run.queued"]);
     await runs.interrupt(a.runId);
     const types = (await finished(b.runId)).map((e) => e.type);
-    expect(types.slice(0, 2)).toEqual(["run.queued", "run.started"]);
+    expect(types.slice(0, 3)).toEqual(["message.sent", "run.queued", "run.started"]);
   });
 
   it("interrupting a queued run finishes it without starting the harness", async () => {
@@ -169,7 +179,11 @@ describe("RunManager", () => {
     const a = await ask("slow");
     const b = await ask("hello");
     await runs.interrupt(b.runId);
-    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["run.queued", "run.finished"]);
+    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual([
+      "message.sent",
+      "run.queued",
+      "run.finished",
+    ]);
     expect(store.read({ runId: b.runId }).at(-1)?.data).toEqual({ status: "interrupted" });
     await runs.interrupt(a.runId);
     await finished(a.runId);

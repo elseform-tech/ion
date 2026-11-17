@@ -63,6 +63,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
   let n = 0;
   const tries = (triesByCwd.get(start.cwd) ?? 0) + 1;
   triesByCwd.set(start.cwd, tries);
+  const nativeId = start.resume ?? `fake-${randomUUID()}`;
   const script: Script = {
     emit: (e) => queue.push(e),
     ask: (toolId, summary, req) => {
@@ -80,13 +81,19 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
   };
   return {
     id: randomUUID(),
-    nativeId: null,
+    nativeId,
     async send({ text }) {
       const name = text.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
       queue.push({
         type: EV.runStarted,
-        data: { harness: "fake", model: start.model ?? "fake", effort: start.effort, authMethod: "Fake" },
+        data: {
+          harness: "fake",
+          model: start.model ?? "fake",
+          effort: start.effort,
+          authMethod: "Fake",
+          sessionId: nativeId,
+        },
       });
       void (async () => {
         if (delayMs) await sleep(delayMs);

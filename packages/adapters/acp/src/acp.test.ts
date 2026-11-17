@@ -53,7 +53,10 @@ describe("acp adapter", () => {
     await s.send({ text: "hello" });
     const events = [];
     for await (const e of s.events()) events.push(e);
-    expect(events[0]).toMatchObject({ type: "run.started", data: { harness: "fake-acp", model: "fake-1" } });
+    expect(events[0]).toMatchObject({
+      type: "run.started",
+      data: { harness: "fake-acp", model: "fake-1", sessionId: expect.any(String) },
+    });
     expect(
       events
         .filter((e) => e.type === "message.delta")

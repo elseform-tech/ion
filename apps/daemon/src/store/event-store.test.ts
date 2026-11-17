@@ -124,3 +124,40 @@ describe("EventStore", () => {
     expect(seen).toEqual([a.id]);
   });
 });
+
+// An existing database from an older ion has view tables with older columns.
+describe("view versions", () => {
+  const view = (version: number, columns: string) => ({
+    name: "demo",
+    version,
+    tables: ["view_demo"],
+    migrate: (db: Db) => db.exec(`CREATE TABLE IF NOT EXISTS view_demo (${columns})`),
+    reset: (db: Db) => db.exec("DELETE FROM view_demo"),
+    apply: (db: Db, e: { chatId: string | null }) => {
+      if (version === 2) db.prepare("INSERT INTO view_demo (chat_id, extra) VALUES (?, 'x')").run(e.chatId);
+      else db.prepare("INSERT INTO view_demo (chat_id) VALUES (?)").run(e.chatId);
+    },
+  });
+
+  it("rebuilds a view whose version changed, from the log", () => {
+    const db = openDb(":memory:");
+    const old = new EventStore(db, [view(1, "chat_id TEXT")]);
+    old.append({ chatId: "c1", runId: null, origin: "daemon", type: "chat.archived", data: {} } as NewEvent);
+    expect(new EventStore(db, [view(2, "chat_id TEXT, extra TEXT")])).toBeInstanceOf(EventStore);
+    expect(db.prepare("SELECT chat_id, extra FROM view_demo").all()).toEqual([{ chat_id: "c1", extra: "x" }]);
+  });
+
+  it("leaves a view alone when its version is the same", () => {
+    const db = openDb(":memory:");
+    new EventStore(db, [view(1, "chat_id TEXT")]).append({
+      chatId: "c1",
+      runId: null,
+      origin: "daemon",
+      type: "chat.archived",
+      data: {},
+    } as NewEvent);
+    db.exec("INSERT INTO view_demo (chat_id) VALUES ('kept')");
+    expect(new EventStore(db, [view(1, "chat_id TEXT")])).toBeInstanceOf(EventStore);
+    expect(db.prepare("SELECT count(*) AS n FROM view_demo").get()).toEqual({ n: 2 });
+  });
+});

@@ -11,6 +11,8 @@ export const needsView: View & {
   openForRun(db: Db, runId: string): string[];
 } = {
   name: "needs",
+  version: 1,
+  tables: ["view_needs"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_needs (
       need_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, run_id TEXT NOT NULL, project_id TEXT,

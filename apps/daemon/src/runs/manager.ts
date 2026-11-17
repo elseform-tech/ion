@@ -63,6 +63,13 @@ export class RunManager {
       });
       if (!chat.chatId) this.createChat(chatId, chat, wt);
       launch = { h, args, chatId, runId: `run_${randomUUID()}`, cwd: wt.path };
+      this.store.append({
+        chatId,
+        runId: launch.runId,
+        origin: "daemon",
+        type: EV.messageSent,
+        data: { text: args.text },
+      });
       this.store.append({ chatId, runId: launch.runId, origin: "daemon", type: EV.runQueued, data: {} });
       const l = launch;
       this.queued.set(l.runId, { chatId, item: this.queue.enqueue(() => this.launch(l)) });

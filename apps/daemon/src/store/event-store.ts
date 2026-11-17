@@ -46,7 +46,7 @@ export class EventStore {
     private readonly db: Db,
     private readonly views: View[] = [],
   ) {
-    for (const v of views) v.migrate(db);
+    if (upgradeViews(db, views)) rebuildViews(db, views);
   }
 
   append(input: NewEvent & { id?: string; ts?: string }): IonEvent {
@@ -145,4 +145,23 @@ function rebuildViews(db: Db, views: View[]): void {
       for (const v of views) v.apply(db, e);
     }
   }).immediate();
+}
+
+/** Creates every view's tables; a view whose version changed is dropped first. True if any needs a rebuild. */
+function upgradeViews(db: Db, views: View[]): boolean {
+  db.exec("CREATE TABLE IF NOT EXISTS view_versions (name TEXT PRIMARY KEY, version INTEGER NOT NULL)");
+  let stale = false;
+  for (const v of views) {
+    const version = v.version ?? 1;
+    const row = db.prepare("SELECT version FROM view_versions WHERE name = ?").get(v.name) as
+      | { version: number }
+      | undefined;
+    if (row?.version !== version) {
+      for (const t of v.tables ?? []) db.exec(`DROP TABLE IF EXISTS "${t.replaceAll('"', "")}"`);
+      db.prepare("INSERT OR REPLACE INTO view_versions (name, version) VALUES (?, ?)").run(v.name, version);
+      stale = stale || row !== undefined || (v.tables ?? []).length > 0;
+    }
+    v.migrate(db);
+  }
+  return stale;
 }
