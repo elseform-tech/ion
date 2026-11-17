@@ -67,6 +67,19 @@ describe("daemon api", () => {
     ).rejects.toThrow("Answer allow or deny");
   });
 
+  it("serves ion's MCP server on the same port, only with a run's key", async () => {
+    const r = await fetch(`http://127.0.0.1:${srv.port}/mcp`, { method: "POST", body: "{}" });
+    expect(r.status).toBe(401);
+    expect((await fetch(`http://127.0.0.1:${srv.port}/other`)).status).toBe(404);
+    // The daemon's own token is not an MCP key.
+    const own = await fetch(`http://127.0.0.1:${srv.port}/mcp`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${srv.token}` },
+      body: "{}",
+    });
+    expect(own.status).toBe(401);
+  });
+
   it("closes sockets that send oversized messages", async () => {
     const big = await connect({ port: srv.port, token: srv.token });
     await expect(big.call("projects.add", { path: "x".repeat(2 * 1024 * 1024) })).rejects.toThrow(

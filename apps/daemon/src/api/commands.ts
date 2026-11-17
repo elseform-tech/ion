@@ -2,6 +2,7 @@ import { forgetMemory } from "../memory/index.js";
 import { memoryView } from "../views/memory.js";
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
+import type { Grants } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { RunManager } from "../runs/manager.js";
 import type { Db, EventStore } from "../store/index.js";
@@ -15,6 +16,7 @@ export type Ctx = {
   store: EventStore;
   db: Db;
   needs: NeedsService;
+  grants: Grants;
   runs: RunManager;
   configFile: string;
   startedAt: number;
