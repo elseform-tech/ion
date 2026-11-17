@@ -1,14 +1,15 @@
 Usage: ion [options] [command]
 
 Options:
-  --json          Machine-readable output
-  -h, --help      display help for command
+  --json                Machine-readable output
+  -h, --help            display help for command
 
 Commands:
-  daemon          Start, stop or check the ion service
-  status          Is ion running, and how many projects
-  projects        Your projects
-  help [command]  display help for command
+  daemon                Start, stop or check the ion service
+  status                Is ion running, and how many projects
+  projects              Your projects
+  ask [options] <text>  Ask a coding agent to do something in a project
+  help [command]        display help for command
 
 ---
 

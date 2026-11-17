@@ -19,8 +19,12 @@ let home: string;
 
 function ion(...args: string[]): Promise<{ code: number; out: string; err: string }> {
   return new Promise((resolve) => {
-    execFile("node", [BIN, ...args], { env: { ...process.env, ION_HOME: home } }, (e, out, err) =>
-      resolve({ code: e ? ((e as { code?: number }).code ?? 1) : 0, out: out.trim(), err: err.trim() }),
+    execFile(
+      "node",
+      [BIN, ...args],
+      { env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1" } },
+      (e, out, err) =>
+        resolve({ code: e ? ((e as { code?: number }).code ?? 1) : 0, out: out.trim(), err: err.trim() }),
     );
   });
 }
@@ -154,5 +158,58 @@ describe("ion cli", { timeout: 20_000 }, () => {
   it("help output", async () => {
     const help = await Promise.all([[], ["daemon"], ["projects"]].map((a) => ion(...a, "--help")));
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
+  });
+
+  describe("ion ask", () => {
+    const setup = async () => {
+      await ion("daemon", "start");
+      const p = repo("app");
+      await ion("projects", "add", p);
+      return p;
+    };
+    const stable = (s: string) => s.replace(/Done · \S+/, "Done · Ns");
+
+    it("streams a run and ends with Done", async () => {
+      await setup();
+      const r = await ion("ask", "hello", "-p", "app", "--harness", "fake");
+      expect(r.code).toBe(0);
+      await expect(`${stable(r.out)}\n`).toMatchFileSnapshot("../golden/ask-hello.txt");
+    });
+
+    it("shows a denied edit and exits 0", async () => {
+      await setup();
+      const r = await ion("ask", "approve", "-p", "app", "--harness", "fake");
+      expect(r.out).toContain("denied");
+      expect(r.code).toBe(0);
+    });
+
+    it("prints one JSON event per line with --json", async () => {
+      await setup();
+      const r = await ion("ask", "hello", "-p", "app", "--harness", "fake", "--json");
+      const events = r.out.split("\n").map((l) => JSON.parse(l));
+      expect(events[0].type).toBe("run.started");
+      expect(events.at(-1)).toMatchObject({ type: "run.finished", data: { status: "done" } });
+    });
+
+    it("explains an unknown project with exit 1", async () => {
+      await setup();
+      const r = await ion("ask", "hello", "-p", "nope", "--harness", "fake");
+      expect(r).toMatchObject({ code: 1, err: "Unknown project: nope" });
+    });
+
+    it("stops on Ctrl+C with exit 130", async () => {
+      await setup();
+      const child = spawn("node", [BIN, "ask", "slow", "-p", "app", "--harness", "fake"], {
+        env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1" },
+      });
+      let out = "";
+      child.stdout.on("data", (d) => {
+        out += d;
+        if (out.includes("sleep 30")) child.kill("SIGINT");
+      });
+      const code = await new Promise<number | null>((r) => child.on("exit", r));
+      expect(out).toContain("Stopped");
+      expect(code).toBe(130);
+    });
   });
 });
