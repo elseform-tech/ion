@@ -22,6 +22,7 @@ export const ADAPTER_EVENT_TYPES = [
 /** Emitted only by the daemon (the ion layer). */
 export const DAEMON_EVENT_TYPES = [
   "chat.created",
+  "chat.archived",
   "run.queued",
   "run.waiting",
   "run.retrying",
@@ -58,6 +59,7 @@ export const EV = {
   usageReported: "usage.reported",
   error: "error",
   chatCreated: "chat.created",
+  chatArchived: "chat.archived",
   runQueued: "run.queued",
   runWaiting: "run.waiting",
   runRetrying: "run.retrying",
@@ -96,7 +98,32 @@ const text = z.object({ text: z.string() });
 const count = z.number().int().min(0);
 
 export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
-  "chat.created": z.object({ title: z.string(), projectId: z.string().nullable() }),
+  "chat.created": z.object({
+    title: z.string(),
+    projectId: z.string().nullable(),
+    worktree: z.string().nullable().optional(),
+    branch: z.string().nullable().optional(),
+  }),
+  "need.raised": z.object({
+    needId: z.string(),
+    requestId: z.string(),
+    kind: z.string(),
+    summary: z.string(),
+    detail: z.string().nullable(),
+    dedupeKey: z.string(),
+  }),
+  "need.resolved": z.object({
+    needId: z.string(),
+    decision: z.enum([...DECISIONS, "superseded"]),
+    by: z.enum(["you", "ion", "daemon"]),
+  }),
+  "run.queued": z.object({}),
+  "run.retrying": z.object({
+    attempt: z.number().int().min(1),
+    delayS: z.number().min(0),
+    reason: z.string(),
+    effort: z.string().nullable(),
+  }),
   "run.started": z.object({
     harness: z.string(),
     model: z.string(),

@@ -24,6 +24,7 @@ export async function startServer(opts: {
   const store = new EventStore(db, allViews);
   const ctx: Ctx = {
     store,
+    db,
     runs: new RunManager(store, { configFile: opts.configFile }),
     configFile: opts.configFile,
     startedAt: Date.now(),
