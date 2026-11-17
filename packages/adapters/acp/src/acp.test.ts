@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ResumeFailed } from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { type AcpHarness, createAcpAdapter } from "./index.js";
@@ -156,6 +157,37 @@ describe("acp adapter", () => {
     for await (const e of s.events()) events.push(e);
     return events;
   };
+
+  const resumed = async (resume: string, caps?: string) => {
+    if (caps) process.env.FAKE_ACP_CAPS = caps;
+    try {
+      const s = await createAcpAdapter(fake, { which: () => process.execPath }).start({
+        cwd,
+        model: null,
+        effort: null,
+        resume,
+        signal: new AbortController().signal,
+        decide: async () => "deny",
+      });
+      await s.send({ text: "howopened" });
+      const out: string[] = [];
+      for await (const e of s.events())
+        if (e.type === "message.delta") out.push((e.data as { text: string }).text);
+      return out.join("");
+    } finally {
+      delete process.env.FAKE_ACP_CAPS;
+    }
+  };
+
+  it("continues a session with session/resume, else session/load without replaying it as new", async () => {
+    expect(await resumed("s-old")).toBe("s-old via session/resume");
+    expect(await resumed("s-old", "load")).toBe("s-old via session/load");
+  });
+
+  it("says so when a session can't be continued", async () => {
+    await expect(resumed("s-old", "none")).rejects.toBeInstanceOf(ResumeFailed);
+    await expect(resumed("gone")).rejects.toBeInstanceOf(ResumeFailed);
+  });
 
   it("passes the harness's env and session options, and reads token usage", async () => {
     const h = { ...fake, env: () => ({ FAKE_ACP_ENV: "ask" }), sessionMeta: { yoloMode: false } };

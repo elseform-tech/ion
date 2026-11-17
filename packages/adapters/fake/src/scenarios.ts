@@ -12,6 +12,8 @@ export type Script = {
   write(file: string, content: string): void;
   /** How many sessions have started in this working folder, this one included (retries are new sessions). */
   tries(): number;
+  /** The text this session was sent. */
+  text(): string;
   wait(ms: number): Promise<"ok" | "interrupted">;
 };
 
@@ -35,6 +37,11 @@ const transient = async (s: Script) => {
 };
 
 export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" | "interrupted">> = {
+  /** Says back exactly the text it was sent (to check what ion sends on a continued chat). */
+  async echo(s) {
+    say(s, s.text());
+    return "done";
+  },
   async hello(s) {
     say(s, "Hi from the fake harness.");
     return "done";

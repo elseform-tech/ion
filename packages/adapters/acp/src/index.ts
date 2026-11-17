@@ -56,7 +56,11 @@ export function createAcpAdapter(
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);
-      const c = await connect(h, path, opts.cwd, deps.startTimeoutMs);
+      const c = await connect(h, path, {
+        cwd: opts.cwd,
+        timeoutMs: deps.startTimeoutMs,
+        resume: opts.resume,
+      });
       const model =
         (await setOption(c, "model", opts.model ?? h.defaultModel)) ?? h.defaultModel ?? "default";
       await setOption(c, "thought_level", opts.effort === "max" ? "high" : opts.effort);

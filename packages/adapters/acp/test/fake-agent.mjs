@@ -15,6 +15,7 @@ const ask = (method, params) =>
 let cancel = null;
 const sessions = new Map();
 const metas = new Map();
+const opened = new Map();
 
 /** Prompts answered in one step: a refusal, a crash, RPC errors. */
 const QUICK = {
@@ -80,6 +81,13 @@ async function prompt(id, { sessionId, prompt: blocks }) {
   }
   const quick = QUICK[text.split(" ")[0]];
   if (quick) return quick(id);
+  if (text.startsWith("howopened")) {
+    update(sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: `${sessionId} via ${opened.get(sessionId) ?? "session/new"}` },
+    });
+    return send({ id, result: { stopReason: "end_turn" } });
+  }
   if (text.startsWith("whoami")) {
     update(sessionId, {
       sessionUpdate: "agent_message_chunk",
@@ -103,6 +111,33 @@ async function prompt(id, { sessionId, prompt: blocks }) {
   send({ id, result: { stopReason: "end_turn" } });
 }
 
+// FAKE_ACP_CAPS: "resume" (default: resume and load), "load" (load only) or "none".
+function initialize(m) {
+  const caps = process.env.FAKE_ACP_CAPS ?? "resume";
+  const agentCapabilities = {
+    loadSession: caps !== "none",
+    ...(caps === "resume" ? { sessionCapabilities: { resume: {} } } : {}),
+  };
+  send({
+    id: m.id,
+    result: { protocolVersion: 1, agentCapabilities, authMethods: [{ id: "login", name: "Login" }] },
+  });
+}
+
+function continueSession(m) {
+  const { sessionId, cwd } = m.params;
+  if (sessionId === "gone") return send({ id: m.id, error: { code: -32002, message: "Session not found" } });
+  sessions.set(sessionId, cwd);
+  opened.set(sessionId, m.method);
+  // session/load replays the old conversation before answering.
+  if (m.method === "session/load")
+    update(sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "OLD HISTORY" },
+    });
+  send({ id: m.id, result: { configOptions: [] } });
+}
+
 createInterface({ input: process.stdin }).on("line", (line) => {
   const m = JSON.parse(line);
   if (m.id !== undefined && waiting.has(m.id)) {
@@ -111,8 +146,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     return;
   }
   if (process.env.FAKE_ACP_HANG === "1") return; // never answers
-  if (m.method === "initialize")
-    return send({ id: m.id, result: { protocolVersion: 1, authMethods: [{ id: "login", name: "Login" }] } });
+  if (m.method === "initialize") return initialize(m);
+  if (m.method === "session/resume" || m.method === "session/load") return continueSession(m);
   if (m.method === "session/new") {
     if (process.env.FAKE_ACP_SIGNED_OUT === "1")
       return send({ id: m.id, error: { code: -32000, message: "Authentication required" } });

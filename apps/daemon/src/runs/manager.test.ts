@@ -274,6 +274,55 @@ describe("RunManager", () => {
     expect((await finished(again.runId)).at(-1)?.data).toEqual({ status: "done" });
   });
 
+  const said = (events: IonEvent[]) =>
+    events.filter((e) => e.type === "message.completed").map((e) => (e.data as { text: string }).text);
+  const sessionOf = (events: IonEvent[]) =>
+    events.filter((e) => e.type === "run.started").map((e) => (e.data as { sessionId: string }).sessionId);
+
+  it("continues a chat by resuming its session, sending just your message", async () => {
+    const first = await ask("echo one");
+    const a = await finished(first.runId);
+    const second = await ask("echo two", { chatId: first.chatId });
+    const b = await finished(second.runId);
+    expect(sessionOf(b)).toEqual(sessionOf(a));
+    expect(said(b)).toEqual(["echo two"]);
+  });
+
+  // Review Focus 1: a session the harness can't resume.
+  it("falls back to a new session with the chat's history when the session can't be resumed", async () => {
+    const first = await ask("echo one");
+    const a = await finished(first.runId);
+    process.env.ION_FAKE_RESUME_FAIL = "1";
+    try {
+      const second = await ask("echo two", { chatId: first.chatId });
+      const b = await finished(second.runId);
+      expect(sessionOf(b)).not.toEqual(sessionOf(a));
+      expect(said(b)[0]).toMatch(
+        /^<ion-data source="this chat's earlier messages">\nyou: echo one\nagent: echo one\n<\/ion-data>\n\necho two$/,
+      );
+      expect(b.some((e) => e.type === "error")).toBe(false);
+      expect(b.at(-1)?.data).toEqual({ status: "done" });
+    } finally {
+      delete process.env.ION_FAKE_RESUME_FAIL;
+    }
+  });
+
+  it("replays the history when the chat has no session to resume", async () => {
+    process.env.ION_FAKE_START_FAIL = "1";
+    const first = await ask("echo one");
+    await finished(first.runId);
+    delete process.env.ION_FAKE_START_FAIL;
+    const b = await finished((await ask("echo two", { chatId: first.chatId })).runId);
+    expect(said(b)[0]).toMatch(/you: echo one\n<\/ion-data>\n\necho two$/);
+  });
+
+  it("resumes the failed try's session when it retries", async () => {
+    const events = await finished((await ask("flaky")).runId);
+    const ids = sessionOf(events);
+    expect(ids).toHaveLength(3);
+    expect(new Set(ids).size).toBe(1);
+  });
+
   it("stores a failed run and keeps working", async () => {
     const { runId } = await ask("fail");
     expect((await finished(runId)).at(-1)?.data).toEqual({ status: "failed" });

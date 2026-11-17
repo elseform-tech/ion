@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ResumeFailed } from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { type FakeQueryCall, fakeQuery } from "../test/fake-query.js";
@@ -43,6 +44,30 @@ async function run(text: string, opts: { calls?: FakeQueryCall[]; exec?: Exec } 
 }
 
 describe("claude-code session", () => {
+  it("continues a session that exists, and says so when it's gone", async () => {
+    const calls: FakeQueryCall[] = [];
+    const known = (id: string) => Promise.resolve(id === "s-known");
+    const adapter = (sessionExists = known) =>
+      createClaudeCodeAdapter({
+        exec: signedIn,
+        which: () => "/bin/claude",
+        query: fakeQuery(calls) as never,
+        sessionExists,
+      });
+    const start = (resume: string) =>
+      adapter().start({
+        cwd,
+        model: null,
+        effort: null,
+        resume,
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+    await (await start("s-known")).close();
+    expect(calls.at(-1)?.options).toMatchObject({ resume: "s-known" });
+    await expect(start("s-gone")).rejects.toBeInstanceOf(ResumeFailed);
+  });
+
   it("loads no settings files, asks for every permission, and passes the project's CLAUDE.md as instructions", async () => {
     const calls: FakeQueryCall[] = [];
     const { writeFileSync } = await import("node:fs");

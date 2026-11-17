@@ -7,6 +7,7 @@ import {
   type HarnessAdapter,
   type Session,
   type StartOpts,
+  ResumeFailed,
 } from "@ion/adapter-kit";
 import { type Capabilities, EV } from "@ion/schema";
 import { SCENARIOS, type Script } from "./scenarios.js";
@@ -25,6 +26,8 @@ const CAPABILITIES: Capabilities = {
 };
 
 /** A scripted harness for tests: the prompt's first word picks a scenario (hello, edit, approve, fail, slow). */
+const HISTORY_END = "</ion-data>\n\n";
+
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
 
@@ -43,6 +46,7 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       // Test switches for the daemon's lifecycle tests: a slow or failing harness start.
       await new Promise((r) => setTimeout(r, Number(process.env.ION_FAKE_START_MS ?? 0)));
       if (process.env.ION_FAKE_START_FAIL) throw new Error("The fake harness didn't start");
+      if (start.resume && process.env.ION_FAKE_RESUME_FAIL) throw new ResumeFailed("No such session");
       return fakeSession(start, delayMs);
     },
   };
@@ -64,6 +68,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
   const tries = (triesByCwd.get(start.cwd) ?? 0) + 1;
   triesByCwd.set(start.cwd, tries);
   const nativeId = start.resume ?? `fake-${randomUUID()}`;
+  let sent = "";
   const script: Script = {
     emit: (e) => queue.push(e),
     ask: (toolId, summary, req) => {
@@ -74,6 +79,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     },
     write: (file, content) => writeFileSync(join(start.cwd, file), content),
     tries: () => tries,
+    text: () => sent,
     wait: async (ms) => {
       await sleep(ms);
       return interrupted ? "interrupted" : "ok";
@@ -83,8 +89,12 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     id: randomUUID(),
     nativeId,
     async send({ text }) {
-      const name = text.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+      // The scenario is the first word of your message, after any history ion put before it.
+      const end = text.lastIndexOf(HISTORY_END);
+      const own = end < 0 ? text : text.slice(end + HISTORY_END.length);
+      const name = own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
+      sent = text;
       queue.push({
         type: EV.runStarted,
         data: {

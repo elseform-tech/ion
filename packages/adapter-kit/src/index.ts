@@ -1,4 +1,5 @@
 export { createEventQueue, type EventQueue } from "./queue.js";
+export { ResumeFailed } from "./types.js";
 export type {
   AdapterEvent,
   ApprovalRequest,

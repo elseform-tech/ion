@@ -15,6 +15,9 @@ export type ApprovalRequest = {
 
 export type { Decision };
 
+/** The harness couldn't continue the session it was given (gone, expired): start a new one instead. */
+export class ResumeFailed extends Error {}
+
 export type StartOpts = {
   cwd: string;
   model: string | null;

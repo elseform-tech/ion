@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { availableParallelism } from "node:os";
-import { type ApprovalRequest, type Decision, projectRoots, type Session } from "@ion/adapter-kit";
+import {
+  type AdapterEvent,
+  type ApprovalRequest,
+  type Decision,
+  projectRoots,
+  ResumeFailed,
+  type Session,
+} from "@ion/adapter-kit";
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV, type IonEvent } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
@@ -9,6 +16,8 @@ import { needDetail, type NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
+import { type HistoryMessage, messagesView } from "../views/messages.js";
+import { HISTORY_CHARS, withHistory } from "./history.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import { decideByPolicy } from "./policy.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
@@ -16,7 +25,17 @@ import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.j
 type AskArgs = Commands["ask"]["args"];
 type Active = { chatId: string; session: Session };
 type Chat = { chatId: string | null; projectId: string | null; title: string };
-type Launch = { h: HarnessEntry; args: AskArgs; chatId: string; runId: string; cwd: string };
+type Launch = {
+  h: HarnessEntry;
+  args: AskArgs;
+  chatId: string;
+  runId: string;
+  cwd: string;
+  /** The chat's earlier messages, for a new session that can't resume the old one. */
+  history: HistoryMessage[];
+  /** The harness session to continue on this try, if any. */
+  resume?: string | null;
+};
 type Between = { chatId: string; interrupt: boolean; wake?: () => void };
 type TryEnd = { status: string; error: RunError | null };
 
@@ -62,7 +81,8 @@ export class RunManager {
         throw new UserError(e.message);
       });
       if (!chat.chatId) this.createChat(chatId, chat, wt);
-      launch = { h, args, chatId, runId: `run_${randomUUID()}`, cwd: wt.path };
+      const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
+      launch = { h, args, chatId, runId: `run_${randomUUID()}`, cwd: wt.path, history };
       this.store.append({
         chatId,
         runId: launch.runId,
@@ -92,7 +112,10 @@ export class RunManager {
       for (;;) {
         if (this.stopping) return;
         state.tries++;
-        const end = await this.tryOnce({ ...l, args: { ...l.args, effort: state.effort ?? undefined } }, b);
+        const end = await this.tryInContext(
+          { ...l, args: { ...l.args, effort: state.effort ?? undefined } },
+          b,
+        );
         const retry = this.planRetry(l, state, end, b);
         if (!retry) return this.finish(l, end.status);
         if (!(await this.pause(b, retry.delayS))) return this.finish(l, "interrupted");
@@ -151,12 +174,28 @@ export class RunManager {
     });
   }
 
+  /**
+   * One try with the chat's context: resume the chat's last session on this harness when there is one, else a
+   * new session with the chat's history before your message. A session the harness can't resume falls back to
+   * the history right away (not a try of its own, and no error stored).
+   */
+  private async tryInContext(l: Launch, b: Between): Promise<TryEnd> {
+    const s = chatsView.session(this.db, l.chatId);
+    const resume = s && s.harness === l.h.adapter.id ? s.sessionId : null;
+    const fresh = { ...l, resume: null, args: { ...l.args, text: withHistory(l.history, l.args.text) } };
+    if (!resume) return this.tryOnce(fresh, b);
+    const end = await this.tryOnce({ ...l, resume }, b);
+    return end.error?.code === "resume_failed" ? this.tryOnce(fresh, b) : end;
+  }
+
   /** One try: start a session, send the text, store what it emits. A failed start is a failed try. */
   private async tryOnce(l: Launch, b: Between): Promise<TryEnd> {
     let session: Session;
     try {
       session = await this.start(l);
     } catch (e) {
+      if (e instanceof ResumeFailed)
+        return { status: "failed", error: { code: "resume_failed", retryable: false, message: e.message } };
       this.daemonError(l.chatId, l.runId, { code: "start", retryable: false, message: (e as Error).message });
       return { status: "failed", error: null };
     }
@@ -288,6 +327,7 @@ export class RunManager {
       cwd: l.cwd,
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
+      ...(l.resume ? { resume: l.resume } : {}),
       signal: new AbortController().signal,
       decide,
     });
@@ -343,12 +383,7 @@ export class RunManager {
     try {
       for await (const e of session.events()) {
         if (this.stopping) break;
-        if (e.type === EV.runFinished) {
-          end.status = String((e.data as { status: string }).status);
-          continue;
-        }
-        this.noteStored(this.store.append({ ...e, chatId, runId, origin: "adapter" }));
-        if (e.type === EV.error) end.error = e.data as RunError;
+        if (keep(e, end)) this.noteStored(this.store.append({ ...e, chatId, runId, origin: "adapter" }));
       }
     } catch (e) {
       // The harness stream broke (a crashed CLI): transient.
@@ -361,4 +396,18 @@ export class RunManager {
     }
     return end;
   }
+}
+
+/**
+ * Notes how a try ends; false for the events the daemon keeps back: the harness's run.finished (whether the run
+ * ends or retries is decided above) and a refused resume (ion retries with the history instead).
+ */
+function keep(e: AdapterEvent, end: TryEnd): boolean {
+  if (e.type === EV.runFinished) {
+    end.status = String((e.data as { status: string }).status);
+    return false;
+  }
+  if (e.type !== EV.error) return true;
+  end.error = e.data as RunError;
+  return end.error.code !== "resume_failed";
 }
