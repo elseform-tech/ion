@@ -22,12 +22,14 @@ const REACHES_OUT = /(^[~/])|(\.\.)/;
 
 /**
  * A Glob pattern is itself a path: the pattern and each of its brace alternatives that is absolute, ~ or ..
- * (a braced pattern can hide an absolute one) is checked like any other path.
+ * (braces or extglob alternatives can hide an absolute one) is checked like any other path.
  */
 function globPaths(req: ApprovalRequest, k: string, v: string): string[] {
   if (k !== "pattern" || !/glob/i.test(req.toolName)) return [];
-  const alternatives = [...v.matchAll(/[{,]\s*([^,{}]*)/g)].map((m) => m[1]!.trim());
-  return [v, ...alternatives].filter((p) => REACHES_OUT.test(p));
+  // Escapes removed, then what follows every opening or alternation delimiter (braces, extglob @(a|b), …).
+  const plain = v.replaceAll("\\", "");
+  const alternatives = [...plain.matchAll(/[{,(|]\s*([^,{}()|]*)/g)].map((m) => m[1]!.trim());
+  return [plain, ...alternatives].filter((p) => REACHES_OUT.test(p));
 }
 
 function pathsOf(req: ApprovalRequest): string[] {

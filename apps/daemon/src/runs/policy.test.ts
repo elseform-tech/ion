@@ -145,7 +145,11 @@ describe("decideByPolicy", () => {
       decideByPolicy({ ...req("search", { path: project, pattern }), toolName: "Glob" }, { roots });
     expect(glob("{**/*.ts,/etc/*}")).toBe("ask");
     expect(glob("src/{a,~/x}/*")).toBe("ask");
+    expect(glob("@(src|/etc)/*")).toBe("ask");
+    expect(glob("+(x|~/y)")).toBe("ask");
+    expect(glob("{a,\\/etc/*}")).toBe("ask");
     expect(glob("src/{a,b}/*.ts")).toBe("allow");
+    expect(glob("src/@(a|b)/*.ts")).toBe("allow");
   });
 
   it("checks declared path fields however deeply nested", () => {
