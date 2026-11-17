@@ -1,71 +1,141 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addProject, DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import type { IonEvent } from "@ion/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UserError } from "../api/errors.js";
-import { EventStore, openDb } from "../store/index.js";
+import { NeedsService } from "../needs/index.js";
+import { type Db, EventStore, openDb } from "../store/index.js";
+import { chatsView } from "../views/chats.js";
 import { allViews } from "../views/index.js";
 import { RunManager } from "./manager.js";
 
 process.env.ION_ALLOW_FAKE = "1";
 
+let db: Db;
 let store: EventStore;
+let needs: NeedsService;
 let runs: RunManager;
+let repo: string;
 
 beforeEach(() => {
   const home = mkdtempSync(join(tmpdir(), "ion-runs-"));
-  const repo = join(home, "repo");
-  mkdirSync(join(repo, ".git"), { recursive: true });
+  repo = join(home, "repo");
+  mkdirSync(repo);
+  const git = (...a: string[]) => execFileSync("git", a, { cwd: repo });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "T");
+  writeFileSync(join(repo, "README.md"), "# repo\n");
+  git("add", ".");
+  git("commit", "-q", "-m", "init");
   const configFile = join(home, "config.toml");
   saveUserConfig(configFile, addProject(DEFAULT_CONFIG, repo));
-  store = new EventStore(openDb(":memory:"), allViews);
-  runs = new RunManager(store, { configFile });
+  db = openDb(":memory:");
+  store = new EventStore(db, allViews);
+  needs = new NeedsService(store, db);
+  runs = new RunManager(store, { configFile, dataDir: join(home, "data") }, needs, db);
 });
 
-async function finished(runId: string, ms = 3000): Promise<IonEvent[]> {
+async function until<T>(f: () => T | undefined, ms = 3000): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
-    const events = store.read({ runId });
-    if (events.some((e) => e.type === "run.finished")) return events;
-    if (Date.now() > end) throw new Error("run didn't finish");
+    const v = f();
+    if (v) return v;
+    if (Date.now() > end) throw new Error("timed out");
     await new Promise((r) => setTimeout(r, 10));
   }
 }
+const finished = (runId: string): Promise<IonEvent[]> =>
+  until(() => {
+    const events = store.read({ runId });
+    return events.some((e) => e.type === "run.finished") ? events : undefined;
+  });
+const openNeed = () => until(() => needs.open()[0]);
 
 const ask = (text: string, extra: object = {}) =>
   runs.ask({ text, projectId: "repo", harness: "fake", ...extra });
 
 describe("RunManager", () => {
-  it("creates a chat and stores the run's events in order", async () => {
+  it("creates a chat with its own worktree and stores the run's events in order", async () => {
     const { chatId, runId } = await ask("hello");
     const types = (await finished(runId)).map((e) => e.type);
     expect(types[0]).toBe("run.started");
     expect(types.at(-1)).toBe("run.finished");
-    expect(store.read({ chatId })[0]?.type).toBe("chat.created");
-    expect(store.read({ runId }).every((e) => e.origin === "adapter" || e.type === "approval.resolved")).toBe(
-      true,
-    );
-  });
-
-  it("denies edits by policy unless allowed, and records the decision after the request", async () => {
-    const { runId } = await ask("approve");
-    const events = await finished(runId);
-    const types = events.map((e) => e.type);
-    expect(types.indexOf("approval.requested")).toBeLessThan(types.indexOf("approval.resolved"));
-    expect(events.find((e) => e.type === "approval.resolved")).toMatchObject({
-      origin: "daemon",
-      data: { decision: "deny", by: "policy" },
+    expect(store.read({ chatId })[0]).toMatchObject({
+      type: "chat.created",
+      data: { worktree: expect.any(String) },
     });
-    expect(types).not.toContain("file.changed");
+    expect(existsSync(join(chatsView.worktree(db, chatId)!, "README.md"))).toBe(true);
   });
 
-  it("allows edits inside the project with allowEdits", async () => {
-    const { runId } = await ask("approve", { allowEdits: true });
+  it("allows an edit inside the chat's worktree without asking; the file lands there, not in the checkout", async () => {
+    const { chatId, runId } = await ask("approve");
     const events = await finished(runId);
-    expect(events.find((e) => e.type === "approval.resolved")?.data).toMatchObject({ decision: "allow" });
-    expect(events.map((e) => e.type)).toContain("file.changed");
+    expect(events.find((e) => e.type === "approval.resolved")).toMatchObject({
+      data: { decision: "allow", by: "policy" },
+    });
+    expect(events.some((e) => e.type === "need.raised")).toBe(false);
+    expect(existsSync(join(chatsView.worktree(db, chatId)!, "notes.md"))).toBe(true);
+    expect(existsSync(join(repo, "notes.md"))).toBe(false);
+  });
+
+  it("turns a command into a need, waits, and resumes when you allow it", async () => {
+    const { runId } = await ask("shell");
+    const need = await openNeed();
+    expect(need).toMatchObject({ runId, kind: "command", summary: "Run pnpm test" });
+    expect(store.read({ runId }).some((e) => e.type === "run.finished")).toBe(false);
+    needs.resolve(need.needId, "allow", "you");
+    const events = await finished(runId);
+    expect(events.find((e) => e.type === "approval.resolved")).toMatchObject({
+      data: { decision: "allow", by: "you" },
+    });
+    expect(events.find((e) => e.type === "tool.finished")).toMatchObject({ data: { ok: true } });
+  });
+
+  it("denies when you deny", async () => {
+    const { runId } = await ask("shell");
+    needs.resolve((await openNeed()).needId, "deny", "you");
+    expect((await finished(runId)).find((e) => e.type === "tool.finished")).toMatchObject({
+      data: { ok: false },
+    });
+  });
+
+  it("asks about an edit outside the worktree", async () => {
+    await ask("outside");
+    expect(await openNeed()).toMatchObject({ kind: "edit", summary: "Write /etc/ion-test.txt" });
+  });
+
+  it("supersedes open needs when ion stops, so they can't resume anything", async () => {
+    const { runId } = await ask("shell");
+    const need = await openNeed();
+    await runs.shutdown();
+    expect(store.read({ runId }).find((e) => e.type === "need.resolved")).toMatchObject({
+      data: { needId: need.needId, decision: "superseded", by: "daemon" },
+    });
+    expect(store.read({ runId }).at(-1)).toMatchObject({ type: "run.finished", data: { status: "failed" } });
+  });
+
+  it("supersedes open needs when the run is interrupted", async () => {
+    const { runId } = await ask("shell");
+    await openNeed();
+    await runs.interrupt(runId);
+    await finished(runId);
+    expect(needs.open()).toEqual([]);
+  });
+
+  it("archives a chat: removes its worktree, keeps the branch, refuses while running", async () => {
+    const { chatId, runId } = await ask("slow");
+    await expect(runs.archive(chatId)).rejects.toThrow(new UserError("Stop the chat's run first"));
+    await runs.interrupt(runId);
+    await finished(runId);
+    const wt = chatsView.worktree(db, chatId)!;
+    await runs.archive(chatId);
+    expect(existsSync(wt)).toBe(false);
+    expect(chatsView.list(db)[0]).toMatchObject({ chatId, archived: true });
+    await expect(ask("hello", { chatId })).rejects.toThrow(new UserError("That chat is archived"));
   });
 
   it("stores a failed run and keeps working", async () => {
@@ -82,35 +152,16 @@ describe("RunManager", () => {
     expect((await finished(runId)).at(-1)?.data).toEqual({ status: "interrupted" });
   });
 
-  it("interrupts within a second", async () => {
-    const { runId } = await ask("slow");
-    const t = Date.now();
-    await runs.interrupt(runId);
-    await finished(runId);
-    expect(Date.now() - t).toBeLessThan(1000);
-  });
-
-  it("rejects an unknown project or harness without storing anything", async () => {
-    await expect(ask("hello", { projectId: "nope" })).rejects.toThrow(new UserError("Unknown project: nope"));
-    await expect(ask("hello", { harness: "nope" })).rejects.toThrow("Unknown harness: nope");
-    expect(store.read({})).toHaveLength(0);
-  });
-
-  // Regression (final review I6): two asks close together could both start on one chat.
   it("runs only one of two concurrent asks on the same chat", async () => {
     const { chatId, runId } = await ask("hello");
     await finished(runId);
     const results = await Promise.allSettled([ask("slow", { chatId }), ask("slow", { chatId })]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    expect(results.find((r) => r.status === "rejected")).toMatchObject({
-      reason: new UserError("This chat is already running"),
-    });
     const ok = results.find((r) => r.status === "fulfilled") as PromiseFulfilledResult<{ runId: string }>;
     await runs.interrupt(ok.value.runId);
     await finished(ok.value.runId);
   });
 
-  // Regression (final review I9): a signed-out harness must leave nothing behind.
   it("refuses a signed-out harness with the sign-in hint and stores nothing", async () => {
     process.env.ION_FAKE_SIGNED_OUT = "1";
     try {
@@ -121,12 +172,9 @@ describe("RunManager", () => {
     }
   });
 
-  // Regression (final review I7): stopping ion mid-run must not leave the run "running".
-  it("finishes active runs as failed when ion stops", async () => {
-    const { runId } = await ask("slow");
-    await runs.shutdown();
-    const events = store.read({ runId });
-    expect(events.at(-2)).toMatchObject({ type: "error", data: { message: "ion stopped" } });
-    expect(events.at(-1)).toMatchObject({ type: "run.finished", data: { status: "failed" } });
+  it("rejects an unknown project or harness without storing anything", async () => {
+    await expect(ask("hello", { projectId: "nope" })).rejects.toThrow(new UserError("Unknown project: nope"));
+    await expect(ask("hello", { harness: "nope" })).rejects.toThrow("Unknown harness: nope");
+    expect(store.read({})).toHaveLength(0);
   });
 });

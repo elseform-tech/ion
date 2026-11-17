@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { connect as tcp } from "node:net";
 import { tmpdir } from "node:os";
@@ -10,7 +11,10 @@ import { startServer } from "./server.js";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
-  mkdirSync(join(p, ".git"), { recursive: true });
+  mkdirSync(p, { recursive: true });
+  const git = (...a: string[]) => execFileSync("git", a, { cwd: p });
+  git("init", "-q", "-b", "main");
+  git("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init");
   return p;
 };
 

@@ -19,11 +19,8 @@ export type Ctx = {
   version: string;
 };
 
-/** Commands whose services arrive later in Plan 03 (archive: Task 4). */
-type PendingCommand = "chat.archive";
-
 type Handlers = {
-  [C in Exclude<Command, "events.subscribe" | PendingCommand>]: (
+  [C in Exclude<Command, "events.subscribe">]: (
     args: Commands[C]["args"],
     ctx: Ctx,
   ) => Commands[C]["result"] | Promise<Commands[C]["result"]>;
@@ -32,6 +29,10 @@ type Handlers = {
 export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
+  "chat.archive": async (a, ctx) => {
+    await ctx.runs.archive(String(a.chatId ?? ""));
+    return { ok: true as const };
+  },
   "need.resolve": (a, ctx) => {
     const decision = a.decision;
     if (decision !== "allow" && decision !== "allow_always" && decision !== "deny")

@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -31,7 +31,10 @@ function ion(...args: string[]): Promise<{ code: number; out: string; err: strin
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
-  mkdirSync(join(p, ".git"), { recursive: true });
+  mkdirSync(p, { recursive: true });
+  const git = (...a: string[]) => execFileSync("git", a, { cwd: p });
+  git("init", "-q", "-b", "main");
+  git("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init");
   return p;
 };
 
@@ -176,11 +179,12 @@ describe("ion cli", { timeout: 20_000 }, () => {
       await expect(`${stable(r.out)}\n`).toMatchFileSnapshot("../golden/ask-hello.txt");
     });
 
-    it("shows a denied edit and exits 0", async () => {
-      await setup();
+    it("edits inside the chat's worktree without asking", async () => {
+      const p = await setup();
       const r = await ion("ask", "approve", "-p", "app", "--harness", "fake");
-      expect(r.out).toContain("denied");
+      expect(r.out).toContain("· Edited notes.md");
       expect(r.code).toBe(0);
+      expect(existsSync(join(p, "notes.md"))).toBe(false);
     });
 
     it("prints one JSON event per line with --json", async () => {

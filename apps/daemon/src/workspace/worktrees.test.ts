@@ -65,6 +65,19 @@ describe("worktrees", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  // Regression (security review): repo config like core.fsmonitor must not run code in ion's git calls.
+  it("never runs core.fsmonitor from the repo's config", async () => {
+    const marker = join(dataDir, "fsmonitor-ran");
+    const script = join(dataDir, "fsmon.sh");
+    writeFileSync(script, `#!/bin/sh\ntouch ${marker}\n`);
+    chmodSync(script, 0o755);
+    const wt = await createWorktree(repo, dataDir, "chat_fs", "Fs");
+    execFileSync("git", ["config", "core.fsmonitor", script], { cwd: repo });
+    await createWorktree(repo, dataDir, "chat_fs", "Fs");
+    await removeWorktree(repo, wt.path);
+    expect(existsSync(marker)).toBe(false);
+  });
+
   it("reports the branch actually checked out, even if the title changed", async () => {
     const first = await createWorktree(repo, dataDir, "chat_abc", "One");
     const again = await createWorktree(repo, dataDir, "chat_abc", "A different title");

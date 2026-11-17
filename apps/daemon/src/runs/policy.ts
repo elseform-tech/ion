@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { ApprovalRequest, Decision } from "@ion/adapter-kit";
+import type { ApprovalRequest } from "@ion/adapter-kit";
 
 /** Every string in the input, however deeply nested, with the key it sits under. */
 function* strings(value: unknown, key = ""): Generator<[string, string]> {
@@ -48,20 +48,21 @@ function inside(p: string, roots: string[]): boolean {
 const allInside = (paths: string[], roots: string[]) => paths.every((p) => inside(p, roots));
 
 /**
- * Plan 02's stand-in for "Needs you". Reads and searches: fine inside the project. Edits: only with
- * --allow-edits, only inside the project, and only when the request names its paths (fail closed).
- * Symlinks are resolved first. Everything else (commands, web, MCP) is denied. Plan 03 turns denials into pins.
+ * Reads, searches and edits whose every named path is inside the chat's worktree (symlinks resolved) are
+ * allowed: the worktree is the sandbox. Anything else (commands, web, MCP, paths outside, or an edit that
+ * names no path) is "ask": it becomes a need you answer. Edits to git internals and agent config always ask.
  */
-export function decideByPolicy(
-  req: ApprovalRequest,
-  opts: { allowEdits: boolean; roots: string[] },
-): Decision {
+export function decideByPolicy(req: ApprovalRequest, opts: { roots: string[] }): "allow" | "ask" {
   const paths = pathsOf(req);
-  const named = paths.length > 0 && allInside(paths, opts.roots);
-  const rules: Record<string, boolean> = {
-    read: named,
-    search: named,
-    edit: opts.allowEdits && named,
-  };
-  return rules[req.kind] === true ? "allow" : "deny";
+  const inWorktree = paths.length > 0 && allInside(paths, opts.roots);
+  if (req.kind === "edit" && paths.some(runsCode)) return "ask";
+  return ["read", "search", "edit"].includes(req.kind) && inWorktree ? "allow" : "ask";
 }
+
+/** Folders and files whose contents git or a coding agent may run: editing them always asks. */
+const CODE_DIRS = new Set([".git", ".claude", ".opencode", ".grok", ".husky", ".vscode"]);
+const CODE_FILES = new Set([".git", ".gitmodules", ".gitattributes", ".mcp.json", ".envrc"]);
+const runsCode = (p: string): boolean => {
+  const parts = p.split(/[\\/]+/);
+  return CODE_FILES.has(parts.at(-1) ?? "") || parts.slice(0, -1).some((s) => CODE_DIRS.has(s));
+};

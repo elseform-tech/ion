@@ -23,11 +23,12 @@ export async function startServer(opts: {
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
   const db = openDb(join(opts.dataDir, "ion.db"));
   const store = new EventStore(db, allViews);
+  const needs = new NeedsService(store, db);
   const ctx: Ctx = {
     store,
     db,
-    needs: new NeedsService(store, db),
-    runs: new RunManager(store, { configFile: opts.configFile }),
+    needs,
+    runs: new RunManager(store, { configFile: opts.configFile, dataDir: opts.dataDir }, needs, db),
     configFile: opts.configFile,
     startedAt: Date.now(),
     version: VERSION,

@@ -1,10 +1,15 @@
 import type { AdapterEvent, Decision } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 
+type Asked = { kind: string; toolName: string; input: Record<string, unknown> };
+
 /** What a scenario can do: emit events, ask for approval, wait (and notice interrupts). */
 export type Script = {
   emit(e: AdapterEvent): void;
-  ask(toolId: string, summary: string): Promise<Decision>;
+  /** Asks permission; by default to write notes.md in the working folder. */
+  ask(toolId: string, summary: string, req?: Asked): Promise<Decision>;
+  /** Writes a file in the working folder (the run's cwd), like a real agent would. */
+  write(file: string, content: string): void;
   wait(ms: number): Promise<"ok" | "interrupted">;
 };
 
@@ -44,9 +49,31 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
       say(s, "I wasn't allowed to write notes.md.");
       return "done";
     }
+    s.write("notes.md", "hello\n");
     done(s, "t1", true);
     edited(s);
     say(s, "Wrote notes.md.");
+    return "done";
+  },
+  async shell(s) {
+    tool(s, { toolId: "t1", name: "Bash", kind: "command", summary: "pnpm test" });
+    const decision = await s.ask("t1", "Run pnpm test", {
+      kind: "command",
+      toolName: "Bash",
+      input: { command: "pnpm test" },
+    });
+    done(s, "t1", decision !== "deny", decision === "deny" ? "Not allowed" : null);
+    say(s, decision === "deny" ? "I wasn't allowed to run the tests." : "Tests pass.");
+    return "done";
+  },
+  async outside(s) {
+    tool(s, { toolId: "t1", name: "Write", kind: "edit", summary: "/etc/ion-test.txt" });
+    const decision = await s.ask("t1", "Write /etc/ion-test.txt", {
+      kind: "edit",
+      toolName: "Write",
+      input: { file_path: "/etc/ion-test.txt" },
+    });
+    done(s, "t1", false, decision === "deny" ? "Not allowed" : "Read-only file system");
     return "done";
   },
   async fail(s) {

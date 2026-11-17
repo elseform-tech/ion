@@ -29,7 +29,6 @@ export type Commands = {
       harness?: string;
       model?: string;
       effort?: EffortLevel;
-      allowEdits?: boolean;
     };
     result: { chatId: string; runId: string };
   };

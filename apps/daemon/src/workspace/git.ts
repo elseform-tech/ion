@@ -26,7 +26,7 @@ export function git(args: string[], cwd: string): Promise<GitResult> {
   return new Promise((resolve) => {
     execFile(
       resolveGit(),
-      ["-c", "core.hooksPath=/dev/null", ...args],
+      ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args],
       { cwd, env: gitEnv(), timeout: 60_000 },
       (err, stdout, stderr) => {
         let code = 0;

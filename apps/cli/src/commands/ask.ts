@@ -12,7 +12,6 @@ type AskOpts = {
   harness?: string;
   model?: string;
   effort?: EffortLevel;
-  allowEdits?: boolean;
 };
 
 /** Prints the run's events as they arrive and resolves when it finishes. */
@@ -55,7 +54,6 @@ async function start(client: IonClient, text: string, o: AskOpts) {
       ...(o.harness ? { harness: o.harness } : {}),
       ...(o.model ? { model: o.model } : {}),
       ...(o.effort ? { effort: o.effort } : {}),
-      allowEdits: o.allowEdits === true,
     });
   } catch (e) {
     client.close();
@@ -72,7 +70,6 @@ export function askCommand(program: Command, out: () => Out) {
     .option("--harness <id>", "claude-code, grok-build or opencode", "claude-code")
     .option("--model <model>", "Model")
     .option("--effort <level>", "low, medium, high or max")
-    .option("--allow-edits", "Let it edit files in the project")
     .action(async (text: string, o: AskOpts) => {
       const up = await reach(ionPaths().dataDir);
       if (!up) fail(NOT_RUNNING, 2);

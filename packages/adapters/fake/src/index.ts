@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AdapterEvent,
@@ -54,18 +55,13 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
   let n = 0;
   const script: Script = {
     emit: (e) => queue.push(e),
-    ask: (toolId, summary) => {
+    ask: (toolId, summary, req) => {
       const requestId = `q${++n}`;
-      queue.push({ type: EV.approvalRequested, data: { requestId, toolId, kind: "edit", summary } });
-      return start.decide({
-        requestId,
-        toolId,
-        toolName: "Write",
-        kind: "edit",
-        summary,
-        input: { file_path: join(start.cwd, "notes.md") },
-      });
+      const r = req ?? { kind: "edit", toolName: "Write", input: { file_path: join(start.cwd, "notes.md") } };
+      queue.push({ type: EV.approvalRequested, data: { requestId, toolId, kind: r.kind, summary } });
+      return start.decide({ requestId, toolId, toolName: r.toolName, kind: r.kind, summary, input: r.input });
     },
+    write: (file, content) => writeFileSync(join(start.cwd, file), content),
     wait: async (ms) => {
       await sleep(ms);
       return interrupted ? "interrupted" : "ok";
