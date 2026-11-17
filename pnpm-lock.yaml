@@ -130,6 +130,9 @@ importers:
       picomatch:
         specifier: 4.0.7
         version: 4.0.7(patch_hash=957dbc7a780b4fe6d3767a6deb4fc36f92db6d345093018d87b52090921bbef1)
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   tools/lint-rules:
     dependencies:

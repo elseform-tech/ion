@@ -28,25 +28,27 @@ describe("picomatch patch", () => {
 
 // The dependency-review waiver for GHSA-fc5q-39xc-vjpf is only safe while every resolved copy is patched.
 describe("lockfile guard", () => {
-  const lock = (snapshots) =>
-    `patchedDependencies:\n  picomatch@4.0.7:\n    hash: abc\n\npackages:\n\n  picomatch@4.0.7:\n    resolution: {}\n\nsnapshots:\n${snapshots}`;
+  const HASH = "abc123";
+  const lock = (snapshots, hash = HASH) =>
+    `lockfileVersion: '9.0'\npatchedDependencies:\n  picomatch@4.0.7:\n    hash: ${hash}\n    path: x.patch\npackages:\n  picomatch@4.0.7:\n    resolution: {integrity: x}\nsnapshots:\n${snapshots}`;
+  const ok = `  picomatch@4.0.7(patch_hash=${HASH}): {}\n  fdir@6.5.0:\n    dependencies:\n      picomatch: 4.0.7(patch_hash=${HASH})\n`;
 
-  it("passes when every resolved picomatch carries the patch", () => {
-    expect(
-      unpatched(
-        lock("  picomatch@4.0.7(patch_hash=abc): {}\n      picomatch: 4.0.7(patch_hash=abc)\n"),
-        "picomatch",
-      ),
-    ).toEqual([]);
+  it("passes when every resolved copy carries the declared patch", () => {
+    expect(unpatched(lock(ok), "picomatch")).toEqual([]);
   });
 
-  it("flags an unpatched copy anywhere in snapshots", () => {
-    expect(
-      unpatched(
-        lock("  picomatch@2.3.1: {}\n      picomatch: 4.0.7(patch_hash=abc)\n      picomatch: 4.0.6\n"),
-        "picomatch",
-      ),
-    ).toEqual(["picomatch@2.3.1", "picomatch: 4.0.6"]);
+  it("flags unpatched, wrongly hashed and quoted copies", () => {
+    const bad = `${ok}  picomatch@2.3.1: {}\n  a@1.0.0:\n    dependencies:\n      picomatch: 4.0.7(patch_hash=evil)\n  b@1.0.0:\n    dependencies:\n      picomatch: '4.0.6'\n`;
+    expect(unpatched(lock(bad), "picomatch")).toEqual([
+      "picomatch@2.3.1",
+      "a@1.0.0 → picomatch 4.0.7(patch_hash=evil)",
+      "b@1.0.0 → picomatch 4.0.6",
+    ]);
+  });
+
+  it("fails closed when there's nothing to check", () => {
+    expect(() => unpatched("lockfileVersion: '9.0'\n", "picomatch")).toThrow(/no snapshots/);
+    expect(() => unpatched(lock("  other@1.0.0: {}\n"), "picomatch")).toThrow(/no picomatch/);
   });
 
   it("finds nothing unpatched in the real lockfile", () => {
