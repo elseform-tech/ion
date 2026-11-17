@@ -35,7 +35,11 @@ export async function createWorktree(
     throw new Error(`Not a git repository: ${repo}`);
   const path = join(dataDir, "worktrees", chatId);
   const branch = branchFor(chatId, title);
-  if (existsSync(join(path, ".git"))) return { path, branch };
+  if (existsSync(join(path, ".git"))) {
+    // Report what's really checked out there (the title may have changed since).
+    const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], path);
+    return { path, branch: head.code === 0 ? head.stdout.trim() : branch };
+  }
   mkdirSync(join(dataDir, "worktrees"), { recursive: true, mode: 0o700 });
   await git(["worktree", "prune"], repo); // forget registrations whose folder is gone
   const args = (await branchExists(repo, branch))
@@ -46,8 +50,14 @@ export async function createWorktree(
   return { path, branch };
 }
 
-/** Removes the worktree folder; the branch (and its commits) stay. */
+/** Removes the worktree folder; the branch (and its commits) stay. Already gone is fine; failing is an error. */
 export async function removeWorktree(repo: string, path: string): Promise<void> {
-  await git(["worktree", "remove", "--force", path], repo);
+  if (!existsSync(path)) {
+    await git(["worktree", "prune"], repo);
+    return;
+  }
+  const r = await git(["worktree", "remove", "--force", path], repo);
   await git(["worktree", "prune"], repo);
+  if (r.code !== 0 || existsSync(path))
+    throw new Error(`Couldn't remove the chat's worktree: ${r.stderr.trim().split("\n")[0] || path}`);
 }

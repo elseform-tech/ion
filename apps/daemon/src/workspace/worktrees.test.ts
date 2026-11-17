@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -54,5 +54,29 @@ describe("worktrees", () => {
   it("refuses a folder that isn't a git repository", async () => {
     const plain = mkdtempSync(join(tmpdir(), "ion-wt-plain-"));
     await expect(createWorktree(plain, dataDir, "chat_x", "x")).rejects.toThrow("Not a git repository");
+  });
+
+  // Regression (security review): a repo's git hooks must never run when ion creates a worktree.
+  it("never runs the repo's git hooks", async () => {
+    const marker = join(dataDir, "hook-ran");
+    writeFileSync(join(repo, ".git", "hooks", "post-checkout"), `#!/bin/sh\ntouch ${marker}\n`);
+    chmodSync(join(repo, ".git", "hooks", "post-checkout"), 0o755);
+    await createWorktree(repo, dataDir, "chat_hook", "Hooks");
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("reports the branch actually checked out, even if the title changed", async () => {
+    const first = await createWorktree(repo, dataDir, "chat_abc", "One");
+    const again = await createWorktree(repo, dataDir, "chat_abc", "A different title");
+    expect(again.branch).toBe(first.branch);
+  });
+
+  it("says so when removing a worktree fails, and is fine with one that's already gone", async () => {
+    const wt = await createWorktree(repo, dataDir, "chat_abc", "One");
+    await removeWorktree(repo, wt.path);
+    await expect(removeWorktree(repo, wt.path)).resolves.toBeUndefined();
+    const plain = mkdtempSync(join(tmpdir(), "ion-wt-notwt-"));
+    writeFileSync(join(plain, "keep.txt"), "x");
+    await expect(removeWorktree(repo, plain)).rejects.toThrow("Couldn't remove the chat's worktree");
   });
 });
