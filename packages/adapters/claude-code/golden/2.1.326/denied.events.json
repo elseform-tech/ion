@@ -1,0 +1,649 @@
+[
+  {
+    "type": "run.started",
+    "data": {
+      "harness": "claude-code",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "authMethod": "Claude subscription"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "I'm creating notes."
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "md in"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " the working directory with the single"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " line \"hello\". The Write"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " tool hand"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "les this directly, so"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " no skill is needed."
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "\n\n"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "I'll write \"hello\""
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " with a trailing newline,"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " since the file alm"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ost certainly doesn't"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " exist yet, so there's"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " no need"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " to read it"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " first."
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "\n\n"
+    }
+  },
+  {
+    "type": "tool.started",
+    "data": {
+      "toolId": "toolu_01Kn3XcsBiLiKwwmDnAiT9PK",
+      "name": "Write",
+      "kind": "edit",
+      "summary": "notes.md"
+    }
+  },
+  {
+    "type": "tool.finished",
+    "data": {
+      "toolId": "toolu_01Kn3XcsBiLiKwwmDnAiT9PK",
+      "ok": false,
+      "summary": null
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "The write just"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " got blocked with"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " a \""
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "Not allowed\""
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " message, so this"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " is a den"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ial from"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " the environment r"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ather than a gl"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "itch. The"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " user asked for Write spec"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ifically, and"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " the denial means"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " I"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " shouldn't ret"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ry the same call."
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " Routing the"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " same file through Bash would just"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " be"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " get"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ting around the block, so I'"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "m not going there."
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "\n\n"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "I'm not going"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " to route"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " the write around the block"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " through Bash, so I'"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ll report the denial to the user"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " and ask how"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " they want to"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " proceed rather than cre"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "ating a Claude Docs"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " doc in"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " its"
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": " place."
+    }
+  },
+  {
+    "type": "thinking.delta",
+    "data": {
+      "text": "\n\n"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "I"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " couldn't create `notes"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": ".md`. The Write call"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " was r"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ejected with `"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "Not allowed by ion"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "`, so the file do"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "esn't exist.\n\nI"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " didn't ret"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ry,"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " and I didn't write"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " the file another"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " way (for example, through"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " Bash), since"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " that would get"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " around the block"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": ". The"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " target path was"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " `"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "/private/var/folders/"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "2y/qs"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "7"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "xc"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "d"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "8"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "s"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "xgg"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "t"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "mq"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "4_bxw"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "t"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "m8"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "c"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "0000gn/T/"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ion-rec-rdl"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "L7z/notes.md"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "`, with"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " the"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " content `hello` plus a"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " trailing newline.\n\nIf"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " you allow writes to that direct"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ory, or t"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ell me another"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " location, I'll ret"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ry the same"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " Write."
+    }
+  },
+  {
+    "type": "message.completed",
+    "data": {
+      "text": "I couldn't create `notes.md`. The Write call was rejected with `Not allowed by ion`, so the file doesn't exist.\n\nI didn't retry, and I didn't write the file another way (for example, through Bash), since that would get around the block. The target path was `<cwd>/notes.md`, with the content `hello` plus a trailing newline.\n\nIf you allow writes to that directory, or tell me another location, I'll retry the same Write."
+    }
+  },
+  {
+    "type": "usage.reported",
+    "data": {
+      "model": "claude-haiku-5-5",
+      "inputTokens": 4,
+      "outputTokens": 702,
+      "costUsd": 0.00673934
+    }
+  },
+  {
+    "type": "run.finished",
+    "data": {
+      "status": "done"
+    }
+  }
+]

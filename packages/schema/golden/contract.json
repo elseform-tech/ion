@@ -39,6 +39,8 @@
     "projects.list",
     "projects.add",
     "chat.create",
-    "events.subscribe"
+    "events.subscribe",
+    "ask",
+    "run.interrupt"
   ]
 }

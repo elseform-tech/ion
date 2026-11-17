@@ -11,7 +11,8 @@
       "!.remember",
       "!**/*.md",
       "!**/golden",
-      "!health"
+      "!health",
+      "!.health"
     ]
   },
   "formatter": {

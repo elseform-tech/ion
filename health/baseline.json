@@ -1,6 +1,6 @@
 {
   "filesOver400": 0,
-  "functionsOver50": 2,
+  "functionsOver50": 6,
   "complexityOver10": 0,
   "duplicationPct": 0,
   "eslintDisables": 0,

@@ -17,6 +17,8 @@ const ALLOW = {
   "tools/lint-rules": ["schema"],
 };
 /** Extra packages a test file may use (e.g. the daemon's api tests drive it through the client). */
+/** The daemon loads adapters in exactly one file, so the set of harnesses is visible in one place. */
+const REGISTRY = "apps/daemon/src/adapters/registry.ts";
 const TEST_EXTRA = { "apps/daemon": ["client"], "apps/cli": ["daemon"] };
 
 /** "@ion/adapter-codex" → "adapters", "@ion/client" → "client", anything else → null. */
@@ -50,6 +52,7 @@ export default {
       wall: "{{from}} may not import @ion/{{to}}. See the walls in AGENTS.md.",
       escape: "Don't reach into another package with a relative path. Import it by name.",
       nodeInUi: "The desktop UI only displays state: no Node APIs. Use @ion/client.",
+      registryOnly: "Import adapters only in src/adapters/registry.ts.",
     },
     schema: [],
   },
@@ -62,6 +65,8 @@ export default {
     return onImports((node, source) => {
       const to = ionPackage(source);
       if (to && !allowed.has(to)) ctx.report({ node, messageId: "wall", data: { from, to } });
+      else if (to === "adapters" && from === "apps/daemon" && p !== REGISTRY)
+        ctx.report({ node, messageId: "registryOnly" });
       else if (source.startsWith(".") && root && escapes(p, source, root))
         ctx.report({ node, messageId: "escape" });
       else if (from === "apps/desktop" && isNodeBuiltin(source)) ctx.report({ node, messageId: "nodeInUi" });
