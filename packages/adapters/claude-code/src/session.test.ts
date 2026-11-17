@@ -86,11 +86,14 @@ describe("claude-code session", () => {
       decide: async () => "allow",
     });
     await s.close();
-    expect(calls.at(-1)?.options).toMatchObject({
-      mcpServers: {
-        ion: { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer k" } },
-      },
+    // Security review: the SDK passes MCP servers on the command line, so the key goes in the environment and the
+    // config only names it (Claude Code expands ${VAR} in MCP headers; checked live, Plan 04).
+    const o = calls.at(-1)?.options as { mcpServers: unknown; env: Record<string, string> };
+    expect(o.mcpServers).toEqual({
+      ion: { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "${ION_MCP_H0}" } },
     });
+    expect(JSON.stringify(o.mcpServers)).not.toContain("Bearer k");
+    expect(o.env.ION_MCP_H0).toBe("Bearer k");
   });
 
   it("continues a session that exists, and says so when it's gone", async () => {
