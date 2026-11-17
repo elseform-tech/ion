@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OPENCODE } from "./harnesses.js";
+import { GROK_BUILD, OPENCODE } from "./harnesses.js";
 
 // Regression (final review I8): a repo's opencode.json could set permissions back to "allow".
 describe("opencode environment", () => {
@@ -17,5 +17,13 @@ describe("opencode environment", () => {
     } finally {
       delete process.env.OPENCODE_CONFIG_CONTENT;
     }
+  });
+
+  // Regression (Plan 03 end to end): a user's own permission_mode = "always-approve" let Grok run shell
+  // commands without asking ion.
+  it("starts Grok in ask mode whatever the user's Grok config says, with read-only commands asking too", () => {
+    const env = GROK_BUILD.env!();
+    expect(JSON.parse(env.GROK_CONFIG!)).toEqual({ ui: { permission_mode: "ask" } });
+    expect(env.GROK_ASK_LOCAL_READS).toBe("false");
   });
 });

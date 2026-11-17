@@ -1,4 +1,5 @@
 import { EV, type IonEvent } from "@ion/schema";
+import { clean, text } from "./sanitize.js";
 
 const HARNESS: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -17,19 +18,6 @@ const VERB: Record<string, string> = {
 
 type D = Record<string, unknown>;
 
-// Agents' text must not drive the terminal: C0/C1 control characters (except newline and tab) and
-// invisible direction marks that reorder what's shown.
-const CONTROL = new RegExp(
-  "[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]",
-  "g",
-);
-const text = (x: unknown): string => String(x ?? "").replace(CONTROL, "");
-/** For one-line fields (paths, summaries, errors): also no line breaks, so they can't fake extra lines. */
-const clean = (x: unknown): string =>
-  text(x)
-    .split(/[\r\n]+/)
-    .join(" ")
-    .trim();
 export type RunEnd = { status: string; code: number };
 type Rendered = { text: string; end?: RunEnd };
 

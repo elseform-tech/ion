@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { withClient } from "../connect.js";
 import { type Out, print } from "../output.js";
+import { clean } from "../sanitize.js";
 
 export function chatsCommands(program: Command, out: () => Out) {
   const ch = program
@@ -9,7 +10,9 @@ export function chatsCommands(program: Command, out: () => Out) {
     .action(async () => {
       const list = (await withClient((c) => c.call("chats.list", {}))).filter((x) => !x.archived);
       const rows = list.map((x) =>
-        [x.chatId, x.title, x.projectId ?? "-", x.branch ?? "-", x.lastRunStatus ?? "-"].join("  "),
+        [x.chatId, x.title, x.projectId ?? "-", x.branch ?? "-", x.lastRunStatus ?? "-"]
+          .map(clean)
+          .join("  "),
       );
       print(out(), rows.length ? rows.join("\n") : "No chats", list);
     });
