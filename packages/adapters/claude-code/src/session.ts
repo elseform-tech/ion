@@ -136,7 +136,7 @@ async function pump(
   } catch (e) {
     if (finished()) return;
     if (!state.interrupted)
-      emit({ type: EV.error, data: { code: "crash", retryable: false, message: (e as Error).message } });
+      emit({ type: EV.error, data: { code: "crash", retryable: true, message: (e as Error).message } });
     end();
   }
 }

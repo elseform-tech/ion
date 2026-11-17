@@ -1,4 +1,5 @@
 import { EV, type IonEvent } from "@ion/schema";
+import { clean, detailLines, text } from "./sanitize.js";
 
 const HARNESS: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -17,19 +18,6 @@ const VERB: Record<string, string> = {
 
 type D = Record<string, unknown>;
 
-// Agents' text must not drive the terminal: C0/C1 control characters (except newline and tab) and
-// invisible direction marks that reorder what's shown.
-const CONTROL = new RegExp(
-  "[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]",
-  "g",
-);
-const text = (x: unknown): string => String(x ?? "").replace(CONTROL, "");
-/** For one-line fields (paths, summaries, errors): also no line breaks, so they can't fake extra lines. */
-const clean = (x: unknown): string =>
-  text(x)
-    .split(/[\r\n]+/)
-    .join(" ")
-    .trim();
 export type RunEnd = { status: string; code: number };
 type Rendered = { text: string; end?: RunEnd };
 
@@ -66,6 +54,7 @@ function endLine(s: State, status: string, ts: string): Rendered {
 
 const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered>> = {
   [EV.runStarted]: (s, d, e) => {
+    if (s.startedAt) return quiet; // a retry: same run, already introduced
     s.startedAt = Date.parse(e.ts);
     const label = HARNESS[String(d.harness)] ?? String(d.harness);
     return { text: line(s, [label, d.authMethod, d.model].filter(Boolean).map(clean).join(" · ")) };
@@ -89,6 +78,17 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     d.decision === "deny"
       ? { text: line(s, `· Asked to use ${s.asks.get(String(d.requestId)) ?? "a tool"} — denied (${d.by})`) }
       : quiet,
+  [EV.needRaised]: (s, d) => ({
+    text:
+      line(s, `· Waiting on you: ${clean(d.summary)} — run: ion needs allow ${clean(d.needId)}`) +
+      detailLines(d.detail),
+  }),
+  [EV.runRetrying]: (s, d) => {
+    const secs = Math.ceil(Number(d.delayS) || 0);
+    const when = secs > 0 ? `in ${secs}s` : "now";
+    const effort = d.effort ? ` at ${clean(d.effort)} effort` : "";
+    return { text: line(s, `· Retrying ${when}${effort} (${clean(d.reason).toLowerCase()})`) };
+  },
   [EV.usageReported]: (s, d) => {
     if (typeof d.costUsd === "number") s.cost = d.costUsd;
     return quiet;

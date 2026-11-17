@@ -17,6 +17,7 @@
   ],
   "daemon": [
     "chat.created",
+    "chat.archived",
     "run.queued",
     "run.waiting",
     "run.retrying",
@@ -41,6 +42,10 @@
     "chat.create",
     "events.subscribe",
     "ask",
-    "run.interrupt"
+    "run.interrupt",
+    "needs.list",
+    "need.resolve",
+    "chats.list",
+    "chat.archive"
   ]
 }

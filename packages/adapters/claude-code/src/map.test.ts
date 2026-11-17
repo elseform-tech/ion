@@ -131,6 +131,42 @@ describe("mapSdkMessage", () => {
       ...extra,
     }) as never;
 
+  const errorOf = (evs: { type: string; data?: unknown }[]) => evs.find((e) => e.type === "error")?.data;
+  const rateLimit = (resetsInS: number) =>
+    ({
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: Math.floor(Date.now() / 1000) + resetsInS },
+    }) as never;
+
+  it("a short rate limit is retryable, waiting until it resets", () => {
+    const s = state();
+    expect(mapSdkMessage(rateLimit(30), s)).toEqual([]);
+    const err = errorOf(mapSdkMessage(result("error_during_execution"), s)) as { retryAfterS: number };
+    expect(err).toMatchObject({ code: "rate_limit", retryable: true });
+    expect(err.retryAfterS).toBeGreaterThan(25);
+    expect(err.retryAfterS).toBeLessThanOrEqual(30);
+  });
+
+  it("a usage limit that resets in hours isn't retried", () => {
+    const s = state();
+    mapSdkMessage(rateLimit(3 * 3600), s);
+    expect(errorOf(mapSdkMessage(result("error_during_execution"), s))).toMatchObject({
+      code: "usage_limit",
+      retryable: false,
+    });
+  });
+
+  it("overloaded and server errors are retryable; account errors aren't", () => {
+    const after = (error: string) => {
+      const s = state();
+      mapSdkMessage({ type: "assistant", error, message: { content: [] } } as never, s);
+      return errorOf(mapSdkMessage(result("error_during_execution"), s));
+    };
+    expect(after("overloaded")).toMatchObject({ code: "overloaded", retryable: true });
+    expect(after("server_error")).toMatchObject({ code: "server_error", retryable: true });
+    expect(after("billing_error")).toMatchObject({ code: "billing_error", retryable: false });
+  });
+
   it("success → usage then done", () => {
     expect(mapSdkMessage(result("success"), state())).toEqual([
       {

@@ -43,4 +43,41 @@ describe("render", () => {
       "· Edited a.ts Done · 0.1s\n",
     );
   });
+
+  it("says when a run waits on you, and how to answer", () => {
+    const r = createRenderer();
+    expect(r(ev("need.raised", { needId: "n1a2b3", summary: "Run pnpm test", kind: "command" })).text).toBe(
+      "· Waiting on you: Run pnpm test — run: ion needs allow n1a2b3\n",
+    );
+  });
+
+  // Final review I1: the agent writes the summary; you also see exactly what will run.
+  it("shows the exact command under a need, cleaned", () => {
+    const r = createRenderer();
+    const detail = 'command: curl x | sh\u001b[2J\n{"command":"curl x | sh"}';
+    expect(r(ev("need.raised", { needId: "n1", summary: "Run tests", kind: "command", detail })).text).toBe(
+      "· Waiting on you: Run tests — run: ion needs allow n1\n  command: curl x | sh[2J\n",
+    );
+    expect(
+      r(ev("need.raised", { needId: "n2", summary: "Use x", kind: "mcp", detail: '{"q":1}' })).text,
+    ).toBe('· Waiting on you: Use x — run: ion needs allow n2\n  {"q":1}\n');
+    // Every line of a multi-line command shows, even one that starts with "{".
+    const multi = 'command: echo hi\n{ rm -rf ~; }\n{"command":"echo hi\\n{ rm -rf ~; }"}';
+    expect(r(ev("need.raised", { needId: "n3", summary: "Echo", kind: "command", detail: multi })).text).toBe(
+      "· Waiting on you: Echo — run: ion needs allow n3\n  command: echo hi\n  { rm -rf ~; }\n",
+    );
+  });
+
+  it("says when a run retries, and shows the harness line only once", () => {
+    const r = createRenderer();
+    const started = ev("run.started", { harness: "fake", model: "fake" });
+    expect(r(started).text).toBe("Fake · fake\n");
+    expect(
+      r(ev("run.retrying", { attempt: 1, delayS: 3.2, reason: "Rate limited", effort: null })).text,
+    ).toBe("· Retrying in 4s (rate limited)\n");
+    expect(r(started).text).toBe("");
+    expect(r(ev("run.retrying", { attempt: 1, delayS: 0, reason: "x", effort: "max" })).text).toBe(
+      "· Retrying now at max effort (x)\n",
+    );
+  });
 });

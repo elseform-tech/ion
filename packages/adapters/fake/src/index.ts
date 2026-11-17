@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AdapterEvent,
@@ -24,6 +25,9 @@ const CAPABILITIES: Capabilities = {
 };
 
 /** A scripted harness for tests: the prompt's first word picks a scenario (hello, edit, approve, fail, slow). */
+/** Sessions started per working folder, so scenarios can behave differently on a retry. */
+const triesByCwd = new Map<string, number>();
+
 export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean } = {}): HarnessAdapter {
   const signedIn = opts.signedIn ?? true;
   const delayMs = opts.delayMs ?? 5;
@@ -35,7 +39,12 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       login: async () => {},
     },
     capabilities: async () => CAPABILITIES,
-    start: async (start) => fakeSession(start, delayMs),
+    start: async (start) => {
+      // Test switches for the daemon's lifecycle tests: a slow or failing harness start.
+      await new Promise((r) => setTimeout(r, Number(process.env.ION_FAKE_START_MS ?? 0)));
+      if (process.env.ION_FAKE_START_FAIL) throw new Error("The fake harness didn't start");
+      return fakeSession(start, delayMs);
+    },
   };
 }
 
@@ -52,20 +61,18 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
       };
     });
   let n = 0;
+  const tries = (triesByCwd.get(start.cwd) ?? 0) + 1;
+  triesByCwd.set(start.cwd, tries);
   const script: Script = {
     emit: (e) => queue.push(e),
-    ask: (toolId, summary) => {
+    ask: (toolId, summary, req) => {
       const requestId = `q${++n}`;
-      queue.push({ type: EV.approvalRequested, data: { requestId, toolId, kind: "edit", summary } });
-      return start.decide({
-        requestId,
-        toolId,
-        toolName: "Write",
-        kind: "edit",
-        summary,
-        input: { file_path: join(start.cwd, "notes.md") },
-      });
+      const r = req ?? { kind: "edit", toolName: "Write", input: { file_path: join(start.cwd, "notes.md") } };
+      queue.push({ type: EV.approvalRequested, data: { requestId, toolId, kind: r.kind, summary } });
+      return start.decide({ requestId, toolId, toolName: r.toolName, kind: r.kind, summary, input: r.input });
     },
+    write: (file, content) => writeFileSync(join(start.cwd, file), content),
+    tries: () => tries,
     wait: async (ms) => {
       await sleep(ms);
       return interrupted ? "interrupted" : "ok";

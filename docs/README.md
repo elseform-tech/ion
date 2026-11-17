@@ -13,12 +13,13 @@
 |---|---|
 | [01 Foundation](superpowers/plans/2026-11-17-01-foundation.md) | Done |
 | [02 Adapters](superpowers/plans/2026-11-17-02-adapters.md): adapter kit, Claude Code, Grok Build and opencode (ACP), `ion ask` | Done |
-| 03 Workspace, scheduler, policy, approvals, needs, retries | Not written |
-| 04 Desktop app and Chats screens | Not written |
-| 05 ion chief and Ions screens | Not written |
-| 06 Routines, Activity, Artifacts, Tools | Not written |
-| 07 Suggestions and memory | Not written |
-| 08 More adapters (Cursor, Gemini CLI, Codex via ACP) | Not written |
+| [03 Workspace and needs](superpowers/plans/2026-11-17-03-workspace-needs.md): worktree per chat, needs, run queue, retries | Done |
+| 04 Context: chat continuity, history and memory for ions (daemon MCP), model catalogs | Not written |
+| 05 Desktop app and Chats screens | Not written |
+| 06 ion chief and Ions screens | Not written |
+| 07 Routines, Activity, Artifacts, Tools | Not written |
+| 08 Suggestions | Not written |
+| 09 More adapters (Cursor, Gemini CLI, Codex via ACP) | Not written |
 
 ## Packages
 

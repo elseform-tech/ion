@@ -19,51 +19,49 @@ const req = (kind: string, input: Record<string, unknown>): ApprovalRequest => (
   summary: "s",
   input,
 });
-const decide = (kind: string, input: Record<string, unknown>, allowEdits = true) =>
-  decideByPolicy(req(kind, input), { allowEdits, roots });
+const decide = (kind: string, input: Record<string, unknown>) => decideByPolicy(req(kind, input), { roots });
 
 describe("decideByPolicy", () => {
-  it("allows reads and searches inside the project, denies them outside", () => {
+  it("allows reads and searches inside the project, asks about them outside", () => {
     expect(decide("read", { file_path: join(project, "src/a.ts") })).toBe("allow");
     expect(decide("search", { pattern: "foo", path: project })).toBe("allow");
-    expect(decide("read", { file_path: "/etc/passwd" })).toBe("deny");
+    expect(decide("read", { file_path: "/etc/passwd" })).toBe("ask");
   });
 
-  it("allows edits only with allowEdits and only inside the project", () => {
+  it("allows edits inside the project and asks about the rest", () => {
     expect(decide("edit", { file_path: join(project, "new.ts") })).toBe("allow");
-    expect(decide("edit", { file_path: join(project, "new.ts") }, false)).toBe("deny");
-    expect(decide("edit", { file_path: join(outside, "x.ts") })).toBe("deny");
+    expect(decide("edit", { file_path: join(outside, "x.ts") })).toBe("ask");
   });
 
-  it("denies an edit that names no path (fail closed)", () => {
-    expect(decide("edit", {})).toBe("deny");
+  it("asks about an edit that names no path (fail closed)", () => {
+    expect(decide("edit", {})).toBe("ask");
   });
 
   it("checks every path, including ACP locations", () => {
-    expect(decide("edit", { locations: [join(project, "a.ts"), "/etc/hosts"] })).toBe("deny");
+    expect(decide("edit", { locations: [join(project, "a.ts"), "/etc/hosts"] })).toBe("ask");
     expect(decide("edit", { locations: [join(project, "a.ts")] })).toBe("allow");
   });
 
   it("resolves symlinks before deciding", () => {
-    expect(decide("edit", { file_path: join(project, "escape/x.ts") })).toBe("deny");
-    expect(decide("read", { file_path: join(project, "escape/secret") })).toBe("deny");
+    expect(decide("edit", { file_path: join(project, "escape/x.ts") })).toBe("ask");
+    expect(decide("read", { file_path: join(project, "escape/secret") })).toBe("ask");
   });
 
-  it("denies commands, web and everything else", () => {
+  it("asks about commands, web and everything else", () => {
     for (const kind of ["command", "web", "mcp", "other"])
-      expect(decide(kind, { file_path: join(project, "a") })).toBe("deny");
+      expect(decide(kind, { file_path: join(project, "a") })).toBe("ask");
   });
 
   it("fails closed for reads that name no path, and finds paths in any *path field", () => {
-    expect(decide("read", {})).toBe("deny");
-    expect(decide("edit", { filePath: "/etc/hosts" })).toBe("deny");
+    expect(decide("read", {})).toBe("ask");
+    expect(decide("edit", { filePath: "/etc/hosts" })).toBe("ask");
     expect(decide("edit", { target_path: join(project, "a.ts") })).toBe("allow");
   });
 
   it("fails closed for searches without a path, and checks ~ paths", () => {
-    expect(decide("search", { pattern: "foo" })).toBe("deny");
-    expect(decide("read", { file_path: "~/.ssh/id_rsa" })).toBe("deny");
-    expect(decide("edit", { file_path: join(project, "a/../../x.ts") })).toBe("deny");
+    expect(decide("search", { pattern: "foo" })).toBe("ask");
+    expect(decide("read", { file_path: "~/.ssh/id_rsa" })).toBe("ask");
+    expect(decide("edit", { file_path: join(project, "a/../../x.ts") })).toBe("ask");
   });
 
   // Regression (final review I1): file content and patterns aren't paths.
@@ -77,10 +75,87 @@ describe("decideByPolicy", () => {
     expect(decide("search", { pattern: "/api/users", path: project })).toBe("allow");
   });
 
+  // Regression (security review): git internals and agent/tool config can run code; always ask.
+  it("asks about edits to git internals and agent config, even inside the worktree", () => {
+    for (const f of [
+      ".git",
+      ".git/config",
+      ".gitmodules",
+      ".claude/settings.json",
+      ".mcp.json",
+      ".envrc",
+      ".opencode/x.ts",
+      "sub/.git/hooks/pre-commit",
+    ])
+      expect(decide("edit", { file_path: join(project, f) })).toBe("ask");
+    expect(decide("read", { file_path: join(project, ".git/config") })).toBe("allow");
+    expect(decide("edit", { file_path: join(project, "src/github.ts") })).toBe("allow");
+  });
+
+  // Regression (security review): case-insensitive file systems, and every dot-folder or tool config.
+  it("asks about such edits whatever their case, in any dot-folder, and for tool config files", () => {
+    for (const f of [
+      ".GIT/config",
+      ".Claude/settings.json",
+      ".github/workflows/ci.yml",
+      ".devcontainer/x.json",
+      ".npmrc",
+      ".yarnrc.yml",
+      ".pre-commit-config.yaml",
+    ])
+      expect(decide("edit", { file_path: join(project, f) })).toBe("ask");
+    expect(decide("edit", { file_path: join(project, ".gitignore") })).toBe("allow");
+  });
+
+  it("judges dot-folders relative to the worktree, not the folders above it", () => {
+    const hidden = realpathSync(mkdtempSync(join(tmpdir(), "ion-dot-")));
+    mkdirSync(join(hidden, ".ion", "wt"), { recursive: true });
+    const wt = join(hidden, ".ion", "wt");
+    expect(decideByPolicy(req("edit", { file_path: join(wt, "a.ts") }), { roots: [wt] })).toBe("allow");
+  });
+
+  // Final review I4: other path-carrying keys, and a Glob pattern that is itself a path.
+  it("checks move destinations and absolute Glob patterns too", () => {
+    expect(decide("edit", { locations: [join(project, "a.ts")], destination: "/etc/a.ts" })).toBe("ask");
+    expect(
+      decideByPolicy(
+        { ...req("search", { path: project, pattern: "/Users/x/.ssh/*" }), toolName: "Glob" },
+        { roots },
+      ),
+    ).toBe("ask");
+    expect(
+      decideByPolicy(
+        { ...req("search", { path: project, pattern: "**/*.ts" }), toolName: "Glob" },
+        { roots },
+      ),
+    ).toBe("allow");
+    expect(
+      decideByPolicy(
+        { ...req("search", { path: project, pattern: "/api/users" }), toolName: "Grep" },
+        { roots },
+      ),
+    ).toBe("allow");
+  });
+
+  // Security review: a URL isn't a path inside the worktree; braces can hide an absolute Glob path.
+  it("asks when a path field holds a URL, or a Glob hides an absolute path in braces", () => {
+    expect(decide("read", { source: "https://example.com/x" })).toBe("ask");
+    expect(decide("read", { file_path: join(project, "a.ts"), src: "file:///etc/passwd" })).toBe("ask");
+    const glob = (pattern: string) =>
+      decideByPolicy({ ...req("search", { path: project, pattern }), toolName: "Glob" }, { roots });
+    expect(glob("{**/*.ts,/etc/*}")).toBe("ask");
+    expect(glob("src/{a,~/x}/*")).toBe("ask");
+    expect(glob("@(src|/etc)/*")).toBe("ask");
+    expect(glob("+(x|~/y)")).toBe("ask");
+    expect(glob("{a,\\/etc/*}")).toBe("ask");
+    expect(glob("src/{a,b}/*.ts")).toBe("allow");
+    expect(glob("src/@(a|b)/*.ts")).toBe("allow");
+  });
+
   it("checks declared path fields however deeply nested", () => {
     expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ file_path: "/etc/hosts" }] })).toBe(
-      "deny",
+      "ask",
     );
-    expect(decide("edit", { locations: [join(project, "a.ts"), "/etc/hosts"] })).toBe("deny");
+    expect(decide("edit", { locations: [join(project, "a.ts"), "/etc/hosts"] })).toBe("ask");
   });
 });

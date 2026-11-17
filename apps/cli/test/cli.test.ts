@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -31,7 +31,10 @@ function ion(...args: string[]): Promise<{ code: number; out: string; err: strin
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
-  mkdirSync(join(p, ".git"), { recursive: true });
+  mkdirSync(p, { recursive: true });
+  const git = (...a: string[]) => execFileSync("git", a, { cwd: p });
+  git("init", "-q", "-b", "main");
+  git("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init");
   return p;
 };
 
@@ -156,7 +159,9 @@ describe("ion cli", { timeout: 20_000 }, () => {
 
   // Golden: the CLI is a public interface; help text and messages change only on purpose.
   it("help output", async () => {
-    const help = await Promise.all([[], ["daemon"], ["projects"]].map((a) => ion(...a, "--help")));
+    const help = await Promise.all(
+      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"]].map((a) => ion(...a, "--help")),
+    );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
   });
 
@@ -176,18 +181,52 @@ describe("ion cli", { timeout: 20_000 }, () => {
       await expect(`${stable(r.out)}\n`).toMatchFileSnapshot("../golden/ask-hello.txt");
     });
 
-    it("shows a denied edit and exits 0", async () => {
-      await setup();
+    it("edits inside the chat's worktree without asking", async () => {
+      const p = await setup();
       const r = await ion("ask", "approve", "-p", "app", "--harness", "fake");
-      expect(r.out).toContain("denied");
+      expect(r.out).toContain("· Edited notes.md");
       expect(r.code).toBe(0);
+      expect(existsSync(join(p, "notes.md"))).toBe(false);
+    });
+
+    it("pauses on a need until you answer it, then finishes", async () => {
+      await setup();
+      const asking = ion("ask", "shell", "-p", "app", "--harness", "fake");
+      let row = "";
+      for (let i = 0; i < 100 && !row; i++) {
+        const r = await ion("needs");
+        if (r.out !== "Nothing needs you") row = r.out;
+        else await new Promise((res) => setTimeout(res, 100));
+      }
+      const [first, detail] = row.split("\n");
+      const [id, project, summary] = first!.split("  ");
+      expect([project, summary]).toEqual(["app", "Run pnpm test"]);
+      expect(detail).toBe("  command: pnpm test");
+      expect((await ion("needs", "allow", id!)).out).toBe("Allowed");
+      const r = await asking;
+      expect(r.out).toContain(`· Waiting on you: Run pnpm test — run: ion needs allow ${id}`);
+      expect(r.out).toContain("Tests pass.");
+      expect(await ion("needs", "deny", id!)).toMatchObject({ code: 1, err: "That's already answered" });
+      expect((await ion("needs")).out).toBe("Nothing needs you");
+    });
+
+    it("lists chats and archives one", async () => {
+      await setup();
+      const r = await ion("ask", "hello there", "-p", "app", "--harness", "fake", "--json");
+      const chatId = JSON.parse(r.out.split("\n")[0]!).chatId as string;
+      expect((await ion("chats")).out).toMatch(
+        new RegExp(`^${chatId}  hello there  app  ion/hello-there-\\w{6}  done$`),
+      );
+      expect((await ion("chats", "archive", chatId)).out).toBe("Archived");
+      expect((await ion("chats")).out).toBe("No chats");
+      expect(await ion("chats", "archive", "nope")).toMatchObject({ code: 1, err: "Unknown chat: nope" });
     });
 
     it("prints one JSON event per line with --json", async () => {
       await setup();
       const r = await ion("ask", "hello", "-p", "app", "--harness", "fake", "--json");
       const events = r.out.split("\n").map((l) => JSON.parse(l));
-      expect(events[0].type).toBe("run.started");
+      expect(events.slice(0, 2).map((e) => e.type)).toEqual(["run.queued", "run.started"]);
       expect(events.at(-1)).toMatchObject({ type: "run.finished", data: { status: "done" } });
     });
 

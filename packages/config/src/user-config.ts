@@ -22,6 +22,9 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   projects: z.array(Project).default([]),
+  resources: z
+    .looseObject({ max_runs: z.union([z.literal("auto"), z.number().int().min(1)]).default("auto") })
+    .default({ max_runs: "auto" }),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

@@ -29,11 +29,38 @@ export type Commands = {
       harness?: string;
       model?: string;
       effort?: EffortLevel;
-      allowEdits?: boolean;
     };
     result: { chatId: string; runId: string };
   };
   "run.interrupt": { args: { runId: string }; result: { ok: true } };
+  "needs.list": { args: { chatId?: string }; result: NeedInfo[] };
+  "need.resolve": {
+    args: { needId: string; decision: "allow" | "deny" };
+    result: { ok: true };
+  };
+  "chats.list": { args: Record<string, never>; result: ChatInfo[] };
+  "chat.archive": { args: { chatId: string }; result: { ok: true } };
+};
+
+export type NeedInfo = {
+  needId: string;
+  chatId: string;
+  runId: string;
+  projectId: string | null;
+  kind: string;
+  summary: string;
+  /** The exact input the agent sent (command, path, URL…), not its own description. */
+  detail: string | null;
+  raisedAt: string;
+};
+
+export type ChatInfo = {
+  chatId: string;
+  title: string;
+  projectId: string | null;
+  branch: string | null;
+  archived: boolean;
+  lastRunStatus: string | null;
 };
 export type Command = keyof Commands;
 export const COMMANDS = [
@@ -44,6 +71,10 @@ export const COMMANDS = [
   "events.subscribe",
   "ask",
   "run.interrupt",
+  "needs.list",
+  "need.resolve",
+  "chats.list",
+  "chat.archive",
 ] as const;
 
 export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };

@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { ApprovalRequest, Decision } from "@ion/adapter-kit";
+import type { ApprovalRequest } from "@ion/adapter-kit";
 
 /** Every string in the input, however deeply nested, with the key it sits under. */
 function* strings(value: unknown, key = ""): Generator<[string, string]> {
@@ -12,12 +12,32 @@ function* strings(value: unknown, key = ""): Generator<[string, string]> {
 }
 
 /**
- * Every path a request names: strings under a key ending in "path" (file_path, notebook_path, filePath, …)
- * or "locations", at any depth. File content, patterns and queries are never treated as paths.
+ * Every path a request names: strings under a key ending in "path" (file_path, notebook_path, filePath, …),
+ * "locations", or naming a source, destination or folder, at any depth; and a Glob's pattern when it is a path. File content, patterns and queries are never treated as paths.
  */
+const PATH_KEY = /(path|locations|destination|dest|target|source|src|dir|directory|cwd|root)$/i;
+
+const URL_LIKE = /^[a-z][a-z0-9+.-]+:/i;
+const REACHES_OUT = /(^[~/])|(\.\.)/;
+
+/**
+ * A Glob pattern is itself a path: the pattern and each of its brace alternatives that is absolute, ~ or ..
+ * (braces or extglob alternatives can hide an absolute one) is checked like any other path.
+ */
+function globPaths(req: ApprovalRequest, k: string, v: string): string[] {
+  if (k !== "pattern" || !/glob/i.test(req.toolName)) return [];
+  // Escapes removed, then what follows every opening or alternation delimiter (braces, extglob @(a|b), …).
+  const plain = v.replaceAll("\\", "");
+  const alternatives = [...plain.matchAll(/[{,(|]\s*([^,{}()|]*)/g)].map((m) => m[1]!.trim());
+  return [plain, ...alternatives].filter((p) => REACHES_OUT.test(p));
+}
+
 function pathsOf(req: ApprovalRequest): string[] {
   const out: string[] = [];
-  for (const [k, v] of strings(req.input)) if (/(path|locations)$/i.test(k)) out.push(v);
+  for (const [k, v] of strings(req.input)) {
+    if (PATH_KEY.test(k)) out.push(v);
+    out.push(...globPaths(req, k, v));
+  }
   return out;
 }
 
@@ -36,9 +56,10 @@ function realish(p: string): string {
   }
 }
 
+const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
+
 function inside(p: string, roots: string[]): boolean {
-  const expanded = p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
-  const real = realish(resolve(roots[0] ?? "/", expanded));
+  const real = realish(resolve(roots[0] ?? "/", expandHome(p)));
   return roots.some((root) => {
     const rel = relative(realish(root), real);
     return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -48,20 +69,38 @@ function inside(p: string, roots: string[]): boolean {
 const allInside = (paths: string[], roots: string[]) => paths.every((p) => inside(p, roots));
 
 /**
- * Plan 02's stand-in for "Needs you". Reads and searches: fine inside the project. Edits: only with
- * --allow-edits, only inside the project, and only when the request names its paths (fail closed).
- * Symlinks are resolved first. Everything else (commands, web, MCP) is denied. Plan 03 turns denials into pins.
+ * Reads, searches and edits whose every named path is inside the chat's worktree (symlinks resolved) are
+ * allowed: the worktree is the sandbox. Anything else (commands, web, MCP, paths outside, or an edit that
+ * names no path) is "ask": it becomes a need you answer. Edits to git internals and agent config always ask.
  */
-export function decideByPolicy(
-  req: ApprovalRequest,
-  opts: { allowEdits: boolean; roots: string[] },
-): Decision {
+export function decideByPolicy(req: ApprovalRequest, opts: { roots: string[] }): "allow" | "ask" {
   const paths = pathsOf(req);
-  const named = paths.length > 0 && allInside(paths, opts.roots);
-  const rules: Record<string, boolean> = {
-    read: named,
-    search: named,
-    edit: opts.allowEdits && named,
-  };
-  return rules[req.kind] === true ? "allow" : "deny";
+  // A URL (https:, file:, …) in a path field is never "inside the worktree".
+  const inWorktree = paths.length > 0 && !paths.some((p) => URL_LIKE.test(p)) && allInside(paths, opts.roots);
+  if (req.kind === "edit" && paths.some((p) => runsCode(p, opts.roots))) return "ask";
+  return ["read", "search", "edit"].includes(req.kind) && inWorktree ? "allow" : "ask";
+}
+
+/**
+ * Git internals, agent config and tool config can make git, a coding agent or a package manager run code:
+ * editing any dot-folder in the worktree, or one of these files, always asks. Case-insensitive (macOS).
+ */
+const CODE_FILES = new Set([
+  ".git",
+  ".gitmodules",
+  ".gitattributes",
+  ".mcp.json",
+  ".envrc",
+  ".npmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  ".pre-commit-config.yaml",
+]);
+function runsCode(p: string, roots: string[]): boolean {
+  const real = realish(resolve(roots[0] ?? "/", expandHome(p)));
+  const root = roots.map(realish).find((r) => !relative(r, real).startsWith(".."));
+  const parts = (root ? relative(root, real) : real).toLowerCase().split(/[\\/]+/);
+  return (
+    CODE_FILES.has(parts.at(-1) ?? "") || parts.slice(0, -1).some((s) => s.startsWith(".") && s !== "..")
+  );
 }

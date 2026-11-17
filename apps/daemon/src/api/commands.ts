@@ -1,13 +1,18 @@
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
+import type { NeedsService } from "../needs/index.js";
 import type { RunManager } from "../runs/manager.js";
-import type { EventStore } from "../store/index.js";
+import type { Db, EventStore } from "../store/index.js";
+import { chatsView } from "../views/chats.js";
+import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
 
 export { UserError } from "./errors.js";
 
 export type Ctx = {
   store: EventStore;
+  db: Db;
+  needs: NeedsService;
   runs: RunManager;
   configFile: string;
   startedAt: number;
@@ -22,6 +27,18 @@ type Handlers = {
 };
 
 export const handlers: Handlers = {
+  "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
+  "chats.list": (_a, ctx) => chatsView.list(ctx.db),
+  "chat.archive": async (a, ctx) => {
+    await ctx.runs.archive(String(a.chatId ?? ""));
+    return { ok: true as const };
+  },
+  "need.resolve": (a, ctx) => {
+    const decision = a.decision;
+    if (decision !== "allow" && decision !== "deny") throw new UserError("Answer allow or deny");
+    ctx.needs.resolve(String(a.needId ?? ""), decision, "you");
+    return { ok: true as const };
+  },
   ask: (a, ctx) => {
     if (typeof a.text !== "string" || !a.text.trim()) throw new UserError("Say what to do");
     return ctx.runs.ask(a);

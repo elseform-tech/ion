@@ -25,6 +25,23 @@ const valid: [string, Record<string, unknown>, string?][] = [
   ["approval.resolved", { requestId: "q1", decision: "deny", by: "policy" }, "daemon"],
   ["usage.reported", { model: "haiku", inputTokens: 10, outputTokens: 5, costUsd: null }],
   ["run.started", { harness: "fake", model: "m", effort: null, authMethod: null }],
+  [
+    "need.raised",
+    {
+      needId: "n1",
+      requestId: "q1",
+      kind: "command",
+      summary: "Run pnpm test",
+      detail: null,
+      dedupeKey: "k",
+    },
+    "daemon",
+  ],
+  ["need.resolved", { needId: "n1", decision: "superseded", by: "daemon" }, "daemon"],
+  ["run.queued", {}, "daemon"],
+  ["run.retrying", { attempt: 1, delayS: 3.2, reason: "rate limit", effort: null }, "daemon"],
+  ["chat.created", { title: "t", projectId: "p", worktree: "/w", branch: "ion/t-abc123" }, "daemon"],
+  ["chat.created", { title: "t", projectId: null }, "daemon"],
 ];
 
 const invalid: [string, Record<string, unknown>, string?][] = [
@@ -35,6 +52,9 @@ const invalid: [string, Record<string, unknown>, string?][] = [
   ["approval.resolved", { requestId: "q1", decision: "maybe", by: "policy" }, "daemon"],
   ["usage.reported", { model: "m", inputTokens: -1, outputTokens: 0, costUsd: null }],
   ["run.started", { harness: "fake", model: "m", effort: null }],
+  ["need.raised", { needId: "n1", requestId: "q1", kind: "command", summary: "x", detail: null }, "daemon"],
+  ["need.resolved", { needId: "n1", decision: "maybe", by: "you" }, "daemon"],
+  ["run.retrying", { attempt: 0, delayS: -1, reason: "x", effort: null }, "daemon"],
 ];
 
 describe("event payloads", () => {

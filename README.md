@@ -5,7 +5,8 @@ Gemini CLI, Cursor CLI, Pi); ion runs them on your machine, one ion per project,
 everything that needs you.
 
 Status: early. Working: daemon, event log, config, architecture lint rules, CI, and `ion ask` on Claude Code,
-Grok Build and opencode.
+Grok Build and opencode. Each chat works in its own git worktree; anything outside it waits for you
+(`ion needs`); runs queue and retry.
 
 ## Quick start (development)
 

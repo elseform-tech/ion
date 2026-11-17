@@ -14,7 +14,11 @@ export type MapState = {
   sessionId: string | null;
   interrupted: boolean;
   tools: Map<string, { name: string; input: Obj }>;
+  /** Why the run is failing, when Claude Code said so before its result (rate limit, overload, account). */
+  failure: Failure | null;
 };
+
+type Failure = { code: string; retryable: boolean; message: string; retryAfterS?: number };
 
 export const createMapState = (o: {
   cwd: string;
@@ -28,7 +32,35 @@ export const createMapState = (o: {
   sessionId: null,
   interrupted: false,
   tools: new Map(),
+  failure: null,
 });
+
+/** Waits longer than this aren't retried: they're a usage limit, not a blip. */
+const MAX_WAIT_S = 120;
+const TRANSIENT = new Set(["rate_limit", "overloaded", "server_error"]);
+
+function mapRateLimit(msg: Obj, s: MapState): AdapterEvent[] {
+  const info = (msg.rate_limit_info ?? {}) as { status?: string; resetsAt?: number };
+  if (info.status !== "rejected") return [];
+  const waitS =
+    typeof info.resetsAt === "number" ? Math.max(0, info.resetsAt - Date.now() / 1000) : undefined;
+  s.failure =
+    waitS !== undefined && waitS > MAX_WAIT_S
+      ? { code: "usage_limit", retryable: false, message: "Claude usage limit reached" }
+      : {
+          code: "rate_limit",
+          retryable: true,
+          message: "Rate limited",
+          ...(waitS === undefined ? {} : { retryAfterS: Math.ceil(waitS) }),
+        };
+  return [];
+}
+
+function noteAssistantError(msg: Obj, s: MapState): void {
+  const error = msg.error;
+  if (typeof error !== "string" || error === "unknown" || s.failure) return;
+  s.failure = { code: error, retryable: TRANSIENT.has(error), message: error.replaceAll("_", " ") };
+}
 
 const blocks = (m: unknown): Block[] => {
   const c = (m as { content?: unknown } | undefined)?.content;
@@ -124,10 +156,12 @@ function mapResult(msg: Obj, s: MapState): AdapterEvent[] {
   const status = endStatus(String(msg.subtype), s);
   if (status === "failed") {
     const errors = Array.isArray(msg.errors) ? msg.errors.join("; ") : "";
-    out.push({
-      type: EV.error,
-      data: { code: String(msg.subtype), retryable: false, message: errors || "Claude Code stopped" },
-    });
+    const fallback = {
+      code: String(msg.subtype),
+      retryable: false,
+      message: errors || "Claude Code stopped",
+    };
+    out.push({ type: EV.error, data: s.failure ?? fallback });
   }
   out.push({ type: EV.runFinished, data: { status } });
   return out;
@@ -142,7 +176,10 @@ export function mapSdkMessage(msg: unknown, s: MapState): AdapterEvent[] {
     case "stream_event":
       return mapStream(m);
     case "assistant":
+      noteAssistantError(m, s);
       return mapAssistant(m, s);
+    case "rate_limit_event":
+      return mapRateLimit(m, s);
     case "user":
       return mapToolResults(m, s);
     case "result":

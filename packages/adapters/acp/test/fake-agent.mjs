@@ -16,6 +16,14 @@ let cancel = null;
 const sessions = new Map();
 const metas = new Map();
 
+/** Prompts answered in one step: a refusal, a crash, RPC errors. */
+const QUICK = {
+  refuse: (id) => send({ id, result: { stopReason: "cancelled" } }),
+  crash: () => process.exit(3),
+  ratelimit: (id) => send({ id, error: { code: -32603, message: "Rate limit exceeded (429)" } }),
+  badinput: (id) => send({ id, error: { code: -32602, message: "Invalid params" } }),
+};
+
 async function prompt(id, { sessionId, prompt: blocks }) {
   const text = blocks
     .map((b) => b.text ?? "")
@@ -70,7 +78,8 @@ async function prompt(id, { sessionId, prompt: blocks }) {
     });
     return send({ id, result: { stopReason: cancelled ? "cancelled" : "end_turn" } });
   }
-  if (text.startsWith("refuse")) return send({ id, result: { stopReason: "cancelled" } });
+  const quick = QUICK[text.split(" ")[0]];
+  if (quick) return quick(id);
   if (text.startsWith("whoami")) {
     update(sessionId, {
       sessionUpdate: "agent_message_chunk",
