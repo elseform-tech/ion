@@ -9,4 +9,4 @@ await ion.call("projects.add", { path: "/code/storefront" });
 const stop = await ion.subscribe({ chatId }, (event) => render(event));
 ```
 
-Errors from the daemon reject with `ApiCallError` (`code`: `unknown_command` | `bad_request` | `invalid` | `internal`).
+The token is sent as a WebSocket subprotocol (`ion.token.<token>`), never in the URL. Errors from the daemon reject with `ApiCallError` (`code`: `unknown_command` | `bad_request` | `invalid` | `internal`).

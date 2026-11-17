@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   type ApiError,
@@ -15,6 +15,7 @@ import { allViews } from "../views/index.js";
 import { type Ctx, handlers, UserError } from "./commands.js";
 
 export const VERSION = "0.0.0";
+export const TOKEN_PREFIX = "ion.token.";
 
 export async function startServer(opts: {
   dataDir: string;
@@ -22,17 +23,31 @@ export async function startServer(opts: {
   port?: number;
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
   const db = openDb(join(opts.dataDir, "ion.db"));
   const store = new EventStore(db, allViews);
   const ctx: Ctx = { store, configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
   const token = randomBytes(24).toString("base64url");
 
-  const wss = new WebSocketServer({ host: "127.0.0.1", port: opts.port ?? 0 });
+  // The token travels as a subprotocol ("ion.token.<token>"): browsers can set it, and it stays out of URLs.
+  const digest = (x: string) => createHash("sha256").update(x).digest();
+  const expected = digest(token);
+  const authorized = (protocols: string[]) =>
+    protocols.some(
+      (p) => p.startsWith(TOKEN_PREFIX) && timingSafeEqual(digest(p.slice(TOKEN_PREFIX.length)), expected),
+    );
+  const wss = new WebSocketServer({
+    host: "127.0.0.1",
+    port: opts.port ?? 0,
+    handleProtocols: (protocols) => (protocols.has("ion") ? "ion" : false),
+  });
   await new Promise<void>((r) => wss.once("listening", r));
 
   wss.on("connection", (ws, req) => {
-    const given = new URL(req.url ?? "/", "http://x").searchParams.get("token");
-    if (given !== token) return ws.close(UNAUTHORIZED_CLOSE, "Unauthorized");
+    const offered = String(req.headers["sec-websocket-protocol"] ?? "")
+      .split(",")
+      .map((p) => p.trim());
+    if (!authorized(offered)) return ws.close(UNAUTHORIZED_CLOSE, "Unauthorized");
 
     const offs: (() => void)[] = [];
     let subN = 0;

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,6 +64,11 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("status")).code).toBe(2);
     expect((await ion("daemon", "start")).out).toBe("Started");
     expect((await ion("status")).code).toBe(0);
+  });
+
+  it("writes daemon.json readable only by you", async () => {
+    await ion("daemon", "start");
+    expect(statSync(join(home, "data", "daemon.json")).mode & 0o777).toBe(0o600);
   });
 
   it("stops and removes daemon.json", async () => {

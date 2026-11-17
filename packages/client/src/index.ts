@@ -9,7 +9,15 @@ export type DaemonInfo = { pid: number; port: number; token: string };
 export function readDaemonInfo(dataDir: string): DaemonInfo | null {
   try {
     const x = JSON.parse(readFileSync(join(dataDir, "daemon.json"), "utf8")) as DaemonInfo;
-    return typeof x.port === "number" && typeof x.token === "string" ? x : null;
+    const ok =
+      Number.isInteger(x.pid) &&
+      x.pid > 0 &&
+      Number.isInteger(x.port) &&
+      x.port >= 1 &&
+      x.port <= 65535 &&
+      typeof x.token === "string" &&
+      x.token.length > 0;
+    return ok ? x : null;
   } catch {
     return null;
   }
@@ -32,9 +40,11 @@ export interface IonClient {
 
 /** Opens an authenticated connection to the daemon. */
 export async function connect(opts: { port: number; token: string; host?: string }): Promise<IonClient> {
-  const ws = new WebSocket(
-    `ws://${opts.host ?? "127.0.0.1"}:${opts.port}/?token=${encodeURIComponent(opts.token)}`,
-  );
+  // The token rides in the subprotocol list, never the URL.
+  const ws = new WebSocket(`ws://${opts.host ?? "127.0.0.1"}:${opts.port}/`, [
+    "ion",
+    `ion.token.${opts.token}`,
+  ]);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", resolve);
     ws.once("error", reject);

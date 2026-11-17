@@ -28,10 +28,24 @@ describe("daemon api", () => {
     await srv.close();
   });
 
+  const closeCode = (ws: WebSocket) => new Promise<number>((r) => ws.on("close", (c) => r(c)));
+
   it("closes connections with a wrong token using 4401", async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/?token=wrong`);
-    const code = await new Promise<number>((r) => ws.on("close", (c) => r(c)));
-    expect(code).toBe(4401);
+    expect(await closeCode(new WebSocket(`ws://127.0.0.1:${srv.port}/`, ["ion", "ion.token.wrong"]))).toBe(
+      4401,
+    );
+  });
+
+  it("doesn't accept the token in the URL", async () => {
+    expect(await closeCode(new WebSocket(`ws://127.0.0.1:${srv.port}/?token=${srv.token}`))).toBe(4401);
+  });
+
+  it("tightens a data folder that already existed with loose permissions", async () => {
+    const h = mkdtempSync(join(tmpdir(), "ion-loose-"));
+    mkdirSync(join(h, "data"), { mode: 0o755 });
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: join(h, "config.toml"), port: 0 });
+    await s2.close();
+    expect(statSync(join(h, "data")).mode & 0o777).toBe(0o700);
   });
 
   it("keeps its data folder private", () => {
