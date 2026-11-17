@@ -34,3 +34,18 @@ child processes only in `apps/daemon/src/workspace`, adapters and `apps/cli/src/
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints.
 - Before committing: `pnpm check && pnpm build`.
 - Keep `docs/README.md` (the index) and this file current when you add a package or a doc.
+
+## Code health (CI enforces all of this)
+
+| Check | Tool | Limit |
+|---|---|---|
+| File and function size | ESLint `max-lines`, `max-lines-per-function` | 1000 lines per file, 80 per function |
+| Nesting and parameters | ESLint `max-depth`, `max-nested-callbacks`, `max-params` | depth 3, 3 callbacks, 4 params |
+| Complexity and smells | `eslint-plugin-sonarjs`, ESLint `complexity` | cognitive 15, cyclomatic 15 |
+| Dead code | knip, TypeScript `noUnused*`/`allowUnreachableCode: false`, ESLint dead-store rules | none allowed |
+| Duplication | jscpd (`pnpm health:dup`) | ratcheted |
+| Ratchet | `pnpm health` vs `health/baseline.json` | files >400 lines, functions >50 lines, cognitive >10, duplication %, `eslint-disable`, TODO may never grow |
+| Golden files | Vitest `toMatchFileSnapshot` in `*/golden/` | contract, default config, CLI help change only on purpose (`vitest -u`) |
+| Security | CodeQL, dependency review, `pnpm audit --audit-level high` | no high or critical |
+
+Improved a metric? Run `pnpm health:update` and commit the new baseline.

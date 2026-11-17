@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { ESLint } from "eslint";
 
 /** Soft limits: crossing one isn't an error, but the count of crossings may never grow. */
-export const SOFT = { fileLines: 400, functionLines: 50, cognitiveComplexity: 10 };
+const SOFT = { fileLines: 400, functionLines: 50, cognitiveComplexity: 10 };
 
 const SOURCES = ["apps/*/src/**/*.{ts,js}", "packages/*/src/**/*.{ts,js}", "tools/*/src/**/*.{ts,js}"];
 // This file names the patterns it counts; don't count it.

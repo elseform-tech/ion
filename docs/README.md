@@ -29,3 +29,4 @@
 | `@ion/daemon` | `apps/daemon/README.md` |
 | `@ion/cli` | `apps/cli/README.md` |
 | `@ion/lint-rules` | `tools/lint-rules/README.md` |
+| `@ion/health` | Code-health ratchet: see "Code health" in `AGENTS.md`; baseline in `health/baseline.json` |

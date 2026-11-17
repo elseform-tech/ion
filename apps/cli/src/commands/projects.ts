@@ -13,22 +13,26 @@ async function client() {
 
 export function projectCommands(program: Command, out: () => Out) {
   const p = program.command("projects").description("Your projects");
-  p.command("ls").description("List your projects").action(async () => {
-    const c = await client();
-    const list = await c.call("projects.list", {});
-    c.close();
-    print(out(), list.length ? list.map((x) => `${x.id}  ${x.path}`).join("\n") : "No projects", list);
-  });
-  p.command("add <path>").description("Add a git repo").action(async (path: string) => {
-    const c = await client();
-    try {
-      // Resolve here: the daemon's working folder isn't yours.
-      const added = await c.call("projects.add", { path: path.startsWith("/") ? path : resolve(path) });
-      print(out(), `Added ${added.id}`, added);
-    } catch (e) {
-      fail(e instanceof ApiCallError ? e.message : "Something went wrong");
-    } finally {
+  p.command("ls")
+    .description("List your projects")
+    .action(async () => {
+      const c = await client();
+      const list = await c.call("projects.list", {});
       c.close();
-    }
-  });
+      print(out(), list.length ? list.map((x) => `${x.id}  ${x.path}`).join("\n") : "No projects", list);
+    });
+  p.command("add <path>")
+    .description("Add a git repo")
+    .action(async (path: string) => {
+      const c = await client();
+      try {
+        // Resolve here: the daemon's working folder isn't yours.
+        const added = await c.call("projects.add", { path: path.startsWith("/") ? path : resolve(path) });
+        print(out(), `Added ${added.id}`, added);
+      } catch (e) {
+        fail(e instanceof ApiCallError ? e.message : "Something went wrong");
+      } finally {
+        c.close();
+      }
+    });
 }

@@ -36,6 +36,15 @@ export default tseslint.config(
       "ion/no-child-process": "error",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
 
+      // Dead code (knip covers unused files, exports and dependencies across packages)
+      "no-unreachable": "error",
+      "no-useless-return": "error",
+      "no-useless-catch": "error",
+      "@typescript-eslint/no-unused-expressions": "error",
+      "sonarjs/no-dead-store": "error",
+      "sonarjs/no-unused-collection": "error",
+      "sonarjs/no-redundant-jump": "error",
+
       // Size and shape
       "max-lines": ["error", { max: HEALTH.maxFileLines, skipBlankLines: true, skipComments: true }],
       "max-lines-per-function": [
