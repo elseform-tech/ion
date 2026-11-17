@@ -43,4 +43,24 @@ describe("render", () => {
       "· Edited a.ts Done · 0.1s\n",
     );
   });
+
+  it("says when a run waits on you, and how to answer", () => {
+    const r = createRenderer();
+    expect(r(ev("need.raised", { needId: "n1a2b3", summary: "Run pnpm test", kind: "command" })).text).toBe(
+      "· Waiting on you: Run pnpm test — run: ion needs allow n1a2b3\n",
+    );
+  });
+
+  it("says when a run retries, and shows the harness line only once", () => {
+    const r = createRenderer();
+    const started = ev("run.started", { harness: "fake", model: "fake" });
+    expect(r(started).text).toBe("Fake · fake\n");
+    expect(
+      r(ev("run.retrying", { attempt: 1, delayS: 3.2, reason: "Rate limited", effort: null })).text,
+    ).toBe("· Retrying in 4s (rate limited)\n");
+    expect(r(started).text).toBe("");
+    expect(r(ev("run.retrying", { attempt: 1, delayS: 0, reason: "x", effort: "max" })).text).toBe(
+      "· Retrying now at max effort (x)\n",
+    );
+  });
 });

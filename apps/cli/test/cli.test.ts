@@ -159,7 +159,9 @@ describe("ion cli", { timeout: 20_000 }, () => {
 
   // Golden: the CLI is a public interface; help text and messages change only on purpose.
   it("help output", async () => {
-    const help = await Promise.all([[], ["daemon"], ["projects"]].map((a) => ion(...a, "--help")));
+    const help = await Promise.all(
+      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"]].map((a) => ion(...a, "--help")),
+    );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
   });
 
@@ -185,6 +187,37 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(r.out).toContain("· Edited notes.md");
       expect(r.code).toBe(0);
       expect(existsSync(join(p, "notes.md"))).toBe(false);
+    });
+
+    it("pauses on a need until you answer it, then finishes", async () => {
+      await setup();
+      const asking = ion("ask", "shell", "-p", "app", "--harness", "fake");
+      let row = "";
+      for (let i = 0; i < 100 && !row; i++) {
+        const r = await ion("needs");
+        if (r.out !== "Nothing needs you") row = r.out;
+        else await new Promise((res) => setTimeout(res, 100));
+      }
+      const [id, project, summary] = row.split("  ");
+      expect([project, summary]).toEqual(["app", "Run pnpm test"]);
+      expect((await ion("needs", "allow", id!)).out).toBe("Allowed");
+      const r = await asking;
+      expect(r.out).toContain(`· Waiting on you: Run pnpm test — run: ion needs allow ${id}`);
+      expect(r.out).toContain("Tests pass.");
+      expect(await ion("needs", "deny", id!)).toMatchObject({ code: 1, err: "That's already answered" });
+      expect((await ion("needs")).out).toBe("Nothing needs you");
+    });
+
+    it("lists chats and archives one", async () => {
+      await setup();
+      const r = await ion("ask", "hello there", "-p", "app", "--harness", "fake", "--json");
+      const chatId = JSON.parse(r.out.split("\n")[0]!).chatId as string;
+      expect((await ion("chats")).out).toMatch(
+        new RegExp(`^${chatId}  hello there  app  ion/hello-there-\\w{6}  done$`),
+      );
+      expect((await ion("chats", "archive", chatId)).out).toBe("Archived");
+      expect((await ion("chats")).out).toBe("No chats");
+      expect(await ion("chats", "archive", "nope")).toMatchObject({ code: 1, err: "Unknown chat: nope" });
     });
 
     it("prints one JSON event per line with --json", async () => {

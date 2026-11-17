@@ -66,6 +66,7 @@ function endLine(s: State, status: string, ts: string): Rendered {
 
 const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered>> = {
   [EV.runStarted]: (s, d, e) => {
+    if (s.startedAt) return quiet; // a retry: same run, already introduced
     s.startedAt = Date.parse(e.ts);
     const label = HARNESS[String(d.harness)] ?? String(d.harness);
     return { text: line(s, [label, d.authMethod, d.model].filter(Boolean).map(clean).join(" · ")) };
@@ -89,6 +90,15 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     d.decision === "deny"
       ? { text: line(s, `· Asked to use ${s.asks.get(String(d.requestId)) ?? "a tool"} — denied (${d.by})`) }
       : quiet,
+  [EV.needRaised]: (s, d) => ({
+    text: line(s, `· Waiting on you: ${clean(d.summary)} — run: ion needs allow ${clean(d.needId)}`),
+  }),
+  [EV.runRetrying]: (s, d) => {
+    const secs = Math.ceil(Number(d.delayS) || 0);
+    const when = secs > 0 ? `in ${secs}s` : "now";
+    const effort = d.effort ? ` at ${clean(d.effort)} effort` : "";
+    return { text: line(s, `· Retrying ${when}${effort} (${clean(d.reason).toLowerCase()})`) };
+  },
   [EV.usageReported]: (s, d) => {
     if (typeof d.costUsd === "number") s.cost = d.costUsd;
     return quiet;

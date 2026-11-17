@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { askCommand } from "./commands/ask.js";
+import { chatsCommands } from "./commands/chats.js";
 import { daemonCommands } from "./commands/daemon.js";
+import { needsCommands } from "./commands/needs.js";
 import { projectCommands } from "./commands/projects.js";
 import { statusCommand } from "./commands/status.js";
 
@@ -12,5 +14,7 @@ daemonCommands(program, out);
 statusCommand(program, out);
 projectCommands(program, out);
 askCommand(program, out);
+needsCommands(program, out);
+chatsCommands(program, out);
 
 await program.parseAsync();

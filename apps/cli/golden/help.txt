@@ -9,6 +9,8 @@ Commands:
   status                Is ion running, and how many projects
   projects              Your projects
   ask [options] <text>  Ask a coding agent to do something in a project
+  needs                 What's waiting on you
+  chats                 Your chats
   help [command]        display help for command
 
 ---
@@ -39,3 +41,43 @@ Commands:
   ls              List your projects
   add <path>      Add a git repo
   help [command]  display help for command
+
+---
+
+Usage: ion ask [options] <text>
+
+Ask a coding agent to do something in a project
+
+Options:
+  -p, --project <id>  Project
+  --chat <id>         Continue a chat
+  --harness <id>      claude-code, grok-build or opencode (default:
+                      "claude-code")
+  --model <model>     Model
+  --effort <level>    low, medium, high or max
+  -h, --help          display help for command
+
+---
+
+Usage: ion needs [options] [command]
+
+What's waiting on you
+
+Options:
+  -h, --help  display help for command
+
+Commands:
+  allow <id>  Allow it
+  deny <id>   Deny it
+
+---
+
+Usage: ion chats [options] [command]
+
+Your chats
+
+Options:
+  -h, --help    display help for command
+
+Commands:
+  archive <id>  Archive a chat; its branch stays
