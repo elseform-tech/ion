@@ -73,4 +73,13 @@ describe("loadUserConfig", () => {
     expect(loadUserConfig(f)).toEqual({ config: c, error: null });
     expect(readFileSync(f, "utf8")).toContain("[[projects]]");
   });
+
+  it("defaults resources.max_runs to auto and accepts a number", () => {
+    expect(DEFAULT_CONFIG.resources.max_runs).toBe("auto");
+    const file = join(mkdtempSync(join(tmpdir(), "ion-cfg-")), "config.toml");
+    writeFileSync(file, "[resources]\nmax_runs = 3\n");
+    expect(loadUserConfig(file).config.resources.max_runs).toBe(3);
+    writeFileSync(file, "[resources]\nmax_runs = 0\n");
+    expect(loadUserConfig(file).error).toContain("max_runs");
+  });
 });

@@ -191,7 +191,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
       await setup();
       const r = await ion("ask", "hello", "-p", "app", "--harness", "fake", "--json");
       const events = r.out.split("\n").map((l) => JSON.parse(l));
-      expect(events[0].type).toBe("run.started");
+      expect(events.slice(0, 2).map((e) => e.type)).toEqual(["run.queued", "run.started"]);
       expect(events.at(-1)).toMatchObject({ type: "run.finished", data: { status: "done" } });
     });
 

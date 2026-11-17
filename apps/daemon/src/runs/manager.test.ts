@@ -19,6 +19,15 @@ let store: EventStore;
 let needs: NeedsService;
 let runs: RunManager;
 let repo: string;
+let configFile: string;
+let dataDir: string;
+
+/** A fresh manager that reads max_runs from the config file. */
+const limitTo = (n: number) => {
+  const c = addProject(DEFAULT_CONFIG, repo);
+  saveUserConfig(configFile, { ...c, resources: { max_runs: n } });
+  runs = new RunManager(store, { configFile, dataDir }, needs, db);
+};
 
 beforeEach(() => {
   const home = mkdtempSync(join(tmpdir(), "ion-runs-"));
@@ -31,12 +40,13 @@ beforeEach(() => {
   writeFileSync(join(repo, "README.md"), "# repo\n");
   git("add", ".");
   git("commit", "-q", "-m", "init");
-  const configFile = join(home, "config.toml");
+  configFile = join(home, "config.toml");
+  dataDir = join(home, "data");
   saveUserConfig(configFile, addProject(DEFAULT_CONFIG, repo));
   db = openDb(":memory:");
   store = new EventStore(db, allViews);
   needs = new NeedsService(store, db);
-  runs = new RunManager(store, { configFile, dataDir: join(home, "data") }, needs, db);
+  runs = new RunManager(store, { configFile, dataDir }, needs, db);
 });
 
 async function until<T>(f: () => T | undefined, ms = 3000): Promise<T> {
@@ -62,7 +72,7 @@ describe("RunManager", () => {
   it("creates a chat with its own worktree and stores the run's events in order", async () => {
     const { chatId, runId } = await ask("hello");
     const types = (await finished(runId)).map((e) => e.type);
-    expect(types[0]).toBe("run.started");
+    expect(types.slice(0, 2)).toEqual(["run.queued", "run.started"]);
     expect(types.at(-1)).toBe("run.finished");
     expect(store.read({ chatId })[0]).toMatchObject({
       type: "chat.created",
@@ -142,6 +152,27 @@ describe("RunManager", () => {
     expect(existsSync(wt)).toBe(false);
     expect(chatsView.list(db)[0]).toMatchObject({ chatId, archived: true });
     await expect(ask("hello", { chatId })).rejects.toThrow(new UserError("That chat is archived"));
+  });
+
+  it("queues runs beyond the limit and starts them as slots free up", async () => {
+    limitTo(1);
+    const a = await ask("slow");
+    const b = await ask("hello");
+    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["run.queued"]);
+    await runs.interrupt(a.runId);
+    const types = (await finished(b.runId)).map((e) => e.type);
+    expect(types.slice(0, 2)).toEqual(["run.queued", "run.started"]);
+  });
+
+  it("interrupting a queued run finishes it without starting the harness", async () => {
+    limitTo(1);
+    const a = await ask("slow");
+    const b = await ask("hello");
+    await runs.interrupt(b.runId);
+    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["run.queued", "run.finished"]);
+    expect(store.read({ runId: b.runId }).at(-1)?.data).toEqual({ status: "interrupted" });
+    await runs.interrupt(a.runId);
+    await finished(a.runId);
   });
 
   it("stores a failed run and keeps working", async () => {

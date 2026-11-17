@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { availableParallelism } from "node:os";
 import { type ApprovalRequest, type Decision, projectRoots, type Session } from "@ion/adapter-kit";
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV, type IonEvent } from "@ion/schema";
@@ -6,6 +7,7 @@ import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
+import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import { decideByPolicy } from "./policy.js";
@@ -21,6 +23,11 @@ export class RunManager {
   private readonly requested = new Map<string, () => void>();
   /** Chats with an ask in progress (before their run is active), so two asks can't race. */
   private readonly reserved = new Set<string>();
+  /** Runs waiting for a free slot (resources.max_runs). */
+  private readonly queued = new Map<string, { chatId: string; item: Queued }>();
+  private readonly queue: ReturnType<typeof createRunQueue>;
+  /** Runs whose harness is starting; true once an interrupt arrived meanwhile. */
+  private readonly starting = new Map<string, { chatId: string; interrupt: boolean }>();
   private stopping = false;
 
   constructor(
@@ -28,7 +35,10 @@ export class RunManager {
     private readonly ctx: { configFile: string; dataDir: string },
     private readonly needs: NeedsService,
     private readonly db: Db,
-  ) {}
+  ) {
+    const setting = loadUserConfig(ctx.configFile).config.resources.max_runs;
+    this.queue = createRunQueue(maxRuns(setting, availableParallelism()));
+  }
 
   async ask(args: AskArgs): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
@@ -49,17 +59,49 @@ export class RunManager {
       });
       if (!chat.chatId) this.createChat(chatId, chat, wt);
       launch = { h, args, chatId, runId: `run_${randomUUID()}`, cwd: wt.path };
-      this.active.set(launch.runId, { chatId, session: await this.start(launch) });
+      this.store.append({ chatId, runId: launch.runId, origin: "daemon", type: EV.runQueued, data: {} });
+      const l = launch;
+      this.queued.set(l.runId, { chatId, item: this.queue.enqueue(() => this.launch(l)) });
     } finally {
       if (key) this.reserved.delete(key);
     }
-    const session = this.active.get(launch.runId)!.session;
-    await session.send({ text: args.text });
-    void this.pump(session, launch.chatId, launch.runId);
     return { chatId: launch.chatId, runId: launch.runId };
   }
 
+  /** Starts a queued run; resolves when the run ends, which frees its slot. */
+  private async launch(l: Launch): Promise<void> {
+    this.queued.delete(l.runId);
+    if (this.stopping) return;
+    this.starting.set(l.runId, { chatId: l.chatId, interrupt: false });
+    let session: Session;
+    try {
+      session = await this.start(l);
+      this.active.set(l.runId, { chatId: l.chatId, session });
+      await session.send({ text: l.args.text });
+    } catch (e) {
+      this.active.delete(l.runId);
+      this.endFailed(l.chatId, l.runId, "start", (e as Error).message);
+      return;
+    } finally {
+      if (this.starting.get(l.runId)?.interrupt) void this.active.get(l.runId)?.session.interrupt();
+      this.starting.delete(l.runId);
+    }
+    await this.pump(session, l.chatId, l.runId);
+  }
+
   async interrupt(runId: string): Promise<void> {
+    const waiting = this.queued.get(runId);
+    if (waiting?.item.cancel()) {
+      this.queued.delete(runId);
+      const data = { status: "interrupted" };
+      this.store.append({ chatId: waiting.chatId, runId, origin: "daemon", type: EV.runFinished, data });
+      return;
+    }
+    const starting = this.starting.get(runId);
+    if (starting) {
+      starting.interrupt = true;
+      return;
+    }
     const run = this.active.get(runId);
     if (!run) throw new UserError("That run isn't running");
     this.needs.supersedeRun(runId); // a waiting permission request gets "deny", so the harness can stop
@@ -78,6 +120,9 @@ export class RunManager {
   /** ion is stopping: every active run ends as failed, and its harness session is closed. */
   async shutdown(): Promise<void> {
     this.stopping = true;
+    for (const [runId, { chatId, item }] of this.queued)
+      if (item.cancel()) this.endFailed(chatId, runId, "daemon_stopped", "ion stopped");
+    this.queued.clear();
     for (const [runId, { chatId, session }] of this.active) {
       this.needs.supersedeRun(runId);
       this.endFailed(chatId, runId, "daemon_stopped", "ion stopped");
@@ -96,7 +141,8 @@ export class RunManager {
   }
 
   private runningIn(chatId: string): boolean {
-    return [...this.active.values()].some((a) => a.chatId === chatId);
+    const all = [...this.active.values(), ...this.queued.values(), ...this.starting.values()];
+    return all.some((a) => a.chatId === chatId);
   }
 
   private endFailed(chatId: string | null, runId: string, code: string, message: string): void {
@@ -149,17 +195,13 @@ export class RunManager {
   private async start(l: Launch): Promise<Session> {
     const roots = projectRoots(l.cwd);
     const decide = (req: ApprovalRequest) => this.decide(l, req, roots);
-    try {
-      return await l.h.adapter.start({
-        cwd: l.cwd,
-        model: l.args.model ?? null,
-        effort: l.args.effort ?? null,
-        signal: new AbortController().signal,
-        decide,
-      });
-    } catch (e) {
-      throw new UserError((e as Error).message);
-    }
+    return l.h.adapter.start({
+      cwd: l.cwd,
+      model: l.args.model ?? null,
+      effort: l.args.effort ?? null,
+      signal: new AbortController().signal,
+      decide,
+    });
   }
 
   /** Inside the worktree: allowed by policy. Anything else: a need you answer. Recorded after the request. */
