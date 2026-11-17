@@ -31,6 +31,13 @@ const toEvent = (r: Row): IonEvent =>
     ...(r.native ? { native: JSON.parse(r.native) } : {}),
   }) as IonEvent;
 
+/** Each run numbers its own events; chat-level events number per chat; the rest share "global". */
+function streamKey(runId: string | null, chatId: string | null): string {
+  if (runId) return `run:${runId}`;
+  if (chatId) return `chat:${chatId}`;
+  return "global";
+}
+
 /** The only writer of events. Append-only; views update in the same transaction. */
 export class EventStore {
   private listeners = new Set<(e: IonEvent) => void>();
@@ -44,7 +51,7 @@ export class EventStore {
 
   append(input: NewEvent & { id?: string; ts?: string }): IonEvent {
     const id = input.id ?? ulid();
-    const stream = input.runId ? `run:${input.runId}` : input.chatId ? `chat:${input.chatId}` : "global";
+    const stream = streamKey(input.runId, input.chatId);
     const tx = this.db.transaction((): { event: IonEvent; fresh: boolean } => {
       const existing = this.db.prepare("SELECT * FROM events WHERE id = ?").get(id) as Row | undefined;
       if (existing) {
@@ -112,7 +119,8 @@ export class EventStore {
       if (!at) throw new Error(`Unknown event id: ${q.afterId}`);
       add("rowid > ?", at.r);
     }
-    const sql = `SELECT * FROM events ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY rowid LIMIT ?`;
+    const filter = where.length ? "WHERE " + where.join(" AND ") : "";
+    const sql = `SELECT * FROM events ${filter} ORDER BY rowid LIMIT ?`;
     params.push(q.limit ?? 10_000);
     return (this.db.prepare(sql).all(...params) as Row[]).map(toEvent);
   }

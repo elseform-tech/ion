@@ -1,3 +1,5 @@
+import { builtinModules } from "node:module";
+import { posix } from "node:path";
 import { isTest, onImports, repoPath } from "./paths.js";
 
 /** Which @ion packages each package may import (docs/architecture/contract.md). */
@@ -16,6 +18,21 @@ export const ALLOW = {
 };
 /** Extra packages a test file may use (e.g. the daemon's api tests drive it through the client). */
 const TEST_EXTRA = { "apps/daemon": ["client"], "apps/cli": ["daemon"] };
+
+/** "@ion/adapter-codex" → "adapters", "@ion/client" → "client", anything else → null. */
+function ionPackage(source) {
+  const m = source.match(/^@ion\/([^/]+)/);
+  if (!m) return null;
+  return m[1].startsWith("adapter-") && m[1] !== "adapter-kit" ? "adapters" : m[1];
+}
+
+/** True when a relative import from file `p` lands outside its package root. */
+function escapes(p, source, root) {
+  const target = posix.normalize(posix.join(posix.dirname(p), source));
+  return !`${target}/`.startsWith(`${root}/`);
+}
+
+const isNodeBuiltin = (source) => source.startsWith("node:") || builtinModules.includes(source);
 
 function owner(p) {
   const m = p.match(/^(apps\/[^/]+|packages\/adapters|packages\/[^/]+|tools\/[^/]+)\//);
@@ -42,25 +59,12 @@ export default {
     if (!from) return {};
     const allowed = new Set([...(ALLOW[from] ?? []), ...(isTest(p) ? (TEST_EXTRA[from] ?? []) : [])]);
     const root = packageRoot(p);
-    const depth = p.split("/").length - 1;
     return onImports((node, source) => {
-      const m = source.match(/^@ion\/([^/]+)/);
-      if (m) {
-        const to = m[1].startsWith("adapter-") && m[1] !== "adapter-kit" ? "adapters" : m[1];
-        if (!allowed.has(to)) ctx.report({ node, messageId: "wall", data: { from, to } });
-        return;
-      }
-      if (source.startsWith(".")) {
-        const parts = [...p.split("/").slice(0, depth)];
-        for (const seg of source.split("/")) {
-          if (seg === "..") parts.pop();
-          else if (seg !== ".") parts.push(seg);
-        }
-        if (root && !`${parts.join("/")}/`.startsWith(`${root}/`)) ctx.report({ node, messageId: "escape" });
-        return;
-      }
-      if (from === "apps/desktop" && /^node:|^(fs|path|os|child_process|net|http)$/.test(source))
-        ctx.report({ node, messageId: "nodeInUi" });
+      const to = ionPackage(source);
+      if (to && !allowed.has(to)) ctx.report({ node, messageId: "wall", data: { from, to } });
+      else if (source.startsWith(".") && root && escapes(p, source, root))
+        ctx.report({ node, messageId: "escape" });
+      else if (from === "apps/desktop" && isNodeBuiltin(source)) ctx.report({ node, messageId: "nodeInUi" });
     });
   },
 };

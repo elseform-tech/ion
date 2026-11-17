@@ -11,6 +11,7 @@ export function addProject(c: UserConfig, path: string): UserConfig {
   const base = basename(abs);
   const taken = new Set(c.projects.map((p) => p.id));
   let id = base;
-  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  let n = 1;
+  while (taken.has(id)) id = `${base}-${++n}`;
   return { ...c, projects: [...c.projects, { id, path: abs, starred: false }] };
 }

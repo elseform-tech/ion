@@ -35,7 +35,7 @@ function describeIssue(file: string, issue: z.core.$ZodIssue): string {
   const where = issue.path.join(".");
   const values = (issue as { values?: unknown[] }).values;
   const what = values ? `must be one of ${values.join(", ")}` : issue.message;
-  return `${basename(file)}: ${where ? `${where} ` : ""}${what}`;
+  return [`${basename(file)}:`, where, what].filter(Boolean).join(" ");
 }
 
 /** Reads the config file. Missing file → defaults. Invalid file → defaults plus a one-line error. */

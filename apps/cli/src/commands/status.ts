@@ -13,6 +13,8 @@ export function statusCommand(program: Command, out: () => Out) {
       const s = await up.client.call("status", {});
       up.client.close();
       const n = `${s.projects} project${s.projects === 1 ? "" : "s"}`;
-      print(out(), `ion is running · ${n}${s.configError ? `\n${s.configError}` : ""}`, s);
+      const lines = [`ion is running · ${n}`];
+      if (s.configError) lines.push(s.configError);
+      print(out(), lines.join("\n"), s);
     });
 }

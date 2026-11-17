@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -41,7 +42,7 @@ export function acquireDaemonLock(dataDir: string, attempts = 6): Lock | null {
       replaced = true;
       continue;
     }
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 + Math.random() * 80);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, randomInt(20, 100));
   }
   return null;
 }
