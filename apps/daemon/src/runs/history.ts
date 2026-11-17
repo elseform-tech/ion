@@ -6,8 +6,21 @@ export const HISTORY_CHARS = 24_000;
 
 /** The chat's earlier messages as a data block, to start a new session where the old one left off. */
 export function historyPreamble(messages: HistoryMessage[]): string {
-  // One JSON-encoded message per line: a message's own line breaks can't fake another turn.
-  const body = messages.map((m) => `${m.role}: ${JSON.stringify(m.text)}`).join("\n");
+  // One JSON-encoded message per line: a message's own line breaks can't fake another turn. The budget counts these
+  // escaped lines, newest first; the newest message always fits (its end is kept when it alone is too long).
+  const lines: string[] = [];
+  let used = 0;
+  for (const m of [...messages].reverse()) {
+    let line = `${m.role}: ${JSON.stringify(m.text)}`;
+    if (!lines.length && line.length > HISTORY_CHARS) {
+      const tail = "…" + m.text.slice(-HISTORY_CHARS / 2);
+      line = `${m.role}: ${JSON.stringify(tail)}`;
+    }
+    if (used + line.length > HISTORY_CHARS) break;
+    used += line.length + 1;
+    lines.unshift(line);
+  }
+  const body = lines.join("\n");
   return `${wrapData("this chat's earlier messages", body)}\n\n`;
 }
 

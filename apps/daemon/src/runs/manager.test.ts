@@ -317,6 +317,40 @@ describe("RunManager", () => {
     expect(said(b)[0]).toMatch(/you: "echo one"\n<\/ion-data id="\w+">\n\necho two$/);
   });
 
+  // Final review minor 3: a session that resumes but then fails for real doesn't trap the chat.
+  it("starts a new session with the history when the resumed one fails", async () => {
+    const first = await ask("echo one");
+    const a = await finished(first.runId);
+    process.env.ION_FAKE_RESUMED_FAILS = "1";
+    try {
+      const b = await finished((await ask("echo two", { chatId: first.chatId, effort: "low" })).runId);
+      expect(b.at(-1)?.data).toEqual({ status: "done" });
+      expect(sessionOf(b).at(-1)).not.toBe(sessionOf(a)[0]);
+      expect(said(b).at(-1)).toMatch(/you: "echo one"/);
+    } finally {
+      delete process.env.ION_FAKE_RESUMED_FAILS;
+    }
+  });
+
+  // Final review minor 5: interrupted while a resume is refused, no new session starts.
+  it("starts no new session when interrupted while the resume is refused", async () => {
+    const first = await ask("echo one");
+    await finished(first.runId);
+    process.env.ION_FAKE_RESUME_FAIL = "1";
+    process.env.ION_FAKE_START_MS = "120";
+    try {
+      const { runId } = await ask("echo two", { chatId: first.chatId });
+      await new Promise((r) => setTimeout(r, 40));
+      await runs.interrupt(runId);
+      const b = await finished(runId);
+      expect(b.at(-1)?.data).toEqual({ status: "interrupted" });
+      expect(b.some((e) => e.type === "run.started")).toBe(false);
+    } finally {
+      delete process.env.ION_FAKE_RESUME_FAIL;
+      delete process.env.ION_FAKE_START_MS;
+    }
+  });
+
   it("resumes the failed try's session when it retries", async () => {
     const events = await finished((await ask("flaky")).runId);
     const ids = sessionOf(events);

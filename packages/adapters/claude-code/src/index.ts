@@ -68,10 +68,10 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
 /** Claude Code's models, kept for 10 minutes; its aliases when it can't list them. */
 function claudeCatalog(deps: ClaudeCodeDeps, binary: () => string | null) {
   return cachedCatalog(
-    async () => {
+    async (signal) => {
       const path = binary();
       if (!path && !deps.listModels) throw new Error("Claude Code isn't installed");
-      const list = await (deps.listModels ?? (() => sdkModels(path ?? "")))();
+      const list = await (deps.listModels ?? (() => sdkModels(path ?? "", signal)))();
       // "default" isn't a model: it's what Claude Code picks when none is given.
       const models = list
         .filter((m) => m.value !== "default")
@@ -86,8 +86,12 @@ function claudeCatalog(deps: ClaudeCodeDeps, binary: () => string | null) {
  * Claude Code's model list from an idle session: it starts, answers `supportedModels()` and is stopped before
  * any prompt is sent, so it costs nothing.
  */
-async function sdkModels(binaryPath: string): Promise<{ value: string; displayName: string }[]> {
+async function sdkModels(
+  binaryPath: string,
+  signal: AbortSignal,
+): Promise<{ value: string; displayName: string }[]> {
   const abort = new AbortController();
+  signal.addEventListener("abort", () => abort.abort(), { once: true });
   // A prompt that never sends anything: the session only answers control requests.
   const never: AsyncIterable<never> = {
     [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<never>>(() => {}) }),

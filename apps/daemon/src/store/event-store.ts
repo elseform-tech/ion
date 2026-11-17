@@ -46,7 +46,11 @@ export class EventStore {
     private readonly db: Db,
     private readonly views: View[] = [],
   ) {
-    if (upgradeViews(db, views)) rebuildViews(db, views);
+    // One transaction: if the rebuild fails or ion is killed mid-way, the versions aren't advanced either, so the
+    // next start upgrades again instead of leaving a view empty.
+    db.transaction(() => {
+      if (upgradeViews(db, views)) replayInto(db, views);
+    }).immediate();
   }
 
   append(input: NewEvent & { id?: string; ts?: string }): IonEvent {
@@ -137,14 +141,17 @@ export class EventStore {
 }
 
 function rebuildViews(db: Db, views: View[]): void {
-  db.transaction(() => {
-    for (const v of views) v.reset(db);
-    const rows = db.prepare("SELECT * FROM events ORDER BY rowid").all() as Row[];
-    for (const r of rows) {
-      const e = toEvent(r);
-      for (const v of views) v.apply(db, e);
-    }
-  }).immediate();
+  db.transaction(() => replayInto(db, views)).immediate();
+}
+
+/** Clears every view and replays the whole log into it (inside the caller's transaction). */
+function replayInto(db: Db, views: View[]): void {
+  for (const v of views) v.reset(db);
+  const rows = db.prepare("SELECT * FROM events ORDER BY rowid").all() as Row[];
+  for (const r of rows) {
+    const e = toEvent(r);
+    for (const v of views) v.apply(db, e);
+  }
 }
 
 /** Creates every view's tables; a view whose version changed is dropped first. True if any needs a rebuild. */

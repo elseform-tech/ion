@@ -59,7 +59,7 @@ export const messagesView: View & {
     return db
       .prepare(
         `SELECT m.chat_id AS chatId, m.role, m.text, m.ts FROM messages_fts f JOIN view_messages m ON m.id = f.rowid
-         WHERE messages_fts MATCH ? AND m.project_id = ? ORDER BY m.id LIMIT ?`,
+         WHERE messages_fts MATCH ? AND m.project_id = ? ORDER BY m.id DESC LIMIT ?`,
       )
       .all(match, projectId, limit) as SearchHit[];
   },

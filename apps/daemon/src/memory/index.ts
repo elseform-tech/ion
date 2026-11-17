@@ -13,11 +13,20 @@ export type MemoryWrite = {
 const MAX = 2000;
 
 /** Remembers something; returns its id. */
-export function writeMemory(store: EventStore, m: MemoryWrite): string {
+const randomId = () => `m${randomBytes(3).toString("hex")}`;
+
+export function writeMemory(
+  store: EventStore,
+  db: Db,
+  m: MemoryWrite,
+  newId: () => string = randomId,
+): string {
   const text = m.text.trim();
   if (!text) throw new UserError("A memory can't be empty");
   if (text.length > MAX) throw new UserError(`A memory can be ${MAX} characters at most`);
-  const memoryId = `m${randomBytes(3).toString("hex")}`;
+  // An id that's already taken is drawn again: a memory is never overwritten by another.
+  let memoryId = newId();
+  while (memoryView.has(db, memoryId)) memoryId = newId();
   store.append({
     chatId: null,
     runId: null,

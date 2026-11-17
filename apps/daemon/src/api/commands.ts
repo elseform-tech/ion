@@ -95,6 +95,18 @@ export const handlers: Handlers = {
 /** A harness, whether it's ready, and (only when it is) its own model list. */
 async function harnessInfo(id: string): Promise<HarnessInfo> {
   const h = getHarness(id)!;
+  // One harness that fails to answer shows as not ready; it doesn't break the list.
+  return readyInfo(id, h).catch(() => ({
+    id,
+    label: h.label,
+    installed: false,
+    signedIn: false,
+    models: [],
+    defaultModel: null,
+  }));
+}
+
+async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness>>): Promise<HarnessInfo> {
   const installed = (await h.adapter.detect()).installed;
   const signedIn = installed && (await h.adapter.auth.status()).signedIn;
   const caps = signedIn ? await h.adapter.capabilities() : null;

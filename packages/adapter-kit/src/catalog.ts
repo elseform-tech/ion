@@ -12,7 +12,7 @@ const TIMEOUT_MS = 10_000;
  * longer than 10 s gives the fallback (`live: false`) and is tried again a minute later.
  */
 export function cachedCatalog(
-  load: () => Promise<Catalog>,
+  load: (signal: AbortSignal) => Promise<Catalog>,
   o: { fallback: Catalog; timeoutMs?: number; now?: () => number },
 ): () => Promise<Catalog & { live: boolean }> {
   const now = o.now ?? Date.now;
@@ -20,11 +20,16 @@ export function cachedCatalog(
   let pending: Promise<Catalog & { live: boolean }> | null = null;
   const fetchOnce = async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // A load that takes too long is told to stop (a harness process must not be left running).
+    const abort = new AbortController();
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("timed out")), o.timeoutMs ?? TIMEOUT_MS);
+      timer = setTimeout(() => {
+        abort.abort();
+        reject(new Error("timed out"));
+      }, o.timeoutMs ?? TIMEOUT_MS);
     });
     try {
-      const value = { ...(await Promise.race([load(), timeout])), live: true };
+      const value = { ...(await Promise.race([load(abort.signal), timeout])), live: true };
       cached = { value, until: now() + TTL_MS };
     } catch {
       cached = { value: { ...o.fallback, live: false }, until: now() + RETRY_MS };

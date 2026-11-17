@@ -41,7 +41,10 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
   const delayMs = opts.delayMs ?? 5;
   return {
     id: "fake",
-    detect: async () => ({ installed: true, version: "0.0.0", path: "fake" }),
+    detect: async () => {
+      if (process.env.ION_FAKE_DETECT_FAIL) throw new Error("The fake harness didn't answer");
+      return { installed: true, version: "0.0.0", path: "fake" };
+    },
     auth: {
       status: async () => ({ signedIn, method: signedIn ? "Fake" : "Not signed in" }),
       login: async () => {},
@@ -112,7 +115,15 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
       });
       void (async () => {
         if (delayMs) await sleep(delayMs);
-        const status = interrupted ? "interrupted" : await scenario(script);
+        // Test switch: a resumed session that then fails for real (e.g. its context is too long).
+        const resumedFails = start.resume && process.env.ION_FAKE_RESUMED_FAILS;
+        if (resumedFails)
+          queue.push({
+            type: EV.error,
+            data: { code: "agent", retryable: false, message: "Prompt too long" },
+          });
+        let status: Awaited<ReturnType<typeof scenario>> = "interrupted";
+        if (!interrupted) status = resumedFails ? "failed" : await scenario(script);
         queue.push({ type: EV.runFinished, data: { status } });
         queue.end();
       })();

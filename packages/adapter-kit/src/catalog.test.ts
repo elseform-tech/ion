@@ -42,4 +42,20 @@ describe("cachedCatalog", () => {
     await Promise.all([get(), get(), get()]);
     expect(load).toHaveBeenCalledTimes(1);
   });
+
+  // Final review I1: a load that hangs is stopped, not left running.
+  it("aborts a load that takes too long", async () => {
+    let aborted = false;
+    const get = cachedCatalog(
+      (signal) =>
+        new Promise<never>(() => {
+          signal.addEventListener("abort", () => {
+            aborted = true;
+          });
+        }),
+      { fallback, timeoutMs: 20 },
+    );
+    await get();
+    expect(aborted).toBe(true);
+  });
 });

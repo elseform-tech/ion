@@ -221,6 +221,19 @@ describe("ion cli", { timeout: 20_000 }, () => {
       });
     });
 
+    // Final review minor 8: one harness that fails to answer doesn't break the list.
+    it("lists the other harnesses when one fails to answer", async () => {
+      process.env.ION_FAKE_DETECT_FAIL = "1";
+      try {
+        await setup();
+        const r = await ion("harnesses");
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("fake  Not installed");
+      } finally {
+        delete process.env.ION_FAKE_DETECT_FAIL;
+      }
+    });
+
     it("lists memory and says so for one it doesn't know", async () => {
       await setup();
       expect((await ion("memory", "ls", "-p", "app")).out).toBe("No memory");

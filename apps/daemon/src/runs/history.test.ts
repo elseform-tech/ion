@@ -20,4 +20,13 @@ describe("historyPreamble", () => {
   it("keeps 24,000 characters of history (Review Focus 4)", () => {
     expect(HISTORY_CHARS).toBe(24_000);
   });
+
+  // Final review minor 1: the budget counts what's actually sent (escaped), and the newest message always fits.
+  it("keeps the escaped history within 24,000 characters and never drops the newest message", () => {
+    const heavy = Array.from({ length: 40 }, () => ({ role: "you" as const, text: '"\n'.repeat(400) }));
+    expect(historyPreamble(heavy).length).toBeLessThan(HISTORY_CHARS + 200);
+    const huge = historyPreamble([{ role: "agent", text: "x".repeat(50_000) }]);
+    expect(huge.length).toBeLessThan(HISTORY_CHARS + 200);
+    expect(huge).toContain("agent: ");
+  });
 });

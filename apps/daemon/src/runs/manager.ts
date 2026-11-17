@@ -40,7 +40,13 @@ type Launch = {
   /** This run's MCP key (from launch until the run ends). */
   mcpKey?: string;
 };
-type Between = { chatId: string; interrupt: boolean; wake?: () => void };
+type Between = {
+  chatId: string;
+  interrupt: boolean;
+  wake?: () => void;
+  /** The chat's session resumed but then failed for real: later tries start a new session with the history. */
+  noResume?: boolean;
+};
 type TryEnd = { status: string; error: RunError | null };
 
 /** Starts runs on harnesses in each chat's own worktree, and stores everything they emit. One run per chat. */
@@ -194,11 +200,17 @@ export class RunManager {
    */
   private async tryInContext(l: Launch, b: Between): Promise<TryEnd> {
     const s = chatsView.session(this.db, l.chatId);
-    const resume = s && s.harness === l.h.adapter.id ? s.sessionId : null;
+    const resume = !b.noResume && s && s.harness === l.h.adapter.id ? s.sessionId : null;
     const fresh = { ...l, resume: null, args: { ...l.args, text: withHistory(l.history, l.args.text) } };
     if (!resume) return this.tryOnce(fresh, b);
     const end = await this.tryOnce({ ...l, resume }, b);
-    return end.error?.code === "resume_failed" ? this.tryOnce(fresh, b) : end;
+    if (end.error?.code !== "resume_failed") {
+      // A resumed session that fails for real (e.g. its context is too long) isn't resumed again.
+      if (end.status === "failed" && end.error && !end.error.retryable) b.noResume = true;
+      return end;
+    }
+    if (b.interrupt || this.stopping) return { status: b.interrupt ? "interrupted" : "failed", error: null };
+    return this.tryOnce(fresh, b);
   }
 
   /** One try: start a session, send the text, store what it emits. A failed start is a failed try. */

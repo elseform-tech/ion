@@ -59,6 +59,12 @@ describe("messagesView", () => {
     expect(messagesView.search(db, "shop", "kiwi", 20).map((h) => h.text)).toEqual(["kiwi in the shop"]);
   });
 
+  // Final review minor 2: the newest matches come first.
+  it("returns the newest matches first", () => {
+    put({ chatId: "c1", runId: "r4", type: "message.sent", data: { text: "kiwi again" } });
+    expect(messagesView.search(db, "app", "kiwi", 1).map((h) => h.text)).toEqual(["kiwi again"]);
+  });
+
   it("treats search text as words, not a query language", () => {
     expect(() => messagesView.search(db, "app", 'kiwi" OR "*', 20)).not.toThrow();
   });

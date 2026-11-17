@@ -161,3 +161,29 @@ describe("view versions", () => {
     expect(db.prepare("SELECT count(*) AS n FROM view_demo").get()).toEqual({ n: 2 });
   });
 });
+
+// Final review I2: a crash during the first rebuild after an upgrade must not leave a view empty for good.
+it("finishes an interrupted view upgrade on the next start", () => {
+  const db = openDb(":memory:");
+  const v = (version: number, fail = false) => ({
+    name: "demo",
+    version,
+    tables: ["view_demo"],
+    migrate: (d: Db) => d.exec("CREATE TABLE IF NOT EXISTS view_demo (chat_id TEXT)"),
+    reset: (d: Db) => d.exec("DELETE FROM view_demo"),
+    apply: (d: Db, e: { chatId: string | null }) => {
+      if (fail) throw new Error("crash");
+      d.prepare("INSERT INTO view_demo (chat_id) VALUES (?)").run(e.chatId);
+    },
+  });
+  new EventStore(db, [v(1)]).append({
+    chatId: "c1",
+    runId: null,
+    origin: "daemon",
+    type: "chat.archived",
+    data: {},
+  } as NewEvent);
+  expect(() => new EventStore(db, [v(2, true)])).toThrow("crash");
+  expect(new EventStore(db, [v(2)])).toBeInstanceOf(EventStore);
+  expect(db.prepare("SELECT chat_id FROM view_demo").all()).toEqual([{ chat_id: "c1" }]);
+});
