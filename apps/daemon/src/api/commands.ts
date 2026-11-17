@@ -2,7 +2,7 @@ import { getHarness, harnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { memoryView } from "../views/memory.js";
-import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
+import { addProject, loadUserConfig, saveUserConfig, setProjectAccess } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
 import type { Grants } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -81,6 +81,18 @@ export const handlers: Handlers = {
     }
     saveUserConfig(ctx.configFile, next);
     return next.projects[next.projects.length - 1]!;
+  },
+  "project.setAccess": (a, ctx) => {
+    const access = a.access;
+    if (access !== "auto" && access !== "full") throw new UserError("Pick auto or full");
+    const { config, error } = loadUserConfig(ctx.configFile);
+    if (error) throw new UserError(`Fix your config first. ${error}`);
+    try {
+      saveUserConfig(ctx.configFile, setProjectAccess(config, String(a.projectId ?? ""), access));
+    } catch (e) {
+      throw new UserError((e as Error).message);
+    }
+    return { ok: true as const };
   },
   "chat.create": (a, ctx): IonEvent =>
     ctx.store.append({

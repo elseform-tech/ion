@@ -6,5 +6,8 @@ deep = "claude-code"
 deepEffort = "high"
 useDeep = "auto"
 
+[access]
+default = "auto"
+
 [resources]
 max_runs = "auto"

@@ -23,6 +23,13 @@ const valid: [string, Record<string, unknown>, string?][] = [
   ["file.changed", { path: "notes.md", change: "add", added: 1, removed: null }],
   ["approval.requested", { requestId: "q1", toolId: "t2", kind: "edit", summary: "Edit notes.md" }],
   ["approval.resolved", { requestId: "q1", decision: "deny", by: "policy" }, "daemon"],
+  ["approval.resolved", { requestId: "q1", decision: "allow", by: "you" }, "daemon"],
+  [
+    "approval.resolved",
+    { requestId: "q1", decision: "deny", by: "ion", reason: "Reads your SSH keys" },
+    "daemon",
+  ],
+  ["approval.resolved", { requestId: "q1", decision: "allow", by: "full" }, "daemon"],
   ["usage.reported", { model: "haiku", inputTokens: 10, outputTokens: 5, costUsd: null }],
   ["run.started", { harness: "fake", model: "m", effort: null, authMethod: null }],
   [

@@ -37,12 +37,13 @@ Usage: ion projects [options] [command]
 Your projects
 
 Options:
-  -h, --help      display help for command
+  -h, --help          display help for command
 
 Commands:
-  ls              List your projects
-  add <path>      Add a git repo
-  help [command]  display help for command
+  ls                  List your projects
+  add <path>          Add a git repo
+  access <id> <mode>  Auto (ion decides) or full
+  help [command]      display help for command
 
 ---
 
@@ -57,6 +58,7 @@ Options:
                       "claude-code")
   --model <model>     Model
   --effort <level>    low, medium, high or max
+  --access <mode>     auto (ion decides) or full
   -h, --help          display help for command
 
 ---

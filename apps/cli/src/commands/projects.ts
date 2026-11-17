@@ -28,4 +28,18 @@ export function projectCommands(program: Command, out: () => Out) {
         c.close();
       }
     });
+  p.command("access <id> <mode>")
+    .description("Auto (ion decides) or full")
+    .action(async (id: string, mode: string) => {
+      if (mode !== "auto" && mode !== "full") fail("Pick auto or full");
+      const c = await connect();
+      try {
+        await c.call("project.setAccess", { projectId: id, access: mode });
+        print(out(), `Access for ${id}: ${mode === "full" ? "Full access" : "Auto"}`, { ok: true });
+      } catch (e) {
+        fail(e instanceof ApiCallError ? e.message : "Something went wrong");
+      } finally {
+        c.close();
+      }
+    });
 }

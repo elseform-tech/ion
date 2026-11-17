@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addProject, DEFAULT_CONFIG } from "./index.js";
+import { addProject, DEFAULT_CONFIG, setProjectAccess } from "./index.js";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-proj-")), name);
@@ -35,5 +35,15 @@ describe("addProject", () => {
     const c = structuredClone(DEFAULT_CONFIG);
     addProject(c, repo("web"));
     expect(c).toEqual(DEFAULT_CONFIG);
+  });
+});
+
+describe("access", () => {
+  it("defaults to Auto, and a project can have its own", () => {
+    expect(DEFAULT_CONFIG.access.default).toBe("auto");
+    const c = addProject(DEFAULT_CONFIG, repo("app"));
+    expect(c.projects[0]!.access).toBeUndefined();
+    expect(setProjectAccess(c, "app", "full").projects[0]!.access).toBe("full");
+    expect(() => setProjectAccess(c, "nope", "full")).toThrow("Unknown project: nope");
   });
 });

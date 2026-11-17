@@ -212,6 +212,20 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect((await ion("needs")).out).toBe("Nothing needs you");
     });
 
+    it("sets a project's access", async () => {
+      await setup();
+      expect((await ion("projects", "access", "app", "full")).out).toBe("Access for app: Full access");
+      expect((await ion("projects", "access", "app", "auto")).out).toBe("Access for app: Auto");
+      expect(await ion("projects", "access", "app", "maybe")).toMatchObject({
+        code: 1,
+        err: "Pick auto or full",
+      });
+      expect(await ion("ask", "hello", "-p", "app", "--harness", "fake", "--access", "maybe")).toMatchObject({
+        code: 1,
+        err: "Pick auto or full",
+      });
+    });
+
     it("lists harnesses with their models, and refuses an unknown model", async () => {
       await setup();
       expect((await ion("harnesses")).out).toContain("fake  Signed in  fake (default), fake-big");

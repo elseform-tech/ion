@@ -4,7 +4,7 @@ import type { IonEvent } from "./events.js";
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
 
-export type ProjectInfo = { id: string; path: string; starred: boolean };
+export type ProjectInfo = { id: string; path: string; starred: boolean; access?: "auto" | "full" };
 
 export type StatusResult = {
   version: string;
@@ -19,6 +19,7 @@ export type Commands = {
   status: { args: Record<string, never>; result: StatusResult };
   "projects.list": { args: Record<string, never>; result: ProjectInfo[] };
   "projects.add": { args: { path: string }; result: ProjectInfo };
+  "project.setAccess": { args: { projectId: string; access: "auto" | "full" }; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   "events.subscribe": { args: { chatId?: string; afterId?: string }; result: { sub: string } };
   ask: {
@@ -29,6 +30,8 @@ export type Commands = {
       harness?: string;
       model?: string;
       effort?: EffortLevel;
+      /** This message's access mode; else the project's, else the default. */
+      access?: "auto" | "full";
     };
     result: { chatId: string; runId: string };
   };
@@ -90,6 +93,7 @@ export const COMMANDS = [
   "status",
   "projects.list",
   "projects.add",
+  "project.setAccess",
   "chat.create",
   "events.subscribe",
   "ask",
