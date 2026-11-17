@@ -6,7 +6,7 @@ type D = Record<string, unknown>;
 /** Open "Needs you" items. Applied after the chats view, so a need can carry its chat's project. */
 export const needsView: View & {
   open(db: Db, chatId?: string): NeedInfo[];
-  find(db: Db, needId: string): { open: boolean; runId: string } | null;
+  find(db: Db, needId: string): { open: boolean; runId: string; decision: string | null } | null;
   openByKey(db: Db, chatId: string, dedupeKey: string): string | null;
   openForRun(db: Db, runId: string): string[];
 } = {
@@ -14,7 +14,7 @@ export const needsView: View & {
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_needs (
       need_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, run_id TEXT NOT NULL, project_id TEXT,
-      kind TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT, dedupe_key TEXT NOT NULL, open INTEGER NOT NULL, raised_at TEXT NOT NULL)`);
+      kind TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT, dedupe_key TEXT NOT NULL, open INTEGER NOT NULL, decision TEXT, raised_at TEXT NOT NULL)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_needs");
@@ -37,14 +37,17 @@ export const needsView: View & {
         e.ts,
       );
     } else if (e.type === EV.needResolved) {
-      db.prepare("UPDATE view_needs SET open = 0 WHERE need_id = ?").run(String(d.needId));
+      db.prepare("UPDATE view_needs SET open = 0, decision = ? WHERE need_id = ?").run(
+        String(d.decision),
+        String(d.needId),
+      );
     }
   },
   find(db, needId) {
-    const r = db.prepare("SELECT open, run_id AS runId FROM view_needs WHERE need_id = ?").get(needId) as
-      | { open: number; runId: string }
-      | undefined;
-    return r ? { open: r.open === 1, runId: r.runId } : null;
+    const r = db
+      .prepare("SELECT open, run_id AS runId, decision FROM view_needs WHERE need_id = ?")
+      .get(needId) as { open: number; runId: string; decision: string | null } | undefined;
+    return r ? { open: r.open === 1, runId: r.runId, decision: r.decision } : null;
   },
   openByKey(db, chatId, dedupeKey) {
     const r = db

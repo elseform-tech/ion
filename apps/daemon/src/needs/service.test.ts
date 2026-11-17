@@ -72,5 +72,8 @@ describe("NeedsService", () => {
       data: { decision: "superseded", by: "daemon" },
     });
     expect(needs.open()).toEqual([]);
+    expect(() =>
+      needs.resolve(store.read({ runId: "r1" })[0]!.data.needId as string, "allow", "you"),
+    ).toThrow(new UserError("That run stopped"));
   });
 });

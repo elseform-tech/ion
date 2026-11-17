@@ -35,8 +35,7 @@ export const handlers: Handlers = {
   },
   "need.resolve": (a, ctx) => {
     const decision = a.decision;
-    if (decision !== "allow" && decision !== "allow_always" && decision !== "deny")
-      throw new UserError("Answer allow or deny");
+    if (decision !== "allow" && decision !== "deny") throw new UserError("Answer allow or deny");
     ctx.needs.resolve(String(a.needId ?? ""), decision, "you");
     return { ok: true as const };
   },

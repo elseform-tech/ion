@@ -206,6 +206,60 @@ describe("RunManager", () => {
     expect(max.filter((e) => e.type === "run.started")).toHaveLength(1);
   });
 
+  // Final review I3: an interrupt during start used to still send the prompt.
+  it("an interrupt while the harness starts ends the run without sending the prompt", async () => {
+    process.env.ION_FAKE_START_MS = "150";
+    try {
+      const { chatId, runId } = await ask("approve");
+      await new Promise((r) => setTimeout(r, 40));
+      await runs.interrupt(runId);
+      const events = await finished(runId);
+      expect(events.at(-1)?.data).toEqual({ status: "interrupted" });
+      expect(events.some((e) => e.type === "run.started")).toBe(false);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(existsSync(join(chatsView.worktree(db, chatId)!, "notes.md"))).toBe(false);
+    } finally {
+      delete process.env.ION_FAKE_START_MS;
+    }
+  });
+
+  // Final review I5: nothing is stored after a run's end, even when a start fails during shutdown.
+  it("stores nothing after run.finished when ion stops during a failing start", async () => {
+    process.env.ION_FAKE_START_MS = "100";
+    process.env.ION_FAKE_START_FAIL = "1";
+    try {
+      const { runId } = await ask("hello");
+      await new Promise((r) => setTimeout(r, 30));
+      await runs.shutdown();
+      await new Promise((r) => setTimeout(r, 150));
+      expect(store.read({ runId }).at(-1)).toMatchObject({
+        type: "run.finished",
+        data: { status: "failed" },
+      });
+    } finally {
+      delete process.env.ION_FAKE_START_MS;
+      delete process.env.ION_FAKE_START_FAIL;
+    }
+  });
+
+  // Final review I2 / Review Focus 1: answering a need after a restart says the run stopped.
+  it("after a restart, answering the old need says the run stopped", async () => {
+    const { chatId, runId } = await ask("shell");
+    const need = await openNeed();
+    const restarted = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
+    restarted.closeUnfinishedRuns([{ runId, chatId, status: "running" }]);
+    expect(() => needs.resolve(need.needId, "allow", "you")).toThrow(new UserError("That run stopped"));
+    await runs.shutdown();
+  });
+
+  // Final review minor 3: a chat stays in its own project.
+  it("keeps a chat in its own project whatever -p says", async () => {
+    const { chatId, runId } = await ask("hello");
+    await finished(runId);
+    const again = await ask("hello", { chatId, projectId: "nope" });
+    expect((await finished(again.runId)).at(-1)?.data).toEqual({ status: "done" });
+  });
+
   it("stores a failed run and keeps working", async () => {
     const { runId } = await ask("fail");
     expect((await finished(runId)).at(-1)?.data).toEqual({ status: "failed" });

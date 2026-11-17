@@ -47,7 +47,8 @@ export class RunManager {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     const chat = this.chatFor(args);
-    const repo = this.projectPath(args.projectId ?? chat.projectId);
+    // An existing chat stays in its own project: its worktree belongs to that repo.
+    const repo = this.projectPath(chat.chatId ? chat.projectId : args.projectId);
     if (this.stopping) throw new UserError("ion is stopping");
     const key = chat.chatId;
     if (key && (this.reserved.has(key) || this.runningIn(key)))
@@ -115,6 +116,11 @@ export class RunManager {
     return this.ctx.random ?? Math.random;
   }
 
+  /** A daemon-side error for a run; nothing is stored once ion is stopping (the run's end is already written). */
+  private daemonError(chatId: string, runId: string, data: RunError): void {
+    if (!this.stopping) this.store.append({ chatId, runId, origin: "daemon", type: EV.error, data });
+  }
+
   private finish(l: Launch, status: string): void {
     if (!this.stopping)
       this.store.append({
@@ -144,28 +150,22 @@ export class RunManager {
     try {
       session = await this.start(l);
     } catch (e) {
-      this.store.append({
-        chatId: l.chatId,
-        runId: l.runId,
-        origin: "daemon",
-        type: EV.error,
-        data: { code: "start", retryable: false, message: (e as Error).message },
-      });
+      this.daemonError(l.chatId, l.runId, { code: "start", retryable: false, message: (e as Error).message });
       return { status: "failed", error: null };
     }
-    if (this.stopping) {
+    // Stopped or interrupted while the harness started: close it without sending the prompt.
+    if (this.stopping || b.interrupt) {
       await session.close().catch(() => {});
-      return { status: "failed", error: null };
+      return { status: b.interrupt ? "interrupted" : "failed", error: null };
     }
     this.active.set(l.runId, { chatId: l.chatId, session });
-    if (b.interrupt) void session.interrupt();
     try {
       await session.send({ text: l.args.text });
     } catch (e) {
       this.active.delete(l.runId);
       await session.close().catch(() => {});
       const error = { code: "crash", retryable: true, message: (e as Error).message };
-      this.store.append({ chatId: l.chatId, runId: l.runId, origin: "daemon", type: EV.error, data: error });
+      this.daemonError(l.chatId, l.runId, error);
       return { status: "failed", error };
     }
     return this.pump(session, l.chatId, l.runId);
@@ -289,6 +289,7 @@ export class RunManager {
   /** Inside the worktree: allowed by policy. Anything else: a need you answer. Recorded after the request. */
   private async decide(l: Launch, req: ApprovalRequest, roots: string[]): Promise<Decision> {
     await this.waitForRequest(req.requestId);
+    if (this.stopping || !this.active.has(l.runId)) return "deny"; // the run already ended
     const byPolicy = decideByPolicy(req, { roots }) === "allow";
     const decision: Decision = byPolicy
       ? "allow"
@@ -345,7 +346,7 @@ export class RunManager {
     } catch (e) {
       // The harness stream broke (a crashed CLI): transient.
       end.error = { code: "crash", retryable: true, message: (e as Error).message };
-      this.store.append({ chatId, runId, origin: "daemon", type: EV.error, data: end.error });
+      this.daemonError(chatId, runId, end.error);
     } finally {
       this.needs.supersedeRun(runId);
       this.active.delete(runId);

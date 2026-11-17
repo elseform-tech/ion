@@ -60,6 +60,13 @@ describe("daemon api", () => {
     expect(await client.call("status", {})).toMatchObject({ projects: 0 });
   });
 
+  // Final review minor 9: "allow always" would widen the agent's own permissions past ion's policy.
+  it("answers needs only with allow or deny", async () => {
+    await expect(
+      client.call("need.resolve", { needId: "x", decision: "allow_always" } as never),
+    ).rejects.toThrow("Answer allow or deny");
+  });
+
   it("closes sockets that send oversized messages", async () => {
     const big = await connect({ port: srv.port, token: srv.token });
     await expect(big.call("projects.add", { path: "x".repeat(2 * 1024 * 1024) })).rejects.toThrow(

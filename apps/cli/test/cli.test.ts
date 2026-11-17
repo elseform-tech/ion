@@ -198,8 +198,10 @@ describe("ion cli", { timeout: 20_000 }, () => {
         if (r.out !== "Nothing needs you") row = r.out;
         else await new Promise((res) => setTimeout(res, 100));
       }
-      const [id, project, summary] = row.split("  ");
+      const [first, detail] = row.split("\n");
+      const [id, project, summary] = first!.split("  ");
       expect([project, summary]).toEqual(["app", "Run pnpm test"]);
+      expect(detail).toBe("  command: pnpm test");
       expect((await ion("needs", "allow", id!)).out).toBe("Allowed");
       const r = await asking;
       expect(r.out).toContain(`· Waiting on you: Run pnpm test — run: ion needs allow ${id}`);

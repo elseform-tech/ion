@@ -1,5 +1,5 @@
 import { EV, type IonEvent } from "@ion/schema";
-import { clean, text } from "./sanitize.js";
+import { clean, detailLines, text } from "./sanitize.js";
 
 const HARNESS: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -79,7 +79,9 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
       ? { text: line(s, `· Asked to use ${s.asks.get(String(d.requestId)) ?? "a tool"} — denied (${d.by})`) }
       : quiet,
   [EV.needRaised]: (s, d) => ({
-    text: line(s, `· Waiting on you: ${clean(d.summary)} — run: ion needs allow ${clean(d.needId)}`),
+    text:
+      line(s, `· Waiting on you: ${clean(d.summary)} — run: ion needs allow ${clean(d.needId)}`) +
+      detailLines(d.detail),
   }),
   [EV.runRetrying]: (s, d) => {
     const secs = Math.ceil(Number(d.delayS) || 0);

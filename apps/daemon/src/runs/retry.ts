@@ -17,11 +17,16 @@ const NOT_EFFORT = new Set([
   "model_not_found",
   "cloud_credential_error",
   "invalid_request",
+  // Claude Code's own caps: more effort spends more, it doesn't fit in less.
+  "error_max_budget_usd",
+  "error_max_turns",
 ]);
 
 /** Full jitter: random(0, min(120 s, 2 s × 2^attempt)); the error's retry-after wins when it has one. */
 export function backoffDelay(attempt: number, random: () => number, retryAfterS?: number): number {
-  if (retryAfterS !== undefined) return retryAfterS;
+  // A harness's retry-after wins, capped at 120 s like our own delays; a nonsense one is ignored.
+  if (retryAfterS !== undefined && Number.isFinite(retryAfterS))
+    return Math.min(120, Math.max(0, retryAfterS));
   return random() * Math.min(120, 2 * 2 ** attempt);
 }
 

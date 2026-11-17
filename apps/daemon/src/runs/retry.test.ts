@@ -23,6 +23,13 @@ describe("backoffDelay", () => {
   it("uses the error's retry-after when there is one", () => {
     expect(backoffDelay(1, () => 0.5, 30)).toBe(30);
   });
+
+  // Final review minors 5: a harness's retry-after is capped at 120 s; a nonsense one is ignored.
+  it("caps a retry-after at 120 s and ignores one that isn't a number", () => {
+    expect(backoffDelay(1, () => 0.5, 3600)).toBe(120);
+    expect(backoffDelay(1, () => 0.5, -5)).toBe(0);
+    expect(backoffDelay(1, () => 0.5, Number.NaN)).toBe(2);
+  });
 });
 
 describe("nextEffort", () => {
@@ -60,7 +67,14 @@ describe("retryPlan", () => {
   });
 
   it("doesn't retry account or usage-limit failures at a higher effort; it wouldn't help", () => {
-    for (const code of ["usage_limit", "billing_error", "authentication_failed", "model_not_found"])
+    for (const code of [
+      "usage_limit",
+      "billing_error",
+      "authentication_failed",
+      "model_not_found",
+      "error_max_budget_usd",
+      "error_max_turns",
+    ])
       expect(
         retryPlan(
           { tries: 1, effortRetried: false, effort: "low" },

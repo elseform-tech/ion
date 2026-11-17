@@ -114,6 +114,29 @@ describe("decideByPolicy", () => {
     expect(decideByPolicy(req("edit", { file_path: join(wt, "a.ts") }), { roots: [wt] })).toBe("allow");
   });
 
+  // Final review I4: other path-carrying keys, and a Glob pattern that is itself a path.
+  it("checks move destinations and absolute Glob patterns too", () => {
+    expect(decide("edit", { locations: [join(project, "a.ts")], destination: "/etc/a.ts" })).toBe("ask");
+    expect(
+      decideByPolicy(
+        { ...req("search", { path: project, pattern: "/Users/x/.ssh/*" }), toolName: "Glob" },
+        { roots },
+      ),
+    ).toBe("ask");
+    expect(
+      decideByPolicy(
+        { ...req("search", { path: project, pattern: "**/*.ts" }), toolName: "Glob" },
+        { roots },
+      ),
+    ).toBe("allow");
+    expect(
+      decideByPolicy(
+        { ...req("search", { path: project, pattern: "/api/users" }), toolName: "Grep" },
+        { roots },
+      ),
+    ).toBe("allow");
+  });
+
   it("checks declared path fields however deeply nested", () => {
     expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ file_path: "/etc/hosts" }] })).toBe(
       "ask",

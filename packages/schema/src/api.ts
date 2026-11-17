@@ -35,7 +35,7 @@ export type Commands = {
   "run.interrupt": { args: { runId: string }; result: { ok: true } };
   "needs.list": { args: { chatId?: string }; result: NeedInfo[] };
   "need.resolve": {
-    args: { needId: string; decision: "allow" | "allow_always" | "deny" };
+    args: { needId: string; decision: "allow" | "deny" };
     result: { ok: true };
   };
   "chats.list": { args: Record<string, never>; result: ChatInfo[] };

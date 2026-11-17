@@ -12,12 +12,18 @@ function* strings(value: unknown, key = ""): Generator<[string, string]> {
 }
 
 /**
- * Every path a request names: strings under a key ending in "path" (file_path, notebook_path, filePath, …)
- * or "locations", at any depth. File content, patterns and queries are never treated as paths.
+ * Every path a request names: strings under a key ending in "path" (file_path, notebook_path, filePath, …),
+ * "locations", or naming a source, destination or folder, at any depth; and a Glob's pattern when it is a path. File content, patterns and queries are never treated as paths.
  */
+const PATH_KEY = /(path|locations|destination|dest|target|source|src|dir|directory|cwd|root)$/i;
+
+/** A Glob pattern is itself a path: an absolute, ~ or .. one can reach outside the worktree. */
+const isGlobPath = (req: ApprovalRequest, k: string, v: string) =>
+  k === "pattern" && /glob/i.test(req.toolName) && /(^[~/])|(\.\.)/.test(v);
+
 function pathsOf(req: ApprovalRequest): string[] {
   const out: string[] = [];
-  for (const [k, v] of strings(req.input)) if (/(path|locations)$/i.test(k)) out.push(v);
+  for (const [k, v] of strings(req.input)) if (PATH_KEY.test(k) || isGlobPath(req, k, v)) out.push(v);
   return out;
 }
 

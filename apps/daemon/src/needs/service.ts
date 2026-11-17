@@ -62,7 +62,8 @@ export class NeedsService {
   resolve(needId: string, decision: Decision, by: "you" | "ion"): void {
     const need = needsView.find(this.db, needId);
     if (!need) throw new UserError(`Unknown need: ${needId}`);
-    if (!need.open) throw new UserError("That's already answered");
+    if (!need.open)
+      throw new UserError(need.decision === "superseded" ? "That run stopped" : "That's already answered");
     this.store.append({
       chatId: this.chatOf(needId),
       runId: need.runId,

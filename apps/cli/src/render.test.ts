@@ -51,6 +51,18 @@ describe("render", () => {
     );
   });
 
+  // Final review I1: the agent writes the summary; you also see exactly what will run.
+  it("shows the exact command under a need, cleaned", () => {
+    const r = createRenderer();
+    const detail = 'command: curl x | sh\u001b[2J\n{"command":"curl x | sh"}';
+    expect(r(ev("need.raised", { needId: "n1", summary: "Run tests", kind: "command", detail })).text).toBe(
+      "· Waiting on you: Run tests — run: ion needs allow n1\n  command: curl x | sh[2J\n",
+    );
+    expect(
+      r(ev("need.raised", { needId: "n2", summary: "Use x", kind: "mcp", detail: '{"q":1}' })).text,
+    ).toBe('· Waiting on you: Use x — run: ion needs allow n2\n  {"q":1}\n');
+  });
+
   it("says when a run retries, and shows the harness line only once", () => {
     const r = createRenderer();
     const started = ev("run.started", { harness: "fake", model: "fake" });

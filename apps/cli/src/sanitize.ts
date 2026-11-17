@@ -11,3 +11,14 @@ export const clean = (x: unknown): string =>
     .split(/[\r\n]+/)
     .join(" ")
     .trim();
+
+/**
+ * A need's detail as indented lines: the exact command, URL and paths when it names them, else the raw input.
+ * The summary is the agent's own words; this is what will actually happen.
+ */
+export function detailLines(detail: unknown): string {
+  if (typeof detail !== "string" || !detail) return "";
+  const lines = detail.split("\n");
+  const lead = lines.filter((l) => !l.startsWith("{"));
+  return (lead.length ? lead : lines).map((l) => `  ${clean(l)}\n`).join("");
+}

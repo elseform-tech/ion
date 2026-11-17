@@ -39,7 +39,12 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       login: async () => {},
     },
     capabilities: async () => CAPABILITIES,
-    start: async (start) => fakeSession(start, delayMs),
+    start: async (start) => {
+      // Test switches for the daemon's lifecycle tests: a slow or failing harness start.
+      await new Promise((r) => setTimeout(r, Number(process.env.ION_FAKE_START_MS ?? 0)));
+      if (process.env.ION_FAKE_START_FAIL) throw new Error("The fake harness didn't start");
+      return fakeSession(start, delayMs);
+    },
   };
 }
 
