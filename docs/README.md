@@ -11,7 +11,7 @@
 | Plan | Status |
 |---|---|
 | [01 Foundation](superpowers/plans/2026-11-17-01-foundation.md) | Done |
-| 02 Adapter kit, fake harness, Claude Code adapter | Not written |
+| [02 Adapters](superpowers/plans/2026-11-17-02-adapters.md): adapter kit, fake harness, Claude Code, `ion ask` | Written |
 | 03 Workspace, scheduler, policy, approvals, needs, retries | Not written |
 | 04 Desktop app and Chats screens | Not written |
 | 05 ion chief and Ions screens | Not written |
