@@ -66,4 +66,12 @@ describe("decideByPolicy", () => {
     expect(decide("read", { file_path: join(project, "a.ts"), target: "../../etc/passwd" })).toBe("deny");
     expect(decide("read", { file_path: "~/.ssh/id_rsa" })).toBe("deny");
   });
+
+  it("checks paths nested in objects and arrays, and bare .. segments", () => {
+    expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ target: "/etc/hosts" }] })).toBe(
+      "deny",
+    );
+    expect(decide("read", { file_path: join(project, "a.ts"), opts: { dir: ".." } })).toBe("deny");
+    expect(decide("read", { file_path: join(project, "a.ts"), note: "fix the bug" })).toBe("allow");
+  });
 });

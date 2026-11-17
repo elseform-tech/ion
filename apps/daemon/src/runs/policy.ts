@@ -3,22 +3,27 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest, Decision } from "@ion/adapter-kit";
 
-const looksLikePath = (v: string) => v.startsWith("/") || v.startsWith("~") || v.includes("../");
+/** Absolute, home-relative, or containing a `..` segment (either separator). */
+const looksLikePath = (v: string) =>
+  v.startsWith("/") || v.startsWith("~") || v.split(/[\\/]/).includes("..");
 
-/** Every path a request names: any input field whose name ends in "path" (file_path, filePath, …) plus ACP `locations`. */
-function pathsOf(req: ApprovalRequest): string[] {
-  const out: string[] = [];
-  for (const [k, v] of Object.entries(req.input)) {
-    if (typeof v !== "string") continue;
-    // Named path fields, plus anything that looks like a path elsewhere (absolute, home, or climbing out).
-    if (/path$/i.test(k) || looksLikePath(v)) out.push(v);
-  }
-  return [...out, ...locationsOf(req.input)];
+/** Every string in the input, however deeply nested, with the key it sits under. */
+function* strings(value: unknown, key = ""): Generator<[string, string]> {
+  if (typeof value === "string") yield [key, value];
+  else if (Array.isArray(value)) for (const v of value) yield* strings(v, key);
+  else if (value && typeof value === "object")
+    for (const [k, v] of Object.entries(value)) yield* strings(v, k);
 }
 
-/** ACP `locations`, as plain strings. */
-const locationsOf = (input: Record<string, unknown>): string[] =>
-  Array.isArray(input.locations) ? input.locations.filter((l): l is string => typeof l === "string") : [];
+/**
+ * Every path a request names: strings under a key ending in "path" or "locations", plus any string anywhere
+ * that looks like a path (absolute, ~, or with a `..` segment).
+ */
+function pathsOf(req: ApprovalRequest): string[] {
+  const out: string[] = [];
+  for (const [k, v] of strings(req.input)) if (/(path|locations)$/i.test(k) || looksLikePath(v)) out.push(v);
+  return out;
+}
 
 /** The real path, resolving symlinks; for a file that doesn't exist yet, its nearest existing parent's. */
 function realish(p: string): string {

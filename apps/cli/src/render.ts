@@ -17,9 +17,19 @@ const VERB: Record<string, string> = {
 
 type D = Record<string, unknown>;
 
-// C0/C1 control characters except newline and tab: agents' text must not drive the terminal.
-const CONTROL = new RegExp("[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f]", "g");
-const clean = (x: unknown): string => String(x ?? "").replace(CONTROL, "");
+// Agents' text must not drive the terminal: C0/C1 control characters (except newline and tab) and
+// invisible direction marks that reorder what's shown.
+const CONTROL = new RegExp(
+  "[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]",
+  "g",
+);
+const text = (x: unknown): string => String(x ?? "").replace(CONTROL, "");
+/** For one-line fields (paths, summaries, errors): also no line breaks, so they can't fake extra lines. */
+const clean = (x: unknown): string =>
+  text(x)
+    .split(/[\r\n]+/)
+    .join(" ")
+    .trim();
 export type RunEnd = { status: string; code: number };
 type Rendered = { text: string; end?: RunEnd };
 
@@ -61,9 +71,9 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     return { text: line(s, [label, d.authMethod, d.model].filter(Boolean).map(clean).join(" · ")) };
   },
   [EV.messageDelta]: (s, d) => {
-    const text = clean(d.text);
-    s.midLine = !text.endsWith("\n");
-    return { text };
+    const streamed = text(d.text);
+    s.midLine = !streamed.endsWith("\n");
+    return { text: streamed };
   },
   [EV.toolStarted]: (s, d) =>
     d.kind === "edit" ? quiet : { text: line(s, `· ${VERB[String(d.kind)] ?? "Used"} ${clean(d.summary)}`) },

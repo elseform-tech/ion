@@ -35,4 +35,12 @@ describe("render", () => {
       r(ev("tool.started", { toolId: "t", name: "Read", kind: "read", summary: "a\u001b[31m.ts" })).text,
     ).toBe("\n· Read a[31m.ts\n");
   });
+
+  it("keeps one-line fields on one line and drops invisible direction marks", () => {
+    const r = createRenderer();
+    const spoof = "a.ts\nDone · 0.1s\u202e";
+    expect(r(ev("file.changed", { path: spoof, change: "modify", added: null, removed: null })).text).toBe(
+      "· Edited a.ts Done · 0.1s\n",
+    );
+  });
 });
