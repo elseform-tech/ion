@@ -86,3 +86,19 @@ describe("claude-code capabilities", () => {
     expect(c.models.map((m) => m.id)).toEqual(["opus", "sonnet", "haiku"]);
   });
 });
+
+describe("loginOnlyEnv", () => {
+  it("removes every variable that would bypass the Claude login, and keeps the rest", async () => {
+    const { loginOnlyEnv } = await import("./cli.js");
+    const env = loginOnlyEnv({
+      PATH: "/bin",
+      HOME: "/h",
+      ANTHROPIC_API_KEY: "k",
+      ANTHROPIC_AUTH_TOKEN: "t",
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      CLAUDE_CODE_USE_VERTEX: "1",
+      CLAUDE_CODE_USE_FOUNDRY: "1",
+    });
+    expect(env).toEqual({ PATH: "/bin", HOME: "/h" });
+  });
+});

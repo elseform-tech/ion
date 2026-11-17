@@ -34,7 +34,14 @@ export function whichOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): 
 }
 
 /** Keys that would make Claude Code bill an API key instead of the user's Claude login. */
-const API_KEY_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+const API_KEY_VARS = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  // Cloud providers take priority over the Claude login too.
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+];
 
 /** The current environment without API keys, so Claude Code always uses its own login. */
 export function loginOnlyEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {

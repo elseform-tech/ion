@@ -1,12 +1,16 @@
 import type { HarnessAdapter } from "@ion/adapter-kit";
 import { CAPABILITIES, parseAuthStatus } from "./capabilities.js";
+import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { type Exec, execNoShell, loginOnlyEnv, runLogin, whichOnPath } from "./cli.js";
+import { type QueryFn, startSession } from "./session.js";
 
 export type { Exec } from "./cli.js";
 
 export type ClaudeCodeDeps = {
   exec?: Exec;
   which?: (bin: string) => string | null;
+  /** The SDK's query(); tests pass a scripted stand-in. */
+  query?: QueryFn;
 };
 
 export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapter {
@@ -36,8 +40,16 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
       },
     },
     capabilities: async () => CAPABILITIES,
-    start: async () => {
-      throw new Error("Not implemented yet");
+    async start(opts) {
+      const path = binary();
+      if (!path) throw new Error("Claude Code isn't installed");
+      const auth = await this.auth.status();
+      if (!auth.signedIn) throw new Error("Claude Code isn't signed in. Run: claude auth login");
+      return startSession(opts, {
+        query: deps.query ?? (sdkQuery as unknown as QueryFn),
+        binaryPath: path,
+        authMethod: auth.method,
+      });
     },
   };
 }
