@@ -48,6 +48,17 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, JSON.stringify(s.mcp()));
     return "done";
   },
+  /** Answers like ion's judge: deny when the action mentions "deny-me", else allow. */
+  async judge(s) {
+    const deny = s.text().includes("deny-me");
+    say(
+      s,
+      JSON.stringify(
+        deny ? { allow: false, reason: "Looks risky" } : { allow: true, reason: "Part of the task" },
+      ),
+    );
+    return "done";
+  },
   async hello(s) {
     say(s, "Hi from the fake harness.");
     return "done";

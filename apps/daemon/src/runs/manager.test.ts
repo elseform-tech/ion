@@ -2,9 +2,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addProject, DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
+import { addProject, DEFAULT_CONFIG, saveUserConfig, setProjectAccess } from "@ion/config";
 import type { IonEvent } from "@ion/schema";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createAccess } from "../access/index.js";
 import { UserError } from "../api/errors.js";
 import { createGrants } from "../mcp/index.js";
 import { NeedsService } from "../needs/index.js";
@@ -21,13 +22,15 @@ let needs: NeedsService;
 let runs: RunManager;
 let repo: string;
 let configFile: string;
+let judge: ReturnType<typeof vi.fn>;
+let access: ReturnType<typeof createAccess>;
 let dataDir: string;
 
 /** A fresh manager that reads max_runs from the config file. */
 const limitTo = (n: number) => {
   const c = addProject(DEFAULT_CONFIG, repo);
   saveUserConfig(configFile, { ...c, resources: { max_runs: n } });
-  runs = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
+  runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
 };
 
 beforeEach(() => {
@@ -47,7 +50,13 @@ beforeEach(() => {
   db = openDb(":memory:");
   store = new EventStore(db, allViews);
   needs = new NeedsService(store, db);
-  runs = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
+  judge = vi.fn(async ({ req }: { req: { input: unknown } }) =>
+    JSON.stringify(req.input).includes("/etc/")
+      ? { allow: false, reason: "Outside the project" }
+      : { allow: true, reason: "Fine for the task" },
+  );
+  access = createAccess({ judge, home: "/nonexistent-home", ionDirs: [dataDir] });
+  runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
 });
 
 async function until<T>(f: () => T | undefined, ms = 3000): Promise<T> {
@@ -103,54 +112,43 @@ describe("RunManager", () => {
     expect(existsSync(join(repo, "notes.md"))).toBe(false);
   });
 
-  it("turns a command into a need, waits, and resumes when you allow it", async () => {
+  const approval = (events: IonEvent[]) => events.find((e) => e.type === "approval.resolved")?.data;
+
+  it("Auto: ion decides a command and the run never pauses", async () => {
     const { runId } = await ask("shell");
-    const need = await openNeed();
-    expect(need).toMatchObject({ runId, kind: "command", summary: "Run pnpm test" });
-    expect(store.read({ runId }).some((e) => e.type === "run.finished")).toBe(false);
-    needs.resolve(need.needId, "allow", "you");
     const events = await finished(runId);
-    expect(events.find((e) => e.type === "approval.resolved")).toMatchObject({
-      data: { decision: "allow", by: "you" },
+    expect(approval(events)).toEqual({
+      requestId: "q1",
+      decision: "allow",
+      by: "ion",
+      reason: "Fine for the task",
     });
     expect(events.find((e) => e.type === "tool.finished")).toMatchObject({ data: { ok: true } });
+    expect(events.some((e) => e.type === "need.raised")).toBe(false);
+    expect(judge).toHaveBeenCalledWith(expect.objectContaining({ projectId: "repo", text: "shell" }));
   });
 
-  it("denies when you deny", async () => {
-    const { runId } = await ask("shell");
-    needs.resolve((await openNeed()).needId, "deny", "you");
-    expect((await finished(runId)).find((e) => e.type === "tool.finished")).toMatchObject({
-      data: { ok: false },
+  it("Auto: what ion denies goes back to the agent with the reason, and the run carries on", async () => {
+    const events = await finished((await ask("outside")).runId);
+    expect(approval(events)).toMatchObject({ decision: "deny", by: "ion", reason: "Outside the project" });
+    expect(events.at(-1)?.data).toEqual({ status: "done" });
+    expect(events.some((e) => e.type === "need.raised")).toBe(false);
+  });
+
+  // Review Focus 4: Full access never asks the judge.
+  it("Full access: everything runs, without asking ion", async () => {
+    const events = await finished((await ask("outside", { access: "full" })).runId);
+    expect(approval(events)).toMatchObject({ decision: "allow", by: "full" });
+    expect(judge).not.toHaveBeenCalled();
+  });
+
+  it("uses the project's access, then the default", async () => {
+    saveUserConfig(configFile, setProjectAccess(addProject(DEFAULT_CONFIG, repo), "repo", "full"));
+    runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
+    expect(approval(await finished((await ask("shell")).runId))).toMatchObject({ by: "full" });
+    expect(approval(await finished((await ask("shell", { access: "auto" })).runId))).toMatchObject({
+      by: "ion",
     });
-  });
-
-  // Regression (security review): the need shows the exact action, and is keyed by it.
-  it("shows the exact input on the need", async () => {
-    await ask("shell");
-    expect((await openNeed()).detail).toMatch(/^command: pnpm test\n/);
-  });
-
-  it("asks about an edit outside the worktree", async () => {
-    await ask("outside");
-    expect(await openNeed()).toMatchObject({ kind: "edit", summary: "Write /etc/ion-test.txt" });
-  });
-
-  it("supersedes open needs when ion stops, so they can't resume anything", async () => {
-    const { runId } = await ask("shell");
-    const need = await openNeed();
-    await runs.shutdown();
-    expect(store.read({ runId }).find((e) => e.type === "need.resolved")).toMatchObject({
-      data: { needId: need.needId, decision: "superseded", by: "daemon" },
-    });
-    expect(store.read({ runId }).at(-1)).toMatchObject({ type: "run.finished", data: { status: "failed" } });
-  });
-
-  it("supersedes open needs when the run is interrupted", async () => {
-    const { runId } = await ask("shell");
-    await openNeed();
-    await runs.interrupt(runId);
-    await finished(runId);
-    expect(needs.open()).toEqual([]);
   });
 
   it("archives a chat: removes its worktree, keeps the branch, refuses while running", async () => {
@@ -259,7 +257,8 @@ describe("RunManager", () => {
 
   // Final review I2 / Review Focus 1: answering a need after a restart says the run stopped.
   it("after a restart, answering the old need says the run stopped", async () => {
-    const { chatId, runId } = await ask("shell");
+    const { chatId, runId } = await ask("slow");
+    void needs.raise({ chatId, runId, requestId: "q9", kind: "command", summary: "x", dedupeKey: "k" });
     const need = await openNeed();
     const restarted = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
     restarted.closeUnfinishedRuns([{ runId, chatId, status: "running" }]);
@@ -362,7 +361,7 @@ describe("RunManager", () => {
     const grants = createGrants();
     runs = new RunManager(
       store,
-      { configFile, dataDir, random: () => 0, mcp: { grants, url: () => "http://127.0.0.1:9/mcp" } },
+      { configFile, dataDir, random: () => 0, access, mcp: { grants, url: () => "http://127.0.0.1:9/mcp" } },
       needs,
       db,
     );

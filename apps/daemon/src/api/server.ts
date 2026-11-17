@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { WebSocketServer } from "ws";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
@@ -10,6 +11,7 @@ import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
+import { createAccess, createJudge, harnessRunner } from "../access/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
 
 export const VERSION = "0.0.0";
@@ -70,7 +72,10 @@ function openState(opts: { dataDir: string; configFile: string }, mcpUrl: () => 
   const store = new EventStore(db, allViews);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
-  const runCtx = { configFile: opts.configFile, dataDir: opts.dataDir, mcp: { grants, url: mcpUrl } };
+  // Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own folders are never touched.
+  const judge = createJudge(harnessRunner(opts.configFile));
+  const access = createAccess({ judge, home: homedir(), ionDirs: [opts.dataDir, dirname(opts.configFile)] });
+  const runCtx = { configFile: opts.configFile, dataDir: opts.dataDir, access, mcp: { grants, url: mcpUrl } };
   return {
     store,
     db,
