@@ -30,6 +30,8 @@ const API_KEY_VARS = [
 export function loginOnlyEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const out = { ...env };
   for (const k of API_KEY_VARS) delete out[k];
+  // A run's MCP key is passed in ION_MCP_H<i> (see session.ts): never inherit another run's.
+  for (const k of Object.keys(out)) if (k.startsWith("ION_MCP_")) delete out[k];
   return out;
 }
 
