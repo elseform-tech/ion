@@ -17,13 +17,25 @@ function* strings(value: unknown, key = ""): Generator<[string, string]> {
  */
 const PATH_KEY = /(path|locations|destination|dest|target|source|src|dir|directory|cwd|root)$/i;
 
-/** A Glob pattern is itself a path: an absolute, ~ or .. one can reach outside the worktree. */
-const isGlobPath = (req: ApprovalRequest, k: string, v: string) =>
-  k === "pattern" && /glob/i.test(req.toolName) && /(^[~/])|(\.\.)/.test(v);
+const URL_LIKE = /^[a-z][a-z0-9+.-]+:/i;
+const REACHES_OUT = /(^[~/])|(\.\.)/;
+
+/**
+ * A Glob pattern is itself a path: the pattern and each of its brace alternatives that is absolute, ~ or ..
+ * (a braced pattern can hide an absolute one) is checked like any other path.
+ */
+function globPaths(req: ApprovalRequest, k: string, v: string): string[] {
+  if (k !== "pattern" || !/glob/i.test(req.toolName)) return [];
+  const alternatives = [...v.matchAll(/[{,]\s*([^,{}]*)/g)].map((m) => m[1]!.trim());
+  return [v, ...alternatives].filter((p) => REACHES_OUT.test(p));
+}
 
 function pathsOf(req: ApprovalRequest): string[] {
   const out: string[] = [];
-  for (const [k, v] of strings(req.input)) if (PATH_KEY.test(k) || isGlobPath(req, k, v)) out.push(v);
+  for (const [k, v] of strings(req.input)) {
+    if (PATH_KEY.test(k)) out.push(v);
+    out.push(...globPaths(req, k, v));
+  }
   return out;
 }
 
@@ -61,7 +73,8 @@ const allInside = (paths: string[], roots: string[]) => paths.every((p) => insid
  */
 export function decideByPolicy(req: ApprovalRequest, opts: { roots: string[] }): "allow" | "ask" {
   const paths = pathsOf(req);
-  const inWorktree = paths.length > 0 && allInside(paths, opts.roots);
+  // A URL (https:, file:, …) in a path field is never "inside the worktree".
+  const inWorktree = paths.length > 0 && !paths.some((p) => URL_LIKE.test(p)) && allInside(paths, opts.roots);
   if (req.kind === "edit" && paths.some((p) => runsCode(p, opts.roots))) return "ask";
   return ["read", "search", "edit"].includes(req.kind) && inWorktree ? "allow" : "ask";
 }

@@ -137,6 +137,17 @@ describe("decideByPolicy", () => {
     ).toBe("allow");
   });
 
+  // Security review: a URL isn't a path inside the worktree; braces can hide an absolute Glob path.
+  it("asks when a path field holds a URL, or a Glob hides an absolute path in braces", () => {
+    expect(decide("read", { source: "https://example.com/x" })).toBe("ask");
+    expect(decide("read", { file_path: join(project, "a.ts"), src: "file:///etc/passwd" })).toBe("ask");
+    const glob = (pattern: string) =>
+      decideByPolicy({ ...req("search", { path: project, pattern }), toolName: "Glob" }, { roots });
+    expect(glob("{**/*.ts,/etc/*}")).toBe("ask");
+    expect(glob("src/{a,~/x}/*")).toBe("ask");
+    expect(glob("src/{a,b}/*.ts")).toBe("allow");
+  });
+
   it("checks declared path fields however deeply nested", () => {
     expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ file_path: "/etc/hosts" }] })).toBe(
       "ask",

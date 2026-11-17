@@ -18,7 +18,9 @@ export const clean = (x: unknown): string =>
  */
 export function detailLines(detail: unknown): string {
   if (typeof detail !== "string" || !detail) return "";
+  // needDetail ends with the input as one JSON line; every line before it (a multi-line command included)
+  // is shown whatever it starts with.
   const lines = detail.split("\n");
-  const lead = lines.filter((l) => !l.startsWith("{"));
-  return (lead.length ? lead : lines).map((l) => `  ${clean(l)}\n`).join("");
+  const shown = lines.length > 1 ? lines.slice(0, -1) : lines;
+  return shown.map((l) => `  ${clean(l)}\n`).join("");
 }

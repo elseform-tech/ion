@@ -61,6 +61,11 @@ describe("render", () => {
     expect(
       r(ev("need.raised", { needId: "n2", summary: "Use x", kind: "mcp", detail: '{"q":1}' })).text,
     ).toBe('· Waiting on you: Use x — run: ion needs allow n2\n  {"q":1}\n');
+    // Every line of a multi-line command shows, even one that starts with "{".
+    const multi = 'command: echo hi\n{ rm -rf ~; }\n{"command":"echo hi\\n{ rm -rf ~; }"}';
+    expect(r(ev("need.raised", { needId: "n3", summary: "Echo", kind: "command", detail: multi })).text).toBe(
+      "· Waiting on you: Echo — run: ion needs allow n3\n  command: echo hi\n  { rm -rf ~; }\n",
+    );
   });
 
   it("says when a run retries, and shows the harness line only once", () => {
