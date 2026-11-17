@@ -22,6 +22,12 @@ describeAdapterContract("claude-code", () => make(), {
   cwd,
 });
 
+async function drain(s: { events(): AsyncIterable<unknown> }) {
+  const out = [];
+  for await (const e of s.events()) out.push(e);
+  return out;
+}
+
 async function run(text: string, opts: { calls?: FakeQueryCall[]; exec?: Exec } = {}) {
   const session = await make(opts.calls, opts.exec).start({
     cwd,
@@ -45,6 +51,42 @@ describe("claude-code session", () => {
     const o = calls[0]!.options as { settingSources: string[]; systemPrompt: { append?: string } };
     expect(o.settingSources).toEqual(["user"]);
     expect(o.systemPrompt.append).toContain("Use tabs.");
+  });
+
+  // Regression (security review): a repo's CLAUDE.md symlinked to a secret must never reach the model.
+  it("ignores a CLAUDE.md that is a symlink, and caps a large one", async () => {
+    const { writeFileSync, symlinkSync, mkdtempSync: mk } = await import("node:fs");
+    const secretDir = mk(join(tmpdir(), "ion-secret-"));
+    writeFileSync(join(secretDir, "id_rsa"), "PRIVATE KEY");
+    const linked = mk(join(tmpdir(), "ion-cc-link-"));
+    symlinkSync(join(secretDir, "id_rsa"), join(linked, "CLAUDE.md"));
+    const calls: FakeQueryCall[] = [];
+    const s1 = await make(calls).start({
+      cwd: linked,
+      model: null,
+      effort: null,
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s1.send({ text: "hello" });
+    await drain(s1);
+    expect(JSON.stringify(calls[0]!.options.systemPrompt)).not.toContain("PRIVATE KEY");
+
+    const big = mk(join(tmpdir(), "ion-cc-big-"));
+    writeFileSync(join(big, "CLAUDE.md"), "x".repeat(200_000));
+    const s2 = await make(calls).start({
+      cwd: big,
+      model: null,
+      effort: null,
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+      instructions: "ion says hi",
+    });
+    await s2.send({ text: "hello" });
+    await drain(s2);
+    const append = (calls[1]!.options.systemPrompt as { append: string }).append;
+    expect(append.length).toBeLessThan(70_000);
+    expect(append.indexOf("ion says hi")).toBeLessThan(append.indexOf("<project-instructions"));
   });
 
   it("never passes Claude's suggested permission rules through on allow always", async () => {
