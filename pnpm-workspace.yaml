@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "packages/adapters/*"
   - "tools/*"
 onlyBuiltDependencies:
   - better-sqlite3
@@ -10,3 +11,8 @@ patchedDependencies:
 overrides:
   # Pinned to the version patches/picomatch@4.0.7.patch fixes (GHSA-fc5q-39xc-vjpf). Drop with the patch.
   picomatch: 4.0.7
+auditConfig:
+  # GHSA-fc5q-39xc-vjpf (picomatch ReDoS): patched in-repo (patches/picomatch@4.0.7.patch), every copy pinned
+  # by the override above and enforced by tools/health/src/patched-deps.test.js. Remove with the patch.
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf

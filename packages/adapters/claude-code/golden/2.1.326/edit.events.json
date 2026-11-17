@@ -1,0 +1,106 @@
+[
+  {
+    "type": "run.started",
+    "data": {
+      "harness": "claude-code",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "authMethod": "Claude subscription"
+    }
+  },
+  {
+    "type": "tool.started",
+    "data": {
+      "toolId": "toolu_01CJYcUtermRz83gzKuQV4pz",
+      "name": "Write",
+      "kind": "edit",
+      "summary": "notes.md"
+    }
+  },
+  {
+    "type": "tool.finished",
+    "data": {
+      "toolId": "toolu_01CJYcUtermRz83gzKuQV4pz",
+      "ok": true,
+      "summary": null
+    }
+  },
+  {
+    "type": "file.changed",
+    "data": {
+      "path": "notes.md",
+      "change": "add",
+      "added": 2,
+      "removed": null
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "I created `notes.md`"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " in the working"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " directory with the"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " Write tool. It"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " contains one"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " line, `hello`,"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": " followed by a tr"
+    }
+  },
+  {
+    "type": "message.delta",
+    "data": {
+      "text": "ailing newline."
+    }
+  },
+  {
+    "type": "message.completed",
+    "data": {
+      "text": "I created `notes.md` in the working directory with the Write tool. It contains one line, `hello`, followed by a trailing newline."
+    }
+  },
+  {
+    "type": "usage.reported",
+    "data": {
+      "model": "claude-haiku-5-5",
+      "inputTokens": 4,
+      "outputTokens": 171,
+      "costUsd": 0.00645004
+    }
+  },
+  {
+    "type": "run.finished",
+    "data": {
+      "status": "done"
+    }
+  }
+]

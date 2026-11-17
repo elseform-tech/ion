@@ -6,7 +6,7 @@ import { type Db, EventStore, openDb } from "./index.js";
 const ev = (
   runId: string,
   type: NewEvent["type"] = "message.delta",
-  data: Record<string, unknown> = {},
+  data: Record<string, unknown> = { text: "x" },
 ): NewEvent => ({
   chatId: "c1",
   runId,
@@ -69,7 +69,13 @@ describe("EventStore", () => {
       data: { title: "t", projectId: null },
     });
     expect(
-      store.append({ chatId: "c1", runId: "x", origin: "adapter", type: "message.delta", data: {} }).seq,
+      store.append({
+        chatId: "c1",
+        runId: "x",
+        origin: "adapter",
+        type: "message.delta",
+        data: { text: "x" },
+      }).seq,
     ).toBe(1);
   });
 
@@ -95,14 +101,14 @@ describe("EventStore", () => {
   });
 
   it("updates the runs view in the same transaction", () => {
-    store.append(ev("r1", "run.started", { harness: "fake", model: "m", effort: null }));
+    store.append(ev("r1", "run.started", { harness: "fake", model: "m", effort: null, authMethod: null }));
     store.append(ev("r1", "run.finished", { status: "failed" }));
     expect(runsView.rows(db)).toMatchObject([{ runId: "r1", status: "failed", harness: "fake" }]);
   });
 
   it("rebuilding views from the log gives the same rows", () => {
-    store.append(ev("r1", "run.started", { harness: "fake", model: "m", effort: "high" }));
-    store.append(ev("r2", "run.started", { harness: "fake", model: "m", effort: null }));
+    store.append(ev("r1", "run.started", { harness: "fake", model: "m", effort: "high", authMethod: null }));
+    store.append(ev("r2", "run.started", { harness: "fake", model: "m", effort: null, authMethod: null }));
     store.append(ev("r1", "run.finished", { status: "done" }));
     const before = runsView.rows(db);
     store.rebuildViews();

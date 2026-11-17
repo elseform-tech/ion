@@ -20,6 +20,10 @@
     "@types/ws": "^8.18.2"
   },
   "dependencies": {
+    "@ion/adapter-acp": "workspace:*",
+    "@ion/adapter-claude-code": "workspace:*",
+    "@ion/adapter-fake": "workspace:*",
+    "@ion/adapter-kit": "workspace:*",
     "@ion/config": "workspace:*",
     "@ion/schema": "workspace:*",
     "better-sqlite3": "^13.2.0",

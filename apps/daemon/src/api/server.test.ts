@@ -72,6 +72,31 @@ describe("daemon api", () => {
     expect(statSync(join(h, "data")).mode & 0o777).toBe(0o700);
   });
 
+  // Regression (final review I7): a run left open by a crash is closed on the next start.
+  it("marks runs a crash left unfinished as failed on start", async () => {
+    const h = mkdtempSync(join(tmpdir(), "ion-sweep-"));
+    const { openDb, EventStore } = await import("../store/index.js");
+    const { allViews } = await import("../views/index.js");
+    mkdirSync(join(h, "data"), { recursive: true });
+    const db = openDb(join(h, "data", "ion.db"));
+    new EventStore(db, allViews).append({
+      chatId: "c",
+      runId: "r-crashed",
+      origin: "adapter",
+      type: "run.started",
+      data: { harness: "fake", model: "m", effort: null, authMethod: null },
+    });
+    db.close();
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: join(h, "config.toml"), port: 0 });
+    const c2 = await connect({ port: s2.port, token: s2.token });
+    const seen: IonEvent[] = [];
+    await c2.subscribe({ chatId: "c" }, (e) => seen.push(e));
+    await until(() => seen.some((e) => e.type === "run.finished"));
+    expect(seen.at(-1)).toMatchObject({ type: "run.finished", data: { status: "failed" } });
+    c2.close();
+    await s2.close();
+  });
+
   it("keeps its data folder private", () => {
     expect(statSync(join(home, "data")).mode & 0o777).toBe(0o700);
   });
@@ -109,6 +134,21 @@ describe("daemon api", () => {
       code: "invalid",
     });
     expect(await client.call("status", {})).toMatchObject({ projects: 0 });
+  });
+
+  it("runs an ask end to end and keeps serving after a failed run", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const repoPath = repo("app");
+    await client.call("projects.add", { path: repoPath });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { runId } = await client.call("ask", { text: "fail", projectId: "app", harness: "fake" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"));
+    expect(seen.filter((e) => e.runId === runId).at(-1)?.data).toEqual({ status: "failed" });
+    expect(await client.call("status", {})).toMatchObject({ projects: 1 });
+    await expect(client.call("ask", { text: "  ", projectId: "app", harness: "fake" })).rejects.toThrow(
+      "Say what to do",
+    );
   });
 
   it("pushes events to subscribers, and only later ones after afterId", async () => {
