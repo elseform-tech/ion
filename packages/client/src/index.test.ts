@@ -37,8 +37,17 @@ describe("connect", () => {
     wss.on("connection", (ws) => {
       ws.on("message", (raw) => {
         const { id } = JSON.parse(String(raw));
-        for (const junk of ["not json", "null", '{"sub":"__proto__","event":{}}', '{"sub":42}', '{"id":7}'])
-          ws.send(junk);
+        const junk = [
+          "not json",
+          "null",
+          '{"sub":"__proto__","event":{}}',
+          '{"sub":42}',
+          '{"id":7}',
+          JSON.stringify({ id, ok: false }), // error reply without an error
+          JSON.stringify({ id, ok: true, sub: "s1", event: {} }), // both kinds at once
+          JSON.stringify({ sub: "s1", event: { type: "nope" } }), // not a valid event
+        ];
+        for (const j of junk) ws.send(j);
         ws.send(JSON.stringify({ id, ok: true, result: { pid: 1 } }));
       });
     });

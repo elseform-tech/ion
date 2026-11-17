@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ApiError, Command, Commands, IonEvent, Push, Reply } from "@ion/schema";
+import {
+  type ApiError,
+  type Command,
+  type Commands,
+  type IonEvent,
+  parseEvent,
+  type Push,
+  type Reply,
+} from "@ion/schema";
 import WebSocket from "ws";
 
 export type DaemonInfo = { pid: number; port: number; token: string };
@@ -38,19 +46,40 @@ export interface IonClient {
   close(): void;
 }
 
-/** A reply or a push, or null for anything else. Only own string keys reach the handler maps. */
-function parseMessage(raw: string): Reply | Push | null {
-  let m: unknown;
+const isObject = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
+
+function asReply(o: Record<string, unknown>): Reply | null {
+  if (o.ok === true && "result" in o) return o as unknown as Reply;
+  const e = o.error;
+  if (o.ok === false && isObject(e) && typeof e.code === "string" && typeof e.message === "string")
+    return o as unknown as Reply;
+  return null;
+}
+
+function asPush(o: Record<string, unknown>): Push | null {
   try {
-    m = JSON.parse(raw);
+    return { sub: o.sub as string, event: parseEvent(o.event) };
   } catch {
     return null;
   }
-  if (typeof m !== "object" || m === null) return null;
-  const o = m as Record<string, unknown>;
-  if (typeof o.sub === "string" && typeof o.event === "object" && o.event !== null) return o as Push;
-  if (typeof o.id === "string" && typeof o.ok === "boolean") return o as unknown as Reply;
-  return null;
+}
+
+/**
+ * A well-formed reply or push, else null. Exactly one of `id` (reply) or `sub` (push) must be present,
+ * replies need a result or a full error, and pushed events must pass the schema.
+ */
+function parseMessage(raw: string): Reply | Push | null {
+  let o: unknown;
+  try {
+    o = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isObject(o)) return null;
+  const isReply = typeof o.id === "string";
+  const isPush = typeof o.sub === "string";
+  if (isReply === isPush) return null;
+  return isReply ? asReply(o) : asPush(o);
 }
 
 /** Opens an authenticated connection to the daemon. */
@@ -100,8 +129,8 @@ export async function connect(opts: { port: number; token: string; host?: string
       const buffered: Push[] = [];
       const id = String(++n);
       const early = (raw: WebSocket.RawData) => {
-        const m = JSON.parse(String(raw));
-        if ("sub" in m) buffered.push(m);
+        const m = parseMessage(String(raw));
+        if (m && "sub" in m) buffered.push(m);
       };
       ws.on("message", early);
       const { sub } = await new Promise<{ sub: string }>((resolve, reject) => {
