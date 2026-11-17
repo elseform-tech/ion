@@ -18,6 +18,15 @@ The always-on service that owns all state.
   (`ion needs allow|deny <id>`). Stopping, interrupting or a crash supersedes a run's open needs.
 - `src/scheduler`: the run queue. At most `resources.max_runs` runs at once (`"auto"` = half the cores, at
   least one); each run stores `run.queued`, then starts when a slot frees.
+- `src/views` also keep `messages` (yours and the agents', with full-text search) and `memory`. Each view has a
+  version: when it changes, an existing database drops that view and rebuilds it from the log.
+- Continuing a chat: a run resumes the chat's last harness session; when the harness can't, a new session gets the
+  chat's earlier messages (newest 24,000 characters) as a labelled data block before your message.
+- `src/mcp`: ion's MCP server at `/mcp` on the daemon's port. Each run gets its own key (kept only as a hash,
+  revoked when the run ends) that sees its own project: `chat_history`, `search_chats`, `open_needs`, `memory_list`,
+  `memory_write` (5 per run). Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
+  tools ask.
+- `src/memory`: memory is yours ("you", shown in every project) or one project's, never shared between projects.
 - `src/api`: the WebSocket API (see `@ion/schema` `api.ts` for the protocol).
 - `src/main.ts`: entry point. Takes the `daemon.lock` (an exclusive SQLite lock the OS releases if the process dies, so only one daemon per data dir), then writes `daemon.json` (`pid`, `port`, `token`, mode 0600).
 
