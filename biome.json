@@ -9,10 +9,21 @@
       "!docs/design",
       "!.superpowers",
       "!.remember",
-      "!**/*.md"
+      "!**/*.md",
+      "!**/golden",
+      "!health"
     ]
   },
-  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
-  "linter": { "enabled": false },
-  "assist": { "enabled": false }
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 110
+  },
+  "linter": {
+    "enabled": false
+  },
+  "assist": {
+    "enabled": false
+  }
 }
