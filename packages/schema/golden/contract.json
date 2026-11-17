@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "adapter": [
+    "run.started",
+    "run.finished",
+    "message.delta",
+    "message.completed",
+    "thinking.delta",
+    "tool.started",
+    "tool.output",
+    "tool.finished",
+    "file.changed",
+    "approval.requested",
+    "artifact.attached",
+    "usage.reported",
+    "error"
+  ],
+  "daemon": [
+    "chat.created",
+    "run.queued",
+    "run.waiting",
+    "run.retrying",
+    "approval.resolved",
+    "need.raised",
+    "need.resolved",
+    "route.sent",
+    "claim.checked",
+    "checks.finished",
+    "routine.proposed",
+    "briefing.written",
+    "signal.raised",
+    "proposal.made",
+    "proposal.answered",
+    "memory.written",
+    "memory.forgotten"
+  ],
+  "commands": [
+    "status",
+    "projects.list",
+    "projects.add",
+    "chat.create",
+    "events.subscribe"
+  ]
+}

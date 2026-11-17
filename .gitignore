@@ -6,3 +6,6 @@ coverage/
 *.db
 *.db-*
 .DS_Store
+.superpowers/
+*.tsbuildinfo
+.health/

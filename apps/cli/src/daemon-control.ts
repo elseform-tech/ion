@@ -1,0 +1,81 @@
+import { spawn } from "node:child_process";
+import { mkdirSync, openSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { connect, type DaemonInfo, type IonClient, readDaemonInfo } from "@ion/client";
+
+const DAEMON =
+  process.env.ION_DAEMON_BIN ?? fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url));
+
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A connected client when ion is up: daemon.json's pid is alive, the token works, and the daemon reports
+ * that same pid. A reused pid or an unrelated process never passes.
+ */
+export async function reach(dataDir: string): Promise<{ client: IonClient; info: DaemonInfo } | null> {
+  const info = readDaemonInfo(dataDir);
+  if (!info || !isAlive(info.pid)) return null;
+  const timeout = () => sleep(1000).then(() => Promise.reject(new Error("timeout")));
+  let client: IonClient | undefined;
+  try {
+    client = await Promise.race([connect(info), timeout()]);
+    const s = await Promise.race([client.call("status", {}), timeout()]);
+    if (s.pid !== info.pid) throw new Error("pid mismatch");
+    return { client, info };
+  } catch {
+    client?.close();
+    return null;
+  }
+}
+
+export async function startDaemon(dataDir: string): Promise<"started" | "already" | "failed"> {
+  const up = await reach(dataDir);
+  if (up) {
+    up.client.close();
+    return "already";
+  }
+  // Leave daemon.json alone: the new daemon replaces it once it holds the lock.
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  const log = openSync(join(dataDir, "daemon.log"), "a");
+  const child = spawn(process.execPath, [DAEMON], {
+    detached: true,
+    stdio: ["ignore", log, log],
+    env: process.env,
+  });
+  child.unref();
+  for (let i = 0; i < 50; i++) {
+    await sleep(100);
+    const r = await reach(dataDir);
+    if (r) {
+      r.client.close();
+      return "started";
+    }
+  }
+  return "failed";
+}
+
+/** Signals only a daemon that proved it is ion (see reach); anything else counts as not running. */
+export async function stopDaemon(dataDir: string): Promise<"stopped" | "not-running"> {
+  const up = await reach(dataDir);
+  if (!up) {
+    const info = readDaemonInfo(dataDir);
+    if (info && !isAlive(info.pid)) rmSync(join(dataDir, "daemon.json"), { force: true });
+    return "not-running";
+  }
+  const { pid } = up.info;
+  up.client.close();
+  process.kill(pid, "SIGTERM");
+  for (let i = 0; i < 50 && isAlive(pid); i++) await sleep(100);
+  if (isAlive(pid)) process.kill(pid, "SIGKILL");
+  rmSync(join(dataDir, "daemon.json"), { force: true });
+  return "stopped";
+}

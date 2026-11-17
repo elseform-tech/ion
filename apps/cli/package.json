@@ -1,0 +1,22 @@
+{
+  "name": "@ion/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ion": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ion/client": "workspace:*",
+    "@ion/config": "workspace:*",
+    "commander": "^15.1.0"
+  },
+  "devDependencies": {
+    "@ion/daemon": "workspace:*"
+  }
+}
