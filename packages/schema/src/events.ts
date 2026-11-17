@@ -74,6 +74,14 @@ const Envelope = z.object({
 });
 
 export const EventSchema = Envelope.superRefine((e, ctx) => {
+  // Trust boundary: adapters translate CLI output; only the daemon may decide needs, approvals, routing.
+  if (e.origin === "adapter" && daemonOnly.has(e.type)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["type"],
+      message: `adapter may not emit daemon-only event ${e.type}`,
+    });
+  }
   const schema = dataSchemas[e.type];
   if (!schema) return;
   const r = schema.safeParse(e.data);

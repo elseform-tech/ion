@@ -37,6 +37,15 @@ describe("parseEvent", () => {
     expect(parseEvent({ ...valid, type: "tool.output", data: { chunk: "ok" } }).type).toBe("tool.output");
   });
 
+  it("rejects daemon-only types coming from an adapter", () => {
+    expect(() => parseEvent({ ...valid, origin: "adapter", type: "approval.resolved", data: {} })).toThrow(
+      /daemon-only/,
+    );
+    expect(parseEvent({ ...valid, origin: "daemon", type: "approval.resolved", data: {} }).type).toBe(
+      "approval.resolved",
+    );
+  });
+
   it("allows null chatId and runId for daemon-wide events", () => {
     const e = parseEvent({
       ...valid,
