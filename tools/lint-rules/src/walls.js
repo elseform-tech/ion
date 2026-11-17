@@ -3,7 +3,7 @@ import { posix } from "node:path";
 import { isTest, onImports, repoPath } from "./paths.js";
 
 /** Which @ion packages each package may import (docs/architecture/contract.md). */
-export const ALLOW = {
+const ALLOW = {
   "packages/schema": [],
   "packages/config": [],
   "packages/client": ["schema"],

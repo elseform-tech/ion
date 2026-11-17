@@ -136,7 +136,7 @@ export class EventStore {
   }
 }
 
-export function rebuildViews(db: Db, views: View[]): void {
+function rebuildViews(db: Db, views: View[]): void {
   db.transaction(() => {
     for (const v of views) v.reset(db);
     const rows = db.prepare("SELECT * FROM events ORDER BY rowid").all() as Row[];

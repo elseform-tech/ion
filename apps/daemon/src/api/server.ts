@@ -8,7 +8,6 @@ import { createAuth } from "./auth.js";
 import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
 
-export { TOKEN_PREFIX } from "./auth.js";
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
 

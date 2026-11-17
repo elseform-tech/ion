@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    "apps/daemon": {
+      "project": ["src/**/*.ts"]
+    },
+    "apps/cli": {
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["@ion/daemon"]
+    },
+    "packages/*": {
+      "project": ["src/**/*.ts"]
+    },
+    "tools/lint-rules": {
+      "project": ["src/**/*.js"]
+    },
+    "tools/health": {
+      "project": ["src/**/*.js"]
+    }
+  }
+}

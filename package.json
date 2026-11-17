@@ -12,7 +12,11 @@
     "typecheck": "turbo run typecheck",
     "lint": "eslint .",
     "format": "biome format --write .",
-    "check": "biome check . && pnpm build && eslint . && turbo run typecheck test"
+    "check": "biome check . && pnpm build && eslint . && turbo run typecheck test && knip && pnpm health",
+    "health:dup": "jscpd apps packages tools --silent",
+    "health:dead": "knip",
+    "health": "pnpm health:dup && node tools/health/src/cli.js check",
+    "health:update": "pnpm health:dup && node tools/health/src/cli.js update"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",

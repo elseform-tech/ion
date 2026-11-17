@@ -50,9 +50,6 @@ importers:
       '@ion/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@ion/schema':
-        specifier: workspace:*
-        version: link:../../packages/schema
       commander:
         specifier: ^15.1.0
         version: 15.1.0
@@ -97,9 +94,6 @@ importers:
       ws:
         specifier: ^8.23.0
         version: 8.23.0
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
     devDependencies:
       '@types/ws':
         specifier: ^8.18.2
@@ -119,6 +113,12 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+
+  tools/health:
+    devDependencies:
+      eslint:
+        specifier: ^9.39.5
+        version: 9.39.5(jiti@2.7.0)
 
   tools/lint-rules:
     dependencies:

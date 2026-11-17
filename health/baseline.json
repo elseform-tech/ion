@@ -1,0 +1,8 @@
+{
+  "filesOver400": 0,
+  "functionsOver50": 2,
+  "complexityOver10": 0,
+  "duplicationPct": 0,
+  "eslintDisables": 0,
+  "todos": 0
+}

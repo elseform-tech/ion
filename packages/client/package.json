@@ -16,8 +16,7 @@
   },
   "dependencies": {
     "@ion/schema": "workspace:*",
-    "ws": "^8.23.0",
-    "zod": "^4.6.7"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/ws": "^8.18.2"

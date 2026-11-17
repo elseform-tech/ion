@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-export const TOKEN_PREFIX = "ion.token.";
+const TOKEN_PREFIX = "ion.token.";
 
 const digest = (x: string) => createHash("sha256").update(x).digest();
 
