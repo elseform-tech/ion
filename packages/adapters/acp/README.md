@@ -10,8 +10,12 @@ Protocol notes: `docs/research/acp-and-harnesses.md`.
 
 - `auth.status()` opens a session without sending a prompt; `-32000` from the agent means signed out. No quota used.
 - Model and effort are set through the session's config options (`category: "model"` / `"thought_level"`).
-- ion makes each agent ask before tools run: opencode gets `permission: ask` for edit, bash and webfetch through
-  `OPENCODE_CONFIG_CONTENT`; Grok Build sessions open with `yoloMode`/`autoMode` off. Your own configs aren't changed.
+- ion makes each agent ask before tools run. opencode: `permission: ask` for edit, bash and webfetch, top-level and
+  for the `build`/`plan` agents, through `OPENCODE_CONFIG_CONTENT`, and `OPENCODE_DISABLE_PROJECT_CONFIG=1` (a repo's
+  own `opencode.json` could set edits back to allow). Grok Build: sessions open with `yoloMode`/`autoMode` off.
+  Your own configs aren't changed. Not yet known: whether opencode's `.opencode/` plugins or Grok's project config
+  can still loosen this; Plan 03's per-chat sandbox is the backstop.
+- Startup (initialize + session) times out after 30 s; a silent agent shows as "Not responding".
 - Permission requests go to the daemon's `decide()`; ion picks the matching `allow_once` / `allow_always` / `reject_once` option.
 - One agent process per turn; `interrupt()` sends `session/cancel`, then stops the process after 3 s.
 

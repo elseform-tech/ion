@@ -13,9 +13,11 @@ Drives Claude Code through the Claude Agent SDK (`query()`), using the `claude` 
 
 ## Safety
 
-- Only your **user** settings load (`settingSources: ["user"]`): a repo's `.claude/` can't pre-approve tools or run
-  hooks. The project's `CLAUDE.md` is passed as instructions instead, read safely (no symlinks or hardlinks, inside
-  the project, ≤ 64 KB, non-blocking, inside `<project-instructions>` markers).
+- **No settings files load** (`settingSources: []`) and the permission mode is `default`, so every non-read tool
+  reaches ion's policy: neither a repo's `.claude/` nor your own allow rules or default mode can skip it. Trade-off:
+  your `~/.claude` CLAUDE.md, hooks and MCP servers don't apply in ion runs yet. The project's `CLAUDE.md` is passed
+  as instructions, read safely (no symlinks or hardlinks, inside the project, ≤ 64 KB, non-blocking, inside
+  `<project-instructions>` markers).
 - Every permission prompt goes to the daemon's `decide()`. "Always allow" never writes Claude Code's own rules.
 
 ## Events
