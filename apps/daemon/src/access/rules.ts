@@ -55,6 +55,8 @@ const SECRET_NAMES = [
 ];
 /** A plain relative path or word: no absolute or home paths, no shell syntax. */
 const PLAIN = /^[\w.\-/@+=:,%]+$/;
+/** A plain flag ("-n5", "--count"): no "=value" or path tucked into it. */
+const FLAG = /^--?[\w-]+$/;
 /** A path in any text: absolute, ~ or $HOME, at the start of a word (not "/a.ts" inside "src/a.ts"). */
 const PATH = /(?<=^|[\s'"=:(])(?:~|\$\{?HOME\}?)?\/[^\s'"`|;&<>()]+/g;
 
@@ -94,7 +96,8 @@ function readOnly(command: string): boolean {
     const [word, sub, ...rest] = part.trim().split(/\s+/);
     // Every argument is a flag or a plain relative path ("/", "~" and the like go to the judge).
     const args = word === "git" ? rest : [sub, ...rest].filter((x): x is string => x !== undefined);
-    if (!args.every((t) => t.startsWith("-") || (PLAIN.test(t) && !t.startsWith("/")))) return false;
+    if (!args.every((t) => FLAG.test(t) || (PLAIN.test(t) && !t.startsWith("/") && !t.startsWith("-"))))
+      return false;
     if (word === "tail" && /\s(-[a-zA-Z]*[fF]|--follow)/.test(part)) return false;
     return word === "git"
       ? READ_ONLY_GIT.has(sub ?? "") && !/--output|--ext-diff/.test(part)

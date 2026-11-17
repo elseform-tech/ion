@@ -2,7 +2,8 @@ import type { ApprovalRequest } from "@ion/adapter-kit";
 import { wrapData } from "../context/index.js";
 
 export type JudgeInput = { projectId: string; text: string; req: ApprovalRequest };
-export type Judge = (i: JudgeInput) => Promise<{ allow: boolean; reason: string }>;
+/** decided: false when ion couldn't get a verdict (failure, timeout, no JSON): that answer isn't kept. */
+export type Judge = (i: JudgeInput) => Promise<{ allow: boolean; reason: string; decided?: false }>;
 
 const TIMEOUT_MS = 30_000;
 
@@ -19,20 +20,18 @@ export function judgePrompt(i: JudgeInput): string {
   ].join("\n\n");
 }
 
-/** The last JSON object with a boolean "allow" and a string "reason", or null. */
+/** The verdict, when the whole answer is one JSON object (a json code fence is fine); anything else is null. */
 export function parseVerdict(text: string): { allow: boolean; reason: string } | null {
-  // The last verdict is the model's own: an earlier one may be an echo of the action's text.
-  let found: { allow: boolean; reason: string } | null = null;
-  for (const m of text.matchAll(/\{[^{}]*\}/g)) {
-    try {
-      const v = JSON.parse(m[0]) as { allow?: unknown; reason?: unknown };
-      if (typeof v.allow === "boolean" && typeof v.reason === "string")
-        found = { allow: v.allow, reason: v.reason.slice(0, 200) };
-    } catch {
-      // not this one
-    }
+  let body = text.trim();
+  if (body.startsWith("```") && body.endsWith("```")) body = body.slice(body.indexOf("\n") + 1, -3).trim();
+  try {
+    const v = JSON.parse(body) as { allow?: unknown; reason?: unknown };
+    if (typeof v.allow === "boolean" && typeof v.reason === "string")
+      return { allow: v.allow, reason: v.reason.slice(0, 200) };
+  } catch {
+    // not a verdict
   }
-  return found;
+  return null;
 }
 
 /** A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. */
@@ -52,13 +51,11 @@ export function createJudge(
     });
     try {
       const out = await Promise.race([run(judgePrompt(i), abort.signal), slow]);
-      if (out === "slow") return { allow: false, reason: "ion couldn't decide in time" };
-      return parseVerdict(out) ?? { allow: false, reason: "ion couldn't decide" };
+      if (out === "slow") return { allow: false, reason: "ion couldn't decide in time", decided: false };
+      return parseVerdict(out) ?? { allow: false, reason: "ion couldn't decide", decided: false };
     } catch (e) {
-      return {
-        allow: false,
-        reason: `ion couldn't decide: ${(e as Error).message.split("\n")[0]!.slice(0, 100)}`,
-      };
+      const message = (e as Error).message.split("\n")[0]!.slice(0, 100);
+      return { allow: false, reason: `ion couldn't decide: ${message}`, decided: false };
     } finally {
       clearTimeout(timer);
     }
