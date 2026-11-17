@@ -11,7 +11,10 @@ import { messagesView } from "../views/messages.js";
 import { needsView } from "../views/needs.js";
 import type { Scope } from "./grants.js";
 
-type Deps = { store: EventStore; db: Db };
+/** Memory writes per run so far: an agent can't flood a project's memory. */
+type Deps = { store: EventStore; db: Db; writes: Map<string, number> };
+
+const WRITES_PER_RUN = 5;
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 const SEARCH_MAX = 20;
@@ -98,6 +101,9 @@ function memoryTools(server: McpServer, scope: Scope, d: Deps): void {
       inputSchema: { text: z.string().min(1).max(2000) },
     },
     guard(({ text }: { text: string }) => {
+      const n = d.writes.get(scope.runId) ?? 0;
+      if (n >= WRITES_PER_RUN) throw new UserError("That's enough memory for one run");
+      d.writes.set(scope.runId, n + 1);
       const source = { chatId: scope.chatId, runId: scope.runId };
       return ok(`Saved ${writeMemory(d.store, { scope: { projectId: scope.projectId }, text, source })}`);
     }),

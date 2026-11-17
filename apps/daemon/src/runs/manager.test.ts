@@ -6,6 +6,7 @@ import { addProject, DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import type { IonEvent } from "@ion/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UserError } from "../api/errors.js";
+import { createGrants } from "../mcp/index.js";
 import { NeedsService } from "../needs/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -321,6 +322,26 @@ describe("RunManager", () => {
     const ids = sessionOf(events);
     expect(ids).toHaveLength(3);
     expect(new Set(ids).size).toBe(1);
+  });
+
+  it("gives each run ion's MCP server with its own key, revoked when the run ends", async () => {
+    const grants = createGrants();
+    runs = new RunManager(
+      store,
+      { configFile, dataDir, random: () => 0, mcp: { grants, url: () => "http://127.0.0.1:9/mcp" } },
+      needs,
+      db,
+    );
+    const events = await finished((await ask("mcpinfo")).runId);
+    const info = JSON.parse(said(events)[0]!) as {
+      name: string;
+      url: string;
+      headers: { Authorization: string };
+    };
+    expect(info).toMatchObject({ name: "ion", url: "http://127.0.0.1:9/mcp" });
+    const key = info.headers.Authorization.replace("Bearer ", "");
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(grants.check(key)).toBeNull();
   });
 
   it("stores a failed run and keeps working", async () => {

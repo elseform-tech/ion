@@ -35,3 +35,14 @@ Tool call fields: `toolCallId`, `title`, `kind` (`read, edit, delete, move, sear
 
 CI never calls a model. Live tests are opt-in: `ION_LIVE=1` uses opencode with a free model; `ION_LIVE_GROK=1` adds Grok Build;
 `ION_LIVE_CLAUDE=1` adds Claude Code (Haiku), only when the Claude adapter itself changed.
+
+## Sessions, MCP and models (probed 2026-11-17, Plan 04)
+
+| | Grok Build | opencode |
+|---|---|---|
+| `agentCapabilities` | `loadSession`, `sessionCapabilities.resume/list/close`, `mcpCapabilities.http/sse` | `loadSession`, `sessionCapabilities.resume/fork/list/close`, `mcpCapabilities.http/sse` |
+| Models | `session/new` → `models.availableModels` and a `model` config option (`grok-4.7`, `grok-4.7-build-fast`, `grok-4.6`, `grok-4.5`); `reasoning_effort` option (`xhigh/high/medium/low`) | `model` config option (`opencode/big-pickle` default, `opencode-go/*`), `mode` option (`build/plan`) |
+| MCP tool permission | Asks: `toolCall.kind: "other"`, `title: "ion__search_chats"`, `rawInput: { variant: "UseTool", tool_name: "<server>__<tool>", tool_input }` | Doesn't ask (MCP tools run without `session/request_permission`); tools show as `ion_<tool>` |
+| Built-in auto-approvals | Read-only commands (`cat`, `ls`, `grep`, `git log`…) plus `touch`/`mkdir`, in every mode | — |
+
+Claude Code: `query({ options: { resume, mcpServers: { ion: { type: "http", url, headers } } } })`; MCP tools are `mcp__<server>__<tool>` and go through `canUseTool`. `claude -p --resume <unknown id>` prints `No conversation found with session ID: …` and exits before any model call; ion checks `getSessionMessages(id, { dir })` first. `supportedModels()` gives `{ value, displayName, … }`.

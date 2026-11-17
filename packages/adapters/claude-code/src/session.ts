@@ -7,7 +7,7 @@ import { EV } from "@ion/schema";
 import { loginOnlyEnv } from "./cli.js";
 import { createDeltaCoalescer } from "@ion/adapter-kit";
 import { createMapState, type MapState, mapSdkMessage } from "./map.js";
-import { toolKind, toolSummary } from "./tools.js";
+import { mcpServerOf, toolKind, toolSummary } from "./tools.js";
 
 type SdkUserMessage = { type: "user"; message: { role: "user"; content: string }; parent_tool_use_id: null };
 type PermissionResult =
@@ -68,6 +68,7 @@ export function startSession(
       requestId,
       toolId: o.toolUseID,
       toolName: name,
+      mcpServer: mcpServerOf(name),
       kind: toolKind(name),
       summary,
       input,
@@ -107,6 +108,9 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     ...(opts.model ? { model: opts.model } : {}),
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...(opts.resume ? { resume: opts.resume } : {}),
+    ...(opts.mcp
+      ? { mcpServers: { [opts.mcp.name]: { type: "http", url: opts.mcp.url, headers: opts.mcp.headers } } }
+      : {}),
     thinking: { type: "adaptive", display: "summarized" },
     includePartialMessages: true,
     abortController: abort,

@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ResumeFailed } from "@ion/adapter-kit";
+import { type ApprovalRequest, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { type AcpHarness, createAcpAdapter } from "./index.js";
@@ -70,6 +70,36 @@ describe("acp adapter", () => {
 
   it("reports not installed when the binary is missing", async () => {
     expect(await createAcpAdapter(fake, { which: () => null }).detect()).toEqual({ installed: false });
+  });
+
+  // Grok asks for an MCP tool as a "UseTool" call named <server>__<tool> (seen live, Plan 04).
+  it("recognizes an MCP tool call and its server", async () => {
+    const { answerPermission } = await import("./session.js");
+    const seen: ApprovalRequest[] = [];
+    const decide = async (r: ApprovalRequest) => {
+      seen.push(r);
+      return "allow" as const;
+    };
+    const ask = (rawInput: object, title = "x") =>
+      answerPermission(
+        {
+          toolCall: { toolCallId: "t", title, kind: "other", rawInput },
+          options: [{ optionId: "y", kind: "allow_once" }],
+        },
+        decide,
+        () => {},
+      );
+    await ask(
+      { variant: "UseTool", tool_name: "ion__search_chats", tool_input: { query: "kiwi" } },
+      "ion__search_chats",
+    );
+    await ask({ variant: "UseTool", tool_name: "github__create_issue", tool_input: {} });
+    await ask({ command: "ls" });
+    expect(seen.map((r) => [r.kind, r.mcpServer])).toEqual([
+      ["mcp", "ion"],
+      ["mcp", "github"],
+      ["other", null],
+    ]);
   });
 
   it("never widens a decision: allow without an allow_once option is refused", async () => {
@@ -144,11 +174,12 @@ describe("acp adapter", () => {
     expect(failing).toEqual({ outcome: { outcome: "cancelled" } });
   });
 
-  const turn = async (h: AcpHarness, text: string) => {
+  const turn = async (h: AcpHarness, text: string, extra: Partial<StartOpts> = {}) => {
     const s = await createAcpAdapter(h, { which: () => process.execPath }).start({
       cwd,
       model: null,
       effort: null,
+      ...extra,
       signal: new AbortController().signal,
       decide: async () => "deny",
     });
@@ -189,6 +220,27 @@ describe("acp adapter", () => {
     await expect(resumed("gone")).rejects.toBeInstanceOf(ResumeFailed);
   });
 
+  it("gives the agent ion's MCP server", async () => {
+    const mcp = {
+      name: "ion" as const,
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer k" },
+    };
+    const events = await turn(fake, "whoami", { mcp });
+    const said = events
+      .filter((e) => e.type === "message.delta")
+      .map((e) => (e.data as { text: string }).text)
+      .join("");
+    expect(JSON.parse(said).mcpServers).toEqual([
+      {
+        type: "http",
+        name: "ion",
+        url: "http://127.0.0.1:9/mcp",
+        headers: [{ name: "Authorization", value: "Bearer k" }],
+      },
+    ]);
+  });
+
   it("passes the harness's env and session options, and reads token usage", async () => {
     const h = { ...fake, env: () => ({ FAKE_ACP_ENV: "ask" }), sessionMeta: { yoloMode: false } };
     const events = await turn(h, "whoami");
@@ -196,7 +248,7 @@ describe("acp adapter", () => {
       .filter((e) => e.type === "message.delta")
       .map((e) => (e.data as { text: string }).text)
       .join("");
-    expect(JSON.parse(said)).toEqual({ meta: { yoloMode: false }, env: "ask" });
+    expect(JSON.parse(said)).toEqual({ meta: { yoloMode: false }, env: "ask", mcpServers: [] });
     expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({
       inputTokens: 7,
       outputTokens: 3,

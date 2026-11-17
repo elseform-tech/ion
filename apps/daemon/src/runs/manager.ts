@@ -12,6 +12,7 @@ import { loadUserConfig } from "@ion/config";
 import { type Commands, EV, type IonEvent } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
+import type { Grants } from "../mcp/index.js";
 import { needDetail, type NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
@@ -35,6 +36,9 @@ type Launch = {
   history: HistoryMessage[];
   /** The harness session to continue on this try, if any. */
   resume?: string | null;
+  projectId: string;
+  /** This run's MCP key (from launch until the run ends). */
+  mcpKey?: string;
 };
 type Between = { chatId: string; interrupt: boolean; wake?: () => void };
 type TryEnd = { status: string; error: RunError | null };
@@ -54,7 +58,13 @@ export class RunManager {
 
   constructor(
     private readonly store: EventStore,
-    private readonly ctx: { configFile: string; dataDir: string; random?: () => number },
+    private readonly ctx: {
+      configFile: string;
+      dataDir: string;
+      random?: () => number;
+      /** ion's MCP server: each run gets a key for its own project, revoked when the run ends. */
+      mcp?: { grants: Grants; url: () => string };
+    },
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
@@ -82,7 +92,8 @@ export class RunManager {
       });
       if (!chat.chatId) this.createChat(chatId, chat, wt);
       const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
-      launch = { h, args, chatId, runId: `run_${randomUUID()}`, cwd: wt.path, history };
+      const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
+      launch = { h, args, chatId, runId: `run_${randomUUID()}`, cwd: wt.path, history, projectId };
       this.store.append({
         chatId,
         runId: launch.runId,
@@ -105,6 +116,7 @@ export class RunManager {
    */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
+    l.mcpKey = this.ctx.mcp?.grants.create({ projectId: l.projectId, chatId: l.chatId, runId: l.runId });
     const b: Between = { chatId: l.chatId, interrupt: false };
     this.between.set(l.runId, b);
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
@@ -122,6 +134,7 @@ export class RunManager {
       }
     } finally {
       this.between.delete(l.runId);
+      this.ctx.mcp?.grants.revoke(l.runId);
     }
   }
 
@@ -328,6 +341,15 @@ export class RunManager {
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
       ...(l.resume ? { resume: l.resume } : {}),
+      ...(this.ctx.mcp && l.mcpKey
+        ? {
+            mcp: {
+              name: "ion" as const,
+              url: this.ctx.mcp.url(),
+              headers: { Authorization: `Bearer ${l.mcpKey}` },
+            },
+          }
+        : {}),
       signal: new AbortController().signal,
       decide,
     });

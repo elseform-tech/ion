@@ -74,6 +74,8 @@ const allInside = (paths: string[], roots: string[]) => paths.every((p) => insid
  * names no path) is "ask": it becomes a need you answer. Edits to git internals and agent config always ask.
  */
 export function decideByPolicy(req: ApprovalRequest, opts: { roots: string[] }): "allow" | "ask" {
+  // ion's own MCP tools answer only about this run's project (the server checks the run's key).
+  if (req.kind === "mcp") return req.mcpServer === "ion" ? "allow" : "ask";
   const paths = pathsOf(req);
   // A URL (https:, file:, …) in a path field is never "inside the worktree".
   const inWorktree = paths.length > 0 && !paths.some((p) => URL_LIKE.test(p)) && allInside(paths, opts.roots);

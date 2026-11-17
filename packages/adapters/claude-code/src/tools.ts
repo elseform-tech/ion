@@ -80,3 +80,9 @@ export function fileChange(
   }
   return { path, change: "modify", added: null, removed: null };
 }
+
+/** The MCP server a Claude Code tool belongs to (`mcp__<server>__<tool>`), or null for a built-in tool. */
+export function mcpServerOf(name: string): string | null {
+  const m = /^mcp__(.+?)__[^_]/.exec(name);
+  return m ? m[1]! : null;
+}

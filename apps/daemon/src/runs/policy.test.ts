@@ -152,6 +152,13 @@ describe("decideByPolicy", () => {
     expect(glob("src/@(a|b)/*.ts")).toBe("allow");
   });
 
+  it("allows ion's own MCP tools, and asks about any other server's", () => {
+    const mcp = (mcpServer: string | null) => decideByPolicy({ ...req("mcp", {}), mcpServer }, { roots });
+    expect(mcp("ion")).toBe("allow");
+    expect(mcp("github")).toBe("ask");
+    expect(mcp(null)).toBe("ask");
+  });
+
   it("checks declared path fields however deeply nested", () => {
     expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ file_path: "/etc/hosts" }] })).toBe(
       "ask",

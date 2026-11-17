@@ -3,7 +3,7 @@ import type { Readable, Writable } from "node:stream";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ResumeFailed } from "@ion/adapter-kit";
+import { ResumeFailed, type StartOpts } from "@ion/adapter-kit";
 import type { AcpHarness } from "./harnesses.js";
 import { createRpc, type Rpc, RpcError } from "./rpc.js";
 
@@ -16,7 +16,7 @@ export type Connection = {
 };
 
 /** Spawns the agent (never through a shell), initializes ACP and opens a session in `cwd`. */
-export type ConnectOpts = { cwd: string; timeoutMs?: number; resume?: string | null };
+export type ConnectOpts = { cwd: string; timeoutMs?: number; resume?: string | null; mcp?: StartOpts["mcp"] };
 
 export async function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
   const timeoutMs = o.timeoutMs ?? 30_000;
@@ -60,7 +60,17 @@ async function handshake(
     clientCapabilities: {},
     clientInfo: { name: "ion", version: "0.0.0" },
   })) as { agentCapabilities?: AgentCaps };
-  const base = { cwd: o.cwd, mcpServers: [], ...(h.sessionMeta ? { _meta: h.sessionMeta } : {}) };
+  const mcpServers = o.mcp
+    ? [
+        {
+          type: "http",
+          name: o.mcp.name,
+          url: o.mcp.url,
+          headers: Object.entries(o.mcp.headers).map(([name, value]) => ({ name, value })),
+        },
+      ]
+    : [];
+  const base = { cwd: o.cwd, mcpServers, ...(h.sessionMeta ? { _meta: h.sessionMeta } : {}) };
   if (o.resume) {
     const method = continueMethod(init.agentCapabilities ?? {});
     if (!method) throw new ResumeFailed(`${h.label} can't continue sessions`);

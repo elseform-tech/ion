@@ -116,6 +116,16 @@ describe("ion's MCP server", () => {
     await c.close();
   });
 
+  // Security review: an agent can't flood a project's memory.
+  it("allows at most 5 memory writes per run", async () => {
+    const c = await client();
+    for (let i = 0; i < 5; i++) await c.callTool({ name: "memory_write", arguments: { text: `note ${i}` } });
+    const sixth = await c.callTool({ name: "memory_write", arguments: { text: "one more" } });
+    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough memory for one run" }] });
+    expect(memoryView.list(db, "app").filter((m) => m.source === "c1")).toHaveLength(5);
+    await c.close();
+  });
+
   it("lists the project's open needs", async () => {
     const c = await client();
     expect(text(await c.callTool({ name: "open_needs", arguments: {} }))).toContain("Run pnpm test");

@@ -60,6 +60,7 @@ export function createAcpAdapter(
         cwd: opts.cwd,
         timeoutMs: deps.startTimeoutMs,
         resume: opts.resume,
+        mcp: opts.mcp,
       });
       const model =
         (await setOption(c, "model", opts.model ?? h.defaultModel)) ?? h.defaultModel ?? "default";

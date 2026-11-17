@@ -20,22 +20,9 @@ export async function startServer(opts: {
   configFile: string;
   port?: number;
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
-  mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
-  chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
-  const db = openDb(join(opts.dataDir, "ion.db"));
-  const store = new EventStore(db, allViews);
-  const needs = new NeedsService(store, db);
-  const grants = createGrants();
-  const ctx: Ctx = {
-    store,
-    db,
-    needs,
-    grants,
-    runs: new RunManager(store, { configFile: opts.configFile, dataDir: opts.dataDir }, needs, db),
-    configFile: opts.configFile,
-    startedAt: Date.now(),
-    version: VERSION,
-  };
+  let port = 0;
+  const ctx = openState(opts, () => `http://127.0.0.1:${port}/mcp`);
+  const { store, db } = ctx;
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   const auth = createAuth();
   const http = httpServer(createMcpHandler({ store, db, grants: ctx.grants }));
@@ -52,8 +39,9 @@ export async function startServer(opts: {
   wss.on("connection", (ws) => new Connection(ws, ctx));
 
   const addr = http.address();
+  port = typeof addr === "object" && addr ? addr.port : 0;
   return {
-    port: typeof addr === "object" && addr ? addr.port : 0,
+    port,
     token: auth.token,
     close: async () => {
       await ctx.runs.shutdown();
@@ -72,4 +60,25 @@ function httpServer(mcp: ReturnType<typeof createMcpHandler>) {
     if ((req.url ?? "/").split("?")[0] === "/mcp") void mcp(req, res).catch(() => res.destroy());
     else res.writeHead(404).end();
   });
+}
+
+/** The data folder, the event store and the services every connection shares. */
+function openState(opts: { dataDir: string; configFile: string }, mcpUrl: () => string): Ctx {
+  mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
+  const db = openDb(join(opts.dataDir, "ion.db"));
+  const store = new EventStore(db, allViews);
+  const needs = new NeedsService(store, db);
+  const grants = createGrants();
+  const runCtx = { configFile: opts.configFile, dataDir: opts.dataDir, mcp: { grants, url: mcpUrl } };
+  return {
+    store,
+    db,
+    needs,
+    grants,
+    runs: new RunManager(store, runCtx, needs, db),
+    configFile: opts.configFile,
+    startedAt: Date.now(),
+    version: VERSION,
+  };
 }

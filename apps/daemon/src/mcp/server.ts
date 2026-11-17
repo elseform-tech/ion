@@ -44,6 +44,7 @@ function authorize(req: IncomingMessage, grants: Grants): { status: number; scop
  * holds a live key, and only what that run's project may see.
  */
 export function createMcpHandler(d: { store: EventStore; db: Db; grants: Grants }) {
+  const writes = new Map<string, number>();
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const auth = authorize(req, d.grants);
     if (!auth.scope) return reply(res, auth.status, auth.status === 403 ? "Forbidden" : "Unknown key");
@@ -54,7 +55,7 @@ export function createMcpHandler(d: { store: EventStore; db: Db; grants: Grants 
       return reply(res, 400, "Bad request");
     }
     const server = new McpServer({ name: "ion", version: "0.0.0" });
-    registerTools(server, auth.scope, d);
+    registerTools(server, auth.scope, { ...d, writes });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

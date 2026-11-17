@@ -80,6 +80,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     write: (file, content) => writeFileSync(join(start.cwd, file), content),
     tries: () => tries,
     text: () => sent,
+    mcp: () => start.mcp ?? null,
     wait: async (ms) => {
       await sleep(ms);
       return interrupted ? "interrupted" : "ok";

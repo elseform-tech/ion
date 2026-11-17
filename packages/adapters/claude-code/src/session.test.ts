@@ -44,6 +44,24 @@ async function run(text: string, opts: { calls?: FakeQueryCall[]; exec?: Exec } 
 }
 
 describe("claude-code session", () => {
+  it("gives Claude Code ion's MCP server", async () => {
+    const calls: FakeQueryCall[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      mcp: { name: "ion", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer k" } },
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.close();
+    expect(calls.at(-1)?.options).toMatchObject({
+      mcpServers: {
+        ion: { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer k" } },
+      },
+    });
+  });
+
   it("continues a session that exists, and says so when it's gone", async () => {
     const calls: FakeQueryCall[] = [];
     const known = (id: string) => Promise.resolve(id === "s-known");

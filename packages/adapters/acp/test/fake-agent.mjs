@@ -16,6 +16,7 @@ let cancel = null;
 const sessions = new Map();
 const metas = new Map();
 const opened = new Map();
+const mcps = new Map();
 
 /** Prompts answered in one step: a refusal, a crash, RPC errors. */
 const QUICK = {
@@ -93,7 +94,11 @@ async function prompt(id, { sessionId, prompt: blocks }) {
       sessionUpdate: "agent_message_chunk",
       content: {
         type: "text",
-        text: JSON.stringify({ meta: metas.get(sessionId), env: process.env.FAKE_ACP_ENV ?? null }),
+        text: JSON.stringify({
+          meta: metas.get(sessionId),
+          env: process.env.FAKE_ACP_ENV ?? null,
+          mcpServers: mcps.get(sessionId),
+        }),
       },
     });
     return send({ id, result: { stopReason: "end_turn", usage: { inputTokens: 7, outputTokens: 3 } } });
@@ -138,6 +143,30 @@ function continueSession(m) {
   send({ id: m.id, result: { configOptions: [] } });
 }
 
+function newSession(m) {
+  if (process.env.FAKE_ACP_SIGNED_OUT === "1")
+    return send({ id: m.id, error: { code: -32000, message: "Authentication required" } });
+  sessions.set("s1", m.params.cwd);
+  metas.set("s1", m.params._meta ?? null);
+  mcps.set("s1", m.params.mcpServers ?? null);
+  return send({
+    id: m.id,
+    result: {
+      sessionId: "s1",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "fake-1",
+          options: [],
+        },
+      ],
+    },
+  });
+}
+
 createInterface({ input: process.stdin }).on("line", (line) => {
   const m = JSON.parse(line);
   if (m.id !== undefined && waiting.has(m.id)) {
@@ -148,28 +177,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (process.env.FAKE_ACP_HANG === "1") return; // never answers
   if (m.method === "initialize") return initialize(m);
   if (m.method === "session/resume" || m.method === "session/load") return continueSession(m);
-  if (m.method === "session/new") {
-    if (process.env.FAKE_ACP_SIGNED_OUT === "1")
-      return send({ id: m.id, error: { code: -32000, message: "Authentication required" } });
-    sessions.set("s1", m.params.cwd);
-    metas.set("s1", m.params._meta ?? null);
-    return send({
-      id: m.id,
-      result: {
-        sessionId: "s1",
-        configOptions: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "fake-1",
-            options: [],
-          },
-        ],
-      },
-    });
-  }
+  if (m.method === "session/new") return newSession(m);
   if (m.method === "session/set_config_option") return send({ id: m.id, result: { configOptions: [] } });
   if (m.method === "session/prompt") return void prompt(m.id, m.params);
   if (m.method === "session/cancel") return cancel?.();

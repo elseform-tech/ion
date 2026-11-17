@@ -14,6 +14,7 @@ export type Script = {
   tries(): number;
   /** The text this session was sent. */
   text(): string;
+  mcp(): unknown;
   wait(ms: number): Promise<"ok" | "interrupted">;
 };
 
@@ -40,6 +41,11 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   /** Says back exactly the text it was sent (to check what ion sends on a continued chat). */
   async echo(s) {
     say(s, s.text());
+    return "done";
+  },
+  /** Says the MCP server ion gave this session, as JSON (or null). */
+  async mcpinfo(s) {
+    say(s, JSON.stringify(s.mcp()));
     return "done";
   },
   async hello(s) {
