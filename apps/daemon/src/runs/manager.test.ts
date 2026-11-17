@@ -116,7 +116,7 @@ describe("RunManager", () => {
   // Regression (security review): the need shows the exact action, and is keyed by it.
   it("shows the exact input on the need", async () => {
     await ask("shell");
-    expect((await openNeed()).detail).toContain('"command":"pnpm test"');
+    expect((await openNeed()).detail).toMatch(/^command: pnpm test\n/);
   });
 
   it("asks about an edit outside the worktree", async () => {

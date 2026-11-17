@@ -5,7 +5,7 @@ import { loadUserConfig } from "@ion/config";
 import { type Commands, EV, type IonEvent } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
-import type { NeedsService } from "../needs/index.js";
+import { needDetail, type NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
@@ -216,7 +216,7 @@ export class RunManager {
           requestId: req.requestId,
           kind: req.kind,
           summary: req.summary,
-          detail: JSON.stringify(req.input).slice(0, 2000),
+          detail: needDetail(req.input),
           dedupeKey: `${l.h.adapter.id}:${req.toolName}:${createHash("sha256").update(JSON.stringify(req.input)).digest("hex")}`,
         });
     // The run may have ended while we waited (interrupt, shutdown): its log is closed.
