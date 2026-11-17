@@ -4,7 +4,7 @@ An open-source orchestrator for coding agents. Bring your own subscriptions (Cla
 Gemini CLI, Cursor CLI, Pi); ion runs them on your machine, one ion per project, with one place for
 everything that needs you.
 
-Status: early. The foundation (daemon, event log, config, CLI) is being built.
+Status: early. The foundation is in: daemon, event log, config, `ion` CLI, architecture lint rules, CI.
 
 ## Quick start (development)
 

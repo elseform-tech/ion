@@ -10,7 +10,7 @@
 
 | Plan | Status |
 |---|---|
-| [01 Foundation](superpowers/plans/2026-11-17-01-foundation.md) | In progress |
+| [01 Foundation](superpowers/plans/2026-11-17-01-foundation.md) | Done |
 | 02 Adapter kit, fake harness, Claude Code adapter | Not written |
 | 03 Workspace, scheduler, policy, approvals, needs, retries | Not written |
 | 04 Desktop app and Chats screens | Not written |
