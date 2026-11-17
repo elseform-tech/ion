@@ -11,11 +11,19 @@ The always-on service that owns all state.
   The only code that runs `git`: no shell, no prompts, a minimal environment, the repo's hooks and
   `core.fsmonitor` turned off. Archiving a chat removes its worktree and keeps the branch.
 - `src/runs`: starts runs in the chat's worktree. The policy allows reads, searches and edits inside it
-  (except git internals, dot-folders and tool config files, which ask); anything else is "ask".
+  (except git internals, dot-folders and tool config files); anything else goes by the access mode.
   Retries: transient failures back off with full jitter (`random(0, min(120, 2 × 2^attempt))` s, at most 4
   tries, a harness retry-after wins); a real failure gets one retry at the next effort level.
-- `src/needs`: an "ask" becomes a need (`need.raised`); the run waits for exactly one `need.resolved`
-  (`ion needs allow|deny <id>`). Stopping, interrupting or a crash supersedes a run's open needs.
+- `src/access` and `src/runs/approvals.ts`: every permission request outside the chat's worktree goes by the run's
+  access mode (`ion ask --access`, else the project's `access`, else `[access] default`, which is `"auto"`).
+  **Full access** allows it. **Auto** never pauses: your secrets (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, gh,
+  gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
+  by rule; read-only commands that stay in the worktree are allowed; anything else goes to a judge, a quick model on
+  `ion.quick` with no tools, which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
+  per action and request in a chat. Limitation: Grok Build runs its own read-only commands (`cat`, `ls`, `grep`…)
+  without asking anyone, so in Auto it can still read files ion would deny.
+- `src/needs`: questions only you can answer (`need.raised`, answered once with `ion needs allow|deny <id>`;
+  stopping or a crash supersedes a run's open needs). Permissions no longer raise needs (see access).
 - `src/scheduler`: the run queue. At most `resources.max_runs` runs at once (`"auto"` = half the cores, at
   least one); each run stores `run.queued`, then starts when a slot frees.
 - `src/views` also keep `messages` (yours and the agents', with full-text search) and `memory`. Each view has a

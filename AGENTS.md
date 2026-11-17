@@ -13,7 +13,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/adapters/claude-code` | Claude Code via the Agent SDK; Claude login only. |
 | `packages/adapters/acp` | Any ACP agent: Grok Build (`grok agent stdio`), opencode (`opencode acp`). |
 | `packages/adapters/fake` | Scripted harness for tests (`ION_ALLOW_FAKE=1`). |
-| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries; `src/needs` turns "ask" into needs; `src/scheduler` queues runs; `src/workspace` owns git worktrees; `src/mcp` is ion's MCP server for runs (history, needs, memory; a key per run); `src/adapters/registry.ts` is the only place adapters load. |
+| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries; `src/access` decides Auto (rules, then a judge model); `src/needs` holds questions only you can answer; `src/scheduler` queues runs; `src/workspace` owns git worktrees; `src/mcp` is ion's MCP server for runs (history, needs, memory; a key per run); `src/adapters/registry.ts` is the only place adapters load. |
 | `apps/cli` | The `ion` command. |
 | `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`, `ion/no-model-names`). |
 

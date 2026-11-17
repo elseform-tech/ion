@@ -15,7 +15,7 @@
 | [02 Adapters](superpowers/plans/2026-11-17-02-adapters.md): adapter kit, Claude Code, Grok Build and opencode (ACP), `ion ask` | Done |
 | [03 Workspace and needs](superpowers/plans/2026-11-17-03-workspace-needs.md): worktree per chat, needs, run queue, retries | Done |
 | [04 Context](superpowers/plans/2026-11-17-04-context.md): chat continuity, history and memory for ions (daemon MCP), model catalogs | Done |
-| [05 Access](superpowers/plans/2026-11-18-05-access.md): Full access or Auto (ion decides), per message, project or default | In progress |
+| [05 Access](superpowers/plans/2026-11-18-05-access.md): Full access or Auto (ion decides), per message, project or default | Done |
 | 06 Desktop app and Chats screens | Not written |
 | 07 ion chief and Ions screens | Not written |
 | 08 Routines, Activity, Artifacts, Tools | Not written |

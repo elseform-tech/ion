@@ -10,7 +10,8 @@ The `ion` command. Talks to the daemon through `@ion/client`; never imports daem
 | `ion status` | `ion is running · 2 projects` |
 | `ion projects ls` | `<id>  <path>` per line |
 | `ion projects add <path>` | `Added <id>` |
-| `ion ask "<text>" -p <project> [--harness claude-code\|grok-build\|opencode] [--model m] [--effort e]` | Runs in the chat's own worktree and streams it; `--chat <id>` continues a chat with its history; shows `· Waiting on you: …` and `· Retrying in 4s (…)`; ends `Done · 4.2s · $0.0031`, `Failed: …` or `Stopped` (Ctrl+C) |
+| `ion ask "<text>" -p <project> [--harness claude-code\|grok-build\|opencode] [--model m] [--effort e] [--access auto\|full]` | Runs in the chat's own worktree and streams it; `--chat <id>` continues a chat with its history; shows `· Allowed by ion: …` / `· Denied by ion: … — reason` (Auto) and `· Retrying in 4s (…)`; ends `Done · 4.2s · $0.0031`, `Failed: …` or `Stopped` (Ctrl+C) |
+| `ion projects access <id> auto\|full` | The project's access mode: Auto (ion decides) or Full access |
 | `ion needs` | What's waiting on you: `<id>  <project>  <summary>` |
 | `ion needs allow\|deny <id>` | Answer it; the paused run resumes |
 | `ion chats` | `<id>  <title>  <project>  <branch>  <last status>` (archived chats hidden) |
