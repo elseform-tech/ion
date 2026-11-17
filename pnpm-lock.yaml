@@ -26,6 +26,9 @@ importers:
 
   apps/daemon:
     dependencies:
+      '@ion/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@ion/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -35,10 +38,35 @@ importers:
       ulid:
         specifier: ^3.0.2
         version: 3.0.2
+      ws:
+        specifier: ^8.23.0
+        version: 8.23.0
     devDependencies:
+      '@ion/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
+
+  packages/client:
+    dependencies:
+      '@ion/schema':
+        specifier: workspace:*
+        version: link:../schema
+      ws:
+        specifier: ^8.23.0
+        version: 8.23.0
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
 
   packages/config:
     dependencies:
@@ -473,6 +501,9 @@ packages:
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
+  '@types/ws@8.18.2':
+    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
+
   '@vitest/expect@3.2.7':
     resolution: {integrity: sha512-E8eBXaKibuvH2pSZErOjdVb5vF4PbKYcrnluBTYxEk1l/VhhwZg1kZQsdtjq+CsF5CFydf2Rdkz7jDHKSisi3w==}
 
@@ -744,6 +775,18 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  ws@8.23.0:
+    resolution: {integrity: sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
@@ -984,6 +1027,10 @@ snapshots:
   '@types/node@24.19.2':
     dependencies:
       undici-types: 7.24.6
+
+  '@types/ws@8.18.2':
+    dependencies:
+      '@types/node': 24.19.2
 
   '@vitest/expect@3.2.7':
     dependencies:
@@ -1277,5 +1324,7 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  ws@8.23.0: {}
 
   zod@4.6.7: {}

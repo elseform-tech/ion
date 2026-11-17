@@ -44,10 +44,19 @@ export class EventStore {
 
   append(input: NewEvent & { id?: string; ts?: string }): IonEvent {
     const id = input.id ?? ulid();
-    const stream = input.runId ?? input.chatId ?? "";
+    const stream = input.runId ? `run:${input.runId}` : input.chatId ? `chat:${input.chatId}` : "global";
     const tx = this.db.transaction((): { event: IonEvent; fresh: boolean } => {
       const existing = this.db.prepare("SELECT * FROM events WHERE id = ?").get(id) as Row | undefined;
-      if (existing) return { event: toEvent(existing), fresh: false };
+      if (existing) {
+        const same =
+          existing.chat_id === input.chatId &&
+          existing.run_id === input.runId &&
+          existing.origin === input.origin &&
+          existing.type === input.type &&
+          existing.data === JSON.stringify(input.data);
+        if (!same) throw new Error(`Event id ${id} is already used by a different event`);
+        return { event: toEvent(existing), fresh: false };
+      }
       const last = this.db.prepare("SELECT max(seq) AS s FROM events WHERE stream = ?").get(stream) as {
         s: number | null;
       };
@@ -92,8 +101,13 @@ export class EventStore {
     const params: unknown[] = [];
     if (q.chatId !== undefined) where.push("chat_id = ?") && params.push(q.chatId);
     if (q.runId !== undefined) where.push("run_id = ?") && params.push(q.runId);
-    if (q.afterId !== undefined)
-      where.push("rowid > coalesce((SELECT rowid FROM events WHERE id = ?), 0)") && params.push(q.afterId);
+    if (q.afterId !== undefined) {
+      const at = this.db.prepare("SELECT rowid AS r FROM events WHERE id = ?").get(q.afterId) as
+        | { r: number }
+        | undefined;
+      if (!at) throw new Error(`Unknown event id: ${q.afterId}`);
+      where.push("rowid > ?") && params.push(at.r);
+    }
     const sql = `SELECT * FROM events ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY rowid LIMIT ?`;
     params.push(q.limit ?? 10_000);
     return (this.db.prepare(sql).all(...params) as Row[]).map(toEvent);

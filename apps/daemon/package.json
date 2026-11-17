@@ -15,11 +15,15 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0"
+    "@ion/client": "workspace:*",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/ws": "^8.18.2"
   },
   "dependencies": {
+    "@ion/config": "workspace:*",
     "@ion/schema": "workspace:*",
     "better-sqlite3": "^13.2.0",
-    "ulid": "^3.0.2"
+    "ulid": "^3.0.2",
+    "ws": "^8.23.0"
   }
 }

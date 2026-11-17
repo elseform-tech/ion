@@ -51,6 +51,37 @@ describe("EventStore", () => {
     expect(store.read({ runId: "r1" })).toHaveLength(1);
   });
 
+  it("refuses a repeated id whose content differs", () => {
+    store.append({ ...ev("r1"), id: "01JD00000000000000000000AB" });
+    expect(() => store.append({ ...ev("r2"), id: "01JD00000000000000000000AB" })).toThrow(/different event/);
+  });
+
+  it("refuses daemon-only events claimed by an adapter", () => {
+    expect(() => store.append({ ...ev("r1", "need.raised"), origin: "adapter" })).toThrow(/daemon-only/);
+  });
+
+  it("keeps run and chat sequences apart even when ids match", () => {
+    store.append({
+      chatId: "x",
+      runId: null,
+      origin: "daemon",
+      type: "chat.created",
+      data: { title: "t", projectId: null },
+    });
+    expect(
+      store.append({ chatId: "c1", runId: "x", origin: "adapter", type: "message.delta", data: {} }).seq,
+    ).toBe(1);
+  });
+
+  it("refuses empty chat and run ids", () => {
+    expect(() => store.append({ ...ev(""), runId: "" })).toThrow();
+  });
+
+  it("throws on an unknown afterId instead of returning everything", () => {
+    store.append(ev("r1"));
+    expect(() => store.read({ chatId: "c1", afterId: "01JDNOPE" })).toThrow("Unknown event id: 01JDNOPE");
+  });
+
   it("validates before writing", () => {
     expect(() => store.append(ev("r1", "run.finished", { status: "great" }))).toThrow();
     expect(() => store.append({ ...ev("r1"), type: "nope" as never })).toThrow();

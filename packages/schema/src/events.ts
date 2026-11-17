@@ -63,8 +63,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
 const Envelope = z.object({
   v: z.literal(SCHEMA_VERSION),
   id: z.string().min(1),
-  chatId: z.string().nullable(),
-  runId: z.string().nullable(),
+  chatId: z.string().min(1).nullable(),
+  runId: z.string().min(1).nullable(),
   seq: z.number().int().min(1),
   ts: z.iso.datetime(),
   origin: z.enum(["adapter", "daemon"]),
