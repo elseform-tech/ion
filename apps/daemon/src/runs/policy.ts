@@ -36,9 +36,10 @@ function realish(p: string): string {
   }
 }
 
+const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
+
 function inside(p: string, roots: string[]): boolean {
-  const expanded = p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
-  const real = realish(resolve(roots[0] ?? "/", expanded));
+  const real = realish(resolve(roots[0] ?? "/", expandHome(p)));
   return roots.some((root) => {
     const rel = relative(realish(root), real);
     return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -55,14 +56,30 @@ const allInside = (paths: string[], roots: string[]) => paths.every((p) => insid
 export function decideByPolicy(req: ApprovalRequest, opts: { roots: string[] }): "allow" | "ask" {
   const paths = pathsOf(req);
   const inWorktree = paths.length > 0 && allInside(paths, opts.roots);
-  if (req.kind === "edit" && paths.some(runsCode)) return "ask";
+  if (req.kind === "edit" && paths.some((p) => runsCode(p, opts.roots))) return "ask";
   return ["read", "search", "edit"].includes(req.kind) && inWorktree ? "allow" : "ask";
 }
 
-/** Folders and files whose contents git or a coding agent may run: editing them always asks. */
-const CODE_DIRS = new Set([".git", ".claude", ".opencode", ".grok", ".husky", ".vscode"]);
-const CODE_FILES = new Set([".git", ".gitmodules", ".gitattributes", ".mcp.json", ".envrc"]);
-const runsCode = (p: string): boolean => {
-  const parts = p.split(/[\\/]+/);
-  return CODE_FILES.has(parts.at(-1) ?? "") || parts.slice(0, -1).some((s) => CODE_DIRS.has(s));
-};
+/**
+ * Git internals, agent config and tool config can make git, a coding agent or a package manager run code:
+ * editing any dot-folder in the worktree, or one of these files, always asks. Case-insensitive (macOS).
+ */
+const CODE_FILES = new Set([
+  ".git",
+  ".gitmodules",
+  ".gitattributes",
+  ".mcp.json",
+  ".envrc",
+  ".npmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  ".pre-commit-config.yaml",
+]);
+function runsCode(p: string, roots: string[]): boolean {
+  const real = realish(resolve(roots[0] ?? "/", expandHome(p)));
+  const root = roots.map(realish).find((r) => !relative(r, real).startsWith(".."));
+  const parts = (root ? relative(root, real) : real).toLowerCase().split(/[\\/]+/);
+  return (
+    CODE_FILES.has(parts.at(-1) ?? "") || parts.slice(0, -1).some((s) => s.startsWith(".") && s !== "..")
+  );
+}

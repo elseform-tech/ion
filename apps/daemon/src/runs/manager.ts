@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { type ApprovalRequest, type Decision, projectRoots, type Session } from "@ion/adapter-kit";
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV, type IonEvent } from "@ion/schema";
@@ -174,7 +174,8 @@ export class RunManager {
           requestId: req.requestId,
           kind: req.kind,
           summary: req.summary,
-          dedupeKey: `${l.h.adapter.id}:${req.toolName}:${req.summary}`,
+          detail: JSON.stringify(req.input).slice(0, 2000),
+          dedupeKey: `${l.h.adapter.id}:${req.toolName}:${createHash("sha256").update(JSON.stringify(req.input)).digest("hex")}`,
         });
     // The run may have ended while we waited (interrupt, shutdown): its log is closed.
     if (this.stopping || !this.active.has(l.runId)) return decision;

@@ -14,7 +14,7 @@ export const needsView: View & {
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_needs (
       need_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, run_id TEXT NOT NULL, project_id TEXT,
-      kind TEXT NOT NULL, summary TEXT NOT NULL, dedupe_key TEXT NOT NULL, open INTEGER NOT NULL, raised_at TEXT NOT NULL)`);
+      kind TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT, dedupe_key TEXT NOT NULL, open INTEGER NOT NULL, raised_at TEXT NOT NULL)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_needs");
@@ -23,8 +23,8 @@ export const needsView: View & {
     const d = e.data as D;
     if (e.type === EV.needRaised && e.chatId && e.runId) {
       db.prepare(
-        `INSERT OR IGNORE INTO view_needs (need_id, chat_id, run_id, project_id, kind, summary, dedupe_key, open, raised_at)
-         VALUES (?, ?, ?, (SELECT project_id FROM view_chats WHERE chat_id = ?), ?, ?, ?, 1, ?)`,
+        `INSERT OR IGNORE INTO view_needs (need_id, chat_id, run_id, project_id, kind, summary, detail, dedupe_key, open, raised_at)
+         VALUES (?, ?, ?, (SELECT project_id FROM view_chats WHERE chat_id = ?), ?, ?, ?, ?, 1, ?)`,
       ).run(
         String(d.needId),
         e.chatId,
@@ -32,6 +32,7 @@ export const needsView: View & {
         e.chatId,
         String(d.kind),
         String(d.summary),
+        d.detail == null ? null : String(d.detail),
         String(d.dedupeKey),
         e.ts,
       );
@@ -59,7 +60,7 @@ export const needsView: View & {
     ).map((r) => r.id);
   },
   open(db, chatId) {
-    const sql = `SELECT need_id AS needId, chat_id AS chatId, run_id AS runId, project_id AS projectId, kind, summary,
+    const sql = `SELECT need_id AS needId, chat_id AS chatId, run_id AS runId, project_id AS projectId, kind, summary, detail,
                  raised_at AS raisedAt FROM view_needs WHERE open = 1 ${chatId ? "AND chat_id = ?" : ""} ORDER BY rowid`;
     return db.prepare(sql).all(...(chatId ? [chatId] : [])) as NeedInfo[];
   },

@@ -92,6 +92,28 @@ describe("decideByPolicy", () => {
     expect(decide("edit", { file_path: join(project, "src/github.ts") })).toBe("allow");
   });
 
+  // Regression (security review): case-insensitive file systems, and every dot-folder or tool config.
+  it("asks about such edits whatever their case, in any dot-folder, and for tool config files", () => {
+    for (const f of [
+      ".GIT/config",
+      ".Claude/settings.json",
+      ".github/workflows/ci.yml",
+      ".devcontainer/x.json",
+      ".npmrc",
+      ".yarnrc.yml",
+      ".pre-commit-config.yaml",
+    ])
+      expect(decide("edit", { file_path: join(project, f) })).toBe("ask");
+    expect(decide("edit", { file_path: join(project, ".gitignore") })).toBe("allow");
+  });
+
+  it("judges dot-folders relative to the worktree, not the folders above it", () => {
+    const hidden = realpathSync(mkdtempSync(join(tmpdir(), "ion-dot-")));
+    mkdirSync(join(hidden, ".ion", "wt"), { recursive: true });
+    const wt = join(hidden, ".ion", "wt");
+    expect(decideByPolicy(req("edit", { file_path: join(wt, "a.ts") }), { roots: [wt] })).toBe("allow");
+  });
+
   it("checks declared path fields however deeply nested", () => {
     expect(decide("edit", { file_path: join(project, "a.ts"), edits: [{ file_path: "/etc/hosts" }] })).toBe(
       "ask",

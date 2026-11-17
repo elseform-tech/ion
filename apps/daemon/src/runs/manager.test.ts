@@ -103,6 +103,12 @@ describe("RunManager", () => {
     });
   });
 
+  // Regression (security review): the need shows the exact action, and is keyed by it.
+  it("shows the exact input on the need", async () => {
+    await ask("shell");
+    expect((await openNeed()).detail).toContain('"command":"pnpm test"');
+  });
+
   it("asks about an edit outside the worktree", async () => {
     await ask("outside");
     expect(await openNeed()).toMatchObject({ kind: "edit", summary: "Write /etc/ion-test.txt" });

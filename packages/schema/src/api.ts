@@ -49,6 +49,8 @@ export type NeedInfo = {
   projectId: string | null;
   kind: string;
   summary: string;
+  /** The exact input the agent sent (command, path, URL…), not its own description. */
+  detail: string | null;
   raisedAt: string;
 };
 
