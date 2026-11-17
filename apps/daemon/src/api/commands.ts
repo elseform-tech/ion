@@ -1,23 +1,35 @@
 import { addProject, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
+import type { RunManager } from "../runs/manager.js";
 import type { EventStore } from "../store/index.js";
+import { UserError } from "./errors.js";
 
-export type Ctx = { store: EventStore; configFile: string; startedAt: number; version: string };
+export { UserError } from "./errors.js";
 
-/** Errors whose message is safe and useful to show the user. */
-export class UserError extends Error {}
-
-/** Commands that start or stop runs; the run manager handles them (Plan 02, Task 7). */
-type RunCommand = "ask" | "run.interrupt";
+export type Ctx = {
+  store: EventStore;
+  runs: RunManager;
+  configFile: string;
+  startedAt: number;
+  version: string;
+};
 
 type Handlers = {
-  [C in Exclude<Command, "events.subscribe" | RunCommand>]: (
+  [C in Exclude<Command, "events.subscribe">]: (
     args: Commands[C]["args"],
     ctx: Ctx,
-  ) => Commands[C]["result"];
+  ) => Commands[C]["result"] | Promise<Commands[C]["result"]>;
 };
 
 export const handlers: Handlers = {
+  ask: (a, ctx) => {
+    if (typeof a.text !== "string" || !a.text.trim()) throw new UserError("Say what to do");
+    return ctx.runs.ask(a);
+  },
+  "run.interrupt": async (a, ctx) => {
+    await ctx.runs.interrupt(String(a.runId ?? ""));
+    return { ok: true as const };
+  },
   status: (_a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     return {

@@ -7,6 +7,7 @@ import { allViews } from "../views/index.js";
 import { createAuth } from "./auth.js";
 import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
+import { RunManager } from "../runs/manager.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -19,8 +20,10 @@ export async function startServer(opts: {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
   const db = openDb(join(opts.dataDir, "ion.db"));
+  const store = new EventStore(db, allViews);
   const ctx: Ctx = {
-    store: new EventStore(db, allViews),
+    store,
+    runs: new RunManager(store, { configFile: opts.configFile }),
     configFile: opts.configFile,
     startedAt: Date.now(),
     version: VERSION,

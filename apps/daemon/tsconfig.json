@@ -12,6 +12,18 @@
     },
     {
       "path": "../../packages/config"
+    },
+    {
+      "path": "../../packages/adapter-kit"
+    },
+    {
+      "path": "../../packages/adapters/claude-code"
+    },
+    {
+      "path": "../../packages/adapters/acp"
+    },
+    {
+      "path": "../../packages/adapters/fake"
     }
   ]
 }

@@ -68,6 +68,18 @@ importers:
 
   apps/daemon:
     dependencies:
+      '@ion/adapter-acp':
+        specifier: workspace:*
+        version: link:../../packages/adapters/acp
+      '@ion/adapter-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/adapters/claude-code
+      '@ion/adapter-fake':
+        specifier: workspace:*
+        version: link:../../packages/adapters/fake
+      '@ion/adapter-kit':
+        specifier: workspace:*
+        version: link:../../packages/adapter-kit
       '@ion/config':
         specifier: workspace:*
         version: link:../../packages/config

@@ -33,14 +33,14 @@ export class Connection {
     if (!req) return this.fail("", "bad_request", "Bad request");
     const args = (req.args ?? {}) as Record<string, unknown>;
     if (req.cmd === "events.subscribe") return this.subscribe(req.id, args);
-    this.run(req.id, req.cmd, args);
+    void this.run(req.id, req.cmd, args);
   }
 
-  private run(id: string, cmd: string, args: unknown): void {
+  private async run(id: string, cmd: string, args: unknown): Promise<void> {
     const h = (handlers as Record<string, Handler>)[cmd];
     if (!h) return this.fail(id, "unknown_command", `Unknown command: ${cmd}`);
     try {
-      this.send({ id, ok: true, result: h(args, this.ctx) } as Reply);
+      this.send({ id, ok: true, result: await h(args, this.ctx) } as Reply);
     } catch (e) {
       if (e instanceof UserError) this.fail(id, "invalid", e.message);
       else this.fail(id, "internal", "Something went wrong");

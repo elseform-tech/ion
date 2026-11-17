@@ -111,6 +111,21 @@ describe("daemon api", () => {
     expect(await client.call("status", {})).toMatchObject({ projects: 0 });
   });
 
+  it("runs an ask end to end and keeps serving after a failed run", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const repoPath = repo("app");
+    await client.call("projects.add", { path: repoPath });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { runId } = await client.call("ask", { text: "fail", projectId: "app", harness: "fake" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"));
+    expect(seen.filter((e) => e.runId === runId).at(-1)?.data).toEqual({ status: "failed" });
+    expect(await client.call("status", {})).toMatchObject({ projects: 1 });
+    await expect(client.call("ask", { text: "  ", projectId: "app", harness: "fake" })).rejects.toThrow(
+      "Say what to do",
+    );
+  });
+
   it("pushes events to subscribers, and only later ones after afterId", async () => {
     const seen: IonEvent[] = [];
     await client.subscribe({}, (e) => seen.push(e));
