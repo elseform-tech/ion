@@ -1,3 +1,6 @@
+import type { GateCall } from "@ion/adapter-kit";
+import { type GateEnv, grokGateEnv, grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
+
 /** How to launch and sign in to an ACP agent. */
 export type AcpHarness = {
   id: string;
@@ -8,8 +11,10 @@ export type AcpHarness = {
   loginArgs: string[];
   loginHint: string;
   defaultModel: string | null;
-  /** Extra environment for the agent (e.g. making it ask before editing). */
-  env?: () => Record<string, string>;
+  /** Extra environment for the agent (e.g. making it ask before editing); with a gate, its hook too. */
+  env?: (gate?: GateEnv) => Record<string, string>;
+  /** The agent's gate-hook payload as one tool call. */
+  toCall?: (payload: unknown) => GateCall | null;
   /** `_meta` sent with `session/new` (agent-specific session options). */
   sessionMeta?: Record<string, unknown>;
 };
@@ -26,7 +31,8 @@ export const GROK_BUILD: AcpHarness = {
   defaultModel: null,
   // Always ask ion before tools run, whatever the user's own Grok permission mode is.
   sessionMeta: { yoloMode: false, autoMode: false },
-  env: grokAskEnv,
+  env: (gate) => ({ ...grokAskEnv(), ...(gate ? grokGateEnv(gate) : {}) }),
+  toCall: grokToCall,
 };
 
 /** Grok's local read-only tools (stat, find, du…) ask like other commands where Grok honours this. */
@@ -45,10 +51,11 @@ export const OPENCODE: AcpHarness = {
   // A free model, so trying ion costs nothing.
   defaultModel: "opencode/big-pickle",
   env: opencodeAskEnv,
+  toCall: opencodeToCall,
 };
 
 /** opencode's own config with edits, shell and web fetches set to ask, merged into any inline config. */
-function opencodeAskEnv(): Record<string, string> {
+function opencodeAskEnv(gate?: GateEnv): Record<string, string> {
   let base: Record<string, unknown> = {};
   try {
     base = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "{}");
@@ -64,8 +71,11 @@ function opencodeAskEnv(): Record<string, string> {
     build: { ...baseAgents.build, permission: { ...(baseAgents.build?.permission as object), ...ask } },
     plan: { ...baseAgents.plan, permission: { ...(baseAgents.plan?.permission as object), ...ask } },
   };
+  // With a gate: ion's plugin reports every tool call to ion before it runs.
+  const plugin = gate ? { plugin: [...((base.plugin as unknown[]) ?? []), OPENCODE_PLUGIN] } : {};
   return {
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...base, permission, agent }),
+    ...(gate ? { ION_GATE_URL: gate.url } : {}),
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...base, permission, agent, ...plugin }),
     // A repo's own opencode.json could set permissions back to "allow" (verified): don't load it.
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
   };

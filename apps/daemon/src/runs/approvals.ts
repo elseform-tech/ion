@@ -18,6 +18,10 @@ export type AskingRun = {
 
 type Verdict = { decision: Decision; by: "policy" | "full" | "ion" | "gate"; reason?: string };
 
+/** What a gate allow and a later prompt are matched on: the kind of call, and its command if it names one. */
+const callKey = (c: { kind: string; input: Record<string, unknown> }) =>
+  typeof c.input.command === "string" ? { kind: c.kind, command: c.input.command } : { kind: c.kind };
+
 /** Added to every Auto deny an agent reads: the way through is asking you. */
 const ASK_HINT = " — if it's needed, ask the user with ion's ask tool";
 
@@ -42,7 +46,7 @@ export class Approvals {
   async decide(r: AskingRun, req: ApprovalRequest, roots: string[]): Promise<Decision> {
     await this.waitForRequest(req.requestId);
     if (!this.isOpen(r.runId)) return "deny";
-    const v: Verdict = this.allows.take(r.runId, req.kind)
+    const v: Verdict = this.allows.take(r.runId, callKey(req))
       ? { decision: "allow", by: "gate" }
       : await this.verdict(r, req, roots);
     if (!this.isOpen(r.runId)) return v.decision;
@@ -61,7 +65,7 @@ export class Approvals {
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     if (v.by === "ion") this.record(r, { requestId: req.requestId, ...v, summary: call.summary });
     if (v.decision === "allow") {
-      this.allows.add(r.runId, call.kind);
+      this.allows.add(r.runId, callKey(call));
       return { decision: "allow" };
     }
     return { decision: "deny", reason: `${v.reason ?? "Not allowed"}${ASK_HINT}` };

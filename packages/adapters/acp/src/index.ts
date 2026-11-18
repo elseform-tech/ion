@@ -58,6 +58,7 @@ export function createAcpAdapter(
           );
         }),
     },
+    ...(h.toCall ? { gateCall: h.toCall } : {}),
     capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps.startTimeoutMs)),
     async start(opts) {
       const path = binary();
@@ -67,6 +68,7 @@ export function createAcpAdapter(
         timeoutMs: deps.startTimeoutMs,
         resume: opts.resume,
         mcp: opts.mcp,
+        gate: opts.gate,
       });
       const model =
         (await setOption(c, "model", opts.model ?? h.defaultModel)) ?? h.defaultModel ?? "default";

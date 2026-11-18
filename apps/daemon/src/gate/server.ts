@@ -12,23 +12,34 @@ const send = (res: ServerResponse, status: number, body: GateAnswer | string) =>
     .end(json ? JSON.stringify(body) : body);
 };
 
-function readJson(req: IncomingMessage): Promise<unknown> {
+export function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    // Settles exactly once, however the request ends: done, failed, torn down for being too large.
+    let settled = false;
+    const settle = (v: unknown) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
     req.on("data", (c: Buffer) => {
       size += c.length;
-      if (size > MAX_BODY) req.destroy();
-      else chunks.push(c);
+      if (size > MAX_BODY) {
+        settle(undefined);
+        req.destroy();
+      } else chunks.push(c);
     });
     req.on("end", () => {
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        settle(JSON.parse(Buffer.concat(chunks).toString("utf8")));
       } catch {
-        resolve(undefined);
+        settle(undefined);
       }
     });
-    req.on("error", () => resolve(undefined));
+    req.on("error", () => settle(undefined));
+    req.on("close", () => settle(undefined));
   });
 }
 

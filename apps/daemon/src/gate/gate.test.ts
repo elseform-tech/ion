@@ -12,6 +12,7 @@ import { createGrants, createMcpHandler, type Grants } from "../mcp/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { createGateHandler } from "./index.js";
+import { readJson } from "./server.js";
 
 process.env.ION_ALLOW_FAKE = "1";
 
@@ -172,5 +173,20 @@ describe("gate keys", () => {
     expect(r.status).toBe(400);
     expect(await r.json()).toEqual({ decision: "deny", reason: "ion couldn't read this tool call" });
     one.close();
+  });
+});
+
+describe("gate body", () => {
+  // Security review: a body over the cap used to leave the read waiting forever.
+  it("settles when the body is too large and the request is torn down", async () => {
+    const { EventEmitter } = await import("node:events");
+    const req = Object.assign(new EventEmitter(), {
+      destroy() {
+        queueMicrotask(() => this.emit("close"));
+      },
+    });
+    const read = readJson(req as never);
+    req.emit("data", Buffer.alloc(2 * 1024 * 1024));
+    expect(await Promise.race([read, new Promise((r) => setTimeout(() => r("hung"), 200))])).toBeUndefined();
   });
 });

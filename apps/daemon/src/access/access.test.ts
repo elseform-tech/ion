@@ -242,3 +242,24 @@ describe("harnessRunner", () => {
     });
   });
 });
+
+// Plan 06: Grok's gate hook lives in the worktree; in Auto, nothing may touch it.
+describe("ruleFor, ion's hook in the worktree", () => {
+  it("denies anything touching .grok/hooks or removing .grok", () => {
+    for (const c of [
+      "rm .grok/hooks/ion.json",
+      "rm -rf .grok",
+      "mv .grok x",
+      "echo {} > ./.grok/hooks/ion.json",
+    ])
+      expect(ruleFor(cmd(c), ctx)).toMatchObject({ decision: "deny", reason: "Touches ion's own files" });
+    const edit: ApprovalRequest = {
+      ...cmd("x"),
+      kind: "edit",
+      toolName: "Write",
+      input: { file_path: join(wt, ".grok/hooks/ion.json") },
+    };
+    expect(ruleFor(edit, ctx)).toMatchObject({ decision: "deny" });
+    expect(ruleFor(cmd("cat src/grok.ts"), ctx)?.decision).toBe("allow");
+  });
+});
