@@ -20,7 +20,7 @@ through `@ion/client/browser`, and it keeps nothing of its own (lint: no `node:*
   - `QuestionBar` is one line: the question and a button per option. Its chevron opens why, each option's reasoning,
     your own answer and "Always for this project".
   - `ToolsPanel` is the side panel: Changes (`chat.diff`, numbered by `diffLines`) and Files. A chat in `default`
-    has no panel; below 1100 px it starts closed.
+    opens with it closed (the toggle opens it); below 1100 px it starts closed.
 - Left out of the lab until ion does them: Library, attachments, Preview, Terminal and Viewer tabs, Open in editor,
   Share, the Ions, Settings and Search rail buttons, and temporary chats.
 - Agents' text is Markdown with no raw HTML; links show where they point but open nothing.

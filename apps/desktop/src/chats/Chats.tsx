@@ -14,16 +14,19 @@ type Question = Extract<Item, { kind: "question" }>;
 
 const WIDE = "(min-width: 1100px)";
 
-/** The side panel starts open on a wide window; narrowing below 1100 px closes it, widening opens it again. */
-function useWidePanel(): [boolean, (v: boolean) => void] {
+/**
+ * The side panel starts open (when `open`) on a wide window; narrowing below 1100 px closes it, and widening opens
+ * it again when it started open.
+ */
+function useWidePanel(open: boolean): [boolean, (v: boolean) => void] {
   const mq = typeof matchMedia === "function" ? matchMedia(WIDE) : null;
-  const [panel, setPanel] = useState(mq?.matches ?? true);
+  const [panel, setPanel] = useState(open && (mq?.matches ?? true));
   useEffect(() => {
     if (!mq) return;
-    const onChange = (e: MediaQueryListEvent) => setPanel(e.matches);
+    const onChange = (e: MediaQueryListEvent) => setPanel(open && e.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
-  }, [mq]);
+  }, [mq, open]);
   return [panel, setPanel];
 }
 
@@ -61,9 +64,9 @@ function OpenChat({
 }) {
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
-  // A plain chat (in ion's `default`) is just a conversation, as the lab's: no side panel.
-  const hasWorktree = Boolean(chat.branch) && !chat.archived && chat.projectId !== "default";
-  const [panel, setPanel] = useWidePanel();
+  const hasWorktree = Boolean(chat.branch) && !chat.archived;
+  // A plain chat (in ion's `default`) opens as just a conversation, as the lab's; its changes are a click away.
+  const [panel, setPanel] = useWidePanel(chat.projectId !== "default");
   const showPanel = hasWorktree && panel;
   return (
     <>

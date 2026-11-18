@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo } from "@ion/schema";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Chats } from "./Chats.js";
 
@@ -35,12 +35,15 @@ describe("Chats", () => {
     expect(container.querySelector(".empty .cbox.big")).not.toBeNull();
   });
 
-  it("shows a plain chat (in default) without the side panel, and a project chat with it", async () => {
+  // Security review: a plain chat can still change files, so its panel is closed, not gone.
+  it("opens a plain chat (in default) with the side panel closed but its toggle there, a project chat with it open", async () => {
     const both = client([chat("p", "default"), chat("c", "storefront")]);
     const { container, rerender } = render(<Chats client={both} openId="p" setOpenId={() => {}} />);
     await screen.findAllByText("p");
     expect(container.querySelector(".split.solo")).not.toBeNull();
     expect(container.querySelector(".tools")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show changes" }));
+    expect(container.querySelector(".tools")).not.toBeNull();
     rerender(<Chats client={both} openId="c" setOpenId={() => {}} />);
     expect(container.querySelector(".tools")).not.toBeNull();
   });
