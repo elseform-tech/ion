@@ -8,6 +8,7 @@ import type { IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { startServer } from "./server.js";
+import { loadUserConfig, saveUserConfig } from "@ion/config";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
@@ -237,6 +238,36 @@ describe("daemon api", () => {
       ["chief", "ion"],
       ["app", "app"],
     ]);
+  });
+
+  it("starts a thread when you message a project's ion, and ion chief routes with the fake model", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    // ion chief's model is the judge's: the fake one here (never a real model in tests).
+    const cf = join(home, "config.toml");
+    const { config } = loadUserConfig(cf);
+    saveUserConfig(cf, { ...config, access: { ...config.access, judge: "fake" } });
+    await client.call("ion.message", { ionId: "app", text: "hello from your ion" });
+    const thread = (await client.call("chats.list", {})).find((c) => c.by === "ion");
+    expect(thread).toMatchObject({ projectId: "app", title: "hello from your ion" });
+    await until(
+      () =>
+        seen.some(
+          (e) =>
+            e.chatId === "ion:app" &&
+            e.type === "ion.said" &&
+            (e.data as { text: string }).text.startsWith("hello from your ion: done"),
+        ),
+      5000,
+    );
+    await client.call("ion.message", { ionId: "chief", text: "please check app" });
+    await until(() => seen.some((e) => e.chatId === "ion:chief" && e.type === "ion.said"), 5000);
+    const chief = seen.filter((e) => e.chatId === "ion:chief" && e.type === "ion.said").at(-1)!.data as {
+      text: string;
+    };
+    expect(chief.text).toBe("Asked 1 project.");
   });
 
   // The user, 2026-11-18: chats can be renamed from the sidebar.

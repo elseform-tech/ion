@@ -67,6 +67,20 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     );
     return "done";
   },
+  /** ion chief's System 1: route to every project your message names, else answer. */
+  async route(s) {
+    const block = (source: string) =>
+      new RegExp(`source="${source}">\\n([\\s\\S]*?)\\n</ion-data`).exec(s.text())?.[1] ?? "";
+    const message = block("your message");
+    const named = block("projects")
+      .split("\n")
+      .filter((p) => p && message.includes(p));
+    const reply = named.length
+      ? { route: named.map((projectId) => ({ projectId, brief: message })) }
+      : { answer: "Nothing needs you right now." };
+    say(s, JSON.stringify(reply));
+    return "done";
+  },
   async hello(s) {
     say(s, "Hi from the fake harness.");
     return "done";

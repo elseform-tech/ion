@@ -17,6 +17,7 @@ import { UserError } from "./errors.js";
 import { HarnessInfos } from "./harness-infos.js";
 import { renameChat } from "../runs/ready.js";
 import { ionsView } from "../views/ions.js";
+import type { Ions } from "../ions/service.js";
 
 export { UserError } from "./errors.js";
 
@@ -27,6 +28,7 @@ export type Ctx = {
   decisions: Decisions;
   grants: Grants;
   runs: RunManager;
+  ions: Ions;
   configFile: string;
   startedAt: number;
   version: string;
@@ -103,8 +105,11 @@ export const handlers: Handlers = {
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,
   "ions.list": (_a, ctx) => ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects),
   // Plan 09, Tasks 3 and 4 answer these.
-  "ion.message": () => {
-    throw new UserError("Not ready yet");
+  "ion.message": async (a, ctx) => {
+    const text = String(a.text ?? "").trim();
+    if (!text) throw new UserError("Say something");
+    await ctx.ions.message(String(a.ionId ?? ""), text);
+    return { ok: true as const };
   },
   "suggestion.answer": () => {
     throw new UserError("Not ready yet");

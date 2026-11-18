@@ -1,0 +1,178 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
+import { EV, type IonEvent } from "@ion/schema";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { UserError } from "../api/errors.js";
+import { type Db, EventStore, openDb } from "../store/index.js";
+import { allViews } from "../views/index.js";
+import { Ions } from "./service.js";
+import { parseRoute } from "./route.js";
+
+let db: Db;
+let store: EventStore;
+let configFile: string;
+let ask: ReturnType<typeof vi.fn>;
+let quick: ReturnType<typeof vi.fn>;
+let n = 0;
+
+beforeEach(() => {
+  db = openDb(":memory:");
+  store = new EventStore(db, allViews);
+  configFile = join(mkdtempSync(join(tmpdir(), "ion-ions-")), "config.toml");
+  saveUserConfig(configFile, {
+    ...DEFAULT_CONFIG,
+    projects: [
+      { id: "storefront", path: "/p/storefront", starred: false },
+      { id: "payments-api", path: "/p/payments-api", starred: false, harness: "opencode" },
+      { id: "default", path: "/p/default", starred: false },
+    ],
+  });
+  n = 0;
+  // A thread starts like a real ask: its chat (by ion), then the run.
+  ask = vi.fn(async (a: { projectId: string; text: string }) => {
+    const chatId = `t${++n}`;
+    store.append({
+      chatId,
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: a.text, projectId: a.projectId, by: "ion" },
+    });
+    return { chatId, runId: `r${n}` };
+  });
+  quick = vi.fn();
+});
+
+const ions = () => new Ions({ store, db, configFile, runs: { ask }, quick });
+const said = (ionId: string) =>
+  store
+    .read({ chatId: `ion:${ionId}` })
+    .filter((e: IonEvent) => e.type === EV.ionSaid)
+    .map((e) => e.data as { text: string; card?: unknown });
+
+// Plan 09: a project's ion starts a thread for what you ask; ion chief answers, or routes to project ions.
+describe("Ions", () => {
+  it("starts a thread in the project when you message its ion, on its agent, and says so", async () => {
+    await ions().message("payments-api", "Check totals rounding");
+    expect(ask).toHaveBeenCalledWith(
+      { projectId: "payments-api", text: "Check totals rounding", harness: "opencode" },
+      { by: "ion" },
+    );
+    expect(store.read({ chatId: "ion:payments-api" })[0]).toMatchObject({
+      type: EV.ionHeard,
+      data: { text: "Check totals rounding" },
+    });
+    expect(said("payments-api")).toEqual([
+      { text: "On it.", card: { kind: "threads", threads: [{ chatId: "t1", projectId: "payments-api" }] } },
+    ]);
+  });
+
+  // Review Focus 4.
+  it("says why when it can't start the thread, and starts nothing", async () => {
+    ask.mockRejectedValueOnce(new UserError("opencode isn't signed in. Run: opencode auth login"));
+    await ions().message("payments-api", "Check totals");
+    expect(said("payments-api")).toEqual([{ text: "opencode isn't signed in. Run: opencode auth login" }]);
+  });
+
+  it("has no ion for default, nor for a project it doesn't know", async () => {
+    await expect(ions().message("default", "hi")).rejects.toThrow("Unknown ion: default");
+    await expect(ions().message("nope", "hi")).rejects.toThrow("Unknown ion: nope");
+  });
+
+  it("lets ion chief answer from what it knows", async () => {
+    quick.mockResolvedValueOnce('{"answer":"Nothing needs you right now."}');
+    await ions().message("chief", "Anything for me?");
+    expect(quick.mock.calls[0]![0]).toContain("Anything for me?");
+    expect(said("chief")).toEqual([{ text: "Nothing needs you right now." }]);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("lets ion chief route to project ions: a thread each, and one card", async () => {
+    quick.mockResolvedValueOnce(
+      JSON.stringify({
+        route: [
+          { projectId: "storefront", brief: "Check rounding in the cart" },
+          { projectId: "payments-api", brief: "Check rounding in totals" },
+        ],
+      }),
+    );
+    await ions().message("chief", "Check the rounding bug everywhere");
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(store.read({ chatId: "ion:storefront" })[0]).toMatchObject({
+      type: EV.ionHeard,
+      data: { text: "Check rounding in the cart" },
+    });
+    expect(said("chief")).toEqual([
+      {
+        text: "Asked 2 projects.",
+        card: {
+          kind: "threads",
+          threads: [
+            { chatId: "t1", projectId: "storefront" },
+            { chatId: "t2", projectId: "payments-api" },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("names a project ion chief couldn't reach", async () => {
+    quick.mockResolvedValueOnce(JSON.stringify({ route: [{ projectId: "payments-api", brief: "Check" }] }));
+    ask.mockRejectedValueOnce(new UserError("opencode isn't signed in"));
+    await ions().message("chief", "Check payments");
+    expect(said("chief")).toEqual([{ text: "Couldn't reach payments-api: opencode isn't signed in" }]);
+  });
+
+  // Review Focus 2.
+  it.each([
+    ["fails", () => quick.mockRejectedValueOnce(new Error("down"))],
+    ["answers junk", () => quick.mockResolvedValueOnce("sure!")],
+  ])("tells you to try again when its model %s, and routes nothing", async (_how, arrange) => {
+    arrange();
+    await ions().message("chief", "Check everything");
+    expect(said("chief")).toEqual([{ text: "I couldn't reach my model; try again." }]);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("reports when one of its threads ends", async () => {
+    const i = ions();
+    i.watch();
+    await i.message("storefront", "Fix the cart");
+    store.append({
+      chatId: "t1",
+      runId: "r1",
+      origin: "adapter",
+      type: EV.messageCompleted,
+      data: { text: "Fixed the cart total." },
+    });
+    store.append({
+      chatId: "t1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+    expect(said("storefront").at(-1)).toEqual({
+      text: "Fix the cart: done. Fixed the cart total.",
+      card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
+    });
+  });
+});
+
+describe("parseRoute", () => {
+  const projects = ["storefront", "payments-api"];
+  it("keeps routes to known projects, never default", () => {
+    expect(
+      parseRoute(
+        '{"route":[{"projectId":"storefront","brief":"a"},{"projectId":"default","brief":"b"},{"projectId":"x","brief":"c"}]}',
+        projects,
+      ),
+    ).toEqual({ route: [{ projectId: "storefront", brief: "a" }] });
+  });
+  it("is null for anything but its JSON", () => {
+    expect(parseRoute("ok", projects)).toBeNull();
+    expect(parseRoute('{"route":[]}', projects)).toBeNull();
+  });
+});

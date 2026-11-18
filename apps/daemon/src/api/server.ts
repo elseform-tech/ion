@@ -17,6 +17,7 @@ import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
+import { Ions } from "../ions/service.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -148,6 +149,8 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
+  const ions = new Ions({ store, db, configFile: opts.configFile, runs, quick });
+  ions.watch();
   return {
     store,
     db,
@@ -155,6 +158,7 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     decisions,
     grants,
     runs,
+    ions,
     configFile: opts.configFile,
     startedAt: Date.now(),
     version: VERSION,
