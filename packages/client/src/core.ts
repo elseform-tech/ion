@@ -72,7 +72,7 @@ export type MiniSocket = {
 /** The subprotocols that authenticate: the token rides here, never in the URL. */
 export const protocols = (token: string) => ["ion", `ion.token.${token}`];
 
-/** At most this many early pushes per subscription (a chat's backlog, before the reply is read). */
+/** At most this many early pushes in all (backlog that arrives before its subscribe's reply is read). */
 const EARLY_MAX = 100_000;
 
 /** A client over an open socket: calls matched to replies, and subscription pushes to their handlers. */
@@ -84,12 +84,17 @@ export function createClient(ws: MiniSocket): IonClient {
   // while a subscribe is in flight and up to a limit. Pushes for nothing being subscribed are dropped.
   const early = new Map<string, IonEvent[]>();
   let subscribing = 0;
+  let kept = 0; // across all subscriptions
   const keepEarly = (sub: string, e: IonEvent) => {
-    if (subscribing === 0) return;
+    if (subscribing === 0 || kept >= EARLY_MAX) return;
     const list = early.get(sub) ?? [];
-    if (list.length >= EARLY_MAX) return;
     list.push(e);
     early.set(sub, list);
+    kept++;
+  };
+  const dropEarly = () => {
+    early.clear();
+    kept = 0;
   };
   ws.onMessage((raw) => {
     const msg = parseMessage(raw);
@@ -123,7 +128,7 @@ export function createClient(ws: MiniSocket): IonClient {
   return {
     call,
     async subscribe(q, onEvent) {
-      if (subscribing++ === 0) early.clear(); // nothing kept from before this subscribe
+      if (subscribing++ === 0) dropEarly(); // nothing kept from before this subscribe
       let sub: string;
       try {
         ({ sub } = await call("events.subscribe", q));
@@ -131,9 +136,11 @@ export function createClient(ws: MiniSocket): IonClient {
         subscribing--;
       }
       subs.set(sub, onEvent);
-      for (const e of early.get(sub) ?? []) onEvent(e);
+      const mine = early.get(sub) ?? [];
       early.delete(sub);
-      if (subscribing === 0) early.clear();
+      kept -= mine.length;
+      for (const e of mine) onEvent(e);
+      if (subscribing === 0) dropEarly();
       return () => subs.delete(sub);
     },
     close: () => ws.close(),

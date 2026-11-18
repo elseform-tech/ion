@@ -2,12 +2,15 @@ import type { AnchorHTMLAttributes } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/** Links in agents' text open nothing inside the app (ion has no browser of its own yet); hovering shows where. */
+/**
+ * Links in agents' text can't navigate at all (no href: no click, middle-click or keyboard opens anything);
+ * hovering shows where they point. Opening them in your browser can come later, through the OS.
+ */
 function Link({ href, children }: AnchorHTMLAttributes<HTMLAnchorElement>) {
   return (
-    <a href={href} title={href} onClick={(e) => e.preventDefault()}>
+    <span className="md-link" title={href}>
       {children}
-    </a>
+    </span>
   );
 }
 

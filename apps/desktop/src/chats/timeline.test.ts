@@ -124,6 +124,17 @@ describe("timeline", () => {
     ]);
   });
 
+  it("knows the run that's going, from queued until it finishes", () => {
+    expect(play(ev("run.queued", {})).running).toBe("r1");
+    expect(play(ev("run.queued", {}), ev("run.started", {})).running).toBe("r1");
+    expect(play(ev("run.queued", {}), ev("run.finished", { status: "done" })).running).toBeNull();
+  });
+
+  it("remembers the agent the chat last ran on, for the next message", () => {
+    expect(play().harness).toBeNull();
+    expect(play(ev("run.started", { harness: "grok-build" })).harness).toBe("grok-build");
+  });
+
   it("shows errors and retries", () => {
     const t = play(
       ev("error", { code: "rate_limit", retryable: true, message: "Rate limited" }),

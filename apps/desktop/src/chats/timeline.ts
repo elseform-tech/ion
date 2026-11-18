@@ -1,6 +1,6 @@
 import { EV, type IonEvent } from "@ion/schema";
 
-export type Choice = { label: string; consequence: string };
+type Choice = { label: string; consequence: string };
 export type Tool = { name: string; summary: string; ok?: boolean };
 
 /** One thing the chat shows, in order. */
@@ -25,6 +25,10 @@ export type Timeline = {
   items: Item[];
   /** The agent message still streaming, by index. */
   streaming: number | null;
+  /** The run that's queued or going, if any. */
+  running: string | null;
+  /** The agent the chat last ran on: the next message's default. */
+  harness: string | null;
   asks: Record<string, string>;
   work: Record<string, number>;
   tools: Record<string, { at: number; tool: number }>;
@@ -36,6 +40,8 @@ export type Timeline = {
 export const empty = (): Timeline => ({
   items: [],
   streaming: null,
+  running: null,
+  harness: null,
   asks: {},
   work: {},
   tools: {},
@@ -127,7 +133,13 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
   const from = t.started[runId];
   const seconds = from ? Math.round((Date.parse(e.ts) - Date.parse(from)) / 1000) : 0;
   const cost = t.cost[runId];
-  return push(t, { kind: "end", status: str(d.status), seconds, ...(cost !== undefined ? { cost } : {}) });
+  const ended = push(t, {
+    kind: "end",
+    status: str(d.status),
+    seconds,
+    ...(cost !== undefined ? { cost } : {}),
+  });
+  return { ...ended, running: t.running === runId ? null : t.running };
 }
 
 type Handler = (t: Timeline, d: D, e: IonEvent) => Timeline;
@@ -136,7 +148,13 @@ const HANDLERS: Record<string, Handler> = {
   [EV.messageSent]: (t, d) => push(t, { kind: "you", text: str(d.text) }),
   [EV.messageDelta]: delta,
   [EV.messageCompleted]: completed,
-  [EV.runStarted]: (t, _d, e) => ({ ...t, started: { ...t.started, [e.runId ?? ""]: e.ts } }),
+  [EV.runQueued]: (t, _d, e) => ({ ...t, running: e.runId }),
+  [EV.runStarted]: (t, d, e) => ({
+    ...t,
+    running: e.runId,
+    harness: str(d.harness) || t.harness,
+    started: { ...t.started, [e.runId ?? ""]: e.ts },
+  }),
   [EV.toolStarted]: (t, d, e) => toolStarted(t, d, e.runId ?? ""),
   [EV.toolFinished]: toolFinished,
   [EV.approvalRequested]: (t, d) => ({ ...t, asks: { ...t.asks, [str(d.requestId)]: str(d.summary) } }),

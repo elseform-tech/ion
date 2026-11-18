@@ -213,6 +213,17 @@ describe("daemon api", () => {
     await until(() => later.length === 1);
     expect(later.map((e) => (e.data as { title: string }).title)).toEqual(["Two"]);
   });
+
+  // Plan 07: the app's sidebar wants only what happens from now on, not every event ion ever stored.
+  it("sends no backlog with fromNow", async () => {
+    await client.call("chat.create", { title: "Old" });
+    const seen: IonEvent[] = [];
+    await client.subscribe({ fromNow: true }, (e) => seen.push(e));
+    await client.call("chat.create", { title: "New" });
+    await until(() => seen.length === 1);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen.map((e) => (e.data as { title: string }).title)).toEqual(["New"]);
+  });
 });
 
 async function until(f: () => boolean, ms = 2000) {

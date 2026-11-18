@@ -28,7 +28,11 @@ export type Commands = {
   "project.create": { args: { name: string }; result: ProjectInfo };
   "project.setAccess": { args: { projectId: string; access: "auto" | "full" }; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
-  "events.subscribe": { args: { chatId?: string; afterId?: string }; result: { sub: string } };
+  /** fromNow: only events from now on, no backlog. */
+  "events.subscribe": {
+    args: { chatId?: string; afterId?: string; fromNow?: boolean };
+    result: { sub: string };
+  };
   ask: {
     args: {
       text: string;

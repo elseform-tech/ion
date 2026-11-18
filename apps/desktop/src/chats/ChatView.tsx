@@ -6,7 +6,7 @@ import { Markdown } from "./Message.js";
 import { empty, type Item, reduce, type Timeline, type Tool } from "./timeline.js";
 
 /** "2m 04s", "45s". */
-export function duration(seconds: number): string {
+function duration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
@@ -21,8 +21,11 @@ export function useTimeline(client: IonClient, chatId: string): Timeline {
     dispatch("reset");
     let stop: (() => void) | undefined;
     let gone = false;
+    // Only this chat's events, and none once it's closed (a late backlog from the old chat is dropped).
     void client
-      .subscribe({ chatId }, (e) => dispatch(e))
+      .subscribe({ chatId }, (e) => {
+        if (!gone && e.chatId === chatId) dispatch(e);
+      })
       .then((s) => {
         if (gone) s();
         else stop = s;

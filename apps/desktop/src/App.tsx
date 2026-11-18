@@ -1,26 +1,21 @@
-import { MessageSquare, Settings } from "@ion/design-system";
+import { MessageSquare } from "@ion/design-system";
+import { Chats } from "./chats/Chats.js";
 import { Down } from "./Down.js";
 import { useIon } from "./ion.js";
 
-/** The window: the rail, the Chats sidebar and the open chat. */
+/** The window: the rail, then the Chats screen (Ions, Library and Settings come in later plans). */
 export function App() {
-  const { state } = useIon();
+  const { state, client } = useIon();
   if (state === "connecting") return <div className="app app--empty" />;
-  if (state === "down") return <Down onRetry={() => window.location.reload()} />;
+  if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
   return (
     <div className="app">
       <nav className="rail" aria-label="Screens">
         <button type="button" className="rail-item rail-item--on" aria-label="Chats">
           <MessageSquare size={18} />
         </button>
-        <div className="rail-end">
-          <button type="button" className="rail-item" aria-label="Settings">
-            <Settings size={18} />
-          </button>
-        </div>
       </nav>
-      <aside className="sidebar" aria-label="Chats" />
-      <main className="main" />
+      <Chats client={client} />
     </div>
   );
 }

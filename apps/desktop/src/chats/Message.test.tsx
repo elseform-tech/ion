@@ -13,8 +13,9 @@ describe("Markdown", () => {
     );
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("strong")?.textContent).toBe("bold");
-    const a = container.querySelector("a");
-    expect(a?.getAttribute("href") ?? "").not.toMatch(/javascript/i);
+    // Security review: no link in agent text can navigate at all (middle-click, keyboard): no href anywhere.
+    expect(container.querySelector("[href]")).toBeNull();
+    expect(container.querySelector(".md-link")?.textContent).toBe("x");
   });
 
   it("renders code and tables", () => {
