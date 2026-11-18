@@ -1,6 +1,6 @@
 import type { IonClient } from "@ion/client/browser";
 import { type ChatInfo, EV, type HarnessInfo, type NeedInfo, type ProjectInfo } from "@ion/schema";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type Groups = {
   needsYou: { chat: ChatInfo; need: NeedInfo }[];
