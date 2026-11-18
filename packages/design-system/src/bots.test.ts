@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { botFor, type PathSink, tracePath } from "./bots.js";
+import { botFor, ionBot, type PathSink, tracePath } from "./bots.js";
 
 /** Records the path calls a shape makes, instead of drawing them. */
 function recorder(): PathSink & { calls: string[] } {
@@ -56,5 +56,30 @@ describe("bots", () => {
     const circle = recorder();
     tracePath("circle", circle);
     expect(circle.calls).toEqual([`arc(0.000,0.000,1.000,0.000,${(Math.PI * 2).toFixed(3)})`]);
+  });
+});
+
+// Plan 09: ions. A project's ion is its harness's shape in the project's colour; ion chief is the ink orbit bot.
+describe("ionBot", () => {
+  it("draws a project's ion as its harness's shape in the project's colour", () => {
+    expect(ionBot({ harness: "claude-code", color: "#5BC67A" })).toMatchObject({
+      shape: "spark",
+      color: "#5BC67A",
+    });
+    expect(ionBot({ harness: "grok-build", color: "#3C82F6" })).toMatchObject({
+      shape: "circle",
+      color: "#3C82F6",
+      decor: "grok",
+    });
+  });
+
+  it("draws an ion with an unknown or no harness as a circle in its colour", () => {
+    expect(ionBot({ harness: null, color: "#F19D38" })).toMatchObject({ shape: "circle", color: "#F19D38" });
+  });
+
+  it("draws ion chief as the ink circle with an orbit of three colours", () => {
+    const chief = ionBot("chief");
+    expect(chief.shape).toBe("circle");
+    expect(chief.orbit).toMatchObject({ tilt: -0.42, speed: 1.1, colors: ["#D97757", "#4285F4", "#5BC67A"] });
   });
 });
