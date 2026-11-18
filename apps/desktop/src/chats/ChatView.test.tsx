@@ -232,9 +232,13 @@ describe("ChatView", () => {
         onFile={onFile}
       />,
     );
-    expect(container.querySelector(".files .fsum")?.textContent).toBe("2 files changed");
-    const rows = [...container.querySelectorAll(".files button")];
-    expect(rows.map((r) => r.textContent)).toEqual(["src/a.ts+3−1", "notes.md+1"]);
+    // The user, 2026-11-18: a proper container that scrolls when a run changed many files. Its head gives the count
+    // and the totals; each row is the file's name, then its folder (quieter), then its counts.
+    expect(container.querySelector(".files .fsum")?.textContent).toBe("2 files changed+4−1");
+    expect(container.querySelector(".files .flist")).not.toBeNull();
+    const rows = [...container.querySelectorAll(".files .flist button")];
+    expect(rows.map((r) => r.textContent)).toEqual(["a.tssrc+3−1", "notes.md+1"]);
+    expect(rows[0]?.getAttribute("title")).toBe("src/a.ts");
     fireEvent.click(rows[0]!);
     expect(onFile).toHaveBeenCalledWith("src/a.ts");
   });

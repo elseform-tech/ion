@@ -13,6 +13,7 @@ import {
 } from "@ion/design-system";
 import type { ChatInfo, IonCard, IonEvent, IonInfo, NeedInfo } from "@ion/schema";
 import { type KeyboardEvent, useEffect, useState } from "react";
+import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 
 /** An ion's avatar: ion chief's orbit bot, or its project's colour on its agent's shape. */
@@ -299,10 +300,7 @@ export function IonChat(p: Omit<CardProps, "card">) {
   const items = useIonChat(p.client, p.ion.ionId);
   return (
     <section className="ichat">
-      <header className="head" data-tauri-drag-region>
-        <IonAvatar ion={p.ion} />
-        <IonName ion={p.ion} className="title" />
-      </header>
+      <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} />
       <Bubbles items={items} {...p} />
       <IonBox client={p.client} ion={p.ion} />
     </section>

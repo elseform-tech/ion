@@ -1,6 +1,7 @@
 export {
   ArrowUp,
   Split,
+  List,
   Orbit,
   FolderPlus,
   Pencil,

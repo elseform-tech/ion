@@ -27,4 +27,9 @@ describe("opencode environment", () => {
     // The CLI's name for ask mode is "default" (it has no "ask"); it outranks the user's config.toml.
     expect(GROK_BUILD.args).toEqual(["--permission-mode", "default", "agent", "stdio"]);
   });
+  // The user, 2026-11-18: Grok's questions failed with "Method not found". Its own question card calls a client
+  // method ion doesn't have (there's no card to show), so it's off, and Grok asks through ion's ask tool.
+  it("turns off Grok's own question card, with or without the gate", () => {
+    expect(GROK_BUILD.env?.(undefined).GROK_ASK_USER_QUESTION).toBe("false");
+  });
 });

@@ -30,6 +30,7 @@ export type Commands = {
   "projects.add": { args: { path: string }; result: ProjectInfo };
   "project.create": { args: { name: string }; result: ProjectInfo };
   "project.setAccess": { args: { projectId: string; access: "auto" | "full" }; result: { ok: true } };
+  "project.star": { args: { projectId: string; starred: boolean }; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   /** fromNow: only events from now on, no backlog. */
   "events.subscribe": {
@@ -158,6 +159,8 @@ export type IonInfo = {
   needs: number;
   /** One of its threads is running. */
   working: boolean;
+  /** Its project is starred (Starred first); ion chief never is. */
+  starred: boolean;
 };
 export type Command = keyof Commands;
 export const COMMANDS = [
@@ -166,6 +169,7 @@ export const COMMANDS = [
   "projects.add",
   "project.create",
   "project.setAccess",
+  "project.star",
   "chat.create",
   "events.subscribe",
   "ask",

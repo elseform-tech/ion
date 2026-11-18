@@ -113,5 +113,9 @@ export function useLive(client: IonClient) {
       stop?.();
     };
   }, [client, refresh, refreshHarnesses]);
-  return { chats, needs, projects, harnesses, ions, refreshHarnesses };
+  const refreshProjects = useCallback(
+    () => void client.call("projects.list", {}).then(setProjects, () => {}),
+    [client],
+  );
+  return { chats, needs, projects, harnesses, ions, refreshHarnesses, refreshProjects };
 }

@@ -36,7 +36,8 @@ child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter
 
 ## Rules
 
-- Test first. Every bug fix adds a test named `regression/<issue>-<slug>.test.ts`.
+- Test first. Every bug fix adds a test that fails without the fix, next to the code it covers (`<file>.test.ts`),
+  with a comment saying what broke (who found it and when, or the issue number).
 - No real model calls in tests. Live tests are opt-in: `ION_LIVE=1` (opencode, free model), `ION_LIVE_GROK=1`, `ION_LIVE_CLAUDE=1` (only when the Claude adapter changed).
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints. Prefer an icon (with its name on hover)
   to a word, and fewer boxes.
@@ -45,12 +46,24 @@ child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter
   up, a gated call, a running one, a plain chat in `default`) and prints the app's address. Then:
   - open every screen and state at 1440×900 and 900×700, and click what a person would: each chat, the work
     blocks and their steps, the brain popover, access, the question panel (open and collapsed), the side panel and
-    its tabs, the sidebar's project menu, the drag handles;
-  - send a real message from a new chat, and a follow-up, with opencode's free model, and watch it run;
+    its tabs, the sidebar's project menu, the drag handles, the rail, the Ions screen (each ion, stars, the
+    project picker, the chats an ion started), a run's changed files;
+  - send a real message from a new chat, and a follow-up, with opencode's free model, and watch it run; message
+    ion chief and a project's ion, and answer a question an agent asks;
   - run the CLI's main commands (`ion --help`, `status`, `projects`, `chats`, `needs`);
   - fix what reads oddly: extra or repeated words, hint text, a number that says nothing ("0s", "−0"), a box
     that holds nothing, a wait with no sign anything is happening, things that don't make sense to someone new;
   - list what you found and what you fixed in the PR. `scripts/tour.sh stop` when done.
+- **Verify every PR end to end, not only with tests and the fake agent.** For each feature the PR adds or
+  changes, use it the way a person would, against real agents: opencode's free model always, Grok and Claude
+  when the feature touches them (an adapter, questions, the gate, ion's own model), so each agent's own tools
+  (its question card, plan mode, permissions) meet ion for real. Read the daemon's log and the chat's events
+  afterwards for errors a screen doesn't show ("Method not found", a tool that failed). Say in the PR what you
+  ran, on which agent, and what happened.
+- **Check every UI element against the design lab** (`docs/design/ion-design-lab.html`) side by side, at the
+  same size: icons, glyphs, groups, headers, menus, counts, spacing. Anything that differs is a bug unless the
+  PR says why and the lab is updated to match. Look for what's inconsistent between screens (the same thing drawn
+  two ways, a word on one screen and an icon on another) and for anything awkward or strange to someone new.
 - Before committing: `pnpm check && pnpm build`.
 - Keep `docs/README.md` (the index) and this file current when you add a package or a doc.
 

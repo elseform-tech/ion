@@ -276,6 +276,19 @@ describe("daemon api", () => {
     // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
   }, 20_000);
 
+  // The lab: a project's ion can be starred (Starred first in Ions and the project menu).
+  it("stars and unstars a project, and its ion says so", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    await client.call("project.star", { projectId: "app", starred: true });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", starred: true });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({ ionId: "app", starred: true });
+    await client.call("project.star", { projectId: "app", starred: false });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({ starred: false });
+    await expect(client.call("project.star", { projectId: "nope", starred: true })).rejects.toThrow(
+      "Unknown project: nope",
+    );
+  });
+
   // The user, 2026-11-18: chats can be renamed from the sidebar.
   it("renames a chat, and refuses an empty name or an unknown chat", async () => {
     const { chatId } = await client.call("chat.create", { title: "Old name" });

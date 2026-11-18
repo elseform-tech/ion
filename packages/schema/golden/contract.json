@@ -49,6 +49,7 @@
     "projects.add",
     "project.create",
     "project.setAccess",
+    "project.star",
     "chat.create",
     "events.subscribe",
     "ask",

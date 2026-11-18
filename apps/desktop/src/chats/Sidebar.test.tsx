@@ -33,6 +33,7 @@ const ions: IonInfo[] = [
     last: null,
     needs: 0,
     working: false,
+    starred: false,
   },
 ];
 const side = (chats: ChatInfo[], needs: NeedInfo[] = [], a = acts()) =>

@@ -35,9 +35,13 @@ export const GROK_BUILD: AcpHarness = {
   toCall: grokToCall,
 };
 
-/** Grok's local read-only tools (stat, find, du…) ask like other commands where Grok honours this. */
+/**
+ * Grok's local read-only tools (stat, find, du…) ask like other commands where Grok honours this. Its own question
+ * card is off: it calls back into a client that has no card to show ("Method not found"), so Grok asks through
+ * ion's ask tool instead.
+ */
 function grokAskEnv(): Record<string, string> {
-  return { GROK_ASK_LOCAL_READS: "false" };
+  return { GROK_ASK_LOCAL_READS: "false", GROK_ASK_USER_QUESTION: "false" };
 }
 
 export const OPENCODE: AcpHarness = {

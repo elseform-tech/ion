@@ -3,7 +3,7 @@ import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
 import { memoryView } from "../views/memory.js";
-import { addProject, loadUserConfig, saveUserConfig, setProjectAccess } from "@ion/config";
+import { addProject, loadUserConfig, saveUserConfig, setProjectAccess, setProjectStarred } from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
 import { decisionsView } from "../views/decisions.js";
@@ -134,6 +134,19 @@ export const handlers: Handlers = {
     });
     saveUserConfig(ctx.configFile, made.config);
     return made.config.projects.find((p) => p.id === made.id)!;
+  },
+  "project.star": (a, ctx) => {
+    const { config, error } = loadUserConfig(ctx.configFile);
+    if (error) throw new UserError(`Fix your config first. ${error}`);
+    try {
+      saveUserConfig(
+        ctx.configFile,
+        setProjectStarred(config, String(a.projectId ?? ""), a.starred === true),
+      );
+    } catch (e) {
+      throw new UserError((e as Error).message);
+    }
+    return { ok: true as const };
   },
   "project.setAccess": (a, ctx) => {
     const access = a.access;

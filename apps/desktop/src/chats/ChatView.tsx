@@ -129,20 +129,42 @@ export function Starting() {
   );
 }
 
-/** A run's changed files: how many, then each with its counts; a file opens the panel at it. */
+/** "+3" and "−1", each only when not zero. */
+const Counts = ({ added, removed }: { added: number; removed: number }) => (
+  <>
+    {added > 0 && <span className="plus">+{added}</span>}
+    {removed > 0 && <span className="minus">−{removed}</span>}
+  </>
+);
+
+/**
+ * A run's changed files, in their own box: the count and totals, then one row per file (its name, its folder,
+ * its counts). The list scrolls past a dozen rows; a file opens the side panel at it.
+ */
 function Files({ files, onFile }: { files: FileChange[]; onFile?: (path: string) => void }) {
+  const sum = (k: "added" | "removed") => files.reduce((n, f) => n + f[k], 0);
   return (
     <div className="files">
       <div className="fsum">
-        {files.length} {files.length === 1 ? "file" : "files"} changed
+        <span className="fct">
+          {files.length} {files.length === 1 ? "file" : "files"} changed
+        </span>
+        <Counts added={sum("added")} removed={sum("removed")} />
       </div>
-      {files.map((f) => (
-        <button type="button" key={f.path} onClick={() => onFile?.(f.path)}>
-          <span className="fp">{f.path}</span>
-          {f.added > 0 && <span className="plus">+{f.added}</span>}
-          {f.removed > 0 && <span className="minus">−{f.removed}</span>}
-        </button>
-      ))}
+      <div className="flist">
+        {files.map((f) => {
+          const cut = f.path.lastIndexOf("/");
+          return (
+            <button type="button" key={f.path} title={f.path} onClick={() => onFile?.(f.path)}>
+              <span className="fn">{f.path.slice(cut + 1)}</span>
+              {cut > 0 && <span className="fd">{f.path.slice(0, cut)}</span>}
+              <span className="fc">
+                <Counts added={f.added} removed={f.removed} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

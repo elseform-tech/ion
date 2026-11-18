@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { type Bot, botFor, hash, ionBot, type Tokens, tracePath } from "./bots.js";
+import { type Bot, botFor, hash, ionBot, railGlyph, type Tokens, tracePath } from "./bots.js";
 
 /*
   Drawing and motion, ported from the design lab (drawEyes, targetPose, easePose, drawBot, frame: lines
@@ -167,7 +167,8 @@ function drawOrbit(
   const RY = R * 0.52;
   ctx.save();
   ctx.rotate(orbit.tilt);
-  ctx.strokeStyle = f.tk.accent;
+  const paint = (p: string | ((t: Tokens) => string)) => (typeof p === "function" ? p(f.tk) : p);
+  ctx.strokeStyle = orbit.stroke ? paint(orbit.stroke) : f.tk.accent;
   ctx.lineWidth = Math.max(1, R * 0.08);
   ctx.lineCap = "round";
   ctx.globalAlpha = layer === "back" ? 0.35 : 1;
@@ -180,7 +181,7 @@ function drawOrbit(
     const a = (f.still ? 0.6 : f.tt * orbit.speed) + (i * TAU) / orbit.colors.length;
     const front = Math.sin(a) > 0;
     if ((layer === "front") !== front) return;
-    ctx.fillStyle = c;
+    ctx.fillStyle = paint(c);
     ctx.beginPath();
     ctx.arc(Math.cos(a) * RX, Math.sin(a) * RY, Math.max(1.3, R * 0.17) * (front ? 1 : 0.8), 0, TAU);
     ctx.fill();
@@ -197,8 +198,14 @@ function drawBody(ctx: CanvasRenderingContext2D, v: View, R: number, f: Frame): 
   ctx.scale(R, R);
   const p = new Path2D();
   tracePath(v.bot.shape, p);
-  ctx.fillStyle = fillOf(ctx, v.bot, tk);
-  ctx.fill(p);
+  if (v.bot.hollow) {
+    ctx.strokeStyle = v.bot.hollow(tk);
+    ctx.lineWidth = 0.16;
+    ctx.stroke(p);
+  } else {
+    ctx.fillStyle = fillOf(ctx, v.bot, tk);
+    ctx.fill(p);
+  }
   if (v.bot.decor) {
     ctx.save();
     ctx.clip(p);
@@ -209,7 +216,8 @@ function drawBody(ctx: CanvasRenderingContext2D, v: View, R: number, f: Frame): 
   ctx.translate(ex, ey);
   ctx.scale(v.bot.es ?? 1, v.bot.es ?? 1);
   const eye = v.bot.eye;
-  drawEyes(ctx, pose, typeof eye === "function" ? eye(tk) : (eye ?? tk.win));
+  const eyeColour = typeof eye === "function" ? eye(tk) : (eye ?? tk.win);
+  drawEyes(ctx, pose, v.bot.hollow ? v.bot.hollow(tk) : eyeColour);
   ctx.restore();
 }
 
@@ -269,9 +277,20 @@ function paint(v: View, f: Frame): void {
   draw(ctx, v, w, f);
 }
 
+/** The bot a key names: a harness ("h:<id>"), the rail glyph, or an ion. */
+function botOf(key: string): Bot {
+  if (key.startsWith("h:")) return botFor(key.slice(2));
+  const ion = JSON.parse(key) as Parameters<typeof ionBot>[0] | "glyph" | "glyph-on";
+  if (ion === "glyph" || ion === "glyph-on") return railGlyph(ion === "glyph-on");
+  return ionBot(ion);
+}
+
 type Who =
   | { harness: string; ion?: never }
-  | { ion: { harness: string | null; color: string | null } | "chief"; harness?: never };
+  | {
+      ion: { harness: string | null; color: string | null } | "chief" | "glyph" | "glyph-on";
+      harness?: never;
+    };
 
 /**
  * A harness's avatar, or an ion's (its project's colour on its harness's shape; ion chief with its orbit), as the
@@ -285,7 +304,7 @@ export function Avatar(p: Who & { seed?: number; state?: BotState }) {
   useEffect(() => {
     const cv = ref.current;
     if (!cv || typeof Path2D === "undefined") return;
-    const bot = key.startsWith("h:") ? botFor(key.slice(2)) : ionBot(JSON.parse(key));
+    const bot = botOf(key);
     const v: View = { cv, bot, seed, state, w: 0 };
     views.add(v);
     start();

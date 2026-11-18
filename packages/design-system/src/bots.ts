@@ -34,8 +34,10 @@ export type Bot = {
   tilt?: number;
   /** Extra marks drawn inside the shape (the lab's decor). */
   decor?: "grok" | "codex" | "cursor" | "opencode";
-  /** A ring around the body with coloured dots moving along it (ion chief). */
-  orbit?: { tilt: number; speed: number; colors: string[] };
+  /** A ring around the body with coloured dots moving along it (ion chief; the rail's glyph). */
+  orbit?: { tilt: number; speed: number; colors: Paint[]; stroke?: Paint };
+  /** Drawn as an outline in this colour (eyes too), not filled: the rail's transparent glyph. */
+  hollow?: (t: Tokens) => string;
 };
 
 const ink = { color: (t: Tokens) => t.ink, eye: (t: Tokens) => t.win };
@@ -60,6 +62,17 @@ const CHIEF: Bot = {
   ...ink,
   orbit: { tilt: -0.42, speed: 1.1, colors: ["#D97757", "#4285F4", "#5BC67A"] },
 };
+
+/** The lab's rail glyph for Ions: a transparent orbit avatar, muted; ink with an accent dot when Ions is open. */
+export function railGlyph(on: boolean): Bot {
+  const ring = (t: Tokens) => (on ? t.ink : t.muted);
+  return {
+    shape: "circle",
+    color: (t) => t.win,
+    hollow: ring,
+    orbit: { tilt: -0.42, speed: 1.2, colors: [(t) => (on ? t.accent : t.muted)], stroke: ring },
+  };
+}
 
 /**
  * An ion's avatar (the lab's `hybrid`): a project's ion is its harness's shape, decor and eyes in the project's

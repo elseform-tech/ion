@@ -30,10 +30,15 @@ function usePanel(): Panel {
 }
 
 /** The sidebar's actions, sent to ion; a refusal shows nowhere new (the list simply doesn't change). */
-function sidebarActions(client: IonClient, openId: string | null, setOpenId: (id: string | null) => void) {
+function sidebarActions(
+  client: IonClient,
+  open: { id: string | null; set: (id: string | null) => void },
+  onProjects: () => void,
+) {
+  const [openId, setOpenId] = [open.id, open.set];
   const act = (f: () => Promise<unknown>) => void f().catch(() => {});
   return {
-    onNewProject: (name: string) => act(() => client.call("project.create", { name })),
+    onNewProject: (name: string) => act(() => client.call("project.create", { name }).then(onProjects)),
     onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
     onArchive: (chatId: string) => {
       if (chatId === openId) setOpenId(null);
@@ -185,7 +190,7 @@ export function Chats({
           ions={live.ions}
           open={openId}
           onOpen={setOpenId}
-          {...sidebarActions(client, openId, setOpenId)}
+          {...sidebarActions(client, { id: openId, set: setOpenId }, live.refreshProjects)}
         />
       </aside>
       <main className="chat">

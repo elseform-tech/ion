@@ -1,10 +1,10 @@
-import { MessageSquare, Orbit } from "@ion/design-system";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Chats } from "./chats/Chats.js";
 import { Down } from "./Down.js";
 import { Ions } from "./ions/Ions.js";
 import { useIon } from "./ion.js";
+import { type Mode, Rail, useNeedCount } from "./Rail.js";
 
 /** The first letter of your account's name, for the rail (the lab's "Y"). */
 function useInitial(): string {
@@ -15,37 +15,6 @@ function useInitial(): string {
   return initial;
 }
 
-type Mode = "chats" | "ions";
-
-/** The lab's rail: the window's own buttons in its top strip, Chats and Ions, then you. */
-function Rail({ mode, setMode, initial }: { mode: Mode; setMode: (m: Mode) => void; initial: string }) {
-  return (
-    <nav className="rail" aria-label="App">
-      <div className="lights" aria-hidden="true" data-tauri-drag-region />
-      <button
-        className={`rb${mode === "chats" ? " on" : ""}`}
-        type="button"
-        title="Chats"
-        onClick={() => setMode("chats")}
-      >
-        <MessageSquare />
-      </button>
-      <button
-        className={`rb${mode === "ions" ? " on" : ""}`}
-        type="button"
-        title="Ions"
-        onClick={() => setMode("ions")}
-      >
-        <Orbit />
-      </button>
-      <span className="grow" />
-      <span className="me" title="You">
-        {initial}
-      </span>
-    </nav>
-  );
-}
-
 /**
  * The window, as the design lab draws it: the rail (the window's own buttons sit in its top strip), then the
  * Chats or the Ions screen. Search and Settings join the rail when they exist.
@@ -53,6 +22,7 @@ function Rail({ mode, setMode, initial }: { mode: Mode; setMode: (m: Mode) => vo
 export function App() {
   const { state, client } = useIon();
   const initial = useInitial();
+  const needs = useNeedCount(client);
   // The open chat outlives a dropped connection: after ion comes back you're where you were.
   const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("chats");
@@ -60,7 +30,7 @@ export function App() {
   if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
   return (
     <div className="win">
-      <Rail mode={mode} setMode={setMode} initial={initial} />
+      <Rail mode={mode} setMode={setMode} initial={initial} needs={needs} />
       <div className="body">
         {mode === "chats" ? (
           <div className="mode chats">

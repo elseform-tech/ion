@@ -63,14 +63,22 @@ const FindProject = ({ q, onQ }: { q: string; onQ: (q: string) => void }) => (
 );
 
 /** "New project": a name, made with Enter (ion makes the folder under your projects folder). */
-function NewProject({ onNew }: { onNew: (name: string) => void }) {
+export function NewProject({
+  onNew,
+  label = "New project",
+  className = "pnew",
+}: {
+  onNew: (name: string) => void;
+  label?: string;
+  className?: string;
+}) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   if (!naming)
     return (
-      <button type="button" className="pnew" onClick={() => setNaming(true)}>
+      <button type="button" className={className} onClick={() => setNaming(true)}>
         <FolderPlus />
-        New project
+        {label}
       </button>
     );
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {

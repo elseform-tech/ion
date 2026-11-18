@@ -58,6 +58,7 @@ export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[]
         color: null,
         harness: null,
         last: last.get("chief") ?? null,
+        starred: false,
         needs: asks.length,
         working: busy.size > 0,
       },
@@ -69,6 +70,7 @@ export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[]
         last: last.get(p.id) ?? null,
         needs: asks.filter((n) => project.get(n.chatId) === p.id).length,
         working: busy.has(p.id),
+        starred: p.starred,
       })),
     ];
   },

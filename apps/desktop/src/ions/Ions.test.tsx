@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { IonClient } from "@ion/client/browser";
 import { type ChatInfo, EV, type IonEvent, type IonInfo } from "@ion/schema";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ionTimeline } from "./ionTimeline.js";
 import { Ions } from "./Ions.js";
@@ -31,6 +31,7 @@ const ions: IonInfo[] = [
     last: "Asked 1 project.",
     needs: 1,
     working: false,
+    starred: false,
   },
   {
     ionId: "storefront",
@@ -40,6 +41,17 @@ const ions: IonInfo[] = [
     last: "On it.",
     needs: 0,
     working: true,
+    starred: true,
+  },
+  {
+    ionId: "payments-api",
+    name: "payments-api",
+    color: "#5BC67A",
+    harness: null,
+    last: null,
+    needs: 0,
+    working: false,
+    starred: false,
   },
 ];
 const thread: ChatInfo = {
@@ -58,6 +70,11 @@ const thread: ChatInfo = {
 function client(events: IonEvent[] = []) {
   const call = vi.fn(async (cmd: string) => {
     if (cmd === "ions.list") return ions;
+    if (cmd === "projects.list")
+      return [
+        { id: "storefront", path: "/p/s", starred: true },
+        { id: "payments-api", path: "/p/p", starred: false },
+      ];
     if (cmd === "chats.list") return [thread];
     if (cmd === "needs.list")
       return [
@@ -82,7 +99,9 @@ function client(events: IonEvent[] = []) {
           raisedAt: "",
         },
       ];
-    return cmd === "ion.message" || cmd === "suggestion.answer" ? { ok: true } : [];
+    return ["ion.message", "suggestion.answer", "project.star", "project.create"].includes(cmd)
+      ? { ok: true }
+      : [];
   });
   const subscribe = vi.fn(async (q: { chatId?: string }, fn: (e: IonEvent) => void) => {
     for (const e of events) if (!q.chatId || e.chatId === q.chatId) fn(e);
@@ -214,5 +233,47 @@ describe("Ions", () => {
     expect(reads()).toBe(before);
     act(() => push(ev("ion:chief", EV.ionSaid, { text: "x" })));
     await waitFor(() => expect(reads()).toBe(before + 1));
+  });
+  // The lab's Ions panel: Starred, then Other projects, each ion with its star.
+  it("groups starred ions first, and stars and unstars a project", async () => {
+    const c = client();
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    await waitFor(() => expect(container.querySelectorAll(".ilist .lh")).toHaveLength(2));
+    expect([...container.querySelectorAll(".ilist .lh")].map((l) => l.textContent)).toEqual([
+      "Starred",
+      "Other projects1",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Unstar storefront" }));
+    expect(c.call).toHaveBeenCalledWith("project.star", { projectId: "storefront", starred: false });
+    fireEvent.click(screen.getByRole("button", { name: "Star payments-api" }));
+    expect(c.call).toHaveBeenCalledWith("project.star", { projectId: "payments-api", starred: true });
+  });
+
+  // The lab's Ions header: the project picker filters the ions; + adds a project (its ion comes with it).
+  it("filters ions by project and adds a project", async () => {
+    const c = client();
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    await waitFor(() => expect(container.querySelectorAll(".pmain")).toHaveLength(2));
+    fireEvent.click(container.querySelector(".ihead .proj")!);
+    fireEvent.click(within(container.querySelector(".ihead .pml") as HTMLElement).getByText("payments-api"));
+    expect([...container.querySelectorAll(".pmain b")].map((b) => b.textContent)).toEqual(["payments-api"]);
+    fireEvent.click(container.querySelector(".ihead .proj")!);
+    fireEvent.click(within(container.querySelector(".ihead .pml") as HTMLElement).getByText("All projects"));
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+    const box = screen.getByLabelText("Project name");
+    fireEvent.change(box, { target: { value: "billing" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(c.call).toHaveBeenCalledWith("project.create", { name: "billing" });
+  });
+
+  // The lab's ion header: the chats the ion started, one click away.
+  it("lists the chats an ion started from its header", async () => {
+    const onOpenChat = vi.fn();
+    const { container } = render(<Ions client={client()} onOpenChat={onOpenChat} />);
+    await waitFor(() => expect(container.querySelector(".pmain")).not.toBeNull());
+    fireEvent.click(container.querySelector(".pmain")!);
+    fireEvent.click(await screen.findByRole("button", { name: "Chats started by storefront" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Fix the cart/ }));
+    expect(onOpenChat).toHaveBeenCalledWith("t1");
   });
 });

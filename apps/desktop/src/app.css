@@ -295,32 +295,70 @@ body.resizing {
 .send.sending {
   opacity: 0.4;
 }
-/* A run's changed files, at its end: a quiet count, then one line per file. */
+/* A run's changed files, at its end: one box, its head (count, totals), then a list that scrolls past ~12 rows. */
 .files {
-  display: grid;
-  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--win);
+  overflow: hidden;
   font-size: 13px;
 }
 .files .fsum {
-  color: var(--faint);
-  margin-bottom: 2px;
-}
-.files button {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.files .fct {
+  margin-right: auto;
+}
+.files .flist {
+  max-height: 312px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+.files .flist button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
-  padding: 3px 6px;
-  margin-left: -6px;
-  border-radius: 6px;
+  padding: 4px 8px;
+  border-radius: 7px;
   cursor: pointer;
   color: var(--ink);
   font: 12.5px var(--mono);
   text-align: left;
 }
-.files button:hover {
+.files .flist button:hover {
   background: var(--hover);
+}
+.files .fn {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files .fd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+}
+.files .fc {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
 }
 .files .plus {
   color: var(--add-ink);
@@ -437,4 +475,29 @@ body.resizing {
 .pmi.pnew {
   border-bottom: 0;
   margin: 0;
+}
+
+/* The ion header's list of the chats it started. */
+.ithreads {
+  right: 0;
+  left: auto;
+  width: 300px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.ithreads button {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.ithreads .tt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ithreads .tm {
+  color: var(--faint);
+  font-size: 12px;
 }

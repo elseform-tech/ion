@@ -28,6 +28,12 @@ export function addProject(c: UserConfig, path: string): UserConfig {
   return { ...c, projects: [...c.projects, { id, path: abs, starred: false }] };
 }
 
+/** Stars or unstars a project. */
+export function setProjectStarred(c: UserConfig, id: string, starred: boolean): UserConfig {
+  if (!c.projects.some((p) => p.id === id)) throw new Error(`Unknown project: ${id}`);
+  return { ...c, projects: c.projects.map((p) => (p.id === id ? { ...p, starred } : p)) };
+}
+
 /** Sets a project's access mode ("auto" or "full"). */
 export function setProjectAccess(c: UserConfig, id: string, access: "auto" | "full"): UserConfig {
   if (!c.projects.some((p) => p.id === id)) throw new Error(`Unknown project: ${id}`);

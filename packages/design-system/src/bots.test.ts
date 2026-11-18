@@ -83,3 +83,17 @@ describe("ionBot", () => {
     expect(chief.orbit).toMatchObject({ tilt: -0.42, speed: 1.1, colors: ["#D97757", "#4285F4", "#5BC67A"] });
   });
 });
+
+// The lab's rail glyph: a hollow circle with its orbit, muted; ink and accent when Ions is open.
+describe("railGlyph", () => {
+  it("is a hollow circle with an orbit, brighter when on", async () => {
+    const { railGlyph } = await import("./bots.js");
+    const t = { win: "#000", ink: "#fff", muted: "#888", accent: "#7D93FF" };
+    const off = railGlyph(false);
+    const on = railGlyph(true);
+    expect(off.shape).toBe("circle");
+    expect(off.hollow?.(t)).toBe("#888");
+    expect(on.hollow?.(t)).toBe("#fff");
+    expect(on.orbit?.colors.map((c) => (typeof c === "function" ? c(t) : c))).toEqual(["#7D93FF"]);
+  });
+});
