@@ -127,6 +127,8 @@ export type ChatInfo = {
   branch: string | null;
   archived: boolean;
   lastRunStatus: string | null;
+  /** When it last had a message or a run (ISO time). */
+  lastActivityAt: string | null;
 };
 export type Command = keyof Commands;
 export const COMMANDS = [

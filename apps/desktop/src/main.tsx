@@ -4,6 +4,7 @@ import "@fontsource/inter/600.css";
 import "@fontsource/sora/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@ion/design-system/tokens.css";
+import "@ion/design-system/lab.css";
 import "./app.css";
 import "./chats/chat.css";
 import "./chats/chats.css";

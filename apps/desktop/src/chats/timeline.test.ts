@@ -34,9 +34,12 @@ describe("timeline", () => {
     expect(t.items[0]).toMatchObject({ kind: "agent", text: "x".repeat(5000), done: false });
   });
 
-  it("groups a run's tools under one 'worked' item, and ends with how long it took", () => {
+  // Plan 08: the lab's one umbrella per turn, with its steps and how long it worked.
+  it("groups a run's thinking and tools under one work item, with when it started and ended", () => {
     const t = play(
       ev("run.started", { harness: "fake" }, "2026-11-18T10:00:00.000Z"),
+      ev("thinking.delta", { text: "Look at " }, "2026-11-18T10:00:01.000Z"),
+      ev("thinking.delta", { text: "the totals" }, "2026-11-18T10:00:05.000Z"),
       ev("tool.started", { toolId: "t1", name: "Read", kind: "read", summary: "a.ts" }),
       ev("tool.finished", { toolId: "t1", ok: true, summary: null }),
       ev("tool.started", { toolId: "t2", name: "Bash", kind: "command", summary: "pnpm test" }),
@@ -48,9 +51,17 @@ describe("timeline", () => {
       {
         kind: "work",
         runId: "r1",
-        tools: [
-          { name: "Read", summary: "a.ts", ok: true },
-          { name: "Bash", summary: "pnpm test", ok: false },
+        started: "2026-11-18T10:00:00.000Z",
+        ended: "2026-11-18T10:02:04.000Z",
+        steps: [
+          {
+            kind: "think",
+            text: "Look at the totals",
+            from: "2026-11-18T10:00:01.000Z",
+            to: "2026-11-18T10:00:05.000Z",
+          },
+          { kind: "tool", toolKind: "read", name: "Read", summary: "a.ts", ok: true },
+          { kind: "tool", toolKind: "command", name: "Bash", summary: "pnpm test", ok: false },
         ],
       },
       { kind: "end", status: "done", seconds: 124, cost: 0.0031 },
@@ -180,7 +191,7 @@ describe("timeline", () => {
     );
     expect(t.items[0]).toMatchObject({
       kind: "work",
-      tools: [
+      steps: [
         { name: "Bash", input: '{"command":"ls"}', output: "a.ts\nb.ts", ok: true },
         { name: "execute", input: '{"command":"pwd"}', ok: true },
       ],
@@ -215,14 +226,25 @@ describe("timeline", () => {
     expect(t.items[1]).toMatchObject({ kind: "ion", tone: "deny" });
   });
 
-  it("shows errors and retries", () => {
+  // Plan 08, a quiet chat: an error is its message only; a retry is a countdown that goes once the retry starts.
+  it("keeps errors to their message, and a retry until it starts", () => {
     const t = play(
       ev("error", { code: "rate_limit", retryable: true, message: "Rate limited" }),
-      ev("run.retrying", { attempt: 1, delayS: 4, reason: "Rate limited" }),
+      ev("run.retrying", { attempt: 1, delayS: 4, reason: "Rate limited" }, "2026-11-18T10:00:00.000Z"),
     );
     expect(t.items).toEqual([
       { kind: "error", text: "Rate limited" },
-      { kind: "ion", tone: "note", text: "Retrying in 4s (rate limited)" },
+      { kind: "retry", until: "2026-11-18T10:00:04.000Z", done: false },
     ]);
+    const after = reduce(t, ev("run.started", { harness: "fake" }, "2026-11-18T10:00:04.100Z"));
+    expect(after.items[1]).toEqual({ kind: "retry", until: "2026-11-18T10:00:04.000Z", done: true });
+  });
+  // Final review I1: a retry stopped during its countdown (no run.started follows) is done, not "Retrying in 0s".
+  it("closes a retry when its run ends without starting again", () => {
+    const t = play(
+      ev("run.retrying", { attempt: 1, delayS: 4, reason: "Rate limited" }, "2026-11-18T10:00:00.000Z"),
+      ev("run.finished", { status: "interrupted" }, "2026-11-18T10:00:01.000Z"),
+    );
+    expect(t.items[0]).toEqual({ kind: "retry", until: "2026-11-18T10:00:04.000Z", done: true });
   });
 });

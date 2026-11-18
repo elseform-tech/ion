@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core only. No shell, no file system; the UI reaches the daemon over WebSocket.",
+  "description": "The main window: core, plus dragging the window by its header. No shell, no file system; the UI reaches the daemon over WebSocket.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
 }

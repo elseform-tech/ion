@@ -3,15 +3,21 @@ import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, IonEvent, NeedInfo } from "@ion/schema";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { groupChats, useLive } from "./live.js";
+import { groupChats, relTime, useLive } from "./live.js";
 
-const chat = (chatId: string, lastRunStatus: string | null = "done", archived = false): ChatInfo => ({
+const chat = (
+  chatId: string,
+  lastRunStatus: string | null = "done",
+  archived = false,
+  o: { at?: string; projectId?: string } = {},
+): ChatInfo => ({
   chatId,
   title: chatId,
-  projectId: "app",
+  projectId: o.projectId ?? "app",
   branch: null,
   archived,
   lastRunStatus,
+  lastActivityAt: o.at ?? null,
 });
 const need = (chatId: string): NeedInfo => ({
   needId: `n-${chatId}`,
@@ -22,6 +28,35 @@ const need = (chatId: string): NeedInfo => ({
   summary: `Question in ${chatId}`,
   detail: null,
   raisedAt: "2026-11-18T10:00:00.000Z",
+});
+
+// Plan 08: the sidebar as the design lab: newest activity first, short times, one project at a time.
+describe("sidebar order, times and projects", () => {
+  it("sorts by last activity, newest first", () => {
+    const g = groupChats(
+      [
+        chat("old", "done", false, { at: "2026-11-10T10:00:00Z" }),
+        chat("new", "done", false, { at: "2026-11-18T10:00:00Z" }),
+      ],
+      [],
+    );
+    expect(g.chats.map((x) => x.chatId)).toEqual(["new", "old"]);
+  });
+
+  it("shows times the way the lab does", () => {
+    const now = new Date("2026-11-18T12:00:00Z");
+    expect(relTime("2026-11-18T11:59:40Z", now)).toBe("now");
+    expect(relTime("2026-11-18T11:20:00Z", now)).toBe("40m");
+    expect(relTime("2026-11-18T09:00:00Z", now)).toBe("3h");
+    expect(relTime("2026-11-17T09:00:00Z", now)).toBe("Tue");
+    expect(relTime("2026-11-01T09:00:00Z", now)).toBe("1 Nov");
+    expect(relTime(null, now)).toBe("");
+  });
+
+  it("shows one project's chats when one is picked", () => {
+    const g = groupChats([chat("a"), chat("b", "done", false, { projectId: "other" })], [], "other");
+    expect(g.chats.map((x) => x.chatId)).toEqual(["b"]);
+  });
 });
 
 describe("groupChats", () => {
@@ -74,19 +109,19 @@ describe("useLive", () => {
   it("re-reads chats and needs when runs start and end and questions come and go", async () => {
     const f = fakeClient();
     const { result } = renderHook(() => useLive(f.client));
-    await waitFor(() => expect(result.current.groups.chats.map((x) => x.chatId)).toEqual(["a"]));
+    await waitFor(() => expect(result.current.chats.map((x) => x.lastRunStatus)).toEqual(["done"]));
     // Live events only, never ion's whole history.
     expect(f.client.subscribe).toHaveBeenCalledWith({ fromNow: true }, expect.any(Function));
     f.lists.chats = [chat("a", "running")];
     await f.send("run.started");
-    await waitFor(() => expect(result.current.groups.running.map((x) => x.chatId)).toEqual(["a"]));
+    await waitFor(() => expect(result.current.chats.map((x) => x.lastRunStatus)).toEqual(["running"]));
     f.lists.needs = [need("a")];
     await f.send("need.raised");
-    await waitFor(() => expect(result.current.groups.needsYou).toHaveLength(1));
+    await waitFor(() => expect(result.current.needs).toHaveLength(1));
     f.lists.needs = [];
     f.lists.chats = [chat("a", "done")];
     await f.send("need.resolved");
-    await waitFor(() => expect(result.current.groups.chats.map((x) => x.chatId)).toEqual(["a"]));
-    expect(result.current.groups.needsYou).toEqual([]);
+    await waitFor(() => expect(result.current.chats.map((x) => x.lastRunStatus)).toEqual(["done"]));
+    expect(result.current.needs).toEqual([]);
   });
 });

@@ -1,50 +1,4 @@
-.app {
-  display: grid;
-  grid-template-columns: 64px 256px 1fr;
-  height: 100%;
-  background: var(--win);
-}
-.rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 44px 0 16px;
-  background: var(--rail);
-  border-right: 1px solid var(--line);
-}
-.rail-end {
-  margin-top: auto;
-}
-.rail-item {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: var(--r-lg);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.rail-item:hover,
-.rail-item--on {
-  background: var(--sel);
-  color: var(--ink);
-}
-.sidebar {
-  background: var(--side);
-  border-right: 1px solid var(--line);
-  overflow: auto;
-}
-.main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-}
-
+/* The app's own pieces, not in the design lab: the empty first frame and "ion isn't running". */
 .app--empty {
   display: block;
 }
@@ -67,4 +21,166 @@
 .down code {
   font-family: var(--mono);
   color: var(--ink);
+}
+
+/* A quiet line in the conversation (the user, 2026-11-18): the lab's muted .work text size, never a banner. */
+.quiet {
+  font-size: 13px;
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.quiet .qm {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wait);
+  flex-shrink: 0;
+}
+/* A tool step's input and output, in the lab's .wg code style. */
+.wg pre {
+  margin: 4px 0 2px;
+  font: 12px / 1.5 var(--mono);
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+}
+.ws {
+  cursor: pointer;
+}
+/* No side panel (no worktree, or hidden): the conversation takes the width. */
+.split.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* The lab's composer: a bare textarea in .cbox, pills that hold a select, the brain popover above its pill. */
+.cbox textarea {
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 0;
+}
+.cbox textarea::placeholder {
+  color: var(--faint);
+}
+.pill select {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  appearance: none;
+  cursor: pointer;
+}
+.send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.cbox {
+  position: relative;
+}
+.cbox .bpop {
+  left: 8px;
+  bottom: calc(100% + 8px);
+}
+/* The question bar's details, above its one line; they push the conversation up, never cover it. */
+.qwrap {
+  display: grid;
+  gap: 6px;
+}
+.qwrap .await {
+  background: var(--win);
+}
+/* One line, always: a long question truncates (all of it on hover and in the details). */
+.qwrap .await .g {
+  min-width: 0;
+}
+.qwrap .await .qt {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qwrap .await .wd {
+  flex-shrink: 0;
+}
+.qchev[aria-expanded="true"] .lucide {
+  transform: rotate(180deg);
+}
+.qd {
+  display: grid;
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+  font-size: 13px;
+  max-height: 40vh;
+  overflow: auto;
+}
+.qd .qq {
+  padding: 4px 7px 0;
+}
+.qd .why {
+  color: var(--muted);
+  padding: 4px 7px 6px;
+}
+.qd-f {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 7px 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.qd-f .own {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 5px 9px;
+}
+
+/* Below 1100 px the side panel, when you open it, lies over the conversation instead of squeezing it. */
+.chat {
+  position: relative;
+}
+@media (max-width: 1099px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .split > .tools {
+    position: absolute;
+    top: 48px;
+    right: 0;
+    bottom: 0;
+    width: min(400px, 92%);
+    z-index: 5;
+    background: var(--win);
+    box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.75);
+  }
+}
+
+/* The brain popover's Model column: a long list (opencode's) scrolls inside the popover; names stay one line. */
+.bp-models .pmi {
+  margin: 0 2px 4px;
+}
+.bp-scroll {
+  overflow: auto;
+  max-height: min(300px, 38vh);
+  display: grid;
+  gap: 1px;
+  align-content: start;
+}
+.bp-row .g,
+.bp-row small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

@@ -1,103 +1,74 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import { ArrowUp, Square } from "@ion/design-system";
+import { ArrowUp, Folder, Square } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useRef, useState } from "react";
+import { type Brain, BrainPill, BrainPopover, useEffortKey } from "./BrainPopover.js";
+import { useDismiss } from "./dismiss.js";
 
-const EFFORTS = ["low", "medium", "high", "max"] as const;
-type Effort = (typeof EFFORTS)[number];
-type Access = "auto" | "full";
+type Access = "" | "auto" | "full";
+const ACCESS: Access[] = ["", "auto", "full"];
+const ACCESS_LABEL: Record<Access, string> = { "": "Project's access", auto: "Auto", full: "Full access" };
 
-/** What the next message runs on: harness, model and effort (the spec's "brain"), and its access mode. */
-export type Brain = { harness: string; model: string; effort: "" | Effort; access: "" | Access };
-
-/** One small picker: its label for screen readers, its options as [value, label]. */
-function Pick({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: [string, string][];
-  onChange: (v: string) => void;
-}) {
+/** The access pill: the project's own, Auto, or Full access, each picked on purpose. */
+function AccessPill({ access, onChange }: { access: Access; onChange: (a: Access) => void }) {
   return (
-    <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
-      {options.map(([v, text]) => (
-        <option key={v} value={v}>
-          {text}
-        </option>
-      ))}
-    </select>
+    <label className="pill">
+      <select aria-label="Access" value={access} onChange={(e) => onChange(e.target.value as Access)}>
+        {ACCESS.map((a) => (
+          <option key={a} value={a}>
+            {ACCESS_LABEL[a]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
-const cap = (x: string) => x[0]!.toUpperCase() + x.slice(1);
-
-/** The agent's own default model by name when it says which; otherwise whose default it is. */
-function defaultModelLabel(h: HarnessInfo | undefined): string {
-  if (!h?.defaultModel) return `${h?.label ?? "The agent"}'s default`;
-  return `${h.models.find((m) => m.id === h.defaultModel)?.label ?? h.defaultModel} (default)`;
+/** A new chat's project pill: ion's `default` unless you pick one. */
+type ProjectPick = { value: string; options: string[]; onChange: (id: string) => void };
+function ProjectPill({ p }: { p: ProjectPick }) {
+  return (
+    <label className="pill">
+      <Folder />
+      <select aria-label="Project" value={p.value} onChange={(e) => p.onChange(e.target.value)}>
+        {p.options.map((id) => (
+          <option key={id} value={id}>
+            {id}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
-/**
- * The agents ready to use. Until they're checked (a few seconds), "Loading agents…"; the chat's own agent stays
- * shown (and is what's sent) even when it isn't ready now.
- */
-function agentOptions(all: HarnessInfo[], ready: HarnessInfo[], chosen: string): [string, string][] {
-  const agents: [string, string][] = ready.map((h) => [h.id, h.label]);
-  if (!all.length) agents.push([chosen, "Loading agents…"]);
-  else if (chosen && !ready.some((h) => h.id === chosen)) agents.push([chosen, `${chosen} (not ready)`]);
-  return agents;
-}
-
-/** The harness, model, effort and access pickers in one row (empty model/effort/access: its own default). */
-function BrainPicker({
-  harnesses,
-  brain,
-  onChange,
-}: {
+/** The brain pill and its popover, which closes on Escape or a click outside. */
+function BrainPick(p: {
+  onOpen?: () => void;
   harnesses: HarnessInfo[];
   brain: Brain;
+  picked: boolean;
   onChange: (b: Brain) => void;
 }) {
-  const ready = harnesses.filter((h) => h.installed && h.signedIn);
-  const current = ready.find((h) => h.id === brain.harness);
-  const models = current?.models ?? [];
-  const defaultLabel = defaultModelLabel(current);
-  const agents = agentOptions(harnesses, ready, brain.harness);
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(open, wrap, close);
+  useEffortKey(p.brain, p.onChange);
   return (
-    <div className="brain">
-      <Pick
-        label="Agent"
-        value={brain.harness}
-        options={agents}
-        onChange={(v) => onChange({ ...brain, harness: v, model: "" })}
+    <span className="bwrap" ref={wrap}>
+      <BrainPill
+        harnesses={p.harnesses}
+        brain={p.brain}
+        open={open}
+        onClick={() => {
+          if (!open) p.onOpen?.();
+          setOpen(!open);
+        }}
       />
-      <Pick
-        label="Model"
-        value={brain.model}
-        options={[["", defaultLabel], ...models.map((m): [string, string] => [m.id, m.label])]}
-        onChange={(v) => onChange({ ...brain, model: v })}
-      />
-      <Pick
-        label="Effort"
-        value={brain.effort}
-        options={[["", "Default effort"], ...EFFORTS.map((x): [string, string] => [x, cap(x)])]}
-        onChange={(v) => onChange({ ...brain, effort: v as Brain["effort"] })}
-      />
-      <Pick
-        label="Access"
-        value={brain.access}
-        options={[
-          ["", "Project's access"],
-          ["auto", "Auto"],
-          ["full", "Full access"],
-        ]}
-        onChange={(v) => onChange({ ...brain, access: v as Brain["access"] })}
-      />
-    </div>
+      {open && (
+        <BrainPopover harnesses={p.harnesses} brain={p.brain} picked={p.picked} onChange={p.onChange} />
+      )}
+    </span>
   );
 }
 
@@ -108,7 +79,11 @@ function where(to: { chatId: string } | { projectId: string | null }) {
 }
 
 /** The message as `ask` arguments: a chat to continue, or a new chat in a project. */
-function askArgs(text: string, brain: Brain, to: { chatId: string } | { projectId: string | null }) {
+function askArgs(
+  text: string,
+  brain: Brain & { access: Access },
+  to: { chatId: string } | { projectId: string | null },
+) {
   return {
     text,
     harness: brain.harness,
@@ -130,7 +105,7 @@ function SendOrStop(p: { client: IonClient; running: string | null; canSend: boo
         aria-label="Stop"
         onClick={() => void p.client.call("run.interrupt", { runId: running })}
       >
-        <Square size={14} />
+        <Square />
       </button>
     );
   return (
@@ -149,26 +124,24 @@ type Props = {
   running: string | null;
   /** The agent the chat last ran on (the default for the next message). */
   harness?: string | null;
+  /** A new chat: its project pill, and the lab's big box. */
+  project?: ProjectPick;
+  /** The brain popover opened: read the agents again. */
+  onBrainOpen?: () => void;
   onSent: (chatId: string) => void;
 };
 
-/** The message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
-export function Composer({ client, harnesses, to, running, onSent, harness }: Props) {
-  // Never a default agent: the chat's own, else the first one ready. Until the list arrives, nothing is sent.
-  const first = harness ?? harnesses.find((h) => h.installed && h.signedIn)?.id ?? "";
-  const [brain, setBrain] = useState<Brain>({ harness: "", model: "", effort: "", access: "" });
-  const [text, setText] = useState("");
+/** Sends with `ask` once at a time, keeping ion's refusal to show. */
+function useSend(client: IonClient, onSent: (chatId: string) => void) {
   const [error, setError] = useState<string | null>(null);
   const sending = useRef(false);
-  const b = { ...brain, harness: brain.harness || first };
-  const canSend = Boolean(text.trim()) && harnesses.length > 0 && Boolean(b.harness);
-  const send = async () => {
-    if (!canSend || sending.current) return;
+  const send = async (args: ReturnType<typeof askArgs>, clear: () => void) => {
+    if (sending.current) return;
     sending.current = true;
     setError(null);
     try {
-      const { chatId } = await client.call("ask", askArgs(text, b, to));
-      setText("");
+      const { chatId } = await client.call("ask", args);
+      clear();
       onSent(chatId);
     } catch (e) {
       setError(e instanceof ApiCallError ? e.message : "Something went wrong");
@@ -176,25 +149,49 @@ export function Composer({ client, harnesses, to, running, onSent, harness }: Pr
       sending.current = false;
     }
   };
+  return { error, send };
+}
+
+/** The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
+export function Composer({ client, harnesses, to, running, onSent, harness, project, onBrainOpen }: Props) {
+  // Never a default agent: the chat's own, else the first one ready. Until the list arrives, nothing is sent.
+  const ready = harnesses.filter((h) => h.installed && h.signedIn);
+  const first = harness ?? ready[0]?.id ?? "";
+  const [brain, setBrain] = useState<Brain>({ harness: "", model: "", effort: "" });
+  const [access, setAccess] = useState<Access>("");
+  const [text, setText] = useState("");
+  const { error, send } = useSend(client, onSent);
+  const b = { ...brain, harness: brain.harness || first };
+  const canSend = Boolean(text.trim()) && ready.some((h) => h.id === b.harness);
+  const go = () => canSend && void send(askArgs(text, { ...b, access }, to), () => setText(""));
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
     e.preventDefault();
-    void send();
+    go();
   };
   return (
-    <div className="composer">
+    <div className={`cbox${project ? " big" : ""}`}>
       <textarea
         aria-label="Message"
-        placeholder="Reply…"
-        rows={2}
+        placeholder={project ? "Ask anything, or describe a change…" : "Reply…"}
+        rows={project ? 3 : 1}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
       />
-      {error && <div className="composer-error">{error}</div>}
-      <div className="composer-row">
-        <BrainPicker harnesses={harnesses} brain={b} onChange={setBrain} />
-        <SendOrStop client={client} running={running} canSend={canSend} onSend={() => void send()} />
+      {error && <div className="quiet">{error}</div>}
+      <div className="bar">
+        {project && <ProjectPill p={project} />}
+        <BrainPick
+          onOpen={onBrainOpen}
+          harnesses={harnesses}
+          brain={b}
+          picked={Boolean(brain.harness || brain.model || brain.effort)}
+          onChange={setBrain}
+        />
+        <AccessPill access={access} onChange={setAccess} />
+        <span className="sp" />
+        <SendOrStop client={client} running={running} canSend={canSend} onSend={go} />
       </div>
     </div>
   );

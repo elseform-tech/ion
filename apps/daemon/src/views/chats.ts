@@ -10,12 +10,12 @@ export const chatsView: View & {
   session(db: Db, chatId: string): { harness: string; sessionId: string } | null;
 } = {
   name: "chats",
-  version: 2,
+  version: 3,
   tables: ["view_chats"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_chats (
       chat_id TEXT PRIMARY KEY, title TEXT NOT NULL, project_id TEXT, worktree TEXT, branch TEXT,
-      archived INTEGER NOT NULL DEFAULT 0, last_run_status TEXT, harness TEXT, session_id TEXT)`);
+      archived INTEGER NOT NULL DEFAULT 0, last_run_status TEXT, harness TEXT, session_id TEXT, last_activity TEXT)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_chats");
@@ -25,12 +25,14 @@ export const chatsView: View & {
     const d = e.data as D;
     if (e.type === EV.chatCreated) {
       db.prepare(
-        "INSERT OR IGNORE INTO view_chats (chat_id, title, project_id, worktree, branch) VALUES (?, ?, ?, ?, ?)",
-      ).run(e.chatId, String(d.title), d.projectId ?? null, d.worktree ?? null, d.branch ?? null);
+        "INSERT OR IGNORE INTO view_chats (chat_id, title, project_id, worktree, branch, last_activity) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(e.chatId, String(d.title), d.projectId ?? null, d.worktree ?? null, d.branch ?? null, e.ts);
     } else if (e.type === EV.chatArchived) {
       db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
     } else {
       if (e.type === EV.runStarted) noteSession(db, e.chatId, d);
+      if (ACTIVITY.has(e.type))
+        db.prepare("UPDATE view_chats SET last_activity = ? WHERE chat_id = ?").run(e.ts, e.chatId);
       const status = runStatus(e.type, d);
       if (status)
         db.prepare("UPDATE view_chats SET last_run_status = ? WHERE chat_id = ?").run(status, e.chatId);
@@ -40,8 +42,8 @@ export const chatsView: View & {
     return (
       db
         .prepare(
-          `SELECT chat_id AS chatId, title, project_id AS projectId, branch, archived, last_run_status AS lastRunStatus
-           FROM view_chats ORDER BY rowid`,
+          `SELECT chat_id AS chatId, title, project_id AS projectId, branch, archived, last_run_status AS lastRunStatus,
+             last_activity AS lastActivityAt FROM view_chats ORDER BY rowid`,
         )
         .all() as (Omit<ChatInfo, "archived"> & { archived: number })[]
     ).map((r) => ({ ...r, archived: r.archived === 1 }));
@@ -61,6 +63,9 @@ export const chatsView: View & {
 };
 
 /** The chat's last run status from a run event, or null for other events. */
+/** What counts as a chat being active: a message, or a run starting or ending. */
+const ACTIVITY = new Set<string>([EV.messageSent, EV.runStarted, EV.runFinished]);
+
 function runStatus(type: string, d: Record<string, unknown>): string | null {
   if (type === EV.runFinished) return String(d.status);
   if (type === EV.runQueued) return "queued";
