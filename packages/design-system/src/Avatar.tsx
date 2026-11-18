@@ -59,10 +59,10 @@ function targetPose(v: View, t: number): Pose {
   return pose;
 }
 
-function easePose(v: View, t: number, dt: number): Pose {
+function easePose(v: View, t: number, dt: number, still: boolean): Pose {
   const tp = targetPose(v, t);
   v.pose ??= { ...tp };
-  const k = reduce() ? 1 : 1 - Math.exp(-dt * 14);
+  const k = still ? 1 : 1 - Math.exp(-dt * 14);
   for (const key of Object.keys(tp) as (keyof Pose)[])
     v.pose[key] = key === "open" ? tp.open : v.pose[key] + (tp[key] - v.pose[key]) * k;
   return v.pose;
@@ -152,11 +152,14 @@ function fillOf(ctx: CanvasRenderingContext2D, b: Bot, t: Tokens): string | Canv
   return g;
 }
 
-function draw(ctx: CanvasRenderingContext2D, v: View, size: number, time: { t: number; dt: number }): void {
-  const tk = tokens();
+/** What a frame reads once for every avatar: the time, the page's colours, and whether motion is reduced. */
+type Frame = { t: number; dt: number; tk: Tokens; still: boolean };
+
+function draw(ctx: CanvasRenderingContext2D, v: View, size: number, f: Frame): void {
+  const tk = f.tk;
   const R = size * 0.4;
-  const dy = reduce() || v.state !== "idle" ? 0 : Math.sin((time.t + v.seed) * 1.5) * R * 0.025;
-  const pose = easePose(v, time.t, time.dt);
+  const dy = f.still || v.state !== "idle" ? 0 : Math.sin((f.t + v.seed) * 1.5) * R * 0.025;
+  const pose = easePose(v, f.t, f.dt, f.still);
   ctx.save();
   ctx.translate(size / 2, size / 2 + dy);
   ctx.rotate(((v.bot.tilt ?? 0) * Math.PI) / 180);
@@ -182,26 +185,44 @@ function draw(ctx: CanvasRenderingContext2D, v: View, size: number, time: { t: n
 let running = false;
 let last = 0;
 const t0 = typeof performance === "object" ? performance.now() : 0;
+/** About 30 frames a second: enough for blinking and glancing, half the work of 60. */
+const FRAME_MS = 33;
+
+/** Starts the one shared loop, unless it's already going. */
+function start(): void {
+  if (running) return;
+  running = true;
+  requestAnimationFrame(frame);
+}
 
 function frame(now: number): void {
-  const dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
-  const t = reduce() ? 0.5 : (now - t0) / 1000;
-  for (const v of views) {
-    const ctx = v.cv.getContext("2d");
-    const w = v.cv.getBoundingClientRect().width;
-    if (!ctx || !w) continue;
-    const dpr = Math.min(devicePixelRatio || 1, 2.5);
-    if (Math.abs(w - v.w) > 0.5) {
-      v.w = w;
-      v.cv.width = v.cv.height = Math.round(w * dpr);
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, w);
-    draw(ctx, v, w, { t, dt });
+  if (now - last >= FRAME_MS) {
+    const still = reduce();
+    const f: Frame = {
+      t: still ? 0.5 : (now - t0) / 1000,
+      dt: Math.min(0.1, (now - last) / 1000),
+      tk: tokens(),
+      still,
+    };
+    last = now;
+    for (const v of views) paint(v, f);
   }
   running = views.size > 0 && !reduce();
   if (running) requestAnimationFrame(frame);
+}
+
+function paint(v: View, f: Frame): void {
+  const ctx = v.cv.getContext("2d");
+  const w = v.cv.getBoundingClientRect().width;
+  if (!ctx || !w) return;
+  const dpr = Math.min(devicePixelRatio || 1, 2.5);
+  if (Math.abs(w - v.w) > 0.5) {
+    v.w = w;
+    v.cv.width = v.cv.height = Math.round(w * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, w);
+  draw(ctx, v, w, f);
 }
 
 /** A harness's avatar, as the lab draws it (class "av": the lab's sizes apply). */
@@ -220,7 +241,7 @@ export function Avatar({
     if (!cv || typeof Path2D === "undefined") return;
     const v: View = { cv, bot: botFor(harness), seed, state, w: 0 };
     views.add(v);
-    if (!running) requestAnimationFrame(frame);
+    start();
     return () => void views.delete(v);
   }, [harness, seed, state]);
   return <canvas ref={ref} className="av" aria-hidden="true" />;

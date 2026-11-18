@@ -133,7 +133,7 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
   const from = t.started[runId];
   const seconds = from ? Math.round((Date.parse(e.ts) - Date.parse(from)) / 1000) : 0;
   const cost = t.cost[runId];
-  const ended = push(workEnded(t, e), {
+  const ended = push(workEnded(retried(t), e), {
     kind: "end",
     status: str(d.status),
     seconds,

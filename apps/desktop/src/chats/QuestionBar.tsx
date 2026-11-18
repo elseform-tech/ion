@@ -57,6 +57,7 @@ function Details(p: {
 }) {
   return (
     <div className="qd">
+      <div className="qq">{p.q.question}</div>
       {p.q.why && <div className="why">{p.q.why}</div>}
       {p.q.choices.map((c, i) => (
         <button
@@ -85,6 +86,17 @@ function Details(p: {
   );
 }
 
+const ON_BAR = 2;
+
+/** The options the bar shows: the first two, with the recommended one always kept; the rest are in the details. */
+function onBar(choices: Question["choices"]) {
+  const all = choices.map((c, i) => ({ c, i }));
+  const rec = all.find((x) => x.c.recommended);
+  const first = all.slice(0, ON_BAR);
+  if (!rec || first.includes(rec)) return first;
+  return [...first.slice(0, ON_BAR - 1), rec];
+}
+
 /**
  * An agent's open question, above the message box, as the lab's one-line `.await`: the question and a button per
  * option (the recommended one primary). The chevron opens the details; closed, it stays one line.
@@ -99,9 +111,9 @@ export function QuestionBar({ client, question }: { client: IonClient; question:
     <div className="qwrap" role="group" aria-label="Question">
       {open && <Details q={question} busy={busy} answer={send} always={always} setAlways={setAlways} />}
       <div className="await">
-        <span className="g">
+        <span className="g" title={question.question}>
           <i className="wd" />
-          {question.question}
+          <span className="qt">{question.question}</span>
         </span>
         <button
           type="button"
@@ -112,7 +124,7 @@ export function QuestionBar({ client, question }: { client: IonClient; question:
         >
           <ChevronUp />
         </button>
-        {question.choices.map((c, i) => (
+        {onBar(question.choices).map(({ c, i }) => (
           <button
             type="button"
             key={`${i}-${c.label}`}

@@ -44,7 +44,7 @@ function useNow(live: boolean): number {
 }
 
 /** A tool step: its icon (or a spinner while it runs), name and argument; opens to its input and output. */
-function ToolRow({ s, live }: { s: ToolStep; live: boolean }) {
+const ToolRow = memo(function ToolRow({ s, live }: { s: ToolStep; live: boolean }) {
   const [open, setOpen] = useState(false);
   const running = live && s.ok === undefined;
   const Icon = s.ok === false ? CircleAlert : (ICONS[s.toolKind] ?? Wrench);
@@ -65,10 +65,10 @@ function ToolRow({ s, live }: { s: ToolStep; live: boolean }) {
       <span />
     </div>
   );
-}
+});
 
 /** A thinking step: "Thought for 4s" and what it thought (clamped; click for all of it). */
-function ThinkRow({ s }: { s: Extract<Step, { kind: "think" }> }) {
+const ThinkRow = memo(function ThinkRow({ s }: { s: Extract<Step, { kind: "think" }> }) {
   const [full, setFull] = useState(false);
   const secs = Math.max(1, Math.round((Date.parse(s.to) - Date.parse(s.from)) / 1000));
   return (
@@ -81,7 +81,7 @@ function ThinkRow({ s }: { s: Extract<Step, { kind: "think" }> }) {
       <span />
     </div>
   );
-}
+});
 
 /** The step a live run is on, for its header. */
 const current = (w: Work) => {
@@ -116,11 +116,13 @@ export const WorkBlock = memo(function WorkBlock({ w }: { w: Work }) {
           </>
         )}
       </button>
-      <div className="wb">
-        {w.steps.map((s, i) =>
-          s.kind === "tool" ? <ToolRow key={i} s={s} live={live} /> : <ThinkRow key={i} s={s} />,
-        )}
-      </div>
+      {open && (
+        <div className="wb">
+          {w.steps.map((s, i) =>
+            s.kind === "tool" ? <ToolRow key={i} s={s} live={live} /> : <ThinkRow key={i} s={s} />,
+          )}
+        </div>
+      )}
     </div>
   );
 });

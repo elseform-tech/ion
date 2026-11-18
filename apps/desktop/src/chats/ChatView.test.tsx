@@ -86,6 +86,12 @@ describe("ChatView", () => {
     expect(steps[1]!.classList.contains("w-err")).toBe(true);
   });
 
+  // Final review I2: a closed block draws no steps, so a live run's tick doesn't re-render hundreds of hidden rows.
+  it("draws no steps while the block is closed", () => {
+    const { container } = view([work({ ended: undefined })]);
+    expect(container.querySelectorAll(".ws")).toHaveLength(0);
+  });
+
   it("opens a step to show what went in and came out", () => {
     const { container } = view([work()]);
     fireEvent.click(container.querySelector(".wh")!);

@@ -2,7 +2,13 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as diff from "./diffLines.js";
 import { ToolsPanel as ChangesPanel } from "./ToolsPanel.js";
+
+vi.mock("./diffLines.js", async (real) => {
+  const m = await real<typeof diff>();
+  return { ...m, diffLines: vi.fn(m.diffLines) };
+});
 
 afterEach(cleanup);
 
@@ -22,11 +28,13 @@ describe("ChangesPanel", () => {
     expect(call).toHaveBeenCalledWith("chat.diff", { chatId: "c1" });
   });
 
-  it("reads the changes again when the chat changes something, and says when there are none", async () => {
+  // Final review I5: no "No changes yet"; an empty panel is empty, as the lab's.
+  it("reads the changes again when the chat changes something, and stays empty when there are none", async () => {
     const call = vi.fn(async () => ({ files: [] }));
     const client = { call } as unknown as IonClient;
-    const { rerender } = render(<ChangesPanel client={client} chatId="c1" version={0} />);
-    expect(await screen.findByText("No changes yet")).toBeTruthy();
+    const { rerender, container } = render(<ChangesPanel client={client} chatId="c1" version={0} />);
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+    expect(container.querySelector(".panel")?.textContent).toBe("");
     rerender(<ChangesPanel client={client} chatId="c1" version={1} />);
     await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
   });
@@ -73,5 +81,15 @@ describe("ChangesPanel", () => {
     const rows = [...container.querySelectorAll(".tree > div")].map((d) => d.textContent);
     expect(rows).toEqual(["Changed files", "src", "a.tsM", "b.tsA"]);
     expect(container.querySelector(".code")).toBeNull();
+  });
+  // Final review I2: the chat re-renders on every event; the panel parses each diff only when it changes.
+  it("parses a diff once however often the chat re-renders", async () => {
+    vi.mocked(diff.diffLines).mockClear();
+    const call = vi.fn(async () => ({ files: [{ path: "a.ts", added: 1, removed: 1, patch }] }));
+    const client = { call } as unknown as IonClient;
+    const { rerender } = render(<ChangesPanel client={client} chatId="c1" version={0} />);
+    await screen.findByText("a.ts");
+    for (let i = 0; i < 5; i++) rerender(<ChangesPanel client={client} chatId="c1" version={0} />);
+    expect(diff.diffLines).toHaveBeenCalledTimes(1);
   });
 });

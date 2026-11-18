@@ -104,4 +104,20 @@ describe("QuestionBar", () => {
     expect(screen.queryByLabelText("Always for this project")).toBeNull();
     expect(container.textContent).not.toContain("4 minutes");
   });
+  // Final review I3: the bar stays one line: the question truncates (all of it on hover), at most two buttons
+  // (the recommended one always among them); the rest are in the details.
+  it("keeps to one line with many options: two buttons on the bar, the recommended one kept", () => {
+    const many = {
+      ...question,
+      question: "Which of these four ways should I use to fix the flaky checkout test?",
+      choices: ["A", "B", "C", "D"].map((label) => ({
+        label,
+        consequence: label,
+        recommended: label === "D",
+      })),
+    };
+    const { container } = bar(many);
+    expect(container.querySelector(".await .g")?.getAttribute("title")).toBe(many.question);
+    expect([...container.querySelectorAll(".await > .btn")].map((b) => b.textContent)).toEqual(["A", "D"]);
+  });
 });

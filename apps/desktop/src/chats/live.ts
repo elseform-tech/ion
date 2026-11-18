@@ -70,10 +70,15 @@ export function useLive(client: IonClient) {
     setChats(c);
     setNeeds(n);
   }, [client]);
+  // Who's installed and signed in changes outside ion (you sign in in a terminal): read again when asked.
+  const refreshHarnesses = useCallback(
+    () => void client.call("harnesses.list", {}).then(setHarnesses, () => {}),
+    [client],
+  );
   useEffect(() => {
     const quiet = () => {}; // a dropped connection shows as "ion isn't running"; nothing to add here
     void client.call("projects.list", {}).then(setProjects, quiet);
-    void client.call("harnesses.list", {}).then(setHarnesses, quiet);
+    refreshHarnesses();
     let stop: (() => void) | undefined;
     let gone = false;
     // Live events first, then the lists: nothing can happen between reading them and listening.
@@ -92,6 +97,6 @@ export function useLive(client: IonClient) {
       gone = true;
       stop?.();
     };
-  }, [client, refresh]);
-  return { chats, needs, projects, harnesses };
+  }, [client, refresh, refreshHarnesses]);
+  return { chats, needs, projects, harnesses, refreshHarnesses };
 }

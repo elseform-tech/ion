@@ -33,7 +33,7 @@ function useWidePanel(open: boolean): [boolean, (v: boolean) => void] {
 /** The lab's chat header: title, project, and the panel toggle when there's a worktree (`panel` not null). */
 function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | null; onPanel: () => void }) {
   return (
-    <header className="head">
+    <header className="head" data-tauri-drag-region>
       <span className="title">{chat.title}</span>
       <span className="muted">{chat.projectId}</span>
       <span className="sp" />
@@ -57,10 +57,12 @@ function OpenChat({
   client,
   chat,
   harnesses,
+  onBrainOpen,
 }: {
   client: IonClient;
   chat: ChatInfo;
   harnesses: HarnessInfo[];
+  onBrainOpen: () => void;
 }) {
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
@@ -80,6 +82,7 @@ function OpenChat({
               <Composer
                 client={client}
                 harnesses={harnesses}
+                onBrainOpen={onBrainOpen}
                 to={{ chatId: chat.chatId }}
                 running={t.running}
                 harness={t.harness}
@@ -100,17 +103,19 @@ function NewChat(props: {
   projects: ProjectInfo[];
   harnesses: HarnessInfo[];
   onSent: (chatId: string) => void;
+  onBrainOpen: () => void;
 }) {
   const [projectId, setProjectId] = useState<string>("default");
   return (
     <>
-      <header className="head" />
+      <header className="head" data-tauri-drag-region />
       <div className="empty">
         <div className="inner">
           <h3>What are we working on?</h3>
           <Composer
             client={props.client}
             harnesses={props.harnesses}
+            onBrainOpen={props.onBrainOpen}
             to={{ projectId: projectId === "default" ? null : projectId }}
             running={null}
             project={{
@@ -153,9 +158,21 @@ export function Chats({
       </aside>
       <main className="chat">
         {chat ? (
-          <OpenChat key={chat.chatId} client={client} chat={chat} harnesses={live.harnesses} />
+          <OpenChat
+            key={chat.chatId}
+            client={client}
+            chat={chat}
+            harnesses={live.harnesses}
+            onBrainOpen={live.refreshHarnesses}
+          />
         ) : (
-          <NewChat client={client} projects={live.projects} harnesses={live.harnesses} onSent={setOpenId} />
+          <NewChat
+            client={client}
+            projects={live.projects}
+            harnesses={live.harnesses}
+            onBrainOpen={live.refreshHarnesses}
+            onSent={setOpenId}
+          />
         )}
       </main>
     </>

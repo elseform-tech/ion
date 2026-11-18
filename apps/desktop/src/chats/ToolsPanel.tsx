@@ -1,13 +1,13 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { FileDiff } from "@ion/schema";
 import { File as FileIcon, FolderOpen, FolderTree, GitCompare } from "@ion/design-system";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useRef, useState } from "react";
 import { diffLines, fileMark, treeOf } from "./diffLines.js";
 
 const SETTLE_MS = 500;
 
 /** One file in the lab's Changes: its header (path, +added, −removed), then its numbered lines. */
-function File({ f }: { f: FileDiff }) {
+const File = memo(function File({ f }: { f: FileDiff }) {
   return (
     <section>
       <div className="fh">
@@ -26,7 +26,7 @@ function File({ f }: { f: FileDiff }) {
       {f.truncated && <div className="ln h">Too long to show in full</div>}
     </section>
   );
-}
+});
 
 const MARK_COLOR: Record<string, string | undefined> = { A: "var(--good)" };
 
@@ -133,13 +133,11 @@ export function ToolsPanel({
   const [tab, setTab] = useState<Tab>("diff");
   const omitted = diff?.omitted ?? 0;
   const files = diff?.files ?? [];
-  const empty = !error && diff && files.length === 0 && !omitted;
   return (
     <aside className="tools" aria-label="Changes">
       <Tabs tab={tab} onTab={setTab} />
       <div className="panel">
         {error && <div className="changes-empty">{error}</div>}
-        {empty && <div className="changes-empty">No changes yet</div>}
         {tab === "diff" && files.length > 0 && (
           <div className="code">
             {files.map((f) => (

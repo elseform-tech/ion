@@ -127,4 +127,20 @@ describe("Composer", () => {
     fireEvent.keyDown(document, { key: ".", metaKey: true });
     expect(effort()).toBe("Medium");
   });
+  // Final review I6: you sign in to an agent after the app opened; opening the popover reads who's ready again.
+  it("reads the agents again when the brain popover opens", () => {
+    const onBrainOpen = vi.fn();
+    render(
+      <Composer
+        client={{ call: vi.fn() } as unknown as IonClient}
+        harnesses={[fake]}
+        to={{ projectId: null }}
+        running={null}
+        onBrainOpen={onBrainOpen}
+        onSent={() => {}}
+      />,
+    );
+    fireEvent.click(pill());
+    expect(onBrainOpen).toHaveBeenCalledTimes(1);
+  });
 });

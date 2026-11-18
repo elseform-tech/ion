@@ -43,6 +43,7 @@ function ProjectPill({ p }: { p: ProjectPick }) {
 
 /** The brain pill and its popover, which closes on Escape or a click outside. */
 function BrainPick(p: {
+  onOpen?: () => void;
   harnesses: HarnessInfo[];
   brain: Brain;
   picked: boolean;
@@ -55,7 +56,15 @@ function BrainPick(p: {
   useEffortKey(p.brain, p.onChange);
   return (
     <span className="bwrap" ref={wrap}>
-      <BrainPill harnesses={p.harnesses} brain={p.brain} open={open} onClick={() => setOpen(!open)} />
+      <BrainPill
+        harnesses={p.harnesses}
+        brain={p.brain}
+        open={open}
+        onClick={() => {
+          if (!open) p.onOpen?.();
+          setOpen(!open);
+        }}
+      />
       {open && (
         <BrainPopover harnesses={p.harnesses} brain={p.brain} picked={p.picked} onChange={p.onChange} />
       )}
@@ -117,6 +126,8 @@ type Props = {
   harness?: string | null;
   /** A new chat: its project pill, and the lab's big box. */
   project?: ProjectPick;
+  /** The brain popover opened: read the agents again. */
+  onBrainOpen?: () => void;
   onSent: (chatId: string) => void;
 };
 
@@ -142,7 +153,7 @@ function useSend(client: IonClient, onSent: (chatId: string) => void) {
 }
 
 /** The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
-export function Composer({ client, harnesses, to, running, onSent, harness, project }: Props) {
+export function Composer({ client, harnesses, to, running, onSent, harness, project, onBrainOpen }: Props) {
   // Never a default agent: the chat's own, else the first one ready. Until the list arrives, nothing is sent.
   const ready = harnesses.filter((h) => h.installed && h.signedIn);
   const first = harness ?? ready[0]?.id ?? "";
@@ -172,6 +183,7 @@ export function Composer({ client, harnesses, to, running, onSent, harness, proj
       <div className="bar">
         {project && <ProjectPill p={project} />}
         <BrainPick
+          onOpen={onBrainOpen}
           harnesses={harnesses}
           brain={b}
           picked={Boolean(brain.harness || brain.model || brain.effort)}

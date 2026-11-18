@@ -239,4 +239,12 @@ describe("timeline", () => {
     const after = reduce(t, ev("run.started", { harness: "fake" }, "2026-11-18T10:00:04.100Z"));
     expect(after.items[1]).toEqual({ kind: "retry", until: "2026-11-18T10:00:04.000Z", done: true });
   });
+  // Final review I1: a retry stopped during its countdown (no run.started follows) is done, not "Retrying in 0s".
+  it("closes a retry when its run ends without starting again", () => {
+    const t = play(
+      ev("run.retrying", { attempt: 1, delayS: 4, reason: "Rate limited" }, "2026-11-18T10:00:00.000Z"),
+      ev("run.finished", { status: "interrupted" }, "2026-11-18T10:00:01.000Z"),
+    );
+    expect(t.items[0]).toEqual({ kind: "retry", until: "2026-11-18T10:00:04.000Z", done: true });
+  });
 });

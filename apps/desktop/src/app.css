@@ -96,6 +96,19 @@
 .qwrap .await {
   background: var(--win);
 }
+/* One line, always: a long question truncates (all of it on hover and in the details). */
+.qwrap .await .g {
+  min-width: 0;
+}
+.qwrap .await .qt {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qwrap .await .wd {
+  flex-shrink: 0;
+}
 .qchev[aria-expanded="true"] .lucide {
   transform: rotate(180deg);
 }
@@ -108,6 +121,9 @@
   font-size: 13px;
   max-height: 40vh;
   overflow: auto;
+}
+.qd .qq {
+  padding: 4px 7px 0;
 }
 .qd .why {
   color: var(--muted);
@@ -129,4 +145,24 @@
   color: var(--ink);
   font: inherit;
   padding: 5px 9px;
+}
+
+/* Below 1100 px the side panel, when you open it, lies over the conversation instead of squeezing it. */
+.chat {
+  position: relative;
+}
+@media (max-width: 1099px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .split > .tools {
+    position: absolute;
+    top: 48px;
+    right: 0;
+    bottom: 0;
+    width: min(400px, 92%);
+    z-index: 5;
+    background: var(--win);
+    box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.75);
+  }
 }
