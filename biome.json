@@ -15,7 +15,8 @@
       "!.health",
       "!**/src-tauri/target",
       "!**/src-tauri/gen",
-      "!.playwright-mcp"
+      "!.playwright-mcp",
+      "!**/design-system/src/lab.css"
     ]
   },
   "formatter": {

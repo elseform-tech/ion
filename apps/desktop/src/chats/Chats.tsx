@@ -28,7 +28,7 @@ function OpenChat({
   const hasWorktree = Boolean(chat.branch) && !chat.archived;
   const [panel, setPanel] = useState(true);
   return (
-    <div className={`chat${hasWorktree && panel ? " chat--panel" : ""}`}>
+    <div className={`chatwrap${hasWorktree && panel ? " chatwrap--panel" : ""}`}>
       <div className="chat-main">
         <header className="chat-head">
           <span className="chat-title">{chat.title}</span>
@@ -121,10 +121,10 @@ export function Chats({
   const chat = live.chats.find((c) => c.chatId === openId);
   return (
     <>
-      <aside className="sidebar" aria-label="Chats">
+      <aside className="side" aria-label="Chats">
         <Sidebar groups={live.groups} open={openId} onOpen={setOpenId} />
       </aside>
-      <main className="main">
+      <main className="chat">
         {chat ? (
           <OpenChat key={chat.chatId} client={client} chat={chat} harnesses={live.harnesses} />
         ) : (

@@ -28,6 +28,18 @@ pub fn read_daemon_info(dir: &std::path::Path) -> Option<DaemonInfo> {
     serde_json::from_str(&text).ok()
 }
 
+/// The first letter of your account's name, for the rail's avatar ("Y" when there's none).
+pub fn initial_of(name: Option<String>) -> String {
+    name.and_then(|n| n.trim().chars().next())
+        .map(|c| c.to_uppercase().collect())
+        .unwrap_or_else(|| "Y".to_string())
+}
+
+#[tauri::command]
+fn user_initial() -> String {
+    initial_of(std::env::var("USER").ok())
+}
+
 #[tauri::command]
 fn daemon_info() -> Option<DaemonInfo> {
     read_daemon_info(&data_dir(|k| std::env::var(k).ok())?)
@@ -36,7 +48,7 @@ fn daemon_info() -> Option<DaemonInfo> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![daemon_info])
+        .invoke_handler(tauri::generate_handler![daemon_info, user_initial])
         .run(tauri::generate_context!())
         .expect("ion couldn't open its window");
 }
@@ -58,6 +70,13 @@ mod tests {
         assert_eq!(data_dir(env(&[("XDG_DATA_HOME", "/x"), ("HOME", "/h")])), Some(PathBuf::from("/x/ion")));
         assert_eq!(data_dir(env(&[("HOME", "/h")])), Some(PathBuf::from("/h/.local/share/ion")));
         assert_eq!(data_dir(env(&[("ION_HOME", ""), ("HOME", "/h")])), Some(PathBuf::from("/h/.local/share/ion")));
+    }
+
+    #[test]
+    fn initial_is_the_first_letter_or_y() {
+        assert_eq!(initial_of(Some("justin".into())), "J");
+        assert_eq!(initial_of(Some("".into())), "Y");
+        assert_eq!(initial_of(None), "Y");
     }
 
     #[test]

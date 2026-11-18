@@ -167,13 +167,13 @@ select:hover {
   cursor: help;
 }
 
-.chat {
+.chatwrap {
   display: grid;
   grid-template-columns: 1fr;
   height: 100%;
   min-height: 0;
 }
-.chat--panel {
+.chatwrap--panel {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 40%);
 }
 .chat-main {
