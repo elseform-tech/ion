@@ -25,29 +25,16 @@ const bar = (
   call,
   ...render(<QuestionBar client={{ call } as unknown as IonClient} question={q} />),
 });
-const details = () => fireEvent.click(screen.getByRole("button", { name: "Details" }));
+const collapse = () => fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
 
 describe("QuestionBar", () => {
-  // Plan 08: the lab's one-line .await: the question, then a button per option; details closed.
-  it("is one line: the question and a button per option, the recommended one primary, details closed", () => {
-    const rec = {
-      ...question,
-      choices: [{ ...question.choices[0]!, recommended: true }, question.choices[1]!],
-    };
-    const { container } = bar(rec);
-    expect(container.querySelector(".await .g")?.textContent).toBe("Merge it?");
-    const btns = [...container.querySelectorAll(".await > .btn")];
-    expect(btns.map((b) => b.textContent)).toEqual(["Merge", "Wait"]);
-    expect(btns[0]!.classList.contains("pri")).toBe(true);
-    expect(screen.queryByLabelText("Your own answer")).toBeNull();
-    expect(container.textContent).not.toContain("Tests pass");
-  });
-
-  it("opens its details from the chevron: why, each option's reasoning, your own words, and Always", () => {
+  // The user, 2026-11-18: the question opens expanded above the message box: why, each option with its reasoning,
+  // your own words and Always.
+  it("opens expanded: the question, why, each option with its reasoning, your own words and Always", () => {
     const { container } = bar();
-    details();
-    expect(container.querySelector(".qd .why")?.textContent).toBe("Tests pass");
-    expect([...container.querySelectorAll(".qd .bp-row")].map((r) => r.textContent)).toEqual([
+    expect(container.querySelector(".qbox .qq")?.textContent).toBe("Merge it?");
+    expect(container.querySelector(".qbox .why")?.textContent).toBe("Tests pass");
+    expect([...container.querySelectorAll(".qbox .bp-row")].map((r) => r.textContent)).toEqual([
       "Mergemain gets the change",
       "WaitNothing yet",
     ]);
@@ -55,11 +42,24 @@ describe("QuestionBar", () => {
     expect(screen.getByLabelText("Always for this project")).toBeTruthy();
   });
 
+  it("collapses to one line: the question and a button per option, the recommended one primary", () => {
+    const rec = {
+      ...question,
+      choices: [{ ...question.choices[0]!, recommended: true }, question.choices[1]!],
+    };
+    const { container } = bar(rec);
+    collapse();
+    expect(container.querySelector(".qbox .qq")?.textContent).toBe("Merge it?");
+    const btns = [...container.querySelectorAll(".qhead > .btn")];
+    expect(btns.map((b) => b.textContent)).toEqual(["Merge", "Wait"]);
+    expect(btns[0]!.classList.contains("pri")).toBe(true);
+    expect(screen.queryByLabelText("Your own answer")).toBeNull();
+  });
+
   it("answers with the choice's number, for this project when ticked", async () => {
     const { call } = bar();
-    details();
     fireEvent.click(screen.getByLabelText("Always for this project"));
-    fireEvent.click(screen.getAllByRole("button", { name: "Wait" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /^Wait/ }));
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("need.answer", { needId: "n1", choice: 2, scope: "project" }),
     );
@@ -71,7 +71,7 @@ describe("QuestionBar", () => {
       throw new ApiCallError("invalid", "That's already answered");
     });
     const { rerender, container } = bar(question, call);
-    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Merge/ }));
     expect(await screen.findByText("That's already answered")).toBeTruthy();
     rerender(
       <QuestionBar
@@ -84,7 +84,6 @@ describe("QuestionBar", () => {
 
   it("sends your own words when none of the choices fit", async () => {
     const { call } = bar();
-    details();
     const box = screen.getByLabelText("Your own answer");
     fireEvent.change(box, { target: { value: "Merge tomorrow" } });
     fireEvent.keyDown(box, { key: "Enter" });
@@ -100,7 +99,6 @@ describe("QuestionBar", () => {
   // A quiet chat: a call ion stopped has no Always (its options say it) and no banner once ion went on.
   it("for a call ion stopped, has no Always and no expired banner", () => {
     const { container } = bar({ ...question, blocked: true, expired: true });
-    details();
     expect(screen.queryByLabelText("Always for this project")).toBeNull();
     expect(container.textContent).not.toContain("4 minutes");
   });
@@ -117,8 +115,9 @@ describe("QuestionBar", () => {
       })),
     };
     const { container } = bar(many);
-    expect(container.querySelector(".await .g")?.getAttribute("title")).toBe(many.question);
-    expect([...container.querySelectorAll(".await > .btn")].map((b) => b.textContent)).toEqual(["A", "D"]);
+    collapse();
+    expect(container.querySelector(".qhead .qq")?.getAttribute("title")).toBe(many.question);
+    expect([...container.querySelectorAll(".qhead > .btn")].map((b) => b.textContent)).toEqual(["A", "D"]);
   });
   // Security review: on ion's question about a call it stopped, every option (no) stays on the bar.
   it("shows every option on the bar for a call ion stopped", () => {
@@ -132,7 +131,8 @@ describe("QuestionBar", () => {
       })),
     };
     const { container } = bar(stopped);
-    expect([...container.querySelectorAll(".await > .btn")].map((b) => b.textContent)).toEqual([
+    collapse();
+    expect([...container.querySelectorAll(".qhead > .btn")].map((b) => b.textContent)).toEqual([
       "Allow once",
       "Always allow",
       "Keep it blocked",

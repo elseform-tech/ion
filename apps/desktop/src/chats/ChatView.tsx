@@ -1,4 +1,5 @@
 import type { IonClient } from "@ion/client/browser";
+import { CircleAlert, Info, type LucideIcon, RotateCw, ShieldX, Square } from "@ion/design-system";
 import type { IonEvent } from "@ion/schema";
 import { memo, type ReactNode, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { Markdown } from "./Message.js";
@@ -44,18 +45,29 @@ function Retry({ until, done }: { until: string; done: boolean }) {
   }, [done]);
   if (done) return null;
   const left = Math.max(0, Math.ceil((Date.parse(until) - now) / 1000));
-  return <div className="quiet">Retrying in {left}s</div>;
+  return (
+    <div className="quiet">
+      <RotateCw />
+      Retrying in {left}s
+    </div>
+  );
 }
 
-/** A quiet line: one muted line in the conversation (a block gets a small mark), never a banner. */
-const Quiet = ({ text, mark }: { text: string; mark?: boolean }) => (
+/** A quiet line: an icon and one muted line in the conversation, never a banner. */
+const Quiet = ({ text, icon: Icon }: { text: string; icon: LucideIcon }) => (
   <div className="quiet">
-    {mark && <i className="qm" />}
+    <Icon />
     {text}
   </div>
 );
 
-const STOPS: Record<string, string> = { failed: "Failed", interrupted: "Stopped", capped: "Stopped" };
+/** How a run that didn't finish shows: a failed one says why (its last error) when it knows. */
+function stopLine(item: Extract<Item, { kind: "end" }>): ReactNode {
+  if (item.status === "failed") return <Quiet text={item.reason ?? "Failed"} icon={CircleAlert} />;
+  if (item.status === "interrupted" || item.status === "capped")
+    return <Quiet text="Stopped" icon={Square} />;
+  return null;
+}
 
 function show(item: Item): ReactNode {
   switch (item.kind) {
@@ -70,15 +82,15 @@ function show(item: Item): ReactNode {
     case "work":
       return <WorkBlock w={item} />;
     case "ion":
-      return <Quiet text={item.text} mark={item.tone === "deny"} />;
+      return <Quiet text={item.text} icon={item.tone === "deny" ? ShieldX : Info} />;
     case "question":
       return null; // open ones are in the bar above the message box; answers go into the chat as messages
     case "end":
-      return STOPS[item.status] ? <Quiet text={STOPS[item.status]!} /> : null;
+      return stopLine(item);
     case "retry":
       return <Retry until={item.until} done={item.done} />;
     case "error":
-      return <Quiet text={item.text} />;
+      return item.gone ? null : <Quiet text={item.text} icon={CircleAlert} />;
   }
 }
 
@@ -113,6 +125,11 @@ export function ChatView({ timeline }: { timeline: Timeline }) {
         {timeline.items.map((item, i) => (
           <Row key={i} item={item} />
         ))}
+        {timeline.running && last?.kind === "you" && (
+          <div className="quiet pending" aria-label="Starting">
+            <i className="spin" />
+          </div>
+        )}
       </div>
     </div>
   );

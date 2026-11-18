@@ -1,4 +1,4 @@
-import { Pin, SquarePen } from "@ion/design-system";
+import { CircleAlert, Pin, Square, SquarePen } from "@ion/design-system";
 import type { ChatInfo, NeedInfo, ProjectInfo } from "@ion/schema";
 import { type ReactNode, useMemo, useState } from "react";
 import { groupChats, relTime } from "./live.js";
@@ -30,14 +30,46 @@ const NeedRow = ({ chat, open, onOpen, need }: Row & { need: NeedInfo }) => (
   </button>
 );
 
-/** A chat row: its title, then a spinner while it runs, else when it was last active. */
+/** How a chat's last run ended, when that's worth a mark: failed or stopped. */
+const MARKS: Record<string, { label: string; Icon: typeof CircleAlert }> = {
+  failed: { label: "Failed", Icon: CircleAlert },
+  interrupted: { label: "Stopped", Icon: Square },
+  capped: { label: "Stopped", Icon: Square },
+};
+
+/** When it was last active, after a mark if its last run failed or was stopped. */
+function When({ chat }: { chat: ChatInfo }) {
+  const mark = MARKS[chat.lastRunStatus ?? ""];
+  return (
+    <span className="tm">
+      {mark && <mark.Icon className="st" aria-label={mark.label} />}
+      {relTime(chat.lastActivityAt)}
+    </span>
+  );
+}
+
+/**
+ * A chat row: its title with the start of the agent's last reply under it, then a spinner while it runs, else
+ * when it was last active. The first slot stays empty: an avatar there marks a thread ion started, not yours.
+ */
 const ChatRow = ({ chat, open, onOpen, running }: Row & { running?: boolean }) => (
   <button className={`r${open ? " on" : ""}`} type="button" onClick={onOpen}>
     <span />
-    <span className="tt">{chat.title}</span>
-    {running ? <i className="spin" /> : <span className="tm">{relTime(chat.lastActivityAt)}</span>}
+    <span>
+      <span className="tt">{chat.title}</span>
+      {chat.preview && <span className="sub">{chat.preview}</span>}
+    </span>
+    {running ? <i className="spin" /> : <When chat={chat} />}
   </button>
 );
+
+/** Chats by project, the most recently active project first (the chats are newest first already). */
+function byProject(chats: ChatInfo[]): { projectId: string; chats: ChatInfo[] }[] {
+  const groups = new Map<string, ChatInfo[]>();
+  for (const c of chats)
+    groups.set(c.projectId ?? "default", [...(groups.get(c.projectId ?? "default") ?? []), c]);
+  return [...groups].map(([projectId, list]) => ({ projectId, chats: list }));
+}
 
 type Props = {
   chats: ChatInfo[];
@@ -82,11 +114,21 @@ export function Sidebar({ chats, needs, projects, open, onOpen }: Props) {
             ))}
           </Group>
         )}
-        <Group label="Chats">
-          {g.chats.map((c) => (
-            <ChatRow key={c.chatId} {...props(c)} />
-          ))}
-        </Group>
+        {project ? (
+          <Group label="Chats">
+            {g.chats.map((c) => (
+              <ChatRow key={c.chatId} {...props(c)} />
+            ))}
+          </Group>
+        ) : (
+          byProject(g.chats).map((p) => (
+            <Group key={p.projectId} label={p.projectId}>
+              {p.chats.map((c) => (
+                <ChatRow key={c.chatId} {...props(c)} />
+              ))}
+            </Group>
+          ))
+        )}
       </div>
     </>
   );

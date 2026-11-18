@@ -3,8 +3,12 @@ import type { FileDiff } from "@ion/schema";
 import { File as FileIcon, FolderOpen, FolderTree, GitCompare } from "@ion/design-system";
 import { Fragment, memo, useEffect, useRef, useState } from "react";
 import { diffLines, fileMark, treeOf } from "./diffLines.js";
+import { Resizer } from "./Resizer.js";
 
 const SETTLE_MS = 500;
+
+/** A chat's changes as read: null until the first read. */
+export type Changes = { diff: { files: FileDiff[]; omitted?: number } | null; error: string | null };
 
 /** One file in the lab's Changes: its header (path, +added, −removed), then its numbered lines. */
 const File = memo(function File({ f }: { f: FileDiff }) {
@@ -13,8 +17,8 @@ const File = memo(function File({ f }: { f: FileDiff }) {
       <div className="fh">
         <span>{f.path}</span>
         <span className="sp" />
-        <span className="plus">+{f.added}</span>
-        <span className="minus">−{f.removed}</span>
+        {f.added > 0 && <span className="plus">+{f.added}</span>}
+        {f.removed > 0 && <span className="minus">−{f.removed}</span>}
       </div>
       {diffLines(f.patch).map((l, i) => (
         <div key={i} className={`ln ${l.kind}`}>
@@ -88,7 +92,7 @@ function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
 }
 
 /** The chat's changes: read when it opens, then again once a burst of edits settles. */
-function useDiff(client: IonClient, chatId: string, version: number) {
+export function useDiff(client: IonClient, chatId: string, version: number): Changes {
   const [diff, setDiff] = useState<{ files: FileDiff[]; omitted?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const shown = useRef<string | null>(null);
@@ -120,21 +124,13 @@ function useDiff(client: IonClient, chatId: string, version: number) {
  * What the chat changed in its worktree (its own branch, new files included). `version` changes whenever the
  * chat does something, and the changes are read again.
  */
-export function ToolsPanel({
-  client,
-  chatId,
-  version,
-}: {
-  client: IonClient;
-  chatId: string;
-  version: number;
-}) {
-  const { diff, error } = useDiff(client, chatId, version);
+export function ToolsPanel({ diff, error }: Changes) {
   const [tab, setTab] = useState<Tab>("diff");
   const omitted = diff?.omitted ?? 0;
   const files = diff?.files ?? [];
   return (
     <aside className="tools" aria-label="Changes">
+      <Resizer name="--tools-w" label="Panel width" initial={400} min={300} max={760} edge="left" />
       <Tabs tab={tab} onTab={setTab} />
       <div className="panel">
         {error && <div className="changes-empty">{error}</div>}

@@ -1,5 +1,13 @@
 export {
   ArrowUp,
+  GripVertical,
+  Loader,
+  ShieldOff,
+  ShieldCheck,
+  Shield,
+  ShieldX,
+  RotateCw,
+  Info,
   Brain,
   Check,
   ChevronDown,

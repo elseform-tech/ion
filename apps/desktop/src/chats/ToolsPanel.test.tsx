@@ -3,7 +3,12 @@ import { ApiCallError, type IonClient } from "@ion/client/browser";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as diff from "./diffLines.js";
-import { ToolsPanel as ChangesPanel } from "./ToolsPanel.js";
+import { ToolsPanel, useDiff } from "./ToolsPanel.js";
+
+/** The panel as a chat uses it: its changes read for it. */
+function ChangesPanel(p: { client: IonClient; chatId: string; version: number }) {
+  return <ToolsPanel {...useDiff(p.client, p.chatId, p.version)} />;
+}
 
 vi.mock("./diffLines.js", async (real) => {
   const m = await real<typeof diff>();
@@ -91,5 +96,14 @@ describe("ChangesPanel", () => {
     await screen.findByText("a.ts");
     for (let i = 0; i < 5; i++) rerender(<ChangesPanel client={client} chatId="c1" version={0} />);
     expect(diff.diffLines).toHaveBeenCalledTimes(1);
+  });
+  // UX tour: "+1 −0": a zero says nothing.
+  it("leaves out a zero count in a file's header", async () => {
+    const call = vi.fn(async () => ({ files: [{ path: "a.ts", added: 1, removed: 0, patch }] }));
+    const { container } = render(
+      <ChangesPanel client={{ call } as unknown as IonClient} chatId="c1" version={0} />,
+    );
+    await screen.findByText("a.ts");
+    expect(container.querySelector(".fh")?.textContent).toBe("a.ts+1");
   });
 });

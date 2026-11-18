@@ -3,9 +3,10 @@
 ion's desktop app: Tauri 2 with React, TypeScript and Vite. It only displays state. Everything comes from the daemon
 through `@ion/client/browser`, and it keeps nothing of its own (lint: no `node:*`, `fetch` or storage in `src`).
 
-- `src-tauri/`: the shell. Its one command, `daemon_info`, reads the daemon's port and token from `daemon.json`
-  (`$ION_HOME/data`, else `$XDG_DATA_HOME/ion`, else `~/.local/share/ion`). Core permissions only: no shell, no
-  file system. The CSP allows `ws://127.0.0.1:*` and nothing remote; fonts are bundled.
+- `src-tauri/`: the shell. `daemon_info` reads the daemon's port and token from `daemon.json`
+  (`$ION_HOME/data`, else `$XDG_DATA_HOME/ion`, else `~/.local/share/ion`); `user_initial` gives the rail your
+  initial. Core permissions, plus dragging the window by its header: no shell, no file system. The CSP allows
+  `ws://127.0.0.1:*` and nothing remote; fonts are bundled.
 - `src/connection.ts`: connects, shows "ion isn't running" while the daemon is down, tries again every 2 s, and
   reconnects when ion restarts (new port and token).
 - `src/chats/`: the Chats screen, drawn with the design lab's own CSS and markup (`@ion/design-system/lab.css`).
@@ -17,12 +18,16 @@ through `@ion/client/browser`, and it keeps nothing of its own (lint: no `node:*
     errors and denials are single muted lines, and a retry counts down.
   - `Composer` is the lab's message box with the brain pill and popover (`BrainPopover`: harness, model, effort;
     ⌘. cycles effort), the access pick, and a new chat's project.
-  - `QuestionBar` is one line: the question and a button per option. Its chevron opens why, each option's reasoning,
-    your own answer and "Always for this project".
-  - `ToolsPanel` is the side panel: Changes (`chat.diff`, numbered by `diffLines`) and Files. A chat in `default`
-    opens with it closed (the toggle opens it); below 1100 px it starts closed.
+  - `QuestionBar` is one box above the message box, open: the question, why, each option with its reasoning, your
+    own answer and "Always for this project". It collapses to one line with a button per option. While it waits,
+    the message box is locked.
+  - `ToolsPanel` is the side panel: Changes (`chat.diff`, numbered by `diffLines`) and Files. It opens when a
+    project chat has changed something; a plain chat (in `default`) keeps it closed; below 1100 px it lies over
+    the conversation. `Resizer` lets you drag the sidebar's and the panel's widths; the conversation keeps 520 px.
+  - The sidebar groups your chats by project, each row with the start of the agent's last reply and a mark when
+    its last run failed or was stopped. The avatar slot stays empty for your chats: it marks threads ion started.
 - Left out of the lab until ion does them: Library, attachments, Preview, Terminal and Viewer tabs, Open in editor,
-  Share, the Ions, Settings and Search rail buttons, and temporary chats.
+  Share, the Ions, Settings and Search rail buttons, temporary chats, and a light theme (the lab is dark only).
 - Agents' text is Markdown with no raw HTML; links show where they point but open nothing.
 
 Run it:

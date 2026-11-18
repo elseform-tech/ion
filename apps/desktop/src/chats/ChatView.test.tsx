@@ -142,19 +142,29 @@ describe("ChatView", () => {
   });
 
   // Plan 08, a quiet chat.
-  it("keeps errors, denials and stops to one quiet line each, and adds no hint text", () => {
+  // UX tour: quiet lines say it with an icon and few words; a failed run says why, once.
+  it("keeps errors, denials, failures and stops to one quiet line each, each with its icon", () => {
     const { container } = view([
-      { kind: "error", text: "Rate limited" },
+      { kind: "error", text: "Rate limited", runId: "r1" },
+      { kind: "error", text: "Gone", runId: "r0", gone: true },
       { kind: "ion", tone: "deny", text: "Denied by ion: cat ~/.ssh/id_rsa — Touches your secrets" },
       { kind: "end", status: "done", seconds: 3 },
+      { kind: "end", status: "failed", seconds: 3, reason: "Overloaded" },
       { kind: "end", status: "interrupted", seconds: 3 },
     ]);
-    const lines = [...container.querySelectorAll(".quiet")].map((x) => x.textContent);
-    expect(lines).toEqual([
+    const lines = [...container.querySelectorAll(".quiet")];
+    expect(lines.map((x) => x.textContent)).toEqual([
       "Rate limited",
       "Denied by ion: cat ~/.ssh/id_rsa — Touches your secrets",
+      "Overloaded",
       "Stopped",
     ]);
+    expect(lines.every((x) => x.querySelector("svg"))).toBe(true);
+  });
+
+  it("says just 'Worked' for under a second", () => {
+    const { container } = view([work({ ended: "2026-11-18T10:00:00.400Z" })]);
+    expect(container.querySelector(".wh")?.textContent).toBe("Worked");
   });
 
   it("counts a retry down, and drops it once it starts", () => {
@@ -169,5 +179,17 @@ describe("ChatView", () => {
       />,
     );
     expect(container.querySelector(".msgs")?.textContent).toBe("");
+  });
+  // UX tour: after you send, the chat showed nothing until the agent did something.
+  it("shows a spinner under your message while its run starts, and none once the agent is working", () => {
+    const you: Item = { kind: "you", text: "Fix it" };
+    const { container, rerender } = render(
+      <ChatView timeline={{ ...empty(), items: [you], running: "r1" }} />,
+    );
+    expect(container.querySelector(".msgs .pending .spin")).not.toBeNull();
+    rerender(<ChatView timeline={{ ...empty(), items: [you, work({ ended: undefined })], running: "r1" }} />);
+    expect(container.querySelector(".msgs .pending")).toBeNull();
+    rerender(<ChatView timeline={{ ...empty(), items: [you], running: null }} />);
+    expect(container.querySelector(".msgs .pending")).toBeNull();
   });
 });

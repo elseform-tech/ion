@@ -129,6 +129,8 @@ export type ChatInfo = {
   lastRunStatus: string | null;
   /** When it last had a message or a run (ISO time). */
   lastActivityAt: string | null;
+  /** The start of the agent's last reply, on one line. */
+  preview: string | null;
 };
 export type Command = keyof Commands;
 export const COMMANDS = [

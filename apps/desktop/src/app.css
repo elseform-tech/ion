@@ -31,11 +31,9 @@
   align-items: center;
   gap: 7px;
 }
-.quiet .qm {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--wait);
+.quiet .lucide {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
 }
 /* A tool step's input and output, in the lab's .wg code style. */
@@ -88,63 +86,78 @@
   left: 8px;
   bottom: calc(100% + 8px);
 }
-/* The question bar's details, above its one line; they push the conversation up, never cover it. */
-.qwrap {
-  display: grid;
-  gap: 6px;
-}
-.qwrap .await {
+/* An agent's question: one box above the message box, open by default (why, options, your words, Always);
+   collapsed, one line with a button per option. */
+.qbox {
+  border: 1px solid var(--line);
+  border-radius: 14px;
   background: var(--win);
+  padding: 6px 6px 6px 12px;
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
 }
-/* One line, always: a long question truncates (all of it on hover and in the details). */
-.qwrap .await .g {
-  min-width: 0;
+.qhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
 }
-.qwrap .await .qt {
+.qhead .wd {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wait);
+  flex-shrink: 0;
+}
+.qhead .qq {
+  flex: 1;
   min-width: 0;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.qwrap .await .wd {
-  flex-shrink: 0;
-}
-.qchev[aria-expanded="true"] .lucide {
-  transform: rotate(180deg);
-}
 .qd {
   display: grid;
   gap: 1px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 6px;
-  font-size: 13px;
   max-height: 40vh;
   overflow: auto;
-}
-.qd .qq {
-  padding: 4px 7px 0;
+  padding-right: 6px;
 }
 .qd .why {
   color: var(--muted);
-  padding: 4px 7px 6px;
+  padding: 0 0 6px 15px;
+}
+.qd .bp-row .rec {
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
 }
 .qd-f {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 7px 2px;
+  padding: 6px 0 2px 7px;
   color: var(--muted);
   font-size: 12.5px;
 }
 .qd-f .own {
   flex: 1;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
   background: transparent;
   color: var(--ink);
   font: inherit;
-  padding: 5px 9px;
+  padding: 5px 2px;
+  outline: none;
+}
+/* While a question waits, the message box is locked: it's answered above. */
+.cbox:has(textarea:disabled) {
+  opacity: 0.5;
+}
+.cbox textarea:disabled {
+  cursor: not-allowed;
 }
 
 /* Below 1100 px the side panel, when you open it, lies over the conversation instead of squeezing it. */
@@ -152,7 +165,7 @@
   position: relative;
 }
 @media (max-width: 1099px) {
-  .split {
+  .chat .split {
     grid-template-columns: minmax(0, 1fr);
   }
   .split > .tools {
@@ -160,7 +173,7 @@
     top: 48px;
     right: 0;
     bottom: 0;
-    width: min(400px, 92%);
+    width: min(var(--tools-w, 400px), 92%);
     z-index: 5;
     background: var(--win);
     box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.75);
@@ -183,4 +196,71 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The access pill is its shield; the list lies over it, unseen, so a click opens it. Full access shows in --wait. */
+.apill {
+  position: relative;
+}
+.apill select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.apill.full {
+  color: var(--wait);
+}
+.bpill .spin {
+  width: 12px;
+  height: 12px;
+}
+
+/* Widths you set by dragging (Resizer): the sidebar and the side panel. The conversation always keeps at least
+   520 px, so the panel gives way first. */
+.chats {
+  grid-template-columns: var(--side-w, 256px) minmax(0, 1fr);
+}
+.split {
+  grid-template-columns: minmax(0, 1fr) min(var(--tools-w, 400px), calc(100% - 520px));
+}
+.side,
+.tools {
+  position: relative;
+}
+.rz {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  z-index: 4;
+  cursor: col-resize;
+}
+.rz-right {
+  right: -4px;
+}
+.rz-left {
+  left: -4px;
+}
+.rz:hover,
+.rz:focus-visible {
+  background: linear-gradient(90deg, transparent 3px, var(--line) 3px, var(--line) 4px, transparent 4px);
+  outline: none;
+}
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+/* A sidebar row's run mark sits beside its time. */
+.r .tm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.r .st {
+  width: 12px;
+  height: 12px;
+}
+.r .st[aria-label="Failed"] {
+  color: var(--bad);
 }

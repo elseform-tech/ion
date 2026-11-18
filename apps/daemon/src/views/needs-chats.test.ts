@@ -95,6 +95,7 @@ describe("chats view", () => {
         archived: false,
         lastRunStatus: "done",
         lastActivityAt: expect.any(String),
+        preview: null,
       },
     ]);
     expect(chatsView.worktree(db, "c1")).toBe("/w/c1");
@@ -110,6 +111,19 @@ describe("chats view, activity", () => {
     store.append(d({ chatId: "c1", runId: "r2", type: "message.sent", data: { text: "again" } }));
     const after = chatsView.list(db).find((c) => c.chatId === "c1")!.lastActivityAt!;
     expect(Date.parse(after)).toBeGreaterThanOrEqual(before);
+  });
+});
+
+// UX tour: a sidebar row shows the start of the agent's last reply under the title.
+describe("chats view, preview", () => {
+  it("keeps the start of the agent's last reply, on one line", () => {
+    const text = `Done.\n\nI changed **three** files and ran the tests; ${"all green ".repeat(20)}`;
+    store.append(
+      d({ chatId: "c1", runId: "r3", type: "message.completed", data: { messageId: "m1", text } }),
+    );
+    const preview = chatsView.list(db).find((c) => c.chatId === "c1")?.preview ?? "";
+    expect(preview.startsWith("Done. I changed three files and ran the tests;")).toBe(true);
+    expect(preview.length).toBeLessThanOrEqual(120);
   });
 });
 

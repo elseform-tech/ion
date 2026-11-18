@@ -23,8 +23,9 @@ export type Item =
       expired?: boolean;
       answered?: string;
     }
-  | { kind: "end"; status: string; seconds: number; cost?: number }
-  | { kind: "error"; text: string };
+  | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string }
+  /** gone: its run ended (done, or failed with it as the reason), so it's not shown on its own. */
+  | { kind: "error"; text: string; runId: string; gone?: boolean };
 
 /** The items, plus what the reducer remembers to place later events. */
 export type Timeline = {
@@ -133,11 +134,13 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
   const from = t.started[runId];
   const seconds = from ? Math.round((Date.parse(e.ts) - Date.parse(from)) / 1000) : 0;
   const cost = t.cost[runId];
-  const ended = push(workEnded(retried(t), e), {
+  const { t: quiet, last } = errorsGone(workEnded(retried(t), e), runId);
+  const ended = push(quiet, {
     kind: "end",
     status: str(d.status),
     seconds,
     ...(cost !== undefined ? { cost } : {}),
+    ...(last && str(d.status) === "failed" ? { reason: last } : {}),
   });
   return { ...ended, running: t.running === runId ? null : t.running, changes: t.changes + 1 };
 }
@@ -147,6 +150,25 @@ const retried = (t: Timeline): Timeline =>
   t.items.some((x) => x.kind === "retry" && !x.done)
     ? { ...t, items: t.items.map((x) => (x.kind === "retry" && !x.done ? { ...x, done: true } : x)) }
     : t;
+
+/** An error, unless it's the same as the run's last one (each retry fails the same way). */
+function error(t: Timeline, d: D, e: IonEvent): Timeline {
+  const runId = e.runId ?? "";
+  const text = str(d.message);
+  const same = t.items.findLast((x) => x.kind === "error" && x.runId === runId);
+  return same?.kind === "error" && same.text === text ? t : push(t, { kind: "error", text, runId });
+}
+
+/** Marks the run's errors gone (its end says what matters), returning the last one's text. */
+function errorsGone(t: Timeline, runId: string): { t: Timeline; last: string | null } {
+  let last: string | null = null;
+  const items = t.items.map((x) => {
+    if (x.kind !== "error" || x.runId !== runId || x.gone) return x;
+    last = x.text;
+    return { ...x, gone: true };
+  });
+  return { t: last === null ? t : { ...t, items }, last };
+}
 
 type Handler = (t: Timeline, d: D, e: IonEvent) => Timeline;
 
@@ -188,7 +210,7 @@ const HANDLERS: Record<string, Handler> = {
       done: false,
     }),
   [EV.runFinished]: finished,
-  [EV.error]: (t, d) => push(t, { kind: "error", text: str(d.message) }),
+  [EV.error]: error,
 };
 
 /** Adds one event to the chat's timeline. Pure: the same events always give the same items. */

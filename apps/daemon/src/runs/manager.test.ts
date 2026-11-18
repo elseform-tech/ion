@@ -14,6 +14,24 @@ import { chatsView } from "../views/chats.js";
 import { allViews } from "../views/index.js";
 import { RunManager } from "./manager.js";
 
+/** How often a fake harness was asked whether it's installed. */
+const detects = vi.hoisted(() => ({ n: 0 }));
+vi.mock("@ion/adapter-fake", async (real) => {
+  const m = await real<typeof import("@ion/adapter-fake")>();
+  return {
+    ...m,
+    createFakeAdapter: (...a: Parameters<typeof m.createFakeAdapter>) => {
+      const adapter = m.createFakeAdapter(...a);
+      const detect = adapter.detect.bind(adapter);
+      adapter.detect = () => {
+        detects.n++;
+        return detect();
+      };
+      return adapter;
+    },
+  };
+});
+
 process.env.ION_ALLOW_FAKE = "1";
 
 let db: Db;
@@ -426,6 +444,28 @@ describe("RunManager", () => {
     } finally {
       delete process.env.ION_FAKE_SIGNED_OUT;
     }
+  });
+
+  // UX tour, 2026-11-18: each message waited seconds while the agent's CLI was asked again whether it's installed
+  // and signed in. A check that passed holds for a while; one that failed is asked again next time.
+  // UX tour: a long first message makes a title cut at a word, marked as cut.
+  it("titles a chat by its first line, cut at a word with an ellipsis when long", async () => {
+    const long =
+      "edit the onboarding email copy so it reads warmer and mentions the free trial length up front";
+    const { chatId, runId } = await ask(long);
+    await finished(runId);
+    expect(chatsView.list(db).find((c) => c.chatId === chatId)?.title).toBe(
+      "edit the onboarding email copy so it reads warmer and…",
+    );
+  });
+
+  it("checks an agent is ready once, not on every message", async () => {
+    const before = detects.n;
+    const first = await ask("hello");
+    await finished(first.runId);
+    const second = await ask("hello", { chatId: first.chatId });
+    await finished(second.runId);
+    expect(detects.n - before).toBe(1);
   });
 
   it("rejects an unknown project or harness without storing anything", async () => {
