@@ -37,50 +37,9 @@ select:hover {
   cursor: help;
 }
 
-.changes {
-  border-left: 1px solid var(--line);
-  overflow: auto;
-  background: var(--win);
-}
 .changes-empty {
   padding: 16px;
   color: var(--faint);
-}
-.diff-head {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  font: 13px var(--mono);
-}
-.diff-plus {
-  color: var(--add-ink);
-}
-.diff-minus {
-  color: var(--del-ink);
-}
-.diff-body {
-  margin: 0;
-  font: 12.5px / 1.6 var(--mono);
-  overflow-x: auto;
-}
-.diff-body > div {
-  padding: 0 12px;
-  white-space: pre;
-}
-.diff-add {
-  background: var(--add);
-  color: var(--add-ink);
-}
-.diff-del {
-  background: var(--del);
-  color: var(--del-ink);
-}
-.diff-hunk {
-  color: var(--faint);
-}
-.diff-ctx {
-  color: var(--muted);
 }
 .changes-error {
   color: var(--bad);

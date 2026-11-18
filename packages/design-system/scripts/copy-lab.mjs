@@ -18,6 +18,7 @@ const RANGES = [
   [521, 522, "starred project"],
   [549, 560, "pins, await (hidden), project menu search"],
   [571, 636, "media: code blocks"],
+  [686, 686, "panel label (.lh2)"],
   [761, 831, "brain picker; work"],
 ];
 

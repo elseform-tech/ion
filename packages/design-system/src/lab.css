@@ -267,6 +267,9 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .acard>.lucide{color:var(--faint)}
 .aic{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--hover);color:var(--accent)}
 
+/* lab lines 686-686: panel label (.lh2) */
+.lh2{font-size:12px;color:var(--faint);font-weight:500;padding:6px 6px 4px}
+
 /* lab lines 761-831: brain picker; work */
 /* brain picker */
 .bpill{gap:6px;padding:4px 8px}

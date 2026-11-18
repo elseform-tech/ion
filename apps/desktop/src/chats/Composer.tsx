@@ -9,17 +9,18 @@ type Access = "" | "auto" | "full";
 const ACCESS: Access[] = ["", "auto", "full"];
 const ACCESS_LABEL: Record<Access, string> = { "": "Project's access", auto: "Auto", full: "Full access" };
 
-/** The access pill: the project's own, Auto, or Full access; a click moves to the next. */
+/** The access pill: the project's own, Auto, or Full access, each picked on purpose. */
 function AccessPill({ access, onChange }: { access: Access; onChange: (a: Access) => void }) {
   return (
-    <button
-      type="button"
-      className="pill"
-      aria-label={`Access: ${ACCESS_LABEL[access]}`}
-      onClick={() => onChange(ACCESS[(ACCESS.indexOf(access) + 1) % ACCESS.length]!)}
-    >
-      {ACCESS_LABEL[access]}
-    </button>
+    <label className="pill">
+      <select aria-label="Access" value={access} onChange={(e) => onChange(e.target.value as Access)}>
+        {ACCESS.map((a) => (
+          <option key={a} value={a}>
+            {ACCESS_LABEL[a]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

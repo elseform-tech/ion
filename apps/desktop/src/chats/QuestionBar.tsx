@@ -117,6 +117,7 @@ export function QuestionBar({ client, question }: { client: IonClient; question:
             type="button"
             key={`${i}-${c.label}`}
             className={`btn${c.recommended ? " pri" : ""}`}
+            title={c.consequence}
             disabled={busy}
             onClick={() => send({ choice: i + 1 })}
           >

@@ -1,8 +1,8 @@
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
 import { PanelRight } from "@ion/design-system";
-import { useState } from "react";
-import { ChangesPanel } from "./ChangesPanel.js";
+import { useEffect, useState } from "react";
+import { ToolsPanel } from "./ToolsPanel.js";
 import { ChatView, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
 import { QuestionBar } from "./QuestionBar.js";
@@ -11,6 +11,21 @@ import { useLive } from "./live.js";
 import type { Item } from "./timeline.js";
 
 type Question = Extract<Item, { kind: "question" }>;
+
+const WIDE = "(min-width: 1100px)";
+
+/** The side panel starts open on a wide window; narrowing below 1100 px closes it, widening opens it again. */
+function useWidePanel(): [boolean, (v: boolean) => void] {
+  const mq = typeof matchMedia === "function" ? matchMedia(WIDE) : null;
+  const [panel, setPanel] = useState(mq?.matches ?? true);
+  useEffect(() => {
+    if (!mq) return;
+    const onChange = (e: MediaQueryListEvent) => setPanel(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [mq]);
+  return [panel, setPanel];
+}
 
 /** The lab's chat header: title, project, and the panel toggle when there's a worktree (`panel` not null). */
 function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | null; onPanel: () => void }) {
@@ -22,7 +37,7 @@ function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | n
       {panel !== null && (
         <button
           type="button"
-          className="ib"
+          className={`ib${panel ? " on" : ""}`}
           aria-label={panel ? "Hide changes" : "Show changes"}
           aria-pressed={panel}
           onClick={onPanel}
@@ -48,7 +63,7 @@ function OpenChat({
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
   // The side panel only appears in chats that have a worktree (an archived chat has none).
   const hasWorktree = Boolean(chat.branch) && !chat.archived;
-  const [panel, setPanel] = useState(true);
+  const [panel, setPanel] = useWidePanel();
   const showPanel = hasWorktree && panel;
   return (
     <>
@@ -70,7 +85,7 @@ function OpenChat({
             </div>
           </div>
         </div>
-        {showPanel && <ChangesPanel client={client} chatId={chat.chatId} version={t.changes} />}
+        {showPanel && <ToolsPanel client={client} chatId={chat.chatId} version={t.changes} />}
       </div>
     </>
   );

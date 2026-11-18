@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChangesPanel } from "./ChangesPanel.js";
+import { ToolsPanel as ChangesPanel } from "./ToolsPanel.js";
 
 afterEach(cleanup);
 
@@ -15,9 +15,10 @@ describe("ChangesPanel", () => {
       <ChangesPanel client={{ call } as unknown as IonClient} chatId="c1" version={0} />,
     );
     expect(await screen.findByText("a.ts")).toBeTruthy();
-    expect(container.querySelector(".diff-add")?.textContent).toBe("+new");
-    expect(container.querySelector(".diff-del")?.textContent).toBe("-old");
-    expect(container.querySelector(".diff-hunk")?.textContent).toBe("@@ -1,2 +1,2 @@");
+    expect(container.querySelector(".tools .code .ln.add")?.textContent).toBe("2+new");
+    expect(container.querySelector(".ln.del")?.textContent).toBe("2−old");
+    expect(container.querySelector(".ln.h")?.textContent).toBe("@@ -1,2 +1,2 @@");
+    expect(container.querySelector(".fh")?.textContent).toBe("a.ts+1−1");
     expect(call).toHaveBeenCalledWith("chat.diff", { chatId: "c1" });
   });
 
@@ -54,5 +55,23 @@ describe("ChangesPanel", () => {
     const call = vi.fn(async () => ({ files: [], omitted: 3 }));
     render(<ChangesPanel client={{ call } as unknown as IonClient} chatId="c1" version={0} />);
     expect(await screen.findByText("3 more files not shown")).toBeTruthy();
+  });
+  // Plan 08: the lab's Files tab: the changed files by folder, each with its mark.
+  it("shows the changed files by folder in the Files tab, added ones marked A", async () => {
+    const added = "diff --git a/src/b.ts b/src/b.ts\nnew file mode 100644\n@@ -0,0 +1 @@\n+x\n";
+    const call = vi.fn(async () => ({
+      files: [
+        { path: "src/a.ts", added: 1, removed: 1, patch },
+        { path: "src/b.ts", added: 1, removed: 0, patch: added },
+      ],
+    }));
+    const { container } = render(
+      <ChangesPanel client={{ call } as unknown as IonClient} chatId="c1" version={0} />,
+    );
+    await screen.findByText("src/a.ts");
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    const rows = [...container.querySelectorAll(".tree > div")].map((d) => d.textContent);
+    expect(rows).toEqual(["Changed files", "src", "a.tsM", "b.tsA"]);
+    expect(container.querySelector(".code")).toBeNull();
   });
 });
