@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,9 +67,12 @@ export function grokGateEnv(g: GateEnv): Record<string, string> {
   const dir = join(process.env.GROK_HOME ?? join(homedir(), ".grok"), "hooks");
   const hook = { type: "command", command: GROK_COMMAND, timeout: 60, failClosed: true };
   const body = `${JSON.stringify({ hooks: { PreToolUse: [{ hooks: [hook] }] } })}\n`;
-  // Written on every gated start (same content), never checked first: nothing to race between check and write.
+  // Written whole to a temp file, then renamed into place: a Grok starting at the same moment reads the old file
+  // or the new one, never a half-written one. Same content every time, so there's nothing to check first.
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, GROK_HOOK), body);
+  const tmp = join(dir, `${GROK_HOOK}.${process.pid}.${randomUUID()}.tmp`);
+  writeFileSync(tmp, body, { mode: 0o600 });
+  renameSync(tmp, join(dir, GROK_HOOK));
   return { ION_GATE_URL: g.url };
 }
 
