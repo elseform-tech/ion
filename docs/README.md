@@ -2,7 +2,7 @@
 
 | Doc | What it's for |
 |---|---|
-| [design/ion-design-lab.html](design/ion-design-lab.html) | The product spec: screens, design system, architecture, engineering, CLI (canvas v34). Open in a browser. |
+| [design/ion-design-lab.html](design/ion-design-lab.html) | The product spec: screens, design system, architecture, engineering, CLI (canvas v34). Open in a browser. Since Plan 06: approvals (the approval bar, allow/deny) are replaced by agents' questions (Needs you, answered by choice), and every chat has a project, so "Plain chat" means a chat in `default`. |
 | [architecture/contract.md](architecture/contract.md) | Event envelope and types, adapter interface, retries, import walls. |
 | [research/acp-and-harnesses.md](research/acp-and-harnesses.md) | ACP protocol, how each coding agent is launched and signed in, quota policy for tests. |
 | [../AGENTS.md](../AGENTS.md) | How to work in this repo: layout, walls, rules. |
@@ -16,11 +16,12 @@
 | [03 Workspace and needs](superpowers/plans/2026-11-17-03-workspace-needs.md): worktree per chat, needs, run queue, retries | Done |
 | [04 Context](superpowers/plans/2026-11-17-04-context.md): chat continuity, history and memory for ions (daemon MCP), model catalogs | Done |
 | [05 Access](superpowers/plans/2026-11-18-05-access.md): Full access or Auto (ion decides), per message, project or default | Done |
-| 06 Desktop app and Chats screens | Not written |
-| 07 ion chief and Ions screens | Not written |
-| 08 Routines, Activity, Artifacts, Tools | Not written |
-| 09 Suggestions | Not written |
-| 10 More adapters (Cursor, Gemini CLI, Codex via ACP) | Not written |
+| [06 Every tool call through ion](superpowers/plans/2026-11-18-06-gate-and-ask.md): each agent's pre-tool hook reports to ion; agents ask you (decisions, outcomes) instead of approvals; every thread has a project (`default`) | Done |
+| 07 Desktop app and Chats screens (the ask bar; "plain chat" is a chat in `default`) | Not written |
+| 08 ion chief and Ions screens | Not written |
+| 09 Routines, Activity, Artifacts, Tools | Not written |
+| 10 Suggestions | Not written |
+| 11 More adapters (Cursor, Gemini CLI, Codex via ACP) | Not written |
 
 ## Packages
 
