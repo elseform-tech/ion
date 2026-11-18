@@ -1,4 +1,5 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
+import { ChevronUp } from "@ion/design-system";
 import { type KeyboardEvent, useState } from "react";
 import type { Item } from "./timeline.js";
 
@@ -23,29 +24,6 @@ function useAnswer(client: IonClient, needId: string) {
   return { error, busy, answer };
 }
 
-/** The options, each with its reasoning and tradeoffs; the agent's own pick marked. */
-function Options({ q, busy, onPick }: { q: Question; busy: boolean; onPick: (n: number) => void }) {
-  return (
-    <div className="qcard-options">
-      {q.choices.map((c, i) => (
-        <button
-          type="button"
-          key={`${i}-${c.label}`}
-          className={`qcard-option${c.recommended ? " qcard-option--rec" : ""}`}
-          disabled={busy}
-          onClick={() => onPick(i + 1)}
-        >
-          <span className="qcard-label">
-            {c.label}
-            {c.recommended && <span className="qcard-rec">Recommended</span>}
-          </span>
-          <span className="qcard-detail">{c.consequence}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** Your own answer, sent with Enter. */
 function OwnAnswer({ busy, onSend }: { busy: boolean; onSend: (text: string) => void }) {
   const [own, setOwn] = useState("");
@@ -56,7 +34,7 @@ function OwnAnswer({ busy, onSend }: { busy: boolean; onSend: (text: string) => 
   };
   return (
     <input
-      className="qcard-own"
+      className="own"
       aria-label="Your own answer"
       placeholder="Something else…"
       value={own}
@@ -67,36 +45,86 @@ function OwnAnswer({ busy, onSend }: { busy: boolean; onSend: (text: string) => 
   );
 }
 
-/**
- * An agent's open question, above the message box (the spec's "a single prompt sits above its message box"):
- * the question, why it's asked, each option with its reasoning and tradeoffs, a box for your own answer, and
- * whether the answer holds for the whole project. ion's own question about a call it stopped has no "always" box
- * (its options say it), and says when ion went on without your answer.
- */
-export function QuestionBar({ client, question }: { client: IonClient; question: Question }) {
-  const [always, setAlways] = useState(false);
-  const { error, busy, answer } = useAnswer(client, question.needId);
-  if (question.resolved) return null;
+type Answer = (pick: Pick) => void;
+
+/** The details behind the chevron: why it's asked, each option's reasoning, your own words, and Always. */
+function Details(p: {
+  q: Question;
+  busy: boolean;
+  answer: Answer;
+  always: boolean;
+  setAlways: (v: boolean) => void;
+}) {
   return (
-    <div className="qcard" role="group" aria-label="Question">
-      {question.expired && (
-        <div className="qcard-expired">
-          ion said no after 4 minutes, and the agent went on. Your answer still counts.
-        </div>
-      )}
-      <div className="qcard-q">{question.question}</div>
-      {question.why && <div className="qcard-why">{question.why}</div>}
-      <Options q={question} busy={busy} onPick={(n) => void answer({ choice: n }, always)} />
-      <div className="qcard-foot">
-        <OwnAnswer busy={busy} onSend={(text) => void answer({ text }, always)} />
-        {!question.blocked && (
-          <label className="qcard-always">
-            <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+    <div className="qd">
+      {p.q.why && <div className="why">{p.q.why}</div>}
+      {p.q.choices.map((c, i) => (
+        <button
+          type="button"
+          key={`${i}-${c.label}`}
+          className={`bp-row${c.recommended ? " on" : ""}`}
+          disabled={p.busy}
+          onClick={() => p.answer({ choice: i + 1 })}
+        >
+          <span className="g">
+            {c.label}
+            <small>{c.consequence}</small>
+          </span>
+        </button>
+      ))}
+      <div className="qd-f">
+        <OwnAnswer busy={p.busy} onSend={(text) => p.answer({ text })} />
+        {!p.q.blocked && (
+          <label>
+            <input type="checkbox" checked={p.always} onChange={(e) => p.setAlways(e.target.checked)} />
             Always for this project
           </label>
         )}
       </div>
-      {error && <div className="qbar-error">{error}</div>}
+    </div>
+  );
+}
+
+/**
+ * An agent's open question, above the message box, as the lab's one-line `.await`: the question and a button per
+ * option (the recommended one primary). The chevron opens the details; closed, it stays one line.
+ */
+export function QuestionBar({ client, question }: { client: IonClient; question: Question }) {
+  const [always, setAlways] = useState(false);
+  const [open, setOpen] = useState(false);
+  const { error, busy, answer } = useAnswer(client, question.needId);
+  if (question.resolved) return null;
+  const send: Answer = (pick) => void answer(pick, always && !question.blocked);
+  return (
+    <div className="qwrap" role="group" aria-label="Question">
+      {open && <Details q={question} busy={busy} answer={send} always={always} setAlways={setAlways} />}
+      <div className="await">
+        <span className="g">
+          <i className="wd" />
+          {question.question}
+        </span>
+        <button
+          type="button"
+          className="ib qchev"
+          aria-label="Details"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <ChevronUp />
+        </button>
+        {question.choices.map((c, i) => (
+          <button
+            type="button"
+            key={`${i}-${c.label}`}
+            className={`btn${c.recommended ? " pri" : ""}`}
+            disabled={busy}
+            onClick={() => send({ choice: i + 1 })}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      {error && <div className="quiet">{error}</div>}
     </div>
   );
 }

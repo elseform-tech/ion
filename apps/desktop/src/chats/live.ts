@@ -93,6 +93,5 @@ export function useLive(client: IonClient) {
       stop?.();
     };
   }, [client, refresh]);
-  const groups = useMemo(() => groupChats(chats, needs), [chats, needs]);
-  return { groups, chats, needs, projects, harnesses };
+  return { chats, needs, projects, harnesses };
 }

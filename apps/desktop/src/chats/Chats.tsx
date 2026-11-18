@@ -57,15 +57,17 @@ function OpenChat({
         <div className="convo">
           <ChatView timeline={t} />
           <div className="foot">
-            {open && <QuestionBar key={open.needId} client={client} question={open} />}
-            <Composer
-              client={client}
-              harnesses={harnesses}
-              to={{ chatId: chat.chatId }}
-              running={t.running}
-              harness={t.harness}
-              onSent={() => {}}
-            />
+            <div className="fcol">
+              {open && <QuestionBar key={open.needId} client={client} question={open} />}
+              <Composer
+                client={client}
+                harnesses={harnesses}
+                to={{ chatId: chat.chatId }}
+                running={t.running}
+                harness={t.harness}
+                onSent={() => {}}
+              />
+            </div>
           </div>
         </div>
         {showPanel && <ChangesPanel client={client} chatId={chat.chatId} version={t.changes} />}
@@ -81,39 +83,30 @@ function NewChat(props: {
   harnesses: HarnessInfo[];
   onSent: (chatId: string) => void;
 }) {
-  const [projectId, setProjectId] = useState<string>("");
+  const [projectId, setProjectId] = useState<string>("default");
   return (
     <>
       <header className="head">
         <span className="title">New chat</span>
-        <span className="sp" />
-        <select
-          aria-label="Project"
-          className="project-pick"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          <option value="">default</option>
-          {props.projects
-            .filter((p) => p.id !== "default")
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.id}
-              </option>
-            ))}
-        </select>
       </header>
       <div className="split solo">
         <div className="convo">
           <div className="msgs timeline--empty">What should we work on?</div>
           <div className="foot">
-            <Composer
-              client={props.client}
-              harnesses={props.harnesses}
-              to={{ projectId: projectId || null }}
-              running={null}
-              onSent={props.onSent}
-            />
+            <div className="fcol">
+              <Composer
+                client={props.client}
+                harnesses={props.harnesses}
+                to={{ projectId: projectId === "default" ? null : projectId }}
+                running={null}
+                project={{
+                  value: projectId,
+                  options: ["default", ...props.projects.map((p) => p.id).filter((id) => id !== "default")],
+                  onChange: setProjectId,
+                }}
+                onSent={props.onSent}
+              />
+            </div>
           </div>
         </div>
       </div>

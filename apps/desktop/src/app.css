@@ -55,13 +55,77 @@
 .split.solo {
   grid-template-columns: minmax(0, 1fr);
 }
-.foot {
-  display: grid;
-  gap: 8px;
+/* The lab's composer: a bare textarea in .cbox, pills that hold a select, the brain popover above its pill. */
+.cbox textarea {
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 0;
 }
-.foot > * {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 660px;
-  margin-inline: auto;
+.cbox textarea::placeholder {
+  color: var(--faint);
+}
+.pill select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  appearance: none;
+  cursor: pointer;
+}
+.send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.cbox {
+  position: relative;
+}
+.cbox .bpop {
+  left: 8px;
+  bottom: calc(100% + 8px);
+}
+/* The question bar's details, above its one line; they push the conversation up, never cover it. */
+.qwrap {
+  display: grid;
+  gap: 6px;
+}
+.qwrap .await {
+  background: var(--win);
+}
+.qchev[aria-expanded="true"] .lucide {
+  transform: rotate(180deg);
+}
+.qd {
+  display: grid;
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+  font-size: 13px;
+  max-height: 40vh;
+  overflow: auto;
+}
+.qd .why {
+  color: var(--muted);
+  padding: 4px 7px 6px;
+}
+.qd-f {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 7px 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.qd-f .own {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 5px 9px;
 }

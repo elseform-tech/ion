@@ -5,6 +5,7 @@ export {
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
+  ChevronUp,
   CircleAlert,
   Copy,
   FilePen,

@@ -109,19 +109,19 @@ describe("useLive", () => {
   it("re-reads chats and needs when runs start and end and questions come and go", async () => {
     const f = fakeClient();
     const { result } = renderHook(() => useLive(f.client));
-    await waitFor(() => expect(result.current.groups.chats.map((x) => x.chatId)).toEqual(["a"]));
+    await waitFor(() => expect(result.current.chats.map((x) => x.lastRunStatus)).toEqual(["done"]));
     // Live events only, never ion's whole history.
     expect(f.client.subscribe).toHaveBeenCalledWith({ fromNow: true }, expect.any(Function));
     f.lists.chats = [chat("a", "running")];
     await f.send("run.started");
-    await waitFor(() => expect(result.current.groups.running.map((x) => x.chatId)).toEqual(["a"]));
+    await waitFor(() => expect(result.current.chats.map((x) => x.lastRunStatus)).toEqual(["running"]));
     f.lists.needs = [need("a")];
     await f.send("need.raised");
-    await waitFor(() => expect(result.current.groups.needsYou).toHaveLength(1));
+    await waitFor(() => expect(result.current.needs).toHaveLength(1));
     f.lists.needs = [];
     f.lists.chats = [chat("a", "done")];
     await f.send("need.resolved");
-    await waitFor(() => expect(result.current.groups.chats.map((x) => x.chatId)).toEqual(["a"]));
-    expect(result.current.groups.needsYou).toEqual([]);
+    await waitFor(() => expect(result.current.chats.map((x) => x.lastRunStatus)).toEqual(["done"]));
+    expect(result.current.needs).toEqual([]);
   });
 });
