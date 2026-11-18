@@ -1,8 +1,9 @@
-import { MessageSquare } from "@ion/design-system";
+import { MessageSquare, Orbit } from "@ion/design-system";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Chats } from "./chats/Chats.js";
 import { Down } from "./Down.js";
+import { Ions } from "./ions/Ions.js";
 import { useIon } from "./ion.js";
 
 /** The first letter of your account's name, for the rail (the lab's "Y"). */
@@ -14,33 +15,68 @@ function useInitial(): string {
   return initial;
 }
 
+type Mode = "chats" | "ions";
+
+/** The lab's rail: the window's own buttons in its top strip, Chats and Ions, then you. */
+function Rail({ mode, setMode, initial }: { mode: Mode; setMode: (m: Mode) => void; initial: string }) {
+  return (
+    <nav className="rail" aria-label="App">
+      <div className="lights" aria-hidden="true" data-tauri-drag-region />
+      <button
+        className={`rb${mode === "chats" ? " on" : ""}`}
+        type="button"
+        title="Chats"
+        onClick={() => setMode("chats")}
+      >
+        <MessageSquare />
+      </button>
+      <button
+        className={`rb${mode === "ions" ? " on" : ""}`}
+        type="button"
+        title="Ions"
+        onClick={() => setMode("ions")}
+      >
+        <Orbit />
+      </button>
+      <span className="grow" />
+      <span className="me" title="You">
+        {initial}
+      </span>
+    </nav>
+  );
+}
+
 /**
  * The window, as the design lab draws it: the rail (the window's own buttons sit in its top strip), then the
- * Chats screen. Ions, Search and Settings join the rail when they exist.
+ * Chats or the Ions screen. Search and Settings join the rail when they exist.
  */
 export function App() {
   const { state, client } = useIon();
   const initial = useInitial();
   // The open chat outlives a dropped connection: after ion comes back you're where you were.
   const [openId, setOpenId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("chats");
   if (state === "connecting") return <div className="app--empty" />;
   if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
   return (
     <div className="win">
-      <nav className="rail" aria-label="App">
-        <div className="lights" aria-hidden="true" data-tauri-drag-region />
-        <button className="rb on" type="button" title="Chats">
-          <MessageSquare />
-        </button>
-        <span className="grow" />
-        <span className="me" title="You">
-          {initial}
-        </span>
-      </nav>
+      <Rail mode={mode} setMode={setMode} initial={initial} />
       <div className="body">
-        <div className="mode chats">
-          <Chats client={client} openId={openId} setOpenId={setOpenId} />
-        </div>
+        {mode === "chats" ? (
+          <div className="mode chats">
+            <Chats client={client} openId={openId} setOpenId={setOpenId} />
+          </div>
+        ) : (
+          <div className="mode ions">
+            <Ions
+              client={client}
+              onOpenChat={(chatId) => {
+                setOpenId(chatId);
+                setMode("chats");
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

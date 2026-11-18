@@ -19,6 +19,12 @@ printf '[access]\njudge = "fake"\n[folders]\nprojects = "%s/projects"\n' "$ION_H
 ion daemon start >/dev/null
 ion projects new storefront >/dev/null
 ion projects new payments-api >/dev/null
+# The projects' ions start their threads on the fake agent too (no quota).
+node --input-type=module -e '
+const c = await import("./packages/config/dist/index.js");
+const f = process.env.ION_HOME + "/config.toml";
+const { config } = c.loadUserConfig(f);
+c.saveUserConfig(f, { ...config, projects: config.projects.map((p) => ({ ...p, harness: "fake" })) });'
 # One chat per state: an edit, a question, a failure, a retry that works, one that gives up, a gated call.
 for s in edit asks fail flaky overloaded gated; do ion ask "$s" -p storefront --harness fake >/dev/null 2>&1 || true; done
 ion ask "hello" --harness fake >/dev/null 2>&1 # a plain chat, in default

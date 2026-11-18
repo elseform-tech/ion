@@ -108,7 +108,8 @@ describe("Ions", () => {
     });
     expect(said("chief")).toEqual([
       {
-        text: "Asked 2 projects.",
+        // The card says it; the words would only repeat it.
+        text: "",
         card: {
           kind: "threads",
           threads: [

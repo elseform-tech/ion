@@ -97,11 +97,9 @@ export class Ions {
         this.say(projectId, "On it.", { kind: "threads", threads: [t] });
       }
     }
-    const asked = threads.length
-      ? [`Asked ${threads.length} project${threads.length === 1 ? "" : "s"}.`]
-      : [];
+    // The card shows the threads it started; the words say only what the card can't (a project it couldn't reach).
     const card: IonCard | undefined = threads.length ? { kind: "threads", threads } : undefined;
-    this.say("chief", [...asked, ...missed].join(" "), card);
+    this.say("chief", missed.join(" "), card);
   }
 
   /** ion chief's System 1: what to do with your message, or null when its model fails, is slow, or answers junk. */

@@ -267,7 +267,7 @@ describe("daemon api", () => {
     const chief = seen.filter((e) => e.chatId === "ion:chief" && e.type === "ion.said").at(-1)!.data as {
       text: string;
     };
-    expect(chief.text).toBe("Asked 1 project.");
+    expect(chief).toMatchObject({ text: "", card: { kind: "threads" } });
   });
 
   // The user, 2026-11-18: chats can be renamed from the sidebar.
