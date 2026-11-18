@@ -18,6 +18,8 @@ import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
 import { Ions } from "../ions/service.js";
+import { IonQuestions } from "../ions/questions.js";
+import { createSame } from "../ions/same.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -144,6 +146,7 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     db,
     needs,
     match: createMatcher(quick),
+    ion: new IonQuestions({ store, db, needs, same: createSame(quick) }),
     followUp: async (chatId, m) =>
       (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown })).runId,
     requestOf: (runId) => runs.requestOf(runId),
@@ -151,16 +154,6 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   late.decisions = decisions;
   const ions = new Ions({ store, db, configFile: opts.configFile, runs, quick });
   ions.watch();
-  return {
-    store,
-    db,
-    needs,
-    decisions,
-    grants,
-    runs,
-    ions,
-    configFile: opts.configFile,
-    startedAt: Date.now(),
-    version: VERSION,
-  };
+  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
+  return { store, db, needs, decisions, grants, runs, ions, ...base0 };
 }

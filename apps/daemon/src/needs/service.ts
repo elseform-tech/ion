@@ -20,6 +20,9 @@ export class NeedsService {
     why?: string;
     /** For a tool call ion stopped: its request, so the call's record and the question match. */
     blocked?: { requestId: string };
+    /** In an ion thread: the ion's note, or the question already waiting that this one is held behind. */
+    via?: { note: string };
+    heldFor?: string;
   }): string {
     const needId = `n${randomBytes(3).toString("hex")}`;
     this.store.append({
@@ -36,6 +39,8 @@ export class NeedsService {
         dedupeKey: `ask:${needId}`,
         choices: r.choices,
         ...(r.blocked ? { blocked: true } : {}),
+        ...(r.via ? { via: r.via } : {}),
+        ...(r.heldFor ? { heldFor: r.heldFor } : {}),
       },
     });
     return needId;
@@ -74,8 +79,31 @@ export class NeedsService {
       });
   }
 
-  open(chatId?: string): NeedInfo[] {
-    return needsView.open(this.db, chatId);
+  open(chatId?: string, held = false): NeedInfo[] {
+    return needsView.open(this.db, chatId, held);
+  }
+
+  heldFor(needId: string): NeedInfo[] {
+    return needsView.heldFor(this.db, needId);
+  }
+
+  /** A held question raised to you after all: closed as itself, and asked again in the open. */
+  release(n: NeedInfo, note: string): void {
+    this.store.append({
+      chatId: n.chatId,
+      runId: n.runId,
+      origin: "daemon",
+      type: EV.needResolved,
+      data: { needId: n.needId, decision: "superseded", by: "daemon" },
+    });
+    this.raiseAsk({
+      chatId: n.chatId,
+      runId: n.runId,
+      question: n.summary,
+      choices: n.choices ?? [],
+      ...(n.detail ? { why: n.detail } : {}),
+      via: { note },
+    });
   }
 
   private chatOf(needId: string): string | null {

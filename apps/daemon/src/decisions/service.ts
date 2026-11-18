@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { type DecisionScope, EV, type NeedInfo } from "@ion/schema";
+import { type DecisionInfo, type DecisionScope, EV, type NeedInfo } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Scope } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -18,6 +18,8 @@ import {
 } from "./blocked.js";
 import { FollowUps, type Message, type Start } from "./followups.js";
 import type { AskInput, Matcher } from "./match.js";
+import { overlap, SAME_QUESTION } from "./words.js";
+import type { IonQuestions } from "../ions/questions.js";
 
 const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
 
@@ -55,22 +57,6 @@ function answerOf(pick: number | string, choices: { label: string }[]): { label:
   return { label: choice.label, custom: false };
 }
 
-const words = (s: string) =>
-  new Set(
-    s
-      .toLowerCase()
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter(Boolean),
-  );
-/** How much two questions share their words (0–1): a check the matcher's model can't talk its way past. */
-function overlap(a: string, b: string): number {
-  const x = words(a);
-  const y = words(b);
-  const both = [...x].filter((w) => y.has(w)).length;
-  return both / Math.max(1, new Set([...x, ...y]).size);
-}
-const SAME_QUESTION = 0.5;
-
 const ASKED = "Asked. End your turn now; the answer comes as the next message.";
 const OUTCOMES_PER_RUN = 3;
 const FOR_JUDGE = 10;
@@ -91,6 +77,8 @@ type Deps = {
   requestOf?: (runId: string) => string | null;
   /** How long a tool call ion stopped waits for your answer (4 minutes; shorter in tests). */
   blockedWaitMs?: number;
+  /** Questions in threads ion started go through the project's ion first (Plan 09). */
+  ion?: IonQuestions;
 };
 
 type Recorded = {
@@ -146,7 +134,8 @@ export class Decisions {
       throw new UserError("Recommend one option at most");
     const known = await this.fromPast(s, q);
     if (known) return known;
-    const needId = this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q });
+    const extra = this.d.ion?.isThread(s.chatId) ? await this.d.ion.raiseWith(s, q) : {};
+    const needId = this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q, ...extra });
     this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
     return ASKED;
   }
@@ -181,7 +170,8 @@ export class Decisions {
   async answer(needId: string, pick: number | string, scope: DecisionScope = "chat"): Promise<void> {
     if (this.answering.has(needId)) throw new UserError("That's already answered");
     const need = this.d.needs.openNeed(needId);
-    const asked = this.d.needs.open(need.chatId).find((x) => x.needId === needId);
+    // A question held behind one waiting elsewhere is answered too (with that answer).
+    const asked = this.d.needs.open(need.chatId, true).find((x) => x.needId === needId);
     if (need.kind !== "ask" || !asked?.choices) throw new UserError("That isn't a question");
     const { label, custom } = answerOf(pick, asked.choices);
     if (asked.blocked) return this.answerBlocked(asked, pick, label);
@@ -208,6 +198,11 @@ export class Decisions {
       });
       if (started === "busy") this.followUps.later(need.chatId, { ...m, decisionId });
       else if (started) this.followUps.started(started, decisionId);
+      if (this.d.ion?.isThread(need.chatId))
+        await this.d.ion.afterAnswer(
+          { needId, projectId: base.projectId, question: asked.summary, choice: label },
+          (id, n) => this.answer(id, n, "chat"),
+        );
     } finally {
       this.answering.delete(needId);
     }
@@ -341,9 +336,9 @@ export class Decisions {
 
   /** ion's answer from an "always" decision, when the matcher names one of this question's own choices. */
   private async fromPast(s: Scope, q: AskInput): Promise<string | null> {
-    const past = decisionsView
-      .applicable(this.d.db, s.projectId, s.chatId)
-      .filter((x) => x.scope !== "chat" && x.by === "you");
+    // In a thread ion started, any of your decisions in the project counts; in your own chats, only "always" ones.
+    const thread = this.d.ion?.isThread(s.chatId) ?? false;
+    const past = this.pastFor(s, thread);
     if (!this.d.match || past.length === 0 || (this.ionAnswered.get(s.runId) ?? 0) >= ION_ANSWERS_PER_RUN)
       return null;
     const m = await this.d.match(q, past);
@@ -357,7 +352,33 @@ export class Decisions {
       ...{ chatId: s.chatId, runId: s.runId, needId: "", projectId: s.projectId, question: q.question },
       ...{ choice: m.label, scope: "chat", by: "ion", from },
     });
+    if (thread) this.d.ion?.answeredFor(s.projectId, q.question, m.label);
     return `The user already decided: ${JSON.stringify(m.label)} when asked ${JSON.stringify(from.question)}. Go ahead.`;
+  }
+
+  private pastFor(s: Scope, thread: boolean) {
+    const mine = (x: DecisionInfo) => x.by === "you" && (thread || x.scope !== "chat");
+    if (!thread) return decisionsView.applicable(this.d.db, s.projectId, s.chatId).filter(mine);
+    return decisionsView.list(this.d.db, s.projectId).filter(mine);
+  }
+
+  /** Your answer to an ion's "always?" suggestion: kept, it's a decision for the project. */
+  suggestion(suggestionId: string, keep: boolean): void {
+    const s = this.d.ion?.takeSuggestion(suggestionId);
+    if (!s) throw new UserError("That suggestion is gone");
+    const chatId = `ion:${s.projectId}`;
+    this.d.store.append({
+      chatId,
+      runId: null,
+      origin: "daemon",
+      type: EV.suggestionAnswered,
+      data: { suggestionId, keep },
+    });
+    if (keep)
+      this.record({
+        ...{ chatId, runId: null, needId: "", projectId: s.projectId, question: s.question },
+        ...{ choice: s.choice, scope: "project", by: "you" },
+      });
   }
 
   private record(r: Recorded): string {

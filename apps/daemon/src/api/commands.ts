@@ -111,8 +111,9 @@ export const handlers: Handlers = {
     await ctx.ions.message(String(a.ionId ?? ""), text);
     return { ok: true as const };
   },
-  "suggestion.answer": () => {
-    throw new UserError("Not ready yet");
+  "suggestion.answer": (a, ctx) => {
+    ctx.decisions.suggestion(String(a.suggestionId ?? ""), a.keep === true);
+    return { ok: true as const };
   },
   "projects.add": (a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
