@@ -49,6 +49,38 @@ const valid: [string, Record<string, unknown>, string?][] = [
   ["run.retrying", { attempt: 1, delayS: 3.2, reason: "rate limit", effort: null }, "daemon"],
   ["chat.created", { title: "t", projectId: "p", worktree: "/w", branch: "ion/t-abc123" }, "daemon"],
   ["chat.created", { title: "t", projectId: null }, "daemon"],
+  // Plan 09: ions.
+  ["chat.created", { title: "t", projectId: "p", by: "ion" }, "daemon"],
+  ["ion.heard", { text: "Check the totals" }, "daemon"],
+  ["ion.said", { text: "On it." }, "daemon"],
+  [
+    "ion.said",
+    { text: "On it.", card: { kind: "threads", threads: [{ chatId: "c2", projectId: "p" }] } },
+    "daemon",
+  ],
+  [
+    "ion.said",
+    { text: "Always?", card: { kind: "suggest", suggestionId: "s1", question: "Use QA?", choice: "Yes" } },
+    "daemon",
+  ],
+  [
+    "ion.said",
+    {
+      text: "Failing",
+      card: { kind: "flag", decisionId: "d1", question: "Use QA?", choice: "Yes", failed: 2 },
+    },
+    "daemon",
+  ],
+  ["suggestion.answered", { suggestionId: "s1", keep: true }, "daemon"],
+  [
+    "need.raised",
+    {
+      ...{ needId: "n2", requestId: "q2", kind: "ask", summary: "Use QA?", detail: null, dedupeKey: "k" },
+      via: { note: "storefront's ion: first time this comes up" },
+      heldFor: "n1",
+    },
+    "daemon",
+  ],
 ];
 
 const invalid: [string, Record<string, unknown>, string?][] = [
@@ -62,6 +94,10 @@ const invalid: [string, Record<string, unknown>, string?][] = [
   ["need.raised", { needId: "n1", requestId: "q1", kind: "command", summary: "x", detail: null }, "daemon"],
   ["need.resolved", { needId: "n1", decision: "maybe", by: "you" }, "daemon"],
   ["run.retrying", { attempt: 0, delayS: -1, reason: "x", effort: null }, "daemon"],
+  ["chat.created", { title: "t", projectId: "p", by: "you" }, "daemon"],
+  ["ion.said", { text: "x", card: { kind: "threads" } }, "daemon"],
+  ["ion.said", { text: "x", card: { kind: "nope" } }, "daemon"],
+  ["suggestion.answered", { suggestionId: "s1", keep: "yes" }, "daemon"],
 ];
 
 describe("event payloads", () => {

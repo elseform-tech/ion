@@ -16,6 +16,7 @@ import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
 import { HarnessInfos } from "./harness-infos.js";
 import { renameChat } from "../runs/ready.js";
+import { ionsView } from "../views/ions.js";
 
 export { UserError } from "./errors.js";
 
@@ -100,6 +101,14 @@ export const handlers: Handlers = {
     };
   },
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,
+  "ions.list": (_a, ctx) => ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects),
+  // Plan 09, Tasks 3 and 4 answer these.
+  "ion.message": () => {
+    throw new UserError("Not ready yet");
+  },
+  "suggestion.answer": () => {
+    throw new UserError("Not ready yet");
+  },
   "projects.add": (a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);

@@ -15,6 +15,7 @@ const chat = (chatId: string, projectId: string, o: Partial<ChatInfo> = {}): Cha
   lastRunStatus: "done",
   lastActivityAt: "2026-11-18T10:00:00.000Z",
   preview: null,
+  by: null,
   ...o,
 });
 const projects: ProjectInfo[] = [

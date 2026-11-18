@@ -229,6 +229,16 @@ describe("daemon api", () => {
     await expect(client.call("chat.diff", { chatId: "nope" })).rejects.toThrow("Unknown chat: nope");
   });
 
+  // Plan 09: ion chief and one ion per project; default has none.
+  it("lists ion chief, then each project's ion", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    const ions = await client.call("ions.list", {});
+    expect(ions.map((x) => [x.ionId, x.name])).toEqual([
+      ["chief", "ion"],
+      ["app", "app"],
+    ]);
+  });
+
   // The user, 2026-11-18: chats can be renamed from the sidebar.
   it("renames a chat, and refuses an empty name or an unknown chat", async () => {
     const { chatId } = await client.call("chat.create", { title: "Old name" });

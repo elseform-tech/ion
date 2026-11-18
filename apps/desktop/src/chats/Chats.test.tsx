@@ -16,6 +16,7 @@ const chat = (chatId: string, projectId: string): ChatInfo => ({
   lastRunStatus: "done",
   lastActivityAt: "2026-11-18T10:00:00.000Z",
   preview: null,
+  by: null,
 });
 const changed = { files: [{ path: "a.ts", added: 1, removed: 0, patch: "@@ -0,0 +1 @@\n+x\n" }] };
 /** ion's answers: these chats, and changes only in chats named in `withChanges`. */

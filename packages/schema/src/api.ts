@@ -10,6 +10,9 @@ export type ProjectInfo = {
   starred: boolean;
   access?: "auto" | "full";
   shareWithIon?: boolean;
+  /** Its ion's colour and the agent its ion's threads run on (Plan 09). */
+  color?: string;
+  harness?: string;
 };
 
 export type StatusResult = {
@@ -62,6 +65,9 @@ export type Commands = {
   "chats.list": { args: Record<string, never>; result: ChatInfo[] };
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
+  "ions.list": { args: Record<string, never>; result: IonInfo[] };
+  "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
+  "suggestion.answer": { args: { suggestionId: string; keep: boolean }; result: { ok: true } };
   /** What a chat changed in its worktree since it started (empty once archived); omitted: files past the cap. */
   "chat.diff": { args: { chatId: string }; result: { files: FileDiff[]; omitted?: number } };
   "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
@@ -132,6 +138,24 @@ export type ChatInfo = {
   lastActivityAt: string | null;
   /** The start of the agent's last reply, on one line. */
   preview: string | null;
+  /** "ion": a thread ion started; null: your own chat. */
+  by: "ion" | null;
+};
+
+/** An ion: ion chief ("chief") or a project's ion (its id is the project's). */
+export type IonInfo = {
+  ionId: string;
+  name: string;
+  /** Its colour (identity only); null for ion chief. */
+  color: string | null;
+  /** The agent its threads run on; null: ion chief, or the default. */
+  harness: string | null;
+  /** The last thing it said. */
+  last: string | null;
+  /** Open questions in its threads (ion chief: all). */
+  needs: number;
+  /** One of its threads is running. */
+  working: boolean;
 };
 export type Command = keyof Commands;
 export const COMMANDS = [
@@ -152,6 +176,9 @@ export const COMMANDS = [
   "chats.list",
   "chat.archive",
   "chat.rename",
+  "ions.list",
+  "ion.message",
+  "suggestion.answer",
   "chat.diff",
   "memory.list",
   "memory.forget",
