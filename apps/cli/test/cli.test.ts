@@ -191,11 +191,12 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(existsSync(join(p, "notes.md"))).toBe(false);
     });
 
-    it("Auto: ion decides, the run never pauses, and the chat says what it decided", async () => {
+    // Plan 07: an allow is quiet (it's recorded); only a denial shows, with its reason.
+    it("Auto: ion decides, the run never pauses, and only a denial is shown", async () => {
       writeFileSync(join(home, "config.toml"), '[access]\njudge = "fake"\n');
       await setup();
       const r = await ion("ask", "shell", "-p", "app", "--harness", "fake");
-      expect(r.out).toContain("· Allowed by ion: Run pnpm test");
+      expect(r.out).not.toContain("Allowed by ion");
       expect(r.out).toContain("Tests pass.");
       expect((await ion("needs")).out).toBe("Nothing needs you");
       const full = await ion("ask", "shell", "-p", "app", "--harness", "fake", "--access", "full");

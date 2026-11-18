@@ -92,8 +92,68 @@ describe("mapUpdate", () => {
         st,
       ),
     ).toEqual([
+      { type: "tool.output", data: { toolId: "w", text: "ok" } },
       { type: "tool.finished", data: { toolId: "w", ok: true, summary: null } },
       { type: "file.changed", data: { path: "notes.md", change: "modify", added: null, removed: null } },
+    ]);
+  });
+});
+
+// Plan 07: each tool's input and output, for the chat to show.
+describe("tool input and output", () => {
+  it("passes the input given at the start, and the output at the end", () => {
+    const st = s();
+    const [started] = mapUpdate(
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        title: "ls",
+        kind: "execute",
+        rawInput: { command: "ls" },
+      },
+      st,
+    );
+    expect(started?.data).toMatchObject({ input: '{\n  "command": "ls"\n}' });
+    const done = mapUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: "a.ts\nb.ts" } }],
+      },
+      st,
+    );
+    expect(done[0]).toEqual({ type: "tool.output", data: { toolId: "t1", text: "a.ts\nb.ts" } });
+    expect(done[1]).toMatchObject({ type: "tool.finished", data: { toolId: "t1", ok: true } });
+  });
+
+  it("passes an input that only arrives later, and output given as rawOutput", () => {
+    const st = s();
+    mapUpdate({ sessionUpdate: "tool_call", toolCallId: "t2", title: "bash", kind: "execute" }, st);
+    mapUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t2",
+        status: "in_progress",
+        rawInput: { command: "pwd" },
+      },
+      st,
+    );
+    const done = mapUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t2",
+        status: "completed",
+        rawOutput: { output: "/repo" },
+      },
+      st,
+    );
+    expect(done).toEqual([
+      { type: "tool.output", data: { toolId: "t2", text: "/repo" } },
+      {
+        type: "tool.finished",
+        data: { toolId: "t2", ok: true, summary: null, input: '{\n  "command": "pwd"\n}' },
+      },
     ]);
   });
 });

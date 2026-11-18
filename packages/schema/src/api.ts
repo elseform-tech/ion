@@ -48,9 +48,12 @@ export type Commands = {
   };
   "run.interrupt": { args: { runId: string }; result: { ok: true } };
   "needs.list": { args: { chatId?: string }; result: NeedInfo[] };
-  /** Answers an agent's question with choice number `choice` (1-based); scope defaults to this chat. */
+  /**
+   * Answers an agent's question: choice number `choice` (1-based), or `text` in your own words. Scope defaults to
+   * this chat.
+   */
   "need.answer": {
-    args: { needId: string; choice: number; scope?: DecisionScope };
+    args: { needId: string; choice?: number; text?: string; scope?: DecisionScope };
     result: { ok: true };
   };
   "decisions.list": { args: { projectId?: string }; result: DecisionInfo[] };
@@ -58,8 +61,8 @@ export type Commands = {
   "decision.forget": { args: { decisionId: string }; result: { ok: true } };
   "chats.list": { args: Record<string, never>; result: ChatInfo[] };
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
-  /** What a chat changed in its worktree since it started (empty once archived). */
-  "chat.diff": { args: { chatId: string }; result: { files: FileDiff[] } };
+  /** What a chat changed in its worktree since it started (empty once archived); omitted: files past the cap. */
+  "chat.diff": { args: { chatId: string }; result: { files: FileDiff[]; omitted?: number } };
   "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
   "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
@@ -95,7 +98,7 @@ export type NeedInfo = {
   /** The exact input the agent sent (command, path, URL…), or why it asks, not its own description. */
   detail: string | null;
   /** An agent's question: the choices you pick from. */
-  choices?: { label: string; consequence: string }[];
+  choices?: { label: string; consequence: string; recommended?: boolean }[];
   raisedAt: string;
 };
 

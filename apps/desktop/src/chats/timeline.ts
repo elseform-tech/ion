@@ -1,7 +1,9 @@
 import { EV, type IonEvent } from "@ion/schema";
 
-type Choice = { label: string; consequence: string };
-export type Tool = { name: string; summary: string; ok?: boolean };
+type Choice = { label: string; consequence: string; recommended?: boolean };
+export type Tool = { name: string; summary: string; ok?: boolean; input?: string; output?: string };
+
+const OUTPUT_MAX = 20 * 1024;
 
 /** One thing the chat shows, in order. */
 export type Item =
@@ -15,6 +17,8 @@ export type Item =
       question: string;
       why: string | null;
       choices: Choice[];
+      /** Closed: answered by you, or its run stopped. */
+      resolved?: boolean;
       answered?: string;
     }
   | { kind: "end"; status: string; seconds: number; cost?: number }
@@ -79,7 +83,11 @@ function completed(t: Timeline, d: D): Timeline {
 }
 
 function toolStarted(t: Timeline, d: D, runId: string): Timeline {
-  const tool: Tool = { name: str(d.name), summary: str(d.summary) };
+  const tool: Tool = {
+    name: str(d.name),
+    summary: str(d.summary),
+    ...(d.input ? { input: str(d.input) } : {}),
+  };
   const at = t.work[runId];
   const work = at !== undefined ? t.items[at] : undefined;
   if (work?.kind === "work") {
@@ -95,20 +103,35 @@ function toolStarted(t: Timeline, d: D, runId: string): Timeline {
   };
 }
 
-function toolFinished(t: Timeline, d: D): Timeline {
-  const where = t.tools[str(d.toolId)];
+/** Changes one tool in its run's work item. */
+function updateTool(t: Timeline, toolId: string, f: (x: Tool) => Tool): Timeline {
+  const where = t.tools[toolId];
   const work = where ? t.items[where.at] : undefined;
   if (!where || work?.kind !== "work") return t;
-  const tools = work.tools.map((x, j) => (j === where.tool ? { ...x, ok: d.ok === true } : x));
+  const tools = work.tools.map((x, j) => (j === where.tool ? f(x) : x));
   return { ...replace(t, where.at, { ...work, tools }), streaming: t.streaming };
 }
+
+const toolFinished = (t: Timeline, d: D): Timeline =>
+  updateTool(t, str(d.toolId), (x) => ({
+    ...x,
+    ok: d.ok === true,
+    ...(d.input ? { input: str(d.input) } : {}),
+  }));
+
+/** Output arrives in pieces; the chat keeps the first 20 KB. */
+const toolOutput = (t: Timeline, d: D): Timeline =>
+  updateTool(t, str(d.toolId), (x) => ({
+    ...x,
+    output: ((x.output ?? "") + str(d.text)).slice(0, OUTPUT_MAX),
+  }));
 
 function approval(t: Timeline, d: D): Timeline {
   if (d.by !== "ion") return t;
   const what = str(d.summary) || t.asks[str(d.requestId)] || "a tool";
-  if (d.decision === "deny")
-    return push(t, { kind: "ion", tone: "deny", text: `Denied by ion: ${what} — ${str(d.reason)}` });
-  return push(t, { kind: "ion", tone: "allow", text: `Allowed by ion: ${what}` });
+  // Allows are recorded but not shown: ion lets most things through. A denial shows, with why.
+  if (d.decision !== "deny") return t;
+  return push(t, { kind: "ion", tone: "deny", text: `Denied by ion: ${what} — ${str(d.reason)}` });
 }
 
 function question(t: Timeline, d: D): Timeline {
@@ -127,8 +150,10 @@ function question(t: Timeline, d: D): Timeline {
 function answered(t: Timeline, d: D): Timeline {
   const i = t.questions[str(d.needId)];
   const q = i !== undefined ? t.items[i] : undefined;
-  if (d.decision !== "answered" || q?.kind !== "question") return t;
-  return { ...replace(t, i!, { ...q, answered: str(d.choice) }), streaming: t.streaming };
+  if (q?.kind !== "question") return t;
+  // Any answer closes it: yours (with the choice), or its run stopping ("superseded").
+  const done = d.decision === "answered" ? { resolved: true, answered: str(d.choice) } : { resolved: true };
+  return { ...replace(t, i!, { ...q, ...done }), streaming: t.streaming };
 }
 
 function finished(t: Timeline, d: D, e: IonEvent): Timeline {
@@ -160,6 +185,7 @@ const HANDLERS: Record<string, Handler> = {
   }),
   [EV.toolStarted]: (t, d, e) => toolStarted(t, d, e.runId ?? ""),
   [EV.toolFinished]: toolFinished,
+  [EV.toolOutput]: toolOutput,
   [EV.fileChanged]: (t) => ({ ...t, changes: t.changes + 1 }),
   [EV.approvalRequested]: (t, d) => ({ ...t, asks: { ...t.asks, [str(d.requestId)]: str(d.summary) } }),
   [EV.approvalResolved]: approval,

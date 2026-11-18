@@ -1,7 +1,11 @@
 import type { DecisionInfo } from "@ion/schema";
 import { wrapData } from "../context/index.js";
 
-export type AskInput = { question: string; choices: { label: string; consequence: string }[]; why?: string };
+export type AskInput = {
+  question: string;
+  choices: { label: string; consequence: string; recommended?: boolean }[];
+  why?: string;
+};
 /** Which past decision answers this question, and with which of its own choices; null: ask the user. */
 export type Matcher = (
   q: AskInput,

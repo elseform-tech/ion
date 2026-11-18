@@ -73,7 +73,6 @@ describe("timeline", () => {
       ev("approval.resolved", { requestId: "q4", decision: "allow", by: "gate" }),
     );
     expect(t.items).toEqual([
-      { kind: "ion", tone: "allow", text: "Allowed by ion: pnpm test" },
       { kind: "ion", tone: "deny", text: "Denied by ion: cat ~/.ssh/id_rsa — Touches your secrets" },
     ]);
   });
@@ -118,6 +117,7 @@ describe("timeline", () => {
         question: "Delete build/?",
         why: "2 GB",
         choices,
+        resolved: true,
         answered: "Keep it",
       },
       { kind: "ion", tone: "answer", text: "Answered by ion from your decision on 18 Nov: Delete it" },
@@ -139,6 +139,52 @@ describe("timeline", () => {
   it("remembers the agent the chat last ran on, for the next message", () => {
     expect(play().harness).toBeNull();
     expect(play(ev("run.started", { harness: "grok-build" })).harness).toBe("grok-build");
+  });
+
+  // Final review I1: a question whose run stopped is closed too, so it never sits in (or returns to) the bar.
+  it("closes a question that was superseded, without saying you chose anything", () => {
+    const choices = [
+      { label: "A", consequence: "a" },
+      { label: "B", consequence: "b" },
+    ];
+    const t = play(
+      ev("need.raised", {
+        needId: "n1",
+        requestId: "a",
+        kind: "ask",
+        summary: "Q?",
+        detail: null,
+        dedupeKey: "k",
+        choices,
+      }),
+      ev("need.resolved", { needId: "n1", decision: "superseded", by: "daemon" }),
+    );
+    expect(t.items[0]).toMatchObject({ kind: "question", resolved: true });
+    expect(t.items[0]).not.toHaveProperty("answered");
+  });
+
+  it("keeps each tool's input and output, including input that arrives when it ends", () => {
+    const t = play(
+      ev("tool.started", {
+        toolId: "t1",
+        name: "Bash",
+        kind: "command",
+        summary: "ls",
+        input: '{"command":"ls"}',
+      }),
+      ev("tool.output", { toolId: "t1", text: "a.ts\n" }),
+      ev("tool.output", { toolId: "t1", text: "b.ts" }),
+      ev("tool.finished", { toolId: "t1", ok: true, summary: null }),
+      ev("tool.started", { toolId: "t2", name: "execute", kind: "command", summary: "pwd" }),
+      ev("tool.finished", { toolId: "t2", ok: true, summary: null, input: '{"command":"pwd"}' }),
+    );
+    expect(t.items[0]).toMatchObject({
+      kind: "work",
+      tools: [
+        { name: "Bash", input: '{"command":"ls"}', output: "a.ts\nb.ts", ok: true },
+        { name: "execute", input: '{"command":"pwd"}', ok: true },
+      ],
+    });
   });
 
   it("shows errors and retries", () => {

@@ -23,7 +23,7 @@ function OpenChat({
   harnesses: HarnessInfo[];
 }) {
   const t = useTimeline(client, chat.chatId);
-  const open = t.items.filter((i): i is Question => i.kind === "question" && !i.answered).at(-1);
+  const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
   // The side panel only appears in chats that have a worktree (an archived chat has none).
   const hasWorktree = Boolean(chat.branch) && !chat.archived;
   const [panel, setPanel] = useState(true);
@@ -106,9 +106,18 @@ function NewChat(props: {
 }
 
 /** The Chats screen: the sidebar, and the open chat or a new one. */
-export function Chats({ client }: { client: IonClient }) {
+export function Chats({
+  client,
+  openId,
+  setOpenId,
+}: {
+  client: IonClient;
+  /** The open chat, kept by the window so it stays open across a reconnect. */
+  openId: string | null;
+  setOpenId: (id: string | null) => void;
+}) {
   const live = useLive(client);
-  const [openId, setOpenId] = useState<string | null>(null);
+
   const chat = live.chats.find((c) => c.chatId === openId);
   return (
     <>

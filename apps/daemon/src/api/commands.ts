@@ -51,7 +51,7 @@ export const handlers: Handlers = {
     const worktree = chat.archived ? null : chatsView.worktree(ctx.db, chat.chatId);
     const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
     if (!worktree || !project) return { files: [] };
-    return { files: await chatDiff(project.path, worktree) };
+    return chatDiff(project.path, worktree);
   },
   "chat.archive": async (a, ctx) => {
     await ctx.runs.archive(String(a.chatId ?? ""));
@@ -60,7 +60,8 @@ export const handlers: Handlers = {
   "need.answer": async (a, ctx) => {
     const scope = a.scope ?? "chat";
     if (!DECISION_SCOPES.includes(scope)) throw new UserError("Pick chat, project or everywhere");
-    await ctx.decisions.answer(String(a.needId ?? ""), Number(a.choice), scope);
+    const pick = typeof a.text === "string" ? a.text : Number(a.choice);
+    await ctx.decisions.answer(String(a.needId ?? ""), pick, scope);
     return { ok: true as const };
   },
   "decisions.list": (a, ctx) => decisionsView.list(ctx.db, a.projectId),

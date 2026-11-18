@@ -1,22 +1,23 @@
 Usage: ion [options] [command]
 
 Options:
-  --json                          Machine-readable output
-  -h, --help                      display help for command
+  --json                             Machine-readable output
+  -h, --help                         display help for command
 
 Commands:
-  daemon                          Start, stop or check the ion service
-  status                          Is ion running, and how many projects
-  projects                        Your projects
-  ask [options] <text>            Ask a coding agent to do something in a
-                                  project
-  needs                           What's waiting on you
-  answer [options] <id> <choice>  Answer a question by its number
-  chats                           Your chats
-  memory                          What ion remembers
-  decisions                       Your answers, and what came of them
-  harnesses                       Coding agents and their models
-  help [command]                  display help for command
+  daemon                             Start, stop or check the ion service
+  status                             Is ion running, and how many projects
+  projects                           Your projects
+  ask [options] <text>               Ask a coding agent to do something in a
+                                     project
+  needs                              What's waiting on you
+  answer [options] <id> <answer...>  Answer a question: a choice's number, or
+                                     your own words
+  chats                              Your chats
+  memory                             What ion remembers
+  decisions                          Your answers, and what came of them
+  harnesses                          Coding agents and their models
+  help [command]                     display help for command
 
 ---
 

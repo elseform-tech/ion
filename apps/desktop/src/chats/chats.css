@@ -161,44 +161,6 @@ select:hover {
   color: var(--faint);
   cursor: default;
 }
-.qbar {
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--side);
-  padding: 10px 12px;
-}
-.qbar-q {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-}
-.qbar-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--wait);
-}
-.qbar-why {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 2px 0 0 14px;
-}
-.qbar-choices {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-.qbar-always {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 13px;
-}
 .md-link {
   color: var(--accent);
   text-decoration: underline;
@@ -267,4 +229,98 @@ select:hover {
 }
 .diff-ctx {
   color: var(--muted);
+}
+.changes-error {
+  color: var(--bad);
+}
+
+.qcard {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--wait);
+  border-radius: var(--r-lg);
+  background: var(--side);
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.qcard-q {
+  font: 600 15px / 1.4 var(--body);
+}
+.qcard-why {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: -6px;
+}
+.qcard-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qcard-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.qcard-option:hover {
+  background: var(--hover);
+  border-color: var(--sel);
+}
+.qcard-option--rec {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.qcard-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.qcard-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.qcard-rec {
+  font: 500 11px / 1 var(--body);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  padding: 3px 7px;
+}
+.qcard-detail {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.qcard-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.qcard-own {
+  flex: 1;
+  min-width: 160px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+.qcard-own::placeholder {
+  color: var(--faint);
+}
+.qcard-always {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
 }

@@ -370,3 +370,57 @@ async function until(f: () => boolean, ms = 2000) {
     await new Promise((r) => setTimeout(r, 5));
   }
 }
+
+// The user's own words, when none of the agent's choices fit.
+describe("answering in your own words", () => {
+  it("sends your words back and keeps them as the decision", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    await d.answer(needs.open("c1")[0]!.needId, "Only the old builds", "project");
+    expect(of(EV.needResolved).at(-1)).toMatchObject({ decision: "answered", choice: "Only the old builds" });
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ choice: "Only the old builds", custom: true });
+    expect(followUp).toHaveBeenCalledWith(
+      "c1",
+      "fake",
+      'You asked: "Delete the build folder?". The user answered: "Only the old builds".',
+      "Tidy the repo",
+    );
+  });
+
+  it("refuses an empty answer", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    await expect(d.answer(needs.open("c1")[0]!.needId, "   ")).rejects.toThrow("Say what you'd like");
+  });
+
+  it("is sent again after a restart in its own words", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    followUp.mockRejectedValueOnce(new UserError("This chat is already running"));
+    await d.answer(needs.open("c1")[0]!.needId, "Later");
+    followUp.mockClear();
+    await make().resume();
+    expect(followUp).toHaveBeenCalledWith(
+      "c1",
+      "fake",
+      'You asked: "Delete the build folder?". The user answered: "Later".',
+      "",
+    );
+  });
+});
+
+describe("recommended options", () => {
+  it("keeps the agent's one recommended option, and refuses two", async () => {
+    const d = make();
+    const choices = [
+      { label: "SQLite", consequence: "One file, no server; fine until many writers", recommended: true },
+      { label: "Postgres", consequence: "A server to run; scales; needed for many writers" },
+    ];
+    await d.ask(scope(), { question: "Which database?", choices });
+    expect(needs.open("c1")[0]!.choices).toEqual(choices);
+    const two = choices.map((c) => ({ ...c, recommended: true }));
+    await expect(d.ask(scope(), { question: "Which database?", choices: two })).rejects.toThrow(
+      "Recommend one option at most",
+    );
+  });
+});

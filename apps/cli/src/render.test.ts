@@ -96,7 +96,7 @@ describe("render", () => {
     expect(
       r(ev("approval.resolved", { requestId: "q1", decision: "allow", by: "ion", reason: "Runs the tests" }))
         .text,
-    ).toBe("· Allowed by ion: Run pnpm test\n");
+    ).toBe("");
     expect(
       r(
         ev("approval.resolved", {
@@ -143,7 +143,7 @@ describe("render", () => {
         }),
       ).text,
     ).toBe(
-      "· Asked you: Delete build/?\n  1. Delete it — build/ is removed\n  2. Keep it — Nothing changes\n  Answer: ion answer n1 <number>\n",
+      "· Asked you: Delete build/?\n  1. Delete it — build/ is removed\n  2. Keep it — Nothing changes\n  Answer: ion answer n1 <number, or your own words>\n",
     );
     expect(
       r(

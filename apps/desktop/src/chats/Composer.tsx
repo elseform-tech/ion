@@ -1,7 +1,7 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import { ArrowUp, Square } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useRef, useState } from "react";
 
 const EFFORTS = ["low", "medium", "high", "max"] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -35,6 +35,23 @@ function Pick({
 
 const cap = (x: string) => x[0]!.toUpperCase() + x.slice(1);
 
+/** The agent's own default model by name when it says which; otherwise whose default it is. */
+function defaultModelLabel(h: HarnessInfo | undefined): string {
+  if (!h?.defaultModel) return `${h?.label ?? "The agent"}'s default`;
+  return `${h.models.find((m) => m.id === h.defaultModel)?.label ?? h.defaultModel} (default)`;
+}
+
+/**
+ * The agents ready to use. Until they're checked (a few seconds), "Loading agents…"; the chat's own agent stays
+ * shown (and is what's sent) even when it isn't ready now.
+ */
+function agentOptions(all: HarnessInfo[], ready: HarnessInfo[], chosen: string): [string, string][] {
+  const agents: [string, string][] = ready.map((h) => [h.id, h.label]);
+  if (!all.length) agents.push([chosen, "Loading agents…"]);
+  else if (chosen && !ready.some((h) => h.id === chosen)) agents.push([chosen, `${chosen} (not ready)`]);
+  return agents;
+}
+
 /** The harness, model, effort and access pickers in one row (empty model/effort/access: its own default). */
 function BrainPicker({
   harnesses,
@@ -46,11 +63,10 @@ function BrainPicker({
   onChange: (b: Brain) => void;
 }) {
   const ready = harnesses.filter((h) => h.installed && h.signedIn);
-  const models = ready.find((h) => h.id === brain.harness)?.models ?? [];
-  // Agents are checked live (a few seconds); until then, say so rather than show an empty picker.
-  const agents: [string, string][] = ready.length
-    ? ready.map((h) => [h.id, h.label])
-    : [[brain.harness, "Loading agents…"]];
+  const current = ready.find((h) => h.id === brain.harness);
+  const models = current?.models ?? [];
+  const defaultLabel = defaultModelLabel(current);
+  const agents = agentOptions(harnesses, ready, brain.harness);
   return (
     <div className="brain">
       <Pick
@@ -62,7 +78,7 @@ function BrainPicker({
       <Pick
         label="Model"
         value={brain.model}
-        options={[["", "Default model"], ...models.map((m): [string, string] => [m.id, m.label])]}
+        options={[["", defaultLabel], ...models.map((m): [string, string] => [m.id, m.label])]}
         onChange={(v) => onChange({ ...brain, model: v })}
       />
       <Pick
@@ -138,13 +154,17 @@ type Props = {
 
 /** The message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
 export function Composer({ client, harnesses, to, running, onSent, harness }: Props) {
-  const first = harness ?? harnesses.find((h) => h.installed && h.signedIn)?.id ?? "claude-code";
+  // Never a default agent: the chat's own, else the first one ready. Until the list arrives, nothing is sent.
+  const first = harness ?? harnesses.find((h) => h.installed && h.signedIn)?.id ?? "";
   const [brain, setBrain] = useState<Brain>({ harness: "", model: "", effort: "", access: "" });
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const sending = useRef(false);
   const b = { ...brain, harness: brain.harness || first };
+  const canSend = Boolean(text.trim()) && harnesses.length > 0 && Boolean(b.harness);
   const send = async () => {
-    if (!text.trim()) return;
+    if (!canSend || sending.current) return;
+    sending.current = true;
     setError(null);
     try {
       const { chatId } = await client.call("ask", askArgs(text, b, to));
@@ -152,6 +172,8 @@ export function Composer({ client, harnesses, to, running, onSent, harness }: Pr
       onSent(chatId);
     } catch (e) {
       setError(e instanceof ApiCallError ? e.message : "Something went wrong");
+    } finally {
+      sending.current = false;
     }
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -172,12 +194,7 @@ export function Composer({ client, harnesses, to, running, onSent, harness }: Pr
       {error && <div className="composer-error">{error}</div>}
       <div className="composer-row">
         <BrainPicker harnesses={harnesses} brain={b} onChange={setBrain} />
-        <SendOrStop
-          client={client}
-          running={running}
-          canSend={Boolean(text.trim())}
-          onSend={() => void send()}
-        />
+        <SendOrStop client={client} running={running} canSend={canSend} onSend={() => void send()} />
       </div>
     </div>
   );

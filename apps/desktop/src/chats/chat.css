@@ -94,3 +94,28 @@
 .asked-q {
   font-weight: 500;
 }
+.tool summary {
+  cursor: pointer;
+  padding: 2px 0;
+}
+.tool.bad summary {
+  color: var(--bad);
+}
+.tool-io-label {
+  margin: 6px 0 2px 16px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.tool-io {
+  margin: 0 0 6px 16px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  font: 12px / 1.5 var(--mono);
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

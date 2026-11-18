@@ -1,6 +1,8 @@
-import type { IonClient } from "@ion/client/browser";
+import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { FileDiff } from "@ion/schema";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const SETTLE_MS = 500;
 
 /** The CSS class for one line of a patch: added, removed, a hunk header, or file headers (hidden). */
 function lineClass(line: string): string | null {
@@ -50,23 +52,39 @@ export function ChangesPanel({
   chatId: string;
   version: number;
 }) {
-  const [files, setFiles] = useState<FileDiff[] | null>(null);
+  const [diff, setDiff] = useState<{ files: FileDiff[]; omitted?: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const shown = useRef<string | null>(null);
   useEffect(() => {
     let live = true;
-    void client.call("chat.diff", { chatId }).then(
-      (r) => live && setFiles(r.files),
-      () => live && setFiles([]),
-    );
+    const read = () =>
+      void client.call("chat.diff", { chatId }).then(
+        (r) => {
+          if (!live) return;
+          setDiff(r);
+          setError(null);
+        },
+        (e: unknown) => live && setError(e instanceof ApiCallError ? e.message : "Couldn't read the changes"),
+      );
+    // At once when a chat opens; after that, once a burst of edits has settled.
+    const opening = shown.current !== chatId;
+    shown.current = chatId;
+    const timer = opening ? undefined : setTimeout(read, SETTLE_MS);
+    if (opening) read();
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, [client, chatId, version]);
+  const omitted = diff?.omitted ?? 0;
   return (
     <aside className="changes" aria-label="Changes">
-      {files?.length === 0 && <div className="changes-empty">No changes yet</div>}
-      {files?.map((f) => (
+      {error && <div className="changes-empty changes-error">{error}</div>}
+      {!error && diff?.files.length === 0 && !omitted && <div className="changes-empty">No changes yet</div>}
+      {diff?.files.map((f) => (
         <File key={f.path} f={f} />
       ))}
+      {omitted > 0 && <div className="changes-empty">{omitted} more files not shown</div>}
     </aside>
   );
 }

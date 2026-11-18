@@ -23,7 +23,16 @@ const guard =
     }
   };
 
-const Choice = z.object({ label: z.string().min(1).max(200), consequence: z.string().max(500) });
+const Choice = z.object({
+  label: z.string().min(1).max(200).describe("A few words naming the option"),
+  consequence: z
+    .string()
+    .max(1000)
+    .describe(
+      "What it leads to: why it fits, the tradeoffs (cost, risk, effort, what's hard to undo), and the facts the user needs to choose",
+    ),
+  recommended: z.boolean().optional().describe("Your own pick; at most one"),
+});
 
 /** Asking the user instead of being approved, your past decisions, and what came of them. */
 export function askTools(server: McpServer, scope: Scope, d: { db: Db; decisions: Decisions }): void {
@@ -31,11 +40,11 @@ export function askTools(server: McpServer, scope: Scope, d: { db: Db; decisions
     "ask",
     {
       description:
-        "Ask the user to decide something before you do it: 2 to 4 choices, each with what it leads to. Then end your turn; the answer comes as the next message. Check `decisions` first: the user may have decided already.",
+        "Ask the user to decide something before you do it. Give one clear question, the context they need (why), and 2 to 4 real options, each with its reasoning, tradeoffs and the facts that matter, marking your recommended one. The user can also answer in their own words. Then end your turn; the answer comes as the next message. Check `decisions` first: the user may have decided already.",
       inputSchema: {
         question: z.string().min(1).max(500),
         choices: z.array(Choice).min(2).max(4),
-        why: z.string().max(1000).optional(),
+        why: z.string().max(1000).optional().describe("Why you're asking: the situation and what's at stake"),
       },
     },
     guard((a: { question: string; choices: z.infer<typeof Choice>[]; why?: string }) =>

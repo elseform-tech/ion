@@ -16,7 +16,7 @@ export class NeedsService {
     chatId: string;
     runId: string;
     question: string;
-    choices: { label: string; consequence: string }[];
+    choices: { label: string; consequence: string; recommended?: boolean }[];
     why?: string;
   }): string {
     const needId = `n${randomBytes(3).toString("hex")}`;

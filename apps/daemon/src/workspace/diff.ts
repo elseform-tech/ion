@@ -1,4 +1,5 @@
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { lstat, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
 import type { FileDiff } from "@ion/schema";
 import { UserError } from "../api/errors.js";
@@ -38,33 +39,39 @@ function cut(f: Omit<FileDiff, "truncated">, ok: boolean): FileDiff {
   return f.patch.length > PATCH_MAX ? { ...f, patch: f.patch.slice(0, PATCH_MAX), truncated: true } : f;
 }
 
-/** A new file the chat made, if it's a regular file really inside the worktree (never a symlink out of it). */
-function regularInside(worktree: string, path: string): boolean {
+/**
+ * A new file the chat made, if it's a regular file really inside the worktree: never a symlink out of it, and
+ * never a hard link (it could be the same file as one elsewhere on your machine).
+ */
+async function regularInside(root: string, worktree: string, path: string): Promise<boolean> {
   const full = join(worktree, path);
   try {
-    return lstatSync(full).isFile() && realpathSync(full).startsWith(realpathSync(worktree) + sep);
+    const st = await lstat(full);
+    return st.isFile() && st.nlink === 1 && (await realpath(full)).startsWith(root + sep);
   } catch {
     return false;
   }
 }
 
-/** Files the chat added and hasn't committed (git diff alone doesn't see them). */
-async function untracked(worktree: string): Promise<FileDiff[]> {
+/** Files the chat added and hasn't committed (git diff alone doesn't see them), and how many weren't shown. */
+async function untracked(worktree: string): Promise<{ files: FileDiff[]; omitted: number }> {
   const list = (await git(["ls-files", "--others", "--exclude-standard", "-z"], worktree)).stdout;
-  const files = list
-    .split("\0")
-    .filter((p) => p && regularInside(worktree, p))
-    .slice(0, FILES_MAX);
-  const out: FileDiff[] = [];
-  for (const path of files) {
+  const all = list.split("\0").filter(Boolean);
+  const root = await realpath(worktree);
+  const files: FileDiff[] = [];
+  let checked = 0;
+  // Checked in order only until the cap is reached: a huge folder of new files costs at most that many checks.
+  for (const path of all) {
+    if (files.length >= FILES_MAX) break;
+    checked++;
+    if (!(await regularInside(root, worktree, path))) continue;
     const r = await git([...DIFF, "--no-index", "--", "/dev/null", path], worktree);
     // A new file: every line is added (binary files have none). Exit 1 just means "they differ".
     const added = r.stdout.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
-    out.push(cut({ path, added, removed: 0, patch: r.stdout }, r.code <= 1));
+    files.push(cut({ path, added, removed: 0, patch: r.stdout }, r.code === 0 || r.code === 1));
   }
-  return out;
+  return { files, omitted: all.length - checked };
 }
-
 /** Where the chat's branch left the project; if git can't say, ion says so rather than show less. */
 async function baseOf(repo: string, worktree: string): Promise<string> {
   const head = await git(["rev-parse", "HEAD"], repo);
@@ -79,14 +86,20 @@ async function baseOf(repo: string, worktree: string): Promise<string> {
  * work, new files included), not what the project did meanwhile. Each file's patch is read on its own, by the
  * path git lists. Empty when the worktree is gone.
  */
-export async function chatDiff(repo: string, worktree: string): Promise<FileDiff[]> {
-  if (!existsSync(worktree)) return [];
+export async function chatDiff(
+  repo: string,
+  worktree: string,
+): Promise<{ files: FileDiff[]; omitted?: number }> {
+  if (!existsSync(worktree)) return { files: [] };
   const base = await baseOf(repo, worktree);
-  const counts = numstat((await git([...DIFF, "--numstat", "-z", base], worktree)).stdout);
+  const counts = [...numstat((await git([...DIFF, "--numstat", "-z", base], worktree)).stdout)];
   const tracked: FileDiff[] = [];
-  for (const [path, c] of [...counts].slice(0, FILES_MAX)) {
+  for (const [path, c] of counts.slice(0, FILES_MAX)) {
     const r = await git([...DIFF, base, "--", path], worktree);
     tracked.push(cut({ path, ...c, patch: r.stdout }, r.code === 0));
   }
-  return [...tracked, ...(await untracked(worktree))].sort((a, b) => (a.path < b.path ? -1 : 1));
+  const fresh = await untracked(worktree);
+  const omitted = Math.max(0, counts.length - FILES_MAX) + fresh.omitted;
+  const files = [...tracked, ...fresh.files].sort((a, b) => (a.path < b.path ? -1 : 1));
+  return omitted ? { files, omitted } : { files };
 }

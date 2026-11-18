@@ -76,22 +76,24 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
   },
   [EV.approvalResolved]: (s, d) => {
     const what = d.summary ? clean(d.summary) : (s.asks.get(String(d.requestId)) ?? "a tool");
-    // Auto: say what ion decided. Full access and the worktree policy stay quiet.
-    if (d.by === "ion") {
-      const text =
-        d.decision === "deny" ? `· Denied by ion: ${what} — ${clean(d.reason)}` : `· Allowed by ion: ${what}`;
-      return { text: line(s, text) };
-    }
+    // Auto: a denial says why. Allows (most actions) stay quiet; they're recorded all the same.
+    if (d.by === "ion")
+      return d.decision === "deny"
+        ? { text: line(s, `· Denied by ion: ${what} — ${clean(d.reason)}`) }
+        : quiet;
     return d.decision === "deny" ? { text: line(s, `· Asked to use ${what} — denied (${d.by})`) } : quiet;
   },
   [EV.needRaised]: (s, d) => {
     if (d.kind !== "ask" || !Array.isArray(d.choices))
       return { text: line(s, `· Waiting on you: ${clean(d.summary)}`) + detailLines(d.detail) };
-    const choices = (d.choices as { label: unknown; consequence: unknown }[]).map(
-      (c, i) => `  ${i + 1}. ${clean(c.label)} — ${clean(c.consequence)}\n`,
+    const choices = (d.choices as { label: unknown; consequence: unknown; recommended?: unknown }[]).map(
+      (c, i) =>
+        `  ${i + 1}. ${clean(c.label)}${c.recommended === true ? " (recommended)" : ""} — ${clean(c.consequence)}\n`,
     );
     const ask = line(s, `· Asked you: ${clean(d.summary)}`);
-    return { text: `${ask}${choices.join("")}  Answer: ion answer ${clean(d.needId)} <number>\n` };
+    return {
+      text: `${ask}${choices.join("")}  Answer: ion answer ${clean(d.needId)} <number, or your own words>\n`,
+    };
   },
   [EV.needResolved]: (s, d) =>
     d.decision === "answered" ? { text: line(s, `· You chose: ${clean(d.choice)}`) } : quiet,

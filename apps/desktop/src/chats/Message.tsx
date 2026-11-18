@@ -1,4 +1,4 @@
-import type { AnchorHTMLAttributes } from "react";
+import { type AnchorHTMLAttributes, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -18,7 +18,7 @@ function Link({ href, children }: AnchorHTMLAttributes<HTMLAnchorElement>) {
  * An agent's text as Markdown. Raw HTML is never rendered (react-markdown leaves it out without a raw-HTML
  * plugin), and unsafe link targets such as javascript: are emptied by its URL check.
  */
-export function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
       <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: Link }}>
@@ -26,4 +26,4 @@ export function Markdown({ text }: { text: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});

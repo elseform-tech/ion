@@ -10,9 +10,21 @@ import { runsView } from "../views/runs.js";
 import { FollowUps, type Message, type Start } from "./followups.js";
 import type { AskInput, Matcher } from "./match.js";
 
-/** The message your answer becomes in the chat. */
-const followText = (question: string, choice: string) =>
-  `You asked: ${JSON.stringify(question)}. The user chose: ${JSON.stringify(choice)}.`;
+/** The message your answer becomes in the chat: a choice, or your own words. */
+const followText = (question: string, answer: string, custom = false) =>
+  `You asked: ${JSON.stringify(question)}. The user ${custom ? "answered" : "chose"}: ${JSON.stringify(answer)}.`;
+
+/** Your answer: choice number `pick` (1-based), or your own words when none of the choices fit. */
+function answerOf(pick: number | string, choices: { label: string }[]): { label: string; custom: boolean } {
+  if (typeof pick === "string") {
+    const words = pick.trim().slice(0, 2000);
+    if (!words) throw new UserError("Say what you'd like");
+    return { label: words, custom: true };
+  }
+  const choice = choices[pick - 1];
+  if (!Number.isInteger(pick) || !choice) throw new UserError(`Pick 1 to ${choices.length}`);
+  return { label: choice.label, custom: false };
+}
 
 const words = (s: string) =>
   new Set(
@@ -59,6 +71,8 @@ type Recorded = {
   choice: string;
   scope: DecisionScope;
   by: "you" | "ion";
+  /** Your own words rather than one of the agent's choices. */
+  custom?: boolean;
   from?: { decisionId: string; decidedAt: string };
 };
 
@@ -90,6 +104,8 @@ export class Decisions {
   async ask(s: Scope, q: AskInput): Promise<string> {
     const labels = q.choices.map((c) => c.label);
     if (new Set(labels).size !== labels.length) throw new UserError("Give each choice its own label");
+    if (q.choices.filter((c) => c.recommended).length > 1)
+      throw new UserError("Recommend one option at most");
     const known = await this.fromPast(s, q);
     if (known) return known;
     const needId = this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q });
@@ -102,31 +118,31 @@ export class Decisions {
    * can't (the agent signed out, the chat archived…) the question stays open and you can answer again. A busy
    * chat gets it when its run ends.
    */
-  async answer(needId: string, n: number, scope: DecisionScope = "chat"): Promise<void> {
+  async answer(needId: string, pick: number | string, scope: DecisionScope = "chat"): Promise<void> {
     if (this.answering.has(needId)) throw new UserError("That's already answered");
     const need = this.d.needs.openNeed(needId);
     const asked = this.d.needs.open(need.chatId).find((x) => x.needId === needId);
     if (need.kind !== "ask" || !asked?.choices) throw new UserError("That isn't a question");
-    const choice = asked.choices[n - 1];
-    if (!Number.isInteger(n) || !choice) throw new UserError(`Pick 1 to ${asked.choices.length}`);
+    const { label, custom } = answerOf(pick, asked.choices);
     this.answering.add(needId);
     try {
       // After a restart the request is gone: the judge then gets none, which only makes it stricter.
       const m: Message = {
         harness: this.harnessOf(need.runId, need.chatId),
-        text: followText(asked.summary, choice.label),
+        text: followText(asked.summary, label, custom),
         request: this.requests.get(needId) ?? "",
       };
       const started = await this.followUps.tryNow(need.chatId, m);
-      this.d.needs.answered(needId, choice.label, scope);
+      this.d.needs.answered(needId, label, scope);
       this.requests.delete(needId);
       const base = { chatId: need.chatId, runId: need.runId, needId, projectId: asked.projectId ?? "" };
       const decisionId = this.record({
         ...base,
         question: asked.summary,
-        choice: choice.label,
+        choice: label,
         scope,
         by: "you",
+        ...(custom ? { custom } : {}),
       });
       if (started === "busy") this.followUps.later(need.chatId, { ...m, decisionId });
       else if (started) this.followUps.started(started, decisionId);
@@ -163,9 +179,10 @@ export class Decisions {
         question: string;
         choice: string;
         by: string;
+        custom?: boolean;
       };
       if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId) return [];
-      const text = followText(d.question, d.choice);
+      const text = followText(d.question, d.choice, d.custom === true);
       if (sent(d.needId, text)) return [];
       return [{ harness: this.harnessOf(e.runId, chatId), text, request: "", decisionId: d.decisionId }];
     });

@@ -40,8 +40,46 @@ describe("QuestionBar", () => {
     fireEvent.click(screen.getByRole("button", { name: /Merge/ }));
     expect(await screen.findByText("That's already answered")).toBeTruthy();
     rerender(
-      <QuestionBar client={{ call } as unknown as IonClient} question={{ ...question, answered: "Merge" }} />,
+      <QuestionBar
+        client={{ call } as unknown as IonClient}
+        question={{ ...question, resolved: true, answered: "Merge" }}
+      />,
     );
     expect(container.textContent).toBe("");
+  });
+
+  it("sends your own words when none of the choices fit", async () => {
+    const call = vi.fn(async () => ({ ok: true }));
+    render(<QuestionBar client={{ call } as unknown as IonClient} question={question} />);
+    const box = screen.getByLabelText("Your own answer");
+    fireEvent.change(box, { target: { value: "Merge tomorrow" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("need.answer", {
+        needId: "n1",
+        text: "Merge tomorrow",
+        scope: "chat",
+      }),
+    );
+  });
+
+  it("shows the question first, then each option with its reasoning, and the recommended one marked", () => {
+    const rich = {
+      ...question,
+      choices: [
+        { label: "Merge", consequence: "main gets it today; CI is green", recommended: true },
+        { label: "Wait", consequence: "Nothing changes until the review" },
+      ],
+    };
+    const { container } = render(
+      <QuestionBar client={{ call: vi.fn() } as unknown as IonClient} question={rich} />,
+    );
+    expect(container.querySelector(".qcard-q")?.textContent).toBe("Merge it?");
+    expect(container.querySelector(".qcard-why")?.textContent).toBe("Tests pass");
+    const options = [...container.querySelectorAll(".qcard-option")].map((o) => o.textContent);
+    expect(options).toEqual([
+      "MergeRecommendedmain gets it today; CI is green",
+      "WaitNothing changes until the review",
+    ]);
   });
 });

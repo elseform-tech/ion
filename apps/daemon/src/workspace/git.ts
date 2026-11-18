@@ -30,8 +30,9 @@ export function git(args: string[], cwd: string): Promise<GitResult> {
       // Diffs can be large: Node's 1 MB default would cut them off silently.
       { cwd, env: gitEnv(), timeout: 60_000, maxBuffer: 64 * 1024 * 1024 },
       (err, stdout, stderr) => {
+        // git's own exit code; -1 when git didn't finish (couldn't start, timed out, output too large).
         let code = 0;
-        if (err) code = typeof err.code === "number" ? err.code : 1;
+        if (err) code = typeof err.code === "number" ? err.code : -1;
         resolve({ code, stdout: String(stdout), stderr: String(stderr) });
       },
     );

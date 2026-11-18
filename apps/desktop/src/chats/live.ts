@@ -47,21 +47,23 @@ export function useLive(client: IonClient) {
     setNeeds(n);
   }, [client]);
   useEffect(() => {
-    void refresh();
-    void client.call("projects.list", {}).then(setProjects);
-    void client.call("harnesses.list", {}).then(setHarnesses);
+    const quiet = () => {}; // a dropped connection shows as "ion isn't running"; nothing to add here
+    void client.call("projects.list", {}).then(setProjects, quiet);
+    void client.call("harnesses.list", {}).then(setHarnesses, quiet);
     let stop: (() => void) | undefined;
     let gone = false;
-    // Only events from now on: the lists above already hold the past.
+    // Live events first, then the lists: nothing can happen between reading them and listening.
     void client
       .subscribe({ fromNow: true }, (e) => {
-        if (CHANGES.has(e.type)) void refresh();
-        if (e.type === EV.chatCreated) void client.call("projects.list", {}).then(setProjects);
+        if (CHANGES.has(e.type)) void refresh().catch(quiet);
+        if (e.type === EV.chatCreated) void client.call("projects.list", {}).then(setProjects, quiet);
       })
       .then((s) => {
-        if (gone) s();
-        else stop = s;
-      });
+        if (gone) return s();
+        stop = s;
+        return refresh();
+      })
+      .catch(quiet);
     return () => {
       gone = true;
       stop?.();
