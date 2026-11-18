@@ -94,9 +94,22 @@ describe("chats view", () => {
         branch: "ion/fix-it-abc123",
         archived: false,
         lastRunStatus: "done",
+        lastActivityAt: expect.any(String),
       },
     ]);
     expect(chatsView.worktree(db, "c1")).toBe("/w/c1");
+  });
+});
+
+// Plan 08: the sidebar sorts and labels chats by their last activity.
+describe("chats view, activity", () => {
+  it("keeps when each chat last had a message or a run", () => {
+    const at = chatsView.list(db).find((c) => c.chatId === "c1")?.lastActivityAt;
+    expect(typeof at).toBe("string");
+    const before = Date.parse(at!);
+    store.append(d({ chatId: "c1", runId: "r2", type: "message.sent", data: { text: "again" } }));
+    const after = chatsView.list(db).find((c) => c.chatId === "c1")!.lastActivityAt!;
+    expect(Date.parse(after)).toBeGreaterThanOrEqual(before);
   });
 });
 

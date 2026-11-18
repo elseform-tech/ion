@@ -132,6 +132,9 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tree .x{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--wait)}
 
 
+/* lab lines 305-305: empty lists */
+.pempty{padding:28px;text-align:center;color:var(--faint)}
+
 /* lab lines 310-330: chips, project picker */
 /* chips, project picker, stats */
 .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center}
@@ -175,8 +178,26 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tile .tname{font-size:15px;line-height:1.2;letter-spacing:-.04em}
 .head .hname{font-size:17px;line-height:1;letter-spacing:-.04em;overflow:visible}
 
-/* lab lines 553-553: await (hidden) */
+/* lab lines 516-516: count badge */
+.nb{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--wait);color:#1a1205;font-size:11px;font-weight:600;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
+
+/* lab lines 521-522: starred project */
+.stari{color:var(--wait);fill:var(--wait)}
+.stari.sm{width:12px;height:12px;vertical-align:-1px}
+
+/* lab lines 549-560: pins, await (hidden), project menu search */
+.pinl{display:inline-flex;align-items:center;gap:5px}
+.pinl .lucide{width:12px;height:12px}
+.r .wd.urg{background:var(--bad)}
+#needsGrp[hidden]{display:none}
 .await[hidden]{display:none}
+/* project menu search */
+.pmi{display:flex;align-items:center;gap:8px;padding:6px 9px 8px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.pmi .lucide{width:14px;height:14px;color:var(--faint)}
+.pmi input{flex:1;min-width:0;border:0;background:transparent;font:inherit;color:var(--ink);outline:none}
+.pml{display:grid;max-height:300px;overflow:auto}
+.pmenu .nb{margin-left:auto}
+.pmenu .nb+.ck{margin-left:6px}
 
 /* lab lines 571-636: media: code blocks */
 /* ===== media ===== */

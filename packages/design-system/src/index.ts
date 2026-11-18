@@ -1,7 +1,13 @@
 export {
   ArrowUp,
+  Check,
   ChevronDown,
   ChevronRight,
+  ChevronsUpDown,
+  Folder,
+  Layers,
+  Pin,
+  Star,
   Code,
   FileDiff,
   MessageSquare,

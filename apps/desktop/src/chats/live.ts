@@ -10,9 +10,33 @@ export type Groups = {
 
 const RUNNING = new Set(["queued", "running"]);
 
-/** The sidebar's sections: Needs you (one row per question), then Running, then the rest, newest first. */
-export function groupChats(chats: ChatInfo[], needs: NeedInfo[]): Groups {
-  const live = chats.filter((c) => !c.archived).reverse();
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A chat's time as the lab shows it: "now", "40m", "3h", the weekday within a week, else "1 Nov". */
+export function relTime(iso: string | null, now = new Date()): string {
+  if (!iso) return "";
+  const t = new Date(iso);
+  const mins = Math.floor((now.getTime() - t.getTime()) / 60_000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  if (mins < 24 * 60) return `${Math.floor(mins / 60)}h`;
+  if (mins < 7 * 24 * 60) return DAYS[t.getUTCDay()]!;
+  return `${t.getUTCDate()} ${MONTHS[t.getUTCMonth()]}`;
+}
+
+const newestFirst = (a: ChatInfo, b: ChatInfo) =>
+  (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? "");
+
+/**
+ * The sidebar's sections: Needs you (one row per question), then Running, then the rest, newest activity first.
+ * With a project picked, only its chats.
+ */
+export function groupChats(chats: ChatInfo[], needs: NeedInfo[], projectId: string | null = null): Groups {
+  const live = chats
+    .filter((c) => !c.archived && (!projectId || c.projectId === projectId))
+    .reverse()
+    .sort(newestFirst);
   const byId = new Map(live.map((c) => [c.chatId, c]));
   const needsYou = needs.flatMap((need) => {
     const chat = byId.get(need.chatId);

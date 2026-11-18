@@ -11,9 +11,12 @@ const RANGES = [
   [31, 35, "general (buttons, focus, icons, spinner)"],
   [47, 47, "window"],
   [48, 164, "window, rail, chats sidebar, chat, empty state, tools"],
+  [305, 305, "empty lists"],
   [310, 330, "chips, project picker"],
   [361, 378, "project menu"],
-  [553, 553, "await (hidden)"],
+  [516, 516, "count badge"],
+  [521, 522, "starred project"],
+  [549, 560, "pins, await (hidden), project menu search"],
   [571, 636, "media: code blocks"],
   [761, 831, "brain picker; work"],
 ];

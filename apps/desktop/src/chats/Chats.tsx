@@ -122,7 +122,13 @@ export function Chats({
   return (
     <>
       <aside className="side" aria-label="Chats">
-        <Sidebar groups={live.groups} open={openId} onOpen={setOpenId} />
+        <Sidebar
+          chats={live.chats}
+          needs={live.needs}
+          projects={live.projects}
+          open={openId}
+          onOpen={setOpenId}
+        />
       </aside>
       <main className="chat">
         {chat ? (
