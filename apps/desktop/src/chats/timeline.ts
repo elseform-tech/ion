@@ -15,6 +15,8 @@ export type Item =
       needId: string;
       question: string;
       why: string | null;
+      /** In an ion thread: the project's ion's one line of context. */
+      note?: string;
       choices: Choice[];
       /** Closed: answered by you, or its run stopped. */
       resolved?: boolean;
@@ -118,6 +120,11 @@ function question(t: Timeline, d: D): Timeline {
     why: typeof d.detail === "string" ? d.detail : null,
     choices: d.choices as Choice[],
     ...(d.blocked === true ? { blocked: true } : {}),
+    ...(typeof (d.via as { note?: unknown } | undefined)?.note === "string"
+      ? { note: (d.via as { note: string }).note }
+      : {}),
+    // Held behind the same question waiting in another thread: settled by that answer, or asked again.
+    ...(typeof d.heldFor === "string" ? { resolved: true } : {}),
   };
   const added = push(t, item);
   const at = added.items.length - 1;

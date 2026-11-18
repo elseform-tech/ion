@@ -46,7 +46,7 @@ function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | n
   return (
     <header className="head" data-tauri-drag-region>
       <span className="title">{chat.title}</span>
-      <span className="muted">{chat.projectId}</span>
+      <span className="muted">{chat.by === "ion" ? `${chat.projectId}'s ion` : chat.projectId}</span>
       <span className="sp" />
       {panel !== null && (
         <button
@@ -181,6 +181,7 @@ export function Chats({
           chats={live.chats}
           needs={live.needs}
           projects={live.projects}
+          ions={live.ions}
           open={openId}
           onOpen={setOpenId}
           {...sidebarActions(client, openId, setOpenId)}

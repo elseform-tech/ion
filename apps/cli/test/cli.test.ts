@@ -246,6 +246,16 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(await ion("memory", "forget", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
     });
 
+    // Plan 09: ions from the CLI (messaging one starts real work, so only the list and a refusal here).
+    it("lists ion chief and each project's ion, and refuses an ion it doesn't know", async () => {
+      await setup();
+      expect((await ion("ions")).out).toBe("chief  ion  -\napp    app  -");
+      expect(await ion("ions", "message", "nope", "hello")).toMatchObject({
+        code: 1,
+        err: "Unknown ion: nope",
+      });
+    });
+
     it("lists chats and archives one", async () => {
       await setup();
       const r = await ion("ask", "hello there", "-p", "app", "--harness", "fake", "--json");

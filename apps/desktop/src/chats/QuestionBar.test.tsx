@@ -138,4 +138,11 @@ describe("QuestionBar", () => {
       "Keep it blocked",
     ]);
   });
+  // Plan 09: a question from an ion thread carries its ion's note.
+  it("shows the ion's note under the question", () => {
+    const { container } = bar({ ...question, note: "storefront's ion: first time this comes up" });
+    expect(container.querySelector(".qbox .qnote")?.textContent).toBe(
+      "storefront's ion: first time this comes up",
+    );
+  });
 });

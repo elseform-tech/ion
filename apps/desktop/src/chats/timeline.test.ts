@@ -299,4 +299,18 @@ describe("timeline", () => {
     );
     expect(t.items).toEqual([{ kind: "you", text: "Green" }]);
   });
+  // Plan 09: an ion thread's question keeps its ion's note.
+  it("keeps the ion's note on a question", () => {
+    const t = play(
+      ev("need.raised", {
+        ...{ needId: "n1", requestId: "q", kind: "ask", summary: "Use QA?", detail: null, dedupeKey: "k" },
+        choices: [{ label: "Yes", consequence: "x" }],
+        via: { note: "storefront's ion: first time this comes up" },
+      }),
+    );
+    expect(t.items[0]).toMatchObject({
+      kind: "question",
+      note: "storefront's ion: first time this comes up",
+    });
+  });
 });

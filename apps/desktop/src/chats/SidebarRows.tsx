@@ -1,19 +1,24 @@
-import { Archive, CircleAlert, Ellipsis, Pencil, Square } from "@ion/design-system";
-import type { ChatInfo, NeedInfo } from "@ion/schema";
+import { Archive, Avatar, CircleAlert, Ellipsis, Pencil, Square } from "@ion/design-system";
+import type { ChatInfo, IonInfo, NeedInfo } from "@ion/schema";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useDismiss } from "./dismiss.js";
 import { relTime } from "./live.js";
 
-export type RowProps = { chat: ChatInfo; open: boolean; onOpen: () => void };
+/** `ion`: the chat's project ion, when ion started the chat (its avatar fills the first slot). */
+export type RowProps = { chat: ChatInfo; open: boolean; onOpen: () => void; ion?: IonInfo };
+
+/** The first slot: the project's ion for a thread ion started; empty for your own chats. */
+const Slot = ({ ion }: { ion?: IonInfo }) =>
+  ion ? <Avatar ion={{ harness: ion.harness, color: ion.color }} /> : <span />;
 export type RowActions = {
   onRename: (chatId: string, title: string) => void;
   onArchive: (chatId: string) => void;
 };
 
 /** A Needs-you row: the question, its project under it, the wait dot. */
-export const NeedRow = ({ chat, open, onOpen, need }: RowProps & { need: NeedInfo }) => (
+export const NeedRow = ({ chat, open, onOpen, need, ion }: RowProps & { need: NeedInfo }) => (
   <button className={`r${open ? " on" : ""}`} type="button" onClick={onOpen}>
-    <span />
+    <Slot ion={ion} />
     <span>
       <span className="tt">{need.summary}</span>
       <span className="sub">{chat.projectId}</span>
@@ -109,6 +114,7 @@ export function ChatRow({
   onOpen,
   running,
   acts,
+  ion,
 }: RowProps & { running?: boolean; acts: RowActions }) {
   const [renaming, setRenaming] = useState(false);
   if (renaming)
@@ -124,7 +130,7 @@ export function ChatRow({
   return (
     <div className="rw">
       <button className={`r${open ? " on" : ""}`} type="button" onClick={onOpen}>
-        <span />
+        <Slot ion={ion} />
         <span>
           <span className={`tt${running ? " now" : ""}`}>{chat.title}</span>
           {chat.preview && <span className="sub">{chat.preview}</span>}

@@ -149,6 +149,7 @@ export function QuestionBar({ client, question }: { client: IonClient; question:
           {open ? <ChevronDown /> : <ChevronUp />}
         </button>
       </div>
+      {question.note && <div className="qnote">{question.note}</div>}
       {open && <Details q={question} busy={busy} answer={send} always={always} setAlways={setAlways} />}
       {error && <div className="quiet">{error}</div>}
     </div>

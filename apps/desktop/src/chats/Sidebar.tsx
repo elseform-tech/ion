@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Pin, SquarePen } from "@ion/design-system";
-import type { ChatInfo, NeedInfo, ProjectInfo } from "@ion/schema";
+import type { ChatInfo, IonInfo, NeedInfo, ProjectInfo } from "@ion/schema";
 import { type ReactNode, useMemo, useState } from "react";
 import { groupChats } from "./live.js";
 import { ProjectMenu } from "./ProjectMenu.js";
@@ -63,6 +63,8 @@ type Props = {
   chats: ChatInfo[];
   needs: NeedInfo[];
   projects: ProjectInfo[];
+  /** Each project's ion, for its avatar beside the threads it started. */
+  ions?: IonInfo[];
   open: string | null;
   onOpen: (chatId: string | null) => void;
   onNewProject: (name: string) => void;
@@ -104,14 +106,14 @@ function ProjectGroups(p: { chats: ChatInfo[]; row: (c: ChatInfo) => ReactNode }
 }
 
 /** The lab's Chats sidebar: Needs you (pinned), Running (shimmering), then your chats by project. */
-export function Sidebar({ chats, needs, projects, open, onOpen, onNewProject, onRename, onArchive }: Props) {
+export function Sidebar(p: Props) {
+  const { chats, needs, projects, ions = [], open, onOpen, onNewProject, onRename, onArchive } = p;
   const [project, setProject] = useState<string | null>(null);
   const g = useMemo(() => groupChats(chats, needs, project), [chats, needs, project]);
-  const props = (c: ChatInfo): RowProps => ({
-    chat: c,
-    open: open === c.chatId,
-    onOpen: () => onOpen(c.chatId),
-  });
+  const props = (c: ChatInfo): RowProps => {
+    const ion = c.by === "ion" ? ions.find((x) => x.ionId === c.projectId) : undefined;
+    return { chat: c, open: open === c.chatId, onOpen: () => onOpen(c.chatId), ...(ion ? { ion } : {}) };
+  };
   const acts = { onRename, onArchive };
   const row = (c: ChatInfo) => <ChatRow key={c.chatId} {...props(c)} acts={acts} />;
   return (

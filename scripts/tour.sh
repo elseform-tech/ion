@@ -1,5 +1,5 @@
 #!/bin/bash
-# The UX tour (AGENTS.md): a fresh ion with every chat state, and the app in a browser.
+# The UX tour (AGENTS.md): a fresh ion with every chat state, ion threads and ion chief, and the app in a browser.
 #   scripts/tour.sh            start it; prints the app's address
 #   scripts/tour.sh stop       stop the tour's ion and the app
 # Needs a build (pnpm build). Uses the fake agent, so it costs no quota; send a real message with opencode's free
@@ -30,6 +30,9 @@ for s in edit asks fail flaky overloaded gated; do ion ask "$s" -p storefront --
 ion ask "hello" --harness fake >/dev/null 2>&1 # a plain chat, in default
 ion ask "edit the onboarding email copy so it reads warmer and mentions the free trial length up front" \
   -p payments-api --harness fake >/dev/null 2>&1
+# Plan 09: a thread storefront's ion started, and ion chief routing a message to two projects.
+ion ions message storefront "edit the readme" >/dev/null 2>&1
+ion ions message chief "please check storefront and payments-api for the rounding bug" >/dev/null 2>&1
 (ion ask "slow" -p payments-api --harness fake >/dev/null 2>&1 &) # running while you look
 pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
 sleep 3

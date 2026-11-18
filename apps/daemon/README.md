@@ -53,3 +53,15 @@ The always-on service that owns all state.
 - `src/main.ts`: entry point. Takes the `daemon.lock` (an exclusive SQLite lock the OS releases if the process dies, so only one daemon per data dir), then writes `daemon.json` (`pid`, `port`, `token`, mode 0600).
 
 Data dir: `$ION_HOME/data`, else `$XDG_DATA_HOME/ion`, else `~/.local/share/ion`. Database: `ion.db`.
+
+## Ions (Plan 09)
+
+`src/ions/`: every project but `default` has an ion, and ion chief sits over them. Each ion's chat is its events
+on `ion:<ionId>` (`ion.heard`, `ion.said`).
+- A project's ion starts a thread (a chat with `by: "ion"`, always in Auto access) for what you ask and says how it
+  ended.
+- ion chief decides on the quick model (the judge's): it answers from the state of your projects (never one with
+  `shareWithIon = false`), or sends your message on to up to 5 project ions.
+- Questions in ion threads go through the project's ion (`questions.ts`): an answer from your decisions there, a
+  duplicate held behind the same question waiting (settled only when identical), else your question with the
+  ion's note; "always?" after the same answer three times; a decision whose runs failed twice is flagged.

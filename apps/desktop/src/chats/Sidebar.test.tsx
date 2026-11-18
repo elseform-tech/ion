@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { ChatInfo, NeedInfo, ProjectInfo } from "@ion/schema";
+import type { ChatInfo, IonInfo, NeedInfo, ProjectInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar.js";
@@ -24,8 +24,29 @@ const projects: ProjectInfo[] = [
 ] as ProjectInfo[];
 
 const acts = () => ({ onNewProject: vi.fn(), onRename: vi.fn(), onArchive: vi.fn() });
+const ions: IonInfo[] = [
+  {
+    ionId: "storefront",
+    name: "storefront",
+    color: "#ED712E",
+    harness: "fake",
+    last: null,
+    needs: 0,
+    working: false,
+  },
+];
 const side = (chats: ChatInfo[], needs: NeedInfo[] = [], a = acts()) =>
-  render(<Sidebar chats={chats} needs={needs} projects={projects} open={null} onOpen={() => {}} {...a} />);
+  render(
+    <Sidebar
+      chats={chats}
+      needs={needs}
+      projects={projects}
+      ions={ions}
+      open={null}
+      onOpen={() => {}}
+      {...a}
+    />,
+  );
 
 // UX tour: your chats told apart by project, each row using its space.
 describe("Sidebar", () => {
@@ -123,5 +144,13 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "More for a" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
     expect(a.onArchive).toHaveBeenCalledWith("a");
+  });
+  // Plan 09: a thread ion started shows its project's ion in the first slot; yours stay empty.
+  it("shows the project's ion beside a thread ion started", () => {
+    const { container } = side([chat("t1", "storefront", { by: "ion" }), chat("c1", "storefront")]);
+    const row = (title: string) =>
+      [...container.querySelectorAll(".r")].find((r) => r.querySelector(".tt")?.textContent === title);
+    expect(row("t1")?.querySelector("canvas")).not.toBeNull();
+    expect(row("c1")?.querySelector("canvas")).toBeNull();
   });
 });

@@ -263,12 +263,13 @@ describe("daemon api", () => {
       5000,
     );
     await client.call("ion.message", { ionId: "chief", text: "please check app" });
-    await until(() => seen.some((e) => e.chatId === "ion:chief" && e.type === "ion.said"), 5000);
+    await until(() => seen.some((e) => e.chatId === "ion:chief" && e.type === "ion.said"), 15_000);
     const chief = seen.filter((e) => e.chatId === "ion:chief" && e.type === "ion.said").at(-1)!.data as {
       text: string;
     };
     expect(chief).toMatchObject({ text: "", card: { kind: "threads" } });
-  });
+    // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
+  }, 20_000);
 
   // The user, 2026-11-18: chats can be renamed from the sidebar.
   it("renames a chat, and refuses an empty name or an unknown chat", async () => {
