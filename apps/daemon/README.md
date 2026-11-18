@@ -7,7 +7,8 @@ The always-on service that owns all state.
   transaction, then notifies subscribers.
 - `src/views`: tables updated as each event is appended (`runs`, `chats`, `needs`). `EventStore.rebuildViews()` replays the
   log into them; replay must give the same rows.
-- `src/workspace`: git worktrees, one per chat, at `<data>/worktrees/<chatId>` on branch `ion/<slug>-<hash>`.
+- `src/workspace`: projects by name (`<[folders] projects>/<name>`, default `~/ion/projects`, a new git repo
+  with one empty commit; `default` is made the first time a chat has no project). Git worktrees, one per chat, at `<data>/worktrees/<chatId>` on branch `ion/<slug>-<hash>`.
   The only code that runs `git`: no shell, no prompts, a minimal environment, the repo's hooks and
   `core.fsmonitor` turned off. Archiving a chat removes its worktree and keeps the branch.
 - `src/runs`: starts runs in the chat's worktree. The policy allows reads, searches and edits inside it
@@ -20,19 +21,28 @@ The always-on service that owns all state.
   gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
   by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (default `claude-code:haiku`, a bare session
   with no tools), which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
-  per action and request in a chat. Limitation: Grok Build runs its own read-only commands (`cat`, `ls`, `grep`…)
-  without asking anyone, so in Auto it can still read files ion would deny.
-- `src/needs`: questions only you can answer (`need.raised`, answered once with `ion needs allow|deny <id>`;
-  stopping or a crash supersedes a run's open needs). Permissions no longer raise needs (see access).
+  per action and request in a chat. The judge also gets your decisions that apply (newest 10).
+- `src/gate`: every tool call, before it runs, through each harness's own hook: `POST /gate/<key>` on the daemon's
+  port (a key per run, separate from MCP keys; no `Origin`), answered `{decision, reason?}` by the same path as
+  permission prompts. Claude Code: an SDK `PreToolUse` callback. Grok: `~/.grok/hooks/ion-gate.json` (a command
+  hook that does nothing outside ion's runs; folder trust stays on), which Auto never lets an agent touch. opencode: ion's
+  plugin through `OPENCODE_CONFIG_CONTENT`. Every hook fails closed. Only Auto's decisions are stored; a gate allow
+  answers the harness's own prompt for the same command or file within 2 s, so it isn't decided twice.
+- `src/needs` and `src/decisions`: agents' questions. An agent calls ion's `ask` tool (2–4 choices, each with
+  what it leads to) and ends its turn; the question waits under Needs you, and outlives its run. Your answer
+  (`ion answer`) is stored as a decision (this chat, this project or everywhere) and sent into the chat as the next
+  message; the run that follows records the decision's outcome (ran or failed); agents (`report_outcome`, 3 per
+  run) and you (`ion decisions note`) add notes. ion answers a new question itself only from a project or
+  everywhere decision, when a quick model names one of the new question's own choices exactly.
 - `src/scheduler`: the run queue. At most `resources.max_runs` runs at once (`"auto"` = half the cores, at
   least one); each run stores `run.queued`, then starts when a slot frees.
-- `src/views` also keep `messages` (yours and the agents', with full-text search) and `memory`. Each view has a
+- `src/views` also keep `messages` (yours and the agents', with full-text search), `memory` and `decisions`. Each view has a
   version: when it changes, an existing database drops that view and rebuilds it from the log.
 - Continuing a chat: a run resumes the chat's last harness session; when the harness can't, a new session gets the
   chat's earlier messages (newest 24,000 characters) as a labelled data block before your message.
 - `src/mcp`: ion's MCP server at `/mcp` on the daemon's port. Each run gets its own key (kept only as a hash,
   revoked when the run ends) that sees its own project: `chat_history`, `search_chats`, `open_needs`, `memory_list`,
-  `memory_write` (5 per run). Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
+  `memory_write` (5 per run), `ask`, `decisions`, `report_outcome`. Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
   tools ask.
 - `src/memory`: memory is yours ("you", shown in every project) or one project's, never shared between projects.
 - `src/api`: the WebSocket API (see `@ion/schema` `api.ts` for the protocol).

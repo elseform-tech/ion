@@ -16,6 +16,13 @@ Protocol notes: `docs/research/acp-and-harnesses.md`.
   Your own configs aren't changed. Not yet known: whether opencode's `.opencode/` plugins or Grok's project config
   can still loosen this; Plan 03's per-chat sandbox is the backstop.
 - Startup (initialize + session) times out after 30 s; a silent agent shows as "Not responding".
+- With a gate (Plan 06), every tool call reaches ion before it runs, built-in read-only commands included.
+  Grok: a `PreToolUse` command hook at `$GROK_HOME/hooks/ion-gate.json` (else `~/.grok/hooks/`), written once:
+  without `ION_GATE_URL` it does nothing; with it, it sends the call to ion with `curl` (`failClosed`). Folder trust
+  stays on, so a repo's own Grok hooks and MCP servers never load unasked; Grok asks you for folder trust once per
+  folder when you use it yourself. opencode:
+  `plugin/ion-gate.js`, listed in `OPENCODE_CONFIG_CONTENT`; it does nothing without `ION_GATE_URL`. `gate.ts`
+  reads each hook's payload (file inputs become `file_path`; a cut-off Grok input is refused).
 - Permission requests go to the daemon's `decide()`; ion picks the matching `allow_once` / `allow_always` / `reject_once` option.
 - One agent process per turn; `interrupt()` sends `session/cancel`, then stops the process after 3 s.
 

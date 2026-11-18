@@ -35,7 +35,11 @@ Adapter events: `run.started`, `run.finished` (done | failed | interrupted | cap
 
 Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `approval.resolved`,
 `need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`,
-`briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`.
+`briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
+`decision.recorded`, `decision.outcome`, `decision.forgotten`.
+
+A `need.raised` with `kind: "ask"` is an agent's question with `choices`; its `need.resolved` has
+`decision: "answered"`, the `choice` and its `scope`. Old allow/deny needs still read.
 
 ## Adapter interface
 

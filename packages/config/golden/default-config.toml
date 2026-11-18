@@ -6,6 +6,9 @@ deep = "claude-code"
 deepEffort = "high"
 useDeep = "auto"
 
+[folders]
+projects = "~/ion/projects"
+
 [access]
 default = "auto"
 judge = "claude-code:haiku"

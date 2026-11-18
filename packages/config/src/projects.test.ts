@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addProject, DEFAULT_CONFIG, setProjectAccess } from "./index.js";
+import { addProject, DEFAULT_CONFIG, DEFAULT_PROJECT, projectNameError, setProjectAccess } from "./index.js";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-proj-")), name);
@@ -47,5 +47,18 @@ describe("access", () => {
     expect(c.projects[0]!.access).toBeUndefined();
     expect(setProjectAccess(c, "app", "full").projects[0]!.access).toBe("full");
     expect(() => setProjectAccess(c, "nope", "full")).toThrow("Unknown project: nope");
+  });
+});
+
+describe("projects by name", () => {
+  it("accepts simple names only", () => {
+    expect(projectNameError("My App")).toBe("Use lowercase letters, numbers, - . _");
+    expect(projectNameError("../x")).toBe("Use lowercase letters, numbers, - . _");
+    expect(projectNameError("app")).toBeNull();
+    expect(projectNameError("default")).toBeNull();
+  });
+  it("keeps projects in a folder you can change; default ~/ion/projects", () => {
+    expect(DEFAULT_CONFIG.folders.projects).toBe("~/ion/projects");
+    expect(DEFAULT_PROJECT).toBe("default");
   });
 });

@@ -7,6 +7,7 @@ import { EV } from "@ion/schema";
 import { loginOnlyEnv } from "./cli.js";
 import { createDeltaCoalescer } from "@ion/adapter-kit";
 import { createMapState, type MapState, mapSdkMessage } from "./map.js";
+import { gateHooks } from "./gate.js";
 import { mcpServerOf, toolKind, toolSummary } from "./tools.js";
 
 type SdkUserMessage = { type: "user"; message: { role: "user"; content: string }; parent_tool_use_id: null };
@@ -109,6 +110,7 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...(opts.resume ? { resume: opts.resume } : {}),
     ...mcpOptions(opts),
+    ...(opts.gate ? { hooks: gateHooks(opts.gate.url) } : {}),
     thinking: { type: "adaptive", display: "summarized" },
     includePartialMessages: true,
     abortController: abort,

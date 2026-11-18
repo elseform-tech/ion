@@ -22,13 +22,14 @@ export type ConnectOpts = {
   timeoutMs?: number;
   resume?: string | null;
   mcp?: StartOpts["mcp"];
+  gate?: StartOpts["gate"];
 };
 
 export async function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
   const timeoutMs = o.timeoutMs ?? 30_000;
   const child = spawn(bin, h.args, {
     stdio: ["pipe", "pipe", "ignore"],
-    env: { ...process.env, ...(h.env?.() ?? {}) },
+    env: { ...process.env, ...(h.env?.(o.gate ? { url: o.gate.url, cwd: o.cwd } : undefined) ?? {}) },
   });
   const rpc = createRpc({ stdin: child.stdin, stdout: child.stdout });
   child.on("error", () => child.stdout.destroy());

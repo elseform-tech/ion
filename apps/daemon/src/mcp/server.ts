@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Db, EventStore } from "../store/index.js";
+import type { Decisions } from "../decisions/index.js";
 import type { Grants, Scope } from "./grants.js";
 import { registerTools } from "./tools.js";
 
@@ -43,7 +44,7 @@ function authorize(req: IncomingMessage, grants: Grants): { status: number; scop
  * ion's MCP server over HTTP (stateless: one small server per request). Only `/mcp`, only from a run that
  * holds a live key, and only what that run's project may see.
  */
-export function createMcpHandler(d: { store: EventStore; db: Db; grants: Grants }) {
+export function createMcpHandler(d: { store: EventStore; db: Db; grants: Grants; decisions?: Decisions }) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const auth = authorize(req, d.grants);
     if (!auth.scope) return reply(res, auth.status, auth.status === 403 ? "Forbidden" : "Unknown key");

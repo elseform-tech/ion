@@ -3,6 +3,7 @@ export { ResumeFailed } from "./types.js";
 export type {
   AdapterEvent,
   ApprovalRequest,
+  GateCall,
   AuthStatus,
   Decision,
   HarnessAdapter,

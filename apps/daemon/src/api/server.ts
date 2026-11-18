@@ -12,6 +12,8 @@ import { Connection } from "./connection.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 import { createAccess, createJudge, harnessRunner } from "../access/index.js";
+import { createMatcher, Decisions } from "../decisions/index.js";
+import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
 
 export const VERSION = "0.0.0";
@@ -23,11 +25,19 @@ export async function startServer(opts: {
   port?: number;
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
   let port = 0;
-  const ctx = openState(opts, () => `http://127.0.0.1:${port}/mcp`);
+  const ctx = openState(opts, () => `http://127.0.0.1:${port}`);
   const { store, db } = ctx;
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
+  // Answers still waiting when ion stopped go into their chats now.
+  void ctx.decisions.resume().catch(() => {});
   const auth = createAuth();
-  const http = httpServer(createMcpHandler({ store, db, grants: ctx.grants }));
+  const http = httpServer(
+    createMcpHandler({ store, db, grants: ctx.grants, decisions: ctx.decisions }),
+    createGateHandler({
+      grants: ctx.grants,
+      decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
+    }),
+  );
   const wss = new WebSocketServer({
     server: http,
     maxPayload: MAX_MESSAGE_BYTES,
@@ -56,16 +66,21 @@ export async function startServer(opts: {
   };
 }
 
-/** One port: the WebSocket API (upgrades), and ion's MCP server at /mcp for runs (with their own keys). */
-function httpServer(mcp: ReturnType<typeof createMcpHandler>) {
+/**
+ * One port: the WebSocket API (upgrades), ion's MCP server at /mcp and the gate at /gate/<key>, both for runs
+ * (with their own keys).
+ */
+function httpServer(mcp: ReturnType<typeof createMcpHandler>, gate: ReturnType<typeof createGateHandler>) {
   return createServer((req, res) => {
-    if ((req.url ?? "/").split("?")[0] === "/mcp") void mcp(req, res).catch(() => res.destroy());
+    const path = (req.url ?? "/").split("?")[0]!;
+    if (path === "/mcp") void mcp(req, res).catch(() => res.destroy());
+    else if (path.startsWith("/gate/")) void gate(req, res).catch(() => res.destroy());
     else res.writeHead(404).end();
   });
 }
 
 /** The data folder, the event store and the services every connection shares. */
-function openState(opts: { dataDir: string; configFile: string }, mcpUrl: () => string): Ctx {
+function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
   const db = openDb(join(opts.dataDir, "ion.db"));
@@ -73,15 +88,47 @@ function openState(opts: { dataDir: string; configFile: string }, mcpUrl: () => 
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   // Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own folders are always denied.
-  const judge = createJudge(harnessRunner(opts.configFile));
-  const access = createAccess({ judge, home: homedir(), ionDirs: [opts.dataDir, dirname(opts.configFile)] });
-  const runCtx = { configFile: opts.configFile, dataDir: opts.dataDir, access, mcp: { grants, url: mcpUrl } };
+  const quick = harnessRunner(opts.configFile);
+  const judge = createJudge(quick);
+  // Made after the run manager it needs; the judge reads it through this holder.
+  const late: { decisions?: Decisions } = {};
+  const access = createAccess({
+    judge,
+    home: homedir(),
+    // ion's files, and a custom Grok folder (where ion's gate hook lives; ~/.grok is covered by name).
+    ionDirs: [
+      opts.dataDir,
+      dirname(opts.configFile),
+      ...(process.env.GROK_HOME ? [process.env.GROK_HOME] : []),
+    ],
+    decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
+  });
+  const runCtx = {
+    configFile: opts.configFile,
+    dataDir: opts.dataDir,
+    access,
+    mcp: { grants, url: () => `${base()}/mcp` },
+    gate: { url: () => `${base()}/gate` },
+  };
+  const runs = new RunManager(store, runCtx, needs, db);
+  // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
+  const decisions = new Decisions({
+    store,
+    db,
+    needs,
+    match: createMatcher(quick),
+    followUp: async (chatId, harness, text, request) =>
+      (await runs.ask({ chatId, text, ...(harness ? { harness } : {}) }, { request })).runId,
+    requestOf: (runId) => runs.requestOf(runId),
+  });
+  late.decisions = decisions;
   return {
     store,
     db,
     needs,
+    decisions,
     grants,
-    runs: new RunManager(store, runCtx, needs, db),
+    runs,
     configFile: opts.configFile,
     startedAt: Date.now(),
     version: VERSION,

@@ -75,7 +75,7 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     return quiet;
   },
   [EV.approvalResolved]: (s, d) => {
-    const what = s.asks.get(String(d.requestId)) ?? "a tool";
+    const what = d.summary ? clean(d.summary) : (s.asks.get(String(d.requestId)) ?? "a tool");
     // Auto: say what ion decided. Full access and the worktree policy stay quiet.
     if (d.by === "ion") {
       const text =
@@ -84,11 +84,26 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     }
     return d.decision === "deny" ? { text: line(s, `· Asked to use ${what} — denied (${d.by})`) } : quiet;
   },
-  [EV.needRaised]: (s, d) => ({
-    text:
-      line(s, `· Waiting on you: ${clean(d.summary)} — run: ion needs allow ${clean(d.needId)}`) +
-      detailLines(d.detail),
-  }),
+  [EV.needRaised]: (s, d) => {
+    if (d.kind !== "ask" || !Array.isArray(d.choices))
+      return { text: line(s, `· Waiting on you: ${clean(d.summary)}`) + detailLines(d.detail) };
+    const choices = (d.choices as { label: unknown; consequence: unknown }[]).map(
+      (c, i) => `  ${i + 1}. ${clean(c.label)} — ${clean(c.consequence)}\n`,
+    );
+    const ask = line(s, `· Asked you: ${clean(d.summary)}`);
+    return { text: `${ask}${choices.join("")}  Answer: ion answer ${clean(d.needId)} <number>\n` };
+  },
+  [EV.needResolved]: (s, d) =>
+    d.decision === "answered" ? { text: line(s, `· You chose: ${clean(d.choice)}`) } : quiet,
+  [EV.decisionRecorded]: (s, d) => {
+    if (d.by !== "ion") return quiet;
+    const on = new Date(String(d.fromDecidedAt)).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    });
+    return { text: line(s, `· Answered by ion from your decision on ${on}: ${clean(d.choice)}`) };
+  },
   [EV.runRetrying]: (s, d) => {
     const secs = Math.ceil(Number(d.delayS) || 0);
     const when = secs > 0 ? `in ${secs}s` : "now";

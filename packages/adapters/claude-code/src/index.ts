@@ -3,6 +3,7 @@ import { CAPABILITIES, FALLBACK_MODELS, parseAuthStatus } from "./capabilities.j
 import { getSessionMessages, query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { cachedCatalog, capabilitiesWith, parseVersion, ResumeFailed, whichOnPath } from "@ion/adapter-kit";
 import { type Exec, execNoShell, loginOnlyEnv, runLogin } from "./cli.js";
+import { claudeGateCall } from "./gate.js";
 import { type QueryFn, startSession } from "./session.js";
 
 export type { Exec } from "./cli.js";
@@ -49,6 +50,7 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
       },
     },
     capabilities: capabilitiesWith(CAPABILITIES, claudeCatalog(deps, binary)),
+    gateCall: claudeGateCall,
     async start(opts) {
       const path = binary();
       if (!path) throw new Error("Claude Code isn't installed");

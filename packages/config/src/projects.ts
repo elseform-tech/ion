@@ -2,6 +2,14 @@ import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { UserConfig } from "./user-config.js";
 
+/** The project new chats use when none is picked. */
+export const DEFAULT_PROJECT = "default";
+
+/** Why a project name can't be used, or null when it can. */
+export function projectNameError(name: string): string | null {
+  return /^[a-z0-9][a-z0-9._-]{0,63}$/.test(name) ? null : "Use lowercase letters, numbers, - . _";
+}
+
 /** Returns a new config with the git repo at `path` added. Throws a user-facing message otherwise. */
 export function addProject(c: UserConfig, path: string): UserConfig {
   const abs = resolve(path);

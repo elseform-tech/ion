@@ -60,11 +60,32 @@ describe("daemon api", () => {
     expect(await client.call("status", {})).toMatchObject({ projects: 0 });
   });
 
-  // Final review minor 9: "allow always" would widen the agent's own permissions past ion's policy.
-  it("answers needs only with allow or deny", async () => {
+  // Plan 06: needs are agents' questions, answered by number with a scope.
+  it("answers questions only with a known scope and a known need", async () => {
     await expect(
-      client.call("need.resolve", { needId: "x", decision: "allow_always" } as never),
-    ).rejects.toThrow("Answer allow or deny");
+      client.call("need.answer", { needId: "x", choice: 1, scope: "always" } as never),
+    ).rejects.toThrow("Pick chat, project or everywhere");
+    await expect(client.call("need.answer", { needId: "x", choice: 1 })).rejects.toThrow("Unknown need: x");
+  });
+
+  // Plan 06 (RF3): an agent asks over MCP, the run ends, you answer, and the answer starts the next run.
+  it("carries your answer to an agent's question into the chat's next run", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { chatId, runId } = await client.call("ask", { text: "asks", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"), 5000);
+    const [need] = await client.call("needs.list", { chatId });
+    expect(need).toMatchObject({ kind: "ask", summary: "Merge it?" });
+    await client.call("need.answer", { needId: need!.needId, choice: 2, scope: "project" });
+    await until(() => seen.some((e) => e.type === "message.sent" && e.runId !== runId), 5000);
+    const sent = seen.filter((e) => e.type === "message.sent").at(-1)!;
+    expect(sent).toMatchObject({ chatId, data: { text: 'You asked: "Merge it?". The user chose: "Wait".' } });
+    await until(() => seen.some((e) => e.type === "decision.outcome"), 5000);
+    expect(await client.call("decisions.list", {})).toMatchObject([
+      { choice: "Wait", scope: "project", outcomes: [{ kind: "ran" }] },
+    ]);
   });
 
   it("serves ion's MCP server on the same port, only with a run's key", async () => {

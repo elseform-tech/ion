@@ -8,12 +8,14 @@ import { NeedsService } from "./service.js";
 let db: Db;
 let store: EventStore;
 let needs: NeedsService;
-const base = {
+const question = {
   chatId: "c1",
   runId: "r1",
-  kind: "command",
-  summary: "Run pnpm test",
-  dedupeKey: "fake:Bash:pnpm test",
+  question: "Use Postgres?",
+  choices: [
+    { label: "Yes", consequence: "Adds a database" },
+    { label: "No", consequence: "Stays on SQLite" },
+  ],
 };
 
 beforeEach(() => {
@@ -30,50 +32,48 @@ beforeEach(() => {
 });
 
 describe("NeedsService", () => {
-  it("raises a need and resolves the waiter with your answer", async () => {
-    const answer = needs.raise({ ...base, requestId: "q1" });
-    const [open] = needs.open();
-    expect(open).toMatchObject({ chatId: "c1", runId: "r1", summary: "Run pnpm test", projectId: "app" });
-    needs.resolve(open!.needId, "allow", "you");
-    expect(await answer).toBe("allow");
+  it("raises a question and answers it once", () => {
+    const id = needs.raiseAsk(question);
+    expect(needs.open()).toMatchObject([
+      { needId: id, kind: "ask", projectId: "app", choices: question.choices },
+    ]);
+    needs.answered(id, "Yes", "project");
     expect(needs.open()).toEqual([]);
-    const types = store.read({ runId: "r1" }).map((e) => e.type);
-    expect(types).toEqual(["need.raised", "need.resolved"]);
+    expect(() => needs.answered(id, "No", "chat")).toThrow(new UserError("That's already answered"));
+    expect(() => needs.openNeed("nope")).toThrow(new UserError("Unknown need: nope"));
   });
 
-  // Review Focus 2: one answer per need.
-  it("refuses a second answer to the same need", async () => {
-    const answer = needs.raise({ ...base, requestId: "q1" });
-    const id = needs.open()[0]!.needId;
-    needs.resolve(id, "deny", "you");
-    expect(() => needs.resolve(id, "allow", "you")).toThrow(new UserError("That's already answered"));
-    expect(await answer).toBe("deny");
-  });
-
-  it("refuses an unknown need", () => {
-    expect(() => needs.resolve("nope", "allow", "you")).toThrow(new UserError("Unknown need: nope"));
-  });
-
-  it("merges a duplicate request in the same chat into the open need", async () => {
-    const a = needs.raise({ ...base, requestId: "q1" });
-    const b = needs.raise({ ...base, requestId: "q2" });
-    expect(needs.open()).toHaveLength(1);
-    needs.resolve(needs.open()[0]!.needId, "allow", "you");
-    expect(await Promise.all([a, b])).toEqual(["allow", "allow"]);
-  });
-
-  // Review Focus 1: a run that stopped can't be resumed by answering its need.
-  it("supersedes a stopped run's open needs, and their waiters get deny", async () => {
-    const answer = needs.raise({ ...base, requestId: "q1" });
+  // An old permission need left open by an older ion is superseded when its run stops; questions aren't.
+  it("supersedes a stopped run's old needs, and keeps its questions", () => {
+    store.append({
+      chatId: "c1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.needRaised,
+      data: { needId: "old", requestId: "q1", kind: "command", summary: "x", detail: null, dedupeKey: "k" },
+    });
+    needs.raiseAsk(question);
     needs.supersedeRun("r1");
-    expect(await answer).toBe("deny");
-    expect(store.read({ runId: "r1" }).at(-1)).toMatchObject({
-      type: "need.resolved",
-      data: { decision: "superseded", by: "daemon" },
+    expect(needs.open().map((n) => n.kind)).toEqual(["ask"]);
+    expect(() => needs.openNeed("old")).toThrow(new UserError("That run stopped"));
+  });
+
+  // Plan 06, Global Constraints: an old allow/deny answer still reads.
+  it("still reads old allow and deny answers", () => {
+    store.append({
+      chatId: "c1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.needRaised,
+      data: { needId: "old", requestId: "q1", kind: "command", summary: "x", detail: null, dedupeKey: "k" },
+    });
+    store.append({
+      chatId: "c1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.needResolved,
+      data: { needId: "old", decision: "allow", by: "you" },
     });
     expect(needs.open()).toEqual([]);
-    expect(() =>
-      needs.resolve(store.read({ runId: "r1" })[0]!.data.needId as string, "allow", "you"),
-    ).toThrow(new UserError("That run stopped"));
   });
 });

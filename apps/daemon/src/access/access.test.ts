@@ -142,6 +142,22 @@ describe("judge", () => {
     expect(p).toMatch(/<ion-data id="\w+" source="the action">\ntool: Bash/);
   });
 
+  // Plan 06: the judge weighs your decisions too, as data.
+  it("gives the judge your decisions when there are any", async () => {
+    const decisions = ['"Push to main?" → "Never" (everywhere)'];
+    const p = judgePrompt({ projectId: "app", text: "x", req: cmd("git push"), decisions });
+    expect(p).toMatch(
+      /<ion-data id="\w+" source="your decisions">\n"Push to main\?" → "Never" \(everywhere\)\n/,
+    );
+    expect(judgePrompt({ projectId: "app", text: "x", req: cmd("git push") })).not.toContain(
+      "your decisions",
+    );
+    const judge = vi.fn(async () => ({ allow: false, reason: "You said never" }));
+    const access = createAccess({ judge, home, ionDirs: ctx.ionDirs, decisionsFor: () => decisions });
+    await access.decide({ chatId: "c1", projectId: "app", text: "x", roots: ctx.roots }, cmd("git push"));
+    expect(judge).toHaveBeenCalledWith(expect.objectContaining({ decisions }));
+  });
+
   it("reads a verdict, and refuses anything else", () => {
     expect(parseVerdict('{"allow": true, "reason": "Runs the tests"}')).toEqual({
       allow: true,
@@ -240,5 +256,39 @@ describe("harnessRunner", () => {
       allow: false,
       reason: "Looks risky",
     });
+  });
+});
+
+// Plan 06: Grok's gate hook lives in the worktree; in Auto, nothing may touch it.
+describe("ruleFor, ion's hook in the worktree", () => {
+  it("denies anything touching .grok/hooks or removing .grok", () => {
+    for (const c of [
+      "rm .grok/hooks/ion.json",
+      "rm -rf .grok",
+      "mv .grok x",
+      "echo {} > ./.grok/hooks/ion.json",
+    ])
+      expect(ruleFor(cmd(c), ctx)).toMatchObject({ decision: "deny", reason: "Touches ion's own files" });
+    const edit: ApprovalRequest = {
+      ...cmd("x"),
+      kind: "edit",
+      toolName: "Write",
+      input: { file_path: join(wt, ".grok/hooks/ion.json") },
+    };
+    expect(ruleFor(edit, ctx)).toMatchObject({ decision: "deny" });
+    // Security review: any spelling that names .grok, or a path that resolves into it, is denied.
+    for (const c of ["rm -r ./x/../.grok", "mv .GROK/ y", "cp z .grok/hooks", "rm -rf .grok;ls"])
+      expect(ruleFor(cmd(c), ctx)?.decision).toBe("deny");
+    const read: ApprovalRequest = {
+      ...cmd("x"),
+      kind: "edit",
+      toolName: "Write",
+      input: { file_path: join(wt, ".grok") },
+    };
+    expect(ruleFor(read, ctx)?.decision).toBe("deny");
+    // The hook now lives in your Grok folder: nothing may touch it either.
+    const hook: ApprovalRequest = { ...read, input: { file_path: `${home}/.grok/hooks/ion-gate.json` } };
+    expect(ruleFor(hook, ctx)).toMatchObject({ decision: "deny", reason: "Touches ion's own files" });
+    expect(ruleFor(cmd("cat src/grok.ts"), ctx)?.decision).toBe("allow");
   });
 });

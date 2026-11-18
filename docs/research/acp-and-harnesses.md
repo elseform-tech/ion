@@ -54,3 +54,18 @@ Grok runs its built-in read-only commands (`cat`, `ls`, `grep`, `git log`…, pl
 `GROK_CONFIG` `permission.ask` (not overlay-allowlisted; only `shell_environment_policy.*`, `toolset.*` are),
 `--deny "Read(<path>)"` (with `/` or `//`), `--deny "Bash(*<path>*)"`. ACP agents also stream text only
 (`agent_message_chunk`); ion's ACP adapter now sends `message.completed` when a message ends.
+
+**Fixed in Plan 06 with hooks (probed 2026-11-18).** A Grok `PreToolUse` hook fires for every tool call,
+built-in read-only commands included, under `grok agent stdio`, and its deny stops the call.
+- **Hooks in the chat's worktree** (`.grok/hooks/`) load only with `GROK_FOLDER_TRUST=0`, which would also load a
+  repo's own Grok hooks, MCP and LSP servers unasked, so ion doesn't use them.
+- **A global hook in `~/.grok/hooks/`** fires in ion's runs (an untrusted worktree, `agent stdio`). ion uses one
+  that does nothing without `ION_GATE_URL`. Cost: with any hook of your own, Grok asks for folder trust in every
+  folder you use it in yourself.
+- **The hook payload** is `{toolName, toolInput, toolInputTruncated, …}` (camelCase, with snake_case copies).
+  `http` hooks expand `${ION_GATE_URL}` from the environment. `failClosed: true` makes a failed hook deny.
+- **opencode:** a plugin listed in `OPENCODE_CONFIG_CONTENT` (`plugin: ["file://…"]`) gets
+  `tool.execute.before(input, output)` with `input.tool` and `output.args` for every tool, MCP tools included
+  (named `<server>_<tool>`). Throwing blocks the call.
+- **Claude Code:** the Agent SDK's `hooks.PreToolUse` callbacks run in-process. ion passes one when the run has a
+  gate.

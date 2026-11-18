@@ -13,6 +13,8 @@ const Project = z.object({
   starred: z.boolean().default(false),
   /** This project's access mode; without it, `[access] default` applies. */
   access: Access.optional(),
+  /** False: ion (the chief) never reads this project's chats. Absent means true. */
+  shareWithIon: z.boolean().optional(),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
@@ -27,6 +29,8 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   projects: z.array(Project).default([]),
+  /** Where `ion projects new <name>` makes projects. */
+  folders: z.looseObject({ projects: z.string().default("~/ion/projects") }).prefault({}),
   /** "auto": ion decides each action outside the chat's worktree; "full": everything runs. */
   access: z
     .looseObject({

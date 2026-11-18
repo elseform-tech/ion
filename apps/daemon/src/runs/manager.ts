@@ -7,7 +7,7 @@ import {
   ResumeFailed,
   type Session,
 } from "@ion/adapter-kit";
-import { loadUserConfig } from "@ion/config";
+import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
@@ -19,7 +19,8 @@ import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
 import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
-import { createWorktree, removeWorktree } from "../workspace/index.js";
+import { createWorktree, ensureDefaultProject, removeWorktree } from "../workspace/index.js";
+import type { GateAnswer } from "../gate/index.js";
 import { Approvals } from "./approvals.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
 
@@ -43,6 +44,8 @@ type Launch = {
   request: string;
   /** This run's MCP key (from launch until the run ends). */
   mcpKey?: string;
+  /** This run's gate key, when its harness reports tool calls through a hook. */
+  gateKey?: string;
 };
 type Between = {
   chatId: string;
@@ -65,6 +68,8 @@ export class RunManager {
   /** Runs that left the queue and haven't ended: interrupt flags, and how to cut a retry's wait short. */
   private readonly between = new Map<string, Between>();
   private stopping = false;
+  /** Runs from launch to end, for the gate to find by its key's run. */
+  private readonly launches = new Map<string, Launch>();
 
   constructor(
     private readonly store: EventStore,
@@ -76,6 +81,8 @@ export class RunManager {
       access?: Access;
       /** ion's MCP server: each run gets a key for its own project, revoked when the run ends. */
       mcp?: { grants: Grants; url: () => string };
+      /** ion's gate (`<base>/<key>`): harnesses with a hook report every tool call there before it runs. */
+      gate?: { url: () => string };
     },
     private readonly needs: NeedsService,
     private readonly db: Db,
@@ -85,9 +92,15 @@ export class RunManager {
     this.approvals = new Approvals(store, ctx.access, (runId) => !this.stopping && this.active.has(runId));
   }
 
-  async ask(args: AskArgs): Promise<{ chatId: string; runId: string }> {
+  /**
+   * `opts.request`: what the judge treats as your request, when the message isn't yours as typed (the run your
+   * answer to an agent's question starts is judged by your request from the run that asked).
+   */
+  async ask(args: AskArgs, opts: { request?: string } = {}): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
+    // A new chat with no project goes to `default` (made the first time): every thread has a project.
+    if (!args.chatId && !args.projectId) args = { ...args, projectId: await this.defaultProject() };
     const chat = this.chatFor(args);
     // An existing chat stays in its own project: its worktree belongs to that repo.
     const repo = this.projectPath(chat.chatId ? chat.projectId : args.projectId);
@@ -100,6 +113,7 @@ export class RunManager {
     try {
       await this.checkReady(h, args.model);
       launch = await this.prepare(h, args, chat, repo);
+      if (opts.request !== undefined) launch.request = opts.request;
       const l = launch;
       this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
     } finally {
@@ -131,7 +145,10 @@ export class RunManager {
    */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
-    l.mcpKey = this.ctx.mcp?.grants.create({ projectId: l.projectId, chatId: l.chatId, runId: l.runId });
+    const scope = { projectId: l.projectId, chatId: l.chatId, runId: l.runId };
+    l.mcpKey = this.ctx.mcp?.grants.create(scope);
+    if (this.ctx.gate && l.h.adapter.gateCall) l.gateKey = this.ctx.mcp?.grants.create(scope, "gate");
+    this.launches.set(l.runId, l);
     const b: Between = { chatId: l.chatId, interrupt: false };
     this.between.set(l.runId, b);
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
@@ -150,6 +167,8 @@ export class RunManager {
     } finally {
       this.between.delete(l.runId);
       this.ctx.mcp?.grants.revoke(l.runId);
+      this.launches.delete(l.runId);
+      this.approvals.forget(l.runId);
     }
   }
 
@@ -337,6 +356,16 @@ export class RunManager {
     return config.projects.find((p) => p.id === projectId)?.access ?? config.access.default;
   }
 
+  private async defaultProject(): Promise<string> {
+    const { config, error } = loadUserConfig(this.ctx.configFile);
+    if (error) throw new UserError(`Fix your config first. ${error}`);
+    const next = await ensureDefaultProject(config).catch((e: Error) => {
+      throw new UserError(e.message);
+    });
+    if (next !== config) saveUserConfig(this.ctx.configFile, next);
+    return DEFAULT_PROJECT;
+  }
+
   private projectPath(projectId: string | null | undefined): string {
     if (!projectId) throw new UserError("Pick a project with -p <project>");
     const p = loadUserConfig(this.ctx.configFile).config.projects.find((x) => x.id === projectId);
@@ -373,6 +402,7 @@ export class RunManager {
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
       ...(l.resume ? { resume: l.resume } : {}),
+      ...(this.ctx.gate && l.gateKey ? { gate: { url: `${this.ctx.gate.url()}/${l.gateKey}` } } : {}),
       ...(this.ctx.mcp && l.mcpKey
         ? {
             mcp: {
@@ -385,6 +415,19 @@ export class RunManager {
       signal: new AbortController().signal,
       decide,
     });
+  }
+
+  /** What you asked in a run, while it's queued or going (the judge's "request"); null once it ended. */
+  requestOf(runId: string): string | null {
+    return this.launches.get(runId)?.request ?? null;
+  }
+
+  /** A tool call a run's hook reported (its gate key's run); null when the harness's payload isn't one. */
+  async gate(runId: string, payload: unknown): Promise<GateAnswer | null> {
+    const l = this.launches.get(runId);
+    const call = l?.h.adapter.gateCall?.(payload);
+    if (!l || !call) return null;
+    return this.approvals.gate(l, call, projectRoots(l.cwd));
   }
 
   /** Stores what a session emits, except its run.finished: whether the run ends or retries is decided above. */

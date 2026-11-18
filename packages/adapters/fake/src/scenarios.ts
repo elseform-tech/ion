@@ -15,6 +15,8 @@ export type Script = {
   /** The text this session was sent. */
   text(): string;
   mcp(): unknown;
+  /** Reports a call to ion's gate like a real hook (allow when the run has no gate). */
+  gate(req: Asked & { summary: string }): Promise<{ decision: string; reason?: string }>;
   wait(ms: number): Promise<"ok" | "interrupted">;
 };
 
@@ -105,6 +107,43 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
       input: { file_path: "/etc/ion-test.txt" },
     });
     done(s, "t1", false, decision === "deny" ? "Not allowed" : "Read-only file system");
+    return "done";
+  },
+  /** "gated <command>": reports the command at the gate, then asks permission as a harness would, then says. */
+  async gated(s) {
+    const command = s.text().trim().split(/\s+/).slice(1).join(" ");
+    const req = { kind: "command", toolName: "Bash", input: { command } };
+    tool(s, { toolId: "t1", name: "Bash", kind: "command", summary: command });
+    const g = await s.gate({ ...req, summary: command });
+    const asked = await s.ask("t1", command, req);
+    const ran = g.decision === "allow" && asked !== "deny";
+    done(s, "t1", ran, ran ? null : "Not allowed");
+    say(s, ran ? "Ran it." : `Blocked: ${g.reason ?? "denied"}`);
+    return "done";
+  },
+  /** Asks the user through ion's MCP server (tool "ask"), then ends its turn, as told. */
+  async asks(s) {
+    const server = s.mcp() as { url: string; headers: Record<string, string> } | null;
+    if (!server) return "failed";
+    const choices = [
+      { label: "Merge", consequence: "main gets the change" },
+      { label: "Wait", consequence: "Nothing yet" },
+    ];
+    const res = await fetch(server.url, {
+      method: "POST",
+      headers: {
+        ...server.headers,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "ask", arguments: { question: "Merge it?", choices } },
+      }),
+    });
+    say(s, await res.text());
     return "done";
   },
   async fail(s) {

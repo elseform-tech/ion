@@ -4,6 +4,7 @@ import { askCommand } from "./commands/ask.js";
 import { chatsCommands } from "./commands/chats.js";
 import { daemonCommands } from "./commands/daemon.js";
 import { harnessesCommand } from "./commands/harnesses.js";
+import { decisionsCommands } from "./commands/decisions.js";
 import { memoryCommands } from "./commands/memory.js";
 import { needsCommands } from "./commands/needs.js";
 import { projectCommands } from "./commands/projects.js";
@@ -19,6 +20,7 @@ askCommand(program, out);
 needsCommands(program, out);
 chatsCommands(program, out);
 memoryCommands(program, out);
+decisionsCommands(program, out);
 harnessesCommand(program, out);
 
 await program.parseAsync();
