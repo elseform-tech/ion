@@ -1,5 +1,6 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateCall } from "@ion/adapter-kit";
 
@@ -31,9 +32,9 @@ function call(toolName: string, kind: Kind, input: Record<string, unknown>, mcpS
   return { toolName, kind, summary, input: file, ...(mcpServer ? { mcpServer } : {}) };
 }
 
-// ---- Grok Build: a PreToolUse HTTP hook in the chat's worktree -------------------------------------------
+// ---- Grok Build: a PreToolUse hook in your Grok folder that acts only in ion's runs -------------------------
 
-const GROK_HOOK = ".grok/hooks/ion.json";
+const GROK_HOOK = "ion-gate.json";
 const GROK_KINDS: Record<string, Kind> = {
   run_terminal_command: "command",
   read_file: "read",
@@ -49,44 +50,28 @@ const GROK_KINDS: Record<string, Kind> = {
   web_search: "web",
 };
 
-/** The repo's shared git folder (a worktree's `.git` is a file pointing into it). */
-function commonGitDir(cwd: string): string | null {
-  const dotgit = join(cwd, ".git");
-  if (!existsSync(dotgit)) return null;
-  if (statSync(dotgit).isDirectory()) return dotgit;
-  const m = /^gitdir: (.+)$/m.exec(readFileSync(dotgit, "utf8"));
-  if (!m) return null;
-  const gitdir = resolve(cwd, m[1]!.trim());
-  const common = join(gitdir, "commondir");
-  return existsSync(common) ? resolve(gitdir, readFileSync(common, "utf8").trim()) : gitdir;
-}
-
-/** Keeps ion's hook file out of git status and commits (once per repo). */
-function excludeHook(cwd: string): void {
-  const git = commonGitDir(cwd);
-  if (!git) return;
-  const file = join(git, "info", "exclude");
-  const line = `/${GROK_HOOK}`;
-  const now = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (now.split("\n").includes(line)) return;
-  mkdirSync(join(git, "info"), { recursive: true });
-  appendFileSync(file, `${now && !now.endsWith("\n") ? "\n" : ""}${line}\n`);
-}
+/**
+ * Outside ion's runs (no ION_GATE_URL) it does nothing; in them it sends the call to ion and prints ion's
+ * answer. curl failing (ion down, a 400) is a failed hook, and failClosed makes that a deny.
+ */
+const GROK_COMMAND =
+  '[ -z "$ION_GATE_URL" ] && exit 0; curl -sf --max-time 60 -H "content-type: application/json" --data-binary @- "$ION_GATE_URL"';
 
 /**
- * Grok runs the worktree's hook only with folder trust off (probed 2026-11-18); a hook in ~/.grok/hooks would
- * make Grok ask for folder trust everywhere you use it yourself. The URL comes from the run's environment, so
- * the file is the same for every run. Fail closed: no answer from ion means the call is denied.
+ * Grok's hook lives in your Grok folder (`$GROK_HOME/hooks`, else `~/.grok/hooks`), written once. A hook in the
+ * worktree would need folder trust off, and that would also load a repo's own Grok hooks and MCP servers unasked.
+ * Trade-off (probed 2026-11-18): with any hook of your own, Grok asks for folder trust in folders you use it in.
  */
 export function grokGateEnv(g: GateEnv): Record<string, string> {
-  mkdirSync(join(g.cwd, ".grok", "hooks"), { recursive: true });
-  const hook = { type: "http", url: "${ION_GATE_URL}", timeout: 60, failClosed: true };
-  writeFileSync(
-    join(g.cwd, GROK_HOOK),
-    `${JSON.stringify({ hooks: { PreToolUse: [{ hooks: [hook] }] } })}\n`,
-  );
-  excludeHook(g.cwd);
-  return { ION_GATE_URL: g.url, GROK_FOLDER_TRUST: "0" };
+  const dir = join(process.env.GROK_HOME ?? join(homedir(), ".grok"), "hooks");
+  const hook = { type: "command", command: GROK_COMMAND, timeout: 60, failClosed: true };
+  const body = `${JSON.stringify({ hooks: { PreToolUse: [{ hooks: [hook] }] } })}\n`;
+  const file = join(dir, GROK_HOOK);
+  if (!existsSync(file) || readFileSync(file, "utf8") !== body) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(file, body);
+  }
+  return { ION_GATE_URL: g.url };
 }
 
 /** Grok's PreToolUse payload. A cut-off input could hide the end of a command, so it isn't read (deny). */

@@ -286,6 +286,9 @@ describe("ruleFor, ion's hook in the worktree", () => {
       input: { file_path: join(wt, ".grok") },
     };
     expect(ruleFor(read, ctx)?.decision).toBe("deny");
+    // The hook now lives in your Grok folder: nothing may touch it either.
+    const hook: ApprovalRequest = { ...read, input: { file_path: `${home}/.grok/hooks/ion-gate.json` } };
+    expect(ruleFor(hook, ctx)).toMatchObject({ decision: "deny", reason: "Touches ion's own files" });
     expect(ruleFor(cmd("cat src/grok.ts"), ctx)?.decision).toBe("allow");
   });
 });

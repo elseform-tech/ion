@@ -26,25 +26,37 @@ function worktree(): { repo: string; wt: string } {
 }
 
 describe("Grok's gate hook", () => {
-  it("writes the hook in the worktree, keeps it out of git, and turns folder trust off for ion's run", () => {
-    const { repo, wt } = worktree();
-    const env = GROK_BUILD.env!({ url, cwd: wt });
-    expect(JSON.parse(readFileSync(join(wt, ".grok/hooks/ion.json"), "utf8"))).toEqual({
-      hooks: {
-        PreToolUse: [{ hooks: [{ type: "http", url: "${ION_GATE_URL}", timeout: 60, failClosed: true }] }],
-      },
-    });
-    expect(env).toMatchObject({ ION_GATE_URL: url, GROK_FOLDER_TRUST: "0" });
-    GROK_BUILD.env!({ url, cwd: wt });
-    const exclude = readFileSync(join(repo, ".git/info/exclude"), "utf8");
-    expect(exclude.split("\n").filter((l) => l === "/.grok/hooks/ion.json")).toHaveLength(1);
-    expect(execFileSync("git", ["status", "--porcelain"], { cwd: wt }).toString()).toBe("");
+  // Security review: folder trust stays on (a repo's own .grok hooks and MCP servers never load unasked), so
+  // ion's hook lives in your Grok folder and does nothing unless ion started the run.
+  it("writes one hook in your Grok folder, that only acts in ion's runs, and leaves the worktree alone", () => {
+    const home = mkdtempSync(join(tmpdir(), "ion-grok-home-"));
+    process.env.GROK_HOME = home;
+    try {
+      const { wt } = worktree();
+      const env = GROK_BUILD.env!({ url, cwd: wt });
+      expect(env.ION_GATE_URL).toBe(url);
+      expect(env).not.toHaveProperty("GROK_FOLDER_TRUST");
+      const hook = JSON.parse(readFileSync(join(home, "hooks/ion-gate.json"), "utf8"));
+      const h = hook.hooks.PreToolUse[0].hooks[0];
+      expect(h).toMatchObject({ type: "command", timeout: 60, failClosed: true });
+      expect(h.command).toMatch(/^\[ -z "\$ION_GATE_URL" \] && exit 0;/);
+      expect(existsSync(join(wt, ".grok"))).toBe(false);
+      GROK_BUILD.env!({ url, cwd: wt });
+      expect(execFileSync("git", ["status", "--porcelain"], { cwd: wt }).toString()).toBe("");
+    } finally {
+      delete process.env.GROK_HOME;
+    }
   });
 
   it("writes nothing without a gate", () => {
-    const { wt } = worktree();
-    expect(GROK_BUILD.env!()).not.toHaveProperty("ION_GATE_URL");
-    expect(existsSync(join(wt, ".grok"))).toBe(false);
+    const home = mkdtempSync(join(tmpdir(), "ion-grok-home-"));
+    process.env.GROK_HOME = home;
+    try {
+      expect(GROK_BUILD.env!()).not.toHaveProperty("ION_GATE_URL");
+      expect(existsSync(join(home, "hooks"))).toBe(false);
+    } finally {
+      delete process.env.GROK_HOME;
+    }
   });
 
   it("reads Grok's hook payload as a tool call", () => {

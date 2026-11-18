@@ -115,11 +115,11 @@ const isSecret = (p: string, home: string) =>
 const namesSecret = (req: ApprovalRequest) =>
   [...strings(req.input)].some((v) => SECRET_NAMES.some((n) => v.toLowerCase().includes(n)));
 
-/** ion's gate hook for Grok, in the chat's worktree: `.grok` itself or anything under it, named or resolved. */
+/** Grok's folders (yours, where ion's gate hook lives, and a worktree's): `.grok` named, or a path into one. */
 const ION_HOOK = /(^|[\s'"=/])\.grok(\/hooks(\/|$|[\s'";|&)])|\/?(?=$|[\s'";|&)]))/i;
-const touchesHook = (req: ApprovalRequest, paths: string[], roots: string[]) =>
+const touchesHook = (req: ApprovalRequest, paths: string[], c: RuleCtx) =>
   [...strings(req.input)].some((v) => ION_HOOK.test(v)) ||
-  paths.some((p) => roots.some((r) => under(fold(p), fold(join(realish(r), ".grok")))));
+  paths.some((p) => [...c.roots, c.home].some((r) => under(fold(p), fold(join(realish(r), ".grok")))));
 
 /** The rules Auto applies before asking the judge; null means "ask the judge". */
 export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
@@ -128,7 +128,7 @@ export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
     return { decision: "deny", reason: "Touches your secrets" };
   const inWorktree = (p: string) => c.roots.some((r) => under(p, realish(r)));
   if (
-    touchesHook(req, paths, c.roots) ||
+    touchesHook(req, paths, c) ||
     paths.some((p) => !inWorktree(p) && c.ionDirs.some((d) => under(p, realish(d))))
   )
     return { decision: "deny", reason: "Touches ion's own files" };

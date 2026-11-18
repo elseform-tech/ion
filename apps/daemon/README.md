@@ -24,8 +24,8 @@ The always-on service that owns all state.
   per action and request in a chat. The judge also gets your decisions that apply (newest 10).
 - `src/gate`: every tool call, before it runs, through each harness's own hook: `POST /gate/<key>` on the daemon's
   port (a key per run, separate from MCP keys; no `Origin`), answered `{decision, reason?}` by the same path as
-  permission prompts. Claude Code: an SDK `PreToolUse` callback. Grok: `.grok/hooks/ion.json` in the worktree
-  (excluded from git; Grok runs with `GROK_FOLDER_TRUST=0`), which Auto never lets an agent touch. opencode: ion's
+  permission prompts. Claude Code: an SDK `PreToolUse` callback. Grok: `~/.grok/hooks/ion-gate.json` (a command
+  hook that does nothing outside ion's runs; folder trust stays on), which Auto never lets an agent touch. opencode: ion's
   plugin through `OPENCODE_CONFIG_CONTENT`. Every hook fails closed. Only Auto's decisions are stored; a gate allow
   answers the harness's own prompt for the same command or file within 2 s, so it isn't decided twice.
 - `src/needs` and `src/decisions`: agents' questions. An agent calls ion's `ask` tool (2–4 choices, each with
