@@ -41,6 +41,7 @@ function scenarioOf(text: string, own: string): string {
   // ion's prompts carry data blocks too; they're recognised by their first words.
   if (text.startsWith("Judge this action")) return "judge";
   if (text.startsWith("Route this message for ion")) return "route";
+  if (text.startsWith("Decide for this project's ion")) return "decide";
   return own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
 }
 

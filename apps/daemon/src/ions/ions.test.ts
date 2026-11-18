@@ -43,8 +43,15 @@ beforeEach(() => {
     });
     return { chatId, runId: `r${n}` };
   });
-  quick = vi.fn();
+  // By default a project's ion starts a thread with your words as its brief (ion chief's tests set their own).
+  quick = vi.fn(async (prompt: string) =>
+    prompt.startsWith(PROJECT_PROMPT) ? JSON.stringify({ thread: yours(prompt) }) : "",
+  );
 });
+
+const PROJECT_PROMPT = "Decide for this project's ion";
+/** Your message, as the prompt carries it. */
+const yours = (prompt: string) => /source="your message">\n([\s\S]*?)\n<\/ion-data/.exec(prompt)?.[1] ?? "";
 
 const ions = () => new Ions({ store, db, configFile, runs: { ask }, quick });
 const said = (ionId: string) =>
@@ -53,6 +60,65 @@ const said = (ionId: string) =>
     .filter((e: IonEvent) => e.type === EV.ionSaid)
     .map((e) => e.data as { text: string; card?: unknown });
 
+// The user, 2026-11-19: "ions are not thinking": "what project am I in" started a thread. A project's ion now
+// decides: it answers itself from what it knows, starts a thread for work, or both.
+describe("a project's ion thinks", () => {
+  it("answers itself when it can, starting no thread", async () => {
+    quick.mockResolvedValueOnce(JSON.stringify({ answer: "You're in storefront." }));
+    await ions().message("storefront", "what project am i in right now");
+    expect(ask).not.toHaveBeenCalled();
+    expect(said("storefront")).toEqual([{ text: "You're in storefront." }]);
+  });
+
+  it("starts a thread with a brief for work, judged by your own words", async () => {
+    quick.mockResolvedValueOnce(
+      JSON.stringify({ answer: "I'll fix it.", thread: "Fix the cart total rounding" }),
+    );
+    await ions().message("storefront", "the cart total is off by a cent, fix it");
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ text: "Fix the cart total rounding" }), {
+      by: "ion",
+      request: "the cart total is off by a cent, fix it",
+    });
+    expect(said("storefront")).toEqual([
+      {
+        text: "I'll fix it.",
+        card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
+      },
+    ]);
+  });
+
+  it("thinks with what it knows of its own project only", async () => {
+    store.append({
+      chatId: "c7",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "Cart totals", projectId: "storefront" },
+    });
+    store.append({
+      chatId: "c8",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "Webhooks", projectId: "payments-api" },
+    });
+    quick.mockResolvedValueOnce(JSON.stringify({ answer: "ok" }));
+    await ions().message("storefront", "what's going on?");
+    const prompt = quick.mock.calls[0]![0] as string;
+    expect(prompt.startsWith(PROJECT_PROMPT)).toBe(true);
+    expect(prompt).toContain("storefront");
+    expect(prompt).toContain("Cart totals");
+    expect(prompt).not.toContain("Webhooks");
+  });
+
+  it("says it couldn't think when its model fails, and starts nothing", async () => {
+    quick.mockRejectedValueOnce(new Error("down"));
+    await ions().message("storefront", "fix it");
+    expect(ask).not.toHaveBeenCalled();
+    expect(said("storefront")).toEqual([{ text: "I couldn't reach my model; try again." }]);
+  });
+});
+
 // Plan 09: a project's ion starts a thread for what you ask; ion chief answers, or routes to project ions.
 describe("Ions", () => {
   it("starts a thread in the project when you message its ion, on its agent, and says so", async () => {
@@ -60,7 +126,7 @@ describe("Ions", () => {
     // Security review: ion's threads always run in Auto, so every action still goes through ion's checks.
     expect(ask).toHaveBeenCalledWith(
       { projectId: "payments-api", text: "Check totals rounding", harness: "opencode", access: "auto" },
-      { by: "ion" },
+      { by: "ion", request: "Check totals rounding" },
     );
     expect(store.read({ chatId: "ion:payments-api" })[0]).toMatchObject({
       type: EV.ionHeard,

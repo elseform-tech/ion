@@ -17,6 +17,7 @@ const HEALTH = {
 export default tseslint.config(
   {
     ignores: [
+      ".claude/**",
       "**/dist/**",
       "**/node_modules/**",
       "docs/**",

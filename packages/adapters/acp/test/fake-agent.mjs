@@ -29,7 +29,7 @@ const QUICK = {
 /** The prompt's text, and ion's standing instructions (their own first block) apart from it. */
 function split(blocks) {
   const all = blocks.map((b) => b.text ?? "");
-  const told = all.find((t) => t.startsWith("<ion-instructions>")) ?? null;
+  const told = all.find((t) => t.startsWith("<ion-instructions ")) ?? null;
   const text = all
     .filter((t) => t !== told)
     .join(" ")

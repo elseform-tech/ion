@@ -5,6 +5,7 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { chiefPrompt, contextOf, parseRoute, type Route } from "./route.js";
+import { parseProjectDecision, projectContextOf, projectPrompt } from "./project.js";
 
 const TIMEOUT_MS = 30_000;
 const NO_MODEL = "I couldn't reach my model; try again.";
@@ -72,9 +73,20 @@ export class Ions {
       throw new UserError(`Unknown ion: ${ionId}`);
     this.heard(ionId, text);
     if (ionId === "chief") return this.chief(text);
-    const r = await this.thread(ionId, text);
-    if ("why" in r) this.say(ionId, r.why);
-    else this.say(ionId, "On it.", { kind: "threads", threads: [r] });
+    return this.project(ionId, text);
+  }
+
+  /** A project's ion thinks: answers itself, starts a thread for work (judged by your own words), or both. */
+  private async project(projectId: string, text: string): Promise<void> {
+    const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId)!;
+    const context = projectContextOf(p, chatsView.list(this.d.db), needsView.open(this.d.db));
+    const said = await this.think(projectPrompt(text, context));
+    const d = said === null ? null : parseProjectDecision(said);
+    if (!d) return this.say(projectId, NO_MODEL);
+    if (!d.thread) return this.say(projectId, d.answer ?? "");
+    const t = await this.thread(projectId, d.thread, text);
+    if ("why" in t) this.say(projectId, [d.answer, t.why].filter(Boolean).join(" "));
+    else this.say(projectId, d.answer ?? "On it.", { kind: "threads", threads: [t] });
   }
 
   /** Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. */
@@ -138,6 +150,12 @@ export class Ions {
       .filter((p) => p.shareWithIon !== false)
       .map((p) => p.id);
     const context = contextOf(ids, chatsView.list(this.d.db), needsView.open(this.d.db));
+    const said = await this.think(chiefPrompt(text, ids, context));
+    return said === null ? null : parseRoute(said, ids);
+  }
+
+  /** ion's quick model on a prompt: its answer, or null when it fails or is slow. */
+  private async think(prompt: string): Promise<string | null> {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     // A hard deadline: the model is told to stop, and ion doesn't wait past it even if it doesn't.
@@ -148,8 +166,7 @@ export class Ions {
       }, TIMEOUT_MS);
     });
     try {
-      const said = await Promise.race([this.d.quick(chiefPrompt(text, ids, context), abort.signal), late]);
-      return said === null ? null : parseRoute(said, ids);
+      return await Promise.race([this.d.quick(prompt, abort.signal), late]);
     } catch {
       return null;
     } finally {

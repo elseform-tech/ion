@@ -156,6 +156,10 @@ export const handlers: Handlers = {
     if (chats.some((c) => ["queued", "running"].includes(c.lastRunStatus ?? "")))
       throw new UserError("Stop its running chats first");
     for (const c of chats) await ctx.runs.archive(c.chatId);
+    // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
+    for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
+    for (const m of memoryView.list(ctx.db, id))
+      if (m.scope === id) forgetMemory(ctx.store, ctx.db, m.memoryId);
     changeConfig(ctx.configFile, (c) => removeProject(c, id));
     return { ok: true as const };
   },

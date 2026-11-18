@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   type AdapterEvent,
   createDeltaCoalescer,
@@ -69,7 +69,12 @@ export function promptOf(text: string, instructions?: string): { type: "text"; t
   // Your text (or a brief ion chief's model wrote) can't open or close ion's block and pose as ion.
   const yours = { type: "text" as const, text: text.replace(/<\/?ion-instructions/gi, "‹ion-instructions") };
   if (!instructions) return [yours];
-  return [{ type: "text", text: `<ion-instructions>\n${instructions}\n</ion-instructions>` }, yours];
+  // A random id per turn fences ion's block (as ion's data blocks are): no text can guess its closing line.
+  const id = randomBytes(8).toString("hex");
+  return [
+    { type: "text", text: `<ion-instructions id="${id}">\n${instructions}\n</ion-instructions id="${id}">` },
+    yours,
+  ];
 }
 
 /** One ACP prompt turn mapped to ion events. The agent process lives as long as the turn. */

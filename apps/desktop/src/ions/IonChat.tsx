@@ -15,6 +15,7 @@ import type { ChatInfo, IonCard, IonEvent, IonInfo, NeedInfo } from "@ion/schema
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
+import { Starting } from "../chats/ChatView.js";
 
 /** An ion's avatar: ion chief's orbit bot, or its project's colour on its agent's shape. */
 export const IonAvatar = ({ ion }: { ion: IonInfo }) => (
@@ -253,6 +254,13 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
             </div>
           );
         })}
+        {/* Your message is the last thing: the ion is thinking (its reply takes this place). */}
+        {p.items.at(-1)?.kind === "you" && (
+          <div className="bm">
+            <IonAvatar ion={p.ion} />
+            <Starting />
+          </div>
+        )}
       </div>
     </div>
   );

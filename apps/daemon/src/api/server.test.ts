@@ -301,8 +301,17 @@ describe("daemon api", () => {
     );
     await client.call("run.interrupt", { runId: slow.runId });
     await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.finished"), 5000);
+    // A decision you made for the project (here: "Merge it?" → Wait, for the project).
+    const asked = await client.call("ask", { text: "asks", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === asked.runId && e.type === "run.finished"), 5000);
+    const [need] = await client.call("needs.list", { chatId: asked.chatId });
+    await client.call("need.answer", { needId: need!.needId, choice: 2, scope: "project" });
+    await until(() => seen.some((e) => e.type === "decision.outcome"), 5000);
+    expect(await client.call("decisions.list", { projectId: "app" })).toHaveLength(1);
     await client.call("project.remove", { projectId: "app" });
     expect(await client.call("projects.list", {})).toEqual([]);
+    // Security review: what you decided for it goes with it, so a later project of the same name starts clean.
+    expect(await client.call("decisions.list", { projectId: "app" })).toEqual([]);
     expect((await client.call("chats.list", {})).filter((c) => c.projectId === "app" && !c.archived)).toEqual(
       [],
     );

@@ -276,4 +276,20 @@ describe("Ions", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Fix the cart/ }));
     expect(onOpenChat).toHaveBeenCalledWith("t1");
   });
+  // The user, 2026-11-19: "ions are not thinking". While an ion decides, its chat shows it's thinking; its reply
+  // takes the place.
+  it("shows an ion thinking until it replies", async () => {
+    const { container } = render(
+      <Ions client={client([ev("ion:chief", EV.ionHeard, { text: "hello" })])} onOpenChat={() => {}} />,
+    );
+    await waitFor(() => expect(container.querySelector(".bcol .pending.now")).not.toBeNull());
+    cleanup();
+    const replied = client([
+      ev("ion:chief", EV.ionHeard, { text: "hello" }),
+      ev("ion:chief", EV.ionSaid, { text: "Hi." }),
+    ]);
+    const after = render(<Ions client={replied} onOpenChat={() => {}} />);
+    await waitFor(() => expect(after.container.querySelector(".bi")?.textContent).toBe("Hi."));
+    expect(after.container.querySelector(".bcol .pending")).toBeNull();
+  });
 });
