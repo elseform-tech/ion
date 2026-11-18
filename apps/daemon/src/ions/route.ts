@@ -38,6 +38,8 @@ const isRoute = (x: unknown): x is { projectId: string; brief: string } =>
   typeof (x as { projectId?: unknown }).projectId === "string" &&
   typeof (x as { brief?: unknown }).brief === "string";
 
+const MAX_ROUTES = 5;
+
 /** ion chief's decision, only when the whole answer is its JSON; routes to unknown projects and `default` drop out. */
 export function parseRoute(text: string, projects: string[]): Route | null {
   let body = text.trim();
@@ -51,6 +53,10 @@ export function parseRoute(text: string, projects: string[]): Route | null {
   if (typeof v.answer === "string" && v.answer.trim()) return { answer: v.answer.trim() };
   if (!Array.isArray(v.route)) return null;
   const known = new Set(projects.filter((p) => p !== DEFAULT_PROJECT));
-  const route = v.route.filter(isRoute).filter((r) => known.has(r.projectId));
+  // At most a handful of threads from one message: the state ion chief reads includes agents' own text.
+  const route = v.route
+    .filter(isRoute)
+    .filter((r) => known.has(r.projectId))
+    .slice(0, MAX_ROUTES);
   return route.length ? { route } : null;
 }

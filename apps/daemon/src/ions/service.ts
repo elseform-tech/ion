@@ -10,7 +10,7 @@ const TIMEOUT_MS = 30_000;
 const NO_MODEL = "I couldn't reach my model; try again.";
 
 type Ask = (
-  args: { projectId: string; text: string; harness?: string },
+  args: { projectId: string; text: string; harness?: string; access: "auto" },
   opts: { by: "ion" },
 ) => Promise<{ chatId: string; runId: string }>;
 
@@ -31,7 +31,7 @@ export type IonsDeps = {
 export class Ions {
   constructor(private readonly d: IonsDeps) {}
 
-  private projects(): { id: string; harness?: string }[] {
+  private projects(): { id: string; harness?: string; shareWithIon?: boolean }[] {
     return loadUserConfig(this.d.configFile).config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
   }
 
@@ -72,10 +72,9 @@ export class Ions {
   ): Promise<{ chatId: string; projectId: string } | { why: string }> {
     const harness = this.projects().find((p) => p.id === projectId)?.harness;
     try {
-      const { chatId } = await this.d.runs.ask(
-        { projectId, text, ...(harness ? { harness } : {}) },
-        { by: "ion" },
-      );
+      // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
+      const args = { projectId, text, ...(harness ? { harness } : {}), access: "auto" as const };
+      const { chatId } = await this.d.runs.ask(args, { by: "ion" });
       return { chatId, projectId };
     } catch (e) {
       if (e instanceof UserError) return { why: e.message };
@@ -107,7 +106,10 @@ export class Ions {
 
   /** ion chief's System 1: what to do with your message, or null when its model fails, is slow, or answers junk. */
   private async decide(text: string): Promise<Route | null> {
-    const ids = this.projects().map((p) => p.id);
+    // A project kept from ion chief (shareWithIon = false) gives it nothing to read and nothing to route to.
+    const ids = this.projects()
+      .filter((p) => p.shareWithIon !== false)
+      .map((p) => p.id);
     const context = contextOf(ids, chatsView.list(this.d.db), needsView.open(this.d.db));
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);

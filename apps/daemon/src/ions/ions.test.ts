@@ -27,6 +27,7 @@ beforeEach(() => {
       { id: "storefront", path: "/p/storefront", starred: false },
       { id: "payments-api", path: "/p/payments-api", starred: false, harness: "opencode" },
       { id: "default", path: "/p/default", starred: false },
+      { id: "private", path: "/p/private", starred: false, shareWithIon: false },
     ],
   });
   n = 0;
@@ -56,8 +57,9 @@ const said = (ionId: string) =>
 describe("Ions", () => {
   it("starts a thread in the project when you message its ion, on its agent, and says so", async () => {
     await ions().message("payments-api", "Check totals rounding");
+    // Security review: ion's threads always run in Auto, so every action still goes through ion's checks.
     expect(ask).toHaveBeenCalledWith(
-      { projectId: "payments-api", text: "Check totals rounding", harness: "opencode" },
+      { projectId: "payments-api", text: "Check totals rounding", harness: "opencode", access: "auto" },
       { by: "ion" },
     );
     expect(store.read({ chatId: "ion:payments-api" })[0]).toMatchObject({
@@ -158,6 +160,26 @@ describe("Ions", () => {
       text: "Fix the cart: done. Fixed the cart total.",
       card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
     });
+  });
+});
+
+// Security review: a project you keep from ion chief gives it nothing, and its routing is bounded.
+describe("ion chief's limits", () => {
+  it("never sees or routes to a project kept from it", async () => {
+    quick.mockResolvedValueOnce(JSON.stringify({ route: [{ projectId: "private", brief: "x" }] }));
+    await ions().message("chief", "check private");
+    expect(quick.mock.calls[0]![0]).not.toContain("private:");
+    expect(ask).not.toHaveBeenCalled();
+    expect(said("chief")).toEqual([{ text: "I couldn't reach my model; try again." }]);
+  });
+
+  it("routes one message to 5 projects at most", () => {
+    const many = Array.from({ length: 7 }, (_, i) => `p${i}`);
+    const r = parseRoute(
+      JSON.stringify({ route: many.map((projectId) => ({ projectId, brief: "x" })) }),
+      many,
+    );
+    expect(r && "route" in r ? r.route.length : 0).toBe(5);
   });
 });
 
