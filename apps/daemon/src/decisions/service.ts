@@ -218,8 +218,8 @@ export class Decisions {
    * about it only when it can't otherwise know: your own words, or a yes after its call was already refused.
    */
   private async answerBlocked(asked: NeedInfo, pick: number | string, label: string): Promise<void> {
-    const { allow, scope } = blockedAnswer(pick);
     const custom = typeof pick === "string";
+    const { allow, scope } = blockedAnswer(label, custom);
     this.d.needs.answered(asked.needId, label, scope ?? "chat");
     const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom }) : undefined;
     const waited = this.holds.release(asked.needId, allow ? "allow" : "deny");

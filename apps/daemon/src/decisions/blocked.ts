@@ -2,25 +2,40 @@
  * A tool call ion stopped, waiting on you: its request, what it does, why ion stopped it, its full input, and its
  * exact key (tool and input) for "Always allow".
  */
-export type Blocked = { requestId: string; summary: string; reason: string; input?: string; key: string };
+export type Blocked = {
+  requestId: string;
+  summary: string;
+  reason: string;
+  input?: string;
+  key: string;
+  /** The input shown was cut: "Always allow" would cover text you can't see, so it isn't offered. */
+  cut?: boolean;
+};
 export type Held = "allow" | "deny" | "timeout";
 
 /** How long a stopped tool call waits for your answer before ion says no (the user's choice: 4 minutes). */
 export const BLOCKED_WAIT_MS = 4 * 60_000;
 
 const PREFIX = "Allow this? ";
+const ONCE = "Allow once";
+const ALWAYS = "Always allow in this project";
+const NO = "Don't allow";
 
 /** What you're asked about a stopped tool call. */
 export const blockedQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
   why: [`ion stopped it: ${b.reason}`, ...(b.input ? [b.input] : [])].join("\n\n"),
   choices: [
-    { label: "Allow once", consequence: "It runs this time. ion asks again next time." },
-    {
-      label: "Always allow in this project",
-      consequence: "It runs, and this exact action runs in this project from now on without asking.",
-    },
-    { label: "Don't allow", consequence: "The agent is told no and works around it." },
+    { label: ONCE, consequence: "It runs this time. ion asks again next time." },
+    ...(b.cut
+      ? []
+      : [
+          {
+            label: ALWAYS,
+            consequence: "It runs, and this exact action runs in this project from now on without asking.",
+          },
+        ]),
+    { label: NO, consequence: "The agent is told no and works around it." },
   ],
 });
 
@@ -28,11 +43,17 @@ export const blockedQuestion = (b: Blocked) => ({
 export const actionOf = (question: string) =>
   question.startsWith(PREFIX) ? question.slice(PREFIX.length) : question;
 
-/** Your answer to a stopped call: whether it runs, and how far the answer reaches (null: not kept). */
-export function blockedAnswer(pick: number | string): { allow: boolean; scope: "chat" | "project" | null } {
-  if (typeof pick === "string") return { allow: false, scope: "chat" }; // your own words: not a yes; sent as said
-  if (pick === 1) return { allow: true, scope: null }; // once means once
-  if (pick === 2) return { allow: true, scope: "project" };
+/**
+ * Your answer to a stopped call, by the label you picked: whether it runs, and how far the answer reaches (null:
+ * not kept). Your own words aren't a yes; they're sent to the agent as you said them.
+ */
+export function blockedAnswer(
+  label: string,
+  custom: boolean,
+): { allow: boolean; scope: "chat" | "project" | null } {
+  if (custom) return { allow: false, scope: "chat" };
+  if (label === ONCE) return { allow: true, scope: null }; // once means once
+  if (label === ALWAYS) return { allow: true, scope: "project" };
   return { allow: false, scope: "chat" };
 }
 

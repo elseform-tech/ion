@@ -150,8 +150,10 @@ export class Approvals {
     const key = actionKey(req);
     if (a.allowed(r, key)) return { decision: "allow", by: "you", reason: "You always allow this" };
     const full = JSON.stringify(req.input, null, 2);
-    const input = full.length > INPUT_SHOWN ? `${full.slice(0, INPUT_SHOWN)}\n… (cut)` : full;
-    return HELD[await a.ask(r, { requestId: req.requestId, summary: req.summary, reason, input, key })];
+    const cut = full.length > INPUT_SHOWN;
+    const input = cut ? `${full.slice(0, INPUT_SHOWN)}\n… (cut)` : full;
+    const b = { requestId: req.requestId, summary: req.summary, reason, input, key, ...(cut ? { cut } : {}) };
+    return HELD[await a.ask(r, b)];
   }
 
   /** Resolves once the adapter's approval.requested for this id is stored, so the log stays in order. */

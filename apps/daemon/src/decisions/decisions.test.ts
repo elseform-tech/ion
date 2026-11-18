@@ -512,3 +512,21 @@ describe("always allow, exactly", () => {
     expect(d.forJudge("app", "c2")).toEqual([]);
   });
 });
+
+describe("always allow, only for what you can see", () => {
+  it("doesn't offer 'Always allow' when the input was cut", async () => {
+    const d = new Decisions({ store, db, needs, followUp, blockedWaitMs: 2000 });
+    const waiting = d.askBlocked(scope(), {
+      requestId: "g10",
+      summary: "big",
+      reason: "r",
+      input: "x\n… (cut)",
+      key: "Bash big",
+      cut: true,
+    });
+    const [need] = needs.open("c1");
+    expect(need!.choices!.map((c) => c.label)).toEqual(["Allow once", "Don't allow"]);
+    await d.answer(need!.needId, 2);
+    expect(await waiting).toBe("deny");
+  });
+});
