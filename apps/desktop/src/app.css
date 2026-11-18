@@ -166,3 +166,21 @@
     box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.75);
   }
 }
+
+/* The brain popover's Model column: a long list (opencode's) scrolls inside the popover; names stay one line. */
+.bp-models .pmi {
+  margin: 0 2px 4px;
+}
+.bp-scroll {
+  overflow: auto;
+  max-height: min(300px, 38vh);
+  display: grid;
+  gap: 1px;
+  align-content: start;
+}
+.bp-row .g,
+.bp-row small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -143,4 +143,30 @@ describe("Composer", () => {
     fireEvent.click(pill());
     expect(onBrainOpen).toHaveBeenCalledTimes(1);
   });
+  // The user, 2026-11-18: opencode's long model list. Each model is its name with its provider under it; a long
+  // list can be searched.
+  it("shows a long model list by name with its provider, and finds a model", () => {
+    const many: HarnessInfo = {
+      ...fake,
+      id: "opencode",
+      label: "opencode",
+      models: Array.from({ length: 20 }, (_, i) => ({ id: `p/m${i}`, label: `OpenCode/Model ${i}` })),
+      defaultModel: null,
+    };
+    compose([many]);
+    fireEvent.click(pill());
+    const row = screen.getByRole("button", { name: /^Model 3OpenCode/ });
+    expect(row.querySelector("small")?.textContent).toBe("OpenCode");
+    fireEvent.change(screen.getByLabelText("Find a model"), { target: { value: "model 1" } });
+    const names = [...document.querySelectorAll(".bp-models .bp-row .g")].map(
+      (g) => g.firstChild?.textContent,
+    );
+    expect(names).toEqual(["Model 1", ...Array.from({ length: 10 }, (_, i) => `Model ${10 + i}`)]);
+  });
+
+  it("has no find field for a short model list", () => {
+    compose([grok]);
+    fireEvent.click(pill());
+    expect(screen.queryByLabelText("Find a model")).toBeNull();
+  });
 });

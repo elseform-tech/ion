@@ -1,6 +1,6 @@
-import { Avatar, Check, ChevronUp, Layers } from "@ion/design-system";
+import { Avatar, Check, ChevronUp, Layers, Search } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const EFFORTS = ["low", "medium", "high", "max"] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -23,9 +23,15 @@ function Bars({ effort }: { effort: Brain["effort"] }) {
   );
 }
 
+/** "OpenCode/Big Pickle" is the model "Big Pickle" from the provider "OpenCode". */
+function nameOf(label: string): { name: string; provider: string } {
+  const i = label.lastIndexOf("/");
+  return i < 0 ? { name: label, provider: "" } : { name: label.slice(i + 1), provider: label.slice(0, i) };
+}
+
 const modelLabel = (h: HarnessInfo | undefined, model: string) => {
   const id = model || h?.defaultModel || "";
-  return h?.models.find((m) => m.id === id)?.label ?? (id || "Default");
+  return nameOf(h?.models.find((m) => m.id === id)?.label ?? (id || "Default")).name;
 };
 
 /** The lab's brain pill: avatar, agent · model · effort bars and effort, chevron. */
@@ -66,10 +72,9 @@ type Row = {
   lead?: React.ReactNode;
 };
 
-function Col({ title, rows, pick }: { title: string; rows: Row[]; pick: (key: string) => void }) {
+function Rows({ rows, pick }: { rows: Row[]; pick: (key: string) => void }) {
   return (
-    <div className="bp-col">
-      <div className="bp-h">{title}</div>
+    <>
       {rows.map((r) => (
         <button
           type="button"
@@ -86,6 +91,48 @@ function Col({ title, rows, pick }: { title: string; rows: Row[]; pick: (key: st
           {r.on && <Check className="ck" />}
         </button>
       ))}
+    </>
+  );
+}
+
+function Col({ title, rows, pick }: { title: string; rows: Row[]; pick: (key: string) => void }) {
+  return (
+    <div className="bp-col">
+      <div className="bp-h">{title}</div>
+      <Rows rows={rows} pick={pick} />
+    </div>
+  );
+}
+
+/** A list this long gets a find field. */
+const FIND_FROM = 12;
+
+/** The Model column: each model by name with its provider under it; it scrolls, and a long list can be searched. */
+function ModelCol({ rows, pick }: { rows: Row[]; pick: (key: string) => void }) {
+  const [q, setQ] = useState("");
+  const words = q.trim().toLowerCase();
+  const shown = words
+    ? rows.filter((r) => `${r.label} ${r.small ?? ""}`.toLowerCase().includes(words))
+    : rows;
+  return (
+    <div className="bp-col bp-models">
+      <div className="bp-h">Model</div>
+      {rows.length > FIND_FROM && (
+        <div className="pmi">
+          <Search />
+          <input
+            type="text"
+            placeholder="Find a model"
+            aria-label="Find a model"
+            autoComplete="off"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+      )}
+      <div className="bp-scroll">
+        <Rows rows={shown} pick={pick} />
+      </div>
     </div>
   );
 }
@@ -102,6 +149,34 @@ export function useEffortKey(brain: Brain, onChange: (b: Brain) => void): void {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [brain, onChange]);
+}
+
+/** The Model column's rows: the agent's default first, then each model by name with its provider. */
+function modelRows(h: HarnessInfo | undefined, model: string): Row[] {
+  return [
+    { key: "", on: !model, label: h?.defaultModel ? modelLabel(h, "") : "Default" },
+    ...(h?.models ?? [])
+      .filter((m) => m.id !== h?.defaultModel)
+      .map((m) => {
+        const { name, provider } = nameOf(m.label);
+        return { key: m.id, on: model === m.id, label: name, ...(provider ? { small: provider } : {}) };
+      }),
+  ];
+}
+
+/** The popover opens above its pill; where the window is short (a new chat's box sits mid-window), its model list
+ * gets shorter so it fits. */
+function useFit(harness: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const pop = ref.current;
+    const list = pop?.querySelector<HTMLElement>(".bp-scroll");
+    if (!pop || !list) return;
+    list.style.maxHeight = "";
+    const over = 8 - pop.getBoundingClientRect().top;
+    if (over > 0 && list.offsetHeight) list.style.maxHeight = `${Math.max(96, list.offsetHeight - over)}px`;
+  }, [harness]);
+  return ref;
 }
 
 /** The lab's `.bpop`: Harness, Model and Effort columns; agents not ready are disabled and say why. */
@@ -121,23 +196,19 @@ export function BrainPopover(p: {
     disabled: Boolean(unready(x)),
     lead: <Avatar harness={x.id} />,
   }));
-  const models: Row[] = [
-    { key: "", on: !b.model, label: h?.defaultModel ? modelLabel(h, "") : "Default" },
-    ...(h?.models ?? [])
-      .filter((m) => m.id !== h?.defaultModel)
-      .map((m) => ({ key: m.id, on: b.model === m.id, label: m.label })),
-  ];
+  const models = modelRows(h, b.model);
   const efforts: Row[] = (["", ...EFFORTS] as Brain["effort"][]).map((e) => ({
     key: e,
     on: b.effort === e,
     label: effortLabel(e),
     lead: <Bars effort={e} />,
   }));
+  const ref = useFit(b.harness);
   return (
-    <div className="bpop" role="dialog" aria-label="Harness, model and effort">
+    <div ref={ref} className="bpop" role="dialog" aria-label="Harness, model and effort">
       <div className="bp-cols">
         <Col title="Harness" rows={harnesses} pick={(k) => p.onChange({ ...b, harness: k, model: "" })} />
-        <Col title="Model" rows={models} pick={(k) => p.onChange({ ...b, model: k })} />
+        <ModelCol key={b.harness} rows={models} pick={(k) => p.onChange({ ...b, model: k })} />
         <Col title="Effort" rows={efforts} pick={(k) => p.onChange({ ...b, effort: k as Brain["effort"] })} />
       </div>
       <div className="bp-f">
