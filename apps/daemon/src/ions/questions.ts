@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { EV, type IonCard, type NeedInfo } from "@ion/schema";
 import type { AskInput } from "../decisions/match.js";
-import { overlap, SAME_QUESTION } from "../decisions/words.js";
+import { isAllowAnswer, overlap, SAME_QUESTION } from "../decisions/words.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
+import { needsView } from "../views/needs.js";
 
 /** You've given the same answer to matching questions this many times: ion suggests making it "always". */
 const SUGGEST_AFTER = 3;
@@ -66,15 +67,31 @@ export class IonQuestions {
         (n) => n.projectId === s.projectId && n.chatId !== s.chatId && !n.blocked && this.isThread(n.chatId),
       );
     const held = waiting.length ? await this.d.same(q, waiting).catch(() => null) : null;
-    if (held && waiting.some((n) => n.needId === held)) return { heldFor: held };
+    // Still waiting now? You may have answered it while ion compared (then this one comes to you).
+    if (held && waiting.some((n) => n.needId === held) && needsView.find(this.d.db, held)?.open)
+      return { heldFor: held };
     return { via: { note: this.note(s.projectId, q.question) } };
+  }
+
+  /**
+   * Your answers an ion may learn from: yours, in this project, never an "allow" for a stopped call, and one you kept
+   * to a chat only when that chat was an ion thread (your own chats' answers stay there).
+   */
+  private mine(projectId: string) {
+    const ok = (x: { by: string; choice: string; scope: string; chatId: string | null }) =>
+      x.by === "you" && !isAllowAnswer(x.choice) && (x.scope !== "chat" || this.isThread(x.chatId ?? ""));
+    return decisionsView.list(this.d.db, projectId).filter(ok);
+  }
+
+  /** Questions held behind one that closed while ion was stopped: raised to you (at ion's start). */
+  sweep(): void {
+    for (const h of this.d.needs.orphans()) this.d.needs.release(h, this.note(h.projectId ?? "", h.summary));
   }
 
   /** The ion's one line of context: a similar answer you gave before, or that it's new. */
   note(projectId: string, question: string): string {
-    const like = decisionsView
-      .list(this.d.db, projectId)
-      .filter((x) => x.by === "you" && overlap(x.question, question) >= SAME_QUESTION)
+    const like = this.mine(projectId)
+      .filter((x) => overlap(x.question, question) >= SAME_QUESTION)
       .at(-1);
     if (!like) return `${projectId}'s ion: first time this comes up`;
     return `${projectId}'s ion: you answered a similar question "${like.choice}" on ${day(like.decidedAt)}`;
@@ -106,11 +123,9 @@ export class IonQuestions {
   }
 
   private suggest(a: Answered): void {
-    const same = decisionsView
-      .list(this.d.db, a.projectId)
-      .filter(
-        (x) => x.by === "you" && x.choice === a.choice && overlap(x.question, a.question) >= SAME_QUESTION,
-      );
+    const same = this.mine(a.projectId).filter(
+      (x) => x.choice === a.choice && overlap(x.question, a.question) >= SAME_QUESTION,
+    );
     const offered = [...this.suggestions.values(), ...this.answeredSuggestions].some(
       (x) => x.projectId === a.projectId && overlap(x.question, a.question) >= SAME_QUESTION,
     );
@@ -146,7 +161,8 @@ export class IonQuestions {
     if (
       !d ||
       failed !== FLAG_AFTER ||
-      !chatsView.list(this.d.db).some((c) => c.projectId === d.projectId && c.by === "ion")
+      // Only decisions made in an ion thread: your own chats' decisions are yours.
+      !this.isThread(d.chatId ?? "")
     )
       return;
     this.say(

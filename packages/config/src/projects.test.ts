@@ -62,3 +62,11 @@ describe("projects by name", () => {
     expect(DEFAULT_PROJECT).toBe("default");
   });
 });
+
+// Final review I11: "chief" is ion chief's; no project takes it.
+describe("reserved names", () => {
+  it("never names a project chief", async () => {
+    const { projectNameError } = await import("./projects.js");
+    expect(projectNameError("chief")).toBe("That name is ion's own");
+  });
+});

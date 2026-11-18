@@ -20,6 +20,7 @@ import { createGrants, createMcpHandler } from "../mcp/index.js";
 import { Ions } from "../ions/service.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
+import { harnessInfos } from "./commands.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -152,7 +153,14 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const ions = new Ions({ store, db, configFile: opts.configFile, runs, quick });
+  const ions = new Ions({
+    store,
+    db,
+    configFile: opts.configFile,
+    runs,
+    quick,
+    agents: () => harnessInfos.list(),
+  });
   ions.watch();
   const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
   return { store, db, needs, decisions, grants, runs, ions, ...base0 };

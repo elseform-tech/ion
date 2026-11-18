@@ -153,7 +153,10 @@ export class RunManager {
     // History is read before your message is stored: it's what came before.
     const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
     const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
-    const access = args.access ?? accessFor(this.ctx.configFile, projectId);
+    // A thread ion started runs in Auto every time: every action there still goes through ion's checks.
+    const ionThread =
+      by === "ion" || chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
+    const access = ionThread ? "auto" : (args.access ?? accessFor(this.ctx.configFile, projectId));
     const runId = `run_${randomUUID()}`;
     this.store.append({
       chatId,
@@ -321,6 +324,7 @@ export class RunManager {
     const chat = this.chatFor({ chatId, text: "" });
     const worktree = chatsView.worktree(this.db, chatId);
     if (worktree) await removeWorktree(projectPath(this.ctx.configFile, chat.projectId), worktree);
+    this.needs.supersedeChat(chatId);
     this.store.append({ chatId, runId: null, origin: "daemon", type: EV.chatArchived, data: {} });
   }
 

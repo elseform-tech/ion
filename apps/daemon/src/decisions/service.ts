@@ -18,14 +18,10 @@ import {
 } from "./blocked.js";
 import { FollowUps, type Message, type Start } from "./followups.js";
 import type { AskInput, Matcher } from "./match.js";
-import { overlap, SAME_QUESTION } from "./words.js";
+import { isAllowAnswer, overlap, SAME_QUESTION } from "./words.js";
 import type { IonQuestions } from "../ions/questions.js";
 
 const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
-
-/** An "allow" answer about a stopped call: kept as an exact rule, never handed to the judge. */
-const isAllowAnswer = (choice: string) =>
-  choice === "Always allow in this project" || choice === "Allow once";
 
 /** The message your answer becomes in the chat: a choice, or your own words. */
 const followText = (question: string, answer: string, custom = false) =>
@@ -100,7 +96,8 @@ type Recorded = {
 /**
  * Agents ask you instead of being approved. A question waits under Needs you; your answer becomes a decision
  * (this chat, this project or everywhere) and the chat's next message. ion answers for you only from a decision
- * you made for the project or everywhere, and only with one of the new question's own choices.
+ * you made for the project or everywhere (in a thread ion started, also one kept to another ion thread), and only
+ * with one of the new question's own choices.
  */
 export class Decisions {
   private readonly followUps: FollowUps;
@@ -140,6 +137,21 @@ export class Decisions {
     return ASKED;
   }
 
+  /** In a thread ion started: its ion settles the questions held behind this one, and may suggest "always". */
+  private async ionAfter(asked: NeedInfo, label: string): Promise<void> {
+    if (!this.d.ion?.isThread(asked.chatId)) return;
+    await this.d.ion.afterAnswer(
+      {
+        needId: asked.needId,
+        projectId: asked.projectId ?? "",
+        question: asked.summary,
+        choice: label,
+        labels: (asked.choices ?? []).map((c) => c.label),
+      },
+      (id, n) => this.answer(id, n, "chat", true),
+    );
+  }
+
   /**
    * ion stopped a tool call (the judge said no, or couldn't decide): ask you, and hold the call until you answer
    * or 4 minutes pass ("timeout": the call is refused, the question stays open, and a later yes still counts).
@@ -167,7 +179,13 @@ export class Decisions {
    * can't (the agent signed out, the chat archived…) the question stays open and you can answer again. A busy
    * chat gets it when its run ends.
    */
-  async answer(needId: string, pick: number | string, scope: DecisionScope = "chat"): Promise<void> {
+  /** `settled`: ion answering a question held behind yours, with your answer (recorded as ion's, not yours). */
+  async answer(
+    needId: string,
+    pick: number | string,
+    scope: DecisionScope = "chat",
+    settled = false,
+  ): Promise<void> {
     if (this.answering.has(needId)) throw new UserError("That's already answered");
     const need = this.d.needs.openNeed(needId);
     // A question held behind one waiting elsewhere is answered too (with that answer).
@@ -187,28 +205,17 @@ export class Decisions {
       const started = await this.followUps.tryNow(need.chatId, m);
       this.d.needs.answered(needId, label, scope);
       this.requests.delete(needId);
-      const base = { chatId: need.chatId, runId: need.runId, needId, projectId: asked.projectId ?? "" };
       const decisionId = this.record({
-        ...base,
+        ...{ chatId: need.chatId, runId: need.runId, needId, projectId: asked.projectId ?? "" },
         question: asked.summary,
         choice: label,
         scope,
-        by: "you",
+        by: settled ? "ion" : "you",
         ...(custom ? { custom } : {}),
       });
       if (started === "busy") this.followUps.later(need.chatId, { ...m, decisionId });
       else if (started) this.followUps.started(started, decisionId);
-      if (this.d.ion?.isThread(need.chatId))
-        await this.d.ion.afterAnswer(
-          {
-            needId,
-            projectId: base.projectId,
-            question: asked.summary,
-            choice: label,
-            labels: asked.choices.map((c) => c.label),
-          },
-          (id, n) => this.answer(id, n, "chat"),
-        );
+      if (!settled) await this.ionAfter(asked, label);
     } finally {
       this.answering.delete(needId);
     }

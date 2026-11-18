@@ -65,6 +65,8 @@ type CardProps = {
   ions: IonInfo[];
   client: IonClient;
   onOpenChat: (chatId: string) => void;
+  /** A suggestion card's recorded answer, when you've given it. */
+  answered?: boolean;
 };
 
 /** What needs you, pinned atop ion chief's chat (the lab's): one quiet line until you open it. */
@@ -168,13 +170,20 @@ function Threads({
 }
 
 /** ion's "always?" suggestion: No or Keep; once answered, it says so. */
-function Suggest({ card, ion, client }: CardProps & { card: Extract<IonCard, { kind: "suggest" }> }) {
-  const [done, setDone] = useState<boolean | null>(null);
+function Suggest({
+  card,
+  ion,
+  client,
+  answered,
+}: CardProps & { card: Extract<IonCard, { kind: "suggest" }> }) {
+  const [done, setDone] = useState<boolean | null>(answered ?? null);
+  const [error, setError] = useState<string | null>(null);
   const answer = (keep: boolean) =>
     void client.call("suggestion.answer", { suggestionId: card.suggestionId, keep }).then(
       () => setDone(keep),
-      () => setDone(false),
+      (e: unknown) => setError(e instanceof Error ? e.message : "Something went wrong"),
     );
+  if (error) return <div className="note">{error}</div>;
   return (
     <div className="ncard">
       <IonAvatar ion={ion} />
@@ -232,7 +241,13 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
               {last ? <IonAvatar ion={p.ion} /> : <span />}
               <div>
                 {m.text && <div className="bi">{m.text}</div>}
-                {m.card && <Card {...p} card={m.card} />}
+                {m.card && (
+                  <Card
+                    {...p}
+                    card={m.card}
+                    {...(m.answered !== undefined ? { answered: m.answered } : {})}
+                  />
+                )}
               </div>
             </div>
           );

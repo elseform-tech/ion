@@ -216,10 +216,6 @@
 .apill.full {
   color: var(--wait);
 }
-.bpill .spin {
-  width: 12px;
-  height: 12px;
-}
 
 /* Widths you set by dragging (Resizer): the sidebar and the side panel. The conversation always keeps at least
    520 px, so the panel gives way first. */

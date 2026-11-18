@@ -59,6 +59,7 @@ export function groupChats(chats: ChatInfo[], needs: NeedInfo[], projectId: stri
 const CHANGES = new Set<string>([
   EV.chatCreated,
   EV.chatArchived,
+  EV.chatRenamed,
   EV.runQueued,
   EV.runStarted,
   EV.runFinished,

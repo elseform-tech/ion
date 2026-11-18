@@ -169,6 +169,37 @@ describe("RunManager", () => {
     });
   });
 
+  // Final review I2: a thread ion started runs in Auto every time, whatever the project's access.
+  it("runs every run of an ion thread in Auto, even in a Full access project", async () => {
+    saveUserConfig(configFile, setProjectAccess(addProject(DEFAULT_CONFIG, repo), "repo", "full"));
+    runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
+    const first = await runs.ask({ text: "shell", projectId: "repo", harness: "fake" }, { by: "ion" });
+    expect(approval(await finished(first.runId))).toMatchObject({ by: "ion" });
+    const next = await runs.ask({ text: "shell", chatId: first.chatId, harness: "fake", access: "full" });
+    expect(approval(await finished(next.runId))).toMatchObject({ by: "ion" });
+  });
+
+  // Final review I1: archiving a chat closes its questions, so nothing waits behind them unseen.
+  it("closes a chat's open questions when it's archived", async () => {
+    const { chatId, runId } = await ask("hello");
+    await finished(runId);
+    const needId = needs.raiseAsk({
+      chatId,
+      runId,
+      question: "Q?",
+      choices: [
+        { label: "A", consequence: "a" },
+        { label: "B", consequence: "b" },
+      ],
+    });
+    await runs.archive(chatId);
+    expect(needs.open(chatId, true)).toEqual([]);
+    expect(store.read({ chatId }).find((e) => e.type === "need.resolved")?.data).toMatchObject({
+      needId,
+      decision: "superseded",
+    });
+  });
+
   it("archives a chat: removes its worktree, keeps the branch, refuses while running", async () => {
     const { chatId, runId } = await ask("slow");
     await expect(runs.archive(chatId)).rejects.toThrow(new UserError("Stop the chat's run first"));

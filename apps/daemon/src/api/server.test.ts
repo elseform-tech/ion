@@ -248,7 +248,12 @@ describe("daemon api", () => {
     // ion chief's model is the judge's: the fake one here (never a real model in tests).
     const cf = join(home, "config.toml");
     const { config } = loadUserConfig(cf);
-    saveUserConfig(cf, { ...config, access: { ...config.access, judge: "fake" } });
+    // Its project's ion runs on the fake agent too: with none set, ion would pick a real one that's ready.
+    saveUserConfig(cf, {
+      ...config,
+      access: { ...config.access, judge: "fake" },
+      projects: config.projects.map((p) => ({ ...p, harness: "fake" })),
+    });
     await client.call("ion.message", { ionId: "app", text: "hello from your ion" });
     const thread = (await client.call("chats.list", {})).find((c) => c.by === "ion");
     expect(thread).toMatchObject({ projectId: "app", title: "hello from your ion" });

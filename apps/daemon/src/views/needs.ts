@@ -9,6 +9,8 @@ export const needsView: View & {
   open(db: Db, chatId?: string, held?: boolean): NeedInfo[];
   /** Questions held behind this one: open, waiting on its answer. */
   heldFor(db: Db, needId: string): NeedInfo[];
+  /** Questions held behind one that has closed (ion stopped before settling them): to raise. */
+  orphans(db: Db): NeedInfo[];
   find(
     db: Db,
     needId: string,
@@ -75,6 +77,13 @@ export const needsView: View & {
   },
   heldFor(db, needId) {
     return rows(db, "open = 1 AND held_for = ?", [needId]);
+  },
+  orphans(db) {
+    return rows(
+      db,
+      "open = 1 AND held_for IS NOT NULL AND held_for NOT IN (SELECT need_id FROM view_needs WHERE open = 1)",
+      [],
+    );
   },
 };
 

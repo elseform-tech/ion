@@ -126,14 +126,23 @@ export function useDiff(client: IonClient, chatId: string, version: number): Cha
  * What the chat changed in its worktree (its own branch, new files included). `version` changes whenever the
  * chat does something, and the changes are read again.
  */
-export function ToolsPanel({ diff, error, focus }: Changes & { focus?: string | null }) {
-  const [tab, setTab] = useState<Tab>("diff");
-  // A file picked in the conversation: show the Changes tab, scrolled to it.
+/** A file picked in the conversation; `n` counts picks, so each one scrolls (once). */
+export type Focus = { path: string; n: number };
+
+/** Shows the Changes tab scrolled to a picked file, once per pick (waiting for the first read if need be). */
+function useFocus(focus: Focus | null | undefined, loaded: boolean, setTab: (t: Tab) => void): void {
+  const done = useRef(0);
   useEffect(() => {
-    if (!focus) return;
+    if (!focus || !loaded || focus.n === done.current) return;
+    done.current = focus.n;
     setTab("diff");
-    document.getElementById(fileId(focus))?.scrollIntoView?.({ block: "start" });
-  }, [focus, diff]);
+    document.getElementById(fileId(focus.path))?.scrollIntoView?.({ block: "start" });
+  }, [focus, loaded, setTab]);
+}
+
+export function ToolsPanel({ diff, error, focus }: Changes & { focus?: Focus | null }) {
+  const [tab, setTab] = useState<Tab>("diff");
+  useFocus(focus, diff !== null, setTab);
   const omitted = diff?.omitted ?? 0;
   const files = diff?.files ?? [];
   return (

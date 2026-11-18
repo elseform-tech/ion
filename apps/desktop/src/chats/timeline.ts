@@ -203,7 +203,12 @@ const HANDLERS: Record<string, Handler> = {
   [EV.fileChanged]: (t, d, e) => {
     const runId = e.runId ?? "";
     const change = { path: str(d.path), added: Number(d.added) || 0, removed: Number(d.removed) || 0 };
-    const files = { ...t.files, [runId]: { ...t.files[runId], [change.path]: change } };
+    // Each change is one edit's counts: a file edited three times adds all three.
+    const was = t.files[runId]?.[change.path];
+    const sum = was
+      ? { ...change, added: was.added + change.added, removed: was.removed + change.removed }
+      : change;
+    const files = { ...t.files, [runId]: { ...t.files[runId], [change.path]: sum } };
     return { ...t, changes: t.changes + 1, files };
   },
   [EV.approvalRequested]: (t, d) => ({ ...t, asks: { ...t.asks, [str(d.requestId)]: str(d.summary) } }),

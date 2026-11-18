@@ -104,7 +104,6 @@ export const handlers: Handlers = {
   },
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,
   "ions.list": (_a, ctx) => ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects),
-  // Plan 09, Tasks 3 and 4 answer these.
   "ion.message": async (a, ctx) => {
     const text = String(a.text ?? "").trim();
     if (!text) throw new UserError("Say something");
@@ -158,9 +157,10 @@ export const handlers: Handlers = {
     }),
 };
 
-/** A harness, whether it's ready, and (only when it is) its own model list. */
 /** Every agent's info, kept and read again in the background (asking each CLI takes seconds). */
 export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs: 60_000 });
+
+/** A harness, whether it's ready, and (only when it is) its own model list. */
 
 async function harnessInfo(id: string): Promise<HarnessInfo> {
   const h = getHarness(id)!;

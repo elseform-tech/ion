@@ -106,4 +106,16 @@ describe("ChangesPanel", () => {
     await screen.findByText("a.ts");
     expect(container.querySelector(".fh")?.textContent).toBe("a.ts+1");
   });
+  // Final review I7: a picked file is scrolled to once per pick, not again on every later read.
+  it("scrolls to a picked file once per pick", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const diff = { files: [{ path: "a.ts", added: 1, removed: 1, patch }] };
+    const { rerender } = render(<ToolsPanel diff={diff} error={null} focus={{ path: "a.ts", n: 1 }} />);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    rerender(<ToolsPanel diff={{ ...diff }} error={null} focus={{ path: "a.ts", n: 1 }} />);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    rerender(<ToolsPanel diff={diff} error={null} focus={{ path: "a.ts", n: 2 }} />);
+    expect(scroll).toHaveBeenCalledTimes(2);
+  });
 });

@@ -2,7 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
 import { PanelRight } from "@ion/design-system";
 import { useState } from "react";
-import { ToolsPanel, useDiff } from "./ToolsPanel.js";
+import { type Focus, ToolsPanel, useDiff } from "./ToolsPanel.js";
 import { ChatView, Starting, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
 import { QuestionBar } from "./QuestionBar.js";
@@ -16,13 +16,14 @@ type Question = Extract<Item, { kind: "question" }>;
 /** The side panel's state for the window: closed to start; picking a changed file opens it at that file. */
 function usePanel(): Panel {
   const [open, setOpen] = useState(false);
-  const [focus, setFocus] = useState<string | null>(null);
+  // A count with the path, so picking the same file again scrolls to it again.
+  const [focus, setFocus] = useState<Focus | null>(null);
   return {
     open,
     focus,
     toggle: () => setOpen((o) => !o),
     show: (path) => {
-      setFocus(path);
+      setFocus((f) => ({ path, n: (f?.n ?? 0) + 1 }));
       setOpen(true);
     },
   };
@@ -63,10 +64,10 @@ function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | n
   );
 }
 
-/** An open chat: its header, timeline, any open question, and the message box. */
 /** The side panel: one choice for the window, closed until you open it; `focus` is a file to show. */
-type Panel = { open: boolean; toggle: () => void; focus: string | null; show: (path: string) => void };
+type Panel = { open: boolean; toggle: () => void; focus: Focus | null; show: (path: string) => void };
 
+/** An open chat: its header, timeline, any open question, and the message box. */
 function OpenChat({
   client,
   chat,

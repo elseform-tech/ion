@@ -1,25 +1,44 @@
 import type { IonClient } from "@ion/client/browser";
-import type { IonInfo } from "@ion/schema";
+import { EV, type IonInfo } from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
 import { useLive } from "../chats/live.js";
 import { IonAvatar, IonChat, IonName } from "./IonChat.js";
 
-/** The ions, kept live: read again whenever something an ion shows changes. */
+/** What changes the ions list: an ion's line, its threads starting, running and ending, their questions. */
+const IONS_CHANGE = new Set<string>([
+  EV.ionSaid,
+  EV.chatCreated,
+  EV.chatArchived,
+  EV.runQueued,
+  EV.runStarted,
+  EV.runFinished,
+  EV.needRaised,
+  EV.needResolved,
+]);
+
+/** The ions, kept live: read again when something they show changes. */
 function useIons(client: IonClient): IonInfo[] {
   const [ions, setIons] = useState<IonInfo[]>([]);
   const read = useCallback(() => void client.call("ions.list", {}).then(setIons, () => {}), [client]);
   useEffect(() => {
     read();
     let stop: (() => void) | undefined;
+    let gone = false;
     void client
-      .subscribe({ fromNow: true }, () => read())
+      .subscribe({ fromNow: true }, (e) => {
+        if (!gone && IONS_CHANGE.has(e.type)) read();
+      })
       .then(
         (s) => {
-          stop = s;
+          if (gone) s();
+          else stop = s;
         },
         () => {},
       );
-    return () => stop?.();
+    return () => {
+      gone = true;
+      stop?.();
+    };
   }, [client, read]);
   return ions;
 }
@@ -92,7 +111,7 @@ export function Ions({ client, onOpenChat }: { client: IonClient; onOpenChat: (c
           client={client}
           ion={open}
           chats={live.chats}
-          needs={live.needs}
+          needs={live.needs.filter((n) => live.chats.some((c) => c.chatId === n.chatId && c.by === "ion"))}
           ions={ions}
           onOpenChat={onOpenChat}
         />

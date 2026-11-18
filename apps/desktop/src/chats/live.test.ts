@@ -126,4 +126,13 @@ describe("useLive", () => {
     await waitFor(() => expect(result.current.chats.map((x) => x.lastRunStatus)).toEqual(["done"]));
     expect(result.current.needs).toEqual([]);
   });
+  // Final review I8: a renamed chat shows its new name at once.
+  it("reads the chats again when one is renamed", async () => {
+    const f = fakeClient();
+    const { result } = renderHook(() => useLive(f.client));
+    await waitFor(() => expect(result.current.chats.map((x) => x.title)).toEqual(["a"]));
+    f.lists.chats = [{ ...chat("a"), title: "Checkout" }];
+    await f.send("chat.renamed");
+    await waitFor(() => expect(result.current.chats.map((x) => x.title)).toEqual(["Checkout"]));
+  });
 });

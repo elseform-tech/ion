@@ -71,6 +71,16 @@ function client(events: IonEvent[] = []) {
           detail: null,
           raisedAt: "",
         },
+        {
+          needId: "n2",
+          chatId: "mine",
+          runId: "r2",
+          projectId: "storefront",
+          kind: "ask",
+          summary: "Mine?",
+          detail: null,
+          raisedAt: "",
+        },
       ];
     return cmd === "ion.message" || cmd === "suggestion.answer" ? { ok: true } : [];
   });
@@ -148,7 +158,9 @@ describe("Ions", () => {
     const onOpenChat = vi.fn();
     const { container } = render(<Ions client={client()} onOpenChat={onOpenChat} />);
     const mini = await screen.findByRole("button", { name: /Needs you/ });
+    // Final review I10: only questions from threads ion started (your own chats' aren't ion's).
     expect(container.querySelector(".pins.mini .peek")?.textContent).toBe("Use QA?");
+    expect(container.querySelector(".pins.mini .ct")?.textContent).toBe("1");
     fireEvent.click(mini);
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     expect(onOpenChat).toHaveBeenCalledWith("t1");
@@ -166,5 +178,41 @@ describe("Ions", () => {
     await waitFor(() => expect(container.querySelectorAll(".fan .fanr")).toHaveLength(2));
     expect(container.querySelector(".fan .fanh")?.textContent).toBe("Asked 2 projects");
     expect(container.querySelector(".tlink")).toBeNull();
+  });
+  // Final review I6: a suggestion you answered stays answered when you come back.
+  it("shows a suggestion you already answered as answered", async () => {
+    const c = client([
+      ev("ion:chief", EV.ionSaid, {
+        text: "Always?",
+        card: { kind: "suggest", suggestionId: "s1", question: "Use QA?", choice: "Yes" },
+      }),
+      ev("ion:chief", EV.suggestionAnswered, { suggestionId: "s1", keep: true }),
+    ]);
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    await waitFor(() =>
+      expect(container.querySelector(".ncard .done")?.textContent).toBe("Always, for this project"),
+    );
+    expect(screen.queryByRole("button", { name: "Keep" })).toBeNull();
+  });
+
+  // Final review I9: the ions are read again when something they show changes, not on every word an agent streams.
+  it("reads the ions again on ion events, not on streamed text", async () => {
+    const live: ((e: IonEvent) => void)[] = [];
+    const push = (e: IonEvent) => {
+      for (const fn of live) fn(e);
+    };
+    const c = client();
+    vi.mocked(c.subscribe).mockImplementation(async (q: { fromNow?: boolean }, fn: (e: IonEvent) => void) => {
+      if (q.fromNow) live.push(fn);
+      return () => {};
+    });
+    render(<Ions client={c} onOpenChat={() => {}} />);
+    await waitFor(() => expect(c.call).toHaveBeenCalledWith("ions.list", {}));
+    const reads = () => c.call.mock.calls.filter(([cmd]) => cmd === "ions.list").length;
+    const before = reads();
+    act(() => push(ev("t1", EV.messageDelta, { text: "a" })));
+    expect(reads()).toBe(before);
+    act(() => push(ev("ion:chief", EV.ionSaid, { text: "x" })));
+    await waitFor(() => expect(reads()).toBe(before + 1));
   });
 });

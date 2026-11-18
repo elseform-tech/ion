@@ -191,4 +191,79 @@ describe("questions in ion threads", () => {
       card: { kind: "flag", decisionId, failed: 2, choice: "Use QA account" },
     });
   });
+  // Final review C1: answered while ion was still comparing: the new question isn't held behind a closed one.
+  it("never holds a question behind one you answered while ion compared them", async () => {
+    const d = make();
+    await d.ask(scope("t1"), q());
+    const first = open("t1")[0]!.needId;
+    let compare: (id: string | null) => void = () => {};
+    same.mockImplementationOnce(() => new Promise((r) => (compare = r)));
+    const asking = d.ask(scope("t2"), q());
+    await vi.waitFor(() => expect(same).toHaveBeenCalled());
+    await d.answer(first, 1, "chat");
+    compare(first);
+    await asking;
+    expect(open("t2").map((n) => n.summary)).toEqual(["Use the QA account for staging?"]);
+  });
+
+  // Final review C1: after a restart (or anything that left it), a question held behind a closed one is raised.
+  it("raises held questions whose question closed, when swept", async () => {
+    const d = make();
+    await d.ask(scope("t1"), q());
+    const first = open("t1")[0]!.needId;
+    same.mockResolvedValueOnce(first);
+    await d.ask(scope("t2"), q());
+    // ion stopped right after recording your answer, before settling the held one:
+    store.append({
+      chatId: "t1",
+      runId: "r-t1",
+      origin: "daemon",
+      type: EV.needResolved,
+      data: { needId: first, decision: "answered", by: "you", choice: "Use QA account", scope: "chat" },
+    });
+    new IonQuestions({ store, db, needs, same }).sweep();
+    expect(open("t2")).toHaveLength(1);
+  });
+
+  // Final review I4: your own chats' answers never reach ion's notes, suggestions or flags.
+  it("keeps your own chats' answers out of ion's notes, suggestions and flags", async () => {
+    const d = make();
+    for (let i = 0; i < 3; i++) {
+      await d.ask(scope("mine", `rm${i}`), q());
+      await d.answer(open("mine")[0]!.needId, 1, "chat");
+    }
+    await d.ask(scope("t1"), q());
+    expect(seen.filter((e) => e.type === EV.needRaised && e.chatId === "t1").at(-1)?.data).toMatchObject({
+      via: { note: "storefront's ion: first time this comes up" },
+    });
+    expect(ionSaid().some((x) => x.card?.kind === "suggest")).toBe(false);
+    const mineDecision = (
+      seen.find((e) => e.type === EV.decisionRecorded && e.chatId === "mine")!.data as { decisionId: string }
+    ).decisionId;
+    for (const runId of ["x1", "x2"])
+      store.append({
+        chatId: "mine",
+        runId,
+        origin: "daemon",
+        type: EV.decisionOutcome,
+        data: { decisionId: mineDecision, kind: "failed", text: "Failed", by: "ion" },
+      });
+    expect(ionSaid().some((x) => x.card?.kind === "flag")).toBe(false);
+  });
+
+  // Final review I5: questions settled by your one answer are ion's doing, not three answers of yours.
+  it("counts only your own answers toward 'Always?'", async () => {
+    const d = make();
+    await d.ask(scope("t1"), q());
+    const first = open("t1")[0]!.needId;
+    chat("t3", "ion");
+    same.mockResolvedValueOnce(first).mockResolvedValueOnce(first);
+    await d.ask(scope("t2"), q());
+    await d.ask(scope("t3"), q());
+    await d.answer(first, 1, "chat");
+    expect(ionSaid().some((x) => x.card?.kind === "suggest")).toBe(false);
+    expect(
+      seen.filter((e) => e.type === EV.decisionRecorded).map((e) => (e.data as { by: string }).by),
+    ).toEqual(["you", "ion", "ion"]);
+  });
 });

@@ -87,6 +87,22 @@ export class NeedsService {
     return needsView.heldFor(this.db, needId);
   }
 
+  orphans(): NeedInfo[] {
+    return needsView.orphans(this.db);
+  }
+
+  /** The chat was archived: its open needs, questions too, can't be answered any more. */
+  supersedeChat(chatId: string): void {
+    for (const n of needsView.open(this.db, chatId, true))
+      this.store.append({
+        chatId,
+        runId: n.runId,
+        origin: "daemon",
+        type: EV.needResolved,
+        data: { needId: n.needId, decision: "superseded", by: "daemon" },
+      });
+  }
+
   /** A held question raised to you after all: closed as itself, and asked again in the open. */
   release(n: NeedInfo, note: string): void {
     this.store.append({

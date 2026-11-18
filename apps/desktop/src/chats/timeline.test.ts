@@ -286,8 +286,9 @@ describe("timeline", () => {
       kind: "end",
       status: "done",
       seconds: 0,
+      // Final review: each file.changed is one edit's counts, so they add up.
       files: [
-        { path: "a.ts", added: 2, removed: 1 },
+        { path: "a.ts", added: 3, removed: 1 },
         { path: "b.ts", added: 4, removed: 0 },
       ],
     });

@@ -7,8 +7,12 @@ export const DEFAULT_PROJECT = "default";
 
 /** Why a project name can't be used, or null when it can. */
 export function projectNameError(name: string): string | null {
+  if (name === ION_CHIEF) return "That name is ion's own";
   return /^[a-z0-9][a-z0-9._-]{0,63}$/.test(name) ? null : "Use lowercase letters, numbers, - . _";
 }
+
+/** ion chief's own id: no project takes it (its chat is "ion:chief"). */
+const ION_CHIEF = "chief";
 
 /** Returns a new config with the git repo at `path` added. Throws a user-facing message otherwise. */
 export function addProject(c: UserConfig, path: string): UserConfig {
@@ -17,7 +21,7 @@ export function addProject(c: UserConfig, path: string): UserConfig {
   const dup = c.projects.find((p) => p.path === abs);
   if (dup) throw new Error(`Already added: ${dup.id}`);
   const base = basename(abs);
-  const taken = new Set(c.projects.map((p) => p.id));
+  const taken = new Set([ION_CHIEF, ...c.projects.map((p) => p.id)]);
   let id = base;
   let n = 1;
   while (taken.has(id)) id = `${base}-${++n}`;
