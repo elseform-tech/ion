@@ -53,7 +53,10 @@ export function askTools(server: McpServer, scope: Scope, d: { db: Db; decisions
       const lines = list.map(
         (x) =>
           `${x.decisionId} (${x.scope}, ${x.decidedAt.slice(0, 10)}): ${JSON.stringify(x.question)} → ${JSON.stringify(x.choice)}` +
-          x.outcomes.map((o) => `\n  ${o.kind} (${o.by}): ${JSON.stringify(o.text)}`).join(""),
+          // Notes on another project's "everywhere" decisions stay in that project.
+          (x.projectId === scope.projectId ? x.outcomes : [])
+            .map((o) => `\n  ${o.kind} (${o.by}): ${JSON.stringify(o.text)}`)
+            .join(""),
       );
       return ok(wrapData("your decisions", lines.join("\n")));
     }),

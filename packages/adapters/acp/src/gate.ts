@@ -112,7 +112,10 @@ export function opencodeToCall(payload: unknown): GateCall | null {
   const tool = str(p?.tool);
   if (!tool) return null;
   // ion's own MCP server is "ion", so its tools come as ion_<tool>; other servers' tools stay "other".
-  const ion = /^ion_([a-z_]+)$/.exec(tool)?.[1];
+  const ion =
+    /^ion_(chat_history|search_chats|open_needs|memory_list|memory_write|ask|decisions|report_outcome)$/.exec(
+      tool,
+    )?.[1];
   if (ion) return call(`ion__${ion}`, "mcp", obj(p?.args) ?? {}, "ion");
   return call(tool, OPENCODE_KINDS[tool] ?? "other", obj(p?.args) ?? {});
 }

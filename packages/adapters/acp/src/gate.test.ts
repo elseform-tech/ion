@@ -111,6 +111,11 @@ describe("opencode's gate plugin", () => {
       kind: "mcp",
       mcpServer: "ion",
     });
+    // Final review: only ion's exact tool names; a server called ion_memory isn't ion.
+    expect(OPENCODE.toCall!({ tool: "ion_memory_write", args: {} })).toMatchObject({
+      toolName: "ion__memory_write",
+    });
+    expect(OPENCODE.toCall!({ tool: "ion_memory_write_x", args: {} })).toMatchObject({ kind: "other" });
     expect(OPENCODE.toCall!({})).toBeNull();
   });
 });

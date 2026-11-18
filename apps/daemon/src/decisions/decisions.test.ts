@@ -1,5 +1,6 @@
 import { EV, type IonEvent } from "@ion/schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { UserError } from "../api/errors.js";
 import { NeedsService } from "../needs/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
@@ -285,3 +286,87 @@ describe("matcher", () => {
     expect(await m(q, past)).toBeNull();
   });
 });
+
+// Final review (Plan 06), finding 2: an answer is never lost.
+describe("answers that can't go straight back", () => {
+  it("keeps the question open when the follow-up can't start, so you can answer again", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    const id = needs.open("c1")[0]!.needId;
+    followUp.mockRejectedValueOnce(new UserError("opencode isn't signed in. Run: opencode auth login"));
+    await expect(d.answer(id, 1)).rejects.toThrow("opencode isn't signed in");
+    expect(needs.open("c1")).toHaveLength(1);
+    expect(of(EV.decisionRecorded)).toEqual([]);
+    await d.answer(id, 1);
+    expect(of(EV.decisionRecorded)).toHaveLength(1);
+  });
+
+  it("sends every answer given while the chat is busy, in order, once its run ends", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    await d.ask(scope(), { ...q, question: "Also clean dist?" });
+    followUp.mockRejectedValueOnce(new UserError("This chat is already running"));
+    const [a, b] = needs.open("c1");
+    await d.answer(a!.needId, 1);
+    await d.answer(b!.needId, 2);
+    store.append({
+      chatId: "c1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+    // The second answer waits behind the first without trying; both go once the run ends, in order.
+    await until(() => followUp.mock.calls.length === 3);
+    expect(followUp.mock.calls.slice(1).map((c) => c[2])).toEqual([
+      'You asked: "Delete the build folder?". The user chose: "Delete it".',
+      'You asked: "Also clean dist?". The user chose: "Keep it".',
+    ]);
+  });
+
+  it("sends answers still waiting when ion stopped, once it starts again", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    followUp.mockRejectedValueOnce(new UserError("This chat is already running"));
+    await d.answer(needs.open("c1")[0]!.needId, 2);
+    // ion stops before the chat's run ends; a new ion picks the answer up.
+    followUp.mockClear();
+    await make().resume();
+    expect(followUp).toHaveBeenCalledWith(
+      "c1",
+      "fake",
+      'You asked: "Delete the build folder?". The user chose: "Keep it".',
+      "",
+    );
+    followUp.mockClear();
+    const text = 'You asked: "Delete the build folder?". The user chose: "Keep it".';
+    store.append({ chatId: "c1", runId: "r2", origin: "daemon", type: EV.messageSent, data: { text } });
+    await make().resume();
+    expect(followUp).not.toHaveBeenCalled();
+  });
+});
+
+// Final review (Plan 06), finding 3: a past answer only stands in for a question worded much the same.
+describe("answered by ion, only for the same question", () => {
+  it("asks you when the new question is about something else, and names the question it matched", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    await d.answer(needs.open("c1")[0]!.needId, 1, "project");
+    const id = String(of(EV.decisionRecorded)[0]!.decisionId);
+    const match = async () => ({ decisionId: id, label: "Delete it" });
+    expect(
+      await make(match).ask(scope("c2", "r9"), { ...q, question: "Drop and recreate the prod database?" }),
+    ).toMatch(/^Asked\./);
+    expect(
+      await make(match).ask(scope("c2", "r8"), { ...q, question: "Should I delete the build folder?" }),
+    ).toBe('The user already decided: "Delete it" when asked "Delete the build folder?". Go ahead.');
+  });
+});
+
+async function until(f: () => boolean, ms = 2000) {
+  const end = Date.now() + ms;
+  while (!f()) {
+    if (Date.now() > end) throw new Error("timed out");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}

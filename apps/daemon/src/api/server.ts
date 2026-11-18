@@ -28,6 +28,8 @@ export async function startServer(opts: {
   const ctx = openState(opts, () => `http://127.0.0.1:${port}`);
   const { store, db } = ctx;
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
+  // Answers still waiting when ion stopped go into their chats now.
+  void ctx.decisions.resume().catch(() => {});
   const auth = createAuth();
   const http = httpServer(
     createMcpHandler({ store, db, grants: ctx.grants, decisions: ctx.decisions }),
@@ -93,7 +95,12 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   const access = createAccess({
     judge,
     home: homedir(),
-    ionDirs: [opts.dataDir, dirname(opts.configFile)],
+    // ion's files, and a custom Grok folder (where ion's gate hook lives; ~/.grok is covered by name).
+    ionDirs: [
+      opts.dataDir,
+      dirname(opts.configFile),
+      ...(process.env.GROK_HOME ? [process.env.GROK_HOME] : []),
+    ],
     decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
   });
   const runCtx = {
