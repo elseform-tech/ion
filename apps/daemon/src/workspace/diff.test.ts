@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -46,6 +46,18 @@ describe("chatDiff", () => {
     const [f] = await chatDiff(repo, wt.path);
     expect(f!.truncated).toBe(true);
     expect(f!.patch.length).toBeLessThanOrEqual(200 * 1024);
+  });
+
+  // Security review: a new symlink shows nothing it points at; a diff over 1 MB isn't lost.
+  it("skips new symlinks and keeps big diffs", async () => {
+    const wt = await createWorktree(repo, dataDir, "chat_links", "Links");
+    symlinkSync("/etc/hosts", join(wt.path, "hosts-link"));
+    writeFileSync(join(wt.path, "README.md"), `# repo\n${"y".repeat(80)}\n`.repeat(20_000));
+    const files = await chatDiff(repo, wt.path);
+    expect(files.map((f) => f.path)).toEqual(["README.md"]);
+    expect(files[0]!.added).toBeGreaterThan(1000);
+    expect(files[0]!.truncated).toBe(true);
+    expect(files[0]!.patch.length).toBeGreaterThan(100_000);
   });
 
   it("is empty when the worktree is gone", async () => {

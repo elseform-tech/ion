@@ -27,7 +27,8 @@ export function git(args: string[], cwd: string): Promise<GitResult> {
     execFile(
       resolveGit(),
       ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args],
-      { cwd, env: gitEnv(), timeout: 60_000 },
+      // Diffs can be large: Node's 1 MB default would cut them off silently.
+      { cwd, env: gitEnv(), timeout: 60_000, maxBuffer: 64 * 1024 * 1024 },
       (err, stdout, stderr) => {
         let code = 0;
         if (err) code = typeof err.code === "number" ? err.code : 1;
