@@ -26,11 +26,36 @@ const QUICK = {
   badinput: (id) => send({ id, error: { code: -32602, message: "Invalid params" } }),
 };
 
-async function prompt(id, { sessionId, prompt: blocks }) {
-  const text = blocks
-    .map((b) => b.text ?? "")
+/** The prompt's text, and ion's standing instructions (their own first block) apart from it. */
+function split(blocks) {
+  const all = blocks.map((b) => b.text ?? "");
+  const told = all.find((t) => t.startsWith("<ion-instructions>")) ?? null;
+  const text = all
+    .filter((t) => t !== told)
     .join(" ")
     .trim();
+  return { told, text };
+}
+
+/** What the agent was given: session options, env, MCP servers, ion's instructions. */
+function whoami(id, sessionId, told) {
+  update(sessionId, {
+    sessionUpdate: "agent_message_chunk",
+    content: {
+      type: "text",
+      text: JSON.stringify({
+        meta: metas.get(sessionId),
+        env: process.env.FAKE_ACP_ENV ?? null,
+        mcpServers: mcps.get(sessionId),
+        ...(told ? { instructions: told } : {}),
+      }),
+    },
+  });
+  return send({ id, result: { stopReason: "end_turn", usage: { inputTokens: 7, outputTokens: 3 } } });
+}
+
+async function prompt(id, { sessionId, prompt: blocks }) {
+  const { told, text } = split(blocks);
   const cwd = sessions.get(sessionId);
   if (text.startsWith("approve")) {
     update(sessionId, {
@@ -89,20 +114,8 @@ async function prompt(id, { sessionId, prompt: blocks }) {
     });
     return send({ id, result: { stopReason: "end_turn" } });
   }
-  if (text.startsWith("whoami")) {
-    update(sessionId, {
-      sessionUpdate: "agent_message_chunk",
-      content: {
-        type: "text",
-        text: JSON.stringify({
-          meta: metas.get(sessionId),
-          env: process.env.FAKE_ACP_ENV ?? null,
-          mcpServers: mcps.get(sessionId),
-        }),
-      },
-    });
-    return send({ id, result: { stopReason: "end_turn", usage: { inputTokens: 7, outputTokens: 3 } } });
-  }
+  if (text.startsWith("whoami")) return whoami(id, sessionId, told);
+
   update(sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Thinking" } });
   update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hi " } });
   update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "there" } });

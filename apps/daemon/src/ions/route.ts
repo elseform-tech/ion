@@ -3,7 +3,8 @@ import type { ChatInfo, NeedInfo } from "@ion/schema";
 import { wrapData } from "../context/index.js";
 
 /** What ion chief does with your message: answer it, or send it on to project ions with a brief each. */
-export type Route = { answer: string } | { route: { projectId: string; brief: string }[] };
+/** An answer, threads to start, or both (a message can ask something and ask for work). */
+export type Route = { answer: string } | { route: { projectId: string; brief: string }[]; answer?: string };
 
 /** What ion chief knows when it decides, from the daemon's views: per project, what needs you, runs and failed. */
 export function contextOf(projects: string[], chats: ChatInfo[], needs: NeedInfo[]): string {
@@ -30,7 +31,7 @@ export function chiefPrompt(text: string, projects: string[], context: string): 
     wrapData("your message", text),
     wrapData("projects", projects.join("\n")),
     wrapData("state", context),
-    'Answer with only JSON: {"answer": "<your reply>"} or {"route": [{"projectId": "<one of the projects>", "brief": "<what to do there>"}]}',
+    'Answer with only JSON: {"answer": "<your reply to what it asks, if anything>", "route": [{"projectId": "<one of the projects>", "brief": "<what to do there>"}]}. Leave out "answer" when it asks nothing, and "route" when it asks for no work.',
   ].join("\n\n");
 }
 
@@ -42,6 +43,16 @@ const isRoute = (x: unknown): x is { projectId: string; brief: string } =>
 
 const MAX_ROUTES = 5;
 
+/** The routes to known projects (never `default`), at most a handful: the state ion chief reads includes agents' text. */
+function routesOf(raw: unknown, projects: string[]): { projectId: string; brief: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const known = new Set(projects.filter((p) => p !== DEFAULT_PROJECT));
+  return raw
+    .filter(isRoute)
+    .filter((r) => known.has(r.projectId))
+    .slice(0, MAX_ROUTES);
+}
+
 /** ion chief's decision, only when the whole answer is its JSON; routes to unknown projects and `default` drop out. */
 export function parseRoute(text: string, projects: string[]): Route | null {
   let body = text.trim();
@@ -52,13 +63,8 @@ export function parseRoute(text: string, projects: string[]): Route | null {
   } catch {
     return null;
   }
-  if (typeof v.answer === "string" && v.answer.trim()) return { answer: v.answer.trim() };
-  if (!Array.isArray(v.route)) return null;
-  const known = new Set(projects.filter((p) => p !== DEFAULT_PROJECT));
-  // At most a handful of threads from one message: the state ion chief reads includes agents' own text.
-  const route = v.route
-    .filter(isRoute)
-    .filter((r) => known.has(r.projectId))
-    .slice(0, MAX_ROUTES);
-  return route.length ? { route } : null;
+  const answer = typeof v.answer === "string" && v.answer.trim() ? v.answer.trim() : undefined;
+  const route = routesOf(v.route, projects);
+  if (route.length) return { route, ...(answer ? { answer } : {}) };
+  return answer ? { answer } : null;
 }

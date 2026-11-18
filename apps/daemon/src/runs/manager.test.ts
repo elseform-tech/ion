@@ -433,6 +433,26 @@ describe("RunManager", () => {
     expect(grants.check(key)).toBeNull();
   });
 
+  // The user, 2026-11-18: Claude and Grok wrote their questions as text (you got no question to answer); only
+  // opencode used ion's ask tool. Every run with ion's tools is told to ask through it.
+  it("tells each run with ion's tools to ask you through ion's ask tool", async () => {
+    runs = new RunManager(
+      store,
+      {
+        configFile,
+        dataDir,
+        random: () => 0,
+        access,
+        mcp: { grants: createGrants(), url: () => "http://127.0.0.1:9/mcp" },
+      },
+      needs,
+      db,
+    );
+    const told = said(await finished((await ask("instructions")).runId))[0] ?? "";
+    expect(told).toContain("ask tool");
+    expect(told).toContain("never");
+  });
+
   it("refuses a model the harness doesn't list, and runs one it does", async () => {
     await expect(ask("hello", { model: "nope" })).rejects.toThrow(
       new UserError("Unknown model for Fake: nope"),

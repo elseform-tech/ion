@@ -36,6 +36,23 @@ Tool call fields: `toolCallId`, `title`, `kind` (`read, edit, delete, move, sear
 CI never calls a model. Live tests are opt-in: `ION_LIVE=1` uses opencode with a free model; `ION_LIVE_GROK=1` adds Grok Build;
 `ION_LIVE_CLAUDE=1` adds Claude Code (Haiku), only when the Claude adapter itself changed.
 
+The live evals (`apps/daemon/src/evals/live.test.ts`) run ion's promises end to end through the daemon on each
+agent you opt in, and print a table: the agent asks through ion and follows your answer, with no hidden tool
+errors; it edits a file in its worktree (your checkout untouched); ion chief answers and routes one message.
+Run them before a PR that touches an adapter, questions, the gate or ion's own model:
+`ION_LIVE=1 [ION_LIVE_GROK=1] [ION_LIVE_CLAUDE=1] pnpm --filter @ion/daemon exec vitest run src/evals`.
+
+### Agents' own question tools (found 2026-11-18)
+
+Each agent has its own way to ask the user, and none works headless under ion:
+- Claude's `AskUserQuestion`: answers itself empty in the SDK. Off (`disallowedTools`) when ion's MCP is there.
+- Grok's `ask_user_question`: calls an ACP extension method on the client; ion has none, so it failed with
+  "Method not found". Off with `GROK_ASK_USER_QUESTION=false` (its `features.ask_user_question`).
+- opencode: none seen; it used ion's `ask` from the tool's description alone.
+
+Without being told, Claude and Grok wrote a question as reply text and ended the run (nothing to answer), so ion
+tells every run to ask through its `ask` tool (`apps/daemon/src/runs/instructions.ts`).
+
 ## Sessions, MCP and models (probed 2026-11-17, Plan 04)
 
 | | Grok Build | opencode |

@@ -23,7 +23,7 @@ const projects: ProjectInfo[] = [
   { id: "payments-api", starred: false },
 ] as ProjectInfo[];
 
-const acts = () => ({ onNewProject: vi.fn(), onRename: vi.fn(), onArchive: vi.fn() });
+const acts = () => ({ onNewProject: vi.fn(), onRename: vi.fn(), onArchive: vi.fn(), onStar: vi.fn() });
 const ions: IonInfo[] = [
   {
     ionId: "storefront",
@@ -153,5 +153,42 @@ describe("Sidebar", () => {
       [...container.querySelectorAll(".r")].find((r) => r.querySelector(".tt")?.textContent === title);
     expect(row("t1")?.querySelector("canvas")).not.toBeNull();
     expect(row("c1")?.querySelector("canvas")).toBeNull();
+  });
+  // The user, 2026-11-18: the sidebar keeps open the projects you watch (starred); the rest start folded.
+  it("keeps starred projects open and first, folds the rest, and stars from the group", () => {
+    const a = acts();
+    const starred = [
+      { id: "storefront", starred: false },
+      { id: "payments-api", starred: true },
+    ] as ProjectInfo[];
+    const { container } = render(
+      <Sidebar
+        chats={[
+          chat("a", "storefront"),
+          chat("b", "payments-api", { lastActivityAt: "2026-11-18T09:00:00.000Z" }),
+        ]}
+        needs={[]}
+        projects={starred}
+        ions={ions}
+        open={null}
+        onOpen={() => {}}
+        {...a}
+      />,
+    );
+    const groups = [...container.querySelectorAll(".grp")];
+    expect(groups.map((g) => g.querySelector(".gfold")?.textContent)).toEqual(["payments-api", "storefront"]);
+    expect(groups.map((g) => g.querySelectorAll(".rw").length)).toEqual([1, 0]);
+    fireEvent.click(screen.getByRole("button", { name: "Star storefront" }));
+    expect(a.onStar).toHaveBeenCalledWith("storefront", true);
+    fireEvent.click(screen.getByRole("button", { name: "Unstar payments-api" }));
+    expect(a.onStar).toHaveBeenCalledWith("payments-api", false);
+  });
+
+  // With nothing starred, nothing is folded: a new user sees their chats.
+  it("folds nothing while no project is starred", () => {
+    const { container } = side([chat("a", "storefront"), chat("b", "payments-api")]);
+    expect([...container.querySelectorAll(".grp")].map((g) => g.querySelectorAll(".rw").length)).toEqual([
+      1, 1,
+    ]);
   });
 });

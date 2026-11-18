@@ -14,6 +14,13 @@ type Ask = (
   opts: { by: "ion"; request?: string },
 ) => Promise<{ chatId: string; runId: string }>;
 
+/** A title without its closing stops or spaces ("Fix the cart." → "Fix the cart"), so ": done." reads right. */
+function trimEnd(title: string): string {
+  let end = title.length;
+  while (end > 0 && ".!?… ".includes(title[end - 1]!)) end--;
+  return title.slice(0, end);
+}
+
 /** Without a project's own agent or a last one: the first ready of these (quota-friendly first), else any. */
 const PREFERRED = ["opencode", "grok-build", "claude-code"];
 
@@ -111,7 +118,7 @@ export class Ions {
   private async chief(text: string): Promise<void> {
     const r = await this.decide(text);
     if (!r) return this.say("chief", NO_MODEL);
-    if ("answer" in r) return this.say("chief", r.answer);
+    if (!("route" in r)) return this.say("chief", r.answer);
     const threads: { chatId: string; projectId: string }[] = [];
     const missed: string[] = [];
     for (const { projectId, brief } of r.route) {
@@ -126,7 +133,7 @@ export class Ions {
     }
     // The card shows the threads it started; the words say only what the card can't (a project it couldn't reach).
     const card: IonCard | undefined = threads.length ? { kind: "threads", threads } : undefined;
-    this.say("chief", missed.join(" "), card);
+    this.say("chief", [r.answer, ...missed].filter(Boolean).join(" "), card);
   }
 
   /** ion chief's System 1: what to do with your message, or null when its model fails, is slow, or answers junk. */
@@ -162,7 +169,8 @@ export class Ions {
       const chat = chatsView.list(this.d.db).find((c) => c.chatId === e.chatId);
       if (chat?.by !== "ion" || !chat.projectId) return;
       const status = (e.data as { status: string }).status;
-      const line = [`${chat.title}: ${status}.`, chat.preview].filter(Boolean).join(" ");
+      const title = trimEnd(chat.title);
+      const line = [`${title}: ${status}.`, chat.preview].filter(Boolean).join(" ");
       this.say(chat.projectId, line, {
         kind: "threads",
         threads: [{ chatId: chat.chatId, projectId: chat.projectId }],

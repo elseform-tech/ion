@@ -25,6 +25,7 @@ import type { GateAnswer } from "../gate/index.js";
 import { type AskBlocked, Approvals } from "./approvals.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
 import { accessFor, defaultProject, projectPath } from "./projects.js";
+import { ION_INSTRUCTIONS } from "./instructions.js";
 
 type AskArgs = Commands["ask"]["args"];
 type Active = { chatId: string; session: Session };
@@ -414,6 +415,7 @@ export class RunManager {
               url: this.ctx.mcp.url(),
               headers: { Authorization: `Bearer ${l.mcpKey}` },
             },
+            instructions: ION_INSTRUCTIONS,
           }
         : {}),
       signal: new AbortController().signal,

@@ -1,5 +1,5 @@
 import { DEFAULT_PROJECT } from "@ion/config";
-import { EV, type IonEvent, type IonInfo, type ProjectInfo } from "@ion/schema";
+import { type IonCard, EV, type IonEvent, type IonInfo, type ProjectInfo } from "@ion/schema";
 import type { Db, View } from "../store/index.js";
 import { chatsView } from "./chats.js";
 import { needsView } from "./needs.js";
@@ -19,6 +19,13 @@ const PALETTE = [
 
 const ionOf = (chatId: string) => (chatId.startsWith("ion:") ? chatId.slice(4) : null);
 
+/** An ion's words, or, when it said none, its card's gist (ion chief's routing says it with the card). */
+function lineOf(d: { text: string; card?: IonCard }): string {
+  if (d.text || d.card?.kind !== "threads") return d.text;
+  const n = new Set(d.card.threads.map((t) => t.projectId)).size;
+  return `Asked ${n} project${n === 1 ? "" : "s"}.`;
+}
+
 /** Each ion's last line; the rest of an ion (its needs, whether it's working) is read from the chats and needs. */
 export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[] } = {
   name: "ions",
@@ -35,7 +42,7 @@ export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[]
     if (!ionId || e.type !== EV.ionSaid) return;
     db.prepare(
       "INSERT INTO view_ions (ion_id, last) VALUES (?, ?) ON CONFLICT(ion_id) DO UPDATE SET last = excluded.last",
-    ).run(ionId, String((e.data as { text: string }).text));
+    ).run(ionId, lineOf(e.data as { text: string; card?: IonCard }));
   },
   /** ion chief first, then one ion per project; `default` has none (it pools chats without a project). */
   list(db, projects) {

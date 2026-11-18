@@ -40,6 +40,8 @@ function sidebarActions(
   return {
     onNewProject: (name: string) => act(() => client.call("project.create", { name }).then(onProjects)),
     onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
+    onStar: (projectId: string, starred: boolean) =>
+      act(() => client.call("project.star", { projectId, starred }).then(onProjects)),
     onArchive: (chatId: string) => {
       if (chatId === openId) setOpenId(null);
       act(() => client.call("chat.archive", { chatId }));

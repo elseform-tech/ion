@@ -42,4 +42,16 @@ describe("HarnessInfos", () => {
     expect(list.map((x) => x.id)).toEqual(["a", "b"]);
     slow(info("b", 2));
   });
+  // The user, 2026-11-18: Claude's models still showed late. The warm-up's first read wasn't kept, so the first
+  // list started a second, slow read of its own.
+  it("lets the first list wait on the warm-up's read, not start another", async () => {
+    let done: (h: HarnessInfo) => void = () => {};
+    const load = vi.fn(() => new Promise<HarnessInfo>((r) => (done = r)));
+    const infos = new HarnessInfos(["claude"], load);
+    infos.warm();
+    const listed = infos.list();
+    done(info("claude", 1));
+    expect((await listed)[0]!.label).toBe("claude 1");
+    expect(load).toHaveBeenCalledTimes(1);
+  });
 });

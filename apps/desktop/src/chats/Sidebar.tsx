@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Pin, SquarePen } from "@ion/design-system";
+import { ChevronDown, ChevronRight, Pin, SquarePen, Star } from "@ion/design-system";
 import type { ChatInfo, IonInfo, NeedInfo, ProjectInfo } from "@ion/schema";
 import { type ReactNode, useMemo, useState } from "react";
 import { groupChats } from "./live.js";
@@ -9,16 +9,20 @@ import { ChatRow, NeedRow, type RowActions, type RowProps } from "./SidebarRows.
 const SHOWN = 5;
 
 type Fold = { folded: boolean; onToggle: () => void };
+/** A group's star: on for a project you watch (kept open, listed first). */
+type StarProps = { name: string; on: boolean; onStar: (on: boolean) => void };
 
 function Group({
   label,
   count,
   fold,
+  star,
   children,
 }: {
   label: ReactNode;
   count?: number;
   fold?: Fold;
+  star?: StarProps;
   children: ReactNode;
 }) {
   return (
@@ -33,6 +37,17 @@ function Group({
           <span>{label}</span>
         )}
         {count !== undefined && <span>{count}</span>}
+        {star && (
+          <button
+            type="button"
+            className={`ib star${star.on ? " on" : ""}`}
+            title={`${star.on ? "Unstar" : "Star"} ${star.name}`}
+            aria-label={`${star.on ? "Unstar" : "Star"} ${star.name}`}
+            onClick={() => star.onStar(!star.on)}
+          >
+            <Star />
+          </button>
+        )}
       </div>
       {!fold?.folded && children}
     </div>
@@ -68,6 +83,8 @@ type Props = {
   open: string | null;
   onOpen: (chatId: string | null) => void;
   onNewProject: (name: string) => void;
+  /** Star (watch) or unstar a project. */
+  onStar: (projectId: string, starred: boolean) => void;
 } & RowActions;
 
 const NEEDS_LABEL = (
@@ -77,20 +94,43 @@ const NEEDS_LABEL = (
   </span>
 );
 
-/** Your chats grouped by project: each group folds, and shows its 5 most recent chats until you ask for more. */
-function ProjectGroups(p: { chats: ChatInfo[]; row: (c: ChatInfo) => ReactNode }) {
-  const [folded, fold] = useToggles();
+/**
+ * Your chats grouped by project: the projects you watch (starred) first and open, the rest folded until you open
+ * them (nothing is folded while no project is starred). Each group shows its 5 most recent chats until you ask.
+ */
+function ProjectGroups(p: {
+  chats: ChatInfo[];
+  starred: Set<string>;
+  onStar: (projectId: string, on: boolean) => void;
+  row: (c: ChatInfo) => ReactNode;
+}) {
+  // What you've opened or folded yourself, against each group's default.
+  const [flipped, flip] = useToggles();
   const [all, showAll] = useToggles();
+  const watching = p.starred.size > 0;
+  const groups = byProject(p.chats).sort(
+    (a, b) => Number(p.starred.has(b.projectId)) - Number(p.starred.has(a.projectId)),
+  );
   return (
     <>
-      {byProject(p.chats).map(({ projectId, chats }) => {
+      {groups.map(({ projectId, chats }) => {
+        const folded = (watching && !p.starred.has(projectId)) !== flipped.has(projectId);
         const shown = all.has(projectId) ? chats : chats.slice(0, SHOWN);
         const more = chats.length - shown.length;
         return (
           <Group
             key={projectId}
             label={projectId}
-            fold={{ folded: folded.has(projectId), onToggle: () => fold(projectId) }}
+            fold={{ folded, onToggle: () => flip(projectId) }}
+            {...(projectId === "default"
+              ? {}
+              : {
+                  star: {
+                    name: projectId,
+                    on: p.starred.has(projectId),
+                    onStar: (on: boolean) => p.onStar(projectId, on),
+                  },
+                })}
           >
             {shown.map(p.row)}
             {more > 0 && (
@@ -107,7 +147,8 @@ function ProjectGroups(p: { chats: ChatInfo[]; row: (c: ChatInfo) => ReactNode }
 
 /** The lab's Chats sidebar: Needs you (pinned), Running (shimmering), then your chats by project. */
 export function Sidebar(p: Props) {
-  const { chats, needs, projects, ions = [], open, onOpen, onNewProject, onRename, onArchive } = p;
+  const { chats, needs, projects, ions = [], open, onOpen, onNewProject, onRename, onArchive, onStar } = p;
+  const starred = useMemo(() => new Set(projects.filter((x) => x.starred).map((x) => x.id)), [projects]);
   const [project, setProject] = useState<string | null>(null);
   const g = useMemo(() => groupChats(chats, needs, project), [chats, needs, project]);
   const props = (c: ChatInfo): RowProps => {
@@ -148,7 +189,7 @@ export function Sidebar(p: Props) {
         {project ? (
           <Group label="Chats">{g.chats.map(row)}</Group>
         ) : (
-          <ProjectGroups chats={g.chats} row={row} />
+          <ProjectGroups chats={g.chats} starred={starred} onStar={onStar} row={row} />
         )}
       </div>
     </>

@@ -64,6 +64,13 @@ function batchingEmitter(
   };
 }
 
+/** A turn's prompt: ion's instructions as their own marked block first (ACP has no system prompt), then yours. */
+function promptOf(text: string, instructions?: string): { type: "text"; text: string }[] {
+  const yours = { type: "text" as const, text };
+  if (!instructions) return [yours];
+  return [{ type: "text", text: `<ion-instructions>\n${instructions}\n</ion-instructions>` }, yours];
+}
+
 /** One ACP prompt turn mapped to ion events. The agent process lives as long as the turn. */
 type Failure = { code: string; retryable: boolean; message: string };
 const CRASH: Failure = { code: "crash", retryable: true, message: "The agent stopped" };
@@ -141,7 +148,7 @@ export function startAcpSession(
     async send({ text: t }) {
       emit(startedEvent(run, opts, c.sessionId));
       c.rpc
-        .request("session/prompt", { sessionId: c.sessionId, prompt: [{ type: "text", text: t }] })
+        .request("session/prompt", { sessionId: c.sessionId, prompt: promptOf(t, opts.instructions) })
         .then((r) => {
           const reason = String((r as { stopReason?: unknown }).stopReason);
           const status = statusOf(reason, interrupted);

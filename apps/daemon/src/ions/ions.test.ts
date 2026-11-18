@@ -153,6 +153,39 @@ describe("Ions", () => {
     }
   });
 
+  // Real run, 2026-11-18: "Is anything waiting on me? Also ask shop to…" got a thread but no answer at all.
+  it("answers and routes the same message", async () => {
+    quick.mockResolvedValueOnce(
+      JSON.stringify({
+        answer: "Nothing needs you.",
+        route: [{ projectId: "storefront", brief: "List the functions" }],
+      }),
+    );
+    await ions().message("chief", "Anything waiting? Also list storefront's functions");
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(said("chief")).toEqual([
+      {
+        text: "Nothing needs you.",
+        card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
+      },
+    ]);
+  });
+
+  // Real run: "List the functions in cart.py without editing anything.: done." — the title's stop, then ": done".
+  it("reports a thread whose title ends in a stop without doubling it", async () => {
+    const i = ions();
+    i.watch();
+    await i.message("storefront", "Fix the cart.");
+    store.append({
+      chatId: "t1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+    expect((said("storefront").at(-1) as { text: string }).text).toBe("Fix the cart: done.");
+  });
+
   it("reports when one of its threads ends", async () => {
     const i = ions();
     i.watch();

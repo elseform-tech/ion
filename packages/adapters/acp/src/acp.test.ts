@@ -256,6 +256,18 @@ describe("acp adapter", () => {
     ]);
   });
 
+  // ACP has no system prompt: ion's instructions go with each turn, as their own block, marked.
+  it("gives the agent ion's instructions with each turn", async () => {
+    const events = await turn(fake, "whoami", { instructions: "Ask with ion's ask tool." });
+    const said = events
+      .filter((e) => e.type === "message.delta")
+      .map((e) => (e.data as { text: string }).text)
+      .join("");
+    expect(JSON.parse(said).instructions).toBe(
+      "<ion-instructions>\nAsk with ion's ask tool.\n</ion-instructions>",
+    );
+  });
+
   it("passes the harness's env and session options, and reads token usage", async () => {
     const h = { ...fake, env: () => ({ FAKE_ACP_ENV: "ask" }), sessionMeta: { yoloMode: false } };
     const events = await turn(h, "whoami");

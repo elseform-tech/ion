@@ -9,6 +9,8 @@ type Entry = { info: HarnessInfo; at: number; reading?: Promise<void> };
  */
 export class HarnessInfos {
   private readonly known = new Map<string, Entry>();
+  /** First reads still going (nothing known yet), so a list waits on them instead of starting its own. */
+  private readonly first = new Map<string, Promise<void>>();
 
   constructor(
     private readonly ids: (() => string[]) | string[],
@@ -46,6 +48,8 @@ export class HarnessInfos {
   private read(id: string): Promise<void> {
     const e = this.known.get(id);
     if (e?.reading) return e.reading;
+    const going = this.first.get(id);
+    if (!e && going) return going;
     const reading = this.load(id).then(
       (info) => void this.known.set(id, { info, at: this.now() }),
       () => {
@@ -53,6 +57,11 @@ export class HarnessInfos {
       },
     );
     if (e) e.reading = reading;
+    else
+      this.first.set(
+        id,
+        reading.finally(() => this.first.delete(id)),
+      );
     return reading;
   }
 }

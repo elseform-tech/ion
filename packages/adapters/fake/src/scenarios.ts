@@ -15,6 +15,8 @@ export type Script = {
   /** The text this session was sent. */
   text(): string;
   mcp(): unknown;
+  /** ion's standing instructions for the run, if any. */
+  instructions(): string;
   /** Reports a call to ion's gate like a real hook (allow when the run has no gate). */
   gate(req: Asked & { summary: string }): Promise<{ decision: string; reason?: string }>;
   wait(ms: number): Promise<"ok" | "interrupted">;
@@ -52,6 +54,10 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     return "done";
   },
   /** Says the MCP server ion gave this session, as JSON (or null). */
+  async instructions(s) {
+    say(s, s.instructions());
+    return "done";
+  },
   async mcpinfo(s) {
     say(s, JSON.stringify(s.mcp()));
     return "done";

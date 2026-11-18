@@ -120,6 +120,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     tries: () => tries,
     text: () => sent,
     mcp: () => start.mcp ?? null,
+    instructions: () => start.instructions ?? "",
     gate: (req) => postGate(start.gate, req),
     wait: async (ms) => {
       await sleep(ms);

@@ -2,7 +2,7 @@
 
 | Doc | What it's for |
 |---|---|
-| [design/ion-design-lab.html](design/ion-design-lab.html) | The product spec: screens, design system, architecture, engineering, CLI (canvas v34). Open in a browser. Since Plan 06: approvals (the approval bar, allow/deny) are replaced by agents' questions (Needs you, answered by choice), and every chat has a project, so "Plain chat" means a chat in `default`. |
+| [design/ion-design-lab.html](design/ion-design-lab.html) | The product spec: screens, design system, architecture, engineering, CLI (canvas v34). Open in a browser. Since Plan 06: approvals (the approval bar, allow/deny) are replaced by agents' questions (Needs you, answered by choice), and every chat has a project, so "Plain chat" means a chat in `default`. Since Plan 09: the sidebar's project groups (star to keep a project open, "N more", rename and archive), shimmer instead of spinners, the changed-files box, the question box above a locked composer. |
 | [architecture/contract.md](architecture/contract.md) | Event envelope and types, adapter interface, retries, import walls. |
 | [research/acp-and-harnesses.md](research/acp-and-harnesses.md) | ACP protocol, how each coding agent is launched and signed in, quota policy for tests. |
 | [../AGENTS.md](../AGENTS.md) | How to work in this repo: layout, walls, rules. |

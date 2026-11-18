@@ -46,6 +46,19 @@ describe("ions view", () => {
     ]);
   });
 
+  // Real run: ion chief's line was blank in the list after it routed (its card says it, its words were empty).
+  it("gives a routing line its card's gist", () => {
+    const card = {
+      kind: "threads",
+      threads: [
+        { chatId: "a", projectId: "storefront" },
+        { chatId: "b", projectId: "x" },
+      ],
+    };
+    store.append(d({ chatId: "ion:chief", runId: null, type: "ion.said", data: { text: "", card } }));
+    expect(ionsView.list(db, projects(["storefront"]))[0]!.last).toBe("Asked 2 projects.");
+  });
+
   it("keeps each ion's last line", () => {
     store.append(d({ chatId: "ion:storefront", runId: null, type: "ion.said", data: { text: "On it." } }));
     expect(ionsView.list(db, projects(["storefront"]))[1]!.last).toBe("On it.");

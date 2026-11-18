@@ -388,8 +388,10 @@ body.resizing {
   width: 26px;
   height: 26px;
 }
+/* Opens leftward (the sidebar would cut it off) and above the rows after it. */
 .rmenu {
   position: absolute;
+  left: auto;
   right: 0;
   top: 100%;
   z-index: 6;
@@ -500,4 +502,21 @@ body.resizing {
 .ithreads .tm {
   color: var(--faint);
   font-size: 12px;
+}
+
+/* A project group's star (watch): shows on hover, stays on when starred. */
+.grp .gl .star {
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+}
+.grp .gl .star .lucide {
+  width: 13px;
+  height: 13px;
+}
+.grp .gl:hover .star {
+  opacity: 1;
+}
+.rw:has(.rmenu) {
+  z-index: 7;
 }

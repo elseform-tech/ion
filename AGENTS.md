@@ -38,7 +38,9 @@ child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter
 
 - Test first. Every bug fix adds a test that fails without the fix, next to the code it covers (`<file>.test.ts`),
   with a comment saying what broke (who found it and when, or the issue number).
-- No real model calls in tests. Live tests are opt-in: `ION_LIVE=1` (opencode, free model), `ION_LIVE_GROK=1`, `ION_LIVE_CLAUDE=1` (only when the Claude adapter changed).
+- No real model calls in tests. Live tests are opt-in: `ION_LIVE=1` (opencode, free model), `ION_LIVE_GROK=1`,
+  `ION_LIVE_CLAUDE=1`. The live evals (`apps/daemon/src/evals`) check ion's promises on each real agent; see
+  `docs/research/acp-and-harnesses.md`.
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints. Prefer an icon (with its name on hover)
   to a word, and fewer boxes.
 - **Run a tour before every PR that changes what people see** (the desktop app, CLI output). `scripts/tour.sh`
