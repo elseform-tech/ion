@@ -1,0 +1,96 @@
+.timeline {
+  flex: 1;
+  overflow: auto;
+  padding: 24px max(24px, calc((100% - 720px) / 2));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.item--you {
+  display: flex;
+  justify-content: flex-end;
+}
+.you {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: var(--r-lg);
+  background: var(--sel);
+  white-space: pre-wrap;
+}
+.md p {
+  margin: 0 0 8px;
+}
+.md code {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--code);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+}
+.md pre {
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px;
+  overflow: auto;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md a {
+  color: var(--accent);
+}
+.md table {
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+}
+.work-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.work-tools {
+  list-style: none;
+  margin: 6px 0 0 20px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.work-tools .bad {
+  color: var(--bad);
+}
+.tool-name {
+  color: var(--ink);
+}
+.line {
+  color: var(--muted);
+  font-size: 13px;
+}
+.line--deny {
+  color: var(--bad);
+}
+.line--answer {
+  color: var(--accent);
+}
+.line--end {
+  color: var(--faint);
+}
+.asked {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--wait);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+}
+.asked-q {
+  font-weight: 500;
+}

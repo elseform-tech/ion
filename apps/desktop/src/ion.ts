@@ -6,11 +6,12 @@ import { type ConnState, type DaemonInfo, IonConnection } from "./connection.js"
 const inTauri = () => "__TAURI_INTERNALS__" in window;
 
 /**
- * Where the daemon is: from the app (Tauri reads daemon.json). Opened in a plain browser (development and the
- * end-to-end check), from `?port=&token=` instead; inside the app the URL is never used.
+ * Where the daemon is: from the app (Tauri reads daemon.json). Only in a development build opened in a plain
+ * browser (`vite`, used by the end-to-end check), from `?port=&token=`; a release build never reads the URL.
  */
 async function daemonInfo(): Promise<DaemonInfo | null> {
   if (inTauri()) return invoke<DaemonInfo | null>("daemon_info");
+  if (!import.meta.env.DEV) return null;
   const q = new URLSearchParams(window.location.search);
   const port = Number(q.get("port"));
   const token = q.get("token");

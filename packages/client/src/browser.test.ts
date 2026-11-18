@@ -62,6 +62,18 @@ describe("connectBrowser", () => {
     expect(seen).toEqual(["e0", "e1"]);
   });
 
+  // Security review: pushes for no subscription in flight are dropped, never kept without limit.
+  it("keeps early pushes only while a subscribe is in flight", async () => {
+    const c = await connectBrowser({ port: 1, token: "t", WebSocket: FakeSocket as never });
+    const s = FakeSocket.last;
+    for (let i = 0; i < 5; i++) s.reply({ sub: "s9", event: event(`stray${i}`) });
+    const seen: string[] = [];
+    const sub = c.subscribe({}, (e) => seen.push(e.id));
+    s.reply({ id: "1", ok: true, result: { sub: "s9" } });
+    await sub;
+    expect(seen).toEqual([]);
+  });
+
   it("rejects pending calls and tells listeners when the connection closes", async () => {
     const c = await connectBrowser({ port: 1, token: "t", WebSocket: FakeSocket as never });
     let closed = false;

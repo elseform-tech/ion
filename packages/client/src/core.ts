@@ -72,20 +72,32 @@ export type MiniSocket = {
 /** The subprotocols that authenticate: the token rides here, never in the URL. */
 export const protocols = (token: string) => ["ion", `ion.token.${token}`];
 
+/** At most this many early pushes per subscription (a chat's backlog, before the reply is read). */
+const EARLY_MAX = 100_000;
+
 /** A client over an open socket: calls matched to replies, and subscription pushes to their handlers. */
 export function createClient(ws: MiniSocket): IonClient {
   let n = 0;
   const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   const subs = new Map<string, (e: IonEvent) => void>();
-  // Backlog can arrive with (or before) the reply that names its subscription: kept until it's known.
+  // Backlog can arrive with (or before) the reply that names its subscription: kept until it's known, but only
+  // while a subscribe is in flight and up to a limit. Pushes for nothing being subscribed are dropped.
   const early = new Map<string, IonEvent[]>();
+  let subscribing = 0;
+  const keepEarly = (sub: string, e: IonEvent) => {
+    if (subscribing === 0) return;
+    const list = early.get(sub) ?? [];
+    if (list.length >= EARLY_MAX) return;
+    list.push(e);
+    early.set(sub, list);
+  };
   ws.onMessage((raw) => {
     const msg = parseMessage(raw);
     if (!msg) return; // never let a malformed server message throw in the caller's process
     if ("sub" in msg) {
       const handler = subs.get(msg.sub);
       if (handler) handler(msg.event);
-      else early.set(msg.sub, [...(early.get(msg.sub) ?? []), msg.event]);
+      else keepEarly(msg.sub, msg.event);
       return;
     }
     const p = pending.get(msg.id);
@@ -111,10 +123,17 @@ export function createClient(ws: MiniSocket): IonClient {
   return {
     call,
     async subscribe(q, onEvent) {
-      const { sub } = await call("events.subscribe", q);
+      if (subscribing++ === 0) early.clear(); // nothing kept from before this subscribe
+      let sub: string;
+      try {
+        ({ sub } = await call("events.subscribe", q));
+      } finally {
+        subscribing--;
+      }
       subs.set(sub, onEvent);
       for (const e of early.get(sub) ?? []) onEvent(e);
       early.delete(sub);
+      if (subscribing === 0) early.clear();
       return () => subs.delete(sub);
     },
     close: () => ws.close(),
