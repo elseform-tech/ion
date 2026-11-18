@@ -27,6 +27,8 @@ export type StartOpts = {
   instructions?: string;
   /** The harness's own session id, to continue a conversation. */
   resume?: string;
+  /** A plain model call (ion's judge): no tools at all, a short system prompt, one turn, no thinking. */
+  bare?: boolean;
   /** ion's MCP server for this run: history, needs and memory of its project. */
   mcp?: { name: "ion"; url: string; headers: Record<string, string> };
   signal: AbortSignal;

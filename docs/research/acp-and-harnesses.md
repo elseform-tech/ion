@@ -46,3 +46,11 @@ CI never calls a model. Live tests are opt-in: `ION_LIVE=1` uses opencode with a
 | Built-in auto-approvals | Read-only commands (`cat`, `ls`, `grep`, `git log`…) plus `touch`/`mkdir`, in every mode | — |
 
 Claude Code: `query({ options: { resume, mcpServers: { ion: { type: "http", url, headers } } } })`; MCP tools are `mcp__<server>__<tool>` and go through `canUseTool`. `claude -p --resume <unknown id>` prints `No conversation found with session ID: …` and exits before any model call; ion checks `getSessionMessages(id, { dir })` first. `supportedModels()` gives `{ value, displayName, … }`.
+
+## Grok's own auto-approvals (probed 2026-11-18, Plan 05)
+
+Grok runs its built-in read-only commands (`cat`, `ls`, `grep`, `git log`…, plus `touch`/`mkdir`) without
+`session/request_permission`, in every mode. None of these stopped `cat` of a protected file in `grok agent stdio`:
+`GROK_CONFIG` `permission.ask` (not overlay-allowlisted; only `shell_environment_policy.*`, `toolset.*` are),
+`--deny "Read(<path>)"` (with `/` or `//`), `--deny "Bash(*<path>*)"`. ACP agents also stream text only
+(`agent_message_chunk`); ion's ACP adapter now sends `message.completed` when a message ends.

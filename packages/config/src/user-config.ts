@@ -5,10 +5,14 @@ import { z } from "zod";
 
 const Effort = z.enum(["low", "medium", "high", "max"]);
 
+const Access = z.enum(["auto", "full"]);
+
 const Project = z.object({
   id: z.string().min(1),
   path: z.string().min(1),
   starred: z.boolean().default(false),
+  /** This project's access mode; without it, `[access] default` applies. */
+  access: Access.optional(),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
@@ -23,6 +27,14 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   projects: z.array(Project).default([]),
+  /** "auto": ion decides each action outside the chat's worktree; "full": everything runs. */
+  access: z
+    .looseObject({
+      default: Access.default("auto"),
+      /** Who decides in Auto: "<harness>:<model>", a small model (it runs for every new action). */
+      judge: z.string().default("claude-code:haiku"),
+    })
+    .prefault({}),
   resources: z
     .looseObject({ max_runs: z.union([z.literal("auto"), z.number().int().min(1)]).default("auto") })
     .default({ max_runs: "auto" }),

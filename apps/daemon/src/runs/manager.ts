@@ -1,26 +1,26 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { availableParallelism } from "node:os";
 import {
   type AdapterEvent,
   type ApprovalRequest,
-  type Decision,
   projectRoots,
   ResumeFailed,
   type Session,
 } from "@ion/adapter-kit";
 import { loadUserConfig } from "@ion/config";
-import { type Commands, EV, type IonEvent } from "@ion/schema";
+import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
+import type { Access } from "../access/index.js";
 import type { Grants } from "../mcp/index.js";
-import { needDetail, type NeedsService } from "../needs/index.js";
+import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
 import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
-import { decideByPolicy } from "./policy.js";
+import { Approvals } from "./approvals.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
 
 type AskArgs = Commands["ask"]["args"];
@@ -37,6 +37,10 @@ type Launch = {
   /** The harness session to continue on this try, if any. */
   resume?: string | null;
   projectId: string;
+  /** Full access, or Auto (ion decides each action outside the worktree). */
+  access: "auto" | "full";
+  /** What you asked in this run, as you wrote it (the judge sees this, never the replayed history). */
+  request: string;
   /** This run's MCP key (from launch until the run ends). */
   mcpKey?: string;
 };
@@ -52,7 +56,7 @@ type TryEnd = { status: string; error: RunError | null };
 /** Starts runs on harnesses in each chat's own worktree, and stores everything they emit. One run per chat. */
 export class RunManager {
   private readonly active = new Map<string, Active>();
-  private readonly requested = new Map<string, () => void>();
+  private readonly approvals: Approvals;
   /** Chats with an ask in progress (before their run is active), so two asks can't race. */
   private readonly reserved = new Set<string>();
   /** Runs waiting for a free slot (resources.max_runs). */
@@ -68,6 +72,8 @@ export class RunManager {
       configFile: string;
       dataDir: string;
       random?: () => number;
+      /** Auto access: rules, then the judge (a quick model). Without it, Auto denies. */
+      access?: Access;
       /** ion's MCP server: each run gets a key for its own project, revoked when the run ends. */
       mcp?: { grants: Grants; url: () => string };
     },
@@ -76,6 +82,7 @@ export class RunManager {
   ) {
     const setting = loadUserConfig(ctx.configFile).config.resources.max_runs;
     this.queue = createRunQueue(maxRuns(setting, availableParallelism()));
+    this.approvals = new Approvals(store, ctx.access, (runId) => !this.stopping && this.active.has(runId));
   }
 
   async ask(args: AskArgs): Promise<{ chatId: string; runId: string }> {
@@ -92,28 +99,30 @@ export class RunManager {
     let launch: Launch;
     try {
       await this.checkReady(h, args.model);
-      const chatId = chat.chatId ?? `chat_${randomUUID()}`;
-      const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
-        throw new UserError(e.message);
-      });
-      if (!chat.chatId) this.createChat(chatId, chat, wt);
-      const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
-      const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
-      launch = { h, args, chatId, runId: `run_${randomUUID()}`, cwd: wt.path, history, projectId };
-      this.store.append({
-        chatId,
-        runId: launch.runId,
-        origin: "daemon",
-        type: EV.messageSent,
-        data: { text: args.text },
-      });
-      this.store.append({ chatId, runId: launch.runId, origin: "daemon", type: EV.runQueued, data: {} });
+      launch = await this.prepare(h, args, chat, repo);
       const l = launch;
-      this.queued.set(l.runId, { chatId, item: this.queue.enqueue(() => this.launch(l)) });
+      this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
     } finally {
       if (key) this.reserved.delete(key);
     }
     return { chatId: launch.chatId, runId: launch.runId };
+  }
+
+  /** Makes the chat's worktree (and the chat, if new), stores your message and queues the run. */
+  private async prepare(h: HarnessEntry, args: AskArgs, chat: Chat, repo: string): Promise<Launch> {
+    const chatId = chat.chatId ?? `chat_${randomUUID()}`;
+    const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
+      throw new UserError(e.message);
+    });
+    if (!chat.chatId) this.createChat(chatId, chat, wt);
+    // History is read before your message is stored: it's what came before.
+    const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
+    const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
+    const access = args.access ?? this.accessFor(projectId);
+    const runId = `run_${randomUUID()}`;
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: { text: args.text } });
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
+    return { h, args, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
   }
 
   /**
@@ -322,6 +331,12 @@ export class RunManager {
     return { chatId: chat.chatId, projectId: chat.projectId, title: chat.title };
   }
 
+  /** The project's own access mode, else the default from config.toml. */
+  private accessFor(projectId: string): "auto" | "full" {
+    const { config } = loadUserConfig(this.ctx.configFile);
+    return config.projects.find((p) => p.id === projectId)?.access ?? config.access.default;
+  }
+
   private projectPath(projectId: string | null | undefined): string {
     if (!projectId) throw new UserError("Pick a project with -p <project>");
     const p = loadUserConfig(this.ctx.configFile).config.projects.find((x) => x.id === projectId);
@@ -352,7 +367,7 @@ export class RunManager {
 
   private async start(l: Launch): Promise<Session> {
     const roots = projectRoots(l.cwd);
-    const decide = (req: ApprovalRequest) => this.decide(l, req, roots);
+    const decide = (req: ApprovalRequest) => this.approvals.decide(l, req, roots);
     return l.h.adapter.start({
       cwd: l.cwd,
       model: l.args.model ?? null,
@@ -372,57 +387,14 @@ export class RunManager {
     });
   }
 
-  /** Inside the worktree: allowed by policy. Anything else: a need you answer. Recorded after the request. */
-  private async decide(l: Launch, req: ApprovalRequest, roots: string[]): Promise<Decision> {
-    await this.waitForRequest(req.requestId);
-    if (this.stopping || !this.active.has(l.runId)) return "deny"; // the run already ended
-    const byPolicy = decideByPolicy(req, { roots, ionMcp: Boolean(l.mcpKey) }) === "allow";
-    const decision: Decision = byPolicy
-      ? "allow"
-      : await this.needs.raise({
-          chatId: l.chatId,
-          runId: l.runId,
-          requestId: req.requestId,
-          kind: req.kind,
-          summary: req.summary,
-          detail: needDetail(req.input),
-          dedupeKey: `${l.h.adapter.id}:${req.toolName}:${createHash("sha256").update(JSON.stringify(req.input)).digest("hex")}`,
-        });
-    // The run may have ended while we waited (interrupt, shutdown): its log is closed.
-    if (this.stopping || !this.active.has(l.runId)) return decision;
-    this.store.append({
-      chatId: l.chatId,
-      runId: l.runId,
-      origin: "daemon",
-      type: EV.approvalResolved,
-      data: { requestId: req.requestId, decision, by: byPolicy ? "policy" : "you" },
-    });
-    return decision;
-  }
-
-  /** Resolves once the adapter's approval.requested for this id is stored, so the log stays in order. */
-  private waitForRequest(requestId: string): Promise<void> {
-    if (this.requested.has(`seen:${requestId}`)) return Promise.resolve();
-    return new Promise((resolve) => this.requested.set(requestId, resolve));
-  }
-
-  private noteStored(e: IonEvent): void {
-    if (e.type !== EV.approvalRequested) return;
-    const id = (e.data as { requestId: string }).requestId;
-    const waiter = this.requested.get(id);
-    if (waiter) {
-      this.requested.delete(id);
-      waiter();
-    } else this.requested.set(`seen:${id}`, () => {});
-  }
-
   /** Stores what a session emits, except its run.finished: whether the run ends or retries is decided above. */
   private async pump(session: Session, chatId: string, runId: string): Promise<TryEnd> {
     const end: TryEnd = { status: "failed", error: null };
     try {
       for await (const e of session.events()) {
         if (this.stopping) break;
-        if (keep(e, end)) this.noteStored(this.store.append({ ...e, chatId, runId, origin: "adapter" }));
+        if (keep(e, end))
+          this.approvals.noteStored(this.store.append({ ...e, chatId, runId, origin: "adapter" }));
       }
     } catch (e) {
       // The harness stream broke (a crashed CLI): transient.

@@ -191,25 +191,30 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(existsSync(join(p, "notes.md"))).toBe(false);
     });
 
-    it("pauses on a need until you answer it, then finishes", async () => {
+    it("Auto: ion decides, the run never pauses, and the chat says what it decided", async () => {
+      writeFileSync(join(home, "config.toml"), '[access]\njudge = "fake"\n');
       await setup();
-      const asking = ion("ask", "shell", "-p", "app", "--harness", "fake");
-      let row = "";
-      for (let i = 0; i < 100 && !row; i++) {
-        const r = await ion("needs");
-        if (r.out !== "Nothing needs you") row = r.out;
-        else await new Promise((res) => setTimeout(res, 100));
-      }
-      const [first, detail] = row.split("\n");
-      const [id, project, summary] = first!.split("  ");
-      expect([project, summary]).toEqual(["app", "Run pnpm test"]);
-      expect(detail).toBe("  command: pnpm test");
-      expect((await ion("needs", "allow", id!)).out).toBe("Allowed");
-      const r = await asking;
-      expect(r.out).toContain(`· Waiting on you: Run pnpm test — run: ion needs allow ${id}`);
+      const r = await ion("ask", "shell", "-p", "app", "--harness", "fake");
+      expect(r.out).toContain("· Allowed by ion: Run pnpm test");
       expect(r.out).toContain("Tests pass.");
-      expect(await ion("needs", "deny", id!)).toMatchObject({ code: 1, err: "That's already answered" });
       expect((await ion("needs")).out).toBe("Nothing needs you");
+      const full = await ion("ask", "shell", "-p", "app", "--harness", "fake", "--access", "full");
+      expect(full.out).not.toContain("by ion");
+      expect(full.out).toContain("Tests pass.");
+    });
+
+    it("sets a project's access", async () => {
+      await setup();
+      expect((await ion("projects", "access", "app", "full")).out).toBe("Access for app: Full access");
+      expect((await ion("projects", "access", "app", "auto")).out).toBe("Access for app: Auto");
+      expect(await ion("projects", "access", "app", "maybe")).toMatchObject({
+        code: 1,
+        err: "Pick auto or full",
+      });
+      expect(await ion("ask", "hello", "-p", "app", "--harness", "fake", "--access", "maybe")).toMatchObject({
+        code: 1,
+        err: "Pick auto or full",
+      });
     });
 
     it("lists harnesses with their models, and refuses an unknown model", async () => {

@@ -170,7 +170,9 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "approval.resolved": z.object({
     requestId: z.string(),
     decision: z.enum(DECISIONS),
-    by: z.enum(["you", "policy", "ion"]),
+    /** you (a need you answered), policy (inside the worktree), ion (Auto decided), full (Full access). */
+    by: z.enum(["you", "policy", "ion", "full"]),
+    reason: z.string().optional(),
   }),
   "usage.reported": z.object({
     model: z.string(),

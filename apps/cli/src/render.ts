@@ -74,10 +74,16 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     s.asks.set(String(d.requestId), clean(d.summary));
     return quiet;
   },
-  [EV.approvalResolved]: (s, d) =>
-    d.decision === "deny"
-      ? { text: line(s, `· Asked to use ${s.asks.get(String(d.requestId)) ?? "a tool"} — denied (${d.by})`) }
-      : quiet,
+  [EV.approvalResolved]: (s, d) => {
+    const what = s.asks.get(String(d.requestId)) ?? "a tool";
+    // Auto: say what ion decided. Full access and the worktree policy stay quiet.
+    if (d.by === "ion") {
+      const text =
+        d.decision === "deny" ? `· Denied by ion: ${what} — ${clean(d.reason)}` : `· Allowed by ion: ${what}`;
+      return { text: line(s, text) };
+    }
+    return d.decision === "deny" ? { text: line(s, `· Asked to use ${what} — denied (${d.by})`) } : quiet;
+  },
   [EV.needRaised]: (s, d) => ({
     text:
       line(s, `· Waiting on you: ${clean(d.summary)} — run: ion needs allow ${clean(d.needId)}`) +

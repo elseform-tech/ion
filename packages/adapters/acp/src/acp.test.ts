@@ -64,6 +64,10 @@ describe("acp adapter", () => {
         .map((e) => (e.data as { text: string }).text)
         .join(""),
     ).toBe("Hi there");
+    // Regression (Plan 05 end to end): ACP replies were never stored as messages (history, search, the judge).
+    expect(events.filter((e) => e.type === "message.completed")).toEqual([
+      { type: "message.completed", data: { text: "Hi there" } },
+    ]);
     expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({ costUsd: 0.002 });
     expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
   });

@@ -15,3 +15,9 @@ export function addProject(c: UserConfig, path: string): UserConfig {
   while (taken.has(id)) id = `${base}-${++n}`;
   return { ...c, projects: [...c.projects, { id, path: abs, starred: false }] };
 }
+
+/** Sets a project's access mode ("auto" or "full"). */
+export function setProjectAccess(c: UserConfig, id: string, access: "auto" | "full"): UserConfig {
+  if (!c.projects.some((p) => p.id === id)) throw new Error(`Unknown project: ${id}`);
+  return { ...c, projects: c.projects.map((p) => (p.id === id ? { ...p, access } : p)) };
+}

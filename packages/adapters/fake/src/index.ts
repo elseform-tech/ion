@@ -100,7 +100,10 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     async send({ text }) {
       // The scenario is the first word of your message, after any history ion put before it.
       const own = text.split(HISTORY_END).at(-1) ?? text;
-      const name = own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+      // ion's judge prompt carries data blocks too; it's recognised by its first words.
+      const name = text.startsWith("Judge this action")
+        ? "judge"
+        : (own.trim().split(/\s+/)[0]?.toLowerCase() ?? "");
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
       sent = text;
       queue.push({

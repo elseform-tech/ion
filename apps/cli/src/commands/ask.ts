@@ -12,6 +12,7 @@ type AskOpts = {
   harness?: string;
   model?: string;
   effort?: EffortLevel;
+  access?: string;
 };
 
 /** Prints the run's events as they arrive and resolves when it finishes. */
@@ -54,6 +55,7 @@ async function start(client: IonClient, text: string, o: AskOpts) {
       ...(o.harness ? { harness: o.harness } : {}),
       ...(o.model ? { model: o.model } : {}),
       ...(o.effort ? { effort: o.effort } : {}),
+      ...(o.access === "auto" || o.access === "full" ? { access: o.access } : {}),
     });
   } catch (e) {
     client.close();
@@ -70,7 +72,9 @@ export function askCommand(program: Command, out: () => Out) {
     .option("--harness <id>", "claude-code, grok-build or opencode", "claude-code")
     .option("--model <model>", "Model")
     .option("--effort <level>", "low, medium, high or max")
+    .option("--access <mode>", "auto (ion decides) or full")
     .action(async (text: string, o: AskOpts) => {
+      if (o.access !== undefined && o.access !== "auto" && o.access !== "full") fail("Pick auto or full");
       const up = await reach(ionPaths().dataDir);
       if (!up) fail(NOT_RUNNING, 2);
       const started = await start(up.client, text, o);

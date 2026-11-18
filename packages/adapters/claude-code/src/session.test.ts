@@ -75,6 +75,21 @@ describe("claude-code session", () => {
     });
   });
 
+  // Final review (Plan 05): ion's judge runs with no tools at all, a short system prompt and one turn.
+  it("starts a bare session with no tools", async () => {
+    const calls: FakeQueryCall[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: "haiku",
+      effort: null,
+      bare: true,
+      signal: new AbortController().signal,
+      decide: async () => "deny",
+    });
+    await s.close();
+    expect(calls.at(-1)?.options).toMatchObject({ tools: [], maxTurns: 1, systemPrompt: expect.any(String) });
+  });
+
   it("gives Claude Code ion's MCP server", async () => {
     const calls: FakeQueryCall[] = [];
     const s = await make(calls).start({

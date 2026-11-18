@@ -80,4 +80,33 @@ describe("render", () => {
       "· Retrying now at max effort (x)\n",
     );
   });
+
+  it("says what ion decided in Auto, and nothing in Full access", () => {
+    const r = createRenderer();
+    r(ev("approval.requested", { requestId: "q1", toolId: "t", kind: "command", summary: "Run pnpm test" }));
+    r(
+      ev("approval.requested", {
+        requestId: "q2",
+        toolId: "t",
+        kind: "command",
+        summary: "Read ~/.ssh/id_rsa",
+      }),
+    );
+    r(ev("approval.requested", { requestId: "q3", toolId: "t", kind: "command", summary: "Deploy" }));
+    expect(
+      r(ev("approval.resolved", { requestId: "q1", decision: "allow", by: "ion", reason: "Runs the tests" }))
+        .text,
+    ).toBe("· Allowed by ion: Run pnpm test\n");
+    expect(
+      r(
+        ev("approval.resolved", {
+          requestId: "q2",
+          decision: "deny",
+          by: "ion",
+          reason: "Touches your secrets",
+        }),
+      ).text,
+    ).toBe("· Denied by ion: Read ~/.ssh/id_rsa — Touches your secrets\n");
+    expect(r(ev("approval.resolved", { requestId: "q3", decision: "allow", by: "full" })).text).toBe("");
+  });
 });
