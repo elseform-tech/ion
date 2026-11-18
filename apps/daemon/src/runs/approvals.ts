@@ -19,8 +19,18 @@ export type AskingRun = {
 
 type Verdict = { decision: Decision; by: "policy" | "full" | "ion" | "gate" | "you"; reason?: string };
 
-/** Asks you about a tool call ion stopped, holding it until you answer or 4 minutes pass. */
-export type AskBlocked = (r: AskingRun, b: Blocked) => Promise<Held>;
+/**
+ * Asks you about a tool call ion stopped, holding it until you answer or 4 minutes pass; `allowed` says whether
+ * you said "Always allow" for exactly this action (tool and input) in the run's project.
+ */
+export type AskBlocked = {
+  ask: (r: AskingRun, b: Blocked) => Promise<Held>;
+  allowed: (r: AskingRun, key: string) => boolean;
+};
+
+/** The exact action: its tool and its whole input. */
+const actionKey = (req: ApprovalRequest) => `${req.toolName} ${JSON.stringify(req.input)}`;
+const INPUT_SHOWN = 1000;
 
 const HELD: Record<Held, Omit<Verdict, "decision"> & { decision: Decision }> = {
   allow: { decision: "allow", by: "you", reason: "You allowed it" },
@@ -131,10 +141,17 @@ export class Approvals {
     );
     // A rule's no (your secrets, ion's files) stands. The judge's no is a question for you.
     if (v.decision === "deny" && v.source === "judge" && this.askBlocked)
-      return HELD[
-        await this.askBlocked(r, { requestId: req.requestId, summary: req.summary, reason: v.reason })
-      ];
+      return this.askYou(this.askBlocked, r, req, v.reason);
     return { decision: v.decision, by: "ion", reason: v.reason };
+  }
+
+  /** The judge said no: unless you always allow exactly this action here, ask you and hold the call. */
+  private async askYou(a: AskBlocked, r: AskingRun, req: ApprovalRequest, reason: string): Promise<Verdict> {
+    const key = actionKey(req);
+    if (a.allowed(r, key)) return { decision: "allow", by: "you", reason: "You always allow this" };
+    const full = JSON.stringify(req.input, null, 2);
+    const input = full.length > INPUT_SHOWN ? `${full.slice(0, INPUT_SHOWN)}\n… (cut)` : full;
+    return HELD[await a.ask(r, { requestId: req.requestId, summary: req.summary, reason, input, key })];
   }
 
   /** Resolves once the adapter's approval.requested for this id is stored, so the log stays in order. */

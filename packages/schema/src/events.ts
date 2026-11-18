@@ -171,6 +171,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     custom: z.boolean().optional(),
     /** An answer about a tool call ion stopped (not an agent's question). */
     blocked: z.boolean().optional(),
+    /** "Always allow": the hash of the exact action (tool and input) that may run without asking. */
+    allowKey: z.string().optional(),
     /** When you made fromDecision, for the chat line. */
     fromDecidedAt: z.string().optional(),
   }),

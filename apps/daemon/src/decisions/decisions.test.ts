@@ -427,7 +427,12 @@ describe("recommended options", () => {
 
 // Plan 07 (the user, 2026-11-18): when ion blocks a tool call, it asks; the call waits up to 4 minutes.
 describe("asking when ion blocks a tool call", () => {
-  const block = { requestId: "g7", summary: "npm publish", reason: "Publishes the package" };
+  const block = {
+    requestId: "g7",
+    summary: "npm publish",
+    reason: "Publishes the package",
+    key: "Bash npm publish",
+  };
   const makeQuick = (timeoutMs = 2000) =>
     new Decisions({ store, db, needs, followUp, blockedWaitMs: timeoutMs, requestOf: () => "Ship it" });
 
@@ -479,5 +484,31 @@ describe("asking when ion blocks a tool call", () => {
       'Earlier ion stopped this: "npm publish". The user now allows it.',
       "Ship it",
     );
+  });
+});
+
+// Security review: "Always allow" lets the exact same action through, decided by ion, never by the judge's reading.
+describe("always allow, exactly", () => {
+  const block = {
+    requestId: "g9",
+    summary: "npm publish",
+    reason: "Publishes the package",
+    input: '{\n  "command": "npm publish"\n}',
+    key: 'Bash {"command":"npm publish"}',
+  };
+  const makeQuick = () => new Decisions({ store, db, needs, followUp, blockedWaitMs: 2000 });
+
+  it("shows the full input, and lets only that exact action through afterwards in the project", async () => {
+    const d = makeQuick();
+    const waiting = d.askBlocked(scope(), block);
+    const [need] = needs.open("c1");
+    expect(need!.detail).toBe('ion stopped it: Publishes the package\n\n{\n  "command": "npm publish"\n}');
+    await d.answer(need!.needId, 2);
+    await waiting;
+    expect(d.alwaysAllowed("app", "c2", block.key)).toBe(true);
+    expect(d.alwaysAllowed("app", "c2", 'Bash {"command":"npm publish --tag x"}')).toBe(false);
+    expect(d.alwaysAllowed("other", "o1", block.key)).toBe(false);
+    // The judge only ever hears your past answers to say no.
+    expect(d.forJudge("app", "c2")).toEqual([]);
   });
 });

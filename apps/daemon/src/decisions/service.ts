@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { type DecisionScope, EV, type NeedInfo } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Scope } from "../mcp/index.js";
@@ -18,6 +18,12 @@ import {
 } from "./blocked.js";
 import { FollowUps, type Message, type Start } from "./followups.js";
 import type { AskInput, Matcher } from "./match.js";
+
+const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
+
+/** An "allow" answer about a stopped call: kept as an exact rule, never handed to the judge. */
+const isAllowAnswer = (choice: string) =>
+  choice === "Always allow in this project" || choice === "Allow once";
 
 /** The message your answer becomes in the chat: a choice, or your own words. */
 const followText = (question: string, answer: string, custom = false) =>
@@ -118,6 +124,8 @@ export class Decisions {
   private readonly requests = new Map<string, string>();
   /** Tool calls ion stopped, waiting on your answer. */
   private readonly holds: Holds;
+  /** Each stopped call's exact key (hashed), for an "Always allow" answer. */
+  private readonly keys = new Map<string, string>();
 
   constructor(private readonly d: Deps) {
     this.holds = new Holds(d.blockedWaitMs ?? BLOCKED_WAIT_MS);
@@ -156,7 +164,13 @@ export class Decisions {
       blocked: { requestId: b.requestId },
     });
     this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
+    this.keys.set(needId, keyHash(b.key));
     return this.holds.hold(needId);
+  }
+
+  /** Whether you said "Always allow" for exactly this action (tool and input) in this project. */
+  alwaysAllowed(projectId: string, _chatId: string, key: string): boolean {
+    return decisionsView.allows(this.d.db, projectId, keyHash(key));
   }
 
   /**
@@ -199,40 +213,45 @@ export class Decisions {
   }
 
   /**
-   * Your answer about a stopped tool call. A call still waiting runs or is refused at once; "Always allow" is kept
-   * for the project (the judge lets actions like it through) and "Don't allow" for the chat. The agent hears about
-   * it only when it can't otherwise know: your own words, or a yes after its call was already refused.
+   * Your answer about a stopped tool call. A call still waiting runs or is refused at once; "Always allow" lets
+   * exactly this action run in the project from now on, and "Don't allow" is kept for the chat. The agent hears
+   * about it only when it can't otherwise know: your own words, or a yes after its call was already refused.
    */
   private async answerBlocked(asked: NeedInfo, pick: number | string, label: string): Promise<void> {
     const { allow, scope } = blockedAnswer(pick);
-    this.d.needs.answered(asked.needId, label, scope ?? "chat");
-    const base = {
-      chatId: asked.chatId,
-      runId: asked.runId,
-      needId: asked.needId,
-      projectId: asked.projectId ?? "",
-    };
     const custom = typeof pick === "string";
-    const decisionId = scope
-      ? this.record({
-          ...base,
-          question: asked.summary,
-          choice: label,
-          scope,
-          by: "you",
-          blocked: true,
-          ...(custom ? { custom } : {}),
-        })
-      : undefined;
+    this.d.needs.answered(asked.needId, label, scope ?? "chat");
+    const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom }) : undefined;
     const waited = this.holds.release(asked.needId, allow ? "allow" : "deny");
     const text = blockedFollowText(asked.summary, { custom, label, late: !waited && allow });
     const request = this.requests.get(asked.needId) ?? "";
     this.requests.delete(asked.needId);
-    if (!text) return;
-    const m: Message = { harness: this.harnessOf(asked.runId, asked.chatId), text, request };
-    const started = await this.followUps.tryNow(asked.chatId, m);
-    if (started === "busy")
-      this.followUps.later(asked.chatId, { ...m, ...(decisionId ? { decisionId } : {}) });
+    if (text)
+      await this.deliver(
+        asked.chatId,
+        { harness: this.harnessOf(asked.runId, asked.chatId), text, request },
+        decisionId,
+      );
+  }
+
+  /** Your answer about a stopped call, kept; "Always allow" with the exact action's key, never the question's words. */
+  private recordBlocked(
+    asked: NeedInfo,
+    a: { label: string; scope: "chat" | "project"; custom: boolean },
+  ): string {
+    const allowKey = a.scope === "project" ? this.keys.get(asked.needId) : undefined;
+    return this.record({
+      ...{ chatId: asked.chatId, runId: asked.runId, needId: asked.needId, projectId: asked.projectId ?? "" },
+      ...{ question: asked.summary, choice: a.label, scope: a.scope, by: "you", blocked: true },
+      ...(allowKey ? { allowKey } : {}),
+      ...(a.custom ? { custom: true } : {}),
+    });
+  }
+
+  /** Sends a message into the chat now, or after its current run if it's busy. */
+  private async deliver(chatId: string, m: Message, decisionId?: string): Promise<void> {
+    const started = await this.followUps.tryNow(chatId, m);
+    if (started === "busy") this.followUps.later(chatId, { ...m, ...(decisionId ? { decisionId } : {}) });
     else if (started) this.followUps.started(started, decisionId);
   }
 
@@ -313,7 +332,7 @@ export class Decisions {
   forJudge(projectId: string, chatId: string): string[] {
     return decisionsView
       .applicable(this.d.db, projectId, chatId)
-      .filter((x) => x.by === "you")
+      .filter((x) => x.by === "you" && !isAllowAnswer(x.choice))
       .slice(0, FOR_JUDGE)
       .map((x) => `${JSON.stringify(x.question)} → ${JSON.stringify(x.choice)} (${x.scope})`);
   }

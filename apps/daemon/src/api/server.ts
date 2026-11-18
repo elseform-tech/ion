@@ -121,9 +121,13 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     mcp: { grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
     // When ion stops a tool call it asks you; made here, answered through the decisions made below.
-    askBlocked: (r: AskingRun, b: Blocked) =>
-      late.decisions?.askBlocked({ projectId: r.projectId, chatId: r.chatId, runId: r.runId }, b) ??
-      Promise.resolve("timeout" as const),
+    askBlocked: {
+      ask: (r: AskingRun, b: Blocked) =>
+        late.decisions?.askBlocked({ projectId: r.projectId, chatId: r.chatId, runId: r.runId }, b) ??
+        Promise.resolve("timeout" as const),
+      allowed: (r: AskingRun, key: string) =>
+        late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
+    },
   };
   const runs = new RunManager(store, runCtx, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.

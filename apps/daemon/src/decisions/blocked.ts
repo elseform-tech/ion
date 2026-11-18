@@ -1,5 +1,8 @@
-/** A tool call ion stopped, waiting on you: its request, what it does, and why ion stopped it. */
-export type Blocked = { requestId: string; summary: string; reason: string };
+/**
+ * A tool call ion stopped, waiting on you: its request, what it does, why ion stopped it, its full input, and its
+ * exact key (tool and input) for "Always allow".
+ */
+export type Blocked = { requestId: string; summary: string; reason: string; input?: string; key: string };
 export type Held = "allow" | "deny" | "timeout";
 
 /** How long a stopped tool call waits for your answer before ion says no (the user's choice: 4 minutes). */
@@ -10,12 +13,12 @@ const PREFIX = "Allow this? ";
 /** What you're asked about a stopped tool call. */
 export const blockedQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
-  why: `ion stopped it: ${b.reason}`,
+  why: [`ion stopped it: ${b.reason}`, ...(b.input ? [b.input] : [])].join("\n\n"),
   choices: [
     { label: "Allow once", consequence: "It runs this time. ion asks again next time." },
     {
       label: "Always allow in this project",
-      consequence: "It runs, and actions like it go through in this project from now on.",
+      consequence: "It runs, and this exact action runs in this project from now on without asking.",
     },
     { label: "Don't allow", consequence: "The agent is told no and works around it." },
   ],

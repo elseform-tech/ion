@@ -251,6 +251,10 @@ select:hover {
   color: var(--muted);
   font-size: 13px;
   margin-top: -6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow: auto;
 }
 .qcard-options {
   display: flex;

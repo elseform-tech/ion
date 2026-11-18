@@ -13,14 +13,16 @@ export const decisionsView: View & {
   /** Those that apply in this chat: its own, its project's, and everywhere ones; newest first. */
   applicable(db: Db, projectId: string, chatId: string): DecisionInfo[];
   find(db: Db, decisionId: string): DecisionInfo | null;
+  /** Whether you said "Always allow" for this exact action (its key's hash) in this project or everywhere. */
+  allows(db: Db, projectId: string, allowKey: string): boolean;
 } = {
   name: "decisions",
-  version: 1,
+  version: 2,
   tables: ["view_decisions", "view_decision_outcomes"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_decisions (
       decision_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, chat_id TEXT, question TEXT NOT NULL,
-      choice TEXT NOT NULL, scope TEXT NOT NULL, by TEXT NOT NULL, decided_at TEXT NOT NULL)`);
+      choice TEXT NOT NULL, scope TEXT NOT NULL, by TEXT NOT NULL, decided_at TEXT NOT NULL, allow_key TEXT)`);
     db.exec(`CREATE TABLE IF NOT EXISTS view_decision_outcomes (
       decision_id TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, by TEXT NOT NULL)`);
   },
@@ -31,8 +33,8 @@ export const decisionsView: View & {
     const d = e.data as D;
     if (e.type === EV.decisionRecorded)
       db.prepare(
-        `INSERT OR IGNORE INTO view_decisions (decision_id, project_id, chat_id, question, choice, scope, by, decided_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO view_decisions (decision_id, project_id, chat_id, question, choice, scope, by, decided_at, allow_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         String(d.decisionId),
         String(d.projectId),
@@ -42,6 +44,7 @@ export const decisionsView: View & {
         String(d.scope),
         String(d.by),
         e.ts,
+        typeof d.allowKey === "string" ? d.allowKey : null,
       );
     else if (e.type === EV.decisionOutcome)
       db.prepare("INSERT INTO view_decision_outcomes (decision_id, kind, text, by) VALUES (?, ?, ?, ?)").run(
@@ -70,6 +73,15 @@ export const decisionsView: View & {
       )
       .all(projectId, chatId) as Row[];
     return withOutcomes(db, rows);
+  },
+  allows(db, projectId, allowKey) {
+    const row = db
+      .prepare(
+        `SELECT 1 FROM view_decisions WHERE allow_key = ? AND by = 'you'
+           AND (scope = 'everywhere' OR (scope = 'project' AND project_id = ?))`,
+      )
+      .get(allowKey, projectId);
+    return row !== undefined;
   },
   find(db, decisionId) {
     const row = db.prepare(`SELECT ${COLUMNS} FROM view_decisions WHERE decision_id = ?`).get(decisionId) as
