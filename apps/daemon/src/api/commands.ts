@@ -14,6 +14,7 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
+import { HarnessInfos } from "./harness-infos.js";
 
 export { UserError } from "./errors.js";
 
@@ -39,7 +40,7 @@ type Handlers = {
 export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
-  "harnesses.list": () => Promise.all(harnessIds().map(harnessInfo)),
+  "harnesses.list": () => harnessInfos.list(),
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
   "memory.forget": (a, ctx) => {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
@@ -138,6 +139,9 @@ export const handlers: Handlers = {
 };
 
 /** A harness, whether it's ready, and (only when it is) its own model list. */
+/** Every agent's info, kept and read again in the background (asking each CLI takes seconds). */
+export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs: 60_000 });
+
 async function harnessInfo(id: string): Promise<HarnessInfo> {
   const h = getHarness(id)!;
   // One harness that fails to answer shows as not ready; it doesn't break the list.

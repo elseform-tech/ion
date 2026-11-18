@@ -111,6 +111,24 @@ describe("claude-code session", () => {
     expect(o.env.ION_MCP_H0).toBe("Bearer k");
   });
 
+  // The user, 2026-11-18: Claude asked with its own AskUserQuestion, which a headless session can't show; the
+  // question vanished. With ion's MCP server, questions go through ion's ask tool, so the built-in one is off.
+  it("turns off Claude's own question tool when ion's ask tool is there", async () => {
+    const calls: FakeQueryCall[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      mcp: { name: "ion", url: "http://127.0.0.1:9/mcp", headers: {} },
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.close();
+    expect((calls.at(-1)?.options as { disallowedTools?: string[] }).disallowedTools).toEqual([
+      "AskUserQuestion",
+    ]);
+  });
+
   it("continues a session that exists, and says so when it's gone", async () => {
     const calls: FakeQueryCall[] = [];
     const known = (id: string) => Promise.resolve(id === "s-known");
