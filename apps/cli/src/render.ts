@@ -75,7 +75,7 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     return quiet;
   },
   [EV.approvalResolved]: (s, d) => {
-    const what = s.asks.get(String(d.requestId)) ?? "a tool";
+    const what = d.summary ? clean(d.summary) : (s.asks.get(String(d.requestId)) ?? "a tool");
     // Auto: say what ion decided. Full access and the worktree policy stay quiet.
     if (d.by === "ion") {
       const text =

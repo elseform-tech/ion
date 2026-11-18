@@ -20,6 +20,7 @@ import { chatsView } from "../views/chats.js";
 import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
 import { createWorktree, ensureDefaultProject, removeWorktree } from "../workspace/index.js";
+import type { GateAnswer } from "../gate/index.js";
 import { Approvals } from "./approvals.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
 
@@ -43,6 +44,8 @@ type Launch = {
   request: string;
   /** This run's MCP key (from launch until the run ends). */
   mcpKey?: string;
+  /** This run's gate key, when its harness reports tool calls through a hook. */
+  gateKey?: string;
 };
 type Between = {
   chatId: string;
@@ -65,6 +68,8 @@ export class RunManager {
   /** Runs that left the queue and haven't ended: interrupt flags, and how to cut a retry's wait short. */
   private readonly between = new Map<string, Between>();
   private stopping = false;
+  /** Runs from launch to end, for the gate to find by its key's run. */
+  private readonly launches = new Map<string, Launch>();
 
   constructor(
     private readonly store: EventStore,
@@ -76,6 +81,8 @@ export class RunManager {
       access?: Access;
       /** ion's MCP server: each run gets a key for its own project, revoked when the run ends. */
       mcp?: { grants: Grants; url: () => string };
+      /** ion's gate (`<base>/<key>`): harnesses with a hook report every tool call there before it runs. */
+      gate?: { url: () => string };
     },
     private readonly needs: NeedsService,
     private readonly db: Db,
@@ -133,7 +140,10 @@ export class RunManager {
    */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
-    l.mcpKey = this.ctx.mcp?.grants.create({ projectId: l.projectId, chatId: l.chatId, runId: l.runId });
+    const scope = { projectId: l.projectId, chatId: l.chatId, runId: l.runId };
+    l.mcpKey = this.ctx.mcp?.grants.create(scope);
+    if (this.ctx.gate && l.h.adapter.gateCall) l.gateKey = this.ctx.mcp?.grants.create(scope, "gate");
+    this.launches.set(l.runId, l);
     const b: Between = { chatId: l.chatId, interrupt: false };
     this.between.set(l.runId, b);
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
@@ -152,6 +162,8 @@ export class RunManager {
     } finally {
       this.between.delete(l.runId);
       this.ctx.mcp?.grants.revoke(l.runId);
+      this.launches.delete(l.runId);
+      this.approvals.forget(l.runId);
     }
   }
 
@@ -385,6 +397,7 @@ export class RunManager {
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
       ...(l.resume ? { resume: l.resume } : {}),
+      ...(this.ctx.gate && l.gateKey ? { gate: { url: `${this.ctx.gate.url()}/${l.gateKey}` } } : {}),
       ...(this.ctx.mcp && l.mcpKey
         ? {
             mcp: {
@@ -397,6 +410,14 @@ export class RunManager {
       signal: new AbortController().signal,
       decide,
     });
+  }
+
+  /** A tool call a run's hook reported (its gate key's run); null when the harness's payload isn't one. */
+  async gate(runId: string, payload: unknown): Promise<GateAnswer | null> {
+    const l = this.launches.get(runId);
+    const call = l?.h.adapter.gateCall?.(payload);
+    if (!l || !call) return null;
+    return this.approvals.gate(l, call, projectRoots(l.cwd));
   }
 
   /** Stores what a session emits, except its run.finished: whether the run ends or retries is decided above. */

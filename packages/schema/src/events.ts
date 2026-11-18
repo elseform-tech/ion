@@ -170,9 +170,14 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "approval.resolved": z.object({
     requestId: z.string(),
     decision: z.enum(DECISIONS),
-    /** you (a need you answered), policy (inside the worktree), ion (Auto decided), full (Full access). */
-    by: z.enum(["you", "policy", "ion", "full"]),
+    /**
+     * you (a need you answered), policy (inside the worktree), ion (Auto decided), full (Full access),
+     * gate (the harness's own prompt for a call ion's gate had already allowed).
+     */
+    by: z.enum(["you", "policy", "ion", "full", "gate"]),
     reason: z.string().optional(),
+    /** What was asked, for a decision made at the gate (no approval.requested comes before it). */
+    summary: z.string().optional(),
   }),
   "usage.reported": z.object({
     model: z.string(),

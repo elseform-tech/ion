@@ -50,6 +50,15 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       login: async () => {},
     },
     capabilities: async () => CAPABILITIES,
+    // The fake hook already sends ion's own shape.
+    gateCall: (payload) => {
+      const p = payload as
+        | { toolName?: unknown; kind?: unknown; summary?: unknown; input?: unknown }
+        | undefined;
+      if (typeof p?.toolName !== "string" || typeof p.kind !== "string") return null;
+      const input = p.input && typeof p.input === "object" ? (p.input as Record<string, unknown>) : {};
+      return { toolName: p.toolName, kind: p.kind, summary: String(p.summary ?? ""), input };
+    },
     start: async (start) => {
       // Test switches for the daemon's lifecycle tests: a slow or failing harness start.
       await new Promise((r) => setTimeout(r, Number(process.env.ION_FAKE_START_MS ?? 0)));
@@ -58,6 +67,20 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       return fakeSession(start, delayMs);
     },
   };
+}
+
+/** Reports a call at ion's gate like a real hook: no gate means allow; no answer means deny (fail closed). */
+async function postGate(
+  gate: StartOpts["gate"],
+  req: unknown,
+): Promise<{ decision: string; reason?: string }> {
+  if (!gate) return { decision: "allow" };
+  try {
+    const r = await fetch(gate.url, { method: "POST", body: JSON.stringify(req) });
+    return (await r.json()) as { decision: string; reason?: string };
+  } catch {
+    return { decision: "deny", reason: "ion didn't answer" };
+  }
 }
 
 function fakeSession(start: StartOpts, delayMs: number): Session {
@@ -89,6 +112,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     tries: () => tries,
     text: () => sent,
     mcp: () => start.mcp ?? null,
+    gate: (req) => postGate(start.gate, req),
     wait: async (ms) => {
       await sleep(ms);
       return interrupted ? "interrupted" : "ok";

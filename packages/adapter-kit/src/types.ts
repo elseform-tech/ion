@@ -17,6 +17,9 @@ export type ApprovalRequest = {
 
 export type { Decision };
 
+/** One tool call as a harness's own pre-tool hook reports it to ion's gate (before the tool runs). */
+export type GateCall = Pick<ApprovalRequest, "toolName" | "kind" | "summary" | "input" | "mcpServer">;
+
 /** The harness couldn't continue the session it was given (gone, expired): start a new one instead. */
 export class ResumeFailed extends Error {}
 
@@ -29,6 +32,8 @@ export type StartOpts = {
   resume?: string;
   /** A plain model call (ion's judge): no tools at all, a short system prompt, one turn, no thinking. */
   bare?: boolean;
+  /** ion's gate for this run: the harness's pre-tool hook sends every tool call here before it runs. */
+  gate?: { url: string };
   /** ion's MCP server for this run: history, needs and memory of its project. */
   mcp?: { name: "ion"; url: string; headers: Record<string, string> };
   signal: AbortSignal;
@@ -55,4 +60,6 @@ export interface HarnessAdapter {
   auth: { status(): Promise<AuthStatus>; login(): Promise<void> };
   capabilities(): Promise<Capabilities>;
   start(opts: StartOpts): Promise<Session>;
+  /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
+  gateCall?(payload: unknown): GateCall | null;
 }

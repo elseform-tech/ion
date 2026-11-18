@@ -12,6 +12,7 @@ import { Connection } from "./connection.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 import { createAccess, createJudge, harnessRunner } from "../access/index.js";
+import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
 
 export const VERSION = "0.0.0";
@@ -23,11 +24,17 @@ export async function startServer(opts: {
   port?: number;
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
   let port = 0;
-  const ctx = openState(opts, () => `http://127.0.0.1:${port}/mcp`);
+  const ctx = openState(opts, () => `http://127.0.0.1:${port}`);
   const { store, db } = ctx;
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   const auth = createAuth();
-  const http = httpServer(createMcpHandler({ store, db, grants: ctx.grants }));
+  const http = httpServer(
+    createMcpHandler({ store, db, grants: ctx.grants }),
+    createGateHandler({
+      grants: ctx.grants,
+      decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
+    }),
+  );
   const wss = new WebSocketServer({
     server: http,
     maxPayload: MAX_MESSAGE_BYTES,
@@ -56,16 +63,21 @@ export async function startServer(opts: {
   };
 }
 
-/** One port: the WebSocket API (upgrades), and ion's MCP server at /mcp for runs (with their own keys). */
-function httpServer(mcp: ReturnType<typeof createMcpHandler>) {
+/**
+ * One port: the WebSocket API (upgrades), ion's MCP server at /mcp and the gate at /gate/<key>, both for runs
+ * (with their own keys).
+ */
+function httpServer(mcp: ReturnType<typeof createMcpHandler>, gate: ReturnType<typeof createGateHandler>) {
   return createServer((req, res) => {
-    if ((req.url ?? "/").split("?")[0] === "/mcp") void mcp(req, res).catch(() => res.destroy());
+    const path = (req.url ?? "/").split("?")[0]!;
+    if (path === "/mcp") void mcp(req, res).catch(() => res.destroy());
+    else if (path.startsWith("/gate/")) void gate(req, res).catch(() => res.destroy());
     else res.writeHead(404).end();
   });
 }
 
 /** The data folder, the event store and the services every connection shares. */
-function openState(opts: { dataDir: string; configFile: string }, mcpUrl: () => string): Ctx {
+function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
   const db = openDb(join(opts.dataDir, "ion.db"));
@@ -75,7 +87,13 @@ function openState(opts: { dataDir: string; configFile: string }, mcpUrl: () => 
   // Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own folders are always denied.
   const judge = createJudge(harnessRunner(opts.configFile));
   const access = createAccess({ judge, home: homedir(), ionDirs: [opts.dataDir, dirname(opts.configFile)] });
-  const runCtx = { configFile: opts.configFile, dataDir: opts.dataDir, access, mcp: { grants, url: mcpUrl } };
+  const runCtx = {
+    configFile: opts.configFile,
+    dataDir: opts.dataDir,
+    access,
+    mcp: { grants, url: () => `${base()}/mcp` },
+    gate: { url: () => `${base()}/gate` },
+  };
   return {
     store,
     db,

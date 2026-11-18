@@ -108,5 +108,18 @@ describe("render", () => {
       ).text,
     ).toBe("· Denied by ion: Read ~/.ssh/id_rsa — Touches your secrets\n");
     expect(r(ev("approval.resolved", { requestId: "q3", decision: "allow", by: "full" })).text).toBe("");
+    // A decision made at the gate carries its own summary; the prompt answered from it stays quiet.
+    expect(
+      r(
+        ev("approval.resolved", {
+          requestId: "g1",
+          decision: "deny",
+          by: "ion",
+          reason: "No",
+          summary: "cat x",
+        }),
+      ).text,
+    ).toBe("· Denied by ion: cat x — No\n");
+    expect(r(ev("approval.resolved", { requestId: "q3", decision: "allow", by: "gate" })).text).toBe("");
   });
 });
