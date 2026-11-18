@@ -79,6 +79,18 @@ describe("questions in ion threads", () => {
     );
   });
 
+  // Security review: a decision you kept to one of your own chats never answers for an ion thread.
+  it("never use a decision you kept to one of your own chats", async () => {
+    const d = make();
+    await d.ask(scope("mine"), q());
+    await d.answer(open("mine")[0]!.needId, 1, "chat");
+    const match: Matcher = vi.fn(async (_q, past) =>
+      past[0] ? { decisionId: past[0].decisionId, label: "Use QA account" } : null,
+    );
+    await make(match).ask(scope("t1"), q());
+    expect(open("t1")).toHaveLength(1);
+  });
+
   // Review Focus 1.
   it("leave your own chats alone: no ion answer from a chat-only decision, and no note", async () => {
     const d = make();
@@ -109,6 +121,19 @@ describe("questions in ion threads", () => {
     expect(open("t2")).toEqual([]);
     await d.answer(first, 1, "chat");
     expect(followUp).toHaveBeenCalledWith("t2", expect.objectContaining({ shown: "Use QA account" }));
+  });
+
+  // Security review: only an identical question (wording and choices) is settled by your answer; one the model
+  // merely thought alike is raised to you instead.
+  it("raise a held question to you when it isn't the very same question", async () => {
+    const d = make();
+    await d.ask(scope("t1"), q());
+    const first = open("t1")[0]!.needId;
+    same.mockResolvedValueOnce(first);
+    await d.ask(scope("t2"), q("Use the QA account for production too?"));
+    await d.answer(first, 1, "chat");
+    expect(followUp).not.toHaveBeenCalledWith("t2", expect.anything());
+    expect(open("t2").map((n) => n.summary)).toEqual(["Use the QA account for production too?"]);
   });
 
   it("raise a held question to you when the one it waited for closes another way", async () => {

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { type DecisionInfo, type DecisionScope, EV, type NeedInfo } from "@ion/schema";
+import { type DecisionScope, EV, type NeedInfo } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Scope } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -200,7 +200,13 @@ export class Decisions {
       else if (started) this.followUps.started(started, decisionId);
       if (this.d.ion?.isThread(need.chatId))
         await this.d.ion.afterAnswer(
-          { needId, projectId: base.projectId, question: asked.summary, choice: label },
+          {
+            needId,
+            projectId: base.projectId,
+            question: asked.summary,
+            choice: label,
+            labels: asked.choices.map((c) => c.label),
+          },
           (id, n) => this.answer(id, n, "chat"),
         );
     } finally {
@@ -356,10 +362,20 @@ export class Decisions {
     return `The user already decided: ${JSON.stringify(m.label)} when asked ${JSON.stringify(from.question)}. Go ahead.`;
   }
 
+  /**
+   * The decisions that may answer a new question. In your own chats, your "always" ones (project or everywhere).
+   * In a thread ion started, also ones you kept to a chat, but only chats ion started: a decision kept to one of
+   * your own chats stays there. Answers allowing a stopped tool call are never reused this way.
+   */
   private pastFor(s: Scope, thread: boolean) {
-    const mine = (x: DecisionInfo) => x.by === "you" && (thread || x.scope !== "chat");
-    if (!thread) return decisionsView.applicable(this.d.db, s.projectId, s.chatId).filter(mine);
-    return decisionsView.list(this.d.db, s.projectId).filter(mine);
+    if (!thread)
+      return decisionsView
+        .applicable(this.d.db, s.projectId, s.chatId)
+        .filter((x) => x.by === "you" && x.scope !== "chat");
+    const ionChat = (chatId: string | null) => (chatId ? (this.d.ion?.isThread(chatId) ?? false) : false);
+    return decisionsView
+      .list(this.d.db, s.projectId)
+      .filter((x) => x.by === "you" && !isAllowAnswer(x.choice) && (x.scope !== "chat" || ionChat(x.chatId)));
   }
 
   /** Your answer to an ion's "always?" suggestion: kept, it's a decision for the project. */

@@ -12,7 +12,15 @@ const SUGGEST_AFTER = 3;
 /** A decision whose runs failed this many times is flagged. */
 const FLAG_AFTER = 2;
 
-type Answered = { needId: string; projectId: string; question: string; choice: string };
+/** `labels`: the answered question's choices, so only the very same question is settled by it. */
+type Answered = { needId: string; projectId: string; question: string; choice: string; labels: string[] };
+
+const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+/** The same question: the same words (case and spacing aside) and the same choices. */
+const identical = (h: NeedInfo, a: Answered) =>
+  norm(h.summary) === norm(a.question) &&
+  JSON.stringify((h.choices ?? []).map((c) => norm(c.label)).sort()) ===
+    JSON.stringify(a.labels.map(norm).sort());
 type Suggestion = { projectId: string; question: string; choice: string };
 
 export type IonQuestionsDeps = {
@@ -86,7 +94,8 @@ export class IonQuestions {
     answerHeld: (needId: string, choice: number) => Promise<void>,
   ): Promise<void> {
     for (const h of this.d.needs.heldFor(a.needId)) {
-      const n = (h.choices ?? []).findIndex((c) => c.label === a.choice);
+      // The model only held it; your answer settles it only when it's the very same question.
+      const n = identical(h, a) ? (h.choices ?? []).findIndex((c) => c.label === a.choice) : -1;
       if (n >= 0)
         await answerHeld(h.needId, n + 1).catch(() =>
           this.d.needs.release(h, this.note(a.projectId, h.summary)),
