@@ -18,9 +18,11 @@ export type AskingRun = {
 
 type Verdict = { decision: Decision; by: "policy" | "full" | "ion" | "gate"; reason?: string };
 
-/** What a gate allow and a later prompt are matched on: the kind of call, and its command if it names one. */
-const callKey = (c: { kind: string; input: Record<string, unknown> }) =>
-  typeof c.input.command === "string" ? { kind: c.kind, command: c.input.command } : { kind: c.kind };
+/** What a gate allow and a later prompt are matched on: the kind of call and its command or file. */
+const callKey = (c: { kind: string; input: Record<string, unknown> }) => {
+  const id = [c.input.command, c.input.file_path].find((v) => typeof v === "string") as string | undefined;
+  return id === undefined ? { kind: c.kind } : { kind: c.kind, id };
+};
 
 /** Added to every Auto deny an agent reads: the way through is asking you. */
 const ASK_HINT = " — if it's needed, ask the user with ion's ask tool";

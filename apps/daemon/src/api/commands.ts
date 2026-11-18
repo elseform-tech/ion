@@ -4,7 +4,9 @@ import { forgetMemory } from "../memory/index.js";
 import { createProject } from "../workspace/index.js";
 import { memoryView } from "../views/memory.js";
 import { addProject, loadUserConfig, saveUserConfig, setProjectAccess } from "@ion/config";
-import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
+import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
+import type { Decisions } from "../decisions/index.js";
+import { decisionsView } from "../views/decisions.js";
 import type { Grants } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { RunManager } from "../runs/manager.js";
@@ -19,6 +21,7 @@ export type Ctx = {
   store: EventStore;
   db: Db;
   needs: NeedsService;
+  decisions: Decisions;
   grants: Grants;
   runs: RunManager;
   configFile: string;
@@ -46,10 +49,21 @@ export const handlers: Handlers = {
     await ctx.runs.archive(String(a.chatId ?? ""));
     return { ok: true as const };
   },
-  "need.resolve": (a, ctx) => {
-    const decision = a.decision;
-    if (decision !== "allow" && decision !== "deny") throw new UserError("Answer allow or deny");
-    ctx.needs.resolve(String(a.needId ?? ""), decision, "you");
+  "need.answer": async (a, ctx) => {
+    const scope = a.scope ?? "chat";
+    if (!DECISION_SCOPES.includes(scope)) throw new UserError("Pick chat, project or everywhere");
+    await ctx.decisions.answer(String(a.needId ?? ""), Number(a.choice), scope);
+    return { ok: true as const };
+  },
+  "decisions.list": (a, ctx) => decisionsView.list(ctx.db, a.projectId),
+  "decision.note": (a, ctx) => {
+    const text = String(a.text ?? "").trim();
+    if (!text) throw new UserError("Say what happened");
+    ctx.decisions.note(String(a.decisionId ?? ""), text.slice(0, 2000));
+    return { ok: true as const };
+  },
+  "decision.forget": (a, ctx) => {
+    ctx.decisions.forget(String(a.decisionId ?? ""));
     return { ok: true as const };
   },
   ask: (a, ctx) => {

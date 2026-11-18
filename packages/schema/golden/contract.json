@@ -34,7 +34,10 @@
     "proposal.made",
     "proposal.answered",
     "memory.written",
-    "memory.forgotten"
+    "memory.forgotten",
+    "decision.recorded",
+    "decision.outcome",
+    "decision.forgotten"
   ],
   "commands": [
     "status",
@@ -47,7 +50,10 @@
     "ask",
     "run.interrupt",
     "needs.list",
-    "need.resolve",
+    "need.answer",
+    "decisions.list",
+    "decision.note",
+    "decision.forget",
     "chats.list",
     "chat.archive",
     "memory.list",

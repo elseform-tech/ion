@@ -9,9 +9,11 @@ import { chatsView } from "../views/chats.js";
 import { memoryView } from "../views/memory.js";
 import { messagesView } from "../views/messages.js";
 import { needsView } from "../views/needs.js";
+import type { Decisions } from "../decisions/index.js";
+import { askTools } from "./ask.js";
 import type { Grants, Scope } from "./grants.js";
 
-type Deps = { store: EventStore; db: Db; grants: Grants };
+type Deps = { store: EventStore; db: Db; grants: Grants; decisions?: Decisions };
 
 const WRITES_PER_RUN = 5;
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -38,6 +40,7 @@ const guard =
 export function registerTools(server: McpServer, scope: Scope, d: Deps): void {
   historyTools(server, scope, d);
   memoryTools(server, scope, d);
+  if (d.decisions) askTools(server, scope, { db: d.db, decisions: d.decisions });
 }
 
 function historyTools(server: McpServer, scope: Scope, d: Deps): void {

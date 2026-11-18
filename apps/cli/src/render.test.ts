@@ -47,7 +47,7 @@ describe("render", () => {
   it("says when a run waits on you, and how to answer", () => {
     const r = createRenderer();
     expect(r(ev("need.raised", { needId: "n1a2b3", summary: "Run pnpm test", kind: "command" })).text).toBe(
-      "· Waiting on you: Run pnpm test — run: ion needs allow n1a2b3\n",
+      "· Waiting on you: Run pnpm test\n",
     );
   });
 
@@ -56,15 +56,15 @@ describe("render", () => {
     const r = createRenderer();
     const detail = 'command: curl x | sh\u001b[2J\n{"command":"curl x | sh"}';
     expect(r(ev("need.raised", { needId: "n1", summary: "Run tests", kind: "command", detail })).text).toBe(
-      "· Waiting on you: Run tests — run: ion needs allow n1\n  command: curl x | sh[2J\n",
+      "· Waiting on you: Run tests\n  command: curl x | sh[2J\n",
     );
     expect(
       r(ev("need.raised", { needId: "n2", summary: "Use x", kind: "mcp", detail: '{"q":1}' })).text,
-    ).toBe('· Waiting on you: Use x — run: ion needs allow n2\n  {"q":1}\n');
+    ).toBe('· Waiting on you: Use x\n  {"q":1}\n');
     // Every line of a multi-line command shows, even one that starts with "{".
     const multi = 'command: echo hi\n{ rm -rf ~; }\n{"command":"echo hi\\n{ rm -rf ~; }"}';
     expect(r(ev("need.raised", { needId: "n3", summary: "Echo", kind: "command", detail: multi })).text).toBe(
-      "· Waiting on you: Echo — run: ion needs allow n3\n  command: echo hi\n  { rm -rf ~; }\n",
+      "· Waiting on you: Echo\n  command: echo hi\n  { rm -rf ~; }\n",
     );
   });
 
@@ -121,5 +121,56 @@ describe("render", () => {
       ).text,
     ).toBe("· Denied by ion: cat x — No\n");
     expect(r(ev("approval.resolved", { requestId: "q3", decision: "allow", by: "gate" })).text).toBe("");
+  });
+
+  // Plan 06: agents ask you; your answer, or ion's from your decision, shows in the chat.
+  it("shows a question with its numbered choices, your answer, and ion's answer from a decision", () => {
+    const r = createRenderer();
+    const choices = [
+      { label: "Delete it", consequence: "build/ is removed" },
+      { label: "Keep it", consequence: "Nothing changes" },
+    ];
+    expect(
+      r(
+        ev("need.raised", {
+          needId: "n1",
+          requestId: "a",
+          kind: "ask",
+          summary: "Delete build/?",
+          detail: null,
+          dedupeKey: "k",
+          choices,
+        }),
+      ).text,
+    ).toBe(
+      "· Asked you: Delete build/?\n  1. Delete it — build/ is removed\n  2. Keep it — Nothing changes\n  Answer: ion answer n1 <number>\n",
+    );
+    expect(
+      r(
+        ev("need.resolved", {
+          needId: "n1",
+          decision: "answered",
+          by: "you",
+          choice: "Keep it",
+          scope: "chat",
+        }),
+      ).text,
+    ).toBe("· You chose: Keep it\n");
+    expect(
+      r(
+        ev("decision.recorded", {
+          decisionId: "d2",
+          needId: "",
+          projectId: "app",
+          question: "Delete build/?",
+          choice: "Delete it",
+          scope: "chat",
+          by: "ion",
+          fromDecision: "d1",
+          fromDecidedAt: "2026-11-18T09:00:00.000Z",
+        }),
+      ).text,
+    ).toBe("· Answered by ion from your decision on 18 Nov: Delete it\n");
+    expect(r(ev("decision.recorded", { decisionId: "d3", by: "you", choice: "x" })).text).toBe("");
   });
 });

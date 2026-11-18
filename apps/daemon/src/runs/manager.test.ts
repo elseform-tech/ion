@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addProject, DEFAULT_CONFIG, saveUserConfig, setProjectAccess } from "@ion/config";
-import type { IonEvent } from "@ion/schema";
+import { EV, type IonEvent } from "@ion/schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAccess } from "../access/index.js";
 import { UserError } from "../api/errors.js";
@@ -258,11 +258,18 @@ describe("RunManager", () => {
   // Final review I2 / Review Focus 1: answering a need after a restart says the run stopped.
   it("after a restart, answering the old need says the run stopped", async () => {
     const { chatId, runId } = await ask("slow");
-    void needs.raise({ chatId, runId, requestId: "q9", kind: "command", summary: "x", dedupeKey: "k" });
+    // An old permission need, as an older ion left it.
+    store.append({
+      chatId,
+      runId,
+      origin: "daemon",
+      type: EV.needRaised,
+      data: { needId: "n9", requestId: "q9", kind: "command", summary: "x", detail: null, dedupeKey: "k" },
+    });
     const need = await openNeed();
     const restarted = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
     restarted.closeUnfinishedRuns([{ runId, chatId, status: "running" }]);
-    expect(() => needs.resolve(need.needId, "allow", "you")).toThrow(new UserError("That run stopped"));
+    expect(() => needs.openNeed(need.needId)).toThrow(new UserError("That run stopped"));
     await runs.shutdown();
   });
 

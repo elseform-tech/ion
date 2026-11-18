@@ -12,6 +12,7 @@ import { Connection } from "./connection.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 import { createAccess, createJudge, harnessRunner } from "../access/index.js";
+import { createMatcher, Decisions } from "../decisions/index.js";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
 
@@ -29,7 +30,7 @@ export async function startServer(opts: {
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   const auth = createAuth();
   const http = httpServer(
-    createMcpHandler({ store, db, grants: ctx.grants }),
+    createMcpHandler({ store, db, grants: ctx.grants, decisions: ctx.decisions }),
     createGateHandler({
       grants: ctx.grants,
       decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
@@ -85,8 +86,16 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   // Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own folders are always denied.
-  const judge = createJudge(harnessRunner(opts.configFile));
-  const access = createAccess({ judge, home: homedir(), ionDirs: [opts.dataDir, dirname(opts.configFile)] });
+  const quick = harnessRunner(opts.configFile);
+  const judge = createJudge(quick);
+  // Made after the run manager it needs; the judge reads it through this holder.
+  const late: { decisions?: Decisions } = {};
+  const access = createAccess({
+    judge,
+    home: homedir(),
+    ionDirs: [opts.dataDir, dirname(opts.configFile)],
+    decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
+  });
   const runCtx = {
     configFile: opts.configFile,
     dataDir: opts.dataDir,
@@ -94,12 +103,24 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     mcp: { grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
   };
+  const runs = new RunManager(store, runCtx, needs, db);
+  // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
+  const decisions = new Decisions({
+    store,
+    db,
+    needs,
+    match: createMatcher(quick),
+    followUp: async (chatId, harness, text) =>
+      (await runs.ask({ chatId, text, ...(harness ? { harness } : {}) })).runId,
+  });
+  late.decisions = decisions;
   return {
     store,
     db,
     needs,
+    decisions,
     grants,
-    runs: new RunManager(store, runCtx, needs, db),
+    runs,
     configFile: opts.configFile,
     startedAt: Date.now(),
     version: VERSION,

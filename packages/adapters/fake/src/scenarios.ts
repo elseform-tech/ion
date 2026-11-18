@@ -121,6 +121,31 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, ran ? "Ran it." : `Blocked: ${g.reason ?? "denied"}`);
     return "done";
   },
+  /** Asks the user through ion's MCP server (tool "ask"), then ends its turn, as told. */
+  async asks(s) {
+    const server = s.mcp() as { url: string; headers: Record<string, string> } | null;
+    if (!server) return "failed";
+    const choices = [
+      { label: "Merge", consequence: "main gets the change" },
+      { label: "Wait", consequence: "Nothing yet" },
+    ];
+    const res = await fetch(server.url, {
+      method: "POST",
+      headers: {
+        ...server.headers,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "ask", arguments: { question: "Merge it?", choices } },
+      }),
+    });
+    say(s, await res.text());
+    return "done";
+  },
   async fail(s) {
     s.emit({
       type: EV.error,

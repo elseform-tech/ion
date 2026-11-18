@@ -40,6 +40,9 @@ export const DAEMON_EVENT_TYPES = [
   "proposal.answered",
   "memory.written",
   "memory.forgotten",
+  "decision.recorded",
+  "decision.outcome",
+  "decision.forgotten",
 ] as const;
 
 export const EVENT_TYPES = [...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES] as const;
@@ -78,6 +81,9 @@ export const EV = {
   proposalAnswered: "proposal.answered",
   memoryWritten: "memory.written",
   memoryForgotten: "memory.forgotten",
+  decisionRecorded: "decision.recorded",
+  decisionOutcome: "decision.outcome",
+  decisionForgotten: "decision.forgotten",
 } as const satisfies Record<string, EventType>;
 
 export type AdapterEventType = (typeof ADAPTER_EVENT_TYPES)[number];
@@ -95,6 +101,9 @@ export const TOOL_KINDS = ["read", "edit", "command", "search", "web", "mcp", "o
 export type ToolKind = (typeof TOOL_KINDS)[number];
 export const DECISIONS = ["allow", "allow_always", "deny"] as const;
 export type Decision = (typeof DECISIONS)[number];
+
+/** How far an answer reaches: this chat, this project, or every project. */
+export const DECISION_SCOPES = ["chat", "project", "everywhere"] as const;
 
 const text = z.object({ text: z.string() });
 const count = z.number().int().min(0);
@@ -123,12 +132,42 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     summary: z.string(),
     detail: z.string().nullable(),
     dedupeKey: z.string(),
+    /** An agent's question (kind "ask"): its choices, each with what it leads to. */
+    choices: z
+      .array(z.object({ label: z.string().min(1).max(200), consequence: z.string().max(500) }))
+      .min(2)
+      .max(4)
+      .optional(),
   }),
   "need.resolved": z.object({
     needId: z.string(),
-    decision: z.enum([...DECISIONS, "superseded"]),
+    /** allow/deny: an old permission need. answered: a question, with the choice you picked. */
+    decision: z.enum([...DECISIONS, "superseded", "answered"]),
     by: z.enum(["you", "ion", "daemon"]),
+    choice: z.string().optional(),
+    scope: z.enum(DECISION_SCOPES).optional(),
   }),
+  /** Your answer kept for later: this chat only, this project, or everywhere. by ion: answered from fromDecision. */
+  "decision.recorded": z.object({
+    decisionId: z.string(),
+    needId: z.string(),
+    projectId: z.string(),
+    question: z.string(),
+    choice: z.string(),
+    scope: z.enum(DECISION_SCOPES),
+    by: z.enum(["you", "ion"]),
+    fromDecision: z.string().optional(),
+    /** When you made fromDecision, for the chat line. */
+    fromDecidedAt: z.string().optional(),
+  }),
+  /** What happened after a decision: the follow-up run ran or failed, or a note from the agent or you. */
+  "decision.outcome": z.object({
+    decisionId: z.string(),
+    kind: z.enum(["ran", "failed", "note"]),
+    text: z.string().max(2000),
+    by: z.enum(["ion", "agent", "you"]),
+  }),
+  "decision.forgotten": z.object({ decisionId: z.string() }),
   "run.queued": z.object({}),
   "run.retrying": z.object({
     attempt: z.number().int().min(1),
