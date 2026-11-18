@@ -40,7 +40,15 @@ function startRun(chatId: string, runId: string) {
     data: { harness: "fake", model: "fake", effort: null, authMethod: "Fake", sessionId: "s" },
   });
 }
-const make = (match?: Matcher) => new Decisions({ store, db, needs, followUp, ...(match ? { match } : {}) });
+const make = (match?: Matcher) =>
+  new Decisions({
+    store,
+    db,
+    needs,
+    followUp,
+    requestOf: (runId) => (runId === "r1" ? "Tidy the repo" : null),
+    ...(match ? { match } : {}),
+  });
 
 beforeEach(() => {
   db = openDb(":memory:");
@@ -98,10 +106,12 @@ describe("answer", () => {
       scope: "project",
       by: "you",
     });
+    // Security review: the judge keeps judging by what you asked, never the agent's question.
     expect(followUp).toHaveBeenCalledWith(
       "c1",
       "fake",
       'You asked: "Delete the build folder?". The user chose: "Delete it".',
+      "Tidy the repo",
     );
     // RF3: a second answer is refused.
     await expect(d.answer(need!.needId, 2)).rejects.toThrow("That's already answered");
@@ -157,6 +167,26 @@ describe("answered by ion", () => {
     expect(needs.open("c2")).toEqual([]);
   });
 
+  // Security review: ion answers only with the very label you picked, and at most 3 times a run.
+  it("answers only with the label you picked before, at most 3 times a run", async () => {
+    await decided("project");
+    const id = String(of(EV.decisionRecorded)[0]!.decisionId);
+    const other = {
+      ...q,
+      choices: [
+        { label: "Keep it", consequence: "x" },
+        { label: "Bin it", consequence: "y" },
+      ],
+    };
+    expect(
+      await make(async () => ({ decisionId: id, label: "Keep it" })).ask(scope("c2", "r9"), other),
+    ).toMatch(/^Asked\./);
+    const d = make(async () => ({ decisionId: id, label: "Delete it" }));
+    for (let i = 0; i < 3; i++)
+      expect(await d.ask(scope("c2", "r7"), q)).toMatch(/^The user already decided/);
+    expect(await d.ask(scope("c2", "r7"), q)).toMatch(/^Asked\./);
+  });
+
   // RF4: a loose fit goes to you.
   it("asks you when the matcher's label isn't one of the new choices", async () => {
     await decided("project");
@@ -186,6 +216,13 @@ describe("decisions for the judge, notes and forgetting", () => {
     expect(d.forJudge("other", "o1")).toEqual(['"Delete the build folder?" → "Delete it" (everywhere)']);
     d.forget(id);
     expect(d.forJudge("other", "o1")).toEqual([]);
+    // Security review: only your own decisions reach the judge, never ion's answers from them.
+    await d.ask(scope(), q);
+    await d.answer(needs.open("c1")[0]!.needId, 1, "project");
+    const from = String(of(EV.decisionRecorded).at(-1)!.decisionId);
+    await make(async () => ({ decisionId: from, label: "Delete it" })).ask(scope(), q);
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ by: "ion" });
+    expect(d.forJudge("app", "c1")).toHaveLength(1);
   });
 
   it("takes at most 3 outcomes from an agent per run, and your notes", async () => {
@@ -202,6 +239,11 @@ describe("decisions for the judge, notes and forgetting", () => {
       text: "That was a mistake",
     });
     expect(() => d.report(scope("o1", "r8", "other"), id, "x")).toThrow("Not allowed");
+    // Security review: an "everywhere" decision from another project isn't another project's agent's to annotate.
+    await d.ask(scope(), q);
+    await d.answer(needs.open("c1")[0]!.needId, 1, "everywhere");
+    const everywhere = String(of(EV.decisionRecorded).at(-1)!.decisionId);
+    expect(() => d.report(scope("o1", "r8", "other"), everywhere, "x")).toThrow("Not allowed");
   });
 });
 

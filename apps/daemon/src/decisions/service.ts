@@ -12,6 +12,7 @@ const ASKED = "Asked. End your turn now; the answer comes as the next message.";
 const OUTCOMES_PER_RUN = 3;
 const FOR_JUDGE = 10;
 const BUSY = "This chat is already running";
+const ION_ANSWERS_PER_RUN = 3;
 
 type Deps = {
   store: EventStore;
@@ -19,8 +20,13 @@ type Deps = {
   needs: NeedsService;
   /** Matches a new question to your "always" decisions; without it, every question goes to you. */
   match?: Matcher;
-  /** Starts a run in the chat with this message (on the chat's harness); resolves to its run id. */
-  followUp: (chatId: string, harness: string | null, text: string) => Promise<string | null>;
+  /**
+   * Starts a run in the chat with this message (on the chat's harness); resolves to its run id. `request` is what
+   * the judge treats as your request: yours from the run that asked, never the agent's question.
+   */
+  followUp: (chatId: string, harness: string | null, text: string, request: string) => Promise<string | null>;
+  /** What you asked in a running run (the judge's "request"), or null. */
+  requestOf?: (runId: string) => string | null;
 };
 
 type Recorded = {
@@ -46,6 +52,9 @@ export class Decisions {
   /** Answers waiting for their chat's current run to end. */
   private readonly waiting = new Map<string, () => void>();
   private readonly reported = new Map<string, number>();
+  private readonly ionAnswered = new Map<string, number>();
+  /** Your request in the run that asked each question, kept for the run your answer starts. */
+  private readonly requests = new Map<string, string>();
 
   constructor(private readonly d: Deps) {
     d.store.onAppend((e) => {
@@ -67,7 +76,8 @@ export class Decisions {
     if (new Set(labels).size !== labels.length) throw new UserError("Give each choice its own label");
     const known = await this.fromPast(s, q);
     if (known) return known;
-    this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q });
+    const needId = this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q });
+    this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
     return ASKED;
   }
 
@@ -83,12 +93,17 @@ export class Decisions {
     const base = { chatId: need.chatId, runId: need.runId, needId, projectId, question: asked.summary };
     const decisionId = this.record({ ...base, choice: choice.label, scope, by: "you" });
     const text = `You asked: ${JSON.stringify(asked.summary)}. The user chose: ${JSON.stringify(choice.label)}.`;
-    await this.send(need.chatId, text, decisionId);
+    // After a restart the request is gone: the judge then gets none, which only makes it stricter.
+    const request = this.requests.get(needId) ?? "";
+    this.requests.delete(needId);
+    await this.send(need.chatId, { text, request }, decisionId);
   }
 
   /** An outcome the agent reports (at most 3 per run), for a decision it may see. */
   report(s: Scope, decisionId: string, text: string): void {
-    if (!decisionsView.applicable(this.d.db, s.projectId, s.chatId).some((x) => x.decisionId === decisionId))
+    // Only decisions of the agent's own project: an agent can't annotate another project's decisions.
+    const mine = decisionsView.find(this.d.db, decisionId);
+    if (!mine || mine.projectId !== s.projectId || (mine.scope === "chat" && mine.chatId !== s.chatId))
       throw new UserError("Not allowed");
     const n = (this.reported.get(s.runId) ?? 0) + 1;
     if (n > OUTCOMES_PER_RUN) throw new UserError("That's enough outcomes for one run");
@@ -117,17 +132,23 @@ export class Decisions {
   forJudge(projectId: string, chatId: string): string[] {
     return decisionsView
       .applicable(this.d.db, projectId, chatId)
+      .filter((x) => x.by === "you")
       .slice(0, FOR_JUDGE)
       .map((x) => `${JSON.stringify(x.question)} → ${JSON.stringify(x.choice)} (${x.scope})`);
   }
 
   /** ion's answer from an "always" decision, when the matcher names one of this question's own choices. */
   private async fromPast(s: Scope, q: AskInput): Promise<string | null> {
-    const past = decisionsView.applicable(this.d.db, s.projectId, s.chatId).filter((x) => x.scope !== "chat");
-    if (!this.d.match || past.length === 0) return null;
+    const past = decisionsView
+      .applicable(this.d.db, s.projectId, s.chatId)
+      .filter((x) => x.scope !== "chat" && x.by === "you");
+    if (!this.d.match || past.length === 0 || (this.ionAnswered.get(s.runId) ?? 0) >= ION_ANSWERS_PER_RUN)
+      return null;
     const m = await this.d.match(q, past);
     const from = past.find((x) => x.decisionId === m?.decisionId);
-    if (!m || !from || !q.choices.some((c) => c.label === m.label)) return null;
+    // Only the very label you picked, offered again as one of the new choices.
+    if (!m || !from || m.label !== from.choice || !q.choices.some((c) => c.label === m.label)) return null;
+    this.ionAnswered.set(s.runId, (this.ionAnswered.get(s.runId) ?? 0) + 1);
     this.record({
       ...{ chatId: s.chatId, runId: s.runId, needId: "", projectId: s.projectId, question: q.question },
       ...{ choice: m.label, scope: "chat", by: "ion", from },
@@ -148,14 +169,18 @@ export class Decisions {
   }
 
   /** Starts the run that carries your answer; if the chat is busy, once its run ends. */
-  private async send(chatId: string, text: string, decisionId: string): Promise<void> {
+  private async send(
+    chatId: string,
+    m: { text: string; request: string },
+    decisionId: string,
+  ): Promise<void> {
     const harness = chatsView.session(this.d.db, chatId)?.harness ?? null;
     try {
-      const runId = await this.d.followUp(chatId, harness, text);
+      const runId = await this.d.followUp(chatId, harness, m.text, m.request);
       if (runId) this.followRuns.set(runId, decisionId);
     } catch (e) {
       if (!(e instanceof UserError) || e.message !== BUSY) throw e;
-      this.waiting.set(chatId, () => void this.send(chatId, text, decisionId).catch(() => {}));
+      this.waiting.set(chatId, () => void this.send(chatId, m, decisionId).catch(() => {}));
     }
   }
 

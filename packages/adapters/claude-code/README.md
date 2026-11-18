@@ -19,6 +19,8 @@ Drives Claude Code through the Claude Agent SDK (`query()`), using the `claude` 
   as instructions, read safely (no symlinks or hardlinks, inside the project, ≤ 64 KB, non-blocking, inside
   `<project-instructions>` markers).
 - Every permission prompt goes to the daemon's `decide()`. "Always allow" never writes Claude Code's own rules.
+- With a gate (Plan 06), an SDK `PreToolUse` hook (passed in, no file) reports every tool call to ion before it
+  runs, reads included; ion's deny becomes the hook's deny, and no answer denies.
 
 ## Events
 

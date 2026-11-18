@@ -110,8 +110,9 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     db,
     needs,
     match: createMatcher(quick),
-    followUp: async (chatId, harness, text) =>
-      (await runs.ask({ chatId, text, ...(harness ? { harness } : {}) })).runId,
+    followUp: async (chatId, harness, text, request) =>
+      (await runs.ask({ chatId, text, ...(harness ? { harness } : {}) }, { request })).runId,
+    requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
   return {

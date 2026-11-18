@@ -92,7 +92,11 @@ export class RunManager {
     this.approvals = new Approvals(store, ctx.access, (runId) => !this.stopping && this.active.has(runId));
   }
 
-  async ask(args: AskArgs): Promise<{ chatId: string; runId: string }> {
+  /**
+   * `opts.request`: what the judge treats as your request, when the message isn't yours as typed (the run your
+   * answer to an agent's question starts is judged by your request from the run that asked).
+   */
+  async ask(args: AskArgs, opts: { request?: string } = {}): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     // A new chat with no project goes to `default` (made the first time): every thread has a project.
@@ -109,6 +113,7 @@ export class RunManager {
     try {
       await this.checkReady(h, args.model);
       launch = await this.prepare(h, args, chat, repo);
+      if (opts.request !== undefined) launch.request = opts.request;
       const l = launch;
       this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
     } finally {
@@ -410,6 +415,11 @@ export class RunManager {
       signal: new AbortController().signal,
       decide,
     });
+  }
+
+  /** What you asked in a run, while it's queued or going (the judge's "request"); null once it ended. */
+  requestOf(runId: string): string | null {
+    return this.launches.get(runId)?.request ?? null;
   }
 
   /** A tool call a run's hook reported (its gate key's run); null when the harness's payload isn't one. */
