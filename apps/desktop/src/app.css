@@ -69,6 +69,7 @@
   color: var(--faint);
 }
 .pill select {
+  padding: 0;
   border: 0;
   background: transparent;
   color: inherit;

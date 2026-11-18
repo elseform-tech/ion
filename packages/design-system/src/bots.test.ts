@@ -31,8 +31,16 @@ describe("bots", () => {
     expect(botFor("cursor").shape).toBe("cube");
   });
 
+  // The user, 2026-11-18: opencode gets its own avatar from its logo (a square block with a square inside).
+  it("draws opencode as a square block with its inner square", () => {
+    expect(botFor("opencode")).toMatchObject({ shape: "block", decor: "opencode" });
+    const calls: string[] = [];
+    const rec = new Proxy({} as PathSink, { get: (_t, k) => () => calls.push(String(k)) });
+    tracePath("block", rec);
+    expect(calls.filter((c) => c === "closePath")).toHaveLength(1);
+  });
+
   it("draws a plain orb for a harness the lab doesn't have", () => {
-    expect(botFor("opencode").shape).toBe("circle");
     expect(botFor("anything-else").shape).toBe("circle");
   });
 

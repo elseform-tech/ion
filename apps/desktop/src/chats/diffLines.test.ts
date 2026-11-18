@@ -16,6 +16,19 @@ describe("diffLines", () => {
     ]);
   });
 
+  // Security review: a changed line that looks like a header ("+++ x" is an added "++ x") is still shown.
+  it("shows every line inside a hunk, even ones that look like file headers", () => {
+    const patch =
+      "diff --git a/t b/t\n--- a/t\n+++ b/t\n@@ -1,2 +1,2 @@\n--- gone\n+++ added\n+index x\n\\ No newline at end of file\n";
+    expect(diffLines(patch).map((l) => [l.kind, l.n, l.text])).toEqual([
+      ["h", "", "@@ -1,2 +1,2 @@"],
+      ["del", "1", "-- gone"],
+      ["add", "1", "++ added"],
+      ["add", "2", "index x"],
+      ["h", "", "\\ No newline at end of file"],
+    ]);
+  });
+
   it("marks a file added, deleted or modified from its patch", () => {
     expect(fileMark("diff --git a/x b/x\nnew file mode 100644\n")).toBe("A");
     expect(fileMark("diff --git a/x b/x\ndeleted file mode 100644\n")).toBe("D");

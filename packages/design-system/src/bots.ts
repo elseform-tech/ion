@@ -17,7 +17,7 @@ export type PathSink = {
   closePath(): void;
 };
 
-export type Shape = "circle" | "spark" | "hexflower" | "gem" | "cube";
+export type Shape = "circle" | "spark" | "hexflower" | "gem" | "cube" | "block";
 
 /** Colours the bot reads from the page's tokens. */
 export type Tokens = { win: string; ink: string; muted: string; accent: string };
@@ -33,7 +33,7 @@ export type Bot = {
   es?: number;
   tilt?: number;
   /** Extra marks drawn inside the shape (the lab's decor). */
-  decor?: "grok" | "codex" | "cursor";
+  decor?: "grok" | "codex" | "cursor" | "opencode";
 };
 
 const ink = { color: (t: Tokens) => t.ink, eye: (t: Tokens) => t.win };
@@ -45,6 +45,8 @@ const LIB: Record<string, Bot> = {
   "grok-build": { shape: "circle", ...ink, eo: [-0.13, -0.13], es: 0.86, decor: "grok" },
   gemini: { shape: "gem", color: { gradient: ["#4285F4", "#9B72CB", "#D96570"] }, es: 0.7 },
   cursor: { shape: "cube", ...ink, eo: [0, 0.12], es: 0.78, decor: "cursor" },
+  // Not in the lab: from opencode's logo, a square block with a square inside (the user, 2026-11-18).
+  opencode: { shape: "block", ...ink, es: 0.8, decor: "opencode" },
 };
 const ORB: Bot = { shape: "circle", color: (t) => t.muted, eye: (t) => t.win };
 
@@ -68,6 +70,20 @@ const ngon = (th: number, n: number, rot = 0) => {
   return Math.cos(Math.PI / n) / Math.cos(u - Math.PI / n);
 };
 
+/** A square of half-side `h` with corners of radius `r`, as one closed path. */
+function roundedSquare(p: PathSink, h: number, r: number): void {
+  p.moveTo(-h + r, -h);
+  p.lineTo(h - r, -h);
+  p.quadraticCurveTo(h, -h, h, -h + r);
+  p.lineTo(h, h - r);
+  p.quadraticCurveTo(h, h, h - r, h);
+  p.lineTo(-h + r, h);
+  p.quadraticCurveTo(-h, h, -h, h - r);
+  p.lineTo(-h, -h + r);
+  p.quadraticCurveTo(-h, -h, -h + r, -h);
+  p.closePath();
+}
+
 /** Traces a shape on a unit scale (radius about 1), as the lab's shapePath. */
 export function tracePath(s: Shape, p: PathSink): void {
   switch (s) {
@@ -90,6 +106,8 @@ export function tracePath(s: Shape, p: PathSink): void {
     }
     case "cube":
       return polar(p, (th) => 0.82 * ngon(th, 6, -Math.PI / 2) + 0.18);
+    case "block":
+      return roundedSquare(p, 0.86, 0.22);
   }
 }
 

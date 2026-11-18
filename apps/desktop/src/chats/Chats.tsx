@@ -61,8 +61,8 @@ function OpenChat({
 }) {
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
-  // The side panel only appears in chats that have a worktree (an archived chat has none).
-  const hasWorktree = Boolean(chat.branch) && !chat.archived;
+  // A plain chat (in ion's `default`) is just a conversation, as the lab's: no side panel.
+  const hasWorktree = Boolean(chat.branch) && !chat.archived && chat.projectId !== "default";
   const [panel, setPanel] = useWidePanel();
   const showPanel = hasWorktree && panel;
   return (
@@ -101,28 +101,22 @@ function NewChat(props: {
   const [projectId, setProjectId] = useState<string>("default");
   return (
     <>
-      <header className="head">
-        <span className="title">New chat</span>
-      </header>
-      <div className="split solo">
-        <div className="convo">
-          <div className="msgs timeline--empty">What should we work on?</div>
-          <div className="foot">
-            <div className="fcol">
-              <Composer
-                client={props.client}
-                harnesses={props.harnesses}
-                to={{ projectId: projectId === "default" ? null : projectId }}
-                running={null}
-                project={{
-                  value: projectId,
-                  options: ["default", ...props.projects.map((p) => p.id).filter((id) => id !== "default")],
-                  onChange: setProjectId,
-                }}
-                onSent={props.onSent}
-              />
-            </div>
-          </div>
+      <header className="head" />
+      <div className="empty">
+        <div className="inner">
+          <h3>What are we working on?</h3>
+          <Composer
+            client={props.client}
+            harnesses={props.harnesses}
+            to={{ projectId: projectId === "default" ? null : projectId }}
+            running={null}
+            project={{
+              value: projectId,
+              options: ["default", ...props.projects.map((p) => p.id).filter((id) => id !== "default")],
+              onChange: setProjectId,
+            }}
+            onSent={props.onSent}
+          />
         </div>
       </div>
     </>

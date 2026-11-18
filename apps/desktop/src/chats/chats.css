@@ -1,24 +1,3 @@
-.icon-button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.icon-button:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
-
-.timeline--empty {
-  display: grid;
-  place-content: center;
-  color: var(--faint);
-}
 select {
   background: transparent;
   color: var(--muted);
@@ -40,7 +19,4 @@ select:hover {
 .changes-empty {
   padding: 16px;
   color: var(--faint);
-}
-.changes-error {
-  color: var(--bad);
 }
