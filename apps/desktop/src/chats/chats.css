@@ -14,33 +14,10 @@
   color: var(--ink);
 }
 
-.chat-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 14px 20px 12px;
-  border-bottom: 1px solid var(--line);
-}
-.chat-title {
-  font-weight: 600;
-}
-.chat-project {
-  color: var(--faint);
-  font-size: 13px;
-}
-.project-pick {
-  margin-left: auto;
-}
 .timeline--empty {
   display: grid;
   place-content: center;
   color: var(--faint);
-}
-.dock {
-  padding: 0 max(24px, calc((100% - 720px) / 2)) 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .composer {
   border: 1px solid var(--line);
@@ -108,24 +85,6 @@ select:hover {
   cursor: help;
 }
 
-.chatwrap {
-  display: grid;
-  grid-template-columns: 1fr;
-  height: 100%;
-  min-height: 0;
-}
-.chatwrap--panel {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 40%);
-}
-.chat-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-.chat-panel-toggle {
-  margin-left: auto;
-}
 .changes {
   border-left: 1px solid var(--line);
   overflow: auto;

@@ -1,15 +1,14 @@
 import { EV, type IonEvent } from "@ion/schema";
+import { type Step, thinking, toolFinished, toolOutput, toolStarted, workEnded } from "./steps.js";
 
 type Choice = { label: string; consequence: string; recommended?: boolean };
-export type Tool = { name: string; summary: string; ok?: boolean; input?: string; output?: string };
-
-const OUTPUT_MAX = 20 * 1024;
 
 /** One thing the chat shows, in order. */
 export type Item =
   | { kind: "you"; text: string }
   | { kind: "agent"; text: string; done: boolean }
-  | { kind: "work"; runId: string; tools: Tool[] }
+  | { kind: "work"; runId: string; started: string; ended?: string; steps: Step[] }
+  | { kind: "retry"; until: string; done: boolean }
   | { kind: "ion"; tone: "allow" | "deny" | "answer" | "note"; text: string }
   | {
       kind: "question";
@@ -40,7 +39,7 @@ export type Timeline = {
   changes: number;
   asks: Record<string, string>;
   work: Record<string, number>;
-  tools: Record<string, { at: number; tool: number }>;
+  tools: Record<string, { at: number; step: number }>;
   questions: Record<string, number>;
   /** ion's questions about stopped calls, by the call's request id. */
   blockedAsks: Record<string, number>;
@@ -88,50 +87,6 @@ function completed(t: Timeline, d: D): Timeline {
   return { ...replace(t, i, { kind: "agent", text: str(d.text), done: true }), streaming: null };
 }
 
-function toolStarted(t: Timeline, d: D, runId: string): Timeline {
-  const tool: Tool = {
-    name: str(d.name),
-    summary: str(d.summary),
-    ...(d.input ? { input: str(d.input) } : {}),
-  };
-  const at = t.work[runId];
-  const work = at !== undefined ? t.items[at] : undefined;
-  if (work?.kind === "work") {
-    const next = replace(t, at!, { ...work, tools: [...work.tools, tool] });
-    return { ...next, tools: { ...t.tools, [str(d.toolId)]: { at: at!, tool: work.tools.length } } };
-  }
-  const added = push(t, { kind: "work", runId, tools: [tool] });
-  const i = added.items.length - 1;
-  return {
-    ...added,
-    work: { ...t.work, [runId]: i },
-    tools: { ...t.tools, [str(d.toolId)]: { at: i, tool: 0 } },
-  };
-}
-
-/** Changes one tool in its run's work item. */
-function updateTool(t: Timeline, toolId: string, f: (x: Tool) => Tool): Timeline {
-  const where = t.tools[toolId];
-  const work = where ? t.items[where.at] : undefined;
-  if (!where || work?.kind !== "work") return t;
-  const tools = work.tools.map((x, j) => (j === where.tool ? f(x) : x));
-  return { ...replace(t, where.at, { ...work, tools }), streaming: t.streaming };
-}
-
-const toolFinished = (t: Timeline, d: D): Timeline =>
-  updateTool(t, str(d.toolId), (x) => ({
-    ...x,
-    ok: d.ok === true,
-    ...(d.input ? { input: str(d.input) } : {}),
-  }));
-
-/** Output arrives in pieces; the chat keeps the first 20 KB. */
-const toolOutput = (t: Timeline, d: D): Timeline =>
-  updateTool(t, str(d.toolId), (x) => ({
-    ...x,
-    output: ((x.output ?? "") + str(d.text)).slice(0, OUTPUT_MAX),
-  }));
-
 /** ion said no to a call it was holding for your answer: its question has gone past its wait. */
 function expire(t: Timeline, requestId: string): Timeline {
   const i = t.blockedAsks[requestId];
@@ -178,7 +133,7 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
   const from = t.started[runId];
   const seconds = from ? Math.round((Date.parse(e.ts) - Date.parse(from)) / 1000) : 0;
   const cost = t.cost[runId];
-  const ended = push(t, {
+  const ended = push(workEnded(t, e), {
     kind: "end",
     status: str(d.status),
     seconds,
@@ -186,6 +141,12 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
   });
   return { ...ended, running: t.running === runId ? null : t.running, changes: t.changes + 1 };
 }
+
+/** A new try started: any retry still counting down is done. */
+const retried = (t: Timeline): Timeline =>
+  t.items.some((x) => x.kind === "retry" && !x.done)
+    ? { ...t, items: t.items.map((x) => (x.kind === "retry" && !x.done ? { ...x, done: true } : x)) }
+    : t;
 
 type Handler = (t: Timeline, d: D, e: IonEvent) => Timeline;
 
@@ -195,12 +156,13 @@ const HANDLERS: Record<string, Handler> = {
   [EV.messageCompleted]: completed,
   [EV.runQueued]: (t, _d, e) => ({ ...t, running: e.runId }),
   [EV.runStarted]: (t, d, e) => ({
-    ...t,
+    ...retried(t),
     running: e.runId,
     harness: str(d.harness) || t.harness,
     started: { ...t.started, [e.runId ?? ""]: e.ts },
   }),
-  [EV.toolStarted]: (t, d, e) => toolStarted(t, d, e.runId ?? ""),
+  [EV.toolStarted]: toolStarted,
+  [EV.thinkingDelta]: thinking,
   [EV.toolFinished]: toolFinished,
   [EV.toolOutput]: toolOutput,
   [EV.fileChanged]: (t) => ({ ...t, changes: t.changes + 1 }),
@@ -218,11 +180,12 @@ const HANDLERS: Record<string, Handler> = {
       : t,
   [EV.usageReported]: (t, d, e) =>
     typeof d.costUsd === "number" ? { ...t, cost: { ...t.cost, [e.runId ?? ""]: d.costUsd } } : t,
-  [EV.runRetrying]: (t, d) =>
+  // A retry counts down to when it starts; it's gone once it has.
+  [EV.runRetrying]: (t, d, e) =>
     push(t, {
-      kind: "ion",
-      tone: "note",
-      text: `Retrying in ${Math.ceil(Number(d.delayS) || 0)}s (${str(d.reason).toLowerCase()})`,
+      kind: "retry",
+      until: new Date(Date.parse(e.ts) + (Number(d.delayS) || 0) * 1000).toISOString(),
+      done: false,
     }),
   [EV.runFinished]: finished,
   [EV.error]: (t, d) => push(t, { kind: "error", text: str(d.message) }),

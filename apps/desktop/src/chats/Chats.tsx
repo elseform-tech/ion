@@ -12,6 +12,28 @@ import type { Item } from "./timeline.js";
 
 type Question = Extract<Item, { kind: "question" }>;
 
+/** The lab's chat header: title, project, and the panel toggle when there's a worktree (`panel` not null). */
+function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | null; onPanel: () => void }) {
+  return (
+    <header className="head">
+      <span className="title">{chat.title}</span>
+      <span className="muted">{chat.projectId}</span>
+      <span className="sp" />
+      {panel !== null && (
+        <button
+          type="button"
+          className="ib"
+          aria-label={panel ? "Hide changes" : "Show changes"}
+          aria-pressed={panel}
+          onClick={onPanel}
+        >
+          <PanelRight />
+        </button>
+      )}
+    </header>
+  );
+}
+
 /** An open chat: its header, timeline, any open question, and the message box. */
 function OpenChat({
   client,
@@ -27,39 +49,28 @@ function OpenChat({
   // The side panel only appears in chats that have a worktree (an archived chat has none).
   const hasWorktree = Boolean(chat.branch) && !chat.archived;
   const [panel, setPanel] = useState(true);
+  const showPanel = hasWorktree && panel;
   return (
-    <div className={`chatwrap${hasWorktree && panel ? " chatwrap--panel" : ""}`}>
-      <div className="chat-main">
-        <header className="chat-head">
-          <span className="chat-title">{chat.title}</span>
-          <span className="chat-project">{chat.projectId}</span>
-          {hasWorktree && (
-            <button
-              type="button"
-              className="icon-button chat-panel-toggle"
-              aria-label={panel ? "Hide changes" : "Show changes"}
-              aria-pressed={panel}
-              onClick={() => setPanel(!panel)}
-            >
-              <PanelRight size={16} />
-            </button>
-          )}
-        </header>
-        <ChatView timeline={t} />
-        <div className="dock">
-          {open && <QuestionBar key={open.needId} client={client} question={open} />}
-          <Composer
-            client={client}
-            harnesses={harnesses}
-            to={{ chatId: chat.chatId }}
-            running={t.running}
-            harness={t.harness}
-            onSent={() => {}}
-          />
+    <>
+      <ChatHead chat={chat} panel={hasWorktree ? panel : null} onPanel={() => setPanel(!panel)} />
+      <div className={`split${showPanel ? "" : " solo"}`}>
+        <div className="convo">
+          <ChatView timeline={t} />
+          <div className="foot">
+            {open && <QuestionBar key={open.needId} client={client} question={open} />}
+            <Composer
+              client={client}
+              harnesses={harnesses}
+              to={{ chatId: chat.chatId }}
+              running={t.running}
+              harness={t.harness}
+              onSent={() => {}}
+            />
+          </div>
         </div>
+        {showPanel && <ChangesPanel client={client} chatId={chat.chatId} version={t.changes} />}
       </div>
-      {hasWorktree && panel && <ChangesPanel client={client} chatId={chat.chatId} version={t.changes} />}
-    </div>
+    </>
   );
 }
 
@@ -73,8 +84,9 @@ function NewChat(props: {
   const [projectId, setProjectId] = useState<string>("");
   return (
     <>
-      <header className="chat-head">
-        <span className="chat-title">New chat</span>
+      <header className="head">
+        <span className="title">New chat</span>
+        <span className="sp" />
         <select
           aria-label="Project"
           className="project-pick"
@@ -91,15 +103,19 @@ function NewChat(props: {
             ))}
         </select>
       </header>
-      <div className="timeline timeline--empty">What should we work on?</div>
-      <div className="dock">
-        <Composer
-          client={props.client}
-          harnesses={props.harnesses}
-          to={{ projectId: projectId || null }}
-          running={null}
-          onSent={props.onSent}
-        />
+      <div className="split solo">
+        <div className="convo">
+          <div className="msgs timeline--empty">What should we work on?</div>
+          <div className="foot">
+            <Composer
+              client={props.client}
+              harnesses={props.harnesses}
+              to={{ projectId: projectId || null }}
+              running={null}
+              onSent={props.onSent}
+            />
+          </div>
+        </div>
       </div>
     </>
   );
