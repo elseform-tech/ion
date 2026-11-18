@@ -88,9 +88,13 @@ function Details(p: {
 
 const ON_BAR = 2;
 
-/** The options the bar shows: the first two, with the recommended one always kept; the rest are in the details. */
-function onBar(choices: Question["choices"]) {
-  const all = choices.map((c, i) => ({ c, i }));
+/**
+ * The options the bar shows. ion's own question about a call it stopped shows them all, so saying no is always
+ * there. An agent's question shows the first two, with the recommended one kept; the rest are in the details.
+ */
+function onBar(q: Question) {
+  const all = q.choices.map((c, i) => ({ c, i }));
+  if (q.blocked) return all;
   const rec = all.find((x) => x.c.recommended);
   const first = all.slice(0, ON_BAR);
   if (!rec || first.includes(rec)) return first;
@@ -124,7 +128,7 @@ export function QuestionBar({ client, question }: { client: IonClient; question:
         >
           <ChevronUp />
         </button>
-        {onBar(question.choices).map(({ c, i }) => (
+        {onBar(question).map(({ c, i }) => (
           <button
             type="button"
             key={`${i}-${c.label}`}

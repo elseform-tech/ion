@@ -120,4 +120,22 @@ describe("QuestionBar", () => {
     expect(container.querySelector(".await .g")?.getAttribute("title")).toBe(many.question);
     expect([...container.querySelectorAll(".await > .btn")].map((b) => b.textContent)).toEqual(["A", "D"]);
   });
+  // Security review: on ion's question about a call it stopped, every option (no) stays on the bar.
+  it("shows every option on the bar for a call ion stopped", () => {
+    const stopped = {
+      ...question,
+      blocked: true,
+      choices: ["Allow once", "Always allow", "Keep it blocked"].map((label, n) => ({
+        label,
+        consequence: label,
+        recommended: n === 1,
+      })),
+    };
+    const { container } = bar(stopped);
+    expect([...container.querySelectorAll(".await > .btn")].map((b) => b.textContent)).toEqual([
+      "Allow once",
+      "Always allow",
+      "Keep it blocked",
+    ]);
+  });
 });
