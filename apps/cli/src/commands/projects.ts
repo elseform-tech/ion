@@ -3,6 +3,7 @@ import type { Command } from "commander";
 import { ApiCallError, type IonClient } from "@ion/client";
 import { connect } from "../connect.js";
 import { fail, type Out, print, table } from "../output.js";
+import { clean } from "../sanitize.js";
 
 /** Calls the daemon; a refusal becomes its message, anything else a plain error. */
 async function call(f: (c: IonClient) => Promise<void>): Promise<void> {
@@ -23,7 +24,7 @@ export function projectCommands(program: Command, out: () => Out) {
     .action(() =>
       call(async (c) => {
         const list = await c.call("projects.list", {});
-        print(out(), list.length ? table(list.map((x) => [x.id, x.path])) : "No projects", list);
+        print(out(), list.length ? table(list.map((x) => [x.id, x.path].map(clean))) : "No projects", list);
       }),
     );
   p.command("add <path>")

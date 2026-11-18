@@ -59,10 +59,13 @@ export const chatsView: View & {
 };
 
 const PREVIEW_MAX = 120;
+/** Control characters and invisible direction marks: an agent's text can't drive a terminal or reorder what's shown. */
+const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /** The start of a reply, as one line of plain words: Markdown marks and line breaks go. */
 function previewOf(text: string): string {
   const plain = text
+    .replace(CONTROL, "")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/[*`#>]+/g, "")
     .replace(/\s+/g, " ")
