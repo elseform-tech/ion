@@ -7,7 +7,7 @@ import {
   ResumeFailed,
   type Session,
 } from "@ion/adapter-kit";
-import { loadUserConfig } from "@ion/config";
+import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
@@ -19,7 +19,7 @@ import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
 import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
-import { createWorktree, removeWorktree } from "../workspace/index.js";
+import { createWorktree, ensureDefaultProject, removeWorktree } from "../workspace/index.js";
 import { Approvals } from "./approvals.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
 
@@ -88,6 +88,8 @@ export class RunManager {
   async ask(args: AskArgs): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
+    // A new chat with no project goes to `default` (made the first time): every thread has a project.
+    if (!args.chatId && !args.projectId) args = { ...args, projectId: await this.defaultProject() };
     const chat = this.chatFor(args);
     // An existing chat stays in its own project: its worktree belongs to that repo.
     const repo = this.projectPath(chat.chatId ? chat.projectId : args.projectId);
@@ -335,6 +337,16 @@ export class RunManager {
   private accessFor(projectId: string): "auto" | "full" {
     const { config } = loadUserConfig(this.ctx.configFile);
     return config.projects.find((p) => p.id === projectId)?.access ?? config.access.default;
+  }
+
+  private async defaultProject(): Promise<string> {
+    const { config, error } = loadUserConfig(this.ctx.configFile);
+    if (error) throw new UserError(`Fix your config first. ${error}`);
+    const next = await ensureDefaultProject(config).catch((e: Error) => {
+      throw new UserError(e.message);
+    });
+    if (next !== config) saveUserConfig(this.ctx.configFile, next);
+    return DEFAULT_PROJECT;
   }
 
   private projectPath(projectId: string | null | undefined): string {

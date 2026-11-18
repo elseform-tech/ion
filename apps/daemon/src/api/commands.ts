@@ -1,6 +1,7 @@
 import { getHarness, harnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
+import { createProject } from "../workspace/index.js";
 import { memoryView } from "../views/memory.js";
 import { addProject, loadUserConfig, saveUserConfig, setProjectAccess } from "@ion/config";
 import { type Command, type Commands, EV, type IonEvent } from "@ion/schema";
@@ -81,6 +82,15 @@ export const handlers: Handlers = {
     }
     saveUserConfig(ctx.configFile, next);
     return next.projects[next.projects.length - 1]!;
+  },
+  "project.create": async (a, ctx) => {
+    const { config, error } = loadUserConfig(ctx.configFile);
+    if (error) throw new UserError(`Fix your config first. ${error}`);
+    const made = await createProject(config, String(a.name ?? "")).catch((e: Error) => {
+      throw new UserError(e.message);
+    });
+    saveUserConfig(ctx.configFile, made.config);
+    return made.config.projects.find((p) => p.id === made.id)!;
   },
   "project.setAccess": (a, ctx) => {
     const access = a.access;

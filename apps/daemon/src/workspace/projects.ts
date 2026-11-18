@@ -1,0 +1,50 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { addProject, DEFAULT_PROJECT, projectNameError, type UserConfig } from "@ion/config";
+import { git } from "./git.js";
+
+const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
+
+async function mustGit(args: string[], cwd: string): Promise<string> {
+  const r = await git(args, cwd);
+  if (r.code !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr.trim().split("\n")[0]}`);
+  return r.stdout.trim();
+}
+
+/** A new git repo with one empty commit (worktrees need one). ion signs it only when you have no git identity. */
+async function initRepo(path: string): Promise<void> {
+  mkdirSync(path, { recursive: true, mode: 0o755 });
+  await mustGit(["init", "-q", "-b", "main"], path);
+  const email = (await git(["config", "user.email"], path)).stdout.trim();
+  const who = email ? [] : ["-c", "user.name=ion", "-c", "user.email=ion@localhost"];
+  await mustGit([...who, "commit", "-q", "--allow-empty", "-m", "Start"], path);
+}
+
+/**
+ * Makes the project `<folders.projects>/<name>` (a new git repo) and adds it. A folder that's already a git
+ * repo is added as it is; any other folder there is refused, never touched.
+ */
+export async function createProject(
+  c: UserConfig,
+  name: string,
+): Promise<{ config: UserConfig; id: string }> {
+  const bad = projectNameError(name);
+  if (bad) throw new Error(bad);
+  if (c.projects.some((p) => p.id === name)) throw new Error(`A project named ${name} already exists`);
+  const path = join(expandHome(c.folders.projects), name);
+  if (!existsSync(path)) await initRepo(path);
+  else if (!existsSync(join(path, ".git"))) throw new Error(`Folder exists and isn't a git repo: ${path}`);
+  const config = addProject(c, path);
+  return { config, id: config.projects[config.projects.length - 1]!.id };
+}
+
+/** The built-in `default` project, made the first time; ion (the chief) doesn't read it unless you say so. */
+export async function ensureDefaultProject(c: UserConfig): Promise<UserConfig> {
+  if (c.projects.some((p) => p.id === DEFAULT_PROJECT)) return c;
+  const { config } = await createProject(c, DEFAULT_PROJECT);
+  return {
+    ...config,
+    projects: config.projects.map((p) => (p.id === DEFAULT_PROJECT ? { ...p, shareWithIon: false } : p)),
+  };
+}

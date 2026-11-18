@@ -427,3 +427,13 @@ describe("RunManager", () => {
     expect(store.read({})).toHaveLength(0);
   });
 });
+
+describe("every chat has a project", () => {
+  it("a new chat with no project goes to default, made under [folders] projects", async () => {
+    const root = join(mkdtempSync(join(tmpdir(), "ion-root-")), "projects");
+    saveUserConfig(configFile, { ...addProject(DEFAULT_CONFIG, repo), folders: { projects: root } });
+    const { chatId } = await runs.ask({ text: "hi", harness: "fake" });
+    expect(chatsView.list(db).find((c) => c.chatId === chatId)?.projectId).toBe("default");
+    expect(existsSync(join(root, "default", ".git"))).toBe(true);
+  });
+});
