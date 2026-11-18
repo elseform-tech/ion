@@ -130,6 +130,12 @@ describe("timeline", () => {
     expect(play(ev("run.queued", {}), ev("run.finished", { status: "done" })).running).toBeNull();
   });
 
+  it("counts file changes and finished runs, so the changes panel knows to look again", () => {
+    expect(play().changes).toBe(0);
+    const t = play(ev("file.changed", { path: "a" }), ev("run.finished", { status: "done" }));
+    expect(t.changes).toBe(2);
+  });
+
   it("remembers the agent the chat last ran on, for the next message", () => {
     expect(play().harness).toBeNull();
     expect(play(ev("run.started", { harness: "grok-build" })).harness).toBe("grok-build");

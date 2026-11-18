@@ -69,6 +69,7 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     tool(s, { toolId: "t1", name: "Read", kind: "read", summary: "README.md" });
     done(s, "t1", true);
     tool(s, { toolId: "t2", name: "Write", kind: "edit", summary: "notes.md" });
+    s.write("notes.md", "hello\n");
     done(s, "t2", true);
     edited(s);
     say(s, "Added notes.md.");

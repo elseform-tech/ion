@@ -58,6 +58,8 @@ export type Commands = {
   "decision.forget": { args: { decisionId: string }; result: { ok: true } };
   "chats.list": { args: Record<string, never>; result: ChatInfo[] };
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
+  /** What a chat changed in its worktree since it started (empty once archived). */
+  "chat.diff": { args: { chatId: string }; result: { files: FileDiff[] } };
   "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
   "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
@@ -96,6 +98,8 @@ export type NeedInfo = {
   choices?: { label: string; consequence: string }[];
   raisedAt: string;
 };
+
+export type FileDiff = { path: string; added: number; removed: number; patch: string; truncated?: true };
 
 export type DecisionScope = "chat" | "project" | "everywhere";
 
@@ -137,6 +141,7 @@ export const COMMANDS = [
   "decision.forget",
   "chats.list",
   "chat.archive",
+  "chat.diff",
   "memory.list",
   "memory.forget",
   "harnesses.list",

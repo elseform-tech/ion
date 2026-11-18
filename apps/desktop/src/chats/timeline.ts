@@ -29,6 +29,8 @@ export type Timeline = {
   running: string | null;
   /** The agent the chat last ran on: the next message's default. */
   harness: string | null;
+  /** Grows with every file change and finished run: the changes panel reads again when it moves. */
+  changes: number;
   asks: Record<string, string>;
   work: Record<string, number>;
   tools: Record<string, { at: number; tool: number }>;
@@ -42,6 +44,7 @@ export const empty = (): Timeline => ({
   streaming: null,
   running: null,
   harness: null,
+  changes: 0,
   asks: {},
   work: {},
   tools: {},
@@ -139,7 +142,7 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
     seconds,
     ...(cost !== undefined ? { cost } : {}),
   });
-  return { ...ended, running: t.running === runId ? null : t.running };
+  return { ...ended, running: t.running === runId ? null : t.running, changes: t.changes + 1 };
 }
 
 type Handler = (t: Timeline, d: D, e: IonEvent) => Timeline;
@@ -157,6 +160,7 @@ const HANDLERS: Record<string, Handler> = {
   }),
   [EV.toolStarted]: (t, d, e) => toolStarted(t, d, e.runId ?? ""),
   [EV.toolFinished]: toolFinished,
+  [EV.fileChanged]: (t) => ({ ...t, changes: t.changes + 1 }),
   [EV.approvalRequested]: (t, d) => ({ ...t, asks: { ...t.asks, [str(d.requestId)]: str(d.summary) } }),
   [EV.approvalResolved]: approval,
   [EV.needRaised]: question,

@@ -204,3 +204,67 @@ select:hover {
   text-decoration: underline;
   cursor: help;
 }
+
+.chat {
+  display: grid;
+  grid-template-columns: 1fr;
+  height: 100%;
+  min-height: 0;
+}
+.chat--panel {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 40%);
+}
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.chat-panel-toggle {
+  margin-left: auto;
+}
+.changes {
+  border-left: 1px solid var(--line);
+  overflow: auto;
+  background: var(--win);
+}
+.changes-empty {
+  padding: 16px;
+  color: var(--faint);
+}
+.diff-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font: 13px var(--mono);
+}
+.diff-plus {
+  color: var(--add-ink);
+}
+.diff-minus {
+  color: var(--del-ink);
+}
+.diff-body {
+  margin: 0;
+  font: 12.5px / 1.6 var(--mono);
+  overflow-x: auto;
+}
+.diff-body > div {
+  padding: 0 12px;
+  white-space: pre;
+}
+.diff-add {
+  background: var(--add);
+  color: var(--add-ink);
+}
+.diff-del {
+  background: var(--del);
+  color: var(--del-ink);
+}
+.diff-hunk {
+  color: var(--faint);
+}
+.diff-ctx {
+  color: var(--muted);
+}

@@ -214,6 +214,21 @@ describe("daemon api", () => {
     expect(later.map((e) => (e.data as { title: string }).title)).toEqual(["Two"]);
   });
 
+  // Plan 07: the changes panel.
+  it("shows a chat's changes, and none once it's archived", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { chatId, runId } = await client.call("ask", { text: "edit", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"), 5000);
+    const { files } = await client.call("chat.diff", { chatId });
+    expect(files.map((f) => [f.path, f.added])).toEqual([["notes.md", 1]]);
+    await client.call("chat.archive", { chatId });
+    expect((await client.call("chat.diff", { chatId })).files).toEqual([]);
+    await expect(client.call("chat.diff", { chatId: "nope" })).rejects.toThrow("Unknown chat: nope");
+  });
+
   // Plan 07: the app's sidebar wants only what happens from now on, not every event ion ever stored.
   it("sends no backlog with fromNow", async () => {
     await client.call("chat.create", { title: "Old" });

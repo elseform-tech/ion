@@ -1,6 +1,8 @@
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
+import { PanelRight } from "@ion/design-system";
 import { useState } from "react";
+import { ChangesPanel } from "./ChangesPanel.js";
 import { ChatView, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
 import { QuestionBar } from "./QuestionBar.js";
@@ -22,25 +24,42 @@ function OpenChat({
 }) {
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.answered).at(-1);
+  // The side panel only appears in chats that have a worktree (an archived chat has none).
+  const hasWorktree = Boolean(chat.branch) && !chat.archived;
+  const [panel, setPanel] = useState(true);
   return (
-    <>
-      <header className="chat-head">
-        <span className="chat-title">{chat.title}</span>
-        <span className="chat-project">{chat.projectId}</span>
-      </header>
-      <ChatView timeline={t} />
-      <div className="dock">
-        {open && <QuestionBar key={open.needId} client={client} question={open} />}
-        <Composer
-          client={client}
-          harnesses={harnesses}
-          to={{ chatId: chat.chatId }}
-          running={t.running}
-          harness={t.harness}
-          onSent={() => {}}
-        />
+    <div className={`chat${hasWorktree && panel ? " chat--panel" : ""}`}>
+      <div className="chat-main">
+        <header className="chat-head">
+          <span className="chat-title">{chat.title}</span>
+          <span className="chat-project">{chat.projectId}</span>
+          {hasWorktree && (
+            <button
+              type="button"
+              className="icon-button chat-panel-toggle"
+              aria-label={panel ? "Hide changes" : "Show changes"}
+              aria-pressed={panel}
+              onClick={() => setPanel(!panel)}
+            >
+              <PanelRight size={16} />
+            </button>
+          )}
+        </header>
+        <ChatView timeline={t} />
+        <div className="dock">
+          {open && <QuestionBar key={open.needId} client={client} question={open} />}
+          <Composer
+            client={client}
+            harnesses={harnesses}
+            to={{ chatId: chat.chatId }}
+            running={t.running}
+            harness={t.harness}
+            onSent={() => {}}
+          />
+        </div>
       </div>
-    </>
+      {hasWorktree && panel && <ChangesPanel client={client} chatId={chat.chatId} version={t.changes} />}
+    </div>
   );
 }
 
