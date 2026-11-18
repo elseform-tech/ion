@@ -2,32 +2,39 @@ import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
 import { PanelRight } from "@ion/design-system";
 import { useEffect, useState } from "react";
-import { ToolsPanel } from "./ToolsPanel.js";
+import { ToolsPanel, useDiff } from "./ToolsPanel.js";
 import { ChatView, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
 import { QuestionBar } from "./QuestionBar.js";
+import { Resizer } from "./Resizer.js";
 import { Sidebar } from "./Sidebar.js";
 import { useLive } from "./live.js";
 import type { Item } from "./timeline.js";
 
 type Question = Extract<Item, { kind: "question" }>;
 
-const WIDE = "(min-width: 1100px)";
+const WIDE = typeof matchMedia === "function" ? matchMedia("(min-width: 1100px)") : null;
+
+/** Whether the window is at least 1100 px wide, kept live. */
+function useWide(): boolean {
+  const [wide, setWide] = useState(WIDE?.matches ?? true);
+  useEffect(() => {
+    const onChange = (e: MediaQueryListEvent) => setWide(e.matches);
+    WIDE?.addEventListener("change", onChange);
+    return () => WIDE?.removeEventListener("change", onChange);
+  }, []);
+  return wide;
+}
 
 /**
- * The side panel starts open (when `open`) on a wide window; narrowing below 1100 px closes it, and widening opens
- * it again when it started open.
+ * Whether the side panel shows. Until you choose, it opens on its own when a project chat has changed something
+ * and the window is wide; a plain chat (in ion's `default`) stays just a conversation, as the lab's.
  */
-function useWidePanel(open: boolean): [boolean, (v: boolean) => void] {
-  const mq = typeof matchMedia === "function" ? matchMedia(WIDE) : null;
-  const [panel, setPanel] = useState(open && (mq?.matches ?? true));
-  useEffect(() => {
-    if (!mq) return;
-    const onChange = (e: MediaQueryListEvent) => setPanel(open && e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [mq, open]);
-  return [panel, setPanel];
+function usePanel(chat: ChatInfo, files: number): [boolean, () => void] {
+  const wide = useWide();
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const panel = choice ?? (wide && files > 0 && chat.projectId !== "default");
+  return [panel, () => setChoice(!panel)];
 }
 
 /** The lab's chat header: title, project, and the panel toggle when there's a worktree (`panel` not null). */
@@ -67,12 +74,12 @@ function OpenChat({
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
   const hasWorktree = Boolean(chat.branch) && !chat.archived;
-  // A plain chat (in ion's `default`) opens as just a conversation, as the lab's; its changes are a click away.
-  const [panel, setPanel] = useWidePanel(chat.projectId !== "default");
+  const changes = useDiff(client, chat.chatId, t.changes);
+  const [panel, togglePanel] = usePanel(chat, changes.diff?.files.length ?? 0);
   const showPanel = hasWorktree && panel;
   return (
     <>
-      <ChatHead chat={chat} panel={hasWorktree ? panel : null} onPanel={() => setPanel(!panel)} />
+      <ChatHead chat={chat} panel={hasWorktree ? panel : null} onPanel={togglePanel} />
       <div className={`split${showPanel ? "" : " solo"}`}>
         <div className="convo">
           <ChatView timeline={t} />
@@ -85,13 +92,14 @@ function OpenChat({
                 onBrainOpen={onBrainOpen}
                 to={{ chatId: chat.chatId }}
                 running={t.running}
+                locked={Boolean(open)}
                 harness={t.harness}
                 onSent={() => {}}
               />
             </div>
           </div>
         </div>
-        {showPanel && <ToolsPanel client={client} chatId={chat.chatId} version={t.changes} />}
+        {showPanel && <ToolsPanel {...changes} />}
       </div>
     </>
   );
@@ -148,6 +156,7 @@ export function Chats({
   return (
     <>
       <aside className="side" aria-label="Chats">
+        <Resizer name="--side-w" label="Sidebar width" initial={256} min={200} max={440} edge="right" />
         <Sidebar
           chats={live.chats}
           needs={live.needs}

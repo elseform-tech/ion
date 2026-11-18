@@ -34,25 +34,41 @@ const modelLabel = (h: HarnessInfo | undefined, model: string) => {
   return nameOf(h?.models.find((m) => m.id === id)?.label ?? (id || "Default")).name;
 };
 
-/** The lab's brain pill: avatar, agent · model · effort bars and effort, chevron. */
+/** The model to name on the pill: none when it's only the agent's default with no name, or repeats the agent's. */
+function pillModel(h: HarnessInfo | undefined, model: string): string | null {
+  if (!h || (!model && !h.defaultModel)) return null;
+  const name = modelLabel(h, model);
+  return name === h.label ? null : name;
+}
+
+/**
+ * The lab's brain pill, in few words: the agent's avatar and name, the model when it says something, and effort as
+ * its bars (all of it named for screen readers). A spinner while the agents are being read.
+ */
 export function BrainPill(p: { harnesses: HarnessInfo[]; brain: Brain; open: boolean; onClick: () => void }) {
   const h = p.harnesses.find((x) => x.id === p.brain.harness);
+  const model = pillModel(h, p.brain.model);
+  const effort = `${effortLabel(p.brain.effort)} effort`;
+  const name = [h?.label ?? "none", model ?? modelLabel(h, p.brain.model), effort].join(" · ");
   return (
     <button
       type="button"
       className="pill bpill"
       aria-haspopup="dialog"
       aria-expanded={p.open}
-      aria-label={`Harness, model and effort: ${h?.label ?? "none"}`}
+      aria-label={`Harness, model and effort: ${name}`}
+      title={name}
       onClick={p.onClick}
     >
       {h && <Avatar harness={h.id} />}
-      <span>{h?.label ?? (p.harnesses.length ? "No agent" : "Loading agents…")}</span>
-      <span className="bsep">·</span>
-      <span>{modelLabel(h, p.brain.model)}</span>
-      <span className="bsep">·</span>
+      {p.harnesses.length ? <span>{h?.label ?? "No agent"}</span> : <i className="spin" />}
+      {model && (
+        <>
+          <span className="bsep">·</span>
+          <span>{model}</span>
+        </>
+      )}
       <Bars effort={p.brain.effort} />
-      <span>{effortLabel(p.brain.effort)}</span>
       <ChevronUp className="bchev" />
     </button>
   );

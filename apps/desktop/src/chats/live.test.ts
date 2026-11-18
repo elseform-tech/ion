@@ -18,6 +18,7 @@ const chat = (
   archived,
   lastRunStatus,
   lastActivityAt: o.at ?? null,
+  preview: null,
 });
 const need = (chatId: string): NeedInfo => ({
   needId: `n-${chatId}`,

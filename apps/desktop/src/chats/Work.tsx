@@ -22,6 +22,9 @@ function duration(seconds: number): string {
   return m ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
 }
 
+/** "Worked for 2m 04s"; under a second, just "Worked". */
+const doneLabel = (verb: string, secs: number) => (secs < 1 ? verb : `${verb} for ${duration(secs)}`);
+
 /** The lab's icon for each kind of tool. */
 const ICONS: Record<string, LucideIcon> = {
   read: FileText,
@@ -112,7 +115,7 @@ export const WorkBlock = memo(function WorkBlock({ w }: { w: Work }) {
         ) : (
           <>
             <Head />
-            <span>{`${tools ? "Worked" : "Thought"} for ${duration(workSeconds(w))}`}</span>
+            <span>{doneLabel(tools ? "Worked" : "Thought", workSeconds(w))}</span>
           </>
         )}
       </button>

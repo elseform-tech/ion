@@ -250,9 +250,8 @@ describe("ion cli", { timeout: 20_000 }, () => {
       await setup();
       const r = await ion("ask", "hello there", "-p", "app", "--harness", "fake", "--json");
       const chatId = JSON.parse(r.out.split("\n")[0]!).chatId as string;
-      expect((await ion("chats")).out).toMatch(
-        new RegExp(`^${chatId}  hello there  app  ion/hello-there-\\w{6}  done$`),
-      );
+      // UX tour: lined-up columns, the title last so a long one doesn't push the others out.
+      expect((await ion("chats")).out).toBe(`${chatId}  done  app  hello there`);
       expect((await ion("chats", "archive", chatId)).out).toBe("Archived");
       expect((await ion("chats")).out).toBe("No chats");
       expect(await ion("chats", "archive", "nope")).toMatchObject({ code: 1, err: "Unknown chat: nope" });

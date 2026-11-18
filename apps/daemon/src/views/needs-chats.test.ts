@@ -95,6 +95,7 @@ describe("chats view", () => {
         archived: false,
         lastRunStatus: "done",
         lastActivityAt: expect.any(String),
+        preview: null,
       },
     ]);
     expect(chatsView.worktree(db, "c1")).toBe("/w/c1");
@@ -110,6 +111,28 @@ describe("chats view, activity", () => {
     store.append(d({ chatId: "c1", runId: "r2", type: "message.sent", data: { text: "again" } }));
     const after = chatsView.list(db).find((c) => c.chatId === "c1")!.lastActivityAt!;
     expect(Date.parse(after)).toBeGreaterThanOrEqual(before);
+  });
+});
+
+// UX tour: a sidebar row shows the start of the agent's last reply under the title.
+describe("chats view, preview", () => {
+  // Security review: an agent's text can't bring terminal escapes or bidi tricks into the sidebar or the CLI.
+  it("strips control and bidi characters from the preview", () => {
+    const text = "ok\u001b[31m red\u202e evil\u0007 end";
+    store.append(
+      d({ chatId: "c1", runId: "r4", type: "message.completed", data: { messageId: "m2", text } }),
+    );
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.preview).toBe("ok[31m red evil end");
+  });
+
+  it("keeps the start of the agent's last reply, on one line", () => {
+    const text = `Done.\n\nI changed **three** files and ran the tests; ${"all green ".repeat(20)}`;
+    store.append(
+      d({ chatId: "c1", runId: "r3", type: "message.completed", data: { messageId: "m1", text } }),
+    );
+    const preview = chatsView.list(db).find((c) => c.chatId === "c1")?.preview ?? "";
+    expect(preview.startsWith("Done. I changed three files and ran the tests;")).toBe(true);
+    expect(preview.length).toBeLessThanOrEqual(120);
   });
 });
 

@@ -1,5 +1,5 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import { ChevronUp } from "@ion/design-system";
+import { ChevronDown, ChevronUp, Star } from "@ion/design-system";
 import { type KeyboardEvent, useState } from "react";
 import type { Item } from "./timeline.js";
 
@@ -47,7 +47,7 @@ function OwnAnswer({ busy, onSend }: { busy: boolean; onSend: (text: string) => 
 
 type Answer = (pick: Pick) => void;
 
-/** The details behind the chevron: why it's asked, each option's reasoning, your own words, and Always. */
+/** The open panel's body: why it's asked, each option with its reasoning, your own words, and Always. */
 function Details(p: {
   q: Question;
   busy: boolean;
@@ -57,13 +57,12 @@ function Details(p: {
 }) {
   return (
     <div className="qd">
-      <div className="qq">{p.q.question}</div>
       {p.q.why && <div className="why">{p.q.why}</div>}
       {p.q.choices.map((c, i) => (
         <button
           type="button"
           key={`${i}-${c.label}`}
-          className={`bp-row${c.recommended ? " on" : ""}`}
+          className="bp-row"
           disabled={p.busy}
           onClick={() => p.answer({ choice: i + 1 })}
         >
@@ -71,6 +70,7 @@ function Details(p: {
             {c.label}
             <small>{c.consequence}</small>
           </span>
+          {c.recommended && <Star className="rec" aria-label="Recommended" />}
         </button>
       ))}
       <div className="qd-f">
@@ -89,8 +89,8 @@ function Details(p: {
 const ON_BAR = 2;
 
 /**
- * The options the bar shows. ion's own question about a call it stopped shows them all, so saying no is always
- * there. An agent's question shows the first two, with the recommended one kept; the rest are in the details.
+ * The options a collapsed panel shows. ion's own question about a call it stopped shows them all, so saying no is
+ * always there. An agent's question shows the first two, with the recommended one kept.
  */
 function onBar(q: Question) {
   const all = q.choices.map((c, i) => ({ c, i }));
@@ -101,46 +101,55 @@ function onBar(q: Question) {
   return [...first.slice(0, ON_BAR - 1), rec];
 }
 
+/** A collapsed panel's buttons: one per option it shows, the recommended one primary. */
+function BarButtons({ q, busy, answer }: { q: Question; busy: boolean; answer: Answer }) {
+  return (
+    <>
+      {onBar(q).map(({ c, i }) => (
+        <button
+          type="button"
+          key={`${i}-${c.label}`}
+          className={`btn${c.recommended ? " pri" : ""}`}
+          title={c.consequence}
+          disabled={busy}
+          onClick={() => answer({ choice: i + 1 })}
+        >
+          {c.label}
+        </button>
+      ))}
+    </>
+  );
+}
+
 /**
- * An agent's open question, above the message box, as the lab's one-line `.await`: the question and a button per
- * option (the recommended one primary). The chevron opens the details; closed, it stays one line.
+ * An agent's open question, in one panel above the message box, open: the question, why, each option with its
+ * reasoning, your own words and Always. Collapsed, it's one line with a button per option.
  */
 export function QuestionBar({ client, question }: { client: IonClient; question: Question }) {
   const [always, setAlways] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const { error, busy, answer } = useAnswer(client, question.needId);
   if (question.resolved) return null;
   const send: Answer = (pick) => void answer(pick, always && !question.blocked);
   return (
-    <div className="qwrap" role="group" aria-label="Question">
-      {open && <Details q={question} busy={busy} answer={send} always={always} setAlways={setAlways} />}
-      <div className="await">
-        <span className="g" title={question.question}>
-          <i className="wd" />
-          <span className="qt">{question.question}</span>
+    <div className="qbox" role="group" aria-label="Question">
+      <div className="qhead">
+        <i className="wd" />
+        <span className="qq" title={question.question}>
+          {question.question}
         </span>
+        {!open && <BarButtons q={question} busy={busy} answer={send} />}
         <button
           type="button"
-          className="ib qchev"
-          aria-label="Details"
+          className="ib"
+          aria-label={open ? "Collapse" : "Expand"}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          <ChevronUp />
+          {open ? <ChevronDown /> : <ChevronUp />}
         </button>
-        {onBar(question).map(({ c, i }) => (
-          <button
-            type="button"
-            key={`${i}-${c.label}`}
-            className={`btn${c.recommended ? " pri" : ""}`}
-            title={c.consequence}
-            disabled={busy}
-            onClick={() => send({ choice: i + 1 })}
-          >
-            {c.label}
-          </button>
-        ))}
       </div>
+      {open && <Details q={question} busy={busy} answer={send} always={always} setAlways={setAlways} />}
       {error && <div className="quiet">{error}</div>}
     </div>
   );

@@ -233,7 +233,7 @@ describe("timeline", () => {
       ev("run.retrying", { attempt: 1, delayS: 4, reason: "Rate limited" }, "2026-11-18T10:00:00.000Z"),
     );
     expect(t.items).toEqual([
-      { kind: "error", text: "Rate limited" },
+      { kind: "error", text: "Rate limited", runId: "r1" },
       { kind: "retry", until: "2026-11-18T10:00:04.000Z", done: false },
     ]);
     const after = reduce(t, ev("run.started", { harness: "fake" }, "2026-11-18T10:00:04.100Z"));
@@ -246,5 +246,32 @@ describe("timeline", () => {
       ev("run.finished", { status: "interrupted" }, "2026-11-18T10:00:01.000Z"),
     );
     expect(t.items[0]).toEqual({ kind: "retry", until: "2026-11-18T10:00:04.000Z", done: true });
+  });
+  // UX tour: an agent that keeps failing the same way is one line, not one per try.
+  it("shows a run's repeated error once", () => {
+    const err = () => ev("error", { code: "rate_limit", retryable: true, message: "Rate limited" });
+    const t = play(err(), err(), err());
+    expect(t.items).toEqual([{ kind: "error", text: "Rate limited", runId: "r1" }]);
+  });
+
+  // UX tour: a run that got through after retrying shows no errors.
+  it("drops a run's errors once it finishes done", () => {
+    const t = play(
+      ev("error", { code: "rate_limit", retryable: true, message: "Rate limited" }),
+      ev("run.finished", { status: "done" }),
+    );
+    expect(t.items.filter((x) => x.kind === "error" && !x.gone)).toEqual([]);
+  });
+
+  // UX tour: a failed run is one line saying why.
+  it("ends a failed run with its last error as the reason", () => {
+    const t = play(
+      ev("error", { code: "rate_limit", retryable: true, message: "Rate limited" }),
+      ev("run.finished", { status: "failed" }),
+    );
+    expect(t.items).toEqual([
+      { kind: "error", text: "Rate limited", runId: "r1", gone: true },
+      { kind: "end", status: "failed", seconds: 0, reason: "Rate limited" },
+    ]);
   });
 });

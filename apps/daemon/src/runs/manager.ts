@@ -10,6 +10,7 @@ import {
 import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
+import { Readiness, titleOf } from "./ready.js";
 import { UserError } from "../api/errors.js";
 import type { Access } from "../access/index.js";
 import type { Grants } from "../mcp/index.js";
@@ -62,6 +63,7 @@ export class RunManager {
   private readonly approvals: Approvals;
   /** Chats with an ask in progress (before their run is active), so two asks can't race. */
   private readonly reserved = new Set<string>();
+  private readonly ready = new Readiness();
   /** Runs waiting for a free slot (resources.max_runs). */
   private readonly queued = new Map<string, { chatId: string; item: Queued }>();
   private readonly queue: ReturnType<typeof createRunQueue>;
@@ -118,7 +120,7 @@ export class RunManager {
     if (key) this.reserved.add(key);
     let launch: Launch;
     try {
-      await this.checkReady(h, args.model);
+      await this.ready.check(h, args.model);
       launch = await this.prepare(h, args, chat, repo);
       if (opts.request !== undefined) launch.request = opts.request;
       const l = launch;
@@ -349,7 +351,7 @@ export class RunManager {
       return {
         chatId: null,
         projectId: args.projectId ?? null,
-        title: args.text.trim().split("\n")[0]!.slice(0, 60),
+        title: titleOf(args.text),
       };
     const chat = chatsView.list(this.db).find((c) => c.chatId === args.chatId);
     if (!chat) throw new UserError(`Unknown chat: ${args.chatId}`);
@@ -378,17 +380,6 @@ export class RunManager {
     const p = loadUserConfig(this.ctx.configFile).config.projects.find((x) => x.id === projectId);
     if (!p) throw new UserError(`Unknown project: ${projectId}`);
     return p.path;
-  }
-
-  private async checkReady(h: HarnessEntry, model?: string): Promise<void> {
-    if (!(await h.adapter.detect()).installed) throw new UserError(`${h.label} isn't installed`);
-    if (!(await h.adapter.auth.status()).signedIn)
-      throw new UserError(`${h.label} isn't signed in. Run: ${h.loginHint}`);
-    // A live model list is the harness's own: a name it doesn't list won't run.
-    if (!model) return;
-    const caps = await h.adapter.capabilities();
-    if (caps.modelsLive && !caps.models.some((x) => x.id === model))
-      throw new UserError(`Unknown model for ${h.label}: ${model}`);
   }
 
   private createChat(chatId: string, chat: Chat, wt: { path: string; branch: string }): void {

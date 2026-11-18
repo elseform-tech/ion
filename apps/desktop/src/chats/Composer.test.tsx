@@ -83,9 +83,42 @@ describe("Composer", () => {
     done({ chatId: "c1", runId: "r1" });
   });
   // Plan 08: the lab's brain pill: agent · model · effort.
-  it("reads agent · model · effort on its pill", () => {
+  // UX tour: fewer words: the pill names the agent and model; effort is its bars (named for screen readers).
+  it("reads agent · model on its pill, with effort as bars", () => {
     const { container } = compose([grok]);
-    expect(container.querySelector(".cbox .bpill")?.textContent).toBe("Grok Build·grok-code·Default");
+    const p = container.querySelector(".cbox .bpill")!;
+    expect(p.textContent).toBe("Grok Build·grok-code");
+    expect(p.querySelector(".ebars")).not.toBeNull();
+    expect(p.getAttribute("aria-label")).toBe(
+      "Harness, model and effort: Grok Build · grok-code · Default effort",
+    );
+  });
+
+  it("leaves out a model that only repeats the agent's name, and shows a spinner while agents load", () => {
+    const { container, rerender } = compose([
+      { ...fake, models: [{ id: "fake", label: "Fake" }], defaultModel: "fake" },
+    ]);
+    expect(container.querySelector(".bpill")?.textContent).toBe("Fake");
+    rerender(
+      <Composer
+        client={{ call: vi.fn() } as unknown as IonClient}
+        harnesses={[]}
+        to={{ projectId: null }}
+        running={null}
+        onSent={() => {}}
+      />,
+    );
+    expect(container.querySelector(".bpill")?.textContent).toBe("");
+    expect(container.querySelector(".bpill .spin")).not.toBeNull();
+  });
+
+  it("shows access as an icon, named on hover and picked from a list", () => {
+    const { container } = compose([fake]);
+    const pick = screen.getByLabelText("Access") as HTMLSelectElement;
+    expect(pick.closest(".pill")?.getAttribute("title")).toBe("Project's access");
+    expect(pick.closest(".pill")?.querySelector("svg")).not.toBeNull();
+    fireEvent.change(pick, { target: { value: "full" } });
+    expect(container.querySelector(".pill.full")?.getAttribute("title")).toBe("Full access");
   });
 
   it("sends what you pick in the brain popover", async () => {
@@ -121,11 +154,11 @@ describe("Composer", () => {
 
   it("cycles effort with ⌘.", () => {
     const { container } = compose([fake]);
-    const effort = () => container.querySelector(".bpill")?.textContent?.split("·").at(-1);
+    const effort = () => container.querySelector(".bpill")?.getAttribute("aria-label")?.split(" · ").at(-1);
     fireEvent.keyDown(document, { key: ".", metaKey: true });
-    expect(effort()).toBe("Low");
+    expect(effort()).toBe("Low effort");
     fireEvent.keyDown(document, { key: ".", metaKey: true });
-    expect(effort()).toBe("Medium");
+    expect(effort()).toBe("Medium effort");
   });
   // Final review I6: you sign in to an agent after the app opened; opening the popover reads who's ready again.
   it("reads the agents again when the brain popover opens", () => {
@@ -168,5 +201,35 @@ describe("Composer", () => {
     compose([grok]);
     fireEvent.click(pill());
     expect(screen.queryByLabelText("Find a model")).toBeNull();
+  });
+  // The user, 2026-11-18: while an agent's question waits, it's answered in its panel, not the message box.
+  it("locks the message box while a question waits", () => {
+    const { call } = { call: vi.fn() };
+    render(
+      <Composer
+        client={{ call } as unknown as IonClient}
+        harnesses={[fake]}
+        to={{ chatId: "c1" }}
+        running={null}
+        locked
+        onSent={() => {}}
+      />,
+    );
+    const box = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    expect(box.disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // UX tour: a message took seconds to leave the box; it leaves at once, and comes back if ion says no.
+  it("clears the box as soon as you send, and puts your words back if ion refuses", async () => {
+    let fail: (e: unknown) => void = () => {};
+    const call = vi.fn(() => new Promise((_r, j) => (fail = j)));
+    compose([fake], call as never);
+    const box = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "hi" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(box.value).toBe("");
+    fail(new Error("no"));
+    await waitFor(() => expect(box.value).toBe("hi"));
   });
 });
