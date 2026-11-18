@@ -18,11 +18,11 @@
 | [05 Access](superpowers/plans/2026-11-18-05-access.md): Full access or Auto (ion decides), per message, project or default | Done |
 | [06 Every tool call through ion](superpowers/plans/2026-11-18-06-gate-and-ask.md): each agent's pre-tool hook reports to ion; agents ask you (decisions, outcomes) instead of approvals; every thread has a project (`default`) | Done |
 | [07 Desktop app](superpowers/plans/2026-11-18-07-desktop.md): Tauri shell, design system, Chats screen (sidebar, timeline, composer, question bar, changes panel) | Done |
-| UI polish (any time): the user doesn't like the Chats screen's look yet (2026-11-18); tune it against the design lab before more screens are built on it | Not written |
-| 08 ion chief and Ions screens. Also, in threads ion started or manages (never chats you drive yourself): agents' questions reach the project's ion first (it answers from your decisions, else passes them on with context); it spots repeated questions and suggests "always" decisions, holds chats whose questions conflict, and flags decisions that keep leading to failed runs. Decide whether `default` gets the same treatment, since it pools every chat without a project | Not written |
-| 09 Routines, Activity, Artifacts, Tools | Not written |
-| 10 Suggestions | Not written |
-| 11 More adapters (Cursor, Gemini CLI, Codex via ACP) | Not written |
+| [08 Match the design lab](superpowers/plans/2026-11-18-08-design-lab.md): the Chats screens as the lab (its CSS, avatars, brain popover, side panel); a quiet chat | In progress |
+| 09 ion chief and Ions screens. Also, in threads ion started or manages (never chats you drive yourself): agents' questions reach the project's ion first (it answers from your decisions, else passes them on with context); it spots repeated questions and suggests "always" decisions, holds chats whose questions conflict, and flags decisions that keep leading to failed runs. Decide whether `default` gets the same treatment, since it pools every chat without a project | Not written |
+| 10 Routines, Activity, Artifacts, Tools | Not written |
+| 11 Suggestions | Not written |
+| 12 More adapters (Cursor, Gemini CLI, Codex via ACP) | Not written |
 
 ## Packages
 
