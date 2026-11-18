@@ -65,7 +65,17 @@ export default tseslint.config(
     // The desktop UI: React's rules of hooks.
     files: ["apps/desktop/src/**/*.tsx", "apps/desktop/src/**/*.ts", "packages/design-system/src/**/*.tsx"],
     plugins: { "react-hooks": reactHooks },
-    rules: { "react-hooks/rules-of-hooks": "error", "react-hooks/exhaustive-deps": "error" },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "error",
+      // The UI only displays state: it talks to ion through @ion/client, and keeps nothing of its own.
+      "no-restricted-globals": [
+        "error",
+        { name: "fetch", message: "The desktop UI reaches ion only through @ion/client." },
+        { name: "localStorage", message: "The desktop UI keeps no state of its own." },
+        { name: "sessionStorage", message: "The desktop UI keeps no state of its own." },
+      ],
+    },
   },
   {
     // Tests read top to bottom; long describe blocks are fine, the other limits still apply.
