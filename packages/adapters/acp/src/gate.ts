@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,11 +66,9 @@ export function grokGateEnv(g: GateEnv): Record<string, string> {
   const dir = join(process.env.GROK_HOME ?? join(homedir(), ".grok"), "hooks");
   const hook = { type: "command", command: GROK_COMMAND, timeout: 60, failClosed: true };
   const body = `${JSON.stringify({ hooks: { PreToolUse: [{ hooks: [hook] }] } })}\n`;
-  const file = join(dir, GROK_HOOK);
-  if (!existsSync(file) || readFileSync(file, "utf8") !== body) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(file, body);
-  }
+  // Written on every gated start (same content), never checked first: nothing to race between check and write.
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, GROK_HOOK), body);
   return { ION_GATE_URL: g.url };
 }
 
