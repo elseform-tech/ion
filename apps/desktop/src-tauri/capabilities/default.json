@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window: core only. No shell, no file system; the UI reaches the daemon over WebSocket.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

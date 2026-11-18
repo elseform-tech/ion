@@ -117,7 +117,15 @@
       "toolId": "toolu_01Kn3XcsBiLiKwwmDnAiT9PK",
       "name": "Write",
       "kind": "edit",
-      "summary": "notes.md"
+      "summary": "notes.md",
+      "input": "{\n  \"file_path\": \"<cwd>/notes.md\",\n  \"content\": \"hello\\n\"\n}"
+    }
+  },
+  {
+    "type": "tool.output",
+    "data": {
+      "toolId": "toolu_01Kn3XcsBiLiKwwmDnAiT9PK",
+      "text": "Not allowed by ion"
     }
   },
   {

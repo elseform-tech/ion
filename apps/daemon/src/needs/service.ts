@@ -16,8 +16,10 @@ export class NeedsService {
     chatId: string;
     runId: string;
     question: string;
-    choices: { label: string; consequence: string }[];
+    choices: { label: string; consequence: string; recommended?: boolean }[];
     why?: string;
+    /** For a tool call ion stopped: its request, so the call's record and the question match. */
+    blocked?: { requestId: string };
   }): string {
     const needId = `n${randomBytes(3).toString("hex")}`;
     this.store.append({
@@ -27,12 +29,13 @@ export class NeedsService {
       type: EV.needRaised,
       data: {
         needId,
-        requestId: `ask_${needId}`,
+        requestId: r.blocked?.requestId ?? `ask_${needId}`,
         kind: "ask",
         summary: r.question,
         detail: r.why ?? null,
         dedupeKey: `ask:${needId}`,
         choices: r.choices,
+        ...(r.blocked ? { blocked: true } : {}),
       },
     });
     return needId;

@@ -8,13 +8,15 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 |---|---|
 | `packages/schema` | The contract: event envelope, event types, capabilities, wire protocol. Imports nothing. |
 | `packages/config` | Config files and paths (`config.toml`, projects). |
-| `packages/client` | Typed WebSocket client for the CLI and the desktop app. |
+| `packages/client` | Typed WebSocket client: Node entry for the CLI, `/browser` entry for the desktop app. |
+| `packages/design-system` | Tokens (CSS variables from the spec), `Button`, `Spinner`, Lucide icons. |
 | `packages/adapter-kit` | Harness contract, shared contract tests (`/contract`), event queue, delta batching, PATH/version helpers. |
 | `packages/adapters/claude-code` | Claude Code via the Agent SDK; Claude login only. |
 | `packages/adapters/acp` | Any ACP agent: Grok Build (`grok agent stdio`), opencode (`opencode acp`). |
 | `packages/adapters/fake` | Scripted harness for tests (`ION_ALLOW_FAKE=1`). |
 | `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries; `src/access` decides Auto (rules, then a judge model); `src/gate` takes every tool call from each harness's own hook before it runs; `src/decisions` keeps your answers to agents' questions and what came of them; `src/needs` holds questions only you can answer; `src/scheduler` queues runs; `src/workspace` owns git worktrees; `src/mcp` is ion's MCP server for runs (history, needs, memory, ask, decisions; a key per run); `src/adapters/registry.ts` is the only place adapters load. |
 | `apps/cli` | The `ion` command. |
+| `apps/desktop` | The desktop app: Tauri 2 shell (`src-tauri`, one command: where the daemon is) and a React UI that only displays the daemon's state (Chats screen). |
 | `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`, `ion/no-model-names`). |
 
 ## Walls

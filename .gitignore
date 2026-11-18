@@ -9,3 +9,4 @@ coverage/
 .superpowers/
 *.tsbuildinfo
 .health/
+.playwright-mcp/

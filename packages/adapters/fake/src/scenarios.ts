@@ -25,7 +25,13 @@ const say = (s: Script, text: string) => {
   s.emit({ type: EV.messageCompleted, data: { text } });
 };
 
-type ToolStart = { toolId: string; name: string; kind: "read" | "edit" | "command"; summary: string };
+type ToolStart = {
+  toolId: string;
+  name: string;
+  kind: "read" | "edit" | "command";
+  summary: string;
+  input?: string;
+};
 const tool = (s: Script, data: ToolStart) => s.emit({ type: EV.toolStarted, data });
 
 const done = (s: Script, toolId: string, ok: boolean, summary: string | null = null) =>
@@ -66,9 +72,24 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     return "done";
   },
   async edit(s) {
-    tool(s, { toolId: "t1", name: "Read", kind: "read", summary: "README.md" });
+    tool(s, {
+      toolId: "t1",
+      name: "Read",
+      kind: "read",
+      summary: "README.md",
+      input: '{\n  "file_path": "README.md"\n}',
+    });
+    s.emit({ type: EV.toolOutput, data: { toolId: "t1", text: "# repo" } });
     done(s, "t1", true);
-    tool(s, { toolId: "t2", name: "Write", kind: "edit", summary: "notes.md" });
+    tool(s, {
+      toolId: "t2",
+      name: "Write",
+      kind: "edit",
+      summary: "notes.md",
+      input: '{\n  "file_path": "notes.md",\n  "content": "hello\\n"\n}',
+    });
+    s.write("notes.md", "hello\n");
+    s.emit({ type: EV.toolOutput, data: { toolId: "t2", text: "Wrote notes.md" } });
     done(s, "t2", true);
     edited(s);
     say(s, "Added notes.md.");

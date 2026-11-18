@@ -1,4 +1,11 @@
-import { type AdapterEvent, projectRoots } from "@ion/adapter-kit";
+import {
+  type AdapterEvent,
+  blocksText,
+  projectRoots,
+  TOOL_INPUT_MAX,
+  TOOL_OUTPUT_MAX,
+  toolText,
+} from "@ion/adapter-kit";
 import { EV, type EffortLevel } from "@ion/schema";
 import { fileChange, toolKind, toolSummary } from "./tools.js";
 
@@ -95,6 +102,12 @@ function mapStream(msg: Obj): AdapterEvent[] {
   return [];
 }
 
+/** The tool's input as text, when there is any. */
+function withInput(input: Obj): { input?: string } {
+  const text = Object.keys(input).length ? toolText(input, TOOL_INPUT_MAX) : null;
+  return text ? { input: text } : {};
+}
+
 function mapAssistant(msg: Obj, s: MapState): AdapterEvent[] {
   const out: AdapterEvent[] = [];
   for (const b of blocks(msg.message)) {
@@ -110,6 +123,7 @@ function mapAssistant(msg: Obj, s: MapState): AdapterEvent[] {
           name: b.name,
           kind: toolKind(b.name),
           summary: toolSummary(b.name, input, s.roots),
+          ...withInput(input),
         },
       });
     }
@@ -117,19 +131,26 @@ function mapAssistant(msg: Obj, s: MapState): AdapterEvent[] {
   return out;
 }
 
-function mapToolResults(msg: Obj, s: MapState): AdapterEvent[] {
+/** One tool's result: its output, its end, and the file it changed (a successful edit). */
+function toolResult(b: Obj & { tool_use_id: string }, s: MapState): AdapterEvent[] {
   const out: AdapterEvent[] = [];
-  for (const b of blocks(msg.message)) {
-    if (b.type !== "tool_result" || typeof b.tool_use_id !== "string") continue;
-    const ok = b.is_error !== true;
-    out.push({ type: EV.toolFinished, data: { toolId: b.tool_use_id, ok, summary: null } });
-    const tool = s.tools.get(b.tool_use_id);
-    if (ok && tool && toolKind(tool.name) === "edit") {
-      const change = fileChange(tool.name, tool.input, s.roots);
-      if (change) out.push({ type: EV.fileChanged, data: change });
-    }
-  }
+  const ok = b.is_error !== true;
+  const text = toolText(blocksText(b.content), TOOL_OUTPUT_MAX);
+  if (text) out.push({ type: EV.toolOutput, data: { toolId: b.tool_use_id, text } });
+  out.push({ type: EV.toolFinished, data: { toolId: b.tool_use_id, ok, summary: null } });
+  const tool = s.tools.get(b.tool_use_id);
+  const change =
+    ok && tool && toolKind(tool.name) === "edit" ? fileChange(tool.name, tool.input, s.roots) : null;
+  if (change) out.push({ type: EV.fileChanged, data: change });
   return out;
+}
+
+function mapToolResults(msg: Obj, s: MapState): AdapterEvent[] {
+  return blocks(msg.message).flatMap((b) =>
+    b.type === "tool_result" && typeof b.tool_use_id === "string"
+      ? toolResult(b as Obj & { tool_use_id: string }, s)
+      : [],
+  );
 }
 
 function endStatus(subtype: string, s: MapState): "done" | "interrupted" | "capped" | "failed" {

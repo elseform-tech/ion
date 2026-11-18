@@ -14,7 +14,7 @@ The `ion` command. Talks to the daemon through `@ion/client`; never imports daem
 | `ion ask "<text>" [-p <project>] [--harness claude-code\|grok-build\|opencode] [--model m] [--effort e] [--access auto\|full]` | Runs in the chat's own worktree and streams it (no `-p`: the `default` project, made the first time); `--chat <id>` continues a chat with its history; shows `· Allowed by ion: …` / `· Denied by ion: … — reason` (Auto) and `· Retrying in 4s (…)`; ends `Done · 4.2s · $0.0031`, `Failed: …` or `Stopped` (Ctrl+C) |
 | `ion projects access <id> auto\|full` | The project's access mode: Auto (ion decides) or Full access |
 | `ion needs` | Agents' questions waiting on you: `<id>  <project>  <question>`, then its numbered choices |
-| `ion answer <id> <n> [--always project\|everywhere]` | Picks choice `n`; it goes back into the chat as the next message. `--always` keeps it as a decision ion may answer from later (default: this chat only) |
+| `ion answer <id> <n or your own words> [--always project\|everywhere]` | Picks choice `n`, or answers in your words; it goes back into the chat as the next message. `--always` keeps it as a decision ion may answer from later (default: this chat only). For a tool call ion stopped, the call goes ahead or not at once |
 | `ion decisions [ls] [-p <project>]` | Your decisions and what came of them |
 | `ion decisions note <id> <text>` / `forget <id>` | Add what happened / forget it |
 | `ion chats` | `<id>  <title>  <project>  <branch>  <last status>` (archived chats hidden) |

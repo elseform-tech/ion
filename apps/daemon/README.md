@@ -21,7 +21,11 @@ The always-on service that owns all state.
   gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
   by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (default `claude-code:haiku`, a bare session
   with no tools), which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
-  per action and request in a chat. The judge also gets your decisions that apply (newest 10).
+  per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
+  says no (or can't decide), ion asks you instead: Allow once, Always allow in this project, Don't allow, or your
+  own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes
+  on, and the question stays open: a later yes still counts and the agent is told. A rule's no (your secrets,
+  ion's files) never asks.
 - `src/gate`: every tool call, before it runs, through each harness's own hook: `POST /gate/<key>` on the daemon's
   port (a key per run, separate from MCP keys; no `Origin`), answered `{decision, reason?}` by the same path as
   permission prompts. Claude Code: an SDK `PreToolUse` callback. Grok: `~/.grok/hooks/ion-gate.json` (a command

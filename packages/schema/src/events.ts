@@ -132,9 +132,19 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     summary: z.string(),
     detail: z.string().nullable(),
     dedupeKey: z.string(),
+    /** ion's own question about a tool call it stopped (the call waits for the answer, up to 4 minutes). */
+    blocked: z.boolean().optional(),
     /** An agent's question (kind "ask"): its choices, each with what it leads to. */
     choices: z
-      .array(z.object({ label: z.string().min(1).max(200), consequence: z.string().max(500) }))
+      .array(
+        z.object({
+          label: z.string().min(1).max(200),
+          /** What it leads to: reasoning, tradeoffs, and what the user needs to know to decide. */
+          consequence: z.string().max(1000),
+          /** The agent's own pick (at most one). */
+          recommended: z.boolean().optional(),
+        }),
+      )
       .min(2)
       .max(4)
       .optional(),
@@ -157,6 +167,12 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     scope: z.enum(DECISION_SCOPES),
     by: z.enum(["you", "ion"]),
     fromDecision: z.string().optional(),
+    /** The choice is your own words, not one of the agent's choices. */
+    custom: z.boolean().optional(),
+    /** An answer about a tool call ion stopped (not an agent's question). */
+    blocked: z.boolean().optional(),
+    /** "Always allow": the hash of the exact action (tool and input) that may run without asking. */
+    allowKey: z.string().optional(),
     /** When you made fromDecision, for the chat line. */
     fromDecidedAt: z.string().optional(),
   }),
@@ -191,9 +207,17 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     name: z.string(),
     kind: z.enum(TOOL_KINDS),
     summary: z.string(),
+    /** The tool's input (text or indented JSON), cut to 8 KB. */
+    input: z.string().max(9000).optional(),
   }),
   "tool.output": z.object({ toolId: z.string(), text: z.string() }),
-  "tool.finished": z.object({ toolId: z.string(), ok: z.boolean(), summary: z.string().nullable() }),
+  "tool.finished": z.object({
+    toolId: z.string(),
+    ok: z.boolean(),
+    summary: z.string().nullable(),
+    /** The input, when the harness only gave it after the tool started. */
+    input: z.string().max(9000).optional(),
+  }),
   "file.changed": z.object({
     path: z.string(),
     change: z.enum(["add", "modify", "delete"]),

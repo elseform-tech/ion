@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { type DecisionScope, EV } from "@ion/schema";
+import { createHash, randomBytes } from "node:crypto";
+import { type DecisionScope, EV, type NeedInfo } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Scope } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -7,12 +7,53 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
 import { runsView } from "../views/runs.js";
+import {
+  actionOf,
+  type Blocked,
+  BLOCKED_WAIT_MS,
+  blockedAnswer,
+  blockedQuestion,
+  type Held,
+  Holds,
+} from "./blocked.js";
 import { FollowUps, type Message, type Start } from "./followups.js";
 import type { AskInput, Matcher } from "./match.js";
 
-/** The message your answer becomes in the chat. */
-const followText = (question: string, choice: string) =>
-  `You asked: ${JSON.stringify(question)}. The user chose: ${JSON.stringify(choice)}.`;
+const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
+
+/** An "allow" answer about a stopped call: kept as an exact rule, never handed to the judge. */
+const isAllowAnswer = (choice: string) =>
+  choice === "Always allow in this project" || choice === "Allow once";
+
+/** The message your answer becomes in the chat: a choice, or your own words. */
+const followText = (question: string, answer: string, custom = false) =>
+  `You asked: ${JSON.stringify(question)}. The user ${custom ? "answered" : "chose"}: ${JSON.stringify(answer)}.`;
+
+/**
+ * What the agent is told after your answer about a stopped call: your own words, or (late: its call was already
+ * refused) that it may go ahead now. Otherwise nothing: its call simply ran or didn't.
+ */
+function blockedFollowText(
+  question: string,
+  a: { custom: boolean; label: string; late: boolean },
+): string | null {
+  if (a.custom) return followText(question, a.label, true);
+  return a.late
+    ? `Earlier ion stopped this: ${JSON.stringify(actionOf(question))}. The user now allows it.`
+    : null;
+}
+
+/** Your answer: choice number `pick` (1-based), or your own words when none of the choices fit. */
+function answerOf(pick: number | string, choices: { label: string }[]): { label: string; custom: boolean } {
+  if (typeof pick === "string") {
+    const words = pick.trim().slice(0, 2000);
+    if (!words) throw new UserError("Say what you'd like");
+    return { label: words, custom: true };
+  }
+  const choice = choices[pick - 1];
+  if (!Number.isInteger(pick) || !choice) throw new UserError(`Pick 1 to ${choices.length}`);
+  return { label: choice.label, custom: false };
+}
 
 const words = (s: string) =>
   new Set(
@@ -48,6 +89,8 @@ type Deps = {
   followUp: Start;
   /** What you asked in a running run (the judge's "request"), or null. */
   requestOf?: (runId: string) => string | null;
+  /** How long a tool call ion stopped waits for your answer (4 minutes; shorter in tests). */
+  blockedWaitMs?: number;
 };
 
 type Recorded = {
@@ -59,6 +102,10 @@ type Recorded = {
   choice: string;
   scope: DecisionScope;
   by: "you" | "ion";
+  /** Your own words rather than one of the agent's choices. */
+  custom?: boolean;
+  /** About a tool call ion stopped, not an agent's question. */
+  blocked?: boolean;
   from?: { decisionId: string; decidedAt: string };
 };
 
@@ -75,8 +122,13 @@ export class Decisions {
   private readonly ionAnswered = new Map<string, number>();
   /** Your request in the run that asked each question, kept for the run your answer starts. */
   private readonly requests = new Map<string, string>();
+  /** Tool calls ion stopped, waiting on your answer. */
+  private readonly holds: Holds;
+  /** Each stopped call's exact key (hashed), for an "Always allow" answer. */
+  private readonly keys = new Map<string, string>();
 
   constructor(private readonly d: Deps) {
+    this.holds = new Holds(d.blockedWaitMs ?? BLOCKED_WAIT_MS);
     this.followUps = new FollowUps(d.store, d.followUp, (chatId, decisionId, how) =>
       this.outcome(chatId, {
         decisionId,
@@ -90,6 +142,8 @@ export class Decisions {
   async ask(s: Scope, q: AskInput): Promise<string> {
     const labels = q.choices.map((c) => c.label);
     if (new Set(labels).size !== labels.length) throw new UserError("Give each choice its own label");
+    if (q.choices.filter((c) => c.recommended).length > 1)
+      throw new UserError("Recommend one option at most");
     const known = await this.fromPast(s, q);
     if (known) return known;
     const needId = this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q });
@@ -98,41 +152,107 @@ export class Decisions {
   }
 
   /**
+   * ion stopped a tool call (the judge said no, or couldn't decide): ask you, and hold the call until you answer
+   * or 4 minutes pass ("timeout": the call is refused, the question stays open, and a later yes still counts).
+   */
+  askBlocked(s: Scope, b: Blocked): Promise<Held> {
+    const q = blockedQuestion(b);
+    const needId = this.d.needs.raiseAsk({
+      chatId: s.chatId,
+      runId: s.runId,
+      ...q,
+      blocked: { requestId: b.requestId },
+    });
+    this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
+    this.keys.set(needId, keyHash(b.key));
+    return this.holds.hold(needId);
+  }
+
+  /** Whether you said "Always allow" for exactly this action (tool and input) in this project. */
+  alwaysAllowed(projectId: string, _chatId: string, key: string): boolean {
+    return decisionsView.allows(this.d.db, projectId, keyHash(key));
+  }
+
+  /**
    * Your answer: choice number `n` (1-based) of an open question. The run that carries it starts first: if it
    * can't (the agent signed out, the chat archived…) the question stays open and you can answer again. A busy
    * chat gets it when its run ends.
    */
-  async answer(needId: string, n: number, scope: DecisionScope = "chat"): Promise<void> {
+  async answer(needId: string, pick: number | string, scope: DecisionScope = "chat"): Promise<void> {
     if (this.answering.has(needId)) throw new UserError("That's already answered");
     const need = this.d.needs.openNeed(needId);
     const asked = this.d.needs.open(need.chatId).find((x) => x.needId === needId);
     if (need.kind !== "ask" || !asked?.choices) throw new UserError("That isn't a question");
-    const choice = asked.choices[n - 1];
-    if (!Number.isInteger(n) || !choice) throw new UserError(`Pick 1 to ${asked.choices.length}`);
+    const { label, custom } = answerOf(pick, asked.choices);
+    if (asked.blocked) return this.answerBlocked(asked, pick, label);
     this.answering.add(needId);
     try {
       // After a restart the request is gone: the judge then gets none, which only makes it stricter.
       const m: Message = {
         harness: this.harnessOf(need.runId, need.chatId),
-        text: followText(asked.summary, choice.label),
+        text: followText(asked.summary, label, custom),
         request: this.requests.get(needId) ?? "",
       };
       const started = await this.followUps.tryNow(need.chatId, m);
-      this.d.needs.answered(needId, choice.label, scope);
+      this.d.needs.answered(needId, label, scope);
       this.requests.delete(needId);
       const base = { chatId: need.chatId, runId: need.runId, needId, projectId: asked.projectId ?? "" };
       const decisionId = this.record({
         ...base,
         question: asked.summary,
-        choice: choice.label,
+        choice: label,
         scope,
         by: "you",
+        ...(custom ? { custom } : {}),
       });
       if (started === "busy") this.followUps.later(need.chatId, { ...m, decisionId });
       else if (started) this.followUps.started(started, decisionId);
     } finally {
       this.answering.delete(needId);
     }
+  }
+
+  /**
+   * Your answer about a stopped tool call. A call still waiting runs or is refused at once; "Always allow" lets
+   * exactly this action run in the project from now on, and "Don't allow" is kept for the chat. The agent hears
+   * about it only when it can't otherwise know: your own words, or a yes after its call was already refused.
+   */
+  private async answerBlocked(asked: NeedInfo, pick: number | string, label: string): Promise<void> {
+    const custom = typeof pick === "string";
+    const { allow, scope } = blockedAnswer(label, custom);
+    this.d.needs.answered(asked.needId, label, scope ?? "chat");
+    const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom }) : undefined;
+    const waited = this.holds.release(asked.needId, allow ? "allow" : "deny");
+    const text = blockedFollowText(asked.summary, { custom, label, late: !waited && allow });
+    const request = this.requests.get(asked.needId) ?? "";
+    this.requests.delete(asked.needId);
+    if (text)
+      await this.deliver(
+        asked.chatId,
+        { harness: this.harnessOf(asked.runId, asked.chatId), text, request },
+        decisionId,
+      );
+  }
+
+  /** Your answer about a stopped call, kept; "Always allow" with the exact action's key, never the question's words. */
+  private recordBlocked(
+    asked: NeedInfo,
+    a: { label: string; scope: "chat" | "project"; custom: boolean },
+  ): string {
+    const allowKey = a.scope === "project" ? this.keys.get(asked.needId) : undefined;
+    return this.record({
+      ...{ chatId: asked.chatId, runId: asked.runId, needId: asked.needId, projectId: asked.projectId ?? "" },
+      ...{ question: asked.summary, choice: a.label, scope: a.scope, by: "you", blocked: true },
+      ...(allowKey ? { allowKey } : {}),
+      ...(a.custom ? { custom: true } : {}),
+    });
+  }
+
+  /** Sends a message into the chat now, or after its current run if it's busy. */
+  private async deliver(chatId: string, m: Message, decisionId?: string): Promise<void> {
+    const started = await this.followUps.tryNow(chatId, m);
+    if (started === "busy") this.followUps.later(chatId, { ...m, ...(decisionId ? { decisionId } : {}) });
+    else if (started) this.followUps.started(started, decisionId);
   }
 
   /** After a restart: answers recorded but never sent into their chat (it was busy when ion stopped) go now. */
@@ -163,9 +283,11 @@ export class Decisions {
         question: string;
         choice: string;
         by: string;
+        custom?: boolean;
+        blocked?: boolean;
       };
-      if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId) return [];
-      const text = followText(d.question, d.choice);
+      if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId || d.blocked) return [];
+      const text = followText(d.question, d.choice, d.custom === true);
       if (sent(d.needId, text)) return [];
       return [{ harness: this.harnessOf(e.runId, chatId), text, request: "", decisionId: d.decisionId }];
     });
@@ -210,7 +332,7 @@ export class Decisions {
   forJudge(projectId: string, chatId: string): string[] {
     return decisionsView
       .applicable(this.d.db, projectId, chatId)
-      .filter((x) => x.by === "you")
+      .filter((x) => x.by === "you" && !isAllowAnswer(x.choice))
       .slice(0, FOR_JUDGE)
       .map((x) => `${JSON.stringify(x.question)} → ${JSON.stringify(x.choice)} (${x.scope})`);
   }

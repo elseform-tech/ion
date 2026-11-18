@@ -370,3 +370,163 @@ async function until(f: () => boolean, ms = 2000) {
     await new Promise((r) => setTimeout(r, 5));
   }
 }
+
+// The user's own words, when none of the agent's choices fit.
+describe("answering in your own words", () => {
+  it("sends your words back and keeps them as the decision", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    await d.answer(needs.open("c1")[0]!.needId, "Only the old builds", "project");
+    expect(of(EV.needResolved).at(-1)).toMatchObject({ decision: "answered", choice: "Only the old builds" });
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ choice: "Only the old builds", custom: true });
+    expect(followUp).toHaveBeenCalledWith(
+      "c1",
+      "fake",
+      'You asked: "Delete the build folder?". The user answered: "Only the old builds".',
+      "Tidy the repo",
+    );
+  });
+
+  it("refuses an empty answer", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    await expect(d.answer(needs.open("c1")[0]!.needId, "   ")).rejects.toThrow("Say what you'd like");
+  });
+
+  it("is sent again after a restart in its own words", async () => {
+    const d = make();
+    await d.ask(scope(), q);
+    followUp.mockRejectedValueOnce(new UserError("This chat is already running"));
+    await d.answer(needs.open("c1")[0]!.needId, "Later");
+    followUp.mockClear();
+    await make().resume();
+    expect(followUp).toHaveBeenCalledWith(
+      "c1",
+      "fake",
+      'You asked: "Delete the build folder?". The user answered: "Later".',
+      "",
+    );
+  });
+});
+
+describe("recommended options", () => {
+  it("keeps the agent's one recommended option, and refuses two", async () => {
+    const d = make();
+    const choices = [
+      { label: "SQLite", consequence: "One file, no server; fine until many writers", recommended: true },
+      { label: "Postgres", consequence: "A server to run; scales; needed for many writers" },
+    ];
+    await d.ask(scope(), { question: "Which database?", choices });
+    expect(needs.open("c1")[0]!.choices).toEqual(choices);
+    const two = choices.map((c) => ({ ...c, recommended: true }));
+    await expect(d.ask(scope(), { question: "Which database?", choices: two })).rejects.toThrow(
+      "Recommend one option at most",
+    );
+  });
+});
+
+// Plan 07 (the user, 2026-11-18): when ion blocks a tool call, it asks; the call waits up to 4 minutes.
+describe("asking when ion blocks a tool call", () => {
+  const block = {
+    requestId: "g7",
+    summary: "npm publish",
+    reason: "Publishes the package",
+    key: "Bash npm publish",
+  };
+  const makeQuick = (timeoutMs = 2000) =>
+    new Decisions({ store, db, needs, followUp, blockedWaitMs: timeoutMs, requestOf: () => "Ship it" });
+
+  it("asks, with why it was stopped and the three options, and lets the call through on Allow once", async () => {
+    const d = makeQuick();
+    const waiting = d.askBlocked(scope(), block);
+    const [need] = needs.open("c1");
+    expect(need).toMatchObject({
+      kind: "ask",
+      summary: "Allow this? npm publish",
+      detail: "ion stopped it: Publishes the package",
+    });
+    expect(need!.choices!.map((c) => c.label)).toEqual([
+      "Allow once",
+      "Always allow in this project",
+      "Don't allow",
+    ]);
+    await d.answer(need!.needId, 1);
+    expect(await waiting).toBe("allow");
+    // Once means once: nothing kept for next time, and no message to the agent (its call just runs).
+    expect(of(EV.decisionRecorded)).toEqual([]);
+    expect(followUp).not.toHaveBeenCalled();
+  });
+
+  it("keeps 'Always allow' for the project, and 'Don't allow' for the chat", async () => {
+    const d = makeQuick();
+    const a = d.askBlocked(scope(), block);
+    await d.answer(needs.open("c1")[0]!.needId, 2);
+    expect(await a).toBe("allow");
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({
+      scope: "project",
+      choice: "Always allow in this project",
+    });
+    const b = d.askBlocked(scope(), { ...block, requestId: "g8" });
+    await d.answer(needs.open("c1")[0]!.needId, 3);
+    expect(await b).toBe("deny");
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ scope: "chat", choice: "Don't allow" });
+  });
+
+  it("says no after the wait, keeps the question open, and tells the agent if you allow it later", async () => {
+    const d = makeQuick(20);
+    expect(await d.askBlocked(scope(), block)).toBe("timeout");
+    const [need] = needs.open("c1");
+    expect(need).toBeDefined();
+    await d.answer(need!.needId, 2);
+    expect(followUp).toHaveBeenCalledWith(
+      "c1",
+      "fake",
+      'Earlier ion stopped this: "npm publish". The user now allows it.',
+      "Ship it",
+    );
+  });
+});
+
+// Security review: "Always allow" lets the exact same action through, decided by ion, never by the judge's reading.
+describe("always allow, exactly", () => {
+  const block = {
+    requestId: "g9",
+    summary: "npm publish",
+    reason: "Publishes the package",
+    input: '{\n  "command": "npm publish"\n}',
+    key: 'Bash {"command":"npm publish"}',
+  };
+  const makeQuick = () => new Decisions({ store, db, needs, followUp, blockedWaitMs: 2000 });
+
+  it("shows the full input, and lets only that exact action through afterwards in the project", async () => {
+    const d = makeQuick();
+    const waiting = d.askBlocked(scope(), block);
+    const [need] = needs.open("c1");
+    expect(need!.detail).toBe('ion stopped it: Publishes the package\n\n{\n  "command": "npm publish"\n}');
+    await d.answer(need!.needId, 2);
+    await waiting;
+    expect(d.alwaysAllowed("app", "c2", block.key)).toBe(true);
+    expect(d.alwaysAllowed("app", "c2", 'Bash {"command":"npm publish --tag x"}')).toBe(false);
+    expect(d.alwaysAllowed("other", "o1", block.key)).toBe(false);
+    // The judge only ever hears your past answers to say no.
+    expect(d.forJudge("app", "c2")).toEqual([]);
+  });
+});
+
+describe("always allow, only for what you can see", () => {
+  it("doesn't offer 'Always allow' when the input was cut", async () => {
+    const d = new Decisions({ store, db, needs, followUp, blockedWaitMs: 2000 });
+    const waiting = d.askBlocked(scope(), {
+      requestId: "g10",
+      summary: "big",
+      reason: "r",
+      input: "x\n… (cut)",
+      key: "Bash big",
+      cut: true,
+    });
+    const [need] = needs.open("c1");
+    expect(need!.choices!.map((c) => c.label)).toEqual(["Allow once", "Don't allow"]);
+    await d.answer(need!.needId, 2);
+    expect(await waiting).toBe("deny");
+  });
+});

@@ -48,7 +48,7 @@ export class Connection {
   }
 
   /** Backlog then live events. Reads and appends are synchronous, so nothing can slip in between. */
-  private subscribe(id: string, q: { chatId?: string; afterId?: string }): void {
+  private subscribe(id: string, q: { chatId?: string; afterId?: string; fromNow?: boolean }): void {
     let backlog: IonEvent[];
     try {
       backlog = readBacklog(this.ctx.store, q);

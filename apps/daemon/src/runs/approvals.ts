@@ -1,6 +1,7 @@
 import type { ApprovalRequest, Decision, GateCall } from "@ion/adapter-kit";
 import { EV, type IonEvent } from "@ion/schema";
 import type { Access } from "../access/index.js";
+import type { Blocked, Held } from "../decisions/blocked.js";
 import { type GateAnswer, GateAllows } from "../gate/index.js";
 import type { EventStore } from "../store/index.js";
 import { decideByPolicy } from "./policy.js";
@@ -16,7 +17,26 @@ export type AskingRun = {
   mcpKey?: string;
 };
 
-type Verdict = { decision: Decision; by: "policy" | "full" | "ion" | "gate"; reason?: string };
+type Verdict = { decision: Decision; by: "policy" | "full" | "ion" | "gate" | "you"; reason?: string };
+
+/**
+ * Asks you about a tool call ion stopped, holding it until you answer or 4 minutes pass; `allowed` says whether
+ * you said "Always allow" for exactly this action (tool and input) in the run's project.
+ */
+export type AskBlocked = {
+  ask: (r: AskingRun, b: Blocked) => Promise<Held>;
+  allowed: (r: AskingRun, key: string) => boolean;
+};
+
+/** The exact action: its tool and its whole input. */
+const actionKey = (req: ApprovalRequest) => `${req.toolName} ${JSON.stringify(req.input)}`;
+const INPUT_SHOWN = 1000;
+
+const HELD: Record<Held, Omit<Verdict, "decision"> & { decision: Decision }> = {
+  allow: { decision: "allow", by: "you", reason: "You allowed it" },
+  deny: { decision: "deny", by: "you", reason: "You said no" },
+  timeout: { decision: "deny", by: "ion", reason: "No answer in 4 minutes" },
+};
 
 /** What a gate allow and a later prompt are matched on: the kind of call and its command or file. */
 const callKey = (c: { kind: string; input: Record<string, unknown> }) => {
@@ -42,6 +62,8 @@ export class Approvals {
     private readonly access: Access | undefined,
     /** False once the run has ended (interrupt, shutdown): its log is closed. */
     private readonly isOpen: (runId: string) => boolean,
+    /** When the judge says no (or can't decide), ion asks you instead of just refusing. */
+    private readonly askBlocked?: AskBlocked,
   ) {}
 
   /** A permission prompt from the harness. One the gate already allowed is answered from that allow. */
@@ -65,7 +87,8 @@ export class Approvals {
     const req: ApprovalRequest = { requestId: `g${++this.gateCount}`, toolId: "", ...call };
     const v = await this.verdict(r, req, roots);
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
-    if (v.by === "ion") this.record(r, { requestId: req.requestId, ...v, summary: call.summary });
+    if (v.by === "ion" || v.by === "you")
+      this.record(r, { requestId: req.requestId, ...v, summary: call.summary });
     if (v.decision === "allow") {
       this.allows.add(r.runId, callKey(call));
       return { decision: "allow" };
@@ -116,7 +139,21 @@ export class Approvals {
       { chatId: r.chatId, projectId: r.projectId, text: r.request, roots },
       req,
     );
+    // A rule's no (your secrets, ion's files) stands. The judge's no is a question for you.
+    if (v.decision === "deny" && v.source === "judge" && this.askBlocked)
+      return this.askYou(this.askBlocked, r, req, v.reason);
     return { decision: v.decision, by: "ion", reason: v.reason };
+  }
+
+  /** The judge said no: unless you always allow exactly this action here, ask you and hold the call. */
+  private async askYou(a: AskBlocked, r: AskingRun, req: ApprovalRequest, reason: string): Promise<Verdict> {
+    const key = actionKey(req);
+    if (a.allowed(r, key)) return { decision: "allow", by: "you", reason: "You always allow this" };
+    const full = JSON.stringify(req.input, null, 2);
+    const cut = full.length > INPUT_SHOWN;
+    const input = cut ? `${full.slice(0, INPUT_SHOWN)}\n… (cut)` : full;
+    const b = { requestId: req.requestId, summary: req.summary, reason, input, key, ...(cut ? { cut } : {}) };
+    return HELD[await a.ask(r, b)];
   }
 
   /** Resolves once the adapter's approval.requested for this id is stored, so the log stays in order. */

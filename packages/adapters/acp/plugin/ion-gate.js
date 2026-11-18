@@ -11,7 +11,7 @@ export const IonGate = async () => ({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tool: input.tool, args: output.args }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(300_000),
       });
       answer = await res.json();
     } catch {

@@ -105,6 +105,42 @@ describe("the gate, end to end with the fake harness", () => {
     expect(records.filter((r) => String(r.requestId).startsWith("g"))).toEqual([]);
   });
 
+  // Plan 07 (the user): when ion stops a tool call it asks you, and the call waits for the answer.
+  it("holds a call the judge refused until you answer, then lets it through", async () => {
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { chatId, runId } = await client.call("ask", {
+      text: "gated deny-me now",
+      harness: "fake",
+      projectId: "repo",
+    });
+    await until(() => seen.some((e) => e.type === "need.raised"));
+    const [need] = await client.call("needs.list", { chatId });
+    expect(need).toMatchObject({ blocked: true, summary: "Allow this? deny-me now" });
+    await client.call("need.answer", { needId: need!.needId, choice: 1 });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"));
+    const said = seen.filter((e) => e.runId === runId && e.type === "message.completed");
+    expect(said.map((e) => (e.data as { text: string }).text)).toEqual(["Ran it."]);
+    const records = seen.filter((e) => e.type === "approval.resolved").map((e) => e.data);
+    expect(records).toContainEqual(expect.objectContaining({ decision: "allow", by: "you" }));
+  });
+
+  it("lets the exact action you always allowed through next time, without asking", async () => {
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const first = await client.call("ask", { text: "gated deny-me now", harness: "fake", projectId: "repo" });
+    await until(() => seen.some((e) => e.type === "need.raised"));
+    const [need] = await client.call("needs.list", { chatId: first.chatId });
+    expect(need!.detail).toContain('"command": "deny-me now"');
+    await client.call("need.answer", { needId: need!.needId, choice: 2 });
+    await until(() => seen.some((e) => e.runId === first.runId && e.type === "run.finished"));
+    const again = await client.call("ask", { text: "gated deny-me now", harness: "fake", projectId: "repo" });
+    await until(() => seen.some((e) => e.runId === again.runId && e.type === "run.finished"));
+    expect(seen.filter((e) => e.type === "need.raised")).toHaveLength(1);
+    const said = seen.filter((e) => e.runId === again.runId && e.type === "message.completed");
+    expect(said.map((e) => (e.data as { text: string }).text)).toEqual(["Ran it."]);
+  });
+
   it("decides a prompt in full when the gate never saw the call", async () => {
     const seen: IonEvent[] = [];
     await client.subscribe({}, (e) => seen.push(e));

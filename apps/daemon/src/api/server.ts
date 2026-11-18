@@ -13,6 +13,8 @@ import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 import { createAccess, createJudge, harnessRunner } from "../access/index.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
+import type { Blocked } from "../decisions/blocked.js";
+import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
 
@@ -79,6 +81,27 @@ function httpServer(mcp: ReturnType<typeof createMcpHandler>, gate: ReturnType<t
   });
 }
 
+/**
+ * Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own files (and a custom Grok folder,
+ * where ion's gate hook lives; ~/.grok is covered by name) are always denied; the judge weighs your decisions.
+ */
+function autoAccess(
+  opts: { dataDir: string; configFile: string },
+  quick: ReturnType<typeof harnessRunner>,
+  late: { decisions?: Decisions },
+) {
+  return createAccess({
+    judge: createJudge(quick),
+    home: homedir(),
+    ionDirs: [
+      opts.dataDir,
+      dirname(opts.configFile),
+      ...(process.env.GROK_HOME ? [process.env.GROK_HOME] : []),
+    ],
+    decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
+  });
+}
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
@@ -87,28 +110,24 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   const store = new EventStore(db, allViews);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
-  // Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own folders are always denied.
   const quick = harnessRunner(opts.configFile);
-  const judge = createJudge(quick);
-  // Made after the run manager it needs; the judge reads it through this holder.
+  // Made after the run manager it needs; the judge and the gate reach it through this holder.
   const late: { decisions?: Decisions } = {};
-  const access = createAccess({
-    judge,
-    home: homedir(),
-    // ion's files, and a custom Grok folder (where ion's gate hook lives; ~/.grok is covered by name).
-    ionDirs: [
-      opts.dataDir,
-      dirname(opts.configFile),
-      ...(process.env.GROK_HOME ? [process.env.GROK_HOME] : []),
-    ],
-    decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
-  });
+  const access = autoAccess(opts, quick, late);
   const runCtx = {
     configFile: opts.configFile,
     dataDir: opts.dataDir,
     access,
     mcp: { grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
+    // When ion stops a tool call it asks you; made here, answered through the decisions made below.
+    askBlocked: {
+      ask: (r: AskingRun, b: Blocked) =>
+        late.decisions?.askBlocked({ projectId: r.projectId, chatId: r.chatId, runId: r.runId }, b) ??
+        Promise.resolve("timeout" as const),
+      allowed: (r: AskingRun, key: string) =>
+        late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
+    },
   };
   const runs = new RunManager(store, runCtx, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.

@@ -1,10 +1,11 @@
 import { isAbsolute, relative } from "node:path";
-import type { AdapterEvent } from "@ion/adapter-kit";
+import { type AdapterEvent, blocksText, TOOL_INPUT_MAX, TOOL_OUTPUT_MAX, toolText } from "@ion/adapter-kit";
 import { EV, type ToolKind } from "@ion/schema";
 
 type Json = Record<string, unknown>;
 
-type ToolInfo = { kind: string; locations: string[] };
+/** input: the tool's input once known; inputSent: whether it went out with tool.started. */
+type ToolInfo = { kind: string; locations: string[]; input?: string; inputSent?: boolean };
 export type AcpState = { roots: string[]; costUsd: number | null; tools: Map<string, ToolInfo> };
 export const createAcpState = (roots: string[]): AcpState => ({ roots, costUsd: null, tools: new Map() });
 
@@ -20,6 +21,8 @@ function remember(u: Json, s: AcpState, toolId: string): ToolInfo | undefined {
   if (typeof u.kind === "string") t.kind = u.kind;
   const locs = locationsOf(u);
   if (locs.length) t.locations = locs;
+  const input = toolText(u.rawInput, TOOL_INPUT_MAX);
+  if (input && !t.inputSent) t.input = input;
   return t;
 }
 
@@ -73,7 +76,14 @@ function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
   if (!tool || (u.status !== "completed" && u.status !== "failed")) return [];
   s.tools.delete(toolId);
   const ok = u.status === "completed";
-  const out: AdapterEvent[] = [{ type: EV.toolFinished, data: { toolId, ok, summary: null } }];
+  // Its output: the text the agent shows for it, else its raw output.
+  const raw = u.rawOutput as { output?: unknown } | undefined;
+  const text = toolText(blocksText(u.content) ?? raw?.output ?? u.rawOutput, TOOL_OUTPUT_MAX);
+  const late = tool.input && !tool.inputSent ? { input: tool.input } : {};
+  const out: AdapterEvent[] = [
+    ...(text ? [{ type: EV.toolOutput, data: { toolId, text } }] : []),
+    { type: EV.toolFinished, data: { toolId, ok, summary: null, ...late } },
+  ];
   if (!ok) return out;
   const diffs = diffChanges(u, s);
   if (diffs.length || acpToolKind(tool.kind) !== "edit") return [...out, ...diffs];
@@ -83,6 +93,28 @@ function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
     data: { path: shorten(p, s.roots), change: "modify", added: null, removed: null },
   }));
   return [...out, ...fromLocations];
+}
+
+/** A tool starting: what ion remembers of it, and its start event (with its input when the agent gives it). */
+function toolCall(u: Json, s: AcpState): AdapterEvent {
+  const toolId = String(u.toolCallId);
+  const input = toolText(u.rawInput, TOOL_INPUT_MAX);
+  s.tools.set(toolId, {
+    kind: String(u.kind ?? "other"),
+    locations: locationsOf(u),
+    inputSent: Boolean(input),
+  });
+  const title = typeof u.title === "string" ? u.title : "Tool";
+  return {
+    type: EV.toolStarted,
+    data: {
+      toolId,
+      name: String(u.kind ?? "other"),
+      kind: acpToolKind(u.kind),
+      summary: title.slice(0, 80),
+      ...(input ? { input } : {}),
+    },
+  };
 }
 
 /** Translates one ACP `session/update` into ion events. Pure apart from `state`. */
@@ -96,22 +128,8 @@ export function mapUpdate(u: Json, s: AcpState): AdapterEvent[] {
       const text = textOf(u.content);
       return text ? [{ type: EV.thinkingDelta, data: { text } }] : [];
     }
-    case "tool_call": {
-      const toolId = String(u.toolCallId);
-      s.tools.set(toolId, { kind: String(u.kind ?? "other"), locations: locationsOf(u) });
-      const title = typeof u.title === "string" ? u.title : "Tool";
-      return [
-        {
-          type: EV.toolStarted,
-          data: {
-            toolId,
-            name: String(u.kind ?? "other"),
-            kind: acpToolKind(u.kind),
-            summary: title.slice(0, 80),
-          },
-        },
-      ];
-    }
+    case "tool_call":
+      return [toolCall(u, s)];
     case "tool_call_update":
       return toolUpdate(u, s);
     case "usage_update": {

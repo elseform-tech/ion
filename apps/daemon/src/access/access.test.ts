@@ -211,6 +211,20 @@ describe("judge", () => {
   });
 });
 
+describe("which part refused", () => {
+  // Plan 07: a judge's refusal asks you; a rule's (your secrets, ion's files) never does.
+  it("says whether a rule or the judge decided", async () => {
+    const judge = vi.fn(async () => ({ allow: false, reason: "Publishes the package" }));
+    const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
+    const at = { chatId: "c1", projectId: "app", text: "fix", roots: ctx.roots };
+    expect(await access.decide(at, cmd("cat ~/.ssh/id_rsa"))).toMatchObject({
+      decision: "deny",
+      source: "rule",
+    });
+    expect(await access.decide(at, cmd("npm publish"))).toMatchObject({ decision: "deny", source: "judge" });
+  });
+});
+
 describe("createAccess", () => {
   // Review Focus 3: the same action twice in a chat asks the judge once.
   it("decides by rule first, then asks the judge once per action and chat", async () => {
@@ -221,6 +235,7 @@ describe("createAccess", () => {
     expect(await access.decide(at, cmd("pnpm test"))).toEqual({
       decision: "allow",
       reason: "Runs the tests",
+      source: "judge",
     });
     await access.decide(at, cmd("pnpm test"));
     expect(judge).toHaveBeenCalledTimes(1);

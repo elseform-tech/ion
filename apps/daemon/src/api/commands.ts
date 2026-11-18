@@ -1,7 +1,7 @@
 import { getHarness, harnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
-import { createProject } from "../workspace/index.js";
+import { chatDiff, createProject } from "../workspace/index.js";
 import { memoryView } from "../views/memory.js";
 import { addProject, loadUserConfig, saveUserConfig, setProjectAccess } from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
@@ -45,6 +45,14 @@ export const handlers: Handlers = {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
     return { ok: true as const };
   },
+  "chat.diff": async (a, ctx) => {
+    const chat = chatsView.list(ctx.db).find((c) => c.chatId === a.chatId);
+    if (!chat) throw new UserError(`Unknown chat: ${String(a.chatId)}`);
+    const worktree = chat.archived ? null : chatsView.worktree(ctx.db, chat.chatId);
+    const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
+    if (!worktree || !project) return { files: [] };
+    return chatDiff(project.path, worktree);
+  },
   "chat.archive": async (a, ctx) => {
     await ctx.runs.archive(String(a.chatId ?? ""));
     return { ok: true as const };
@@ -52,7 +60,8 @@ export const handlers: Handlers = {
   "need.answer": async (a, ctx) => {
     const scope = a.scope ?? "chat";
     if (!DECISION_SCOPES.includes(scope)) throw new UserError("Pick chat, project or everywhere");
-    await ctx.decisions.answer(String(a.needId ?? ""), Number(a.choice), scope);
+    const pick = typeof a.text === "string" ? a.text : Number(a.choice);
+    await ctx.decisions.answer(String(a.needId ?? ""), pick, scope);
     return { ok: true as const };
   },
   "decisions.list": (a, ctx) => decisionsView.list(ctx.db, a.projectId),

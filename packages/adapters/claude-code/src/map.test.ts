@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createMapState, mapSdkMessage } from "./map.js";
 
+/** The events without each tool's input and output (covered by their own test below). */
+const withoutIo = (evs: { type: string; data: unknown }[]) =>
+  evs
+    .filter((e) => e.type !== "tool.output")
+    .map((e) => {
+      const data = { ...(e.data as Record<string, unknown>) };
+      delete data.input;
+      return { ...e, data };
+    });
+
 const state = () => createMapState({ cwd: "/repo", effort: "high", authMethod: "Claude subscription" });
 const types = (evs: { type: string }[]) => evs.map((e) => e.type);
 
@@ -59,7 +69,7 @@ describe("mapSdkMessage", () => {
       } as never,
       state(),
     );
-    expect(evs).toEqual([
+    expect(withoutIo(evs)).toEqual([
       { type: "message.completed", data: { text: "Reading it." } },
       { type: "tool.started", data: { toolId: "tu1", name: "Read", kind: "read", summary: "src/a.ts" } },
       {
@@ -112,7 +122,7 @@ describe("mapSdkMessage", () => {
       } as never,
       s,
     );
-    expect(evs).toEqual([
+    expect(withoutIo(evs)).toEqual([
       { type: "tool.finished", data: { toolId: "e1", ok: true, summary: null } },
       { type: "file.changed", data: { path: "a.ts", change: "modify", added: 4, removed: 2 } },
       { type: "tool.finished", data: { toolId: "w1", ok: true, summary: null } },
@@ -201,5 +211,31 @@ describe("mapSdkMessage", () => {
 
   it("ignores message types it doesn't know", () => {
     expect(mapSdkMessage({ type: "rate_limit_event" } as never, state())).toEqual([]);
+  });
+});
+
+// Plan 07: each tool's input and output, for the chat to show.
+describe("tool input and output", () => {
+  it("passes a tool's input when it starts and its result when it ends", () => {
+    const st = createMapState({ cwd: "/repo", effort: null, authMethod: "x" });
+    const [started] = mapSdkMessage(
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }] },
+      },
+      st,
+    );
+    expect(started?.data).toMatchObject({ input: '{\n  "command": "ls"\n}' });
+    const out = mapSdkMessage(
+      {
+        type: "user",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text: "a.ts" }] }],
+        },
+      },
+      st,
+    );
+    expect(out[0]).toEqual({ type: "tool.output", data: { toolId: "t1", text: "a.ts" } });
+    expect(out[1]).toMatchObject({ type: "tool.finished", data: { toolId: "t1", ok: true } });
   });
 });

@@ -15,7 +15,15 @@
       "toolId": "toolu_01CJYcUtermRz83gzKuQV4pz",
       "name": "Write",
       "kind": "edit",
-      "summary": "notes.md"
+      "summary": "notes.md",
+      "input": "{\n  \"file_path\": \"<cwd>/notes.md\",\n  \"content\": \"hello\\n\"\n}"
+    }
+  },
+  {
+    "type": "tool.output",
+    "data": {
+      "toolId": "toolu_01CJYcUtermRz83gzKuQV4pz",
+      "text": "File created successfully at: <cwd>/notes.md (file state is current in your context — no need to Read it back)"
     }
   },
   {

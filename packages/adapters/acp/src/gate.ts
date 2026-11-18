@@ -56,7 +56,7 @@ const GROK_KINDS: Record<string, Kind> = {
  * answer. curl failing (ion down, a 400) is a failed hook, and failClosed makes that a deny.
  */
 const GROK_COMMAND =
-  '[ -z "$ION_GATE_URL" ] && exit 0; curl -sf --max-time 60 -H "content-type: application/json" --data-binary @- "$ION_GATE_URL"';
+  '[ -z "$ION_GATE_URL" ] && exit 0; curl -sf --max-time 300 -H "content-type: application/json" --data-binary @- "$ION_GATE_URL"';
 
 /**
  * Grok's hook lives in your Grok folder (`$GROK_HOME/hooks`, else `~/.grok/hooks`), written once. A hook in the
@@ -65,7 +65,7 @@ const GROK_COMMAND =
  */
 export function grokGateEnv(g: GateEnv): Record<string, string> {
   const dir = join(process.env.GROK_HOME ?? join(homedir(), ".grok"), "hooks");
-  const hook = { type: "command", command: GROK_COMMAND, timeout: 60, failClosed: true };
+  const hook = { type: "command", command: GROK_COMMAND, timeout: 300, failClosed: true };
   const body = `${JSON.stringify({ hooks: { PreToolUse: [{ hooks: [hook] }] } })}\n`;
   // Written whole to a temp file, then renamed into place: a Grok starting at the same moment reads the old file
   // or the new one, never a half-written one. Same content every time, so there's nothing to check first.
