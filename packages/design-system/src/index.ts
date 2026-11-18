@@ -12,5 +12,7 @@ export {
   SquarePen,
   Wrench,
 } from "lucide-react";
+export { Avatar, type BotState } from "./Avatar.js";
+export { botFor } from "./bots.js";
 export { Button } from "./Button.js";
 export { Spinner } from "./Spinner.js";
