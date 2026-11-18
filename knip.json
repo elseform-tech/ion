@@ -11,6 +11,12 @@
     "packages/*": {
       "project": ["src/**/*.ts"]
     },
+    "packages/design-system": {
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/desktop": {
+      "project": ["src/**/*.{ts,tsx}"]
+    },
     "tools/lint-rules": {
       "project": ["src/**/*.js"]
     },

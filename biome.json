@@ -12,7 +12,10 @@
       "!**/*.md",
       "!**/golden",
       "!health",
-      "!.health"
+      "!.health",
+      "!**/src-tauri/target",
+      "!**/src-tauri/gen",
+      "!.playwright-mcp"
     ]
   },
   "formatter": {

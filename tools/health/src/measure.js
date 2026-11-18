@@ -6,14 +6,14 @@ import { ESLint } from "eslint";
 const SOFT = { fileLines: 400, functionLines: 50, cognitiveComplexity: 10 };
 
 const SOURCES = [
-  "apps/*/src/**/*.{ts,js}",
-  "packages/*/src/**/*.{ts,js}",
-  "packages/adapters/*/src/**/*.{ts,js}",
-  "tools/*/src/**/*.{ts,js}",
+  "apps/*/src/**/*.{ts,tsx,js}",
+  "packages/*/src/**/*.{ts,tsx,js}",
+  "packages/adapters/*/src/**/*.{ts,tsx,js}",
+  "tools/*/src/**/*.{ts,tsx,js}",
 ];
 // This file names the patterns it counts; don't count it.
 const SELF = "tools/health/src/measure.js";
-const isTest = (f) => /\.test\.[jt]s$/.test(f);
+const isTest = (f) => /\.test\.(ts|tsx|js)$/.test(f);
 
 async function softLimitCounts(root, files) {
   const eslint = new ESLint({

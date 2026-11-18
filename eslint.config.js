@@ -1,5 +1,6 @@
 import ion from "@ion/lint-rules";
 import sonarjs from "eslint-plugin-sonarjs";
+import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 /** Code health limits. Raise one only with a reason in the PR; never per file to dodge it. */
@@ -22,6 +23,7 @@ export default tseslint.config(
       ".superpowers/**",
       ".remember/**",
       "**/.turbo/**",
+      "**/src-tauri/**",
     ],
   },
   ...tseslint.configs.recommended,
@@ -60,8 +62,14 @@ export default tseslint.config(
     },
   },
   {
+    // The desktop UI: React's rules of hooks.
+    files: ["apps/desktop/src/**/*.tsx", "apps/desktop/src/**/*.ts", "packages/design-system/src/**/*.tsx"],
+    plugins: { "react-hooks": reactHooks },
+    rules: { "react-hooks/rules-of-hooks": "error", "react-hooks/exhaustive-deps": "error" },
+  },
+  {
     // Tests read top to bottom; long describe blocks are fine, the other limits still apply.
-    files: ["**/*.test.ts", "**/*.test.js", "**/test/**"],
+    files: ["**/*.test.ts", "**/*.test.tsx", "**/*.test.js", "**/test/**"],
     rules: {
       "max-lines-per-function": "off",
       "max-nested-callbacks": ["error", 5],
