@@ -229,6 +229,19 @@ describe("daemon api", () => {
     await expect(client.call("chat.diff", { chatId: "nope" })).rejects.toThrow("Unknown chat: nope");
   });
 
+  // The user, 2026-11-18: chats can be renamed from the sidebar.
+  it("renames a chat, and refuses an empty name or an unknown chat", async () => {
+    const { chatId } = await client.call("chat.create", { title: "Old name" });
+    await client.call("chat.rename", { chatId, title: "  Checkout rounding  " });
+    expect((await client.call("chats.list", {})).find((c) => c.chatId === chatId)?.title).toBe(
+      "Checkout rounding",
+    );
+    await expect(client.call("chat.rename", { chatId, title: "  " })).rejects.toThrow("Give the chat a name");
+    await expect(client.call("chat.rename", { chatId: "nope", title: "x" })).rejects.toThrow(
+      "Unknown chat: nope",
+    );
+  });
+
   // Plan 07: the app's sidebar wants only what happens from now on, not every event ion ever stored.
   it("sends no backlog with fromNow", async () => {
     await client.call("chat.create", { title: "Old" });

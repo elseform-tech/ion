@@ -105,7 +105,10 @@ export class RunManager {
    * `opts.request`: what the judge treats as your request, when the message isn't yours as typed (the run your
    * answer to an agent's question starts is judged by your request from the run that asked).
    */
-  async ask(args: AskArgs, opts: { request?: string } = {}): Promise<{ chatId: string; runId: string }> {
+  async ask(
+    args: AskArgs,
+    opts: { request?: string; shown?: string } = {},
+  ): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     // A new chat with no project goes to `default` (made the first time): every thread has a project.
@@ -121,7 +124,7 @@ export class RunManager {
     let launch: Launch;
     try {
       await this.ready.check(h, args.model);
-      launch = await this.prepare(h, args, chat, repo);
+      launch = await this.prepare(h, { ...args, shown: opts.shown }, chat, repo);
       if (opts.request !== undefined) launch.request = opts.request;
       const l = launch;
       this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
@@ -132,7 +135,14 @@ export class RunManager {
   }
 
   /** Makes the chat's worktree (and the chat, if new), stores your message and queues the run. */
-  private async prepare(h: HarnessEntry, args: AskArgs, chat: Chat, repo: string): Promise<Launch> {
+  /** `ask.shown`: what the chat shows as yours, when the text is ion's wording (your answer to a question). */
+  private async prepare(
+    h: HarnessEntry,
+    ask: AskArgs & { shown?: string },
+    chat: Chat,
+    repo: string,
+  ): Promise<Launch> {
+    const { shown, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
@@ -143,7 +153,13 @@ export class RunManager {
     const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
     const access = args.access ?? this.accessFor(projectId);
     const runId = `run_${randomUUID()}`;
-    this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: { text: args.text } });
+    this.store.append({
+      chatId,
+      runId,
+      origin: "daemon",
+      type: EV.messageSent,
+      data: { text: args.text, ...(shown ? { shown } : {}) },
+    });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
     return { h, args, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
   }

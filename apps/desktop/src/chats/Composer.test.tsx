@@ -94,7 +94,7 @@ describe("Composer", () => {
     );
   });
 
-  it("leaves out a model that only repeats the agent's name, and shows a spinner while agents load", () => {
+  it("leaves out a model that only repeats the agent's name, and shimmers while agents load", () => {
     const { container, rerender } = compose([
       { ...fake, models: [{ id: "fake", label: "Fake" }], defaultModel: "fake" },
     ]);
@@ -108,8 +108,8 @@ describe("Composer", () => {
         onSent={() => {}}
       />,
     );
-    expect(container.querySelector(".bpill")?.textContent).toBe("");
-    expect(container.querySelector(".bpill .spin")).not.toBeNull();
+    expect(container.querySelector(".spin")).toBeNull();
+    expect(container.querySelector(".bpill .now")?.textContent).toBe("Agents");
   });
 
   it("shows access as an icon, named on hover and picked from a list", () => {

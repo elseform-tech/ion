@@ -1,9 +1,18 @@
 import type { IonClient } from "@ion/client/browser";
 import { CircleAlert, Info, type LucideIcon, RotateCw, ShieldX, Square } from "@ion/design-system";
 import type { IonEvent } from "@ion/schema";
-import { memo, type ReactNode, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  memo,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { Markdown } from "./Message.js";
-import { empty, type Item, reduce, type Timeline } from "./timeline.js";
+import { empty, type FileChange, type Item, reduce, type Timeline } from "./timeline.js";
 import { WorkBlock } from "./Work.js";
 
 const step = (t: Timeline, a: IonEvent | "reset"): Timeline => (a === "reset" ? empty() : reduce(t, a));
@@ -69,7 +78,7 @@ function stopLine(item: Extract<Item, { kind: "end" }>): ReactNode {
   return null;
 }
 
-function show(item: Item): ReactNode {
+function show(item: Item, onFile?: (path: string) => void): ReactNode {
   switch (item.kind) {
     case "you":
       return <div className="u">{item.text}</div>;
@@ -86,7 +95,12 @@ function show(item: Item): ReactNode {
     case "question":
       return null; // open ones are in the bar above the message box; answers go into the chat as messages
     case "end":
-      return stopLine(item);
+      return (
+        <>
+          {item.files && <Files files={item.files} onFile={onFile} />}
+          {stopLine(item)}
+        </>
+      );
     case "retry":
       return <Retry until={item.until} done={item.done} />;
     case "error":
@@ -94,9 +108,48 @@ function show(item: Item): ReactNode {
   }
 }
 
+/** What the chat says while a run starts: a playful word every 3 s, shimmering, stronger as the wait grows. */
+const WORDS = ["Thinking", "Cooking", "Brewing", "Pondering", "Tinkering", "Noodling"];
+const WORD_MS = 3000;
+const FULL_MS = 20_000;
+
+export function Starting() {
+  const [from] = useState(() => Date.now());
+  const [now, setNow] = useState(from);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, []);
+  const waited = now - from;
+  const strength = Math.min(1, 0.2 + (0.8 * waited) / FULL_MS);
+  return (
+    <div className="quiet pending now" style={{ "--strength": strength.toFixed(2) } as CSSProperties}>
+      {WORDS[Math.floor(waited / WORD_MS) % WORDS.length]}
+    </div>
+  );
+}
+
+/** A run's changed files: how many, then each with its counts; a file opens the panel at it. */
+function Files({ files, onFile }: { files: FileChange[]; onFile?: (path: string) => void }) {
+  return (
+    <div className="files">
+      <div className="fsum">
+        {files.length} {files.length === 1 ? "file" : "files"} changed
+      </div>
+      {files.map((f) => (
+        <button type="button" key={f.path} onClick={() => onFile?.(f.path)}>
+          <span className="fp">{f.path}</span>
+          {f.added > 0 && <span className="plus">+{f.added}</span>}
+          {f.removed > 0 && <span className="minus">−{f.removed}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** One item. Unchanged items keep their identity, so a new event re-renders only what changed. */
-const Row = memo(function Row({ item }: { item: Item }) {
-  return <>{show(item)}</>;
+const Row = memo(function Row({ item, onFile }: { item: Item; onFile?: (path: string) => void }) {
+  return <>{show(item, onFile)}</>;
 });
 
 /** Keeps the newest at the bottom in view, unless you've scrolled up to read. */
@@ -115,7 +168,8 @@ function useFollow(count: number) {
 }
 
 /** The conversation, as the lab's `.msgs > .col`: your messages, the agent's work and replies, quiet notes. */
-export function ChatView({ timeline }: { timeline: Timeline }) {
+/** `onFile`: a changed file was picked (open the panel at it). */
+export function ChatView({ timeline, onFile }: { timeline: Timeline; onFile?: (path: string) => void }) {
   const last = timeline.items.at(-1);
   // Follow new items, and a streaming message as it grows.
   const follow = useFollow(timeline.items.length * 1e6 + (last?.kind === "agent" ? last.text.length : 0));
@@ -123,13 +177,9 @@ export function ChatView({ timeline }: { timeline: Timeline }) {
     <div className="msgs" role="log" aria-live="polite" ref={follow.ref} onScroll={follow.onScroll}>
       <div className="col">
         {timeline.items.map((item, i) => (
-          <Row key={i} item={item} />
+          <Row key={i} item={item} onFile={onFile} />
         ))}
-        {timeline.running && last?.kind === "you" && (
-          <div className="quiet pending" aria-label="Starting">
-            <i className="spin" />
-          </div>
-        )}
+        {timeline.running && last?.kind === "you" && <Starting />}
       </div>
     </div>
   );

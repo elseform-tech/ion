@@ -42,24 +42,56 @@ describe("Chats", () => {
   });
 
   // Security review: a plain chat can still change files, so its panel is closed, not gone.
-  it("opens a plain chat (in default) with the side panel closed but its toggle there, a project chat with it open", async () => {
-    const both = client([chat("p", "default"), chat("c", "storefront")], ["p", "c"]);
-    const { container, rerender } = render(<Chats client={both} openId="p" setOpenId={() => {}} />);
-    await screen.findAllByText("p");
-    expect(container.querySelector(".split.solo")).not.toBeNull();
+  // The user, 2026-11-18: the side panel starts closed, even when a chat has changes; once you open it, it stays
+  // open as you switch chats.
+  it("keeps the side panel closed until you open it, then open across chats", async () => {
+    const c = client([chat("a", "storefront"), chat("b", "storefront")], ["a", "b"]);
+    const { container, rerender } = render(<Chats client={c} openId="a" setOpenId={() => {}} />);
+    await screen.findAllByText("a");
+    await waitFor(() => expect(c.call).toHaveBeenCalledWith("chat.diff", { chatId: "a" }));
     expect(container.querySelector(".tools")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show changes" }));
-    expect(container.querySelector(".tools")).not.toBeNull();
-    rerender(<Chats client={both} openId="c" setOpenId={() => {}} />);
+    await waitFor(() => expect(container.querySelector(".tools")).not.toBeNull());
+    rerender(<Chats client={c} openId="b" setOpenId={() => {}} />);
     await waitFor(() => expect(container.querySelector(".tools")).not.toBeNull());
   });
-  // UX tour: an empty side panel was 400 px of nothing; it opens when the chat has changed something.
-  it("keeps a project chat's panel closed until it has changes", async () => {
-    const c = client([chat("c", "storefront")]);
-    const { container } = render(<Chats client={c} openId="c" setOpenId={() => {}} />);
-    await screen.findAllByText("c");
-    await waitFor(() => expect(c.call).toHaveBeenCalledWith("chat.diff", { chatId: "c" }));
-    expect(container.querySelector(".tools")).toBeNull();
-    expect(screen.getByRole("button", { name: "Show changes" })).toBeTruthy();
+
+  it("makes a project, renames and archives chats through ion", async () => {
+    const c = client([chat("a", "storefront")]);
+    const { container } = render(<Chats client={c} openId={null} setOpenId={() => {}} />);
+    await screen.findAllByText("a");
+    fireEvent.click(container.querySelector(".proj")!);
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    const box = screen.getByLabelText("Project name");
+    fireEvent.change(box, { target: { value: "billing" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(c.call).toHaveBeenCalledWith("project.create", { name: "billing" });
+    fireEvent.click(screen.getByRole("button", { name: "More for a" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+    expect(c.call).toHaveBeenCalledWith("chat.archive", { chatId: "a" });
+  });
+  // UX tour: a new chat showed nothing while ion made it; your message and a starting word show at once.
+  it("shows your message at once in a new chat while ion makes it", async () => {
+    const c = client([]);
+    const fake = {
+      id: "fake",
+      label: "Fake",
+      installed: true,
+      signedIn: true,
+      models: [],
+      defaultModel: null,
+    };
+    vi.mocked(c.call).mockImplementation(async (cmd: string) => {
+      if (cmd === "harnesses.list") return [fake];
+      if (cmd === "ask") return new Promise(() => {});
+      return [];
+    });
+    const { container } = render(<Chats client={c} openId={null} setOpenId={() => {}} />);
+    await waitFor(() => expect(container.querySelector(".bpill")?.textContent).toBe("Fake"));
+    const box = screen.getByLabelText("Message");
+    fireEvent.change(box, { target: { value: "Fix the totals" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(container.querySelector(".msgs .u")?.textContent).toBe("Fix the totals");
+    expect(container.querySelector(".msgs .pending")).not.toBeNull();
   });
 });

@@ -192,6 +192,7 @@ export class Decisions {
         harness: this.harnessOf(need.runId, need.chatId),
         text: followText(asked.summary, label, custom),
         request: this.requests.get(needId) ?? "",
+        shown: label,
       };
       const started = await this.followUps.tryNow(need.chatId, m);
       this.d.needs.answered(needId, label, scope);
@@ -229,7 +230,7 @@ export class Decisions {
     if (text)
       await this.deliver(
         asked.chatId,
-        { harness: this.harnessOf(asked.runId, asked.chatId), text, request },
+        { harness: this.harnessOf(asked.runId, asked.chatId), text, request, shown: label },
         decisionId,
       );
   }
@@ -289,7 +290,8 @@ export class Decisions {
       if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId || d.blocked) return [];
       const text = followText(d.question, d.choice, d.custom === true);
       if (sent(d.needId, text)) return [];
-      return [{ harness: this.harnessOf(e.runId, chatId), text, request: "", decisionId: d.decisionId }];
+      const harness = this.harnessOf(e.runId, chatId);
+      return [{ harness, text, request: "", shown: d.choice, decisionId: d.decisionId }];
     });
   }
 

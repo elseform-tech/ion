@@ -28,6 +28,8 @@ export const chatsView: View & {
       db.prepare(
         "INSERT OR IGNORE INTO view_chats (chat_id, title, project_id, worktree, branch, last_activity) VALUES (?, ?, ?, ?, ?, ?)",
       ).run(e.chatId, String(d.title), d.projectId ?? null, d.worktree ?? null, d.branch ?? null, e.ts);
+    } else if (e.type === EV.chatRenamed) {
+      db.prepare("UPDATE view_chats SET title = ? WHERE chat_id = ?").run(String(d.title), e.chatId);
     } else if (e.type === EV.chatArchived) {
       db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
     } else {

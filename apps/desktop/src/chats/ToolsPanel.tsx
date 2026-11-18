@@ -10,10 +10,12 @@ const SETTLE_MS = 500;
 /** A chat's changes as read: null until the first read. */
 export type Changes = { diff: { files: FileDiff[]; omitted?: number } | null; error: string | null };
 
+const fileId = (path: string) => `file-${encodeURIComponent(path)}`;
+
 /** One file in the lab's Changes: its header (path, +added, −removed), then its numbered lines. */
 const File = memo(function File({ f }: { f: FileDiff }) {
   return (
-    <section>
+    <section id={fileId(f.path)}>
       <div className="fh">
         <span>{f.path}</span>
         <span className="sp" />
@@ -124,8 +126,14 @@ export function useDiff(client: IonClient, chatId: string, version: number): Cha
  * What the chat changed in its worktree (its own branch, new files included). `version` changes whenever the
  * chat does something, and the changes are read again.
  */
-export function ToolsPanel({ diff, error }: Changes) {
+export function ToolsPanel({ diff, error, focus }: Changes & { focus?: string | null }) {
   const [tab, setTab] = useState<Tab>("diff");
+  // A file picked in the conversation: show the Changes tab, scrolled to it.
+  useEffect(() => {
+    if (!focus) return;
+    setTab("diff");
+    document.getElementById(fileId(focus))?.scrollIntoView?.({ block: "start" });
+  }, [focus, diff]);
   const omitted = diff?.omitted ?? 0;
   const files = diff?.files ?? [];
   return (

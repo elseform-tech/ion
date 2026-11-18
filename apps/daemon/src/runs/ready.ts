@@ -1,5 +1,8 @@
 import type { HarnessEntry } from "../adapters/registry.js";
+import { EV } from "@ion/schema";
 import { UserError } from "../api/errors.js";
+import type { Db, EventStore } from "../store/index.js";
+import { chatsView } from "../views/chats.js";
 
 const TITLE_MAX = 60;
 
@@ -10,6 +13,14 @@ export function titleOf(text: string): string {
   const cut = line.slice(0, TITLE_MAX - 1);
   const word = cut.lastIndexOf(" ");
   return `${(word > TITLE_MAX / 2 ? cut.slice(0, word) : cut).trimEnd()}…`;
+}
+
+/** A new name for a chat, trimmed; at most 120 characters. */
+export function renameChat(store: EventStore, db: Db, chatId: string, title: string): void {
+  if (!chatsView.list(db).some((c) => c.chatId === chatId)) throw new UserError(`Unknown chat: ${chatId}`);
+  const name = title.trim().slice(0, 120);
+  if (!name) throw new UserError("Give the chat a name");
+  store.append({ chatId, runId: null, origin: "daemon", type: EV.chatRenamed, data: { title: name } });
 }
 
 /** How long an agent that was ready counts as ready without asking again. A failed check is asked again. */

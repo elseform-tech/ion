@@ -61,6 +61,7 @@ export type Commands = {
   "decision.forget": { args: { decisionId: string }; result: { ok: true } };
   "chats.list": { args: Record<string, never>; result: ChatInfo[] };
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
+  "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
   /** What a chat changed in its worktree since it started (empty once archived); omitted: files past the cap. */
   "chat.diff": { args: { chatId: string }; result: { files: FileDiff[]; omitted?: number } };
   "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
@@ -150,6 +151,7 @@ export const COMMANDS = [
   "decision.forget",
   "chats.list",
   "chat.archive",
+  "chat.rename",
   "chat.diff",
   "memory.list",
   "memory.forget",

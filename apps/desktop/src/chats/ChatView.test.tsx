@@ -121,10 +121,19 @@ describe("ChatView", () => {
     expect(container.querySelector(".ws.think .wl")?.textContent).toBe("Thought for 4sLook at totals");
   });
 
-  it("shows a live run's current step with a spinner", () => {
-    const { container } = view([work({ ended: undefined })]);
-    expect(container.querySelector(".wh .spin")).not.toBeNull();
+  // The user, 2026-11-18: no spinners; what's live shimmers.
+  it("shows a live run's current step shimmering, with no spinner", () => {
+    const { container } = view([
+      work({
+        ended: undefined,
+        steps: [{ kind: "tool", toolKind: "command", name: "Bash", summary: "pnpm test" }],
+      }),
+    ]);
+    expect(container.querySelector(".spin")).toBeNull();
     expect(container.querySelector(".wh .now")?.textContent).toBe("Bash pnpm test");
+    fireEvent.click(container.querySelector(".wh")!);
+    expect(container.querySelector(".spin")).toBeNull();
+    expect(container.querySelector(".ws.w-run .now")?.textContent).toBe("Bash");
   });
 
   // Review Focus 2: an agent's text inside lab components is text.
@@ -181,15 +190,52 @@ describe("ChatView", () => {
     expect(container.querySelector(".msgs")?.textContent).toBe("");
   });
   // UX tour: after you send, the chat showed nothing until the agent did something.
-  it("shows a spinner under your message while its run starts, and none once the agent is working", () => {
+  it("shows a playful word under your message while its run starts, growing stronger, and none once the agent is working", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-18T10:00:00.000Z") });
     const you: Item = { kind: "you", text: "Fix it" };
     const { container, rerender } = render(
       <ChatView timeline={{ ...empty(), items: [you], running: "r1" }} />,
     );
-    expect(container.querySelector(".msgs .pending .spin")).not.toBeNull();
+    const pending = () => container.querySelector(".msgs .pending")!;
+    expect(container.querySelector(".spin")).toBeNull();
+    const first = pending().textContent;
+    expect(first).toBe("Thinking");
+    const strength = () => Number((pending() as HTMLElement).style.getPropertyValue("--strength"));
+    const before = strength();
+    act(() => vi.advanceTimersByTime(3000));
+    expect(pending().textContent).not.toBe(first);
+    expect(strength()).toBeGreaterThan(before);
     rerender(<ChatView timeline={{ ...empty(), items: [you, work({ ended: undefined })], running: "r1" }} />);
     expect(container.querySelector(".msgs .pending")).toBeNull();
     rerender(<ChatView timeline={{ ...empty(), items: [you], running: null }} />);
     expect(container.querySelector(".msgs .pending")).toBeNull();
+  });
+  // The user, 2026-11-18: a turn that changed files ends with their list.
+  it("ends a run that changed files with their list and counts", () => {
+    const onFile = vi.fn();
+    const { container } = render(
+      <ChatView
+        timeline={{
+          ...empty(),
+          items: [
+            {
+              kind: "end",
+              status: "done",
+              seconds: 3,
+              files: [
+                { path: "src/a.ts", added: 3, removed: 1 },
+                { path: "notes.md", added: 1, removed: 0 },
+              ],
+            },
+          ],
+        }}
+        onFile={onFile}
+      />,
+    );
+    expect(container.querySelector(".files .fsum")?.textContent).toBe("2 files changed");
+    const rows = [...container.querySelectorAll(".files button")];
+    expect(rows.map((r) => r.textContent)).toEqual(["src/a.ts+3−1", "notes.md+1"]);
+    fireEvent.click(rows[0]!);
+    expect(onFile).toHaveBeenCalledWith("src/a.ts");
   });
 });

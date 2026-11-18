@@ -1,67 +1,43 @@
-import { CircleAlert, Pin, Square, SquarePen } from "@ion/design-system";
+import { ChevronDown, ChevronRight, Pin, SquarePen } from "@ion/design-system";
 import type { ChatInfo, NeedInfo, ProjectInfo } from "@ion/schema";
 import { type ReactNode, useMemo, useState } from "react";
-import { groupChats, relTime } from "./live.js";
+import { groupChats } from "./live.js";
 import { ProjectMenu } from "./ProjectMenu.js";
+import { ChatRow, NeedRow, type RowActions, type RowProps } from "./SidebarRows.js";
 
-function Group({ label, count, children }: { label: ReactNode; count?: number; children: ReactNode }) {
+/** A project group shows this many chats until you ask for the rest. */
+const SHOWN = 5;
+
+type Fold = { folded: boolean; onToggle: () => void };
+
+function Group({
+  label,
+  count,
+  fold,
+  children,
+}: {
+  label: ReactNode;
+  count?: number;
+  fold?: Fold;
+  children: ReactNode;
+}) {
   return (
     <div className="grp">
       <div className="gl">
-        <span>{label}</span>
+        {fold ? (
+          <button type="button" className="gfold" aria-expanded={!fold.folded} onClick={fold.onToggle}>
+            {fold.folded ? <ChevronRight /> : <ChevronDown />}
+            {label}
+          </button>
+        ) : (
+          <span>{label}</span>
+        )}
         {count !== undefined && <span>{count}</span>}
       </div>
-      {children}
+      {!fold?.folded && children}
     </div>
   );
 }
-
-type Row = { chat: ChatInfo; open: boolean; onOpen: () => void };
-
-/** A Needs-you row: the question, its project under it, the wait dot. */
-const NeedRow = ({ chat, open, onOpen, need }: Row & { need: NeedInfo }) => (
-  <button className={`r${open ? " on" : ""}`} type="button" onClick={onOpen}>
-    <span />
-    <span>
-      <span className="tt">{need.summary}</span>
-      <span className="sub">{chat.projectId}</span>
-    </span>
-    <i className="wd" />
-  </button>
-);
-
-/** How a chat's last run ended, when that's worth a mark: failed or stopped. */
-const MARKS: Record<string, { label: string; Icon: typeof CircleAlert }> = {
-  failed: { label: "Failed", Icon: CircleAlert },
-  interrupted: { label: "Stopped", Icon: Square },
-  capped: { label: "Stopped", Icon: Square },
-};
-
-/** When it was last active, after a mark if its last run failed or was stopped. */
-function When({ chat }: { chat: ChatInfo }) {
-  const mark = MARKS[chat.lastRunStatus ?? ""];
-  return (
-    <span className="tm">
-      {mark && <mark.Icon className="st" aria-label={mark.label} />}
-      {relTime(chat.lastActivityAt)}
-    </span>
-  );
-}
-
-/**
- * A chat row: its title with the start of the agent's last reply under it, then a spinner while it runs, else
- * when it was last active. The first slot stays empty: an avatar there marks a thread ion started, not yours.
- */
-const ChatRow = ({ chat, open, onOpen, running }: Row & { running?: boolean }) => (
-  <button className={`r${open ? " on" : ""}`} type="button" onClick={onOpen}>
-    <span />
-    <span>
-      <span className="tt">{chat.title}</span>
-      {chat.preview && <span className="sub">{chat.preview}</span>}
-    </span>
-    {running ? <i className="spin" /> : <When chat={chat} />}
-  </button>
-);
 
 /** Chats by project, the most recently active project first (the chats are newest first already). */
 function byProject(chats: ChatInfo[]): { projectId: string; chats: ChatInfo[] }[] {
@@ -71,13 +47,26 @@ function byProject(chats: ChatInfo[]): { projectId: string; chats: ChatInfo[] }[
   return [...groups].map(([projectId, list]) => ({ projectId, chats: list }));
 }
 
+/** A set kept for the window's life: which groups are folded, which show all their chats. */
+function useToggles(): [Set<string>, (key: string) => void] {
+  const [set, setSet] = useState<Set<string>>(() => new Set());
+  const toggle = (key: string) =>
+    setSet((s) => {
+      const next = new Set(s);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  return [set, toggle];
+}
+
 type Props = {
   chats: ChatInfo[];
   needs: NeedInfo[];
   projects: ProjectInfo[];
   open: string | null;
   onOpen: (chatId: string | null) => void;
-};
+  onNewProject: (name: string) => void;
+} & RowActions;
 
 const NEEDS_LABEL = (
   <span className="pinl">
@@ -86,15 +75,55 @@ const NEEDS_LABEL = (
   </span>
 );
 
-/** The lab's Chats sidebar: Needs you (pinned), Running (with a spinner), then everything else by activity. */
-export function Sidebar({ chats, needs, projects, open, onOpen }: Props) {
+/** Your chats grouped by project: each group folds, and shows its 5 most recent chats until you ask for more. */
+function ProjectGroups(p: { chats: ChatInfo[]; row: (c: ChatInfo) => ReactNode }) {
+  const [folded, fold] = useToggles();
+  const [all, showAll] = useToggles();
+  return (
+    <>
+      {byProject(p.chats).map(({ projectId, chats }) => {
+        const shown = all.has(projectId) ? chats : chats.slice(0, SHOWN);
+        const more = chats.length - shown.length;
+        return (
+          <Group
+            key={projectId}
+            label={projectId}
+            fold={{ folded: folded.has(projectId), onToggle: () => fold(projectId) }}
+          >
+            {shown.map(p.row)}
+            {more > 0 && (
+              <button type="button" className="more-rows" onClick={() => showAll(projectId)}>
+                {more} more
+              </button>
+            )}
+          </Group>
+        );
+      })}
+    </>
+  );
+}
+
+/** The lab's Chats sidebar: Needs you (pinned), Running (shimmering), then your chats by project. */
+export function Sidebar({ chats, needs, projects, open, onOpen, onNewProject, onRename, onArchive }: Props) {
   const [project, setProject] = useState<string | null>(null);
   const g = useMemo(() => groupChats(chats, needs, project), [chats, needs, project]);
-  const props = (c: ChatInfo) => ({ chat: c, open: open === c.chatId, onOpen: () => onOpen(c.chatId) });
+  const props = (c: ChatInfo): RowProps => ({
+    chat: c,
+    open: open === c.chatId,
+    onOpen: () => onOpen(c.chatId),
+  });
+  const acts = { onRename, onArchive };
+  const row = (c: ChatInfo) => <ChatRow key={c.chatId} {...props(c)} acts={acts} />;
   return (
     <>
       <div className="shead">
-        <ProjectMenu projects={projects} needs={needs} project={project} onPick={setProject} />
+        <ProjectMenu
+          projects={projects}
+          needs={needs}
+          project={project}
+          onPick={setProject}
+          onNew={onNewProject}
+        />
         <button className="ib" type="button" title="New chat" onClick={() => onOpen(null)}>
           <SquarePen />
         </button>
@@ -110,24 +139,14 @@ export function Sidebar({ chats, needs, projects, open, onOpen }: Props) {
         {g.running.length > 0 && (
           <Group label="Running" count={g.running.length}>
             {g.running.map((c) => (
-              <ChatRow key={c.chatId} {...props(c)} running />
+              <ChatRow key={c.chatId} {...props(c)} acts={acts} running />
             ))}
           </Group>
         )}
         {project ? (
-          <Group label="Chats">
-            {g.chats.map((c) => (
-              <ChatRow key={c.chatId} {...props(c)} />
-            ))}
-          </Group>
+          <Group label="Chats">{g.chats.map(row)}</Group>
         ) : (
-          byProject(g.chats).map((p) => (
-            <Group key={p.projectId} label={p.projectId}>
-              {p.chats.map((c) => (
-                <ChatRow key={c.chatId} {...props(c)} />
-              ))}
-            </Group>
-          ))
+          <ProjectGroups chats={g.chats} row={row} />
         )}
       </div>
     </>

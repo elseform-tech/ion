@@ -1,5 +1,9 @@
 export {
   ArrowUp,
+  FolderPlus,
+  Pencil,
+  Ellipsis,
+  Archive,
   GripVertical,
   Loader,
   ShieldOff,

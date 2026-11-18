@@ -264,3 +264,176 @@ body.resizing {
 .r .st[aria-label="Failed"] {
   color: var(--bad);
 }
+
+/* No spinners (the user, 2026-11-18): what's live shimmers, as the lab's working step does. */
+.now {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--ink) 50%, var(--muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shim 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .now {
+    animation: none;
+    color: var(--ink);
+    background: none;
+  }
+}
+/* While a run starts: a playful word, its shimmer stronger the longer you wait (--strength 0.2 → 1). */
+.pending.now {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--faint) calc((1 - var(--strength, 0.2)) * 100%), var(--muted)) 0%,
+    color-mix(in srgb, var(--muted) calc((1 - var(--strength, 0.2)) * 100%), var(--ink)) 50%,
+    color-mix(in srgb, var(--faint) calc((1 - var(--strength, 0.2)) * 100%), var(--muted)) 100%
+  );
+  width: fit-content;
+}
+.send.sending {
+  opacity: 0.4;
+}
+/* A run's changed files, at its end: a quiet count, then one line per file. */
+.files {
+  display: grid;
+  gap: 1px;
+  font-size: 13px;
+}
+.files .fsum {
+  color: var(--faint);
+  margin-bottom: 2px;
+}
+.files button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--ink);
+  font: 12.5px var(--mono);
+  text-align: left;
+}
+.files button:hover {
+  background: var(--hover);
+}
+.files .plus {
+  color: var(--add-ink);
+}
+.files .minus {
+  color: var(--del-ink);
+}
+/* Sidebar rows: a menu on hover; groups that fold; "N more". */
+.rw {
+  position: relative;
+}
+.rmore {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+}
+.rw:hover .rmore,
+.rmore:focus-within {
+  display: block;
+}
+.rw:hover .tm {
+  visibility: hidden;
+}
+.rmore .ib {
+  width: 26px;
+  height: 26px;
+}
+.rmenu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 6;
+  min-width: 140px;
+  display: grid;
+  padding: 4px;
+}
+.rmenu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.rmenu button:hover {
+  background: var(--hover);
+}
+.rmenu .lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+.r.rename input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  width: 100%;
+}
+.gfold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.gfold .lucide {
+  width: 12px;
+  height: 12px;
+}
+.more-rows {
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  padding: 4px 8px 4px 34px;
+  cursor: pointer;
+  text-align: left;
+}
+.more-rows:hover {
+  color: var(--ink);
+}
+.pnew {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 9px 6px;
+  cursor: pointer;
+}
+.pnew .lucide {
+  width: 14px;
+  height: 14px;
+}
+.pmi.pnew {
+  border-bottom: 0;
+  margin: 0;
+}

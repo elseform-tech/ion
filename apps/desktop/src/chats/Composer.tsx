@@ -112,8 +112,8 @@ function SendOrStop(p: {
   const running = p.running;
   if (p.pending)
     return (
-      <button type="button" className="send" aria-label="Sending" disabled>
-        <i className="spin" />
+      <button type="button" className="send sending" aria-label="Sending" disabled>
+        <ArrowUp />
       </button>
     );
   if (running)
@@ -145,6 +145,8 @@ type Props = {
   harness?: string | null;
   /** A new chat: its project pill, and the lab's big box. */
   project?: ProjectPick;
+  /** Your message is on its way (its text), or came back refused (null). */
+  onSending?: (text: string | null) => void;
   /** An agent's question waits: it's answered in its panel, so the box is locked. */
   locked?: boolean;
   /** The brain popover opened: read the agents again. */
@@ -182,7 +184,7 @@ function useSend(client: IonClient, onSent: (chatId: string) => void) {
 
 /** The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
 export function Composer(p: Props) {
-  const { client, harnesses, to, running, onSent, harness, project, onBrainOpen, locked } = p;
+  const { client, harnesses, to, running, onSent, harness, project, onBrainOpen, locked, onSending } = p;
   // Never a default agent: the chat's own, else the first one ready. Until the list arrives, nothing is sent.
   const ready = harnesses.filter((h) => h.installed && h.signedIn);
   const first = harness ?? ready[0]?.id ?? "";
@@ -192,7 +194,11 @@ export function Composer(p: Props) {
   const { error, pending, send } = useSend(client, onSent);
   const b = { ...brain, harness: brain.harness || first };
   const canSend = !locked && Boolean(text.trim()) && ready.some((h) => h.id === b.harness);
-  const go = () => canSend && void send(askArgs(text, { ...b, access }, to), setText);
+  const put = (t: string) => {
+    setText(t);
+    onSending?.(t ? null : text);
+  };
+  const go = () => canSend && void send(askArgs(text, { ...b, access }, to), put);
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
     e.preventDefault();

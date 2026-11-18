@@ -15,6 +15,7 @@ import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
 import { HarnessInfos } from "./harness-infos.js";
+import { renameChat } from "../runs/ready.js";
 
 export { UserError } from "./errors.js";
 
@@ -53,6 +54,10 @@ export const handlers: Handlers = {
     const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
     if (!worktree || !project) return { files: [] };
     return chatDiff(project.path, worktree);
+  },
+  "chat.rename": (a, ctx) => {
+    renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));
+    return { ok: true as const };
   },
   "chat.archive": async (a, ctx) => {
     await ctx.runs.archive(String(a.chatId ?? ""));

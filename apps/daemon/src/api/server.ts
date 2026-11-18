@@ -102,6 +102,13 @@ function autoAccess(
   });
 }
 
+/** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
+const followAsk = (chatId: string, m: { harness: string | null; text: string }) => ({
+  chatId,
+  text: m.text,
+  ...(m.harness ? { harness: m.harness } : {}),
+});
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
@@ -136,8 +143,8 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     db,
     needs,
     match: createMatcher(quick),
-    followUp: async (chatId, harness, text, request) =>
-      (await runs.ask({ chatId, text, ...(harness ? { harness } : {}) }, { request })).runId,
+    followUp: async (chatId, m) =>
+      (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown })).runId,
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;

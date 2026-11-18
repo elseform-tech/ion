@@ -23,6 +23,7 @@ export const ADAPTER_EVENT_TYPES = [
 export const DAEMON_EVENT_TYPES = [
   "chat.created",
   "chat.archived",
+  "chat.renamed",
   "message.sent",
   "run.queued",
   "run.waiting",
@@ -64,6 +65,7 @@ export const EV = {
   error: "error",
   chatCreated: "chat.created",
   chatArchived: "chat.archived",
+  chatRenamed: "chat.renamed",
   messageSent: "message.sent",
   runQueued: "run.queued",
   runWaiting: "run.waiting",
@@ -115,8 +117,14 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     worktree: z.string().nullable().optional(),
     branch: z.string().nullable().optional(),
   }),
+  /** You renamed the chat. */
+  "chat.renamed": z.object({ title: z.string().min(1) }),
   /** What you asked: the text of an ask, stored before its run is queued. */
-  "message.sent": z.object({ text: z.string() }),
+  "message.sent": z.object({
+    text: z.string(),
+    /** What the chat shows as yours, when `text` is ion's wording for the agent (your answer to its question). */
+    shown: z.string().optional(),
+  }),
   /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
   "memory.written": z.object({
     memoryId: z.string(),

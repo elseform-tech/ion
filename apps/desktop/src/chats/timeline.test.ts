@@ -274,4 +274,29 @@ describe("timeline", () => {
       { kind: "end", status: "failed", seconds: 0, reason: "Rate limited" },
     ]);
   });
+  // The user, 2026-11-18: a run's end lists the files it changed (the last counts for each path).
+  it("ends a run with the files it changed", () => {
+    const t = play(
+      ev("file.changed", { path: "a.ts", change: "modify", added: 1, removed: 0 }),
+      ev("file.changed", { path: "b.ts", change: "add", added: 4, removed: 0 }),
+      ev("file.changed", { path: "a.ts", change: "modify", added: 2, removed: 1 }),
+      ev("run.finished", { status: "done" }),
+    );
+    expect(t.items.at(-1)).toEqual({
+      kind: "end",
+      status: "done",
+      seconds: 0,
+      files: [
+        { path: "a.ts", added: 2, removed: 1 },
+        { path: "b.ts", added: 4, removed: 0 },
+      ],
+    });
+  });
+  // The user, 2026-11-18: your answer shows as what you chose, not ion's wording for the agent.
+  it("shows the message ion sent for your answer as your answer", () => {
+    const t = play(
+      ev("message.sent", { text: 'You asked: "Colour?". The user chose: "Green".', shown: "Green" }),
+    );
+    expect(t.items).toEqual([{ kind: "you", text: "Green" }]);
+  });
 });

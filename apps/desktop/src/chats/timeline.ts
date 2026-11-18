@@ -23,7 +23,7 @@ export type Item =
       expired?: boolean;
       answered?: string;
     }
-  | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string }
+  | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string; files?: FileChange[] }
   /** gone: its run ended (done, or failed with it as the reason), so it's not shown on its own. */
   | { kind: "error"; text: string; runId: string; gone?: boolean };
 
@@ -38,6 +38,8 @@ export type Timeline = {
   harness: string | null;
   /** Grows with every file change and finished run: the changes panel reads again when it moves. */
   changes: number;
+  /** Each run's changed files so far, by path (the last counts win), for its end. */
+  files: Record<string, Record<string, FileChange>>;
   asks: Record<string, string>;
   work: Record<string, number>;
   tools: Record<string, { at: number; step: number }>;
@@ -54,6 +56,7 @@ export const empty = (): Timeline => ({
   running: null,
   harness: null,
   changes: 0,
+  files: {},
   asks: {},
   work: {},
   tools: {},
@@ -64,6 +67,8 @@ export const empty = (): Timeline => ({
 });
 
 type D = Record<string, unknown>;
+/** A file a run changed, with its line counts. */
+export type FileChange = { path: string; added: number; removed: number };
 const str = (x: unknown) => (typeof x === "string" ? x : "");
 const push = (t: Timeline, item: Item): Timeline => ({ ...t, items: [...t.items, item], streaming: null });
 const replace = (t: Timeline, i: number, item: Item): Timeline => {
@@ -141,6 +146,7 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
     seconds,
     ...(cost !== undefined ? { cost } : {}),
     ...(last && str(d.status) === "failed" ? { reason: last } : {}),
+    ...(t.files[runId] ? { files: Object.values(t.files[runId]) } : {}),
   });
   return { ...ended, running: t.running === runId ? null : t.running, changes: t.changes + 1 };
 }
@@ -173,7 +179,7 @@ function errorsGone(t: Timeline, runId: string): { t: Timeline; last: string | n
 type Handler = (t: Timeline, d: D, e: IonEvent) => Timeline;
 
 const HANDLERS: Record<string, Handler> = {
-  [EV.messageSent]: (t, d) => push(t, { kind: "you", text: str(d.text) }),
+  [EV.messageSent]: (t, d) => push(t, { kind: "you", text: str(d.shown) || str(d.text) }),
   [EV.messageDelta]: delta,
   [EV.messageCompleted]: completed,
   [EV.runQueued]: (t, _d, e) => ({ ...t, running: e.runId }),
@@ -187,7 +193,12 @@ const HANDLERS: Record<string, Handler> = {
   [EV.thinkingDelta]: thinking,
   [EV.toolFinished]: toolFinished,
   [EV.toolOutput]: toolOutput,
-  [EV.fileChanged]: (t) => ({ ...t, changes: t.changes + 1 }),
+  [EV.fileChanged]: (t, d, e) => {
+    const runId = e.runId ?? "";
+    const change = { path: str(d.path), added: Number(d.added) || 0, removed: Number(d.removed) || 0 };
+    const files = { ...t.files, [runId]: { ...t.files[runId], [change.path]: change } };
+    return { ...t, changes: t.changes + 1, files };
+  },
   [EV.approvalRequested]: (t, d) => ({ ...t, asks: { ...t.asks, [str(d.requestId)]: str(d.summary) } }),
   [EV.approvalResolved]: approval,
   [EV.needRaised]: question,
