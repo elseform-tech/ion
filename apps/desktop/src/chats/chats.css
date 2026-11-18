@@ -324,3 +324,7 @@ select:hover {
   color: var(--muted);
   font-size: 13px;
 }
+.qcard-expired {
+  color: var(--wait);
+  font-size: 13px;
+}

@@ -21,7 +21,7 @@ import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
 import { createWorktree, ensureDefaultProject, removeWorktree } from "../workspace/index.js";
 import type { GateAnswer } from "../gate/index.js";
-import { Approvals } from "./approvals.js";
+import { type AskBlocked, Approvals } from "./approvals.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
 
 type AskArgs = Commands["ask"]["args"];
@@ -83,13 +83,20 @@ export class RunManager {
       mcp?: { grants: Grants; url: () => string };
       /** ion's gate (`<base>/<key>`): harnesses with a hook report every tool call there before it runs. */
       gate?: { url: () => string };
+      /** Asks you about a tool call ion stopped (the call waits for the answer). */
+      askBlocked?: AskBlocked;
     },
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
     const setting = loadUserConfig(ctx.configFile).config.resources.max_runs;
     this.queue = createRunQueue(maxRuns(setting, availableParallelism()));
-    this.approvals = new Approvals(store, ctx.access, (runId) => !this.stopping && this.active.has(runId));
+    this.approvals = new Approvals(
+      store,
+      ctx.access,
+      (runId) => !this.stopping && this.active.has(runId),
+      ctx.askBlocked,
+    );
   }
 
   /**

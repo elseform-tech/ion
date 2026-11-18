@@ -424,3 +424,60 @@ describe("recommended options", () => {
     );
   });
 });
+
+// Plan 07 (the user, 2026-11-18): when ion blocks a tool call, it asks; the call waits up to 4 minutes.
+describe("asking when ion blocks a tool call", () => {
+  const block = { requestId: "g7", summary: "npm publish", reason: "Publishes the package" };
+  const makeQuick = (timeoutMs = 2000) =>
+    new Decisions({ store, db, needs, followUp, blockedWaitMs: timeoutMs, requestOf: () => "Ship it" });
+
+  it("asks, with why it was stopped and the three options, and lets the call through on Allow once", async () => {
+    const d = makeQuick();
+    const waiting = d.askBlocked(scope(), block);
+    const [need] = needs.open("c1");
+    expect(need).toMatchObject({
+      kind: "ask",
+      summary: "Allow this? npm publish",
+      detail: "ion stopped it: Publishes the package",
+    });
+    expect(need!.choices!.map((c) => c.label)).toEqual([
+      "Allow once",
+      "Always allow in this project",
+      "Don't allow",
+    ]);
+    await d.answer(need!.needId, 1);
+    expect(await waiting).toBe("allow");
+    // Once means once: nothing kept for next time, and no message to the agent (its call just runs).
+    expect(of(EV.decisionRecorded)).toEqual([]);
+    expect(followUp).not.toHaveBeenCalled();
+  });
+
+  it("keeps 'Always allow' for the project, and 'Don't allow' for the chat", async () => {
+    const d = makeQuick();
+    const a = d.askBlocked(scope(), block);
+    await d.answer(needs.open("c1")[0]!.needId, 2);
+    expect(await a).toBe("allow");
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({
+      scope: "project",
+      choice: "Always allow in this project",
+    });
+    const b = d.askBlocked(scope(), { ...block, requestId: "g8" });
+    await d.answer(needs.open("c1")[0]!.needId, 3);
+    expect(await b).toBe("deny");
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ scope: "chat", choice: "Don't allow" });
+  });
+
+  it("says no after the wait, keeps the question open, and tells the agent if you allow it later", async () => {
+    const d = makeQuick(20);
+    expect(await d.askBlocked(scope(), block)).toBe("timeout");
+    const [need] = needs.open("c1");
+    expect(need).toBeDefined();
+    await d.answer(need!.needId, 2);
+    expect(followUp).toHaveBeenCalledWith(
+      "c1",
+      "fake",
+      'Earlier ion stopped this: "npm publish". The user now allows it.',
+      "Ship it",
+    );
+  });
+});

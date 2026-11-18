@@ -8,7 +8,9 @@ export { ruleFor } from "./rules.js";
 export { harnessRunner } from "./runner.js";
 
 type At = { chatId: string; projectId: string; text: string; roots: string[] };
-export type Access = { decide(at: At, req: ApprovalRequest): Promise<Verdict> };
+/** source: a rule (your secrets, ion's files: never asks you) or the judge (its "no" asks you). */
+type AccessVerdict = Verdict & { source: "rule" | "judge" };
+export type Access = { decide(at: At, req: ApprovalRequest): Promise<AccessVerdict> };
 
 /** Auto: rules first, then the judge, at most once per action in a chat. */
 export function createAccess(o: {
@@ -18,11 +20,11 @@ export function createAccess(o: {
   /** Your decisions that apply in a chat, for the judge (Plan 06). */
   decisionsFor?: (projectId: string, chatId: string) => string[];
 }): Access {
-  const cache = new Map<string, Verdict>();
+  const cache = new Map<string, AccessVerdict>();
   return {
     async decide(at, req) {
       const rule = ruleFor(req, { roots: at.roots, home: o.home, ionDirs: o.ionDirs });
-      if (rule) return rule;
+      if (rule) return { ...rule, source: "rule" };
       // The same action for the same request in a chat: one judge call.
       const hash = createHash("sha256")
         .update(JSON.stringify([at.text, req.toolName, req.input, o.decisionsFor?.(at.projectId, at.chatId)]))
@@ -37,7 +39,11 @@ export function createAccess(o: {
         req,
         ...(decisions.length ? { decisions } : {}),
       });
-      const verdict: Verdict = { decision: v.allow ? "allow" : "deny", reason: v.reason };
+      const verdict: AccessVerdict = {
+        decision: v.allow ? "allow" : "deny",
+        reason: v.reason,
+        source: "judge",
+      };
       // A judge that couldn't decide (slow, signed out) is asked again next time.
       if (v.decided !== false) cache.set(key, verdict);
       return verdict;

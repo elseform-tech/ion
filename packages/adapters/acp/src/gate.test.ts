@@ -38,7 +38,8 @@ describe("Grok's gate hook", () => {
       expect(env).not.toHaveProperty("GROK_FOLDER_TRUST");
       const hook = JSON.parse(readFileSync(join(home, "hooks/ion-gate.json"), "utf8"));
       const h = hook.hooks.PreToolUse[0].hooks[0];
-      expect(h).toMatchObject({ type: "command", timeout: 60, failClosed: true });
+      // ion may hold a call up to 4 minutes while it asks you; the hook waits a little longer.
+      expect(h).toMatchObject({ type: "command", timeout: 300, failClosed: true });
       expect(h.command).toMatch(/^\[ -z "\$ION_GATE_URL" \] && exit 0;/);
       expect(existsSync(join(wt, ".grok"))).toBe(false);
       GROK_BUILD.env!({ url, cwd: wt });

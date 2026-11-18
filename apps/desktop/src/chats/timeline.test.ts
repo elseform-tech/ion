@@ -187,6 +187,34 @@ describe("timeline", () => {
     });
   });
 
+  it("marks ion's question about a stopped call as gone past its wait when ion says no", () => {
+    const choices = [
+      { label: "Allow once", consequence: "a" },
+      { label: "Don't allow", consequence: "b" },
+    ];
+    const t = play(
+      ev("need.raised", {
+        needId: "n1",
+        requestId: "g4",
+        kind: "ask",
+        summary: "Allow this? npm publish",
+        detail: "ion stopped it: x",
+        dedupeKey: "k",
+        choices,
+        blocked: true,
+      }),
+      ev("approval.resolved", {
+        requestId: "g4",
+        decision: "deny",
+        by: "ion",
+        reason: "No answer in 4 minutes",
+        summary: "npm publish",
+      }),
+    );
+    expect(t.items[0]).toMatchObject({ kind: "question", blocked: true, expired: true });
+    expect(t.items[1]).toMatchObject({ kind: "ion", tone: "deny" });
+  });
+
   it("shows errors and retries", () => {
     const t = play(
       ev("error", { code: "rate_limit", retryable: true, message: "Rate limited" }),

@@ -99,6 +99,8 @@ export type NeedInfo = {
   detail: string | null;
   /** An agent's question: the choices you pick from. */
   choices?: { label: string; consequence: string; recommended?: boolean }[];
+  /** ion's own question about a tool call it stopped. */
+  blocked?: boolean;
   raisedAt: string;
 };
 

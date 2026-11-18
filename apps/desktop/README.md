@@ -12,7 +12,9 @@ through `@ion/client/browser`, and it keeps nothing of its own (lint: no `node:*
   - `timeline.ts` turns a chat's events into what it shows (pure, tested).
   - `live.ts` keeps the sidebar's lists live (Needs you, Running, Chats).
   - `Composer` holds the agent, model, effort and access pickers.
-  - `QuestionBar` shows an agent's question with its choices.
+  - `QuestionBar` shows a question as a card: the question, why, each option with its reasoning and tradeoffs (the
+    recommended one marked), your own answer, and "Always for this project". ion's own question about a call it
+    stopped says when ion went on without your answer.
   - `ChangesPanel` shows what the chat changed (`chat.diff`).
 - Agents' text is Markdown with no raw HTML; links show where they point but open nothing.
 

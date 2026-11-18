@@ -19,6 +19,9 @@ export type Item =
       choices: Choice[];
       /** Closed: answered by you, or its run stopped. */
       resolved?: boolean;
+      /** ion's question about a tool call it stopped; expired: ion said no after waiting, the agent went on. */
+      blocked?: boolean;
+      expired?: boolean;
       answered?: string;
     }
   | { kind: "end"; status: string; seconds: number; cost?: number }
@@ -39,6 +42,8 @@ export type Timeline = {
   work: Record<string, number>;
   tools: Record<string, { at: number; tool: number }>;
   questions: Record<string, number>;
+  /** ion's questions about stopped calls, by the call's request id. */
+  blockedAsks: Record<string, number>;
   started: Record<string, string>;
   cost: Record<string, number>;
 };
@@ -53,6 +58,7 @@ export const empty = (): Timeline => ({
   work: {},
   tools: {},
   questions: {},
+  blockedAsks: {},
   started: {},
   cost: {},
 });
@@ -126,12 +132,20 @@ const toolOutput = (t: Timeline, d: D): Timeline =>
     output: ((x.output ?? "") + str(d.text)).slice(0, OUTPUT_MAX),
   }));
 
+/** ion said no to a call it was holding for your answer: its question has gone past its wait. */
+function expire(t: Timeline, requestId: string): Timeline {
+  const i = t.blockedAsks[requestId];
+  const q = i !== undefined ? t.items[i] : undefined;
+  return q?.kind === "question" ? replace(t, i!, { ...q, expired: true }) : t;
+}
+
 function approval(t: Timeline, d: D): Timeline {
   if (d.by !== "ion") return t;
   const what = str(d.summary) || t.asks[str(d.requestId)] || "a tool";
   // Allows are recorded but not shown: ion lets most things through. A denial shows, with why.
   if (d.decision !== "deny") return t;
-  return push(t, { kind: "ion", tone: "deny", text: `Denied by ion: ${what} — ${str(d.reason)}` });
+  const marked = expire(t, str(d.requestId));
+  return push(marked, { kind: "ion", tone: "deny", text: `Denied by ion: ${what} — ${str(d.reason)}` });
 }
 
 function question(t: Timeline, d: D): Timeline {
@@ -142,9 +156,12 @@ function question(t: Timeline, d: D): Timeline {
     question: str(d.summary),
     why: typeof d.detail === "string" ? d.detail : null,
     choices: d.choices as Choice[],
+    ...(d.blocked === true ? { blocked: true } : {}),
   };
   const added = push(t, item);
-  return { ...added, questions: { ...t.questions, [str(d.needId)]: added.items.length - 1 } };
+  const at = added.items.length - 1;
+  const blockedAsks = d.blocked === true ? { ...t.blockedAsks, [str(d.requestId)]: at } : t.blockedAsks;
+  return { ...added, questions: { ...t.questions, [str(d.needId)]: at }, blockedAsks };
 }
 
 function answered(t: Timeline, d: D): Timeline {

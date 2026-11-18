@@ -6,7 +6,8 @@ const BUSY = "This chat is already running";
 
 /** Your answer on its way back into a chat: the message, what the judge treats as your request, and the agent. */
 export type Message = { harness: string | null; text: string; request: string };
-type Pending = Message & { decisionId: string };
+/** decisionId: the decision whose outcome the run is, if any (a one-off answer has none). */
+type Pending = Message & { decisionId?: string };
 export type Start = (
   chatId: string,
   harness: string | null,
@@ -54,8 +55,8 @@ export class FollowUps {
     this.queue.set(chatId, [...(this.queue.get(chatId) ?? []), p]);
   }
 
-  started(runId: string, decisionId: string): void {
-    this.runs.set(runId, decisionId);
+  started(runId: string, decisionId?: string): void {
+    if (decisionId) this.runs.set(runId, decisionId);
   }
 
   private async attempt(chatId: string, m: Message): Promise<string | "busy"> {
@@ -77,10 +78,11 @@ export class FollowUps {
       if (r === "busy") return;
       if (r) this.started(r, next.decisionId);
     } catch (e) {
-      this.ended(chatId, next.decisionId, {
-        ok: false,
-        why: `Couldn't send your answer: ${(e as Error).message}`,
-      });
+      if (next.decisionId)
+        this.ended(chatId, next.decisionId, {
+          ok: false,
+          why: `Couldn't send your answer: ${(e as Error).message}`,
+        });
     }
     list.shift();
     if (list.length === 0) this.queue.delete(chatId);

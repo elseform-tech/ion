@@ -35,7 +35,7 @@ export function gateHooks(url: string): { PreToolUse: { hooks: Hook[] }[] } {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tool_name: i.tool_name, tool_input: i.tool_input }),
-        signal: AbortSignal.any([o.signal, AbortSignal.timeout(60_000)]),
+        signal: AbortSignal.any([o.signal, AbortSignal.timeout(300_000)]),
       });
       const a = (await res.json()) as { decision?: unknown; reason?: unknown };
       if (a.decision === "allow") return {};

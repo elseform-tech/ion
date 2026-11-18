@@ -19,7 +19,7 @@ export function judgePrompt(i: JudgeInput): string {
     wrapData("the action", action),
     ...(i.decisions?.length
       ? [
-          "Weigh the user's own past decisions below: never allow what they said no to.",
+          "Weigh the user's own past decisions below: allow what they said to always allow (and actions just like it), and never allow what they said no to.",
           wrapData("your decisions", i.decisions.join("\n")),
         ]
       : []),

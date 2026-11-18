@@ -117,7 +117,7 @@ function show(item: Item): ReactNode {
     case "end":
       return <End item={item} />;
     case "error":
-      return <div className="line line--deny">{item.text}</div>;
+      return <div className="line line--error">{item.text}</div>;
   }
 }
 

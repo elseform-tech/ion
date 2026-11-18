@@ -132,6 +132,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     summary: z.string(),
     detail: z.string().nullable(),
     dedupeKey: z.string(),
+    /** ion's own question about a tool call it stopped (the call waits for the answer, up to 4 minutes). */
+    blocked: z.boolean().optional(),
     /** An agent's question (kind "ask"): its choices, each with what it leads to. */
     choices: z
       .array(
@@ -167,6 +169,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     fromDecision: z.string().optional(),
     /** The choice is your own words, not one of the agent's choices. */
     custom: z.boolean().optional(),
+    /** An answer about a tool call ion stopped (not an agent's question). */
+    blocked: z.boolean().optional(),
     /** When you made fromDecision, for the chat line. */
     fromDecidedAt: z.string().optional(),
   }),

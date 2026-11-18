@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { type DecisionScope, EV } from "@ion/schema";
+import { type DecisionScope, EV, type NeedInfo } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Scope } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -7,12 +7,35 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
 import { runsView } from "../views/runs.js";
+import {
+  actionOf,
+  type Blocked,
+  BLOCKED_WAIT_MS,
+  blockedAnswer,
+  blockedQuestion,
+  type Held,
+  Holds,
+} from "./blocked.js";
 import { FollowUps, type Message, type Start } from "./followups.js";
 import type { AskInput, Matcher } from "./match.js";
 
 /** The message your answer becomes in the chat: a choice, or your own words. */
 const followText = (question: string, answer: string, custom = false) =>
   `You asked: ${JSON.stringify(question)}. The user ${custom ? "answered" : "chose"}: ${JSON.stringify(answer)}.`;
+
+/**
+ * What the agent is told after your answer about a stopped call: your own words, or (late: its call was already
+ * refused) that it may go ahead now. Otherwise nothing: its call simply ran or didn't.
+ */
+function blockedFollowText(
+  question: string,
+  a: { custom: boolean; label: string; late: boolean },
+): string | null {
+  if (a.custom) return followText(question, a.label, true);
+  return a.late
+    ? `Earlier ion stopped this: ${JSON.stringify(actionOf(question))}. The user now allows it.`
+    : null;
+}
 
 /** Your answer: choice number `pick` (1-based), or your own words when none of the choices fit. */
 function answerOf(pick: number | string, choices: { label: string }[]): { label: string; custom: boolean } {
@@ -60,6 +83,8 @@ type Deps = {
   followUp: Start;
   /** What you asked in a running run (the judge's "request"), or null. */
   requestOf?: (runId: string) => string | null;
+  /** How long a tool call ion stopped waits for your answer (4 minutes; shorter in tests). */
+  blockedWaitMs?: number;
 };
 
 type Recorded = {
@@ -73,6 +98,8 @@ type Recorded = {
   by: "you" | "ion";
   /** Your own words rather than one of the agent's choices. */
   custom?: boolean;
+  /** About a tool call ion stopped, not an agent's question. */
+  blocked?: boolean;
   from?: { decisionId: string; decidedAt: string };
 };
 
@@ -89,8 +116,11 @@ export class Decisions {
   private readonly ionAnswered = new Map<string, number>();
   /** Your request in the run that asked each question, kept for the run your answer starts. */
   private readonly requests = new Map<string, string>();
+  /** Tool calls ion stopped, waiting on your answer. */
+  private readonly holds: Holds;
 
   constructor(private readonly d: Deps) {
+    this.holds = new Holds(d.blockedWaitMs ?? BLOCKED_WAIT_MS);
     this.followUps = new FollowUps(d.store, d.followUp, (chatId, decisionId, how) =>
       this.outcome(chatId, {
         decisionId,
@@ -114,6 +144,22 @@ export class Decisions {
   }
 
   /**
+   * ion stopped a tool call (the judge said no, or couldn't decide): ask you, and hold the call until you answer
+   * or 4 minutes pass ("timeout": the call is refused, the question stays open, and a later yes still counts).
+   */
+  askBlocked(s: Scope, b: Blocked): Promise<Held> {
+    const q = blockedQuestion(b);
+    const needId = this.d.needs.raiseAsk({
+      chatId: s.chatId,
+      runId: s.runId,
+      ...q,
+      blocked: { requestId: b.requestId },
+    });
+    this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
+    return this.holds.hold(needId);
+  }
+
+  /**
    * Your answer: choice number `n` (1-based) of an open question. The run that carries it starts first: if it
    * can't (the agent signed out, the chat archived…) the question stays open and you can answer again. A busy
    * chat gets it when its run ends.
@@ -124,6 +170,7 @@ export class Decisions {
     const asked = this.d.needs.open(need.chatId).find((x) => x.needId === needId);
     if (need.kind !== "ask" || !asked?.choices) throw new UserError("That isn't a question");
     const { label, custom } = answerOf(pick, asked.choices);
+    if (asked.blocked) return this.answerBlocked(asked, pick, label);
     this.answering.add(needId);
     try {
       // After a restart the request is gone: the judge then gets none, which only makes it stricter.
@@ -149,6 +196,44 @@ export class Decisions {
     } finally {
       this.answering.delete(needId);
     }
+  }
+
+  /**
+   * Your answer about a stopped tool call. A call still waiting runs or is refused at once; "Always allow" is kept
+   * for the project (the judge lets actions like it through) and "Don't allow" for the chat. The agent hears about
+   * it only when it can't otherwise know: your own words, or a yes after its call was already refused.
+   */
+  private async answerBlocked(asked: NeedInfo, pick: number | string, label: string): Promise<void> {
+    const { allow, scope } = blockedAnswer(pick);
+    this.d.needs.answered(asked.needId, label, scope ?? "chat");
+    const base = {
+      chatId: asked.chatId,
+      runId: asked.runId,
+      needId: asked.needId,
+      projectId: asked.projectId ?? "",
+    };
+    const custom = typeof pick === "string";
+    const decisionId = scope
+      ? this.record({
+          ...base,
+          question: asked.summary,
+          choice: label,
+          scope,
+          by: "you",
+          blocked: true,
+          ...(custom ? { custom } : {}),
+        })
+      : undefined;
+    const waited = this.holds.release(asked.needId, allow ? "allow" : "deny");
+    const text = blockedFollowText(asked.summary, { custom, label, late: !waited && allow });
+    const request = this.requests.get(asked.needId) ?? "";
+    this.requests.delete(asked.needId);
+    if (!text) return;
+    const m: Message = { harness: this.harnessOf(asked.runId, asked.chatId), text, request };
+    const started = await this.followUps.tryNow(asked.chatId, m);
+    if (started === "busy")
+      this.followUps.later(asked.chatId, { ...m, ...(decisionId ? { decisionId } : {}) });
+    else if (started) this.followUps.started(started, decisionId);
   }
 
   /** After a restart: answers recorded but never sent into their chat (it was busy when ion stopped) go now. */
@@ -180,8 +265,9 @@ export class Decisions {
         choice: string;
         by: string;
         custom?: boolean;
+        blocked?: boolean;
       };
-      if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId) return [];
+      if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId || d.blocked) return [];
       const text = followText(d.question, d.choice, d.custom === true);
       if (sent(d.needId, text)) return [];
       return [{ harness: this.harnessOf(e.runId, chatId), text, request: "", decisionId: d.decisionId }];

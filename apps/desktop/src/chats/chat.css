@@ -76,7 +76,11 @@
   color: var(--muted);
   font-size: 13px;
 }
+/* A block (ion said no) is yellow; an error is red. */
 .line--deny {
+  color: var(--wait);
+}
+.line--error {
   color: var(--bad);
 }
 .line--answer {

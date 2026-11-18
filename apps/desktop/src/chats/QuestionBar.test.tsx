@@ -82,4 +82,17 @@ describe("QuestionBar", () => {
       "WaitNothing changes until the review",
     ]);
   });
+
+  it("for a call ion stopped, has no 'always' box (its options say it) and says when ion went on without it", () => {
+    const { container, queryByLabelText } = render(
+      <QuestionBar
+        client={{ call: vi.fn() } as unknown as IonClient}
+        question={{ ...question, blocked: true, expired: true }}
+      />,
+    );
+    expect(queryByLabelText("Always for this project")).toBeNull();
+    expect(container.querySelector(".qcard-expired")?.textContent).toBe(
+      "ion said no after 4 minutes, and the agent went on. Your answer still counts.",
+    );
+  });
 });
