@@ -33,11 +33,22 @@ describe("createProject", () => {
     );
   });
 
-  it("refuses bad names and names already taken", async () => {
+  // The user, 2026-11-19: "create project is not working". "My App" and "Website" were refused (lowercase only),
+  // and the app hid why. Any name works: ion makes its id (and folder) from it and shows the name as typed.
+  it("takes any name: makes an id from it and keeps the name as you typed it", async () => {
     const c = withRoot();
-    await expect(createProject(c, "My App")).rejects.toThrow("Use lowercase letters, numbers, - . _");
+    const made = await createProject(c, "  My App!  ");
+    expect(made.id).toBe("my-app");
+    expect(made.config.projects[0]).toMatchObject({ id: "my-app", name: "My App!" });
+    expect((await createProject(made.config, "website")).config.projects[1]).not.toHaveProperty("name");
+  });
+
+  it("refuses an empty name, ion's own, and names already taken", async () => {
+    const c = withRoot();
+    await expect(createProject(c, " !! ")).rejects.toThrow("Give the project a name");
+    await expect(createProject(c, "Chief")).rejects.toThrow("That name is ion's own");
     const { config } = await createProject(c, "app");
-    await expect(createProject(config, "app")).rejects.toThrow("A project named app already exists");
+    await expect(createProject(config, "App")).rejects.toThrow("A project named app already exists");
   });
 });
 

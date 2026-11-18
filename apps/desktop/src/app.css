@@ -520,3 +520,42 @@ body.resizing {
 .rw:has(.rmenu) {
   z-index: 7;
 }
+/* A project group's menu and rename box, in its header. */
+.gl .gmore {
+  margin-left: 2px;
+}
+.gl .gmore .ib {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+.gl:hover .gmore .ib,
+.gl .gmore .ib:focus-visible,
+.gl .gmore .ib[aria-expanded="true"] {
+  opacity: 1;
+}
+.gl .grename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink);
+  background: var(--win);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.rmenu .danger {
+  color: var(--del-ink);
+}
+/* Why a new project was refused, under its name box. */
+.pnew .perr,
+.addp + .perr,
+.pmi .perr {
+  flex-basis: 100%;
+  color: var(--del-ink);
+  font-size: 12px;
+  padding: 2px 0 0 24px;
+}
+.pmi.pnew {
+  flex-wrap: wrap;
+}

@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Pin, SquarePen, Star } from "@ion/design-sys
 import type { ChatInfo, IonInfo, NeedInfo, ProjectInfo } from "@ion/schema";
 import { type ReactNode, useMemo, useState } from "react";
 import { groupChats } from "./live.js";
+import { type ProjectActions, ProjectGroupMenu, ProjectRename } from "./ProjectGroupMenu.js";
 import { ProjectMenu } from "./ProjectMenu.js";
 import { ChatRow, NeedRow, type RowActions, type RowProps } from "./SidebarRows.js";
 
@@ -17,18 +18,24 @@ function Group({
   count,
   fold,
   star,
+  menu,
+  editing,
   children,
 }: {
   label: ReactNode;
   count?: number;
   fold?: Fold;
   star?: StarProps;
+  /** The group's own menu (a project's Rename and Remove). */
+  menu?: ReactNode;
+  /** The label is a rename box: it stays out of the fold button. */
+  editing?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="grp">
       <div className="gl">
-        {fold ? (
+        {fold && !editing ? (
           <button type="button" className="gfold" aria-expanded={!fold.folded} onClick={fold.onToggle}>
             {fold.folded ? <ChevronRight /> : <ChevronDown />}
             {label}
@@ -48,6 +55,7 @@ function Group({
             <Star />
           </button>
         )}
+        {menu}
       </div>
       {!fold?.folded && children}
     </div>
@@ -82,10 +90,12 @@ type Props = {
   ions?: IonInfo[];
   open: string | null;
   onOpen: (chatId: string | null) => void;
-  onNewProject: (name: string) => void;
+  /** Makes a project: its id, or a refusal (an Error with ion's words). */
+  onNewProject: (name: string) => Promise<string>;
   /** Star (watch) or unstar a project. */
   onStar: (projectId: string, starred: boolean) => void;
-} & RowActions;
+} & RowActions &
+  ProjectActions;
 
 const NEEDS_LABEL = (
   <span className="pinl">
@@ -94,18 +104,58 @@ const NEEDS_LABEL = (
   </span>
 );
 
+/** A group header's parts. */
+type Head = { label: ReactNode; editing?: boolean; star?: StarProps; menu?: ReactNode };
+
+/** Each project group's header: its name (or the rename box), its star and its menu; `default` has neither. */
+function useProjectHead(
+  p: {
+    starred: Set<string>;
+    names: Map<string, string>;
+    onStar: (projectId: string, on: boolean) => void;
+  } & ProjectActions,
+): [string | null, (projectId: string) => Head] {
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const head = (projectId: string): Head => {
+    const name = p.names.get(projectId) ?? projectId;
+    if (projectId === "default") return { label: name };
+    const done = (to: string | null) => {
+      setRenaming(null);
+      if (to?.trim() && to.trim() !== name) p.onRenameProject(projectId, to.trim());
+    };
+    return {
+      label: renaming === projectId ? <ProjectRename name={name} onDone={done} /> : name,
+      editing: renaming === projectId,
+      star: { name, on: p.starred.has(projectId), onStar: (on: boolean) => p.onStar(projectId, on) },
+      menu: (
+        <ProjectGroupMenu
+          name={name}
+          onRename={() => setRenaming(projectId)}
+          onRemove={() => p.onRemoveProject(projectId)}
+        />
+      ),
+    };
+  };
+  return [renaming, head];
+}
+
 /**
  * Your chats grouped by project: the projects you watch (starred) first and open, the rest folded until you open
  * them (nothing is folded while no project is starred). Each group shows its 5 most recent chats until you ask.
  */
-function ProjectGroups(p: {
-  chats: ChatInfo[];
-  starred: Set<string>;
-  onStar: (projectId: string, on: boolean) => void;
-  row: (c: ChatInfo) => ReactNode;
-}) {
+function ProjectGroups(
+  p: {
+    chats: ChatInfo[];
+    starred: Set<string>;
+    /** Each project's shown name (its id when not renamed). */
+    names: Map<string, string>;
+    onStar: (projectId: string, on: boolean) => void;
+    row: (c: ChatInfo) => ReactNode;
+  } & ProjectActions,
+) {
   // What you've opened or folded yourself, against each group's default.
   const [flipped, flip] = useToggles();
+  const [renaming, head] = useProjectHead(p);
   const [all, showAll] = useToggles();
   const watching = p.starred.size > 0;
   const groups = byProject(p.chats).sort(
@@ -120,17 +170,8 @@ function ProjectGroups(p: {
         return (
           <Group
             key={projectId}
-            label={projectId}
-            fold={{ folded, onToggle: () => flip(projectId) }}
-            {...(projectId === "default"
-              ? {}
-              : {
-                  star: {
-                    name: projectId,
-                    on: p.starred.has(projectId),
-                    onStar: (on: boolean) => p.onStar(projectId, on),
-                  },
-                })}
+            {...head(projectId)}
+            fold={{ folded: folded && renaming !== projectId, onToggle: () => flip(projectId) }}
           >
             {shown.map(p.row)}
             {more > 0 && (
@@ -145,10 +186,51 @@ function ProjectGroups(p: {
   );
 }
 
+/** The sidebar's head: the project picker (with New project) and New chat. */
+function SidebarHead(p: {
+  projects: ProjectInfo[];
+  needs: NeedInfo[];
+  project: string | null;
+  onPick: (id: string | null) => void;
+  onNewProject: (name: string) => Promise<string>;
+  onOpen: (chatId: string | null) => void;
+}) {
+  const { projects, needs, project, onOpen } = p;
+  const setProject = p.onPick;
+  const onNewProject = p.onNewProject;
+  return (
+    <div className="shead">
+      <ProjectMenu
+        projects={projects}
+        needs={needs}
+        project={project}
+        onPick={setProject}
+        onNew={(name) =>
+          onNewProject(name).then((id) => {
+            // A new project has no chats yet: show it, with a new chat open in it.
+            setProject(id);
+            onOpen(null);
+          })
+        }
+      />
+      <button className="ib" type="button" title="New chat" onClick={() => onOpen(null)}>
+        <SquarePen />
+      </button>
+    </div>
+  );
+}
+
+/** Which projects are starred, and each one's shown name. */
+function useProjectSets(projects: ProjectInfo[]) {
+  const starred = useMemo(() => new Set(projects.filter((x) => x.starred).map((x) => x.id)), [projects]);
+  const names = useMemo(() => new Map(projects.map((x) => [x.id, x.name ?? x.id])), [projects]);
+  return { starred, names };
+}
+
 /** The lab's Chats sidebar: Needs you (pinned), Running (shimmering), then your chats by project. */
 export function Sidebar(p: Props) {
   const { chats, needs, projects, ions = [], open, onOpen, onNewProject, onRename, onArchive, onStar } = p;
-  const starred = useMemo(() => new Set(projects.filter((x) => x.starred).map((x) => x.id)), [projects]);
+  const { starred, names } = useProjectSets(projects);
   const [project, setProject] = useState<string | null>(null);
   const g = useMemo(() => groupChats(chats, needs, project), [chats, needs, project]);
   const props = (c: ChatInfo): RowProps => {
@@ -159,18 +241,14 @@ export function Sidebar(p: Props) {
   const row = (c: ChatInfo) => <ChatRow key={c.chatId} {...props(c)} acts={acts} />;
   return (
     <>
-      <div className="shead">
-        <ProjectMenu
-          projects={projects}
-          needs={needs}
-          project={project}
-          onPick={setProject}
-          onNew={onNewProject}
-        />
-        <button className="ib" type="button" title="New chat" onClick={() => onOpen(null)}>
-          <SquarePen />
-        </button>
-      </div>
+      <SidebarHead
+        projects={projects}
+        needs={needs}
+        project={project}
+        onPick={setProject}
+        onNewProject={onNewProject}
+        onOpen={onOpen}
+      />
       <div className="slist">
         {g.needsYou.length > 0 && (
           <Group label={NEEDS_LABEL} count={g.needsYou.length}>
@@ -189,7 +267,12 @@ export function Sidebar(p: Props) {
         {project ? (
           <Group label="Chats">{g.chats.map(row)}</Group>
         ) : (
-          <ProjectGroups chats={g.chats} starred={starred} onStar={onStar} row={row} />
+          <ProjectGroups
+            chats={g.chats}
+            {...{ starred, names, onStar, row }}
+            onRenameProject={p.onRenameProject}
+            onRemoveProject={p.onRemoveProject}
+          />
         )}
       </div>
     </>

@@ -65,8 +65,9 @@ function batchingEmitter(
 }
 
 /** A turn's prompt: ion's instructions as their own marked block first (ACP has no system prompt), then yours. */
-function promptOf(text: string, instructions?: string): { type: "text"; text: string }[] {
-  const yours = { type: "text" as const, text };
+export function promptOf(text: string, instructions?: string): { type: "text"; text: string }[] {
+  // Your text (or a brief ion chief's model wrote) can't open or close ion's block and pose as ion.
+  const yours = { type: "text" as const, text: text.replace(/<\/?ion-instructions/gi, "‹ion-instructions") };
   if (!instructions) return [yours];
   return [{ type: "text", text: `<ion-instructions>\n${instructions}\n</ion-instructions>` }, yours];
 }

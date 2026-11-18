@@ -71,9 +71,10 @@ export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[]
       },
       ...own.map((p, i) => ({
         ionId: p.id,
-        name: p.id,
+        name: p.name ?? p.id,
         color: p.color ?? PALETTE[i % PALETTE.length]!,
-        harness: p.harness ?? null,
+        // The lab draws an ion on its agent's shape: the project's own agent, else the one its latest chat ran on.
+        harness: p.harness ?? chatsView.lastAgent(db, p.id),
         last: last.get(p.id) ?? null,
         needs: asks.filter((n) => project.get(n.chatId) === p.id).length,
         working: busy.has(p.id),

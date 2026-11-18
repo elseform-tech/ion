@@ -145,7 +145,7 @@ export function Ions({ client, onOpenChat }: { client: IonClient; onOpenChat: (c
   const open = ions.find((x) => x.ionId === openId) ?? ions[0];
   const [chief, ...all] = ions;
   const projects = all.filter((x) => project === null || x.ionId === project);
-  const addProject = (name: string) => void client.call("project.create", { name }).then(changed, () => {});
+  const addProject = (name: string) => client.call("project.create", { name }).then(changed);
   return (
     <>
       <aside className="ipanel" aria-label="Ions">

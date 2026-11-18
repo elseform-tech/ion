@@ -8,6 +8,8 @@ export const chatsView: View & {
   list(db: Db): ChatInfo[];
   worktree(db: Db, chatId: string): string | null;
   session(db: Db, chatId: string): { harness: string; sessionId: string } | null;
+  /** The agent the project's most recently active chat ran on, if any ran. */
+  lastAgent(db: Db, projectId: string): string | null;
 } = {
   name: "chats",
   version: 5,
@@ -53,6 +55,14 @@ export const chatsView: View & {
         )
         .all() as (Omit<ChatInfo, "archived"> & { archived: number })[]
     ).map((r) => ({ ...r, archived: r.archived === 1 }));
+  },
+  lastAgent(db, projectId) {
+    const r = db
+      .prepare(
+        "SELECT harness FROM view_chats WHERE project_id = ? AND harness IS NOT NULL ORDER BY last_activity DESC LIMIT 1",
+      )
+      .get(projectId) as { harness: string } | undefined;
+    return r?.harness ?? null;
   },
   session(db, chatId) {
     const r = db

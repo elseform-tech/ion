@@ -15,7 +15,7 @@ function ProjectList({
 }: Pick & { projects: ProjectInfo[]; needs: NeedInfo[]; q: string }) {
   const list = [...projects]
     .sort((a, b) => Number(b.starred) - Number(a.starred))
-    .filter((x) => !q.trim() || x.id.includes(q.trim().toLowerCase()));
+    .filter((x) => !q.trim() || `${x.id} ${x.name ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <div className="pml">
       {!q.trim() && (
@@ -35,7 +35,7 @@ function ProjectList({
             onClick={() => onPick(x.id)}
           >
             {x.starred ? <Star className="stari" /> : <Folder />}
-            {x.id}
+            {x.name ?? x.id}
             {waiting > 0 && <span className="nb">{waiting}</span>}
             {x.id === project && <Check className="ck" />}
           </button>
@@ -62,18 +62,22 @@ const FindProject = ({ q, onQ }: { q: string; onQ: (q: string) => void }) => (
   </div>
 );
 
-/** "New project": a name, made with Enter (ion makes the folder under your projects folder). */
+/**
+ * "New project": any name, made with Enter (ion makes the folder under your projects folder). A refusal shows under
+ * the box, which keeps your words.
+ */
 export function NewProject({
   onNew,
   label = "New project",
   className = "pnew",
 }: {
-  onNew: (name: string) => void;
+  onNew: (name: string) => Promise<unknown>;
   label?: string;
   className?: string;
 }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
   if (!naming)
     return (
       <button type="button" className={className} onClick={() => setNaming(true)}>
@@ -84,9 +88,14 @@ export function NewProject({
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") setNaming(false);
     if (e.key !== "Enter" || !name.trim()) return;
-    onNew(name.trim());
-    setNaming(false);
-    setName("");
+    onNew(name.trim()).then(
+      () => {
+        setNaming(false);
+        setName("");
+        setError(null);
+      },
+      (err: unknown) => setError(err instanceof Error ? err.message : "Something went wrong"),
+    );
   };
   return (
     <div className="pmi pnew">
@@ -96,15 +105,19 @@ export function NewProject({
         aria-label="Project name"
         autoFocus
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(e) => {
+          setName(e.target.value);
+          setError(null);
+        }}
         onKeyDown={onKey}
       />
+      {error && <div className="perr">{error}</div>}
     </div>
   );
 }
 
 export function ProjectMenu(
-  p: Pick & { projects: ProjectInfo[]; needs: NeedInfo[]; onNew: (name: string) => void },
+  p: Pick & { projects: ProjectInfo[]; needs: NeedInfo[]; onNew: (name: string) => Promise<unknown> },
 ) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -123,7 +136,9 @@ export function ProjectMenu(
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span className="projLbl">{p.project ?? "All projects"}</span>
+        <span className="projLbl">
+          {p.project ? (p.projects.find((x) => x.id === p.project)?.name ?? p.project) : "All projects"}
+        </span>
         <ChevronsUpDown />
       </button>
       <div className="pmenu" hidden={!open}>
@@ -138,12 +153,7 @@ export function ProjectMenu(
             close();
           }}
         />
-        <NewProject
-          onNew={(name) => {
-            p.onNew(name);
-            close();
-          }}
-        />
+        <NewProject onNew={(name) => p.onNew(name).then(close)} />
       </div>
     </div>
   );

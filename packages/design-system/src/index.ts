@@ -5,6 +5,7 @@ export {
   Orbit,
   FolderPlus,
   Pencil,
+  FolderMinus,
   Ellipsis,
   Archive,
   GripVertical,

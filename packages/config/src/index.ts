@@ -2,7 +2,10 @@ export { ionPaths } from "./paths.js";
 export {
   addProject,
   DEFAULT_PROJECT,
+  projectIdOf,
   projectNameError,
+  removeProject,
+  renameProject,
   setProjectAccess,
   setProjectStarred,
 } from "./projects.js";

@@ -32,15 +32,15 @@ function AccessPill({ access, onChange }: { access: Access; onChange: (a: Access
 }
 
 /** A new chat's project pill: ion's `default` unless you pick one. */
-type ProjectPick = { value: string; options: string[]; onChange: (id: string) => void };
+type ProjectPick = { value: string; options: { id: string; name: string }[]; onChange: (id: string) => void };
 function ProjectPill({ p }: { p: ProjectPick }) {
   return (
     <label className="pill">
       <Folder />
       <select aria-label="Project" value={p.value} onChange={(e) => p.onChange(e.target.value)}>
-        {p.options.map((id) => (
-          <option key={id} value={id}>
-            {id}
+        {p.options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
           </option>
         ))}
       </select>
@@ -143,6 +143,8 @@ type Props = {
   running: string | null;
   /** The agent the chat last ran on (the default for the next message). */
   harness?: string | null;
+  /** The chat's latest model and effort (what its pill shows until you pick). */
+  current?: { model: string | null; effort: string | null };
   /** A new chat: its project pill, and the lab's big box. */
   project?: ProjectPick;
   /** Your message is on its way (its text), or came back refused (null). */
@@ -182,13 +184,34 @@ function useSend(client: IonClient, onSent: (chatId: string) => void) {
   return { error, pending, send };
 }
 
+/** Your brain picks per chat, for the window's life: a chat's composer drawn again keeps them. */
+const picks = new Map<string, Brain>();
+
+/** An open chat's brain: what you picked for it (kept while the window is open), else its latest model and effort. */
+function useBrain(to: Props["to"], current: Props["current"]): [Brain, (b: Brain) => void] {
+  const key = "chatId" in to ? to.chatId : null;
+  const [brain, setPicked] = useState<Brain>(
+    () =>
+      (key && picks.get(key)) || {
+        harness: "",
+        model: current?.model ?? "",
+        effort: (current?.effort ?? "") as Brain["effort"],
+      },
+  );
+  const set = (b: Brain) => {
+    if (key) picks.set(key, b);
+    setPicked(b);
+  };
+  return [brain, set];
+}
+
 /** The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
 export function Composer(p: Props) {
   const { client, harnesses, to, running, onSent, harness, project, onBrainOpen, locked, onSending } = p;
   // Never a default agent: the chat's own, else the first one ready. Until the list arrives, nothing is sent.
   const ready = harnesses.filter((h) => h.installed && h.signedIn);
   const first = harness ?? ready[0]?.id ?? "";
-  const [brain, setBrain] = useState<Brain>({ harness: "", model: "", effort: "" });
+  const [brain, setBrain] = useBrain(to, p.current);
   const [access, setAccess] = useState<Access>("");
   const [text, setText] = useState("");
   const { error, pending, send } = useSend(client, onSent);

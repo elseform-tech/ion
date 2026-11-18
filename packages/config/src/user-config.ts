@@ -11,6 +11,8 @@ const Project = z.object({
   id: z.string().min(1),
   path: z.string().min(1),
   starred: z.boolean().default(false),
+  /** The name ion shows, when you renamed it (its id stays: events, decisions and threads refer to it). */
+  name: z.string().min(1).max(60).optional(),
   /** This project's access mode; without it, `[access] default` applies. */
   access: Access.optional(),
   /** False: ion (the chief) never reads this project's chats. Absent means true. */

@@ -103,12 +103,7 @@ export class Ions {
   private async agentFor(projectId: string): Promise<string | undefined> {
     const own = this.projects().find((p) => p.id === projectId)?.harness;
     if (own) return own;
-    const last = chatsView
-      .list(this.d.db)
-      .filter((c) => c.projectId === projectId)
-      .sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""))
-      .map((c) => chatsView.session(this.d.db, c.chatId)?.harness)
-      .find(Boolean);
+    const last = chatsView.lastAgent(this.d.db, projectId);
     if (last) return last;
     const ready = (await this.d.agents?.().catch(() => [])) ?? [];
     const ok = ready.filter((h) => h.installed && h.signedIn).map((h) => h.id);
@@ -171,10 +166,8 @@ export class Ions {
       const status = (e.data as { status: string }).status;
       const title = trimEnd(chat.title);
       const line = [`${title}: ${status}.`, chat.preview].filter(Boolean).join(" ");
-      this.say(chat.projectId, line, {
-        kind: "threads",
-        threads: [{ chatId: chat.chatId, projectId: chat.projectId }],
-      });
+      // Words only: the thread's card was shown when it started, and it updates as the thread runs.
+      this.say(chat.projectId, line);
     });
   }
 }

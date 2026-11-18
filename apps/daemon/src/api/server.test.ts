@@ -276,6 +276,42 @@ describe("daemon api", () => {
     // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
   }, 20_000);
 
+  // The user, 2026-11-19: rename a project (the name ion shows; its id stays).
+  it("renames a project, and its ion takes the name", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    await client.call("project.rename", { projectId: "app", name: "Storefront" });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", name: "Storefront" });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({ ionId: "app", name: "Storefront" });
+    await expect(client.call("project.rename", { projectId: "app", name: " " })).rejects.toThrow(
+      "Give the project a name",
+    );
+  });
+
+  // The user, 2026-11-19: remove a project. Its chats are archived (worktrees and questions closed); its folder stays.
+  it("removes a project: archives its chats, keeps its folder, refuses while one runs", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const path = repo("app");
+    await client.call("projects.add", { path });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const slow = await client.call("ask", { text: "slow", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.started"), 5000);
+    await expect(client.call("project.remove", { projectId: "app" })).rejects.toThrow(
+      "Stop its running chats first",
+    );
+    await client.call("run.interrupt", { runId: slow.runId });
+    await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.finished"), 5000);
+    await client.call("project.remove", { projectId: "app" });
+    expect(await client.call("projects.list", {})).toEqual([]);
+    expect((await client.call("chats.list", {})).filter((c) => c.projectId === "app" && !c.archived)).toEqual(
+      [],
+    );
+    expect(statSync(path).isDirectory()).toBe(true);
+    await expect(client.call("project.remove", { projectId: "default" })).rejects.toThrow(
+      "default can't be removed",
+    );
+  });
+
   // The lab: a project's ion can be starred (Starred first in Ions and the project menu).
   it("stars and unstars a project, and its ion says so", async () => {
     await client.call("projects.add", { path: repo("app") });

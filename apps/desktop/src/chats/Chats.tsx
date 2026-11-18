@@ -38,8 +38,16 @@ function sidebarActions(
   const [openId, setOpenId] = [open.id, open.set];
   const act = (f: () => Promise<unknown>) => void f().catch(() => {});
   return {
-    onNewProject: (name: string) => act(() => client.call("project.create", { name }).then(onProjects)),
+    onNewProject: (name: string) =>
+      client.call("project.create", { name }).then((made) => {
+        onProjects();
+        return made.id;
+      }),
     onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
+    onRenameProject: (projectId: string, name: string) =>
+      act(() => client.call("project.rename", { projectId, name }).then(onProjects)),
+    onRemoveProject: (projectId: string) =>
+      act(() => client.call("project.remove", { projectId }).then(onProjects)),
     onStar: (projectId: string, starred: boolean) =>
       act(() => client.call("project.star", { projectId, starred }).then(onProjects)),
     onArchive: (chatId: string) => {
@@ -110,6 +118,7 @@ function OpenChat({
                 running={t.running}
                 locked={Boolean(open)}
                 harness={t.harness}
+                current={{ model: t.model, effort: t.effort }}
                 onSent={() => {}}
               />
             </div>
@@ -154,7 +163,12 @@ function NewChat(props: {
             running={null}
             project={{
               value: projectId,
-              options: ["default", ...props.projects.map((p) => p.id).filter((id) => id !== "default")],
+              options: [
+                { id: "default", name: "default" },
+                ...props.projects
+                  .filter((p) => p.id !== "default")
+                  .map((p) => ({ id: p.id, name: p.name ?? p.id })),
+              ],
               onChange: setProjectId,
             }}
             onSending={setSending}

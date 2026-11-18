@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ChatInfo, IonInfo, NeedInfo, ProjectInfo } from "@ion/schema";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar.js";
 
@@ -23,7 +23,14 @@ const projects: ProjectInfo[] = [
   { id: "payments-api", starred: false },
 ] as ProjectInfo[];
 
-const acts = () => ({ onNewProject: vi.fn(), onRename: vi.fn(), onArchive: vi.fn(), onStar: vi.fn() });
+const acts = () => ({
+  onNewProject: vi.fn(async (name: string) => name),
+  onRename: vi.fn(),
+  onArchive: vi.fn(),
+  onStar: vi.fn(),
+  onRenameProject: vi.fn(),
+  onRemoveProject: vi.fn(),
+});
 const ions: IonInfo[] = [
   {
     ionId: "storefront",
@@ -190,5 +197,64 @@ describe("Sidebar", () => {
     expect([...container.querySelectorAll(".grp")].map((g) => g.querySelectorAll(".rw").length)).toEqual([
       1, 1,
     ]);
+  });
+  // The user, 2026-11-19: rename and remove a project from its group; a renamed project shows its name.
+  it("renames a project from its group, and shows the new name", () => {
+    const a = acts();
+    const named = [{ id: "storefront", starred: false, name: "Shop" }] as ProjectInfo[];
+    const { container } = render(
+      <Sidebar
+        chats={[chat("a", "storefront")]}
+        needs={[]}
+        projects={named}
+        ions={ions}
+        open={null}
+        onOpen={() => {}}
+        {...a}
+      />,
+    );
+    expect(container.querySelector(".grp .gfold")?.textContent).toBe("Shop");
+    fireEvent.click(screen.getByRole("button", { name: "More for Shop" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const box = screen.getByLabelText("Project name");
+    fireEvent.change(box, { target: { value: "Storefront" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(a.onRenameProject).toHaveBeenCalledWith("storefront", "Storefront");
+  });
+
+  it("removes a project only after you confirm", () => {
+    const a = acts();
+    side([chat("a", "storefront")], [], a);
+    fireEvent.click(screen.getByRole("button", { name: "More for storefront" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
+    expect(a.onRemoveProject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove storefront" }));
+    expect(a.onRemoveProject).toHaveBeenCalledWith("storefront");
+  });
+
+  it("has no menu for default", () => {
+    side([chat("a", "default")]);
+    expect(screen.queryByRole("button", { name: "More for default" })).toBeNull();
+  });
+  // The user, 2026-11-19: "create project is not working": a refusal showed nowhere, and a new project (no chats
+  // yet) showed nowhere either. Now the refusal shows under the box, and a new project opens with a new chat.
+  it("shows why a new project was refused, and opens one that was made", async () => {
+    const a = acts();
+    a.onNewProject
+      .mockRejectedValueOnce(new Error("A project named shop already exists"))
+      .mockResolvedValueOnce("shop");
+    const onOpen = vi.fn();
+    const { container } = render(
+      <Sidebar chats={[]} needs={[]} projects={projects} ions={ions} open={null} onOpen={onOpen} {...a} />,
+    );
+    fireEvent.click(container.querySelector(".shead .proj")!);
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    const box = screen.getByLabelText("Project name");
+    fireEvent.change(box, { target: { value: "Shop" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(await screen.findByText("A project named shop already exists")).toBeTruthy();
+    fireEvent.keyDown(screen.getByLabelText("Project name"), { key: "Enter" });
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith(null));
+    expect(container.querySelector(".shead .projLbl")?.textContent).toBe("shop");
   });
 });

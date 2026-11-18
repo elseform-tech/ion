@@ -8,6 +8,8 @@ export type ProjectInfo = {
   id: string;
   path: string;
   starred: boolean;
+  /** The name ion shows, when you renamed it; else its id. */
+  name?: string;
   access?: "auto" | "full";
   shareWithIon?: boolean;
   /** Its ion's colour and the agent its ion's threads run on (Plan 09). */
@@ -31,6 +33,10 @@ export type Commands = {
   "project.create": { args: { name: string }; result: ProjectInfo };
   "project.setAccess": { args: { projectId: string; access: "auto" | "full" }; result: { ok: true } };
   "project.star": { args: { projectId: string; starred: boolean }; result: { ok: true } };
+  /** Shows the project under a new name (its id stays). */
+  "project.rename": { args: { projectId: string; name: string }; result: { ok: true } };
+  /** Takes the project out of ion: its chats are archived; its folder is never touched. */
+  "project.remove": { args: { projectId: string }; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   /** fromNow: only events from now on, no backlog. */
   "events.subscribe": {
@@ -170,6 +176,8 @@ export const COMMANDS = [
   "project.create",
   "project.setAccess",
   "project.star",
+  "project.rename",
+  "project.remove",
   "chat.create",
   "events.subscribe",
   "ask",

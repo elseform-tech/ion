@@ -205,8 +205,9 @@ describe("Ions", () => {
       data: { status: "done" },
     });
     expect(said("storefront").at(-1)).toEqual({
+      // The user, 2026-11-19: "two threads" for one question. The thread's card is shown once (at "On it.", live);
+      // the report is words only.
       text: "Fix the cart: done. Fixed the cart total.",
-      card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
     });
   });
 });

@@ -36,8 +36,10 @@ export type Timeline = {
   streaming: number | null;
   /** The run that's queued or going, if any. */
   running: string | null;
-  /** The agent the chat last ran on: the next message's default. */
+  /** The agent the chat last ran on, and its model and effort: the next message's defaults. */
   harness: string | null;
+  model: string | null;
+  effort: string | null;
   /** Grows with every file change and finished run: the changes panel reads again when it moves. */
   changes: number;
   /** Each run's changed files so far, by path (the last counts win), for its end. */
@@ -57,6 +59,8 @@ export const empty = (): Timeline => ({
   streaming: null,
   running: null,
   harness: null,
+  model: null,
+  effort: null,
   changes: 0,
   files: {},
   asks: {},
@@ -194,6 +198,8 @@ const HANDLERS: Record<string, Handler> = {
     ...retried(t),
     running: e.runId,
     harness: str(d.harness) || t.harness,
+    model: str(d.model) || null,
+    effort: str(d.effort) || null,
     started: { ...t.started, [e.runId ?? ""]: e.ts },
   }),
   [EV.toolStarted]: toolStarted,

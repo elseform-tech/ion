@@ -3,7 +3,16 @@ import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
 import { memoryView } from "../views/memory.js";
-import { addProject, loadUserConfig, saveUserConfig, setProjectAccess, setProjectStarred } from "@ion/config";
+import {
+  addProject,
+  loadUserConfig,
+  removeProject,
+  renameProject,
+  saveUserConfig,
+  setProjectAccess,
+  setProjectStarred,
+  type UserConfig,
+} from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
 import { decisionsView } from "../views/decisions.js";
@@ -135,6 +144,21 @@ export const handlers: Handlers = {
     saveUserConfig(ctx.configFile, made.config);
     return made.config.projects.find((p) => p.id === made.id)!;
   },
+  "project.rename": (a, ctx) => {
+    changeConfig(ctx.configFile, (c) => renameProject(c, String(a.projectId ?? ""), String(a.name ?? "")));
+    return { ok: true as const };
+  },
+  "project.remove": async (a, ctx) => {
+    const id = String(a.projectId ?? "");
+    // Refuses default and an unknown project before anything is archived.
+    changeConfig(ctx.configFile, (c) => (removeProject(c, id), c));
+    const chats = chatsView.list(ctx.db).filter((c) => c.projectId === id && !c.archived);
+    if (chats.some((c) => ["queued", "running"].includes(c.lastRunStatus ?? "")))
+      throw new UserError("Stop its running chats first");
+    for (const c of chats) await ctx.runs.archive(c.chatId);
+    changeConfig(ctx.configFile, (c) => removeProject(c, id));
+    return { ok: true as const };
+  },
   "project.star": (a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
@@ -169,6 +193,17 @@ export const handlers: Handlers = {
       data: { title: String(a.title ?? "New chat"), projectId: a.projectId ?? null },
     }),
 };
+
+/** Loads your config, changes it, saves it; a refusal (or a config that doesn't parse) is the error you see. */
+function changeConfig(file: string, change: (c: UserConfig) => UserConfig): void {
+  const { config, error } = loadUserConfig(file);
+  if (error) throw new UserError(`Fix your config first. ${error}`);
+  try {
+    saveUserConfig(file, change(config));
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
+}
 
 /** Every agent's info, kept and read again in the background (asking each CLI takes seconds). */
 export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs: 60_000 });

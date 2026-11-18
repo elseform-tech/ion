@@ -59,6 +59,19 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("status")).out).toBe("ion is running · 0 projects");
   });
 
+  // The user, 2026-11-19: rename and remove projects.
+  it("renames a project and removes it, keeping its folder", async () => {
+    await ion("daemon", "start");
+    const p = repo("shop");
+    await ion("projects", "add", p);
+    expect((await ion("projects", "rename", "shop", "My", "Shop")).out).toBe("Renamed shop");
+    expect((await ion("projects", "ls")).out).toBe(`shop  My Shop  ${p}`);
+    expect((await ion("projects", "remove", "shop")).out).toBe("Removed shop");
+    expect((await ion("projects", "ls")).out).toBe("No projects");
+    expect(existsSync(p)).toBe(true);
+    expect((await ion("projects", "remove", "default")).err).toContain("default can't be removed");
+  });
+
   it("adds and lists projects", async () => {
     await ion("daemon", "start");
     const p = repo("storefront");

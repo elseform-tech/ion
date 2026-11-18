@@ -59,6 +59,24 @@ describe("ions view", () => {
     expect(ionsView.list(db, projects(["storefront"]))[0]!.last).toBe("Asked 2 projects.");
   });
 
+  // The user, 2026-11-19: ions showed a plain orb, not the lab's agent shapes. With no agent set for the project,
+  // its ion wears the agent its latest chat ran on (the one ion's threads would use).
+  it("draws an ion on its project's latest agent when the project names none", () => {
+    store.append(
+      d({ chatId: "c1", runId: null, type: "chat.created", data: { title: "a", projectId: "storefront" } }),
+    );
+    store.append(
+      d({
+        chatId: "c1",
+        runId: "r1",
+        type: "run.started",
+        data: { harness: "grok-build", model: "m", effort: null, authMethod: null, sessionId: "s1" },
+      }),
+    );
+    expect(ionsView.list(db, projects(["storefront", "payments-api"]))[1]!.harness).toBe("grok-build");
+    expect(ionsView.list(db, projects(["storefront", "payments-api"]))[2]!.harness).toBeNull();
+  });
+
   it("keeps each ion's last line", () => {
     store.append(d({ chatId: "ion:storefront", runId: null, type: "ion.said", data: { text: "On it." } }));
     expect(ionsView.list(db, projects(["storefront"]))[1]!.last).toBe("On it.");

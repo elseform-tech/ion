@@ -314,4 +314,9 @@ describe("timeline", () => {
       note: "storefront's ion: first time this comes up",
     });
   });
+  // The composer starts from the chat's own brain.
+  it("keeps the model and effort of the chat's latest run", () => {
+    const t = play(ev("run.started", { harness: "grok-build", model: "grok-code-fast", effort: "high" }));
+    expect(t).toMatchObject({ harness: "grok-build", model: "grok-code-fast", effort: "high" });
+  });
 });
