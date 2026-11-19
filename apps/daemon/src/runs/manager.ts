@@ -319,12 +319,15 @@ export class RunManager {
     await run.session.interrupt();
   }
 
-  /** Removes the chat's worktree (its branch and commits stay) and marks it archived. */
-  async archive(chatId: string): Promise<void> {
+  /**
+   * Removes the chat's worktree (its branch and commits stay) and marks it archived. `repo`: its project's folder,
+   * for a project already out of your config (being removed).
+   */
+  async archive(chatId: string, repo?: string): Promise<void> {
     if (this.runningIn(chatId)) throw new UserError("Stop the chat's run first");
     const chat = this.chatFor({ chatId, text: "" });
     const worktree = chatsView.worktree(this.db, chatId);
-    if (worktree) await removeWorktree(projectPath(this.ctx.configFile, chat.projectId), worktree);
+    if (worktree) await removeWorktree(repo ?? projectPath(this.ctx.configFile, chat.projectId), worktree);
     this.needs.supersedeChat(chatId);
     this.store.append({ chatId, runId: null, origin: "daemon", type: EV.chatArchived, data: {} });
   }

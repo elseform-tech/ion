@@ -351,6 +351,19 @@ describe("daemon api", () => {
     );
   });
 
+  // Review, 2026-11-19: project.update wrote any field it was sent: `{projectId, path}` moved the project.
+  it("changes only the fields Settings may change on a project", async () => {
+    const path = repo("app");
+    await client.call("projects.add", { path });
+    await client.call("project.update", {
+      projectId: "app",
+      color: "#ED712E",
+      path: "/elsewhere",
+      id: "x",
+    } as never);
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", path, color: "#ED712E" });
+  });
+
   // The user, 2026-11-19: rename a project (the name ion shows; its id stays).
   it("renames a project, and its ion takes the name", async () => {
     await client.call("projects.add", { path: repo("app") });
@@ -394,6 +407,25 @@ describe("daemon api", () => {
     await expect(client.call("project.remove", { projectId: "default" })).rejects.toThrow(
       "default can't be removed",
     );
+  });
+
+  // Review, 2026-11-19: removing a project kept it in your config while its chats were archived, so a routine or an
+  // ion message in that time could start a thread in it.
+  it("starts nothing in a project while it's being removed", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const first = await client.call("ask", { text: "edit", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === first.runId && e.type === "run.finished"), 5000);
+    const removing = client.call("project.remove", { projectId: "app" });
+    const late = client.call("ask", { text: "edit", harness: "fake", projectId: "app" }).then(
+      () => "started",
+      (e: Error) => e.message,
+    );
+    await removing;
+    expect(await late).toBe("Unknown project: app");
+    expect((await client.call("chats.list", {})).filter((c) => !c.archived)).toEqual([]);
   });
 
   // The lab: a project's ion can be starred (Starred first in Ions and the project menu).

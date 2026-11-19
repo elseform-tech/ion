@@ -21,11 +21,15 @@ function checkEffort(e: unknown): EffortLevel | undefined {
   return e as EffortLevel;
 }
 
+const PATCHABLE = ["name", "when", "text", "on", "effort"] as const;
+
 /** Your patch as config fields: skip becomes the time of the next run (the one skipped), or none. */
 function fieldsOf(a: PatchArgs, configFile: string): RoutinePatch {
-  const { projectId, routineId, skip, ...rest } = a;
-  checkEffort(rest.effort);
-  const fields: RoutinePatch = { ...rest };
+  const { projectId, routineId, skip } = a;
+  checkEffort(a.effort);
+  // Only these: anything else sent (an id, a path) is never written.
+  const fields: Record<string, unknown> = {};
+  for (const k of PATCHABLE) if (k in a) fields[k] = a[k];
   if (skip === false) fields.skip = null;
   if (skip === true) {
     const r = loadUserConfig(configFile)
@@ -34,7 +38,7 @@ function fieldsOf(a: PatchArgs, configFile: string): RoutinePatch {
     if (!r) throw new UserError(`Unknown routine: ${routineId}`);
     fields.skip = nextRun(r.when, new Date()).toISOString();
   }
-  return fields;
+  return fields as RoutinePatch;
 }
 
 /** Adds a routine to a project's ion, in your config; it waits for its first time from now on. */

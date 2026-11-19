@@ -33,10 +33,13 @@ function checked(p: ProjectPatch): Omit<ProjectPatch, "projectId"> {
   if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
   if (p.access && p.access !== "auto" && p.access !== "full") throw new UserError("Pick auto or full");
   if (p.model !== undefined && p.model !== null && !p.model.trim()) throw new UserError("Pick a model");
-  const fields: Omit<ProjectPatch, "projectId"> & { projectId?: string } = { ...p };
-  delete fields.projectId;
-  return fields;
+  // Only these: anything else sent (a path, an id) is never written.
+  const fields: Record<string, unknown> = {};
+  for (const k of PATCHABLE) if (k in p) fields[k] = p[k];
+  return fields as Omit<ProjectPatch, "projectId">;
 }
+
+const PATCHABLE = ["harness", "color", "model", "effort", "access", "shareWithIon"] as const;
 
 /** Sets the given fields on one project; a null removes the field (its default applies again). */
 function patchProject(c: UserConfig, p: ProjectPatch): UserConfig {

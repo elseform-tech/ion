@@ -91,6 +91,22 @@ describe("routines and activity", () => {
     ).rejects.toThrow("Unknown routine: morning-check");
   });
 
+  // Review, 2026-11-19: routine.update wrote any field it was sent into your config.
+  it("changes only a routine's own fields", async () => {
+    await add();
+    const cf = join(home, "config.toml");
+    await client.call("routine.update", {
+      projectId: "app",
+      routineId: "morning-check",
+      name: "Check",
+      id: "x",
+      path: "/elsewhere",
+    } as never);
+    const [r] = loadUserConfig(cf).config.projects[0]?.routines ?? [];
+    expect(r).toMatchObject({ id: "morning-check", name: "Check" });
+    expect(r).not.toHaveProperty("path");
+  });
+
   it("runs one now: a thread titled by its name, shown in today's activity", async () => {
     await add();
     const { chatId } = await client.call("routine.run", { projectId: "app", routineId: "morning-check" });

@@ -24,6 +24,7 @@ import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
 import { HarnessInfos } from "./harness-infos.js";
 import { renameChat } from "../runs/ready.js";
+import { projectPath } from "../runs/projects.js";
 import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
 import { changeConfig, settingsHandlers } from "./settings.js";
@@ -172,12 +173,14 @@ export const handlers: Handlers = {
     const chats = chatsView.list(ctx.db).filter((c) => c.projectId === id && !c.archived);
     if (chats.some((c) => ["queued", "running"].includes(c.lastRunStatus ?? "")))
       throw new UserError("Stop its running chats first");
-    for (const c of chats) await ctx.runs.archive(c.chatId);
+    // Out of your config first, so nothing (a routine, an ion message) starts in it while it goes.
+    const repo = projectPath(ctx.configFile, id);
+    changeConfig(ctx.configFile, (c) => removeProject(c, id));
+    for (const c of chats) await ctx.runs.archive(c.chatId, repo);
     // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
     for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
     for (const m of memoryView.list(ctx.db, id))
       if (m.scope === id) forgetMemory(ctx.store, ctx.db, m.memoryId);
-    changeConfig(ctx.configFile, (c) => removeProject(c, id));
     return { ok: true as const };
   },
   "project.star": (a, ctx) => {
