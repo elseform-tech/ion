@@ -26,7 +26,7 @@
 | 11 Suggestions: ion chief suggests a routine for what you asked a project for on 3 days, and resuming a chat of yours that stalled with changes; cards in its chat (Add routine or Resume / Not now / fewer like this), `ion suggestions` | Done |
 | 12 More adapters: Codex (through its app-server, not ACP) | Codex done; Cursor and Gemini CLI not started (not installed to verify) |
 | 13 Ions that read like people: thread lines and a side panel, a frame around the app, plain-word reports, ready agents only (PR #19) | In review |
-| [14 Ions with tools](superpowers/plans/2026-11-19-14-ions-with-tools.md): ions think as agent sessions with ion's tools and reading only; project profiles; ion chief routes among 20+ projects and asks which one when unsure | Planned |
+| [14 Ions with tools](superpowers/plans/2026-11-19-14-ions-with-tools.md): ions think as agent sessions with ion's tools and reading only; project profiles; ion chief routes among 20+ projects and asks which one when unsure | Done |
 | [15 Workspace artifacts and processes](superpowers/plans/2026-11-19-15-workspace-artifacts-processes.md): the panel lists a chat's artifacts and every process its tool calls left running, wherever | Planned |
 
 ## Packages
