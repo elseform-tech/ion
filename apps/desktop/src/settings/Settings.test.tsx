@@ -28,6 +28,7 @@ const ions: IonInfo[] = [
     last: null,
     needs: 0,
     working: false,
+    thinking: false,
     starred: false,
   },
   {
@@ -38,6 +39,7 @@ const ions: IonInfo[] = [
     last: null,
     needs: 0,
     working: false,
+    thinking: false,
     starred: false,
   },
 ];

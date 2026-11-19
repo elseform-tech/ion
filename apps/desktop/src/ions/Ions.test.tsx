@@ -31,6 +31,7 @@ const ions: IonInfo[] = [
     last: "Asked 1 project.",
     needs: 1,
     working: false,
+    thinking: false,
     starred: false,
   },
   {
@@ -41,6 +42,7 @@ const ions: IonInfo[] = [
     last: "On it.",
     needs: 0,
     working: true,
+    thinking: false,
     starred: true,
   },
   {
@@ -51,6 +53,7 @@ const ions: IonInfo[] = [
     last: null,
     needs: 0,
     working: false,
+    thinking: false,
     starred: false,
   },
 ];
@@ -274,7 +277,9 @@ describe("Ions", () => {
     act(() => push(ev("t1", EV.messageDelta, { text: "a" })));
     expect(reads()).toBe(before);
     act(() => push(ev("ion:chief", EV.ionSaid, { text: "x" })));
-    await waitFor(() => expect(reads()).toBe(before + 1));
+    await waitFor(() => expect(reads()).toBe(before + 1)); // Task review, 2026-11-19: your message starts the ion's turn, so whether it's thinking is read again too.
+    act(() => push(ev("ion:chief", EV.ionHeard, { text: "y" })));
+    await waitFor(() => expect(reads()).toBe(before + 2));
   });
   // The lab's Ions panel: Starred, then Other projects, each ion with its star.
   it("groups starred ions first, and stars and unstars a project", async () => {

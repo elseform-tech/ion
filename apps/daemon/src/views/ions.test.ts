@@ -123,4 +123,15 @@ describe("ions view", () => {
     store.append(d({ chatId: "t1", runId: "r1", type: "run.queued", data: {} }));
     expect(ionsView.list(db, projects(["storefront"]))[1]!.working).toBe(true);
   });
+
+  // Task review, 2026-11-19: the app guessed whether an ion was thinking from its chat, wrong after a restart or in
+  // a report turn (Esc did nothing, Enter skipped the queue). The list says what ion's turns know.
+  it("says which ions are thinking, as ion's turns say", () => {
+    const ions = ionsView.list(db, projects(["storefront", "docs"]), (ionId) => ionId === "storefront");
+    expect(ions.map((i) => [i.ionId, i.thinking])).toEqual([
+      ["chief", false],
+      ["storefront", true],
+      ["docs", false],
+    ]);
+  });
 });

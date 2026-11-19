@@ -16,6 +16,7 @@ const ion = (ionId: string, name: string): IonInfo => ({
   last: null,
   needs: 0,
   working: false,
+  thinking: false,
   starred: false,
 });
 const ions = [ion("chief", "ion"), ion("storefront", "storefront"), ion("docs", "docs")];

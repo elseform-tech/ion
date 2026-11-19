@@ -7,7 +7,7 @@ import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
 import { Markdown } from "../chats/Message.js";
-import { onEnter, putBack, QueueLines, useDoubleEsc, useQueue } from "../chats/Queue.js";
+import { onEnter, QueueLines, submit, useDoubleEsc, useEditInto, useQueue } from "../chats/Queue.js";
 import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
 import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
@@ -224,46 +224,52 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
   );
 }
 
-/** The ion is thinking: your message waits for its reply, or its turn's work is going. */
-function thinking(items: IonItem[]): boolean {
-  const last = items.at(-1);
-  return last?.kind === "you" || last?.kind === "work";
-}
-
 /**
- * The message box for an ion: Enter sends; while it thinks, Enter queues (⌘Enter: sends now) and Esc twice stops
- * its turn.
+ * The message box for an ion: Enter sends; while it thinks (ion's word), Enter and Send queue (⌘Enter: sends now)
+ * and Esc twice stops its turn.
  */
-function IonBox({ client, ion, working }: { client: IonClient; ion: IonInfo; working: boolean }) {
+function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
   const [text, setText] = useState("");
   const q = useQueue(client, { ionId: ion.ionId });
+  const { ref, onEdit } = useEditInto(setText);
   useDoubleEsc(
-    working ? ion.ionId : null,
+    ion.thinking ? ion.ionId : null,
     (ionId) => void client.call("ion.stop", { ionId }).catch(() => {}),
   );
+  const edit = (t: string) => {
+    setText(t);
+    q.clearError();
+  };
   const send = () => {
     if (!text.trim()) return;
     void client.call("ion.message", { ionId: ion.ionId, text: text.trim() }).catch(() => {});
-    setText("");
+    edit("");
   };
-  const onKey = onEnter({ q, working, text, setText, send, brain: () => ({}) });
+  const b = { q, working: ion.thinking, text, setText, send, brain: () => ({}) };
   return (
     <div className="foot">
       <div className="fcol">
-        <QueueLines q={q} onEdit={(t) => setText((box) => putBack(box, t))} />
+        <QueueLines q={q} onEdit={onEdit} />
         <div className="cbox">
           <textarea
             aria-label={`Message ${ion.name}`}
+            ref={ref}
             placeholder={`Message ${ion.name}`}
             rows={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={onKey}
+            onChange={(e) => edit(e.target.value)}
+            onKeyDown={onEnter(b)}
           />
           {q.error && <div className="quiet">{q.error}</div>}
           <div className="bar">
             <span className="sp" />
-            <button type="button" className="send" aria-label="Send" disabled={!text.trim()} onClick={send}>
+            <button
+              type="button"
+              className="send"
+              aria-label="Send"
+              disabled={!text.trim()}
+              onClick={() => submit(b, false)}
+            >
               <ArrowUp />
             </button>
           </div>
@@ -295,7 +301,7 @@ export function IonChat(p: Omit<CardProps, "card" | "peek" | "onPeek">) {
     <section className={`ichat${open ? " peek" : ""}`}>
       <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} {...(panel ? { panel } : {})} />
       <Bubbles items={items} {...p} peek={open ? peek : null} onPeek={toggle} />
-      <IonBox client={p.client} ion={p.ion} working={thinking(items)} />
+      <IonBox client={p.client} ion={p.ion} />
       {open && (
         <ThreadPeek
           key={open.chatId}

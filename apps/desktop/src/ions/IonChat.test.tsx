@@ -29,6 +29,7 @@ const ion: IonInfo = {
   last: null,
   needs: 0,
   working: false,
+  thinking: false,
   starred: false,
 };
 
@@ -45,8 +46,8 @@ function daemon(events: IonEvent[], items: QueuedInfo[] = []) {
     }
     return { ok: true };
   });
-  const subscribe = vi.fn(async (q: { chatId?: string }, fn: (e: IonEvent) => void) => {
-    if (q.chatId) {
+  const subscribe = vi.fn(async (q: { chatId?: string; fromNow?: boolean }, fn: (e: IonEvent) => void) => {
+    if (q.chatId && !q.fromNow) {
       push = (e) => act(() => fn(e));
       for (const e of events) fn(e);
     }
@@ -55,11 +56,12 @@ function daemon(events: IonEvent[], items: QueuedInfo[] = []) {
   return { call, subscribe };
 }
 
-const show = (d: ReturnType<typeof daemon>) =>
+/** The ion's chat; `thinking`: what ion says of its turn (the daemon's word, not a guess from the chat). */
+const show = (d: ReturnType<typeof daemon>, thinking = true) =>
   render(
     <IonChat
       client={d as unknown as IonClient}
-      ion={ion}
+      ion={{ ...ion, thinking }}
       ions={[ion]}
       chats={[]}
       needs={[]}
@@ -109,7 +111,7 @@ describe("an ion's message box", () => {
     expect(d.call).not.toHaveBeenCalledWith("ion.message", expect.anything());
     cleanup();
     const idle = daemon([ev(EV.ionHeard, { text: "hi" }), ev(EV.ionSaid, { text: "Hello." }, "turn1")]);
-    show(idle);
+    show(idle, false);
     type("thanks");
     fireEvent.keyDown(box(), { key: "Enter" });
     expect(idle.call).toHaveBeenCalledWith("ion.message", {
@@ -133,5 +135,43 @@ describe("an ion's message box", () => {
     expect(d.call).toHaveBeenCalledWith("queue.remove", { queueId: "q1" });
     fireEvent.click(within(lines[1]!).getByRole("button", { name: "Edit" }));
     await waitFor(() => expect(box().value).toBe("edit me"));
+  });
+
+  // Task review, 2026-11-19: the box guessed from the chat whether the ion was thinking; after a restart or in a
+  // report turn it guessed wrong. It goes by what ion says.
+  it("queues and stops by what ion says, not by what its chat looks like", async () => {
+    const quiet = daemon([ev(EV.ionHeard, { text: "hi" }), ev(EV.ionSaid, { text: "Hello." }, "turn1")]);
+    show(quiet, true);
+    type("next");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    await waitFor(() => expect(quiet.call).toHaveBeenCalledWith("queue.add", expect.anything()));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(quiet.call).toHaveBeenCalledWith("ion.stop", { ionId: "storefront" });
+    cleanup();
+    const after = daemon([ev(EV.ionHeard, { text: "hi" })]);
+    show(after, false);
+    type("again");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(after.call).toHaveBeenCalledWith("ion.message", { ionId: "storefront", text: "again" });
+  });
+
+  // Task review, 2026-11-19: the Send button sent straight to a thinking ion, past the queue.
+  it("Send queues while the ion thinks", async () => {
+    const d = daemon(thinking);
+    show(d);
+    type("later");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(d.call).toHaveBeenCalledWith("queue.add", expect.anything()));
+    expect(d.call).not.toHaveBeenCalledWith("ion.message", expect.anything());
+  });
+
+  // Task review, 2026-11-19: after Edit you had to click into the box to go on.
+  it("puts the caret at the end of the box after Edit", async () => {
+    show(daemon(thinking, [{ queueId: "q1", text: "first", brain: {}, addedAt: "" }]));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await waitFor(() => expect(box().value).toBe("edit me"));
+    await waitFor(() => expect(document.activeElement).toBe(box()));
+    expect(box().selectionStart).toBe("edit me".length);
   });
 });

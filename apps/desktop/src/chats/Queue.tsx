@@ -1,7 +1,7 @@
 import type { IonClient } from "@ion/client/browser";
 import { ArrowUp, Pencil, X } from "@ion/design-system";
 import { type AskBrain, EV, type QueuedInfo, type QueueTarget } from "@ion/schema";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useRef, useState } from "react";
 import { useCallError } from "../callError.js";
 
 /** Events after which a queue is read again. */
@@ -25,8 +25,8 @@ function useQueued(client: IonClient, to: QueueTarget | null): QueuedInfo[] {
     const quiet = () => {}; // a dropped connection shows as "ion isn't running"; nothing to add here
     const read = () => void client.call("queue.list", { to: t }).then((q) => !gone && setItems(q), quiet);
     void client
-      .subscribe({ fromNow: true }, (e) => {
-        if (e.chatId === stream && CHANGES.has(e.type)) read();
+      .subscribe({ chatId: stream, fromNow: true }, (e) => {
+        if (CHANGES.has(e.type)) read();
       })
       .then((s) => {
         if (gone) return s();
@@ -51,12 +51,14 @@ export type Queue = {
   remove: (queueId: string) => void;
   /** Edit: its text, out of the queue (to put back in the box). */
   take: (queueId: string, then: (text: string) => void) => void;
+  /** You changed the box: the last refusal goes. */
+  clearError: () => void;
 };
 
 /** A chat's or an ion's queue, and what you can do with it. */
 export function useQueue(client: IonClient, to: QueueTarget | null): Queue {
   const items = useQueued(client, to);
-  const [error, run] = useCallError();
+  const [error, run, clearError] = useCallError();
   const add = (text: string, brain: AskBrain, now: boolean) =>
     new Promise<boolean>((done) => {
       if (!to) return done(false);
@@ -75,12 +77,17 @@ export function useQueue(client: IonClient, to: QueueTarget | null): Queue {
     sendNow: (queueId) => run(client.call("queue.sendNow", { queueId })),
     remove: (queueId) => run(client.call("queue.remove", { queueId })),
     take: (queueId, then) => run(client.call("queue.take", { queueId }), (r) => then(r.text)),
+    clearError,
   };
 }
 
-/** What Enter does while the work goes: queue it, or (⌘Enter, Ctrl+Enter off macOS) send it now; null: not Enter. */
+/**
+ * What Enter does while the work goes: queue it, or (⌘Enter, Ctrl+Enter off macOS) send it now; null: not Enter,
+ * or Enter picking a word in an input method.
+ */
 function enterKey(e: KeyboardEvent<HTMLTextAreaElement>): "queue" | "now" | null {
-  if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return null;
+  if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)
+    return null;
   return e.metaKey || e.ctrlKey ? "now" : "queue";
 }
 
@@ -97,23 +104,45 @@ type Box = {
 };
 
 /**
- * The message box's Enter (Shift+Enter is a new line): it sends when nothing works; while the work goes, it queues
- * (⌘Enter: queues and sends now). Your words leave the box at once and come back if the daemon says no.
+ * Sends when nothing works; while the work goes, queues it (`now`: and sends it now). Your words leave the box at
+ * once and come back if the daemon says no.
  */
-export const onEnter = (b: Box) => (e: KeyboardEvent<HTMLTextAreaElement>) => {
-  const key = enterKey(e);
-  if (!key) return;
-  e.preventDefault();
+export function submit(b: Box, now: boolean): void {
   if (!b.working) return b.send();
   const brain = b.brain();
   const text = b.text;
   if (!brain || !text.trim()) return;
   b.setText("");
-  void b.q.add(text.trim(), brain, key === "now").then((ok) => !ok && b.setText(text));
+  void b.q.add(text.trim(), brain, now).then((ok) => !ok && b.setText(text));
+}
+
+/** The message box's Enter (Shift+Enter is a new line): see submit; ⌘Enter sends now. */
+export const onEnter = (b: Box) => (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const key = enterKey(e);
+  if (!key) return;
+  e.preventDefault();
+  submit(b, key === "now");
 };
 
+/** Edit: the taken text goes back in the box (see putBack), and you go on typing at its end. */
+export function useEditInto(setText: Dispatch<SetStateAction<string>>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [edits, setEdits] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!edits || !el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [edits]);
+  const onEdit = (text: string) => {
+    setText((box) => putBack(box, text));
+    setEdits((n) => n + 1);
+  };
+  return { ref, onEdit };
+}
+
 /** The taken text back in the box: alone when it's empty, else after what's there. */
-export const putBack = (box: string, text: string) => (box.trim() ? `${box}\n${text}` : text);
+const putBack = (box: string, text: string) => (box.trim() ? `${box}\n${text}` : text);
 
 /** Why it waits, when it does: its send failed, or it goes after your answer. */
 function Why({ q }: { q: QueuedInfo }) {

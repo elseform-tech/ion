@@ -145,4 +145,74 @@ describe("the queue in a chat", () => {
     expect(await screen.findByText("That's 10 waiting already")).toBeTruthy();
     expect(box().value).toBe("one more");
   });
+
+  // Task review, 2026-11-19: a refusal stayed under the box after you went on typing and sending.
+  it("drops the refusal once you change the box", async () => {
+    chatBox(daemon([], ["queue.add", "That's 10 waiting already"]), "r1");
+    type("one more");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(await screen.findByText("That's 10 waiting already")).toBeTruthy();
+    type("one more, shorter");
+    expect(screen.queryByText("That's 10 waiting already")).toBeNull();
+  });
+
+  // Task review, 2026-11-19: after Edit you had to click into the box to go on.
+  it("puts the caret at the end of the box after Edit", async () => {
+    chatBox(daemon([queued("q1", "first")]), "r1");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await waitFor(() => expect(box().value).toBe("edit me"));
+    await waitFor(() => expect(document.activeElement).toBe(box()));
+    expect(box().selectionStart).toBe("edit me".length);
+  });
+
+  // Task review, 2026-11-19: Enter that picks a word in an input method (keyCode 229) isn't a send.
+  it("leaves Enter alone while an input method composes", () => {
+    const d = daemon();
+    chatBox(d, "r1");
+    type("日本");
+    fireEvent.keyDown(box(), { key: "Enter", keyCode: 229 });
+    expect(box().value).toBe("日本");
+    expect(d.call).not.toHaveBeenCalledWith("queue.add", expect.anything());
+  });
+
+  // Task review, 2026-11-19: each box listens only to its own chat's events.
+  it("listens only to its own chat", async () => {
+    const d = daemon();
+    chatBox(d, "r1");
+    await waitFor(() =>
+      expect(d.subscribe).toHaveBeenCalledWith({ chatId: "c1", fromNow: true }, expect.anything()),
+    );
+  });
+
+  // Tour, 2026-11-19: a chat on an agent the app doesn't list (the fake one) showed "Claude Code" and its queued
+  // follow-up ran on Claude Code. It keeps its own agent: shown by name, and nothing sent overrides it.
+  it("keeps a chat on an unlisted agent on its own agent", async () => {
+    const grok: HarnessInfo = { ...fake, id: "grok-build", label: "Grok Build" };
+    const d = daemon();
+    const at = (running: string | null) => (
+      <Composer
+        client={d as unknown as IonClient}
+        harnesses={[grok]}
+        to={{ chatId: "c1" }}
+        running={running}
+        harness="fake"
+        onSent={() => {}}
+      />
+    );
+    const { rerender } = render(at("r1"));
+    expect(screen.getByRole("button", { name: /Harness, model and effort/ }).textContent).toContain("fake");
+    type("then this");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    await waitFor(() =>
+      expect(d.call).toHaveBeenCalledWith("queue.add", {
+        to: { chatId: "c1" },
+        text: "then this",
+        brain: {},
+      }),
+    );
+    rerender(at(null));
+    type("and this");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    await waitFor(() => expect(d.call).toHaveBeenCalledWith("ask", { text: "and this", chatId: "c1" }));
+  });
 });

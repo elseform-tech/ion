@@ -139,7 +139,8 @@ export const handlers: Handlers = {
     };
   },
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,
-  "ions.list": (_a, ctx) => ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects),
+  "ions.list": (_a, ctx) =>
+    ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects, (ionId) => ctx.ions.busy(ionId)),
   "ion.message": async (a, ctx) => {
     const text = String(a.text ?? "").trim();
     if (!text) throw new UserError("Say something");

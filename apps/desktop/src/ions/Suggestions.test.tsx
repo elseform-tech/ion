@@ -23,11 +23,11 @@ const ev = (type: string, data: Record<string, unknown>): IonEvent =>
 
 const chief: IonInfo = {
   ...{ ionId: "chief", name: "ion", color: null, harness: null, last: null },
-  ...{ needs: 0, working: false, starred: false },
+  ...{ needs: 0, working: false, thinking: false, starred: false },
 };
 const storefront: IonInfo = {
   ...{ ionId: "storefront", name: "storefront", color: "#ED712E", harness: "claude-code", last: null },
-  ...{ needs: 0, working: false, starred: false },
+  ...{ needs: 0, working: false, thinking: false, starred: false },
 };
 const since = new Date(2026, 10, 13, 10).toISOString();
 const stalledChat: ChatInfo = {

@@ -351,6 +351,8 @@ export type IonInfo = {
   needs: number;
   /** One of its threads is running. */
   working: boolean;
+  /** Its own turn is going (or waiting): Enter queues, Esc twice stops it. */
+  thinking: boolean;
   /** Its project is starred (Starred first); ion chief never is. */
   starred: boolean;
 };
