@@ -13,6 +13,7 @@ const RANGES = [
   [47, 47, "window"],
   [48, 164, "window, rail, chats sidebar, chat, empty state, tools"],
   [165, 202, "ions: panel, ion chat, bubbles, thread links, quick replies"],
+  [209, 264, "settings: nav, groups, rows, switches, ion page, agent and colour pickers"],
   [267, 283, "ions: new-ion card, notes"],
   [305, 305, "empty lists"],
   [310, 330, "chips, project picker"],
@@ -29,6 +30,9 @@ const RANGES = [
   [686, 686, "panel label (.lh2)"],
   [713, 724, "ions: needs strip, collapsed"],
   [761, 831, "brain picker; work"],
+  [890, 891, "settings: ion's model slots"],
+  [896, 896, "settings: model separator"],
+  [902, 919, "settings: tools rows, agents' status, stacked rows"],
   [1051, 1066, "ions: project ion rows, fan-out card"],
 ];
 

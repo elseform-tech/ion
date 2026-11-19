@@ -111,6 +111,29 @@ describe("a project's ion thinks", () => {
     expect(prompt).not.toContain("Webhooks");
   });
 
+  // Settings: a project ion's model and effort are what its threads run on (only with the agent they belong to).
+  it("runs its threads on the project's model and effort", async () => {
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [
+        {
+          id: "storefront",
+          path: "/p/storefront",
+          starred: false,
+          harness: "grok-build",
+          model: "grok-code",
+          effort: "high",
+        },
+      ],
+    });
+    await ions().message("storefront", "Fix the cart");
+    expect(ask.mock.calls[0]![0]).toMatchObject({
+      harness: "grok-build",
+      model: "grok-code",
+      effort: "high",
+    });
+  });
+
   it("says it couldn't think when its model fails, and starts nothing", async () => {
     quick.mockRejectedValueOnce(new Error("down"));
     await ions().message("storefront", "fix it");

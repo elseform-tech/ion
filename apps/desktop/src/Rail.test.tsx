@@ -20,4 +20,11 @@ describe("Rail", () => {
     expect((container.querySelector(".dotb") as HTMLElement).hidden).toBe(true);
     expect(ions.classList.contains("on")).toBe(true);
   });
+  // The lab's rail: Settings sits above you, at the bottom.
+  it("opens Settings from the gear", () => {
+    const setMode = vi.fn();
+    render(<Rail mode="chats" setMode={setMode} initial="Y" needs={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(setMode).toHaveBeenCalledWith("settings");
+  });
 });

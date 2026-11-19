@@ -1,5 +1,5 @@
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
-import { EV, type HarnessInfo, type IonCard } from "@ion/schema";
+import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -11,7 +11,14 @@ const TIMEOUT_MS = 30_000;
 const NO_MODEL = "I couldn't reach my model; try again.";
 
 type Ask = (
-  args: { projectId: string; text: string; harness?: string; access: "auto" },
+  args: {
+    projectId: string;
+    text: string;
+    harness?: string;
+    model?: string;
+    effort?: Effort;
+    access: "auto";
+  },
   opts: { by: "ion"; request?: string },
 ) => Promise<{ chatId: string; runId: string }>;
 
@@ -102,13 +109,26 @@ export class Ions {
     const harness = await this.agentFor(projectId);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
-      const args = { projectId, text, ...(harness ? { harness } : {}), access: "auto" as const };
+      const args = {
+        projectId,
+        text,
+        ...(harness ? { harness } : {}),
+        ...this.brainOf(projectId, harness),
+        access: "auto" as const,
+      };
       const { chatId } = await this.d.runs.ask(args, { by: "ion", ...(request ? { request } : {}) });
       return { chatId, projectId };
     } catch (e) {
       if (e instanceof UserError) return { why: e.message };
       throw e;
     }
+  }
+
+  /** The project's model and effort (Settings), only on the agent they were picked for. */
+  private brainOf(projectId: string, harness: string | undefined): { model?: string; effort?: Effort } {
+    const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId);
+    if (!p || !harness || p.harness !== harness) return {};
+    return { ...(p.model ? { model: p.model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
   }
 
   /** The project's own agent, else the one its last chat ran on, else the first ready (opencode, Grok, Claude). */

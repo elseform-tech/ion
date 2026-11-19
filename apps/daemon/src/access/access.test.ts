@@ -274,6 +274,24 @@ describe("harnessRunner", () => {
   });
 });
 
+// The user, 2026-11-19 (Settings): ion thinks with its own quick model ([ion] quick), set apart from the judge.
+describe("harnessRunner for ion's own thinking", () => {
+  it("uses [ion] quick, not the judge", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-quick-")), "config.toml");
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "fake" },
+      access: { ...DEFAULT_CONFIG.access, judge: "nope" },
+    });
+    const said = await harnessRunner(configFile, "quick")("hello", new AbortController().signal);
+    expect(said).toBe("Hi from the fake harness.");
+    await expect(harnessRunner(configFile)("hello", new AbortController().signal)).rejects.toThrow(
+      "Unknown harness: nope",
+    );
+  });
+});
+
 // Plan 06: Grok's gate hook lives in the worktree; in Auto, nothing may touch it.
 describe("ruleFor, ion's hook in the worktree", () => {
   it("denies anything touching .grok/hooks or removing .grok", () => {

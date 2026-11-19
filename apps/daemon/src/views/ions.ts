@@ -1,21 +1,11 @@
 import { DEFAULT_PROJECT } from "@ion/config";
-import { type IonCard, EV, type IonEvent, type IonInfo, type ProjectInfo } from "@ion/schema";
+import { type IonCard, EV, type IonEvent, type IonInfo, type ProjectInfo, ION_COLORS } from "@ion/schema";
 import type { Db, View } from "../store/index.js";
 import { chatsView } from "./chats.js";
 import { needsView } from "./needs.js";
 
 /** Ion colours, from the lab's palette, in the order projects take them. Identity only, never status. */
-const PALETTE = [
-  "#ED712E",
-  "#5BC67A",
-  "#F19D38",
-  "#3C82F6",
-  "#885CF5",
-  "#54B9A6",
-  "#EB4699",
-  "#EA4045",
-  "#97683D",
-];
+const PALETTE = ION_COLORS.map((c) => c.hex);
 
 const ionOf = (chatId: string) => (chatId.startsWith("ion:") ? chatId.slice(4) : null);
 

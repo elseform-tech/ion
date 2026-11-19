@@ -24,6 +24,9 @@ const Project = z.object({
     .optional(),
   /** The agent its ion's threads run on; absent: ion's default. */
   harness: z.string().min(1).optional(),
+  /** The model and effort its ion's threads run on (else the agent's own defaults). */
+  model: z.string().min(1).max(200).optional(),
+  effort: Effort.optional(),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.

@@ -11,7 +11,6 @@ import {
   saveUserConfig,
   setProjectAccess,
   setProjectStarred,
-  type UserConfig,
 } from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
@@ -27,6 +26,7 @@ import { HarnessInfos } from "./harness-infos.js";
 import { renameChat } from "../runs/ready.js";
 import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
+import { changeConfig, settingsHandlers } from "./settings.js";
 
 export { UserError } from "./errors.js";
 
@@ -43,7 +43,7 @@ export type Ctx = {
   version: string;
 };
 
-type Handlers = {
+export type Handlers = {
   [C in Exclude<Command, "events.subscribe">]: (
     args: Commands[C]["args"],
     ctx: Ctx,
@@ -51,6 +51,7 @@ type Handlers = {
 };
 
 export const handlers: Handlers = {
+  ...settingsHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   "harnesses.list": () => harnessInfos.list(),
@@ -197,17 +198,6 @@ export const handlers: Handlers = {
       data: { title: String(a.title ?? "New chat"), projectId: a.projectId ?? null },
     }),
 };
-
-/** Loads your config, changes it, saves it; a refusal (or a config that doesn't parse) is the error you see. */
-function changeConfig(file: string, change: (c: UserConfig) => UserConfig): void {
-  const { config, error } = loadUserConfig(file);
-  if (error) throw new UserError(`Fix your config first. ${error}`);
-  try {
-    saveUserConfig(file, change(config));
-  } catch (e) {
-    throw new UserError((e as Error).message);
-  }
-}
 
 /** Every agent's info, kept and read again in the background (asking each CLI takes seconds). */
 export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs: 60_000 });

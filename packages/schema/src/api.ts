@@ -15,7 +15,40 @@ export type ProjectInfo = {
   /** Its ion's colour and the agent its ion's threads run on (Plan 09). */
   color?: string;
   harness?: string;
+  /** The model and effort its ion's threads run on. */
+  model?: string;
+  effort?: "low" | "medium" | "high" | "max";
 };
+
+/** What Settings can change about a project's ion: each field set, or null to clear it. */
+export type ProjectPatch = {
+  projectId: string;
+  harness?: string | null;
+  color?: string | null;
+  model?: string | null;
+  effort?: "low" | "medium" | "high" | "max" | null;
+  access?: "auto" | "full" | null;
+  shareWithIon?: boolean | null;
+};
+
+/** ion's own models: "quick" thinks for ion chief and the project ions ("<agent>" or "<agent>:<model>"). */
+export type IonSettings = { quick: string };
+
+/** The lab's ion colours, by name, in the order new projects take them. */
+export const ION_COLORS: { name: string; hex: string }[] = [
+  { name: "Orange", hex: "#ED712E" },
+  { name: "Green", hex: "#5BC67A" },
+  { name: "Amber", hex: "#F19D38" },
+  { name: "Blue", hex: "#3C82F6" },
+  { name: "Purple", hex: "#885CF5" },
+  { name: "Teal", hex: "#54B9A6" },
+  { name: "Pink", hex: "#EB4699" },
+  { name: "Red", hex: "#EA4045" },
+  { name: "Brown", hex: "#97683D" },
+];
+
+/** Runs over the last 30 days: how many, how many succeeded, their cost, runs per day (oldest first). */
+export type IonStats = { runs: number; succeeded: number; costUsd: number; perDay: number[] };
 
 export type StatusResult = {
   version: string;
@@ -37,6 +70,13 @@ export type Commands = {
   "project.rename": { args: { projectId: string; name: string }; result: { ok: true } };
   /** Takes the project out of ion: its chats are archived; its folder is never touched. */
   "project.remove": { args: { projectId: string }; result: { ok: true } };
+  /** A project's ion setup and rules; null clears a field (back to the default). */
+  "project.update": { args: ProjectPatch; result: { ok: true } };
+  /** ion's own models (Settings → Agents). */
+  "settings.get": { args: Record<string, never>; result: IonSettings };
+  /** An ion's threads' runs over the last 30 days (ion chief: every ion's). */
+  "ion.stats": { args: { ionId: string }; result: IonStats };
+  "settings.update": { args: Partial<IonSettings>; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   /** fromNow: only events from now on, no backlog. */
   "events.subscribe": {
@@ -178,6 +218,10 @@ export const COMMANDS = [
   "project.star",
   "project.rename",
   "project.remove",
+  "project.update",
+  "settings.get",
+  "ion.stats",
+  "settings.update",
   "chat.create",
   "events.subscribe",
   "ask",

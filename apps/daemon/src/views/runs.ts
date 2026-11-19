@@ -14,14 +14,23 @@ export type RunRow = {
 const ended = new Set<string>(RUN_END_STATUSES);
 
 /** One row per run: its latest status. */
-export const runsView: View & { rows(db: Db): RunRow[] } = {
+/** Some chats' runs over the last 30 days: how many, how many succeeded, their cost, and runs per day (oldest first). */
+export type RunStats = { runs: number; succeeded: number; costUsd: number; perDay: number[] };
+
+const DAYS = 30;
+const DAY_MS = 86_400_000;
+
+export const runsView: View & {
+  rows(db: Db): RunRow[];
+  stats(db: Db, chatIds: string[], now: Date): RunStats;
+} = {
   name: "runs",
-  version: 1,
+  version: 2,
   tables: ["view_runs"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_runs (
       run_id TEXT PRIMARY KEY, chat_id TEXT, status TEXT NOT NULL,
-      harness TEXT, model TEXT, started_at TEXT, finished_at TEXT)`);
+      harness TEXT, model TEXT, started_at TEXT, finished_at TEXT, cost REAL)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_runs");
@@ -43,6 +52,11 @@ export const runsView: View & { rows(db: Db): RunRow[] } = {
         (d.model as string) ?? null,
         e.type === EV.runStarted ? e.ts : null,
       );
+    } else if (e.type === EV.usageReported && typeof d.costUsd === "number") {
+      db.prepare("UPDATE view_runs SET cost = coalesce(cost, 0) + ? WHERE run_id = ?").run(
+        d.costUsd,
+        e.runId,
+      );
     } else if (e.type === EV.runFinished && ended.has(d.status as string)) {
       db.prepare("UPDATE view_runs SET status = ?, finished_at = ? WHERE run_id = ?").run(
         d.status,
@@ -50,6 +64,28 @@ export const runsView: View & { rows(db: Db): RunRow[] } = {
         e.runId,
       );
     }
+  },
+  stats(db, chatIds, now) {
+    const since = new Date(now.getTime() - DAYS * DAY_MS).toISOString();
+    const marks = chatIds.map(() => "?").join(",");
+    const rows = chatIds.length
+      ? (db
+          .prepare(
+            `SELECT status, cost, started_at AS at FROM view_runs WHERE chat_id IN (${marks}) AND started_at >= ?`,
+          )
+          .all(...chatIds, since) as { status: string; cost: number | null; at: string }[])
+      : [];
+    const perDay = Array<number>(DAYS).fill(0);
+    for (const r of rows) {
+      const ago = Math.floor((now.getTime() - Date.parse(r.at)) / DAY_MS);
+      if (ago >= 0 && ago < DAYS) perDay[DAYS - 1 - ago]! += 1;
+    }
+    return {
+      runs: rows.length,
+      succeeded: rows.filter((r) => r.status === "done").length,
+      costUsd: Math.round(rows.reduce((n, r) => n + (r.cost ?? 0), 0) * 100) / 100,
+      perDay,
+    };
   },
   rows(db) {
     return db

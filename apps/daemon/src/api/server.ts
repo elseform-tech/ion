@@ -86,7 +86,7 @@ function httpServer(mcp: ReturnType<typeof createMcpHandler>, gate: ReturnType<t
 }
 
 /**
- * Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own files (and a custom Grok folder,
+ * Auto: rules, then a judge on its own model ([access] judge). Your secrets and ion's own files (and a custom Grok folder,
  * where ion's gate hook lives; ~/.grok is covered by name) are always denied; the judge weighs your decisions.
  */
 function autoAccess(
@@ -114,6 +114,13 @@ const followAsk = (chatId: string, m: { harness: string | null; text: string }) 
 });
 
 /** The data folder, the event store and the services every connection shares. */
+/** ion chief and the project ions, thinking with ion's quick model, watching their threads end. */
+function startIons(d: Omit<ConstructorParameters<typeof Ions>[0], "agents">): Ions {
+  const ions = new Ions({ ...d, agents: () => harnessInfos.list() });
+  ions.watch();
+  return ions;
+}
+
 function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
@@ -122,6 +129,11 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   const quick = harnessRunner(opts.configFile);
+  // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
+  const ionQuick = harnessRunner(opts.configFile, "quick");
+  const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
+  // Questions held behind one that closed while ion was stopped come to you now.
+  ionQuestions.sweep();
   // Made after the run manager it needs; the judge and the gate reach it through this holder.
   const late: { decisions?: Decisions } = {};
   const access = autoAccess(opts, quick, late);
@@ -146,22 +158,14 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     store,
     db,
     needs,
-    match: createMatcher(quick),
-    ion: new IonQuestions({ store, db, needs, same: createSame(quick) }),
+    match: createMatcher(ionQuick),
+    ion: ionQuestions,
     followUp: async (chatId, m) =>
       (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown })).runId,
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const ions = new Ions({
-    store,
-    db,
-    configFile: opts.configFile,
-    runs,
-    quick,
-    agents: () => harnessInfos.list(),
-  });
-  ions.watch();
+  const ions = startIons({ store, db, configFile: opts.configFile, runs, quick: ionQuick });
   const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
   return { store, db, needs, decisions, grants, runs, ions, ...base0 };
 }

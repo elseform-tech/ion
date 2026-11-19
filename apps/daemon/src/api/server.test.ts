@@ -245,12 +245,13 @@ describe("daemon api", () => {
     await client.call("projects.add", { path: repo("app") });
     const seen: IonEvent[] = [];
     await client.subscribe({}, (e) => seen.push(e));
-    // ion chief's model is the judge's: the fake one here (never a real model in tests).
+    // ion thinks with its own quick model ([ion] quick), and judges with [access] judge: both fake here.
     const cf = join(home, "config.toml");
     const { config } = loadUserConfig(cf);
     // Its project's ion runs on the fake agent too: with none set, ion would pick a real one that's ready.
     saveUserConfig(cf, {
       ...config,
+      ion: { ...config.ion, quick: "fake" },
       access: { ...config.access, judge: "fake" },
       projects: config.projects.map((p) => ({ ...p, harness: "fake" })),
     });
@@ -275,6 +276,61 @@ describe("daemon api", () => {
     expect(chief).toMatchObject({ text: "", card: { kind: "threads" } });
     // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
   }, 20_000);
+
+  // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
+  it("reads and sets ion's quick model, refusing an unknown agent", async () => {
+    expect(await client.call("settings.get", {})).toEqual({ quick: "claude-code" });
+    await client.call("settings.update", { quick: "grok-build" });
+    expect(await client.call("settings.get", {})).toEqual({ quick: "grok-build" });
+    await expect(client.call("settings.update", { quick: "nope:x" })).rejects.toThrow("Unknown agent: nope");
+  });
+
+  it("gives an ion's stats: its threads' runs over 30 days", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    expect(await client.call("ion.stats", { ionId: "app" })).toMatchObject({
+      runs: 0,
+      succeeded: 0,
+      costUsd: 0,
+    });
+    expect((await client.call("ion.stats", { ionId: "chief" })).perDay).toHaveLength(30);
+    await expect(client.call("ion.stats", { ionId: "nope" })).rejects.toThrow("Unknown ion: nope");
+  });
+
+  it("sets a project ion's agent, colour, model, effort and access, and checks them", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    await client.call("project.update", {
+      projectId: "app",
+      harness: "grok-build",
+      color: "#ED712E",
+      model: "grok-code",
+      effort: "high",
+      access: "full",
+      shareWithIon: false,
+    });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({
+      harness: "grok-build",
+      color: "#ED712E",
+      model: "grok-code",
+      effort: "high",
+      access: "full",
+      shareWithIon: false,
+    });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({
+      harness: "grok-build",
+      color: "#ED712E",
+    });
+    await client.call("project.update", { projectId: "app", model: null });
+    expect((await client.call("projects.list", {}))[0]).not.toHaveProperty("model");
+    await expect(client.call("project.update", { projectId: "app", harness: "nope" })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
+    await expect(client.call("project.update", { projectId: "app", color: "red" })).rejects.toThrow(
+      "Pick a colour",
+    );
+    await expect(client.call("project.update", { projectId: "app", effort: "huge" })).rejects.toThrow(
+      "Pick low, medium, high or max",
+    );
+  });
 
   // The user, 2026-11-19: rename a project (the name ion shows; its id stays).
   it("renames a project, and its ion takes the name", async () => {

@@ -176,6 +176,64 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .quick button:hover{background:var(--hover)}
 .typing{display:inline-flex;gap:4px;padding:12px 14px;background:var(--hover);border-radius:18px 18px 18px 6px;justify-self:start}
 
+/* lab lines 209-264: settings: nav, groups, rows, switches, ion page, agent and colour pickers */
+.settings{grid-template-columns:220px minmax(0,1fr)}
+.snav{background:var(--side);border-right:1px solid var(--line);padding:16px 10px;display:grid;align-content:start;gap:1px}
+.snav b{padding:0 10px 10px;font-weight:600}
+.snav div{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;color:var(--muted);cursor:default}
+.snav div.on{background:var(--sel);color:var(--ink)}
+.sbody{overflow:auto;padding:28px 40px;display:grid;align-content:start;gap:26px;max-width:760px}
+.sbody h4{margin:0 0 8px;font-size:12.5px;font-weight:500;color:var(--faint)}
+.group{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.hrow{display:grid;grid-template-columns:30px minmax(0,1fr) 150px auto;gap:14px;align-items:center;padding:11px 14px}
+.hrow+.hrow,.srow+.srow{border-top:1px solid var(--line)}
+.hrow canvas{width:30px;height:30px}
+.hrow .s,.srow .s{font-size:12.5px;color:var(--muted)}
+.meter{display:grid;gap:4px;font-size:11.5px;color:var(--faint)}
+.meter .tr{height:4px;border-radius:999px;background:var(--hover);overflow:hidden}
+.meter .tr i{display:block;height:100%;background:var(--ink);border-radius:inherit}
+.meter.hi .tr i{background:var(--wait)}
+.srow{display:flex;align-items:center;gap:12px;padding:12px 14px}
+.srow .g{flex:1}
+.sw{width:30px;height:18px;border-radius:999px;background:var(--line);position:relative;flex-shrink:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw.on{background:var(--brand)} .sw.on::after{left:14px}
+.stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:8px}
+.stepper span{width:26px;text-align:center;font-variant-numeric:tabular-nums}
+.snav button{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;color:var(--muted);border:0;background:transparent;width:100%;text-align:left;cursor:pointer}
+.snav button:hover{background:var(--hover);color:var(--ink)}
+.snav button.on{background:var(--sel);color:var(--ink)}
+.spage{display:grid;gap:26px;align-content:start}
+.spage[hidden]{display:none}
+.irow{display:grid;grid-template-columns:32px minmax(0,1fr) 140px 110px 16px;gap:12px;align-items:center;padding:10px 14px;border:0;background:transparent;width:100%;text-align:left;cursor:pointer}
+.irow+.irow{border-top:1px solid var(--line)}
+.irow:hover{background:var(--hover)}
+.irow canvas{width:32px;height:32px}
+.irow .s{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.irow .h{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.irow .h canvas{width:16px;height:16px}
+.irow>.lucide{color:var(--faint)}
+.back{display:inline-flex;align-items:center;gap:4px;border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0;font-size:13px;justify-self:start}
+.back:hover{color:var(--ink)}
+.ihero{display:flex;align-items:center;gap:16px}
+.ihero canvas{width:64px;height:64px}
+.ihero .g{flex:1;min-width:0}
+.ihero h3{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em}
+.ihero .s{color:var(--muted)}
+.val{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);border:0;background:transparent;cursor:pointer;padding:4px 6px;border-radius:7px}
+.val:hover{background:var(--hover);color:var(--ink)}
+.val canvas{width:16px;height:16px}
+.val .lucide{width:14px;height:14px;color:var(--faint)}
+.hpick{display:flex;gap:2px}
+.hpick button{width:34px;height:34px;border-radius:9px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer;opacity:.55}
+.hpick button:hover{background:var(--hover);opacity:1}
+.hpick button.on{background:var(--sel);opacity:1;box-shadow:0 0 0 1px var(--line)}
+.hpick canvas{width:24px;height:24px}
+.sws{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;max-width:240px}
+.sws button{width:18px;height:18px;border-radius:50%;border:0;background:var(--c);cursor:pointer;padding:0}
+.sws button.on{box-shadow:0 0 0 2px var(--win),0 0 0 3.5px var(--c)}
+.chip{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--hover);color:var(--muted)}
+
 /* lab lines 267-283: ions: new-ion card, notes */
 /* new-ion card */
 .ncard{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:center;padding:12px;border-radius:16px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:430px}
@@ -480,6 +538,33 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .wsum .wst{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);margin-bottom:2px}
 .wsum .wst .lucide{width:13px;height:13px}
 .wsrc{font-size:11px;color:var(--faint);margin-left:6px}
+
+/* lab lines 890-891: settings: ion's model slots */
+.slot{display:inline-flex;align-items:center;gap:6px}
+.slot .lucide{width:14px;height:14px;color:var(--accent)}
+
+/* lab lines 896-896: settings: model separator */
+.val .bsep{color:var(--faint);margin:0 2px}
+
+/* lab lines 902-919: settings: tools rows, agents' status, stacked rows */
+.trow{display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:11px 14px}
+.trow+.trow{border-top:1px solid var(--line)}
+.trow .ti{width:30px;height:30px;border-radius:8px;background:var(--hover);display:grid;place-items:center;color:var(--muted)}
+.trow .ti .lucide{width:16px;height:16px}
+.trow .s{font-size:12.5px;color:var(--muted)}
+.trow code{font-size:12px}
+.hsup{display:flex;gap:4px;align-items:center}
+.hsup span{position:relative;width:20px;height:20px;display:grid;place-items:center}
+.hsup canvas{width:18px;height:18px}
+.hsup span.no canvas{opacity:.22;filter:grayscale(1)}
+.hsup span.no::after{content:"";position:absolute;left:2px;right:2px;top:50%;height:1.5px;background:var(--faint);transform:rotate(-40deg)}
+.hsup .all{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;width:auto;height:auto}
+.hsup .all .lucide{width:14px;height:14px;color:var(--good)}
+.tabs2{display:flex;gap:6px;margin:0 0 10px}
+.okd{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--good);margin-right:6px;vertical-align:1px}
+.cbusy{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.srow.stack{flex-direction:column;align-items:stretch;gap:10px}
+.srow.stack .chips{justify-content:flex-start}
 
 /* lab lines 1051-1066: ions: project ion rows, fan-out card */
 /* project ions */

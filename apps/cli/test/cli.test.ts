@@ -238,7 +238,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         code: 1,
         err: "Unknown model for Fake: nope",
       });
-    });
+    }, 60_000); // it asks each real agent CLI; slow under load
 
     // Final review minor 8: one harness that fails to answer doesn't break the list.
     it("lists the other harnesses when one fails to answer", async () => {
