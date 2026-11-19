@@ -174,6 +174,8 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     },
     async close() {
       queue.end();
+      // Test switch: a harness whose close never returns.
+      if (process.env.ION_FAKE_CLOSE_HANGS) await new Promise(() => {});
     },
   };
 }

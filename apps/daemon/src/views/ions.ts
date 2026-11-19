@@ -16,7 +16,12 @@ function lineOf(d: { text: string; card?: IonCard }): string {
   return `Asked ${n} project${n === 1 ? "" : "s"}.`;
 }
 
-function noteSession(db: Db, d: { ionId: string; harness: string; nativeId: string }): void {
+/** An ion's session, or (both null) none: a turn on it failed. */
+function noteSession(db: Db, d: { ionId: string; harness: string | null; nativeId: string | null }): void {
+  if (d.harness === null || d.nativeId === null) {
+    db.prepare("DELETE FROM view_ion_sessions WHERE ion_id = ?").run(d.ionId);
+    return;
+  }
   db.prepare(
     "INSERT INTO view_ion_sessions (ion_id, harness, native_id) VALUES (?, ?, ?) " +
       "ON CONFLICT(ion_id) DO UPDATE SET harness = excluded.harness, native_id = excluded.native_id",
@@ -49,7 +54,7 @@ export const ionsView: IonsView = {
   },
   apply(db, e: IonEvent) {
     if (e.type === EV.ionSession)
-      return noteSession(db, e.data as { ionId: string; harness: string; nativeId: string });
+      return noteSession(db, e.data as { ionId: string; harness: string | null; nativeId: string | null });
     const ionId = e.chatId ? ionOf(e.chatId) : null;
     if (!ionId || e.type !== EV.ionSaid) return;
     // ion chief's suggestions are optional: its last line stays what it last told you.

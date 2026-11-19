@@ -117,9 +117,10 @@ describe("an ion's turn", () => {
     expect(work[0]!.runId).toMatch(/^turn_/);
   });
 
+  // Task review, 2026-11-19: run as the second project, so a scope mix-up (all projects) would answer "storefront".
   it("a project's ion sees only its project", async () => {
-    const r = await turns().turn("storefront", "what is this");
-    expect(r).toEqual({ reply: "This is storefront.", threads: [] });
+    const r = await turns().turn("payments-api", "what is this");
+    expect(r).toEqual({ reply: "This is payments-api.", threads: [] });
   });
 
   it("ion chief can't start a thread in a project kept from it", async () => {
@@ -127,6 +128,43 @@ describe("an ion's turn", () => {
     expect(startThread).not.toHaveBeenCalled();
     expect(r.threads).toEqual([]);
   });
+
+  // Task review, 2026-11-19: `default` pools chats without a project; it has no ion and gets no threads.
+  it("ion chief can't start a thread in default", async () => {
+    const r = await turns().turn("chief", "please check default");
+    expect(startThread).not.toHaveBeenCalled();
+    expect(r.threads).toEqual([]);
+  });
+
+  // Task review, 2026-11-19: a resumed session that starts fine but then fails (its context grew too long) kept
+  // every later turn failing on it. A turn that fails forgets its session; the next one starts fresh.
+  it("a session that fails is forgotten, and the next turn starts fresh", async () => {
+    const t = turns();
+    await t.turn("storefront", "hello");
+    const first = ionsView.session(db, "storefront")!.nativeId;
+    process.env.ION_FAKE_RESUMED_FAILS = "1";
+    try {
+      expect((await t.turn("storefront", "hello")).reply).toBe(NO_AGENT);
+      expect(ionsView.session(db, "storefront")).toBeNull();
+      // Fresh: a resumed session would fail again under this switch.
+      expect((await t.turn("storefront", "hello")).reply).toBe("This is storefront.");
+      expect(ionsView.session(db, "storefront")!.nativeId).not.toBe(first);
+    } finally {
+      delete process.env.ION_FAKE_RESUMED_FAILS;
+    }
+  });
+
+  // Task review, 2026-11-19: an adapter whose close never resolved held the turn, and that ion's later turns.
+  it("a session that won't close doesn't hold the turn or the next one", async () => {
+    process.env.ION_FAKE_CLOSE_HANGS = "1";
+    try {
+      const t = turns(100);
+      expect((await t.turn("storefront", "take-your-time")).reply).toBe(TOO_LONG);
+      expect((await t.turn("storefront", "hello")).reply).toBe("This is storefront.");
+    } finally {
+      delete process.env.ION_FAKE_CLOSE_HANGS;
+    }
+  }, 15_000);
 
   it("an ion that doesn't exist is refused", async () => {
     await expect(turns().turn("default", "hello")).rejects.toThrow("Unknown ion: default");

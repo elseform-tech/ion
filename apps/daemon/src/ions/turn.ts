@@ -66,10 +66,28 @@ export type IonTurnsDeps = {
 type Live = { ionId: string; request: string; adapter: HarnessAdapter; rules: RuleCtx; threads: Thread[] };
 
 /** How a turn's session ended: its last message, its native id, and whether it ran past its limit. */
-type Ended = { last: string; nativeId: string | null; late: boolean };
+type Ended = { last: string; nativeId: string | null; late: boolean; failed: boolean };
+
+/** How long ion waits for a session to close: an agent that never does can't hold the turn, nor the ion's next. */
+const CLOSE_MS = 2000;
+
+/** Closes a session, waiting at most CLOSE_MS. */
+async function closing(session: Session): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wait = new Promise<void>((r) => {
+    timer = setTimeout(r, CLOSE_MS);
+  });
+  try {
+    await Promise.race([session.close().catch(() => {}), wait]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Notes the session's last message, and its native id once the agent says it (some only say it when it starts). */
 function note(e: AdapterEvent, end: Ended): void {
+  if (e.type === EV.error) end.failed = true;
+  if (e.type === EV.runFinished && (e.data as { status?: unknown }).status !== "done") end.failed = true;
   if (e.type === EV.messageCompleted) end.last = String((e.data as { text?: unknown }).text ?? "");
   const id = e.type === EV.runStarted ? (e.data as { sessionId?: unknown }).sessionId : undefined;
   if (typeof id === "string" && id) end.nativeId = id;
@@ -126,11 +144,15 @@ export class IonTurns {
     this.live.set(turnId, live);
     try {
       const end = await this.session({ ionId, turnId, text, cwd, rules }, brain, h.adapter);
-      if (end.nativeId) this.keepSession(ionId, brain.harness, end.nativeId);
       const reply = end.late ? TOO_LONG : end.last.trim() || NO_AGENT;
+      // A session that failed or said nothing is forgotten: resuming it would likely fail again (its context too long).
+      const broken = !end.late && (end.failed || reply === NO_AGENT);
+      if (broken) this.forgetSession(ionId);
+      else if (end.nativeId) this.keepSession(ionId, brain.harness, end.nativeId);
       return { reply, threads: live.threads };
     } catch (e) {
       console.error(`ion's agent (${brain.harness}): ${e instanceof Error ? e.name : "an error"}`);
+      this.forgetSession(ionId);
       return { reply: NO_AGENT, threads: live.threads };
     } finally {
       this.live.delete(turnId);
@@ -203,7 +225,7 @@ export class IonTurns {
     abort: AbortController,
     work: (end: Ended, hold: (s: Session) => void) => Promise<void>,
   ): Promise<Ended> {
-    const end: Ended = { last: "", nativeId: null, late: false };
+    const end: Ended = { last: "", nativeId: null, late: false, failed: false };
     let session: Session | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<void>((r) => {
@@ -226,7 +248,7 @@ export class IonTurns {
       return end;
     } finally {
       clearTimeout(timer);
-      await session?.close().catch(() => {});
+      if (session) await closing(session);
     }
   }
 
@@ -273,6 +295,18 @@ export class IonTurns {
         this.d.store.append({ ...e, chatId: `ion:${t.ionId}`, runId: t.turnId, origin: "adapter" });
       note(e, end);
     }
+  }
+
+  /** Forgets the ion's session (when it has one), so its next turn starts a fresh one. */
+  private forgetSession(ionId: string): void {
+    if (!ionsView.session(this.d.db, ionId)) return;
+    this.d.store.append({
+      chatId: `ion:${ionId}`,
+      runId: null,
+      origin: "daemon",
+      type: EV.ionSession,
+      data: { ionId, harness: null, nativeId: null },
+    });
   }
 
   /** Records the ion's session when it's new (another agent, or a session it couldn't resume). */
