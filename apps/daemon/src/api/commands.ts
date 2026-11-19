@@ -27,6 +27,7 @@ import { renameChat } from "../runs/ready.js";
 import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
 import { changeConfig, settingsHandlers } from "./settings.js";
+import { workspaceHandlers } from "./workspace.js";
 
 export { UserError } from "./errors.js";
 
@@ -52,6 +53,7 @@ export type Handlers = {
 
 export const handlers: Handlers = {
   ...settingsHandlers,
+  ...workspaceHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   "harnesses.list": () => harnessInfos.list(),

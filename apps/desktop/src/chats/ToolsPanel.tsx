@@ -1,6 +1,7 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { FileDiff } from "@ion/schema";
-import { File as FileIcon, FolderOpen, FolderTree, GitCompare } from "@ion/design-system";
+import { Cpu, Eye, File as FileIcon, FolderOpen, FolderTree, GitCompare } from "@ion/design-system";
+import { Preview, Tasks } from "./Preview.js";
 import { Fragment, memo, useEffect, useRef, useState } from "react";
 import { diffLines, fileMark, treeOf } from "./diffLines.js";
 import { Resizer } from "./Resizer.js";
@@ -37,7 +38,7 @@ const File = memo(function File({ f }: { f: FileDiff }) {
 const MARK_COLOR: Record<string, string | undefined> = { A: "var(--good)" };
 
 /** The lab's Files tab: the changed files by folder, each with its mark. */
-function Tree({ files }: { files: FileDiff[] }) {
+function Tree({ files, onPick }: { files: FileDiff[]; onPick?: (path: string) => void }) {
   const marks = new Map(files.map((f) => [f.path, fileMark(f.patch)]));
   return (
     <div className="tree">
@@ -51,15 +52,24 @@ function Tree({ files }: { files: FileDiff[] }) {
             </div>
           )}
           {g.files.map((name) => {
-            const mark = marks.get(g.folder ? `${g.folder}/${name}` : name)!;
+            const path = g.folder ? `${g.folder}/${name}` : name;
+            const mark = marks.get(path)!;
+            // A file opens in the preview (when there's a chat to read it from).
             return (
-              <div key={name} style={g.folder ? { paddingLeft: 26 } : undefined}>
+              <button
+                type="button"
+                key={name}
+                className="trow2"
+                disabled={!onPick}
+                style={g.folder ? { paddingLeft: 26 } : undefined}
+                onClick={() => onPick?.(path)}
+              >
                 <FileIcon />
                 {name}
                 <span className="x" style={{ color: MARK_COLOR[mark] }}>
                   {mark}
                 </span>
-              </div>
+              </button>
             );
           })}
         </Fragment>
@@ -68,10 +78,10 @@ function Tree({ files }: { files: FileDiff[] }) {
   );
 }
 
-type Tab = "diff" | "files";
+type Tab = "diff" | "files" | "preview" | "tasks";
 
-/** The lab's .ttabs: Changes and Files. */
-function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+/** The lab's .ttabs: Changes and Files; with a chat, also Preview and Tasks (what's running, with PIDs). */
+function Tabs({ tab, onTab, live }: { tab: Tab; onTab: (t: Tab) => void; live: boolean }) {
   const one = (t: Tab, title: string, Icon: typeof GitCompare) => (
     <button
       className={`ib${tab === t ? " on" : ""}`}
@@ -89,6 +99,8 @@ function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
     <div className="ttabs" role="tablist" aria-label="Panel">
       {one("diff", "Changes", GitCompare)}
       {one("files", "Files", FolderTree)}
+      {live && one("preview", "Preview", Eye)}
+      {live && one("tasks", "Tasks", Cpu)}
     </div>
   );
 }
@@ -140,25 +152,54 @@ function useFocus(focus: Focus | null | undefined, loaded: boolean, setTab: (t: 
   }, [focus, loaded, setTab]);
 }
 
-export function ToolsPanel({ diff, error, focus }: Changes & { focus?: Focus | null }) {
+type PanelProps = Changes & {
+  focus?: Focus | null;
+  /** The chat, for the Preview and Tasks tabs. */
+  client?: IonClient;
+  chatId?: string;
+};
+
+/** The chat's own tabs: a file as it is, and what's still running in its worktree. */
+function ChatTabs(p: { tab: Tab; client: IonClient; chatId: string; path: string | null }) {
+  if (p.tab === "preview") return <Preview client={p.client} chatId={p.chatId} path={p.path} />;
+  if (p.tab === "tasks") return <Tasks client={p.client} chatId={p.chatId} />;
+  return null;
+}
+
+/** The changes, as a diff or as a tree whose files open in the preview. */
+function ChangeTabs(p: { tab: Tab; files: FileDiff[]; onPick: ((path: string) => void) | undefined }) {
+  if (!p.files.length) return null;
+  if (p.tab === "diff")
+    return (
+      <div className="code">
+        {p.files.map((f) => (
+          <File key={f.path} f={f} />
+        ))}
+      </div>
+    );
+  if (p.tab === "files") return <Tree files={p.files} {...(p.onPick ? { onPick: p.onPick } : {})} />;
+  return null;
+}
+
+export function ToolsPanel({ diff, error, focus, client, chatId }: PanelProps) {
   const [tab, setTab] = useState<Tab>("diff");
+  const [pick, setPick] = useState<string | null>(null);
   useFocus(focus, diff !== null, setTab);
   const omitted = diff?.omitted ?? 0;
   const files = diff?.files ?? [];
+  const chat = client && chatId ? { client, chatId } : null;
+  const open = (path: string) => {
+    setPick(path);
+    setTab("preview");
+  };
   return (
     <aside className="tools" aria-label="Changes">
       <Resizer name="--tools-w" label="Panel width" initial={400} min={300} max={760} edge="left" />
-      <Tabs tab={tab} onTab={setTab} />
+      <Tabs tab={tab} onTab={setTab} live={chat !== null} />
       <div className="panel">
         {error && <div className="changes-empty">{error}</div>}
-        {tab === "diff" && files.length > 0 && (
-          <div className="code">
-            {files.map((f) => (
-              <File key={f.path} f={f} />
-            ))}
-          </div>
-        )}
-        {tab === "files" && files.length > 0 && <Tree files={files} />}
+        <ChangeTabs tab={tab} files={files} onPick={chat ? open : undefined} />
+        {chat && <ChatTabs tab={tab} {...chat} path={pick ?? files[0]?.path ?? null} />}
         {omitted > 0 && <div className="changes-empty">{omitted} more files not shown</div>}
       </div>
     </aside>

@@ -34,6 +34,15 @@ export type ProjectPatch = {
 /** ion's own models: "quick" thinks for ion chief and the project ions ("<agent>" or "<agent>:<model>"). */
 export type IonSettings = { quick: string };
 
+/** A process still running in a chat's worktree. */
+export type TaskInfo = { pid: number; command: string; elapsed: string; ports: number[] };
+
+/** A file as the preview shows it: text, HTML (rendered locked), an image, or a binary it can't show. */
+export type FilePreview =
+  | { path: string; kind: "text" | "html"; text: string; size: number }
+  | { path: string; kind: "image"; dataUrl: string; size: number }
+  | { path: string; kind: "binary"; size: number };
+
 /** The lab's ion colours, by name, in the order new projects take them. */
 export const ION_COLORS: { name: string; hex: string }[] = [
   { name: "Orange", hex: "#ED712E" },
@@ -76,6 +85,12 @@ export type Commands = {
   "settings.get": { args: Record<string, never>; result: IonSettings };
   /** An ion's threads' runs over the last 30 days (ion chief: every ion's). */
   "ion.stats": { args: { ionId: string }; result: IonStats };
+  /** What's still running in a chat's worktree (dev servers, watchers), with PIDs and ports. */
+  "chat.tasks": { args: { chatId: string }; result: TaskInfo[] };
+  /** Stops one of them (only if it's still running in that worktree). */
+  "task.stop": { args: { chatId: string; pid: number }; result: { ok: true } };
+  /** A file in a chat's worktree, for the preview (at most 1 MB). */
+  "chat.file": { args: { chatId: string; path: string }; result: FilePreview };
   "settings.update": { args: Partial<IonSettings>; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   /** fromNow: only events from now on, no backlog. */
@@ -221,6 +236,9 @@ export const COMMANDS = [
   "project.update",
   "settings.get",
   "ion.stats",
+  "chat.tasks",
+  "task.stop",
+  "chat.file",
   "settings.update",
   "chat.create",
   "events.subscribe",

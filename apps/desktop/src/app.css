@@ -559,3 +559,94 @@ body.resizing {
 .pmi.pnew {
   flex-wrap: wrap;
 }
+/* A changed file in the Files tab opens in the preview: the lab's tree row, as a button. */
+.tree .trow2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tree .trow2:hover:not(:disabled) {
+  background: var(--hover);
+}
+.tree .trow2:disabled {
+  cursor: default;
+}
+/* The side panel floats at the right of the chat: inset, rounded, lifted. */
+.split .tools {
+  margin: 10px 10px 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--win);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
+  overflow: hidden;
+}
+/* Preview: a file as it is. */
+.preview {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  min-height: 0;
+}
+.preview pre.code {
+  margin: 0;
+  padding: 10px;
+  white-space: pre-wrap;
+  font: 12.5px / 1.5 var(--mono);
+  overflow: auto;
+}
+.preview iframe {
+  width: 100%;
+  height: 60vh;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.preview img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+/* Tasks: what's running in the chat's worktree. */
+.tasks {
+  display: grid;
+  padding: 6px;
+}
+.task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+}
+.task + .task {
+  border-top: 1px solid var(--line);
+}
+.task .tc {
+  font: 12.5px var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task .tm {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  grid-column: 1;
+}
+.task .te {
+  color: var(--faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.task .ib {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}

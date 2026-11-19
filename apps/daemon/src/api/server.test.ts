@@ -285,6 +285,25 @@ describe("daemon api", () => {
     await expect(client.call("settings.update", { quick: "nope:x" })).rejects.toThrow("Unknown agent: nope");
   });
 
+  // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.
+  it("previews a chat's file and lists its background tasks", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { chatId, runId } = await client.call("ask", { text: "edit", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"), 5000);
+    expect(await client.call("chat.file", { chatId, path: "notes.md" })).toMatchObject({ kind: "text" });
+    await expect(client.call("chat.file", { chatId, path: "../../x" })).rejects.toThrow(
+      "That file isn't in this chat",
+    );
+    expect(await client.call("chat.tasks", { chatId })).toEqual([]);
+    await expect(client.call("task.stop", { chatId, pid: 1 })).rejects.toThrow(
+      "That isn't running in this chat",
+    );
+    await expect(client.call("chat.tasks", { chatId: "nope" })).rejects.toThrow("That chat has no workspace");
+  });
+
   it("gives an ion's stats: its threads' runs over 30 days", async () => {
     await client.call("projects.add", { path: repo("app") });
     expect(await client.call("ion.stats", { ionId: "app" })).toMatchObject({

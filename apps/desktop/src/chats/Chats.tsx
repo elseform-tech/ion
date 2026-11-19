@@ -124,7 +124,7 @@ function OpenChat({
             </div>
           </div>
         </div>
-        {showPanel && <ToolsPanel {...changes} focus={panel.focus} />}
+        {showPanel && <ToolsPanel {...changes} focus={panel.focus} client={client} chatId={chat.chatId} />}
       </div>
     </>
   );

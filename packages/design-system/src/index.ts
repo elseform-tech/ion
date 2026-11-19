@@ -37,6 +37,8 @@ export {
   Pin,
   Plug,
   Zap,
+  Eye,
+  Cpu,
   ChevronLeft,
   MessageCircle,
   Star,
