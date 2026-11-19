@@ -17,6 +17,8 @@ import { type QueuedRow, queueView } from "../views/queue.js";
 const MAX_WAITING = 10;
 /** What ask says when the chat is running: the message just waits for the run's end. */
 const BUSY = "This chat is already running";
+/** What the first waiting line says after you stopped the work: the queue waits for you. */
+const STOPPED = "Stopped";
 
 export type QueueDeps = {
   store: EventStore;
@@ -53,7 +55,8 @@ const streamOf = (to: QueueTarget): string => ("chatId" in to ? to.chatId : `ion
  * stopping) and goes out, oldest first, when the chat's run ends (however it ended) or the ion's turn does: one at
  * a time, with the brain picked when it was queued. Send now stops the work and goes next. A chat's queue waits
  * while the agent's question is open and while your answers wait to go in; one that couldn't go out says why and
- * holds its queue until you send it now, edit it or remove it.
+ * holds its queue until you send it now, edit it or remove it. Stopping the work yourself (Stop, Esc twice) holds
+ * it the same way ("Stopped"), until you send one now, change the queue or send a message; Send now's stop doesn't.
  */
 export class PromptQueue {
   /** Messages going out now (until the chat's run is queued, or the ion has heard it): no longer yours to edit. */
@@ -69,7 +72,7 @@ export class PromptQueue {
     const drain = (to: QueueTarget) => void this.drain(to).catch(() => {});
     d.chats.onEnded((chatId) => drain({ chatId }));
     d.ions.onTurnEnd((ionId) => {
-      this.unhold({ ionId });
+      this.unhold({ ionId }, STOPPED);
       drain({ ionId });
     });
     d.store.onAppend((e) => {
@@ -140,6 +143,28 @@ export class PromptQueue {
     if (this.busyKeys.has(key)) return void this.stopAfter.add(key);
     if (this.working(q.to)) return this.stop(q.to);
     return this.drain(q.to);
+  }
+
+  /** You stopped the chat's run or the ion's turn (Stop, Esc twice): what's queued waits, "Stopped". */
+  hold(to: QueueTarget): void {
+    if (!this.working(to)) return;
+    const waiting = queueView.waiting(this.d.db, to);
+    if (!waiting[0] || waiting.some((w) => w.why)) return;
+    this.next.delete(keyOf(to));
+    this.append(to, EV.queueFailed, { queueId: waiting[0].queueId, why: STOPPED });
+  }
+
+  /** Esc twice on an ion: its turn stops and its queue waits; with nothing of yours to stop, nothing waits. */
+  stopIon(ionId: string): boolean {
+    this.hold({ ionId });
+    const stopped = this.d.ions.stopTurn(ionId);
+    if (!stopped) this.unhold({ ionId });
+    return stopped;
+  }
+
+  /** You sent a message yourself: a held queue goes on after it. */
+  goOn(to: QueueTarget): void {
+    this.unhold(to);
   }
 
   /** At the start: what waits for a chat or an ion that isn't working goes out (ion stopped while it waited). */
@@ -217,7 +242,10 @@ export class PromptQueue {
   private async send(q: QueuedRow): Promise<void> {
     const key = keyOf(q.to);
     if ("chatId" in q.to) {
-      await this.d.chats.ask({ ...q.brain, chatId: q.to.chatId, text: q.text });
+      // None picked: the chat's own agent, never another one that happens to be ready.
+      const own = q.brain.harness ? null : chatsView.session(this.d.db, q.to.chatId)?.harness;
+      const brain = own ? { ...q.brain, harness: own } : q.brain;
+      await this.d.chats.ask({ ...brain, chatId: q.to.chatId, text: q.text });
       this.sent(q, key);
       return;
     }
@@ -231,10 +259,13 @@ export class PromptQueue {
     this.unhold(q.to);
   }
 
-  /** Things moved (a send went out, you changed the queue, a run went well): a failed send no longer holds it. */
-  private unhold(to: QueueTarget): void {
+  /**
+   * Things moved (a send went out, you changed the queue, a run went well): a failed send no longer holds it.
+   * `keep`: a hold that stays (an ion's turn ending keeps "Stopped").
+   */
+  private unhold(to: QueueTarget, keep?: string): void {
     for (const q of queueView.waiting(this.d.db, to))
-      if (q.why) this.append(to, EV.queueFailed, { queueId: q.queueId, why: null });
+      if (q.why && q.why !== keep) this.append(to, EV.queueFailed, { queueId: q.queueId, why: null });
   }
 
   private failed(q: QueuedRow, e: unknown): void {

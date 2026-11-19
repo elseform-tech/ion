@@ -147,8 +147,11 @@ export class IonTurns {
   private readonly live = new Map<string, Live>();
   /** Turns asked for and not yet over, per ion (its own and those waiting behind it). */
   private readonly pending = new Map<string, number>();
-  /** Ions whose current turn is starting (finding its agent, its session not yet up: nothing to halt yet). */
-  private readonly starting = new Set<string>();
+  /**
+   * Ions whose current turn is starting (finding its agent, its session not yet up: nothing to halt yet), and
+   * whether that turn answers your message (a report doesn't).
+   */
+  private readonly starting = new Map<string, boolean>();
   /** You stopped an ion's turn while it was starting: it ends as stopped as soon as it can. */
   private readonly stopAsked = new Set<string>();
   /** ion is stopping: no turn starts, and nothing more is written. */
@@ -178,13 +181,16 @@ export class IonTurns {
     return this.pending.has(ionId);
   }
 
-  /** You stopped the ion's turn (Esc twice): it ends now and says so; its next turn goes on. False: none was going. */
+  /**
+   * You stopped the ion's turn (Esc twice): it ends now and says so; its next turn goes on. Only a turn answering
+   * your message stops: a report on a thread goes on. False: none was going.
+   */
   stop(ionId: string): boolean {
-    const going = [...this.live.values()].filter((t) => t.ionId === ionId && t.halt);
+    const going = [...this.live.values()].filter((t) => t.ionId === ionId && t.halt && t.request !== null);
     for (const t of going) t.halt!(true);
     if (going.length) return true;
     // Still starting: only this turn ends, never one waiting behind it.
-    if (!this.starting.has(ionId)) return false;
+    if (!this.starting.get(ionId)) return false;
     this.stopAsked.add(ionId);
     return true;
   }
@@ -225,7 +231,7 @@ export class IonTurns {
 
   private async run(ionId: string, text: string, request: string | null): Promise<TurnResult> {
     if (this.stopping) return { reply: NO_AGENT, threads: [] };
-    this.starting.add(ionId);
+    this.starting.set(ionId, request !== null);
     try {
       return await this.think(ionId, text, request);
     } finally {

@@ -365,6 +365,43 @@ describe("an ion's turn", () => {
     expect(t.stop("storefront")).toBe(false);
   }, 10_000);
 
+  // Final review, 2026-11-19: Esc twice (or Send now) while an ion reported on a thread cut the report, and the
+  // thread's line said "Stopped." Stop ends only a turn answering your message; a report goes on.
+  it("stop leaves a report turn alone", async () => {
+    const t = turns();
+    const report = t.turn("storefront", "take-your-time", { noThreads: true });
+    await vi.waitFor(() => expect(onIon("storefront").some((e) => e.type === EV.toolStarted)).toBe(true));
+    expect(t.stop("storefront")).toBe(false);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(t.busy("storefront")).toBe(true);
+    await t.shutdown();
+    expect((await report).reply).not.toBe(STOPPED);
+  }, 10_000);
+
+  // Final review, 2026-11-19: the same while the report is still starting.
+  it("stop leaves a report turn alone while it starts", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    current = new IonTurns({
+      ...{ store, db, configFile: join(home, "config.toml"), dataDir: join(home, "data") },
+      ...{ grants, startThread, home },
+      agents: async () => {
+        await gate;
+        return agents();
+      },
+      mcpUrl: () => `${base}/mcp`,
+      gateUrl: () => `${base}/gate`,
+    });
+    made.push(current);
+    const report = current.turn("storefront", "hello", { noThreads: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(current.stop("storefront")).toBe(false);
+    release();
+    expect((await report).reply).toBe("This is storefront.");
+  }, 10_000);
+
   // Task review, 2026-11-19: Esc twice while an ion's turn was still finding its agent did nothing (and said ok).
   it("stop before the session starts ends that turn as stopped, and not the one behind it", async () => {
     let release = () => {};

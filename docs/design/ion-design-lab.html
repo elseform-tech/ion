@@ -2991,8 +2991,10 @@ function renderIon(k,ph){
     const proof=m.proof==='none'?`<div class="proof warn"><i data-lucide="triangle-alert"></i>No tests run<span>·</span><button type="button">Ask for proof</button></div>`:'';
     h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div title="${m.meta?esc(meta.replace(/<[^>]+>/g,'')):''}">${m.work?workHTML(m.work):''}${inner}${proof}</div></div>`;
   });
+  // While the ion thinks (something waits in its queue, or it's typing), its box has Stop, as a chat's does.
+  const thinking=Boolean(v.queue||v.msgs.at(-1)?.typing);
   const qHTML=v.queue?`<div class="queue" role="list" aria-label="Queued">${v.queue.map(([t,why])=>`<div class="qline" role="listitem"><span class="t" title="${esc(t)}">${esc(t)}</span>${why?`<span class="why">${esc(why)}</span>`:''}<button class="ib" type="button" title="Send now"><i data-lucide="arrow-up"></i></button><button class="ib" type="button" title="Edit"><i data-lucide="pencil"></i></button><button class="ib" type="button" title="Remove"><i data-lucide="x"></i></button></div>`).join('')}</div>`:'';
-  h+=`</div></div><div class="foot"><div class="fcol">${qHTML}<div class="cbox"><span class="ph">${esc(ph||'Message '+v.name)}</span><div class="bar"><button class="ib" type="button" title="Attach"><i data-lucide="plus"></i></button><span class="sp"></span><button class="ib" type="button" title="Voice"><i data-lucide="mic"></i></button><button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button></div></div></div></div>`;
+  h+=`</div></div><div class="foot"><div class="fcol">${qHTML}<div class="cbox"><span class="ph">${esc(ph||'Message '+v.name)}</span><div class="bar"><button class="ib" type="button" title="Attach"><i data-lucide="plus"></i></button><span class="sp"></span><button class="ib" type="button" title="Voice"><i data-lucide="mic"></i></button>${thinking?'<button class="send" type="button" aria-label="Stop" title="Stop"><i data-lucide="square"></i></button>':'<button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>'}</div></div></div></div>`;
   chatEl.innerHTML=h; hydrate(chatEl); icons(chatEl);
 }
 paintWork(); buildIonNav(); renderIon(curIon);

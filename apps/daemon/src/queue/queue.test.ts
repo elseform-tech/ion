@@ -437,3 +437,87 @@ describe("the prompt queue", () => {
     expect(queue.list({ chatId })[0]?.held).toBe("answer");
   });
 });
+
+describe("stopping holds the queue", () => {
+  // Final review, 2026-11-19: Stop (or Esc twice) on a chat's run sent the next queued message right away, so the
+  // work you stopped went on. What's queued waits, "Stopped", until you send one now, change the queue or send.
+  it("stopping the run holds what's queued (a chat)", async () => {
+    const { chatId, runId } = await working();
+    queue.add({ chatId }, "hello one", fake);
+    const two = queue.add({ chatId }, "hello two", fake);
+    queue.hold({ chatId });
+    await runs.interrupt(runId);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(sent(chatId)).toEqual(["slow"]);
+    expect(queue.list({ chatId }).map((q) => q.why)).toEqual(["Stopped", undefined]);
+    // A message you send goes on with it, after the message's own run.
+    await runs.ask({ chatId, text: "hello direct", ...fake });
+    queue.goOn({ chatId });
+    await until(() => sent(chatId).length === 4);
+    await finishedAll(chatId);
+    expect(sent(chatId)).toEqual(["slow", "hello direct", "hello one", "hello two"]);
+    expect(() => queue.take(two)).toThrow(new UserError("Already sent"));
+  });
+
+  // Final review, 2026-11-19: the same for an ion: Esc twice on its turn sent the next queued message at once.
+  it("stopping the run holds what's queued (an ion)", async () => {
+    const ion = fakeIons();
+    makeQueue(ion.ions);
+    void ion.ions.message("chief", "first");
+    queue.add({ ionId: "chief" }, "second", {});
+    const third = queue.add({ ionId: "chief" }, "third", {});
+    expect(queue.stopIon("chief")).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ion.stopped).toEqual(["chief"]);
+    expect(ion.heard).toEqual(["first"]);
+    expect(queue.list({ ionId: "chief" }).map((q) => q.why)).toEqual(["Stopped", undefined]);
+    // Send now on a line: it goes, and the rest follow it.
+    await queue.sendNow(third);
+    await until(() => ion.heard.length === 2);
+    ion.end("chief");
+    await until(() => ion.heard.length === 3);
+    expect(ion.heard).toEqual(["first", "third", "second"]);
+  });
+
+  // Final review, 2026-11-19: with only a report going (nothing of yours to stop), Esc twice holds nothing.
+  it("an ion with nothing of yours to stop keeps its queue going", async () => {
+    const ion = fakeIons();
+    ion.ions.stopTurn = () => false;
+    makeQueue(ion.ions);
+    void ion.ions.message("chief", "a report");
+    queue.add({ ionId: "chief" }, "second", {});
+    expect(queue.stopIon("chief")).toBe(false);
+    expect(queue.list({ ionId: "chief" })[0]?.why).toBeUndefined();
+    ion.end("chief");
+    await until(() => ion.heard.length === 2);
+  });
+
+  // Final review, 2026-11-19: Send now stops the work too; that stop must never hold the queue.
+  it("Send now's stop doesn't hold", async () => {
+    const { chatId } = await working();
+    queue.add({ chatId }, "hello one", fake);
+    const two = queue.add({ chatId }, "hello two", fake);
+    await queue.sendNow(two);
+    await until(() => sent(chatId).length === 3);
+    await finishedAll(chatId);
+    expect(sent(chatId)).toEqual(["slow", "hello two", "hello one"]);
+    expect(store.read({ chatId }).some((e) => e.type === EV.queueFailed)).toBe(false);
+  });
+});
+
+describe("a queued message's agent", () => {
+  // Final review, 2026-11-19: a message queued with no agent picked went out on whichever agent was ready first
+  // (maybe Claude Code), unattended. It keeps the chat's own; if that isn't ready, it says why and waits.
+  it("keeps the chat's own agent when none was picked", async () => {
+    const { chatId, runId } = await working();
+    const asked: { harness?: string }[] = [];
+    askVia = (a) => {
+      asked.push(a as { harness?: string });
+      return runs.ask({ ...fake, ...a });
+    };
+    queue.add({ chatId }, "hello", {});
+    await runs.interrupt(runId);
+    await until(() => asked.length === 1);
+    expect(asked[0]?.harness).toBe("fake");
+  });
+});

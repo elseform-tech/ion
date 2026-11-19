@@ -6,7 +6,7 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { brainOf, projectAgent } from "./brain.js";
 import { plainReport } from "./project.js";
-import { type IonTurns, NO_AGENT, PER_TURN, TOO_LONG } from "./turn.js";
+import { type IonTurns, NO_AGENT, PER_TURN, STOPPED, TOO_LONG } from "./turn.js";
 
 type Ask = (
   args: {
@@ -304,7 +304,8 @@ export class Ions {
     const r = await this.d.turns
       .turn(projectId, reportPrompt(chat, { status, reply, changed }), { noThreads: true })
       .catch(() => null);
-    const failed = !r || r.reply === NO_AGENT || r.reply === TOO_LONG;
+    // A report that was stopped (or found no agent, or ran too long) is the agent's own reply instead.
+    const failed = !r || [NO_AGENT, TOO_LONG, STOPPED].includes(r.reply);
     const text = failed ? plainReport(title, status, reply) : capped(r.reply);
     this.say(projectId, text, undefined, r?.turnId);
     this.ended(projectId);

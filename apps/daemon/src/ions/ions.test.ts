@@ -9,7 +9,7 @@ import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { contextOf } from "./route.js";
 import { Ions } from "./service.js";
-import { NO_AGENT, PER_TURN, TOO_LONG, type TurnOpts } from "./turn.js";
+import { NO_AGENT, PER_TURN, STOPPED, TOO_LONG, type TurnOpts } from "./turn.js";
 
 type Thread = { chatId: string; projectId: string };
 
@@ -464,6 +464,16 @@ describe("a thread's end", () => {
       await vi.waitFor(() => expect(last()).toEqual({ text: "Fixed the cart total." }));
     },
   );
+
+  // Final review, 2026-11-19: a report turn that was stopped replaced the thread's report with "Stopped.". It's
+  // the agent's own reply instead.
+  it("a stopped report is the agent's own reply", async () => {
+    const i = ions();
+    await started(i, "storefront");
+    turn.mockResolvedValueOnce({ reply: STOPPED, threads: [] });
+    end("done", "Fixed the cart total.");
+    await vi.waitFor(() => expect(last()).toEqual({ text: "Fixed the cart total." }));
+  });
 
   it("says plainly when a thread didn't finish and its ion can't say it", async () => {
     const i = ions();

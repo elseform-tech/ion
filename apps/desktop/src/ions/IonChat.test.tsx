@@ -156,14 +156,22 @@ describe("an ion's message box", () => {
     expect(after.call).toHaveBeenCalledWith("ion.message", { ionId: "storefront", text: "again" });
   });
 
-  // Task review, 2026-11-19: the Send button sent straight to a thinking ion, past the queue.
-  it("Send queues while the ion thinks", async () => {
+  // Final review, 2026-11-19: the chat box has a Stop button while it works; the ion box had only Esc twice. While
+  // the ion thinks it shows the same Stop (Enter still queues); when it's done, Send.
+  it("shows Stop while the ion thinks, and Send when it's done", async () => {
     const d = daemon(thinking);
     show(d);
     type("later");
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(d.call).toHaveBeenCalledWith("ion.stop", { ionId: "storefront" });
+    fireEvent.keyDown(box(), { key: "Enter" });
     await waitFor(() => expect(d.call).toHaveBeenCalledWith("queue.add", expect.anything()));
     expect(d.call).not.toHaveBeenCalledWith("ion.message", expect.anything());
+    cleanup();
+    show(daemon([ev(EV.ionHeard, { text: "hi" }), ev(EV.ionSaid, { text: "Hello." }, "turn1")]), false);
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
   });
 
   // Task review, 2026-11-19: after Edit you had to click into the box to go on.

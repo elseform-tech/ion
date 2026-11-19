@@ -233,7 +233,10 @@ export type Commands = {
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
   "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
-  /** Stops the ion's turn (Esc twice): it says it stopped, and what's queued goes on. */
+  /**
+   * Stops the ion's turn answering your message (Stop, Esc twice; a report goes on): it says it stopped, and what's
+   * queued waits ("Stopped") until you send one now, change the queue or send a message. `stopped`: one was going.
+   */
   "ion.stop": { args: { ionId: string }; result: { ok: true; stopped: boolean } };
   /** What waits to go to a chat or an ion, oldest first. */
   "queue.list": { args: { to: QueueTarget }; result: QueuedInfo[] };

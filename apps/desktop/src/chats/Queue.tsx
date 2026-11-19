@@ -4,8 +4,11 @@ import { type AskBrain, EV, type QueuedInfo, type QueueTarget } from "@ion/schem
 import { type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useRef, useState } from "react";
 import { useCallError } from "../callError.js";
 
-/** Events after which a queue is read again. */
-const CHANGES = new Set<string>([EV.queueAdded, EV.queueRemoved, EV.queueSent, EV.queueFailed]);
+/** Events after which a queue is read again (a question raised or answered: whether it waits for your answer). */
+const CHANGES = new Set<string>([
+  ...[EV.queueAdded, EV.queueRemoved, EV.queueSent, EV.queueFailed],
+  ...[EV.needRaised, EV.needResolved],
+]);
 
 /** The events stream a queue's events land on: the chat's own, or the ion's chat. */
 const streamOf = (to: QueueTarget) => ("chatId" in to ? to.chatId : `ion:${to.ionId}`);

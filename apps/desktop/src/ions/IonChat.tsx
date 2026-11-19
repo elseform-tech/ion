@@ -1,5 +1,14 @@
 import type { IonClient } from "@ion/client/browser";
-import { ArrowUp, Check, ChevronDown, ChevronUp, CircleAlert, MessageSquare, Pin } from "@ion/design-system";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  MessageSquare,
+  Pin,
+  Square,
+} from "@ion/design-system";
 import type { ChatInfo, IonCard, IonEvent, IonInfo, NeedInfo } from "@ion/schema";
 import { useEffect, useState } from "react";
 import { IonAvatar } from "./IonAvatar.js";
@@ -224,18 +233,31 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
   );
 }
 
+/** Send, or Stop while the ion thinks (as a chat's box has). */
+function SendOrStop(p: { thinking: boolean; canSend: boolean; onSend: () => void; onStop: () => void }) {
+  if (p.thinking)
+    return (
+      <button type="button" className="send" aria-label="Stop" onClick={p.onStop}>
+        <Square />
+      </button>
+    );
+  return (
+    <button type="button" className="send" aria-label="Send" disabled={!p.canSend} onClick={p.onSend}>
+      <ArrowUp />
+    </button>
+  );
+}
+
 /**
- * The message box for an ion: Enter sends; while it thinks (ion's word), Enter and Send queue (⌘Enter: sends now)
- * and Esc twice stops its turn.
+ * The message box for an ion: Enter sends; while it thinks (ion's word), Enter queues (⌘Enter: sends now) and Stop
+ * (or Esc twice) stops its turn.
  */
 function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
   const [text, setText] = useState("");
   const q = useQueue(client, { ionId: ion.ionId });
   const { ref, onEdit } = useEditInto(setText);
-  useDoubleEsc(
-    ion.thinking ? ion.ionId : null,
-    (ionId) => void client.call("ion.stop", { ionId }).catch(() => {}),
-  );
+  const stop = (ionId: string) => void client.call("ion.stop", { ionId }).catch(() => {});
+  useDoubleEsc(ion.thinking ? ion.ionId : null, stop);
   const edit = (t: string) => {
     setText(t);
     q.clearError();
@@ -263,15 +285,12 @@ function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
           {q.error && <div className="quiet">{q.error}</div>}
           <div className="bar">
             <span className="sp" />
-            <button
-              type="button"
-              className="send"
-              aria-label="Send"
-              disabled={!text.trim()}
-              onClick={() => submit(b, false)}
-            >
-              <ArrowUp />
-            </button>
+            <SendOrStop
+              thinking={ion.thinking}
+              canSend={Boolean(text.trim())}
+              onSend={() => submit(b, false)}
+              onStop={() => stop(ion.ionId)}
+            />
           </div>
         </div>
       </div>

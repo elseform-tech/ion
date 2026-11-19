@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import type { HarnessInfo, QueuedInfo } from "@ion/schema";
+import { EV, type HarnessInfo, type QueuedInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "./Composer.js";
@@ -67,7 +67,7 @@ describe("the queue in a chat", () => {
       expect(d.call).toHaveBeenCalledWith("queue.add", {
         to: { chatId: "c1" },
         text: "next, the tests",
-        brain: { harness: "fake" },
+        brain: {},
       }),
     );
     expect(d.call).not.toHaveBeenCalledWith("ask", expect.anything());
@@ -181,6 +181,53 @@ describe("the queue in a chat", () => {
     chatBox(d, "r1");
     await waitFor(() =>
       expect(d.subscribe).toHaveBeenCalledWith({ chatId: "c1", fromNow: true }, expect.anything()),
+    );
+  });
+
+  // Final review, 2026-11-19: "After your answer" showed (and went) only when the queue next changed. The queue is
+  // read again when the agent asks something or the question is answered.
+  it("reads the queue again when a question is raised or answered", async () => {
+    const d = daemon();
+    let push: (e: { type: string }) => void = () => {};
+    d.subscribe.mockImplementation((async (_q: unknown, fn: (e: { type: string }) => void) => {
+      push = fn;
+      return () => {};
+    }) as never);
+    chatBox(d, "r1");
+    const reads = () => d.call.mock.calls.filter(([cmd]) => cmd === "queue.list").length;
+    await waitFor(() => expect(reads()).toBe(1));
+    push({ type: EV.needRaised });
+    await waitFor(() => expect(reads()).toBe(2));
+    push({ type: EV.needResolved });
+    await waitFor(() => expect(reads()).toBe(3));
+  });
+
+  // Final review, 2026-11-19: queued while the chat's own agent was signed out, a message switched to the first
+  // ready agent (maybe Claude Code) and went out on it later, unattended. Queued, it keeps the chat's own agent
+  // (ion says why if it still can't go).
+  it("a queued message keeps the chat's own agent", async () => {
+    const grok: HarnessInfo = { ...fake, id: "grok-build", label: "Grok Build" };
+    const out: HarnessInfo = { ...fake, id: "claude-code", label: "Claude Code", signedIn: false };
+    const d = daemon();
+    render(
+      <Composer
+        client={d as unknown as IonClient}
+        harnesses={[out, grok]}
+        to={{ chatId: "c1" }}
+        running="r1"
+        harness="claude-code"
+        current={{ model: "opus", effort: "" }}
+        onSent={() => {}}
+      />,
+    );
+    type("later");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    await waitFor(() =>
+      expect(d.call).toHaveBeenCalledWith("queue.add", {
+        to: { chatId: "c1" },
+        text: "later",
+        brain: { model: "opus" },
+      }),
     );
   });
 

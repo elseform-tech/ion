@@ -628,6 +628,28 @@ describe("daemon api", () => {
     );
   });
 
+  // Final review, 2026-11-19: Stop on a chat's run sent its next queued message right after, so the work went on.
+  // What's queued waits ("Stopped") until you send a message (or deal with a queued one).
+  it("Stop holds the chat's queue until you send a message", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const ends = () => seen.filter((e) => e.type === "run.finished").length;
+    const slow = await client.call("ask", { text: "slow", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.started"), 5000);
+    const to = { chatId: slow.chatId };
+    await client.call("queue.add", { to, text: "hello queued", brain: { harness: "fake" } });
+    await client.call("run.interrupt", { runId: slow.runId });
+    await until(() => ends() === 1, 5000);
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await client.call("queue.list", { to })).map((q) => q.why)).toEqual(["Stopped"]);
+    await client.call("ask", { chatId: slow.chatId, text: "hello direct", harness: "fake" });
+    await until(() => ends() === 3, 5000);
+    const said = seen.filter((e) => e.type === "message.sent").map((e) => (e.data as { text: string }).text);
+    expect(said).toEqual(["slow", "hello direct", "hello queued"]);
+  });
+
   // Plan 07: the app's sidebar wants only what happens from now on, not every event ion ever stored.
   it("sends no backlog with fromNow", async () => {
     await client.call("chat.create", { title: "Old" });

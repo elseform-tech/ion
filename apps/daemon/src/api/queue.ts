@@ -19,5 +19,6 @@ export const queueHandlers: Pick<
     await ctx.queue.sendNow(String(a.queueId ?? ""));
     return { ok: true as const };
   },
-  "ion.stop": (a, ctx) => ({ ok: true as const, stopped: ctx.ions.stopTurn(String(a.ionId ?? "")) }),
+  // You stopped it: what's queued waits until you send one now, change the queue or send a message.
+  "ion.stop": (a, ctx) => ({ ok: true as const, stopped: ctx.queue.stopIon(String(a.ionId ?? "")) }),
 };

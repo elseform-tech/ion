@@ -247,7 +247,9 @@ function useBoxText(q: Queue, onSending: Props["onSending"]) {
 
 /**
  * The brain the box shows (`b`) and the one a message goes with (`sent`): a chat kept on an unlisted agent sends
- * none of its own (ion uses the chat's), unless you pick one. `agentReady`: it can go.
+ * none of its own (ion uses the chat's), unless you pick one. `queued`: a queued message goes later, unattended,
+ * so it never switches agents: none unless you picked one (ion uses the chat's, or says why it can't).
+ * `agentReady`: it can go.
  */
 function useSendBrain(p: Props) {
   const { ready, own, first, unlisted } = defaults(p.harnesses, p.harness);
@@ -256,6 +258,7 @@ function useSendBrain(p: Props) {
   const b = withAgent(brain, own, first);
   const keep = unlisted && !brain.harness;
   const sent = { ...b, access, harness: keep ? "" : b.harness };
+  const queued = brain.harness ? sent : { ...brain, access };
   return {
     brain,
     setBrain,
@@ -263,6 +266,7 @@ function useSendBrain(p: Props) {
     setAccess,
     b,
     sent,
+    queued,
     agentReady: keep || ready.some((h) => h.id === b.harness),
   };
 }
@@ -275,13 +279,13 @@ export function Composer(p: Props) {
   const { client, harnesses, to, running, onSent, project, onBrainOpen, locked } = p;
   useDoubleEsc(running, (runId) => void client.call("run.interrupt", { runId }).catch(() => {}));
   const q = useQueue(client, "chatId" in to ? to : null);
-  const { brain, setBrain, access, setAccess, b, sent, agentReady } = useSendBrain(p);
+  const { brain, setBrain, access, setAccess, b, sent, queued, agentReady } = useSendBrain(p);
   const { text, setText, edit, put } = useBoxText(q, p.onSending);
   const { error, pending, send } = useSend(client, onSent);
   const canSend = !locked && Boolean(text.trim()) && agentReady;
   const { ref, onEdit } = useEditInto(setText);
   const go = () => canSend && void send(askArgs(text, sent, to), put);
-  const brainNow = () => (canSend ? brainArgs(sent) : null);
+  const brainNow = () => (canSend ? brainArgs(queued) : null);
   const onKey = onEnter({ q, working: Boolean(running), text, setText, send: go, brain: brainNow });
   const shown = error ?? q.error;
   return (
