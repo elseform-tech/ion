@@ -1,9 +1,10 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import { ArrowUp, Folder, type LucideIcon, Shield, ShieldCheck, ShieldOff, Square } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
-import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { type Brain, BrainPill, BrainPopover, useEffortKey } from "./BrainPopover.js";
 import { useDismiss } from "./dismiss.js";
+import { onEnter, putBack, QueueLines, useDoubleEsc, useQueue } from "./Queue.js";
 
 type Access = "" | "auto" | "full";
 const ACCESS: Access[] = ["", "auto", "full"];
@@ -85,41 +86,24 @@ function where(to: { chatId: string } | { projectId: string | null }) {
   return to.projectId ? { projectId: to.projectId } : {};
 }
 
-/** The message as `ask` arguments: a chat to continue, or a new chat in a project. */
-function askArgs(
-  text: string,
-  brain: Brain & { access: Access },
-  to: { chatId: string } | { projectId: string | null },
-) {
+/** The brain a message goes with: its agent, and the model, effort and access you picked. */
+function brainArgs(brain: Brain & { access: Access }) {
   return {
-    text,
     harness: brain.harness,
-    ...where(to),
     ...(brain.model ? { model: brain.model } : {}),
     ...(brain.effort ? { effort: brain.effort } : {}),
     ...(brain.access ? { access: brain.access } : {}),
   };
 }
 
-/** How close two presses of Esc must be to stop a run. */
-const DOUBLE_ESC_MS = 500;
-
-/** Esc twice, quickly, stops the chat's run (one Esc only closes what's open). */
-function useDoubleEscStop(client: IonClient, running: string | null): void {
-  useEffect(() => {
-    if (!running) return;
-    let last = 0;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      const now = Date.now();
-      if (now - last < DOUBLE_ESC_MS) {
-        last = 0;
-        void client.call("run.interrupt", { runId: running }).catch(() => {});
-      } else last = now;
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [client, running]);
+/** The message as `ask` arguments: a chat to continue, or a new chat in a project. */
+function askArgs(
+  text: string,
+  brain: Brain & { access: Access },
+  to: { chatId: string } | { projectId: string | null },
+) {
+  const { harness, ...rest } = brainArgs(brain);
+  return { text, harness, ...where(to), ...rest };
 }
 
 /** Send, or Stop while the chat's run is going (Esc twice stops it too). */
@@ -242,11 +226,15 @@ const withAgent = (brain: Brain, own: string | undefined, first: string): Brain 
     ? { ...brain, harness: brain.harness || first }
     : { ...brain, harness: first, model: "" };
 
-/** The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
+/**
+ * The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running.
+ * While the run goes, what you send waits in the queue above it (⌘Enter: sends it now).
+ */
 export function Composer(p: Props) {
   const { client, harnesses, to, running, onSent, harness, project, onBrainOpen, locked, onSending } = p;
   const { ready, own, first } = defaults(harnesses, harness);
-  useDoubleEscStop(client, running);
+  useDoubleEsc(running, (runId) => void client.call("run.interrupt", { runId }).catch(() => {}));
+  const q = useQueue(client, "chatId" in to ? to : null);
   const [brain, setBrain] = useBrain(to, p.current);
   const [access, setAccess] = useState<Access>("");
   const [text, setText] = useState("");
@@ -258,36 +246,37 @@ export function Composer(p: Props) {
     onSending?.(t ? null : text);
   };
   const go = () => canSend && void send(askArgs(text, { ...b, access }, to), put);
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-    e.preventDefault();
-    go();
-  };
+  const brainNow = () => (canSend ? brainArgs({ ...b, access }) : null);
+  const onKey = onEnter({ q, working: Boolean(running), text, setText, send: go, brain: brainNow });
+  const shown = error ?? q.error;
   return (
-    <div className={`cbox${project ? " big" : ""}`}>
-      <textarea
-        aria-label="Message"
-        placeholder={project ? "Ask anything, or describe a change…" : "Reply…"}
-        rows={project ? 3 : 1}
-        disabled={locked}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKey}
-      />
-      {error && <div className="quiet">{error}</div>}
-      <div className="bar">
-        {project && <ProjectPill p={project} />}
-        <BrainPick
-          onOpen={onBrainOpen}
-          harnesses={harnesses}
-          brain={b}
-          picked={Boolean(brain.harness || brain.model || brain.effort)}
-          onChange={setBrain}
+    <>
+      <QueueLines q={q} onEdit={(t) => setText((box) => putBack(box, t))} />
+      <div className={`cbox${project ? " big" : ""}`}>
+        <textarea
+          aria-label="Message"
+          placeholder={project ? "Ask anything, or describe a change…" : "Reply…"}
+          rows={project ? 3 : 1}
+          disabled={locked}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKey}
         />
-        <AccessPill access={access} onChange={setAccess} />
-        <span className="sp" />
-        <SendOrStop client={client} running={running} canSend={canSend} pending={pending} onSend={go} />
+        {shown && <div className="quiet">{shown}</div>}
+        <div className="bar">
+          {project && <ProjectPill p={project} />}
+          <BrainPick
+            onOpen={onBrainOpen}
+            harnesses={harnesses}
+            brain={b}
+            picked={Boolean(brain.harness || brain.model || brain.effort)}
+            onChange={setBrain}
+          />
+          <AccessPill access={access} onChange={setAccess} />
+          <span className="sp" />
+          <SendOrStop client={client} running={running} canSend={canSend} pending={pending} onSend={go} />
+        </div>
       </div>
-    </div>
+    </>
   );
 }

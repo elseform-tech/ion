@@ -1,12 +1,13 @@
 import type { IonClient } from "@ion/client/browser";
 import { ArrowUp, Check, ChevronDown, ChevronUp, CircleAlert, MessageSquare, Pin } from "@ion/design-system";
 import type { ChatInfo, IonCard, IonEvent, IonInfo, NeedInfo } from "@ion/schema";
-import { type KeyboardEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { IonAvatar } from "./IonAvatar.js";
 import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
 import { Markdown } from "../chats/Message.js";
+import { onEnter, putBack, QueueLines, useDoubleEsc, useQueue } from "../chats/Queue.js";
 import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
 import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
@@ -223,22 +224,33 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
   );
 }
 
-/** The message box for an ion: Enter sends. */
-function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
+/** The ion is thinking: your message waits for its reply, or its turn's work is going. */
+function thinking(items: IonItem[]): boolean {
+  const last = items.at(-1);
+  return last?.kind === "you" || last?.kind === "work";
+}
+
+/**
+ * The message box for an ion: Enter sends; while it thinks, Enter queues (⌘Enter: sends now) and Esc twice stops
+ * its turn.
+ */
+function IonBox({ client, ion, working }: { client: IonClient; ion: IonInfo; working: boolean }) {
   const [text, setText] = useState("");
+  const q = useQueue(client, { ionId: ion.ionId });
+  useDoubleEsc(
+    working ? ion.ionId : null,
+    (ionId) => void client.call("ion.stop", { ionId }).catch(() => {}),
+  );
   const send = () => {
     if (!text.trim()) return;
     void client.call("ion.message", { ionId: ion.ionId, text: text.trim() }).catch(() => {});
     setText("");
   };
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-    e.preventDefault();
-    send();
-  };
+  const onKey = onEnter({ q, working, text, setText, send, brain: () => ({}) });
   return (
     <div className="foot">
       <div className="fcol">
+        <QueueLines q={q} onEdit={(t) => setText((box) => putBack(box, t))} />
         <div className="cbox">
           <textarea
             aria-label={`Message ${ion.name}`}
@@ -248,6 +260,7 @@ function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKey}
           />
+          {q.error && <div className="quiet">{q.error}</div>}
           <div className="bar">
             <span className="sp" />
             <button type="button" className="send" aria-label="Send" disabled={!text.trim()} onClick={send}>
@@ -282,7 +295,7 @@ export function IonChat(p: Omit<CardProps, "card" | "peek" | "onPeek">) {
     <section className={`ichat${open ? " peek" : ""}`}>
       <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} {...(panel ? { panel } : {})} />
       <Bubbles items={items} {...p} peek={open ? peek : null} onPeek={toggle} />
-      <IonBox client={p.client} ion={p.ion} />
+      <IonBox client={p.client} ion={p.ion} working={thinking(items)} />
       {open && (
         <ThreadPeek
           key={open.chatId}

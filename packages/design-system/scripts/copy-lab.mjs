@@ -44,6 +44,7 @@ const RANGES = [
   [997, 997, "activity: rows"],
   [1060, 1077, "ions: project ion rows, a thread open beside its ion's chat; routines' instructions"],
   [1083, 1088, "the frame: the top strip, each screen inside it; the sidebar hidden"],
+  [1089, 1095, "queued messages above the message box"],
 ];
 
 const out = [
