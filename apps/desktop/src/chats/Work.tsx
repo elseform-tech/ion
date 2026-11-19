@@ -62,6 +62,19 @@ export function stepName(raw: string): string {
   return name.replace(/^mcp__.+?__(?=[^_])/, "");
 }
 
+/** A step's name and summary as shown. Grok's "Use tool" carries the real tool in its summary: that is the name. */
+function stepText(s: ToolStep): { name: string; summary: string } {
+  const summary = stripControl(s.summary).trim();
+  if (stripControl(s.name) === "Use tool" && /^[\w.-]+$/.test(summary)) {
+    const ion = /^(?:mcp__ion__|ion__)/.test(summary);
+    return {
+      name: ion ? stepName(summary) : summary.replace(/^(?:mcp__)?[^_\s]+?__(?=[^_])/, ""),
+      summary: "",
+    };
+  }
+  return { name: stepName(s.name), summary: stepSummary(s) };
+}
+
 /** A step's summary as shown: none when it only repeats the tool's name. */
 function stepSummary(s: ToolStep): string {
   const summary = stripControl(s.summary).trim();
@@ -85,7 +98,7 @@ export function useNow(live: boolean): number {
 const ToolRow = memo(function ToolRow({ s, live }: { s: ToolStep; live: boolean }) {
   const [open, setOpen] = useState(false);
   const running = live && s.ok === undefined;
-  const summary = stepSummary(s);
+  const { name, summary } = stepText(s);
   const Icon = s.ok === false ? CircleAlert : (ICONS[s.toolKind] ?? Wrench);
   let state = s.ok === false ? "err" : "ok";
   if (running) state = "run";
@@ -93,7 +106,7 @@ const ToolRow = memo(function ToolRow({ s, live }: { s: ToolStep; live: boolean 
     <div className={`ws w-${state}`} onClick={() => setOpen(!open)}>
       <Icon />
       <div className="wl">
-        <b className={running ? "now" : undefined}>{stepName(s.name)}</b>
+        <b className={running ? "now" : undefined}>{name}</b>
         {summary && (
           <>
             {" "}
@@ -132,8 +145,8 @@ const ThinkRow = memo(function ThinkRow({ s }: { s: Extract<Step, { kind: "think
 export const current = (w: Work) => {
   const last = w.steps.at(-1);
   if (last?.kind !== "tool") return "Thinking";
-  const summary = stepSummary(last);
-  return summary ? `${stepName(last.name)} ${summary}` : stepName(last.name);
+  const { name, summary } = stepText(last);
+  return summary ? `${name} ${summary}` : name;
 };
 
 /**
