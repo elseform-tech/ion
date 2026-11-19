@@ -51,7 +51,10 @@ export class FollowUps {
 
   /** Sends it after what the chat already has waiting. */
   later(chatId: string, p: Pending): void {
-    this.queue.set(chatId, [...(this.queue.get(chatId) ?? []), p]);
+    // One list per chat, changed in place: a send in flight sees what's added meanwhile.
+    const list = this.queue.get(chatId) ?? [];
+    list.push(p);
+    this.queue.set(chatId, list);
   }
 
   started(runId: string, decisionId?: string): void {
@@ -87,14 +90,19 @@ export class FollowUps {
   /** Chats whose next answer is being sent: one send at a time, so a retry and a run's end can't both send it. */
   private readonly draining = new Set<string>();
 
+  /** Chats asked to drain while one was draining: they drain again after it, so no request is lost. */
+  private readonly again = new Set<string>();
+
   private async drain(chatId: string): Promise<void> {
-    if (this.draining.has(chatId)) return;
+    if (this.draining.has(chatId)) return void this.again.add(chatId);
     this.draining.add(chatId);
     try {
       // One answer, then the next while there is one (it usually reads busy: its run waits for this one's end).
       while (await this.sendNext(chatId));
     } finally {
       this.draining.delete(chatId);
+      if (this.again.delete(chatId) && this.queue.get(chatId)?.length)
+        queueMicrotask(() => void this.drain(chatId));
     }
   }
 
@@ -123,8 +131,11 @@ export class FollowUps {
         });
     }
     this.tries.delete(chatId);
-    list.shift();
-    if (list.length === 0) this.queue.delete(chatId);
-    return list.length > 0 && this.queue.get(chatId) === list;
+    // Removed by identity from the live list (it may have grown while this one was sent).
+    const live = this.queue.get(chatId) ?? [];
+    const at = live.indexOf(next);
+    if (at >= 0) live.splice(at, 1);
+    if (live.length === 0) this.queue.delete(chatId);
+    return live.length > 0;
   }
 }

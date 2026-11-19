@@ -59,4 +59,43 @@ describe("FollowUps", () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(start).toHaveBeenCalledTimes(2);
   });
+  // Security review, 2026-11-19: an answer added while another is being sent doesn't make the first one go twice,
+  // and is itself sent.
+  it("sends each answer once when another is added while one is being sent", async () => {
+    let release: (v: string) => void = () => {};
+    const sent: string[] = [];
+    const start = vi.fn((_c: string, m: { text: string }) => {
+      sent.push(m.text);
+      if (sent.length === 1) return Promise.reject(new UserError("This chat is already running"));
+      if (sent.length === 2) return new Promise<string>((r) => (release = r));
+      return Promise.resolve(`r${sent.length}`);
+    });
+    const f = new FollowUps(store, start, () => {});
+    const a = { ...msg, text: "A" };
+    const b = { ...msg, text: "B" };
+    expect(await f.tryNow("c1", a)).toBe("busy");
+    f.later("c1", a);
+    store.append({
+      chatId: "c1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    f.later("c1", b); // while A is being sent
+    release("r2");
+    await vi.advanceTimersByTimeAsync(0);
+    store.append({
+      chatId: "c1",
+      runId: "r2",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(sent.filter((t) => t === "A")).toHaveLength(2); // the busy try, then the send
+    expect(sent.filter((t) => t === "B").length).toBeGreaterThanOrEqual(1);
+    expect(sent.at(-1)).toBe("B");
+  });
 });
