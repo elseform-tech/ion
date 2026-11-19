@@ -174,3 +174,25 @@ describe("render", () => {
     expect(r(ev("decision.recorded", { decisionId: "d3", by: "you", choice: "x" })).text).toBe("");
   });
 });
+
+// Plan 09: a question from an ion thread carries its ion's note; agents' text can't drive the terminal.
+describe("needText", () => {
+  it("prints the ion's note under the question, without control characters", async () => {
+    const { needText } = await import("./render.js");
+    const text = needText({
+      needId: "n1",
+      chatId: "t1",
+      runId: "r1",
+      projectId: "storefront",
+      kind: "ask",
+      summary: "Use QA?",
+      detail: null,
+      raisedAt: "",
+      choices: [{ label: "Yes", consequence: "Logs in" }],
+      via: { note: "storefront's ion: \u001b[31mfirst time this comes up" },
+    });
+    expect(text).toBe(
+      "n1  storefront  Use QA?\n  storefront's ion: [31mfirst time this comes up\n  1. Yes — Logs in",
+    );
+  });
+});

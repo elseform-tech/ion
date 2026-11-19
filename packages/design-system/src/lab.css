@@ -11,6 +11,10 @@
 .spin{width:12px;height:12px;border-radius:50%;border:1.6px solid var(--line);border-top-color:var(--muted);animation:spin .9s linear infinite;flex-shrink:0}
 @media (prefers-reduced-motion: reduce){.spin{animation:none;border-top-color:var(--faint)}}
 
+/* lab lines 40-41: brand wordmark */
+.brand{font-family:var(--display);font-weight:800;font-size:24px;letter-spacing:-.05em;color:var(--brand-on)}
+.brand i{font-style:normal;color:var(--brand)}
+
 /* lab lines 47-47: window */
 /* window */
 
@@ -132,6 +136,65 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tree .x{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--wait)}
 
 
+/* lab lines 165-202: ions: panel, ion chat, bubbles, thread links, quick replies */
+/* ions (agent layer) */
+.ions{grid-template-columns:300px minmax(0,1fr)}
+.ipanel{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.ihead{display:flex;align-items:center;gap:4px;padding:12px 10px 4px 18px}
+.ihead b{margin-right:auto;font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:8px 12px 12px}
+.tile{display:grid;justify-items:center;gap:6px;padding:14px 4px 10px;border-radius:14px;border:0;background:transparent;cursor:pointer;font-size:12.5px;color:var(--muted);position:relative}
+.tile:hover{background:var(--hover)}
+.tile.on{background:var(--win);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.tile canvas{width:52px;height:52px}
+.tile .wd{position:absolute;top:10px;right:16px;width:8px;height:8px;border-radius:50%;background:var(--wait);box-shadow:0 0 0 2px var(--side)}
+.ilist{overflow:auto;padding:0 8px 12px;display:grid;gap:1px;align-content:start}
+.ir{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:center;padding:8px;border-radius:10px;border:0;background:transparent;text-align:left;cursor:pointer;width:100%}
+.ir:hover{background:var(--hover)}
+.ir.on{background:var(--win);box-shadow:0 0 0 1px var(--line)}
+.ir canvas{width:34px;height:34px}
+.ir b{font-weight:500;display:block}
+.ir span{font-size:12.5px;color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ichat{display:grid;grid-template-rows:56px minmax(0,1fr) auto;min-height:0;min-width:0}
+.ichat .head{gap:10px}
+.ichat .head canvas{width:28px;height:28px}
+.ichat .head .role{color:var(--faint);font-size:12.5px}
+.bubbles{overflow:auto;padding:28px 0 12px}
+.bcol{max-width:640px;margin:0 auto;padding:0 28px;display:grid;gap:14px}
+.bm{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:end}
+.bm canvas{width:28px;height:28px}
+.bi{background:var(--hover);border-radius:18px 18px 18px 6px;padding:9px 14px;justify-self:start;max-width:86%}
+.bu{justify-self:end;background:var(--ink);color:var(--win);border-radius:18px 18px 6px 18px;padding:9px 14px;max-width:78%}
+.tlink{display:flex;align-items:center;gap:10px;margin-top:8px;padding:8px 10px;border-radius:12px;background:var(--win);border:0;width:100%;text-align:left;cursor:pointer;box-shadow:0 0 0 1px var(--line)}
+.tlink:hover{box-shadow:0 0 0 1px var(--faint)}
+.tlink .g{flex:1;min-width:0}
+.tlink .g small{display:block;color:var(--muted);font-size:12px}
+.tlink .lucide{color:var(--faint)}
+.tlink .wd{width:7px;height:7px;border-radius:50%;background:var(--wait)}
+.quick{display:flex;gap:6px;flex-wrap:wrap;margin-left:38px}
+.quick button{border:1px solid var(--line);background:var(--win);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
+.quick button:hover{background:var(--hover)}
+.typing{display:inline-flex;gap:4px;padding:12px 14px;background:var(--hover);border-radius:18px 18px 18px 6px;justify-self:start}
+
+/* lab lines 267-283: ions: new-ion card, notes */
+/* new-ion card */
+.ncard{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:center;padding:12px;border-radius:16px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:430px}
+.ncard canvas{width:44px;height:44px}
+.ncard b{font-weight:600}
+.ncard .tag{font-size:11px;font-weight:500;color:var(--accent);margin-left:6px}
+.ncard .s{font-size:12.5px;color:var(--muted)}
+.ncard .meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);margin-top:4px}
+.ncard .meta span{display:inline-flex;align-items:center;gap:4px}
+.ncard .meta .lucide{width:12px;height:12px}
+.ncard .meta canvas{width:14px;height:14px}
+.ncard .acts{grid-column:1/-1;display:flex;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+.ncard .acts .sp{flex:1}
+.ncard .done{grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.ncard .done .lucide{width:14px;height:14px;color:var(--good)}
+.note{font-size:12.5px;color:var(--faint);display:flex;align-items:center;gap:8px}
+.note button{border:0;background:transparent;color:var(--accent);cursor:pointer;padding:0;font-size:12.5px}
+.ir .nw{font-size:10.5px;font-weight:500;font-style:normal;color:var(--accent);margin-left:6px}
+
 /* lab lines 305-305: empty lists */
 .pempty{padding:28px;text-align:center;color:var(--faint)}
 
@@ -178,12 +241,73 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tile .tname{font-size:15px;line-height:1.2;letter-spacing:-.04em}
 .head .hname{font-size:17px;line-height:1;letter-spacing:-.04em;overflow:visible}
 
+/* lab lines 456-463: ions: ion chief tile */
+.ihead .pwrap{margin-left:14px}
+.chief{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;margin:4px 8px 6px;padding:10px;border-radius:14px;border:0;background:transparent;text-align:left;cursor:pointer;width:calc(100% - 16px)}
+.chief:hover{background:var(--hover)}
+.chief.on{background:var(--win);box-shadow:0 0 0 1px var(--line)}
+.chief canvas{width:40px;height:40px}
+.chief .tname{font-size:18px;line-height:1.1;letter-spacing:-.04em}
+.chief small{display:block;font-size:12px;color:var(--muted)}
+.chief .wd{width:8px;height:8px;border-radius:50%;background:var(--wait)}
+
+/* lab lines 478-484: ions: route card */
+.route{display:grid;grid-template-columns:14px minmax(0,1fr) 14px;align-items:center;gap:10px;margin-top:2px;padding:8px 12px;border-radius:12px;border:0;background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted);font-size:13px;cursor:pointer;text-align:left}
+.route:hover{color:var(--ink);box-shadow:inset 0 0 0 1px var(--faint)}
+.route b{color:var(--ink);font-weight:500}
+.route canvas{width:18px;height:18px}
+.route .lucide{width:14px;height:14px}
+.route .l1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.route .why{display:block;font-size:12px;color:var(--faint)}
+
+/* lab lines 503-515: ions: scalable panel rows */
+/* scalable ions panel */
+.lh{display:flex;justify-content:space-between;font-size:12px;color:var(--faint);font-weight:500;padding:12px 10px 4px}
+.lh span{font-weight:400}
+.prow{display:grid;grid-template-columns:minmax(0,1fr) 30px;align-items:center;border-radius:10px}
+.prow:hover{background:var(--hover)}
+.pmain{display:flex;align-items:center;gap:10px;padding:8px 6px 8px 10px;border:0;background:transparent;text-align:left;cursor:pointer;min-width:0}
+.pmain .g{flex:1;min-width:0}
+.pmain b{font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pmain small{display:block;font-size:12px;color:var(--faint)}
+.stack{display:flex;align-items:center}
+.stack canvas{width:22px;height:22px;margin-left:-6px;border-radius:50%;background:var(--side);box-shadow:0 0 0 2px var(--side)}
+.stack canvas:first-child{margin-left:0}
+.stack .more{font-size:11px;color:var(--faint);margin-left:4px}
+
 /* lab lines 516-516: count badge */
 .nb{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--wait);color:#1a1205;font-size:11px;font-weight:600;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
+
+/* lab lines 517-520: ions: star */
+.star{opacity:0;width:28px;height:28px}
+.prow:hover .star,.star.on,.star:focus-visible{opacity:1}
+.star.on{color:var(--wait)}
+.star.on .lucide{fill:currentColor}
 
 /* lab lines 521-522: starred project */
 .stari{color:var(--wait);fill:var(--wait)}
 .stari.sm{width:12px;height:12px;vertical-align:-1px}
+
+/* lab lines 530-548: ions: needs pinned atop ion chief */
+.chief .nb{margin-right:2px}
+/* pins */
+.pins{position:sticky;top:-28px;z-index:2;max-width:640px;margin:-14px auto 18px;padding:10px;border-radius:16px;background:var(--side);box-shadow:0 0 0 1px var(--line),0 10px 30px -14px rgba(0,0,0,.7);display:grid;gap:4px}
+.pins.calm{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;padding:10px 14px}
+.pinh{display:flex;align-items:center;gap:6px;padding:2px 6px 4px;font-size:12.5px;color:var(--muted)}
+.pinh b{font-weight:600;color:var(--ink)}
+.pinh .lucide{width:14px;height:14px}
+.pinh .ct{color:var(--faint)}
+.pinh .sp{flex:1}
+.link.sm{font-size:12.5px;padding:0}
+.pin{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:8px;border-radius:12px;background:var(--win)}
+.pin canvas{width:24px;height:24px}
+.pin>.lucide{color:var(--muted);justify-self:center}
+.pin b{font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pin small{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pin .btn{padding:4px 10px;font-size:12.5px}
+.pin:not(.urg) .utag{display:none}
+.utag{font-size:11px;font-weight:500;color:var(--bad);display:inline-flex;align-items:center;gap:4px}
+.utag::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--bad)}
 
 /* lab lines 549-560: pins, await (hidden), project menu search */
 .pinl{display:inline-flex;align-items:center;gap:5px}
@@ -270,6 +394,20 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 /* lab lines 686-686: panel label (.lh2) */
 .lh2{font-size:12px;color:var(--faint);font-weight:500;padding:6px 6px 4px}
 
+/* lab lines 713-724: ions: needs strip, collapsed */
+
+.pins.mini{display:flex;align-items:center;gap:8px;width:100%;border:0;cursor:pointer;padding:9px 14px;font-size:13px;color:var(--muted);text-align:left;margin:-14px auto 14px}
+.pins.mini:hover{box-shadow:0 0 0 1px var(--faint),0 10px 30px -14px rgba(0,0,0,.7)}
+.pins.mini .lucide{width:14px;height:14px}
+.pins.mini b{color:var(--ink);font-weight:600}
+.pins.mini .ct{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--wait);color:#1a1205;font-size:11px;font-weight:600;display:inline-grid;place-items:center}
+.pins.mini .sep{width:1px;height:14px;background:var(--line)}
+.pins.mini .ud{width:7px;height:7px;border-radius:50%;background:var(--bad);flex-shrink:0}
+.pins.mini .peek{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.pins.mini .sp{flex:1}
+.pins.mini .open{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;white-space:nowrap}
+.pinh .ib{width:26px;height:26px}
+
 /* lab lines 761-831: brain picker; work */
 /* brain picker */
 .bpill{gap:6px;padding:4px 8px}
@@ -342,6 +480,24 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .wsum .wst{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);margin-bottom:2px}
 .wsum .wst .lucide{width:13px;height:13px}
 .wsrc{font-size:11px;color:var(--faint);margin-left:6px}
+
+/* lab lines 1051-1066: ions: project ion rows, fan-out card */
+/* project ions */
+.prow .pmain canvas{width:30px;height:30px;flex-shrink:0}
+.pmain small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.addp{display:flex;align-items:center;gap:8px;width:100%;margin-top:6px;padding:9px 10px;border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);cursor:pointer;font-size:13px}
+.addp:hover{color:var(--ink);border-color:var(--faint)}
+.addp .lucide{width:15px;height:15px}
+.fan{display:grid;gap:2px;padding:8px;border-radius:14px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:460px}
+.fanh{display:flex;align-items:center;gap:6px;padding:2px 6px 6px;font-size:12px;color:var(--muted)}
+.fanh .lucide{width:13px;height:13px}
+.fanr{display:grid;grid-template-columns:22px 110px minmax(0,1fr) 14px;gap:8px;align-items:center;padding:7px 6px;border:0;border-radius:9px;background:transparent;text-align:left;cursor:pointer;color:var(--ink);font-size:13px}
+.fanr:hover{background:var(--hover)}
+.fanr canvas{width:22px;height:22px}
+.fanr b{font-weight:500}
+.ft2{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;min-width:0}
+.ft2 .lucide{width:13px;height:13px;flex-shrink:0}
+.fanr>.lucide{width:14px;height:14px;color:var(--faint)}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

@@ -96,6 +96,7 @@ describe("chats view", () => {
         lastRunStatus: "done",
         lastActivityAt: expect.any(String),
         preview: null,
+        by: null,
       },
     ]);
     expect(chatsView.worktree(db, "c1")).toBe("/w/c1");

@@ -32,8 +32,10 @@ The always-on service that owns all state.
   hook that does nothing outside ion's runs; folder trust stays on), which Auto never lets an agent touch. opencode: ion's
   plugin through `OPENCODE_CONFIG_CONTENT`. Every hook fails closed. Only Auto's decisions are stored; a gate allow
   answers the harness's own prompt for the same command or file within 2 s, so it isn't decided twice.
-- `src/needs` and `src/decisions`: agents' questions. An agent calls ion's `ask` tool (2–4 choices, each with
-  what it leads to) and ends its turn; the question waits under Needs you, and outlives its run. Your answer
+- `src/needs` and `src/decisions`: agents' questions. Every run with ion's tools is told (`runs/instructions.ts`;
+  Claude's system prompt, a marked first block of each ACP turn) to ask only through ion's `ask` tool; each agent's
+  own question card is off (Claude's `AskUserQuestion`, Grok's `ask_user_question`), since nobody can answer it
+  here. An agent calls `ask` (2–4 choices, each with what it leads to) and ends its turn; the question waits under Needs you, and outlives its run. Your answer
   (`ion answer`) is stored as a decision (this chat, this project or everywhere) and sent into the chat as the next
   message; the run that follows records the decision's outcome (ran or failed); agents (`report_outcome`, 3 per
   run) and you (`ion decisions note`) add notes. ion answers a new question itself only from a project or
@@ -53,3 +55,15 @@ The always-on service that owns all state.
 - `src/main.ts`: entry point. Takes the `daemon.lock` (an exclusive SQLite lock the OS releases if the process dies, so only one daemon per data dir), then writes `daemon.json` (`pid`, `port`, `token`, mode 0600).
 
 Data dir: `$ION_HOME/data`, else `$XDG_DATA_HOME/ion`, else `~/.local/share/ion`. Database: `ion.db`.
+
+## Ions (Plan 09)
+
+`src/ions/`: every project but `default` has an ion, and ion chief sits over them. Each ion's chat is its events
+on `ion:<ionId>` (`ion.heard`, `ion.said`).
+- A project's ion starts a thread (a chat with `by: "ion"`, always in Auto access) for what you ask and says how it
+  ended.
+- ion chief decides on the quick model (the judge's): it answers from the state of your projects (never one with
+  `shareWithIon = false`), or sends your message on to up to 5 project ions.
+- Questions in ion threads go through the project's ion (`questions.ts`): an answer from your decisions there, a
+  duplicate held behind the same question waiting (settled only when identical), else your question with the
+  ion's note; "always?" after the same answer three times; a decision whose runs failed twice is flagged.

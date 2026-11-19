@@ -1,9 +1,9 @@
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
 import { PanelRight } from "@ion/design-system";
-import { useEffect, useState } from "react";
-import { ToolsPanel, useDiff } from "./ToolsPanel.js";
-import { ChatView, useTimeline } from "./ChatView.js";
+import { useState } from "react";
+import { type Focus, ToolsPanel, useDiff } from "./ToolsPanel.js";
+import { ChatView, Starting, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
 import { QuestionBar } from "./QuestionBar.js";
 import { Resizer } from "./Resizer.js";
@@ -13,28 +13,48 @@ import type { Item } from "./timeline.js";
 
 type Question = Extract<Item, { kind: "question" }>;
 
-const WIDE = typeof matchMedia === "function" ? matchMedia("(min-width: 1100px)") : null;
-
-/** Whether the window is at least 1100 px wide, kept live. */
-function useWide(): boolean {
-  const [wide, setWide] = useState(WIDE?.matches ?? true);
-  useEffect(() => {
-    const onChange = (e: MediaQueryListEvent) => setWide(e.matches);
-    WIDE?.addEventListener("change", onChange);
-    return () => WIDE?.removeEventListener("change", onChange);
-  }, []);
-  return wide;
+/** The side panel's state for the window: closed to start; picking a changed file opens it at that file. */
+function usePanel(): Panel {
+  const [open, setOpen] = useState(false);
+  // A count with the path, so picking the same file again scrolls to it again.
+  const [focus, setFocus] = useState<Focus | null>(null);
+  return {
+    open,
+    focus,
+    toggle: () => setOpen((o) => !o),
+    show: (path) => {
+      setFocus((f) => ({ path, n: (f?.n ?? 0) + 1 }));
+      setOpen(true);
+    },
+  };
 }
 
-/**
- * Whether the side panel shows. Until you choose, it opens on its own when a project chat has changed something
- * and the window is wide; a plain chat (in ion's `default`) stays just a conversation, as the lab's.
- */
-function usePanel(chat: ChatInfo, files: number): [boolean, () => void] {
-  const wide = useWide();
-  const [choice, setChoice] = useState<boolean | null>(null);
-  const panel = choice ?? (wide && files > 0 && chat.projectId !== "default");
-  return [panel, () => setChoice(!panel)];
+/** The sidebar's actions, sent to ion; a refusal shows nowhere new (the list simply doesn't change). */
+function sidebarActions(
+  client: IonClient,
+  open: { id: string | null; set: (id: string | null) => void },
+  onProjects: () => void,
+) {
+  const [openId, setOpenId] = [open.id, open.set];
+  const act = (f: () => Promise<unknown>) => void f().catch(() => {});
+  return {
+    onNewProject: (name: string) =>
+      client.call("project.create", { name }).then((made) => {
+        onProjects();
+        return made.id;
+      }),
+    onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
+    onRenameProject: (projectId: string, name: string) =>
+      act(() => client.call("project.rename", { projectId, name }).then(onProjects)),
+    onRemoveProject: (projectId: string) =>
+      act(() => client.call("project.remove", { projectId }).then(onProjects)),
+    onStar: (projectId: string, starred: boolean) =>
+      act(() => client.call("project.star", { projectId, starred }).then(onProjects)),
+    onArchive: (chatId: string) => {
+      if (chatId === openId) setOpenId(null);
+      act(() => client.call("chat.archive", { chatId }));
+    },
+  };
 }
 
 /** The lab's chat header: title, project, and the panel toggle when there's a worktree (`panel` not null). */
@@ -42,7 +62,7 @@ function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | n
   return (
     <header className="head" data-tauri-drag-region>
       <span className="title">{chat.title}</span>
-      <span className="muted">{chat.projectId}</span>
+      <span className="muted">{chat.by === "ion" ? `${chat.projectId}'s ion` : chat.projectId}</span>
       <span className="sp" />
       {panel !== null && (
         <button
@@ -59,30 +79,34 @@ function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | n
   );
 }
 
+/** The side panel: one choice for the window, closed until you open it; `focus` is a file to show. */
+type Panel = { open: boolean; toggle: () => void; focus: Focus | null; show: (path: string) => void };
+
 /** An open chat: its header, timeline, any open question, and the message box. */
 function OpenChat({
   client,
   chat,
   harnesses,
   onBrainOpen,
+  panel,
 }: {
   client: IonClient;
   chat: ChatInfo;
   harnesses: HarnessInfo[];
   onBrainOpen: () => void;
+  panel: Panel;
 }) {
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
   const hasWorktree = Boolean(chat.branch) && !chat.archived;
   const changes = useDiff(client, chat.chatId, t.changes);
-  const [panel, togglePanel] = usePanel(chat, changes.diff?.files.length ?? 0);
-  const showPanel = hasWorktree && panel;
+  const showPanel = hasWorktree && panel.open;
   return (
     <>
-      <ChatHead chat={chat} panel={hasWorktree ? panel : null} onPanel={togglePanel} />
+      <ChatHead chat={chat} panel={hasWorktree ? panel.open : null} onPanel={panel.toggle} />
       <div className={`split${showPanel ? "" : " solo"}`}>
         <div className="convo">
-          <ChatView timeline={t} />
+          <ChatView timeline={t} onFile={hasWorktree ? panel.show : undefined} />
           <div className="foot">
             <div className="fcol">
               {open && <QuestionBar key={open.needId} client={client} question={open} />}
@@ -94,12 +118,13 @@ function OpenChat({
                 running={t.running}
                 locked={Boolean(open)}
                 harness={t.harness}
+                current={{ model: t.model, effort: t.effort }}
                 onSent={() => {}}
               />
             </div>
           </div>
         </div>
-        {showPanel && <ToolsPanel {...changes} />}
+        {showPanel && <ToolsPanel {...changes} focus={panel.focus} />}
       </div>
     </>
   );
@@ -114,10 +139,20 @@ function NewChat(props: {
   onBrainOpen: () => void;
 }) {
   const [projectId, setProjectId] = useState<string>("default");
+  // Your first message, shown at once while ion makes the chat (ion can take a moment).
+  const [sending, setSending] = useState<string | null>(null);
   return (
     <>
       <header className="head" data-tauri-drag-region />
-      <div className="empty">
+      {sending !== null && (
+        <div className="msgs">
+          <div className="col">
+            <div className="u">{sending}</div>
+            <Starting />
+          </div>
+        </div>
+      )}
+      <div className="empty" hidden={sending !== null}>
         <div className="inner">
           <h3>What are we working on?</h3>
           <Composer
@@ -128,9 +163,15 @@ function NewChat(props: {
             running={null}
             project={{
               value: projectId,
-              options: ["default", ...props.projects.map((p) => p.id).filter((id) => id !== "default")],
+              options: [
+                { id: "default", name: "default" },
+                ...props.projects
+                  .filter((p) => p.id !== "default")
+                  .map((p) => ({ id: p.id, name: p.name ?? p.id })),
+              ],
               onChange: setProjectId,
             }}
+            onSending={setSending}
             onSent={props.onSent}
           />
         </div>
@@ -151,6 +192,7 @@ export function Chats({
   setOpenId: (id: string | null) => void;
 }) {
   const live = useLive(client);
+  const panel = usePanel();
 
   const chat = live.chats.find((c) => c.chatId === openId);
   return (
@@ -161,8 +203,10 @@ export function Chats({
           chats={live.chats}
           needs={live.needs}
           projects={live.projects}
+          ions={live.ions}
           open={openId}
           onOpen={setOpenId}
+          {...sidebarActions(client, { id: openId, set: setOpenId }, live.refreshProjects)}
         />
       </aside>
       <main className="chat">
@@ -173,6 +217,7 @@ export function Chats({
             chat={chat}
             harnesses={live.harnesses}
             onBrainOpen={live.refreshHarnesses}
+            panel={panel}
           />
         ) : (
           <NewChat

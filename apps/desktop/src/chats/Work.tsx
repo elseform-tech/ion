@@ -55,9 +55,9 @@ const ToolRow = memo(function ToolRow({ s, live }: { s: ToolStep; live: boolean 
   if (running) state = "run";
   return (
     <div className={`ws w-${state}`} onClick={() => setOpen(!open)}>
-      {running ? <i className="spin" /> : <Icon />}
+      <Icon />
       <div className="wl">
-        <b>{s.name}</b> <code>{s.summary}</code>
+        <b className={running ? "now" : undefined}>{s.name}</b> <code>{s.summary}</code>
         {open && (s.input || s.output) && (
           <div className="wg">
             {s.input && <pre>{s.input}</pre>}
@@ -108,7 +108,6 @@ export const WorkBlock = memo(function WorkBlock({ w }: { w: Work }) {
         <ChevronRight className="cv" />
         {live ? (
           <>
-            <i className="spin" />
             <span className="now">{current(w)}</span>
             <span className="wn">· {duration(workSeconds(w, now))}</span>
           </>

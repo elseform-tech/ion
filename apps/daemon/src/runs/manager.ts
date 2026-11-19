@@ -7,7 +7,7 @@ import {
   ResumeFailed,
   type Session,
 } from "@ion/adapter-kit";
-import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig } from "@ion/config";
+import { loadUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { Readiness, titleOf } from "./ready.js";
@@ -20,10 +20,12 @@ import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
 import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
-import { createWorktree, ensureDefaultProject, removeWorktree } from "../workspace/index.js";
+import { createWorktree, removeWorktree } from "../workspace/index.js";
 import type { GateAnswer } from "../gate/index.js";
 import { type AskBlocked, Approvals } from "./approvals.js";
 import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
+import { accessFor, defaultProject, projectPath } from "./projects.js";
+import { ION_INSTRUCTIONS } from "./instructions.js";
 
 type AskArgs = Commands["ask"]["args"];
 type Active = { chatId: string; session: Session };
@@ -105,14 +107,18 @@ export class RunManager {
    * `opts.request`: what the judge treats as your request, when the message isn't yours as typed (the run your
    * answer to an agent's question starts is judged by your request from the run that asked).
    */
-  async ask(args: AskArgs, opts: { request?: string } = {}): Promise<{ chatId: string; runId: string }> {
+  async ask(
+    args: AskArgs,
+    opts: { request?: string; shown?: string; by?: "ion" } = {},
+  ): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     // A new chat with no project goes to `default` (made the first time): every thread has a project.
-    if (!args.chatId && !args.projectId) args = { ...args, projectId: await this.defaultProject() };
+    if (!args.chatId && !args.projectId)
+      args = { ...args, projectId: await defaultProject(this.ctx.configFile) };
     const chat = this.chatFor(args);
     // An existing chat stays in its own project: its worktree belongs to that repo.
-    const repo = this.projectPath(chat.chatId ? chat.projectId : args.projectId);
+    const repo = projectPath(this.ctx.configFile, chat.chatId ? chat.projectId : args.projectId);
     if (this.stopping) throw new UserError("ion is stopping");
     const key = chat.chatId;
     if (key && (this.reserved.has(key) || this.runningIn(key)))
@@ -121,7 +127,7 @@ export class RunManager {
     let launch: Launch;
     try {
       await this.ready.check(h, args.model);
-      launch = await this.prepare(h, args, chat, repo);
+      launch = await this.prepare(h, { ...args, shown: opts.shown, by: opts.by }, chat, repo);
       if (opts.request !== undefined) launch.request = opts.request;
       const l = launch;
       this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
@@ -132,18 +138,34 @@ export class RunManager {
   }
 
   /** Makes the chat's worktree (and the chat, if new), stores your message and queues the run. */
-  private async prepare(h: HarnessEntry, args: AskArgs, chat: Chat, repo: string): Promise<Launch> {
+  /** `ask.shown`: what the chat shows as yours, when the text is ion's wording (your answer to a question). */
+  private async prepare(
+    h: HarnessEntry,
+    ask: AskArgs & { shown?: string; by?: "ion" },
+    chat: Chat,
+    repo: string,
+  ): Promise<Launch> {
+    const { shown, by, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
     });
-    if (!chat.chatId) this.createChat(chatId, chat, wt);
+    if (!chat.chatId) this.createChat(chatId, chat, wt, by);
     // History is read before your message is stored: it's what came before.
     const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
     const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
-    const access = args.access ?? this.accessFor(projectId);
+    // A thread ion started runs in Auto every time: every action there still goes through ion's checks.
+    const ionThread =
+      by === "ion" || chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
+    const access = ionThread ? "auto" : (args.access ?? accessFor(this.ctx.configFile, projectId));
     const runId = `run_${randomUUID()}`;
-    this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: { text: args.text } });
+    this.store.append({
+      chatId,
+      runId,
+      origin: "daemon",
+      type: EV.messageSent,
+      data: { text: args.text, ...(shown ? { shown } : {}) },
+    });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
     return { h, args, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
   }
@@ -302,7 +324,8 @@ export class RunManager {
     if (this.runningIn(chatId)) throw new UserError("Stop the chat's run first");
     const chat = this.chatFor({ chatId, text: "" });
     const worktree = chatsView.worktree(this.db, chatId);
-    if (worktree) await removeWorktree(this.projectPath(chat.projectId), worktree);
+    if (worktree) await removeWorktree(projectPath(this.ctx.configFile, chat.projectId), worktree);
+    this.needs.supersedeChat(chatId);
     this.store.append({ chatId, runId: null, origin: "daemon", type: EV.chatArchived, data: {} });
   }
 
@@ -359,36 +382,20 @@ export class RunManager {
     return { chatId: chat.chatId, projectId: chat.projectId, title: chat.title };
   }
 
-  /** The project's own access mode, else the default from config.toml. */
-  private accessFor(projectId: string): "auto" | "full" {
-    const { config } = loadUserConfig(this.ctx.configFile);
-    return config.projects.find((p) => p.id === projectId)?.access ?? config.access.default;
-  }
-
-  private async defaultProject(): Promise<string> {
-    const { config, error } = loadUserConfig(this.ctx.configFile);
-    if (error) throw new UserError(`Fix your config first. ${error}`);
-    const next = await ensureDefaultProject(config).catch((e: Error) => {
-      throw new UserError(e.message);
-    });
-    if (next !== config) saveUserConfig(this.ctx.configFile, next);
-    return DEFAULT_PROJECT;
-  }
-
-  private projectPath(projectId: string | null | undefined): string {
-    if (!projectId) throw new UserError("Pick a project with -p <project>");
-    const p = loadUserConfig(this.ctx.configFile).config.projects.find((x) => x.id === projectId);
-    if (!p) throw new UserError(`Unknown project: ${projectId}`);
-    return p.path;
-  }
-
-  private createChat(chatId: string, chat: Chat, wt: { path: string; branch: string }): void {
+  /** `by`: "ion" for a thread ion started (Plan 09); your own chats have none. */
+  private createChat(chatId: string, chat: Chat, wt: { path: string; branch: string }, by?: "ion"): void {
     this.store.append({
       chatId,
       runId: null,
       origin: "daemon",
       type: EV.chatCreated,
-      data: { title: chat.title, projectId: chat.projectId, worktree: wt.path, branch: wt.branch },
+      data: {
+        title: chat.title,
+        projectId: chat.projectId,
+        worktree: wt.path,
+        branch: wt.branch,
+        ...(by ? { by } : {}),
+      },
     });
   }
 
@@ -408,6 +415,7 @@ export class RunManager {
               url: this.ctx.mcp.url(),
               headers: { Authorization: `Bearer ${l.mcpKey}` },
             },
+            instructions: ION_INSTRUCTIONS,
           }
         : {}),
       signal: new AbortController().signal,

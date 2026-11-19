@@ -15,6 +15,8 @@ export type Item =
       needId: string;
       question: string;
       why: string | null;
+      /** In an ion thread: the project's ion's one line of context. */
+      note?: string;
       choices: Choice[];
       /** Closed: answered by you, or its run stopped. */
       resolved?: boolean;
@@ -23,7 +25,7 @@ export type Item =
       expired?: boolean;
       answered?: string;
     }
-  | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string }
+  | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string; files?: FileChange[] }
   /** gone: its run ended (done, or failed with it as the reason), so it's not shown on its own. */
   | { kind: "error"; text: string; runId: string; gone?: boolean };
 
@@ -34,10 +36,14 @@ export type Timeline = {
   streaming: number | null;
   /** The run that's queued or going, if any. */
   running: string | null;
-  /** The agent the chat last ran on: the next message's default. */
+  /** The agent the chat last ran on, and its model and effort: the next message's defaults. */
   harness: string | null;
+  model: string | null;
+  effort: string | null;
   /** Grows with every file change and finished run: the changes panel reads again when it moves. */
   changes: number;
+  /** Each run's changed files so far, by path (the last counts win), for its end. */
+  files: Record<string, Record<string, FileChange>>;
   asks: Record<string, string>;
   work: Record<string, number>;
   tools: Record<string, { at: number; step: number }>;
@@ -53,7 +59,10 @@ export const empty = (): Timeline => ({
   streaming: null,
   running: null,
   harness: null,
+  model: null,
+  effort: null,
   changes: 0,
+  files: {},
   asks: {},
   work: {},
   tools: {},
@@ -64,6 +73,8 @@ export const empty = (): Timeline => ({
 });
 
 type D = Record<string, unknown>;
+/** A file a run changed, with its line counts. */
+export type FileChange = { path: string; added: number; removed: number };
 const str = (x: unknown) => (typeof x === "string" ? x : "");
 const push = (t: Timeline, item: Item): Timeline => ({ ...t, items: [...t.items, item], streaming: null });
 const replace = (t: Timeline, i: number, item: Item): Timeline => {
@@ -113,6 +124,11 @@ function question(t: Timeline, d: D): Timeline {
     why: typeof d.detail === "string" ? d.detail : null,
     choices: d.choices as Choice[],
     ...(d.blocked === true ? { blocked: true } : {}),
+    ...(typeof (d.via as { note?: unknown } | undefined)?.note === "string"
+      ? { note: (d.via as { note: string }).note }
+      : {}),
+    // Held behind the same question waiting in another thread: settled by that answer, or asked again.
+    ...(typeof d.heldFor === "string" ? { resolved: true } : {}),
   };
   const added = push(t, item);
   const at = added.items.length - 1;
@@ -141,6 +157,7 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
     seconds,
     ...(cost !== undefined ? { cost } : {}),
     ...(last && str(d.status) === "failed" ? { reason: last } : {}),
+    ...(t.files[runId] ? { files: Object.values(t.files[runId]) } : {}),
   });
   return { ...ended, running: t.running === runId ? null : t.running, changes: t.changes + 1 };
 }
@@ -173,7 +190,7 @@ function errorsGone(t: Timeline, runId: string): { t: Timeline; last: string | n
 type Handler = (t: Timeline, d: D, e: IonEvent) => Timeline;
 
 const HANDLERS: Record<string, Handler> = {
-  [EV.messageSent]: (t, d) => push(t, { kind: "you", text: str(d.text) }),
+  [EV.messageSent]: (t, d) => push(t, { kind: "you", text: str(d.shown) || str(d.text) }),
   [EV.messageDelta]: delta,
   [EV.messageCompleted]: completed,
   [EV.runQueued]: (t, _d, e) => ({ ...t, running: e.runId }),
@@ -181,13 +198,25 @@ const HANDLERS: Record<string, Handler> = {
     ...retried(t),
     running: e.runId,
     harness: str(d.harness) || t.harness,
+    model: str(d.model) || null,
+    effort: str(d.effort) || null,
     started: { ...t.started, [e.runId ?? ""]: e.ts },
   }),
   [EV.toolStarted]: toolStarted,
   [EV.thinkingDelta]: thinking,
   [EV.toolFinished]: toolFinished,
   [EV.toolOutput]: toolOutput,
-  [EV.fileChanged]: (t) => ({ ...t, changes: t.changes + 1 }),
+  [EV.fileChanged]: (t, d, e) => {
+    const runId = e.runId ?? "";
+    const change = { path: str(d.path), added: Number(d.added) || 0, removed: Number(d.removed) || 0 };
+    // Each change is one edit's counts: a file edited three times adds all three.
+    const was = t.files[runId]?.[change.path];
+    const sum = was
+      ? { ...change, added: was.added + change.added, removed: was.removed + change.removed }
+      : change;
+    const files = { ...t.files, [runId]: { ...t.files[runId], [change.path]: sum } };
+    return { ...t, changes: t.changes + 1, files };
+  },
   [EV.approvalRequested]: (t, d) => ({ ...t, asks: { ...t.asks, [str(d.requestId)]: str(d.summary) } }),
   [EV.approvalResolved]: approval,
   [EV.needRaised]: question,

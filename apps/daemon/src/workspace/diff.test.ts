@@ -71,7 +71,8 @@ describe("chatDiff", () => {
     expect(r.files).toHaveLength(200);
     expect(r.omitted).toBe(3);
     expect(r.files.some((f) => f.path === "aa-linked.txt")).toBe(false);
-  });
+    // git runs once per changed file (203 here): under a busy machine this outlasts the 5 s default.
+  }, 20_000);
 
   it("is empty when the worktree is gone", async () => {
     expect(await chatDiff(repo, join(dataDir, "worktrees", "nope"))).toEqual({ files: [] });

@@ -274,4 +274,49 @@ describe("timeline", () => {
       { kind: "end", status: "failed", seconds: 0, reason: "Rate limited" },
     ]);
   });
+  // The user, 2026-11-18: a run's end lists the files it changed (the last counts for each path).
+  it("ends a run with the files it changed", () => {
+    const t = play(
+      ev("file.changed", { path: "a.ts", change: "modify", added: 1, removed: 0 }),
+      ev("file.changed", { path: "b.ts", change: "add", added: 4, removed: 0 }),
+      ev("file.changed", { path: "a.ts", change: "modify", added: 2, removed: 1 }),
+      ev("run.finished", { status: "done" }),
+    );
+    expect(t.items.at(-1)).toEqual({
+      kind: "end",
+      status: "done",
+      seconds: 0,
+      // Final review: each file.changed is one edit's counts, so they add up.
+      files: [
+        { path: "a.ts", added: 3, removed: 1 },
+        { path: "b.ts", added: 4, removed: 0 },
+      ],
+    });
+  });
+  // The user, 2026-11-18: your answer shows as what you chose, not ion's wording for the agent.
+  it("shows the message ion sent for your answer as your answer", () => {
+    const t = play(
+      ev("message.sent", { text: 'You asked: "Colour?". The user chose: "Green".', shown: "Green" }),
+    );
+    expect(t.items).toEqual([{ kind: "you", text: "Green" }]);
+  });
+  // Plan 09: an ion thread's question keeps its ion's note.
+  it("keeps the ion's note on a question", () => {
+    const t = play(
+      ev("need.raised", {
+        ...{ needId: "n1", requestId: "q", kind: "ask", summary: "Use QA?", detail: null, dedupeKey: "k" },
+        choices: [{ label: "Yes", consequence: "x" }],
+        via: { note: "storefront's ion: first time this comes up" },
+      }),
+    );
+    expect(t.items[0]).toMatchObject({
+      kind: "question",
+      note: "storefront's ion: first time this comes up",
+    });
+  });
+  // The composer starts from the chat's own brain.
+  it("keeps the model and effort of the chat's latest run", () => {
+    const t = play(ev("run.started", { harness: "grok-build", model: "grok-code-fast", effort: "high" }));
+    expect(t).toMatchObject({ harness: "grok-build", model: "grok-code-fast", effort: "high" });
+  });
 });

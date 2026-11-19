@@ -59,6 +59,19 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("status")).out).toBe("ion is running · 0 projects");
   });
 
+  // The user, 2026-11-19: rename and remove projects.
+  it("renames a project and removes it, keeping its folder", async () => {
+    await ion("daemon", "start");
+    const p = repo("shop");
+    await ion("projects", "add", p);
+    expect((await ion("projects", "rename", "shop", "My", "Shop")).out).toBe("Renamed shop");
+    expect((await ion("projects", "ls")).out).toBe(`shop  My Shop  ${p}`);
+    expect((await ion("projects", "remove", "shop")).out).toBe("Removed shop");
+    expect((await ion("projects", "ls")).out).toBe("No projects");
+    expect(existsSync(p)).toBe(true);
+    expect((await ion("projects", "remove", "default")).err).toContain("default can't be removed");
+  });
+
   it("adds and lists projects", async () => {
     await ion("daemon", "start");
     const p = repo("storefront");
@@ -244,6 +257,16 @@ describe("ion cli", { timeout: 20_000 }, () => {
       await setup();
       expect((await ion("memory", "ls", "-p", "app")).out).toBe("No memory");
       expect(await ion("memory", "forget", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
+    });
+
+    // Plan 09: ions from the CLI (messaging one starts real work, so only the list and a refusal here).
+    it("lists ion chief and each project's ion, and refuses an ion it doesn't know", async () => {
+      await setup();
+      expect((await ion("ions")).out).toBe("chief  ion  -\napp    app  -");
+      expect(await ion("ions", "message", "nope", "hello")).toMatchObject({
+        code: 1,
+        err: "Unknown ion: nope",
+      });
     });
 
     it("lists chats and archives one", async () => {

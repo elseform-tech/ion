@@ -61,7 +61,7 @@ export function BrainPill(p: { harnesses: HarnessInfo[]; brain: Brain; open: boo
       onClick={p.onClick}
     >
       {h && <Avatar harness={h.id} />}
-      {p.harnesses.length ? <span>{h?.label ?? "No agent"}</span> : <i className="spin" />}
+      {p.harnesses.length ? <span>{h?.label ?? "No agent"}</span> : <span className="now">Agents</span>}
       {model && (
         <>
           <span className="bsep">·</span>

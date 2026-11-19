@@ -1,5 +1,12 @@
 import type { IonClient } from "@ion/client/browser";
-import { type ChatInfo, EV, type HarnessInfo, type NeedInfo, type ProjectInfo } from "@ion/schema";
+import {
+  type ChatInfo,
+  EV,
+  type HarnessInfo,
+  type IonInfo,
+  type NeedInfo,
+  type ProjectInfo,
+} from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
 
 export type Groups = {
@@ -52,6 +59,7 @@ export function groupChats(chats: ChatInfo[], needs: NeedInfo[], projectId: stri
 const CHANGES = new Set<string>([
   EV.chatCreated,
   EV.chatArchived,
+  EV.chatRenamed,
   EV.runQueued,
   EV.runStarted,
   EV.runFinished,
@@ -65,10 +73,17 @@ export function useLive(client: IonClient) {
   const [needs, setNeeds] = useState<NeedInfo[]>([]);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [harnesses, setHarnesses] = useState<HarnessInfo[]>([]);
+  // Each project's ion, for its avatar beside the threads it started.
+  const [ions, setIons] = useState<IonInfo[]>([]);
   const refresh = useCallback(async () => {
-    const [c, n] = await Promise.all([client.call("chats.list", {}), client.call("needs.list", {})]);
+    const [c, n, i] = await Promise.all([
+      client.call("chats.list", {}),
+      client.call("needs.list", {}),
+      client.call("ions.list", {}).catch((): IonInfo[] => []),
+    ]);
     setChats(c);
     setNeeds(n);
+    setIons(i ?? []);
   }, [client]);
   // Who's installed and signed in changes outside ion (you sign in in a terminal): read again when asked.
   const refreshHarnesses = useCallback(
@@ -98,5 +113,9 @@ export function useLive(client: IonClient) {
       stop?.();
     };
   }, [client, refresh, refreshHarnesses]);
-  return { chats, needs, projects, harnesses, refreshHarnesses };
+  const refreshProjects = useCallback(
+    () => void client.call("projects.list", {}).then(setProjects, () => {}),
+    [client],
+  );
+  return { chats, needs, projects, harnesses, ions, refreshHarnesses, refreshProjects };
 }

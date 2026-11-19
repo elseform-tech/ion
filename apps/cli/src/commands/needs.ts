@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { withClient } from "../connect.js";
 import { fail, type Out, print } from "../output.js";
-import { clean, detailLines } from "../sanitize.js";
+import { needText } from "../render.js";
 
 const WHERE = ["project", "everywhere"];
 
@@ -11,17 +11,7 @@ export function needsCommands(program: Command, out: () => Out) {
     .description("What's waiting on you")
     .action(async () => {
       const list = await withClient((c) => c.call("needs.list", {}));
-      const rows = list.map((x) => {
-        const choices = (x.choices ?? []).map(
-          (ch, i) =>
-            `\n  ${i + 1}. ${clean(ch.label)}${ch.recommended ? " (recommended)" : ""} — ${clean(ch.consequence)}`,
-        );
-        return (
-          [x.needId, x.projectId ?? "-", x.summary].map(clean).join("  ") +
-          `\n${detailLines(x.detail)}`.trimEnd() +
-          choices.join("")
-        );
-      });
+      const rows = list.map(needText);
       print(out(), rows.length ? rows.join("\n") : "Nothing needs you", list);
     });
   program

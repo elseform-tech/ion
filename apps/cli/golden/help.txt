@@ -14,6 +14,7 @@ Commands:
   answer [options] <id> <answer...>  Answer a question: a choice's number, or
                                      your own words
   chats                              Your chats
+  ions                               ion and your projects' ions
   memory                             What ion remembers
   decisions                          Your answers, and what came of them
   harnesses                          Coding agents and their models
@@ -41,14 +42,16 @@ Usage: ion projects [options] [command]
 Your projects
 
 Options:
-  -h, --help          display help for command
+  -h, --help             display help for command
 
 Commands:
-  ls                  List your projects
-  add <path>          Add a git repo
-  new <name>          Make a new project
-  access <id> <mode>  Auto (ion decides) or full
-  help [command]      display help for command
+  ls                     List your projects
+  add <path>             Add a git repo
+  new <name>             Make a new project
+  rename <id> <name...>  Show a project under a new name
+  remove <id>            Take a project out of ion (its folder stays)
+  access <id> <mode>     Auto (ion decides) or full
+  help [command]         display help for command
 
 ---
 

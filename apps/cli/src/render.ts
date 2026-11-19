@@ -1,4 +1,4 @@
-import { EV, type IonEvent } from "@ion/schema";
+import { EV, type IonEvent, type NeedInfo } from "@ion/schema";
 import { clean, detailLines, text } from "./sanitize.js";
 
 const HARNESS: Record<string, string> = {
@@ -127,4 +127,19 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
 export function createRenderer(): (e: IonEvent) => Rendered {
   const s: State = { midLine: false, startedAt: 0, cost: null, lastError: null, asks: new Map() };
   return (e) => HANDLERS[e.type]?.(s, e.data as D, e) ?? quiet;
+}
+
+/** A question or need as `ion needs` prints it: id, project and summary; the ion's note; the detail; the choices. */
+export function needText(x: NeedInfo): string {
+  const choices = (x.choices ?? []).map(
+    (ch, i) =>
+      `\n  ${i + 1}. ${clean(ch.label)}${ch.recommended ? " (recommended)" : ""} — ${clean(ch.consequence)}`,
+  );
+  const note = x.via ? `\n  ${clean(x.via.note)}` : "";
+  return (
+    [x.needId, x.projectId ?? "-", x.summary].map(clean).join("  ") +
+    note +
+    `\n${detailLines(x.detail)}`.trimEnd() +
+    choices.join("")
+  );
 }

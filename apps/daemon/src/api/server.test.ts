@@ -8,6 +8,7 @@ import type { IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { startServer } from "./server.js";
+import { loadUserConfig, saveUserConfig } from "@ion/config";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
@@ -227,6 +228,114 @@ describe("daemon api", () => {
     await client.call("chat.archive", { chatId });
     expect((await client.call("chat.diff", { chatId })).files).toEqual([]);
     await expect(client.call("chat.diff", { chatId: "nope" })).rejects.toThrow("Unknown chat: nope");
+  });
+
+  // Plan 09: ion chief and one ion per project; default has none.
+  it("lists ion chief, then each project's ion", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    const ions = await client.call("ions.list", {});
+    expect(ions.map((x) => [x.ionId, x.name])).toEqual([
+      ["chief", "ion"],
+      ["app", "app"],
+    ]);
+  });
+
+  it("starts a thread when you message a project's ion, and ion chief routes with the fake model", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    // ion chief's model is the judge's: the fake one here (never a real model in tests).
+    const cf = join(home, "config.toml");
+    const { config } = loadUserConfig(cf);
+    // Its project's ion runs on the fake agent too: with none set, ion would pick a real one that's ready.
+    saveUserConfig(cf, {
+      ...config,
+      access: { ...config.access, judge: "fake" },
+      projects: config.projects.map((p) => ({ ...p, harness: "fake" })),
+    });
+    await client.call("ion.message", { ionId: "app", text: "hello from your ion" });
+    const thread = (await client.call("chats.list", {})).find((c) => c.by === "ion");
+    expect(thread).toMatchObject({ projectId: "app", title: "hello from your ion" });
+    await until(
+      () =>
+        seen.some(
+          (e) =>
+            e.chatId === "ion:app" &&
+            e.type === "ion.said" &&
+            (e.data as { text: string }).text.startsWith("hello from your ion: done"),
+        ),
+      5000,
+    );
+    await client.call("ion.message", { ionId: "chief", text: "please check app" });
+    await until(() => seen.some((e) => e.chatId === "ion:chief" && e.type === "ion.said"), 15_000);
+    const chief = seen.filter((e) => e.chatId === "ion:chief" && e.type === "ion.said").at(-1)!.data as {
+      text: string;
+    };
+    expect(chief).toMatchObject({ text: "", card: { kind: "threads" } });
+    // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
+  }, 20_000);
+
+  // The user, 2026-11-19: rename a project (the name ion shows; its id stays).
+  it("renames a project, and its ion takes the name", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    await client.call("project.rename", { projectId: "app", name: "Storefront" });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", name: "Storefront" });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({ ionId: "app", name: "Storefront" });
+    await expect(client.call("project.rename", { projectId: "app", name: " " })).rejects.toThrow(
+      "Give the project a name",
+    );
+  });
+
+  // The user, 2026-11-19: remove a project. Its chats are archived (worktrees and questions closed); its folder stays.
+  it("removes a project: archives its chats, keeps its folder, refuses while one runs", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const path = repo("app");
+    await client.call("projects.add", { path });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const slow = await client.call("ask", { text: "slow", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.started"), 5000);
+    await expect(client.call("project.remove", { projectId: "app" })).rejects.toThrow(
+      "Stop its running chats first",
+    );
+    await client.call("run.interrupt", { runId: slow.runId });
+    await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.finished"), 5000);
+    await client.call("project.remove", { projectId: "app" });
+    expect(await client.call("projects.list", {})).toEqual([]);
+    expect((await client.call("chats.list", {})).filter((c) => c.projectId === "app" && !c.archived)).toEqual(
+      [],
+    );
+    expect(statSync(path).isDirectory()).toBe(true);
+    await expect(client.call("project.remove", { projectId: "default" })).rejects.toThrow(
+      "default can't be removed",
+    );
+  });
+
+  // The lab: a project's ion can be starred (Starred first in Ions and the project menu).
+  it("stars and unstars a project, and its ion says so", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    await client.call("project.star", { projectId: "app", starred: true });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", starred: true });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({ ionId: "app", starred: true });
+    await client.call("project.star", { projectId: "app", starred: false });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({ starred: false });
+    await expect(client.call("project.star", { projectId: "nope", starred: true })).rejects.toThrow(
+      "Unknown project: nope",
+    );
+  });
+
+  // The user, 2026-11-18: chats can be renamed from the sidebar.
+  it("renames a chat, and refuses an empty name or an unknown chat", async () => {
+    const { chatId } = await client.call("chat.create", { title: "Old name" });
+    await client.call("chat.rename", { chatId, title: "  Checkout rounding  " });
+    expect((await client.call("chats.list", {})).find((c) => c.chatId === chatId)?.title).toBe(
+      "Checkout rounding",
+    );
+    await expect(client.call("chat.rename", { chatId, title: "  " })).rejects.toThrow("Give the chat a name");
+    await expect(client.call("chat.rename", { chatId: "nope", title: "x" })).rejects.toThrow(
+      "Unknown chat: nope",
+    );
   });
 
   // Plan 07: the app's sidebar wants only what happens from now on, not every event ion ever stored.

@@ -18,12 +18,10 @@ import {
 } from "./blocked.js";
 import { FollowUps, type Message, type Start } from "./followups.js";
 import type { AskInput, Matcher } from "./match.js";
+import { isAllowAnswer, overlap, SAME_QUESTION } from "./words.js";
+import type { IonQuestions } from "../ions/questions.js";
 
 const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
-
-/** An "allow" answer about a stopped call: kept as an exact rule, never handed to the judge. */
-const isAllowAnswer = (choice: string) =>
-  choice === "Always allow in this project" || choice === "Allow once";
 
 /** The message your answer becomes in the chat: a choice, or your own words. */
 const followText = (question: string, answer: string, custom = false) =>
@@ -55,22 +53,6 @@ function answerOf(pick: number | string, choices: { label: string }[]): { label:
   return { label: choice.label, custom: false };
 }
 
-const words = (s: string) =>
-  new Set(
-    s
-      .toLowerCase()
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter(Boolean),
-  );
-/** How much two questions share their words (0–1): a check the matcher's model can't talk its way past. */
-function overlap(a: string, b: string): number {
-  const x = words(a);
-  const y = words(b);
-  const both = [...x].filter((w) => y.has(w)).length;
-  return both / Math.max(1, new Set([...x, ...y]).size);
-}
-const SAME_QUESTION = 0.5;
-
 const ASKED = "Asked. End your turn now; the answer comes as the next message.";
 const OUTCOMES_PER_RUN = 3;
 const FOR_JUDGE = 10;
@@ -91,6 +73,8 @@ type Deps = {
   requestOf?: (runId: string) => string | null;
   /** How long a tool call ion stopped waits for your answer (4 minutes; shorter in tests). */
   blockedWaitMs?: number;
+  /** Questions in threads ion started go through the project's ion first (Plan 09). */
+  ion?: IonQuestions;
 };
 
 type Recorded = {
@@ -112,7 +96,8 @@ type Recorded = {
 /**
  * Agents ask you instead of being approved. A question waits under Needs you; your answer becomes a decision
  * (this chat, this project or everywhere) and the chat's next message. ion answers for you only from a decision
- * you made for the project or everywhere, and only with one of the new question's own choices.
+ * you made for the project or everywhere (in a thread ion started, also one kept to another ion thread), and only
+ * with one of the new question's own choices.
  */
 export class Decisions {
   private readonly followUps: FollowUps;
@@ -146,9 +131,25 @@ export class Decisions {
       throw new UserError("Recommend one option at most");
     const known = await this.fromPast(s, q);
     if (known) return known;
-    const needId = this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q });
+    const extra = this.d.ion?.isThread(s.chatId) ? await this.d.ion.raiseWith(s, q) : {};
+    const needId = this.d.needs.raiseAsk({ chatId: s.chatId, runId: s.runId, ...q, ...extra });
     this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
     return ASKED;
+  }
+
+  /** In a thread ion started: its ion settles the questions held behind this one, and may suggest "always". */
+  private async ionAfter(asked: NeedInfo, label: string): Promise<void> {
+    if (!this.d.ion?.isThread(asked.chatId)) return;
+    await this.d.ion.afterAnswer(
+      {
+        needId: asked.needId,
+        projectId: asked.projectId ?? "",
+        question: asked.summary,
+        choice: label,
+        labels: (asked.choices ?? []).map((c) => c.label),
+      },
+      (id, n) => this.answer(id, n, "chat", true),
+    );
   }
 
   /**
@@ -178,10 +179,17 @@ export class Decisions {
    * can't (the agent signed out, the chat archived…) the question stays open and you can answer again. A busy
    * chat gets it when its run ends.
    */
-  async answer(needId: string, pick: number | string, scope: DecisionScope = "chat"): Promise<void> {
+  /** `settled`: ion answering a question held behind yours, with your answer (recorded as ion's, not yours). */
+  async answer(
+    needId: string,
+    pick: number | string,
+    scope: DecisionScope = "chat",
+    settled = false,
+  ): Promise<void> {
     if (this.answering.has(needId)) throw new UserError("That's already answered");
     const need = this.d.needs.openNeed(needId);
-    const asked = this.d.needs.open(need.chatId).find((x) => x.needId === needId);
+    // A question held behind one waiting elsewhere is answered too (with that answer).
+    const asked = this.d.needs.open(need.chatId, true).find((x) => x.needId === needId);
     if (need.kind !== "ask" || !asked?.choices) throw new UserError("That isn't a question");
     const { label, custom } = answerOf(pick, asked.choices);
     if (asked.blocked) return this.answerBlocked(asked, pick, label);
@@ -192,21 +200,22 @@ export class Decisions {
         harness: this.harnessOf(need.runId, need.chatId),
         text: followText(asked.summary, label, custom),
         request: this.requests.get(needId) ?? "",
+        shown: label,
       };
       const started = await this.followUps.tryNow(need.chatId, m);
       this.d.needs.answered(needId, label, scope);
       this.requests.delete(needId);
-      const base = { chatId: need.chatId, runId: need.runId, needId, projectId: asked.projectId ?? "" };
       const decisionId = this.record({
-        ...base,
+        ...{ chatId: need.chatId, runId: need.runId, needId, projectId: asked.projectId ?? "" },
         question: asked.summary,
         choice: label,
         scope,
-        by: "you",
+        by: settled ? "ion" : "you",
         ...(custom ? { custom } : {}),
       });
       if (started === "busy") this.followUps.later(need.chatId, { ...m, decisionId });
       else if (started) this.followUps.started(started, decisionId);
+      if (!settled) await this.ionAfter(asked, label);
     } finally {
       this.answering.delete(needId);
     }
@@ -229,7 +238,7 @@ export class Decisions {
     if (text)
       await this.deliver(
         asked.chatId,
-        { harness: this.harnessOf(asked.runId, asked.chatId), text, request },
+        { harness: this.harnessOf(asked.runId, asked.chatId), text, request, shown: label },
         decisionId,
       );
   }
@@ -289,7 +298,8 @@ export class Decisions {
       if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId || d.blocked) return [];
       const text = followText(d.question, d.choice, d.custom === true);
       if (sent(d.needId, text)) return [];
-      return [{ harness: this.harnessOf(e.runId, chatId), text, request: "", decisionId: d.decisionId }];
+      const harness = this.harnessOf(e.runId, chatId);
+      return [{ harness, text, request: "", shown: d.choice, decisionId: d.decisionId }];
     });
   }
 
@@ -339,9 +349,9 @@ export class Decisions {
 
   /** ion's answer from an "always" decision, when the matcher names one of this question's own choices. */
   private async fromPast(s: Scope, q: AskInput): Promise<string | null> {
-    const past = decisionsView
-      .applicable(this.d.db, s.projectId, s.chatId)
-      .filter((x) => x.scope !== "chat" && x.by === "you");
+    // In a thread ion started, any of your decisions in the project counts; in your own chats, only "always" ones.
+    const thread = this.d.ion?.isThread(s.chatId) ?? false;
+    const past = this.pastFor(s, thread);
     if (!this.d.match || past.length === 0 || (this.ionAnswered.get(s.runId) ?? 0) >= ION_ANSWERS_PER_RUN)
       return null;
     const m = await this.d.match(q, past);
@@ -355,7 +365,43 @@ export class Decisions {
       ...{ chatId: s.chatId, runId: s.runId, needId: "", projectId: s.projectId, question: q.question },
       ...{ choice: m.label, scope: "chat", by: "ion", from },
     });
+    if (thread) this.d.ion?.answeredFor(s.projectId, q.question, m.label);
     return `The user already decided: ${JSON.stringify(m.label)} when asked ${JSON.stringify(from.question)}. Go ahead.`;
+  }
+
+  /**
+   * The decisions that may answer a new question. In your own chats, your "always" ones (project or everywhere).
+   * In a thread ion started, also ones you kept to a chat, but only chats ion started: a decision kept to one of
+   * your own chats stays there. Answers allowing a stopped tool call are never reused this way.
+   */
+  private pastFor(s: Scope, thread: boolean) {
+    if (!thread)
+      return decisionsView
+        .applicable(this.d.db, s.projectId, s.chatId)
+        .filter((x) => x.by === "you" && x.scope !== "chat");
+    const ionChat = (chatId: string | null) => (chatId ? (this.d.ion?.isThread(chatId) ?? false) : false);
+    return decisionsView
+      .list(this.d.db, s.projectId)
+      .filter((x) => x.by === "you" && !isAllowAnswer(x.choice) && (x.scope !== "chat" || ionChat(x.chatId)));
+  }
+
+  /** Your answer to an ion's "always?" suggestion: kept, it's a decision for the project. */
+  suggestion(suggestionId: string, keep: boolean): void {
+    const s = this.d.ion?.takeSuggestion(suggestionId);
+    if (!s) throw new UserError("That suggestion is gone");
+    const chatId = `ion:${s.projectId}`;
+    this.d.store.append({
+      chatId,
+      runId: null,
+      origin: "daemon",
+      type: EV.suggestionAnswered,
+      data: { suggestionId, keep },
+    });
+    if (keep)
+      this.record({
+        ...{ chatId, runId: null, needId: "", projectId: s.projectId, question: s.question },
+        ...{ choice: s.choice, scope: "project", by: "you" },
+      });
   }
 
   private record(r: Recorded): string {

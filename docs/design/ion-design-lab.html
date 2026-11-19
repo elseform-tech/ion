@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>ion Design Lab</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1094,6 +1095,70 @@ details summary{cursor:pointer;color:var(--ink);font-weight:500}
 details ul{margin:10px 0 0;padding-left:18px;display:grid;gap:6px}
 details a{color:var(--accent)}
 .fine{font-size:12px;color:var(--faint)}
+/* ===== as the app ships it (apps/desktop/src/app.css), outside copy-lab's ranges ===== */
+/* no spinners: what's live shimmers; a run that hasn't replied yet shows a word, stronger as the wait grows */
+.now{background:linear-gradient(90deg,var(--muted) 0%,var(--ink) 50%,var(--muted) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 1.6s linear infinite}
+@media (prefers-reduced-motion:reduce){.now{animation:none;color:var(--ink);background:none}}
+.quiet{font-size:13px;color:var(--faint);display:flex;align-items:center;gap:7px}
+.quiet .lucide{width:14px;height:14px;flex-shrink:0}
+.pending.now{background-image:linear-gradient(90deg,color-mix(in srgb,var(--faint) calc((1 - var(--strength,.2)) * 100%),var(--muted)) 0%,color-mix(in srgb,var(--muted) calc((1 - var(--strength,.2)) * 100%),var(--ink)) 50%,color-mix(in srgb,var(--faint) calc((1 - var(--strength,.2)) * 100%),var(--muted)) 100%);width:fit-content}
+/* sidebar: project groups that fold, a star per project, a menu per row, "N more" */
+.r .tm{display:inline-flex;align-items:center;gap:4px}
+.r .st{width:12px;height:12px}
+.r .st[aria-label="Failed"]{color:var(--bad)}
+.rw{position:relative}
+.rmore{position:absolute;right:4px;top:50%;transform:translateY(-50%);display:none}
+.rw:hover .rmore,.rmore:focus-within{display:block}
+.rw:hover .tm{visibility:hidden}
+.rmore .ib{width:26px;height:26px}
+.rmenu{position:absolute;right:0;top:100%;z-index:6;min-width:140px;display:grid;padding:4px}
+/* the app's .rmenu keeps .pmenu's left:0 (opens rightward, clipped by the sidebar) and sits under the rows after it;
+   here it opens under the ⋯, above the rows */
+.rmenu{left:auto}
+.rw:has(.rmenu:not([hidden])){z-index:7}
+.rmenu button{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;padding:6px 8px;border-radius:6px;cursor:pointer;text-align:left}
+.rmenu button:hover{background:var(--hover)}
+.rmenu .lucide{width:14px;height:14px;color:var(--muted)}
+.r.rename input{border:0;outline:0;background:transparent;color:var(--ink);font:inherit;width:100%}
+.gfold{display:inline-flex;align-items:center;gap:4px;border:0;background:transparent;color:inherit;font:inherit;padding:0;cursor:pointer}
+.gfold .lucide{width:12px;height:12px}
+.more-rows{border:0;background:transparent;color:var(--faint);font-size:12px;padding:4px 8px 4px 34px;cursor:pointer;text-align:left}
+.more-rows:hover{color:var(--ink)}
+.grp .gl .star{width:22px;height:22px;margin-left:4px}
+.grp .gl .star .lucide{width:13px;height:13px}
+.grp .gl:hover .star{opacity:1}
+#chatGrps{display:contents}
+/* a run's changed files, at its end: one box, its head (count, totals), then a list that scrolls past ~12 rows */
+.files{border:1px solid var(--line);border-radius:12px;background:var(--win);overflow:hidden;font-size:13px}
+.files .fsum{display:flex;align-items:baseline;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-variant-numeric:tabular-nums}
+.files .fct{margin-right:auto}
+.files .flist{max-height:312px;overflow-y:auto;overscroll-behavior:contain;padding:4px}
+.files .flist button{display:flex;align-items:baseline;gap:8px;width:100%;min-width:0;border:0;background:transparent;padding:4px 8px;border-radius:7px;cursor:pointer;color:var(--ink);font:12.5px var(--mono);text-align:left}
+.files .flist button:hover{background:var(--hover)}
+.files .fn{flex:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.files .fd{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--faint)}
+.files .fc{margin-left:auto;display:flex;gap:6px;font-variant-numeric:tabular-nums}
+.files .plus{color:var(--add-ink)}
+.files .minus{color:var(--del-ink)}
+/* an agent's question: one box above the message box, open (why, options, your words, Always); collapsed, one line
+   with a button per option. While it waits the message box is locked. */
+.qbox{border:1px solid var(--line);border-radius:14px;background:var(--win);padding:6px 6px 6px 12px;display:grid;gap:2px;font-size:13px}
+.qbox [hidden]{display:none}
+.qhead{display:flex;align-items:center;gap:8px;min-height:30px}
+.qhead .wd{width:7px;height:7px;border-radius:50%;background:var(--wait);flex-shrink:0}
+.qhead .qq{flex:1;min-width:0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qbox:not(.shut) .qtog .lucide-chevron-up,.qbox.shut .qtog .lucide-chevron-down{display:none}
+.qd{display:grid;gap:1px;max-height:40vh;overflow:auto;padding-right:6px}
+.qd .why{color:var(--muted);padding:0 0 6px 15px}
+.qd .bp-row .rec{width:13px;height:13px;color:var(--accent)}
+.bp-row .g,.bp-row small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qd-f{display:flex;align-items:center;gap:10px;padding:6px 0 2px 7px;color:var(--muted);font-size:12.5px}
+.qd-f .own{flex:1;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;padding:5px 2px;outline:none}
+.cbox textarea{border:0;outline:0;resize:none;background:transparent;color:var(--ink);font:inherit;padding:0}
+.cbox textarea::placeholder{color:var(--faint)}
+.send:disabled{opacity:.35;cursor:default}
+.cbox:has(textarea:disabled){opacity:.5}
+.cbox textarea:disabled{cursor:not-allowed}
 </style>
 
 <div class="wrap">
@@ -1137,19 +1202,8 @@ details a{color:var(--accent)}
           </div>
           <div class="slist">
             <div class="grp" id="needsGrp"></div>
-            <div class="grp">
-              <div class="gl"><span>Running</span><span>2</span></div>
-              <button class="r" data-proj="payments-api" type="button" data-go="code"><canvas class="av" data-ion="lead" aria-hidden="true"></canvas><span class="tt">Idempotency keys</span><i class="spin"></i></button>
-              <button class="r" data-proj="payments-api" type="button" data-go="code"><canvas class="av" data-ion="payments-api" aria-hidden="true"></canvas><span class="tt">Webhook retry backoff</span><i class="spin"></i></button>
-            </div>
-            <div class="grp">
-              <div class="gl"><span>Chats</span></div>
-              <button class="r" type="button" data-go="chat" data-row="chat"><span></span><span class="tt">Pricing page headline</span><span class="tm">1h</span></button>
-              <button class="r" type="button" data-go="chat"><span></span><span class="tt">Postgres or SQLite?</span><span class="tm">Tue</span></button>
-              <button class="r" data-proj="storefront" type="button" data-go="code"><span></span><span class="tt">Tailwind 4 migration</span><span class="tm">Mon</span></button>
-              <button class="r" type="button" data-go="chat"><span></span><span class="tt">Onboarding email ideas</span><span class="tm">Mon</span></button>
-              <button class="r" data-proj="docs" type="button" data-go="code"><canvas class="av" data-ion="docs" aria-hidden="true"></canvas><span class="tt">v2.3 changelog</span><span class="tm">Sun</span></button>
-            </div>
+            <div class="grp" id="runGrp"></div>
+            <div id="chatGrps"></div>
           </div>
         </aside>
 
@@ -1216,6 +1270,24 @@ export function sumLines(lines: Line[]) {
                   </div>
                   <div class="proof"><i data-lucide="shield-check" class="ok"></i><button type="button" data-opentab="term">14/14 tests</button><span>·</span><button type="button" data-view="shot">2 screenshots</button><span>·</span><button type="button" data-view="rec">Recording 0:32</button></div>
                 </div>
+                <div class="files"><div class="fsum"><span class="fct">15 files changed</span><span class="plus">+241</span><span class="minus">−55</span></div>
+                  <div class="flist">
+                    <button type="button" title="src/cart/totals.ts" data-opentab="diff"><span class="fn">totals.ts</span><span class="fd">src/cart</span><span class="fc"><span class="plus">+18</span><span class="minus">−7</span></span></button>
+                    <button type="button" title="src/cart/totals.test.ts" data-opentab="diff"><span class="fn">totals.test.ts</span><span class="fd">src/cart</span><span class="fc"><span class="plus">+41</span></span></button>
+                    <button type="button" title="src/cart/money.ts" data-opentab="diff"><span class="fn">money.ts</span><span class="fd">src/cart</span><span class="fc"><span class="plus">+24</span></span></button>
+                    <button type="button" title="src/cart/money.test.ts" data-opentab="diff"><span class="fn">money.test.ts</span><span class="fd">src/cart</span><span class="fc"><span class="plus">+36</span></span></button>
+                    <button type="button" title="src/cart/discount.ts" data-opentab="diff"><span class="fn">discount.ts</span><span class="fd">src/cart</span><span class="fc"><span class="plus">+9</span><span class="minus">−12</span></span></button>
+                    <button type="button" title="src/cart/discount.test.ts" data-opentab="diff"><span class="fn">discount.test.ts</span><span class="fd">src/cart</span><span class="fc"><span class="plus">+14</span><span class="minus">−3</span></span></button>
+                    <button type="button" title="src/cart/index.ts" data-opentab="diff"><span class="fn">index.ts</span><span class="fd">src/cart</span><span class="fc"><span class="plus">+2</span></span></button>
+                    <button type="button" title="src/checkout/OrderSummary.tsx" data-opentab="diff"><span class="fn">OrderSummary.tsx</span><span class="fd">src/checkout</span><span class="fc"><span class="plus">+6</span><span class="minus">−6</span></span></button>
+                    <button type="button" title="src/checkout/LineItem.tsx" data-opentab="diff"><span class="fn">LineItem.tsx</span><span class="fd">src/checkout</span><span class="fc"><span class="plus">+3</span><span class="minus">−4</span></span></button>
+                    <button type="button" title="src/checkout/useCartTotals.ts" data-opentab="diff"><span class="fn">useCartTotals.ts</span><span class="fd">src/checkout</span><span class="fc"><span class="plus">+5</span><span class="minus">−9</span></span></button>
+                    <button type="button" title="src/api/orders/create.ts" data-opentab="diff"><span class="fn">create.ts</span><span class="fd">src/api/orders</span><span class="fc"><span class="plus">+4</span><span class="minus">−2</span></span></button>
+                    <button type="button" title="src/api/orders/create.test.ts" data-opentab="diff"><span class="fn">create.test.ts</span><span class="fd">src/api/orders</span><span class="fc"><span class="plus">+12</span><span class="minus">−1</span></span></button>
+                    <button type="button" title="src/lib/format-price.ts" data-opentab="diff"><span class="fn">format-price.ts</span><span class="fd">src/lib</span><span class="fc"><span class="plus">+7</span><span class="minus">−11</span></span></button>
+                    <button type="button" title="e2e/checkout.spec.ts" data-opentab="diff"><span class="fn">checkout.spec.ts</span><span class="fd">e2e</span><span class="fc"><span class="plus">+22</span></span></button>
+                    <button type="button" title="e2e/fixtures/cart-3-discounted.json" data-opentab="diff"><span class="fn">cart-3-discounted.json</span><span class="fd">e2e/fixtures</span><span class="fc"><span class="plus">+38</span></span></button>
+                  </div></div>
               </div></div>
               <div class="foot"><div class="fcol">
                 <div class="await"><span class="g"><i class="wd"></i>Open pull request #482?</span><button class="btn" type="button">Review</button><button class="btn pri" type="button">Open PR</button></div>
@@ -1323,6 +1395,70 @@ export function sumLines(lines: Line[]) {
               </div></div>
             </div>
             <aside class="tools pview" id="pview" hidden></aside>
+          </div>
+        </section>
+        <!-- an agent's question waits: its box above the message box, open; the message box is locked -->
+        <section class="chat" data-screen="ask" hidden>
+          <div class="head"><span class="title">Tailwind 4 migration</span><span class="muted">storefront</span><span class="sp"></span></div>
+          <div class="split solo">
+            <div class="convo">
+              <div class="msgs"><div class="col">
+                <div class="u">Move us to Tailwind 4. Keep the look the same.</div>
+                <div class="a"><p>Most of the config maps over as is. One thing first.</p></div>
+              </div></div>
+              <div class="foot"><div class="fcol">
+                <div class="qbox" role="group" aria-label="Question" id="askBox">
+                  <div class="qhead">
+                    <i class="wd"></i>
+                    <span class="qq" title="Keep the old breakpoints?">Keep the old breakpoints?</span>
+                    <button type="button" class="btn pri" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done" hidden>Keep them</button>
+                    <button type="button" class="btn" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done" hidden>Use the defaults</button>
+                    <button type="button" class="ib qtog" aria-label="Collapse" aria-expanded="true" data-qtog><i data-lucide="chevron-down"></i><i data-lucide="chevron-up"></i></button>
+                  </div>
+                  <div class="qd">
+                    <div class="why">Tailwind 4 drops your custom <code>xs</code> screen (420px).</div>
+                    <button type="button" class="bp-row" data-need="tw4" data-a="done"><span class="g">Keep them<small>Moves xs into the theme; nothing changes on screen</small></span><i data-lucide="star" class="rec" aria-label="Recommended"></i></button>
+                    <button type="button" class="bp-row" data-need="tw4" data-a="done"><span class="g">Use the defaults<small>Drops xs; 9 components shift on small phones</small></span></button>
+                    <button type="button" class="bp-row" data-need="tw4" data-a="done"><span class="g">Map xs to sm<small>One fewer breakpoint; small phones get the sm layout</small></span></button>
+                    <div class="qd-f">
+                      <input class="own" aria-label="Your own answer" placeholder="Something else…">
+                      <label><input type="checkbox"> Always for this project</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="cbox">
+                  <textarea aria-label="Message" placeholder="Reply…" rows="1" disabled id="askMsg"></textarea>
+                  <div class="bar">
+                    <button class="pill bpill" type="button" data-brain="code" aria-haspopup="dialog"></button>
+                    <span class="sp"></span>
+                    <button class="send" type="button" aria-label="Stop" title="Stop"><i data-lucide="square"></i></button>
+                  </div>
+                </div>
+              </div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- a run that hasn't replied yet: a shimmering word under your message -->
+        <section class="chat" data-screen="start" hidden>
+          <div class="head"><span class="title">Cache product images</span><span class="muted">storefront</span><span class="sp"></span></div>
+          <div class="split solo">
+            <div class="convo">
+              <div class="msgs"><div class="col">
+                <div class="u">Product images load slowly on the category page. Cache them at the edge.</div>
+                <div class="quiet pending now" id="startWord" style="--strength:.2">Thinking</div>
+              </div></div>
+              <div class="foot"><div class="fcol">
+                <div class="cbox">
+                  <textarea aria-label="Message" placeholder="Reply…" rows="1"></textarea>
+                  <div class="bar">
+                    <button class="pill bpill" type="button" data-brain="code" aria-haspopup="dialog"></button>
+                    <span class="sp"></span>
+                    <button class="send" type="button" aria-label="Stop" title="Stop"><i data-lucide="square"></i></button>
+                  </div>
+                </div>
+              </div></div>
+            </div>
           </div>
         </section>
         <!-- library: every file, image, recording and artifact on a project -->
@@ -2362,7 +2498,7 @@ recordings_keep    = <span class="v">"30d"</span></pre>
     <summary>How it works</summary>
     <ul>
       <li><b>Chats</b> is where you work. Coding and plain chats share one interface. The side panel (preview, changes, terminal, files) only appears in chats that have a project.</li>
-      <li><b>The sidebar sorts by what needs attention:</b> Needs you, then Running (with a spinner), then everything else. Rows have no avatars unless an ion started the chat.</li>
+      <li><b>The sidebar sorts by what needs attention:</b> Needs you, then Running (the title shimmers), then your chats by project: starred projects first and open, the rest folded, five chats each until you ask for more. Each row shows the start of the last reply and when it was last active; its menu renames or archives it. Rows have no avatars unless an ion started the chat.</li>
       <li><b>ion is your inbox and briefing,</b> and the place to ask anything that spans projects. It sends that work to each project’s ion and reports back.</li>
       <li><b>Every project has exactly one ion.</b> It holds the project’s memory and routines. A routine carries its own instructions, trigger, harness and effort, so one ion can do CI triage, dependency updates and changelogs. Chats provide the parallelism.</li>
       <li><b>An ion’s face shows its brain.</b> Its shape comes from the harness it runs on (spark for Claude Code, hexflower for Codex, slash for Grok Build), and its color is its own. Ions on the same harness look related but stay distinct, and switching harness keeps the color and name.</li>
@@ -2637,7 +2773,8 @@ let NEEDS=[
   {id:'mig',k:'payments-api',t:'Approve migration 0042?',p:'payments-api',sub:'Adds the idempotency_keys table',urgent:1,acts:[['Review','open'],['Approve','done']]},
   {id:'pr482',k:null,chat:'code',t:'Open pull request #482?',p:'storefront',sub:'Fix checkout rounding',acts:[['Review','open'],['Open PR','done']]},
   {id:'login',k:'storefront',t:'Use the QA account for staging?',p:'storefront',sub:'Cart drawer e2e',acts:[['I’ll sign in','open'],['Use QA account','done']]},
-  {id:'store',k:'mobile-app',t:'App Store rejected 2 screenshots',p:'mobile-app',sub:'Needs new 6.7-inch captures',acts:[['Open chat','open'],['Retake them','done']]}];
+  {id:'store',k:'mobile-app',t:'App Store rejected 2 screenshots',p:'mobile-app',sub:'Needs new 6.7-inch captures',acts:[['Open chat','open'],['Retake them','done']]},
+  {id:'tw4',k:null,chat:'ask',t:'Keep the old breakpoints?',p:'storefront',sub:'Tailwind 4 migration',acts:[['Open chat','open'],['Keep them','done']]}];
 /* evidence that travels with a pin, so you can decide from the pin */
 const EVID={mig:{code:'ALTER TABLE payments\n  ADD COLUMN idempotency_key text UNIQUE;\nCREATE INDEX CONCURRENTLY payments_idem_idx …',note:'Dry run on staging: 0.4 s · no table locks · 0 rows changed',files:[['0042_idempotency.sql','sql'],['dry-run.log',null]]}};
 const needsOf=k=>NEEDS.filter(n=>n.k===k), needsIn=p=>NEEDS.filter(n=>n.p===p);
@@ -2750,6 +2887,7 @@ function refreshAttention(){
   document.querySelector('.dotb').hidden=!NEEDS.length;
   document.querySelector('[data-rail="ions"]').title=NEEDS.length?`Ions · ${NEEDS.length} need you`:'Ions';
   const aw=document.querySelector('[data-screen="code"] .await'); if(aw) aw.hidden=!NEEDS.some(n=>n.id==='pr482');
+  const ask=NEEDS.some(n=>n.id==='tw4'); document.getElementById('askBox').style.display=ask?'':'none'; document.getElementById('askMsg').disabled=ask;
 }
 /* the moment an ion is born: a card inside ion's chat, no setup flow */
 function newIonCard(k){
@@ -2996,6 +3134,7 @@ actSub.textContent=nextLine();
 /* ===== project switcher: filters chats and ions ===== */
 function setProj(p){
   curProj=p; document.querySelectorAll('.projLbl').forEach(l=>l.textContent=p==='*'?'All projects':p);
+  renderChatRows();
   document.querySelectorAll('.slist .r').forEach(r=>r.hidden=p!=='*'&&r.dataset.proj!==p);
   document.querySelectorAll('.slist .grp').forEach(g=>{ const n=[...g.querySelectorAll('.r')].filter(r=>!r.hidden).length; g.hidden=!n; const c=g.querySelector('.gl span+span'); if(c) c.textContent=n; });
   buildIonNav(); rerenderRight(); actSub.textContent=nextLine();
@@ -3079,7 +3218,7 @@ document.addEventListener('click',e=>{
   if('pinsall' in d){ pinsAll=!pinsAll; renderIon('lead'); return; }
   if('pinstoggle' in d){ pinsOpen=!pinsOpen; renderIon('lead'); return; }
   if(d.evtoggle){ evOpen.has(d.evtoggle)?evOpen.delete(d.evtoggle):evOpen.add(d.evtoggle); renderIon('lead'); return; }
-  if(d.star){ STARRED.has(d.star)?STARRED.delete(d.star):STARRED.add(d.star); buildIonNav(); return; }
+  if(d.star){ STARRED.has(d.star)?STARRED.delete(d.star):STARRED.add(d.star); buildIonNav(); renderChatRows(); return; }
   if(d.nlevel){ PINFO[d.p].notif=d.nlevel; renderNotif(); return; }
   if('addproject' in d){ openSheet(); return; }
   if(d.rtadd){ const v=IONS[d.k], i=+d.i; if(d.rtadd==='keep') delete v.routines[i].isNew; else { v.routines.splice(i,1); v.role=`${v.routines.length} routine${v.routines.length===1?'':'s'}`; } rerenderRight(); return; }
@@ -3316,8 +3455,9 @@ document.addEventListener('click',e=>{
 });
 
 /* navigation */
-const SCREEN_MODE={new:'chats',code:'chats',chat:'chats',library:'chats',ions:'ions',settings:'settings'};
+const SCREEN_MODE={new:'chats',code:'chats',chat:'chats',ask:'chats',start:'chats',library:'chats',ions:'ions',settings:'settings'};
 function go(id){
+  if(id==='start'&&curScreen!=='start') startFrom=Date.now(); curScreen=id;
   const mode=SCREEN_MODE[id]; railMode=mode;
   document.querySelectorAll('.mode').forEach(m=>m.hidden=m.dataset.mode!==mode);
   if(mode==='chats') document.querySelectorAll('[data-screen]').forEach(s=>s.hidden=s.dataset.screen!==id);
@@ -3343,7 +3483,8 @@ const CHATS=[
   {t:'Webhook retry backoff',p:'payments-api',ion:'payments-api',run:1,code:1,go:'code'},
   {t:'Pricing page headline',go:'chat',tm:'1h'},
   {t:'Postgres or SQLite?',go:'chat',tm:'Tue'},
-  {t:'Tailwind 4 migration',p:'storefront',go:'code',code:1,tm:'Mon'},
+  {t:'Tailwind 4 migration',p:'storefront',go:'ask',wait:1,code:1},
+  {t:'Cache product images',p:'storefront',run:1,code:1,go:'start'},
   {t:'Onboarding email ideas',go:'chat',tm:'Mon'},
   {t:'v2.3 changelog',p:'docs',ion:'docs',go:'code',code:1,tm:'Sun'}];
 const ACTIONS=[
@@ -3433,6 +3574,81 @@ const hs=document.getElementById('hstrip');
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-demo]'); if(!b) return;
   document.getElementById('win').scrollIntoView({behavior:reduce?'auto':'smooth',block:'center'});
   if(b.dataset.demo==='chat'){ go('ions'); renderIon('lead'); } else { go('ions'); openSheet(); } });
+
+/* ===== chats sidebar, as the app ships it: Running shimmers; then your chats by project ===== */
+/* starred projects first and open, the rest folded (none while nothing is starred); 5 chats a group until "N more" */
+let curScreen='', startFrom=Date.now();
+const RUNROWS=[
+  {t:'Idempotency keys',p:'payments-api',ion:'lead',go:'code',sub:'Adding a unique index on key and merchant'},
+  {t:'Webhook retry backoff',p:'payments-api',ion:'payments-api',go:'code',sub:'Backoff doubles now, up to 10 minutes'},
+  {t:'Cache product images',p:'storefront',go:'start',row:'start'}];
+const CHATROWS=[
+  {t:'Pricing page headline',p:'default',go:'chat',row:'chat',sub:'Done. I started a coding chat on storefront for it.',tm:'1h'},
+  {t:'Search filters on mobile',p:'storefront',go:'code',sub:'Filters open in a bottom sheet under 640px now.',tm:'3h'},
+  {t:'Nightly dependency check',p:'storefront',ion:'storefront',go:'code',sub:'3 patch updates. All tests pass.',tm:'5h'},
+  {t:'Stripe webhook signatures',p:'payments-api',ion:'payments-api',go:'code',sub:'Signatures are checked before parsing.',tm:'Tue'},
+  {t:'Postgres or SQLite?',p:'default',go:'chat',sub:'SQLite, until you need more than one writer.',tm:'Tue'},
+  {t:'Fix 404 on /sale',p:'storefront',go:'code',sub:'The route was missing from the sitemap build.',tm:'Mon'},
+  {t:'Refund rounding',p:'payments-api',go:'code',sub:'Tests failed on the partial-refund case.',tm:'Mon',failed:1},
+  {t:'Onboarding email ideas',p:'default',go:'chat',sub:'Five subject lines, shortest first.',tm:'Mon'},
+  {t:'Bump Vite to 6',p:'storefront',go:'code',sub:'Builds are 18% faster. No config changes.',tm:'Sun'},
+  {t:'v2.3 changelog',p:'docs',ion:'docs',go:'code',sub:'Drafted from 31 merged pull requests.',tm:'Sun'},
+  {t:'Checkout copy tweaks',p:'storefront',go:'code',sub:'Shorter button labels on every step.',tm:'Sat'},
+  {t:'Sticky add-to-cart',p:'storefront',go:'code',sub:'Shows once the main button scrolls away.',tm:'Fri'},
+  {t:'Size guide modal',p:'storefront',go:'code',sub:'Opens from the product page; Esc closes it.',tm:'11 Nov'},
+  {t:'Hero video compression',p:'marketing-site',go:'code',sub:'Down from 14 MB to 3.1 MB.',tm:'9 Nov'}];
+[...RUNROWS,...CHATROWS].forEach((c,i)=>c.id='c'+i);
+const foldFlip=new Set(), showAll=new Set();
+let renaming=null, openRmenu=null;
+const rowHTML=(c,run)=>{
+  const slot=c.ion?`<canvas class="av" data-ion="${c.ion}" aria-hidden="true"></canvas>`:'<span></span>';
+  if(renaming===c.id) return `<div class="r on rename" data-cid="${c.id}">${'<span></span>'}<input aria-label="Chat name" value="${esc(c.t)}"></div>`;
+  const tm=run?'':`<span class="tm">${c.failed?'<i data-lucide="circle-alert" class="st" aria-label="Failed"></i>':''}${esc(c.tm)}</span>`;
+  return `<div class="rw"><button class="r${c.row&&c.row===curScreen?' on':''}" type="button" data-go="${c.go}" data-proj="${esc(c.p)}"${c.row?` data-row="${c.row}"`:''}>${slot}<span><span class="tt${run?' now':''}">${esc(c.t)}</span>${c.sub?`<span class="sub">${esc(c.sub)}</span>`:''}</span>${tm}</button>`+
+    `<div class="rmore"><button class="ib" type="button" aria-label="More for ${esc(c.t)}" data-rmore="${c.id}"><i data-lucide="ellipsis"></i></button><div class="pmenu rmenu" role="menu" hidden><button type="button" role="menuitem" data-rren="${c.id}"><i data-lucide="pencil"></i>Rename</button><button type="button" role="menuitem" data-rarch="${c.id}"><i data-lucide="archive"></i>Archive</button></div></div></div>`;
+};
+function renderChatRows(){
+  const rg=document.getElementById('runGrp'), cg=document.getElementById('chatGrps');
+  rg.innerHTML=`<div class="gl"><span>Running</span><span>${RUNROWS.length}</span></div>`+RUNROWS.map(c=>rowHTML(c,1)).join('');
+  rg.hidden=!RUNROWS.length;
+  if(curProj!=='*'){ cg.innerHTML=`<div class="grp"><div class="gl"><span>Chats</span></div>${CHATROWS.filter(c=>c.p===curProj).map(c=>rowHTML(c)).join('')}</div>`; }
+  else {
+    const groups=[]; CHATROWS.forEach(c=>{ let g=groups.find(x=>x.p===c.p); if(!g) groups.push(g={p:c.p,rows:[]}); g.rows.push(c); });
+    const watching=STARRED.size>0; groups.sort((a,b)=>STARRED.has(b.p)-STARRED.has(a.p));
+    cg.innerHTML=groups.map(({p,rows})=>{
+      const on=STARRED.has(p), folded=(watching&&!on)!==foldFlip.has(p), shown=showAll.has(p)?rows:rows.slice(0,5), more=rows.length-shown.length;
+      const star=p==='default'?'':`<button type="button" class="ib star${on?' on':''}" title="${on?'Unstar':'Star'} ${esc(p)}" aria-label="${on?'Unstar':'Star'} ${esc(p)}" data-gstar="${esc(p)}"><i data-lucide="star"></i></button>`;
+      return `<div class="grp"><div class="gl"><button type="button" class="gfold" aria-expanded="${!folded}" data-gfold="${esc(p)}"><i data-lucide="chevron-${folded?'right':'down'}"></i>${esc(p)}</button>${star}</div>`+
+        (folded?'':shown.map(c=>rowHTML(c)).join('')+(more>0?`<button type="button" class="more-rows" data-gmore="${esc(p)}">${more} more</button>`:''))+'</div>';
+    }).join('');
+  }
+  const box=document.querySelector('.slist'); hydrate(box); icons(box); if(reduce) requestAnimationFrame(frame);
+  const inp=box.querySelector('.rename input'); if(inp){ inp.focus(); inp.select(); }
+}
+const findRow=id=>[RUNROWS,CHATROWS].map(l=>[l,l.findIndex(c=>c.id===id)]).find(([,i])=>i>=0);
+function endRename(save){
+  const inp=document.querySelector('.slist .rename input'); if(!inp||!renaming) return;
+  const [l,i]=findRow(renaming), v=inp.value.trim(); if(save&&v) l[i].t=v; renaming=null; renderChatRows();
+}
+document.addEventListener('click',e=>{
+  const m=e.target.closest('[data-rmore]');
+  if(m){ const menu=m.nextElementSibling, id=m.dataset.rmore; menu.hidden=openRmenu===id; openRmenu=menu.hidden?null:id; return; }
+  openRmenu=null;
+  const t=e.target.closest('[data-rren],[data-rarch],[data-gfold],[data-gstar],[data-gmore],[data-qtog]'); if(!t) return;
+  const d=t.dataset;
+  if(d.rren){ renaming=d.rren; renderChatRows(); return; }
+  if(d.rarch){ const [l,i]=findRow(d.rarch); l.splice(i,1); setProj(curProj); return; }
+  if(d.gfold){ foldFlip.has(d.gfold)?foldFlip.delete(d.gfold):foldFlip.add(d.gfold); renderChatRows(); return; }
+  if(d.gstar){ STARRED.has(d.gstar)?STARRED.delete(d.gstar):STARRED.add(d.gstar); setProj(curProj); return; }
+  if(d.gmore){ showAll.add(d.gmore); renderChatRows(); return; }
+  if('qtog' in d){ const q=t.closest('.qbox'), shut=q.classList.toggle('shut'); q.querySelector('.qd').hidden=shut; q.querySelectorAll('.qhead .btn').forEach(b=>b.hidden=!shut); t.setAttribute('aria-expanded',String(!shut)); t.setAttribute('aria-label',shut?'Expand':'Collapse'); }
+});
+document.addEventListener('keydown',e=>{ if(!e.target.closest('.slist .rename')) return; if(e.key==='Enter') endRename(true); if(e.key==='Escape') endRename(false); });
+document.addEventListener('focusout',e=>{ if(e.target.closest('.slist .rename')) setTimeout(()=>endRename(true),0); });
+/* a run that hasn't replied: a playful word every 3 s, its shimmer stronger as the wait grows (full at 20 s) */
+const START_WORDS=['Thinking','Cooking','Brewing','Pondering','Tinkering','Noodling'];
+setInterval(()=>{ if(curScreen!=='start') return; const w=Date.now()-startFrom, el=document.getElementById('startWord');
+  el.textContent=START_WORDS[Math.floor(w/3000)%START_WORDS.length]; el.style.setProperty('--strength',Math.min(1,.2+.8*w/20000).toFixed(2)); },500);
 
 hydrate(document);
 function icons(root){ try{ window.lucide&&lucide.createIcons({root:root||document}); }catch(e){ try{ lucide.createIcons(); }catch(_){} } }

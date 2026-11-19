@@ -1,5 +1,14 @@
 export { ionPaths } from "./paths.js";
-export { addProject, DEFAULT_PROJECT, projectNameError, setProjectAccess } from "./projects.js";
+export {
+  addProject,
+  DEFAULT_PROJECT,
+  projectIdOf,
+  projectNameError,
+  removeProject,
+  renameProject,
+  setProjectAccess,
+  setProjectStarred,
+} from "./projects.js";
 export {
   DEFAULT_CONFIG,
   loadUserConfig,

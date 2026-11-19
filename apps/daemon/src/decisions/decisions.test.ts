@@ -108,12 +108,13 @@ describe("answer", () => {
       by: "you",
     });
     // Security review: the judge keeps judging by what you asked, never the agent's question.
-    expect(followUp).toHaveBeenCalledWith(
-      "c1",
-      "fake",
-      'You asked: "Delete the build folder?". The user chose: "Delete it".',
-      "Tidy the repo",
-    );
+    expect(followUp).toHaveBeenCalledWith("c1", {
+      harness: "fake",
+      text: 'You asked: "Delete the build folder?". The user chose: "Delete it".',
+      request: "Tidy the repo",
+      // The user, 2026-11-18: the chat shows your answer, not ion's wording for the agent.
+      shown: "Delete it",
+    });
     // RF3: a second answer is refused.
     await expect(d.answer(need!.needId, 2)).rejects.toThrow("That's already answered");
   });
@@ -318,7 +319,7 @@ describe("answers that can't go straight back", () => {
     });
     // The second answer waits behind the first without trying; both go once the run ends, in order.
     await until(() => followUp.mock.calls.length === 3);
-    expect(followUp.mock.calls.slice(1).map((c) => c[2])).toEqual([
+    expect(followUp.mock.calls.slice(1).map((c) => c[1].text)).toEqual([
       'You asked: "Delete the build folder?". The user chose: "Delete it".',
       'You asked: "Also clean dist?". The user chose: "Keep it".',
     ]);
@@ -332,12 +333,12 @@ describe("answers that can't go straight back", () => {
     // ion stops before the chat's run ends; a new ion picks the answer up.
     followUp.mockClear();
     await make().resume();
-    expect(followUp).toHaveBeenCalledWith(
-      "c1",
-      "fake",
-      'You asked: "Delete the build folder?". The user chose: "Keep it".',
-      "",
-    );
+    expect(followUp).toHaveBeenCalledWith("c1", {
+      harness: "fake",
+      text: 'You asked: "Delete the build folder?". The user chose: "Keep it".',
+      request: "",
+      shown: "Keep it",
+    });
     followUp.mockClear();
     const text = 'You asked: "Delete the build folder?". The user chose: "Keep it".';
     store.append({ chatId: "c1", runId: "r2", origin: "daemon", type: EV.messageSent, data: { text } });
@@ -379,12 +380,12 @@ describe("answering in your own words", () => {
     await d.answer(needs.open("c1")[0]!.needId, "Only the old builds", "project");
     expect(of(EV.needResolved).at(-1)).toMatchObject({ decision: "answered", choice: "Only the old builds" });
     expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ choice: "Only the old builds", custom: true });
-    expect(followUp).toHaveBeenCalledWith(
-      "c1",
-      "fake",
-      'You asked: "Delete the build folder?". The user answered: "Only the old builds".',
-      "Tidy the repo",
-    );
+    expect(followUp).toHaveBeenCalledWith("c1", {
+      harness: "fake",
+      text: 'You asked: "Delete the build folder?". The user answered: "Only the old builds".',
+      request: "Tidy the repo",
+      shown: "Only the old builds",
+    });
   });
 
   it("refuses an empty answer", async () => {
@@ -400,12 +401,12 @@ describe("answering in your own words", () => {
     await d.answer(needs.open("c1")[0]!.needId, "Later");
     followUp.mockClear();
     await make().resume();
-    expect(followUp).toHaveBeenCalledWith(
-      "c1",
-      "fake",
-      'You asked: "Delete the build folder?". The user answered: "Later".',
-      "",
-    );
+    expect(followUp).toHaveBeenCalledWith("c1", {
+      harness: "fake",
+      text: 'You asked: "Delete the build folder?". The user answered: "Later".',
+      request: "",
+      shown: "Later",
+    });
   });
 });
 
@@ -478,12 +479,12 @@ describe("asking when ion blocks a tool call", () => {
     const [need] = needs.open("c1");
     expect(need).toBeDefined();
     await d.answer(need!.needId, 2);
-    expect(followUp).toHaveBeenCalledWith(
-      "c1",
-      "fake",
-      'Earlier ion stopped this: "npm publish". The user now allows it.',
-      "Ship it",
-    );
+    expect(followUp).toHaveBeenCalledWith("c1", {
+      harness: "fake",
+      text: 'Earlier ion stopped this: "npm publish". The user now allows it.',
+      request: "Ship it",
+      shown: "Always allow in this project",
+    });
   });
 });
 

@@ -36,6 +36,14 @@ const HISTORY_END = /<\/ion-data id="\w+">\n\n/;
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
 
+/** Which scenario a message plays: ion's judge and ion chief's routing by their first words, else its first word. */
+function scenarioOf(text: string, own: string): string {
+  // ion's prompts carry data blocks too; they're recognised by their first words.
+  if (text.startsWith("Judge this action")) return "judge";
+  if (text.startsWith("Route this message for ion")) return "route";
+  return own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+}
+
 export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean } = {}): HarnessAdapter {
   const signedIn = opts.signedIn ?? true;
   const delayMs = opts.delayMs ?? 5;
@@ -112,6 +120,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     tries: () => tries,
     text: () => sent,
     mcp: () => start.mcp ?? null,
+    instructions: () => start.instructions ?? "",
     gate: (req) => postGate(start.gate, req),
     wait: async (ms) => {
       await sleep(ms);
@@ -124,10 +133,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     async send({ text }) {
       // The scenario is the first word of your message, after any history ion put before it.
       const own = text.split(HISTORY_END).at(-1) ?? text;
-      // ion's judge prompt carries data blocks too; it's recognised by its first words.
-      const name = text.startsWith("Judge this action")
-        ? "judge"
-        : (own.trim().split(/\s+/)[0]?.toLowerCase() ?? "");
+      const name = scenarioOf(text, own);
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
       sent = text;
       queue.push({

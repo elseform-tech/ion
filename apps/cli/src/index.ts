@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { askCommand } from "./commands/ask.js";
 import { chatsCommands } from "./commands/chats.js";
+import { ionsCommands } from "./commands/ions.js";
 import { daemonCommands } from "./commands/daemon.js";
 import { harnessesCommand } from "./commands/harnesses.js";
 import { decisionsCommands } from "./commands/decisions.js";
@@ -19,6 +20,7 @@ projectCommands(program, out);
 askCommand(program, out);
 needsCommands(program, out);
 chatsCommands(program, out);
+ionsCommands(program, out);
 memoryCommands(program, out);
 decisionsCommands(program, out);
 harnessesCommand(program, out);

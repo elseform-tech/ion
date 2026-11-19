@@ -7,8 +7,26 @@ export const DEFAULT_PROJECT = "default";
 
 /** Why a project name can't be used, or null when it can. */
 export function projectNameError(name: string): string | null {
+  if (name === ION_CHIEF) return "That name is ion's own";
   return /^[a-z0-9][a-z0-9._-]{0,63}$/.test(name) ? null : "Use lowercase letters, numbers, - . _";
 }
+
+/** A project's id (and folder name) from the name you typed: "My App!" → "my-app". Empty when nothing usable. */
+export function projectIdOf(name: string): string {
+  let id = "";
+  for (const ch of name.normalize("NFKD").toLowerCase()) {
+    if (/[a-z0-9._]/.test(ch)) id += ch;
+    else if (/\p{M}/u.test(ch))
+      continue; // an accent, split off by NFKD: "é" → "e"
+    else if (id && !id.endsWith("-")) id += "-";
+  }
+  while (id.endsWith("-") || id.endsWith(".")) id = id.slice(0, -1);
+  while (id.startsWith(".") || id.startsWith("_")) id = id.slice(1);
+  return id.slice(0, 64);
+}
+
+/** ion chief's own id: no project takes it (its chat is "ion:chief"). */
+const ION_CHIEF = "chief";
 
 /** Returns a new config with the git repo at `path` added. Throws a user-facing message otherwise. */
 export function addProject(c: UserConfig, path: string): UserConfig {
@@ -17,11 +35,45 @@ export function addProject(c: UserConfig, path: string): UserConfig {
   const dup = c.projects.find((p) => p.path === abs);
   if (dup) throw new Error(`Already added: ${dup.id}`);
   const base = basename(abs);
-  const taken = new Set(c.projects.map((p) => p.id));
+  const taken = new Set([ION_CHIEF, ...c.projects.map((p) => p.id)]);
   let id = base;
   let n = 1;
   while (taken.has(id)) id = `${base}-${++n}`;
   return { ...c, projects: [...c.projects, { id, path: abs, starred: false }] };
+}
+
+/** Shows a project under a new name; its id stays. Back to its id: the name is dropped. */
+export function renameProject(c: UserConfig, id: string, name: string): UserConfig {
+  if (id === DEFAULT_PROJECT) throw new Error("default can't be renamed");
+  if (!c.projects.some((p) => p.id === id)) throw new Error(`Unknown project: ${id}`);
+  const n = name.trim().slice(0, 60);
+  if (!n) throw new Error("Give the project a name");
+  const taken = c.projects.some(
+    (p) => p.id !== id && [p.id, p.name].some((x) => x?.toLowerCase() === n.toLowerCase()),
+  );
+  if (taken || n.toLowerCase() === DEFAULT_PROJECT) throw new Error("That name is taken");
+  return {
+    ...c,
+    projects: c.projects.map((p) => {
+      if (p.id !== id) return p;
+      const rest = { ...p };
+      delete rest.name;
+      return n === id ? rest : { ...rest, name: n };
+    }),
+  };
+}
+
+/** Takes a project out of ion. Its folder and repo are never touched. */
+export function removeProject(c: UserConfig, id: string): UserConfig {
+  if (id === DEFAULT_PROJECT) throw new Error("default can't be removed");
+  if (!c.projects.some((p) => p.id === id)) throw new Error(`Unknown project: ${id}`);
+  return { ...c, projects: c.projects.filter((p) => p.id !== id) };
+}
+
+/** Stars or unstars a project. */
+export function setProjectStarred(c: UserConfig, id: string, starred: boolean): UserConfig {
+  if (!c.projects.some((p) => p.id === id)) throw new Error(`Unknown project: ${id}`);
+  return { ...c, projects: c.projects.map((p) => (p.id === id ? { ...p, starred } : p)) };
 }
 
 /** Sets a project's access mode ("auto" or "full"). */

@@ -94,7 +94,7 @@ describe("Composer", () => {
     );
   });
 
-  it("leaves out a model that only repeats the agent's name, and shows a spinner while agents load", () => {
+  it("leaves out a model that only repeats the agent's name, and shimmers while agents load", () => {
     const { container, rerender } = compose([
       { ...fake, models: [{ id: "fake", label: "Fake" }], defaultModel: "fake" },
     ]);
@@ -108,8 +108,8 @@ describe("Composer", () => {
         onSent={() => {}}
       />,
     );
-    expect(container.querySelector(".bpill")?.textContent).toBe("");
-    expect(container.querySelector(".bpill .spin")).not.toBeNull();
+    expect(container.querySelector(".spin")).toBeNull();
+    expect(container.querySelector(".bpill .now")?.textContent).toBe("Agents");
   });
 
   it("shows access as an icon, named on hover and picked from a list", () => {
@@ -231,5 +231,40 @@ describe("Composer", () => {
     expect(box.value).toBe("");
     fail(new Error("no"));
     await waitFor(() => expect(box.value).toBe("hi"));
+  });
+  // The user, 2026-11-19: "I changed the model in a working thread and it didn't persist." The pill starts from the
+  // chat's own brain, and a pick for a chat is kept when its composer is drawn again.
+  it("starts from the chat's own model, and keeps a chat's pick when drawn again", async () => {
+    const call = vi.fn(async () => ({ chatId: "c9", runId: "r2" }));
+    const box = (key: string) => (
+      <Composer
+        key={key}
+        client={{ call } as unknown as IonClient}
+        harnesses={[fake, grok]}
+        to={{ chatId: "c9" }}
+        running={null}
+        harness="grok-build"
+        current={{ model: "grok-code", effort: "high" }}
+        onSent={() => {}}
+      />
+    );
+    const { rerender } = render(box("a"));
+    expect(pill().getAttribute("aria-label")).toContain("High");
+    fireEvent.click(pill());
+    fireEvent.click(screen.getByRole("button", { name: /^grok-code-fast/ }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    rerender(box("b"));
+    expect(pill().getAttribute("aria-label")).toContain("grok-code-fast");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "go on" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("ask", {
+        text: "go on",
+        chatId: "c9",
+        harness: "grok-build",
+        model: "grok-code-fast",
+        effort: "high",
+      }),
+    );
   });
 });

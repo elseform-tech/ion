@@ -9,17 +9,27 @@ const lines = readFileSync(join(root, "docs/design/ion-design-lab.html"), "utf8"
 // Line ranges in the lab (1-based, inclusive) that style the app window, with what they hold.
 const RANGES = [
   [31, 35, "general (buttons, focus, icons, spinner)"],
+  [40, 41, "brand wordmark"],
   [47, 47, "window"],
   [48, 164, "window, rail, chats sidebar, chat, empty state, tools"],
+  [165, 202, "ions: panel, ion chat, bubbles, thread links, quick replies"],
+  [267, 283, "ions: new-ion card, notes"],
   [305, 305, "empty lists"],
   [310, 330, "chips, project picker"],
   [361, 378, "project menu"],
+  [456, 463, "ions: ion chief tile"],
+  [478, 484, "ions: route card"],
+  [503, 515, "ions: scalable panel rows"],
   [516, 516, "count badge"],
+  [517, 520, "ions: star"],
   [521, 522, "starred project"],
+  [530, 548, "ions: needs pinned atop ion chief"],
   [549, 560, "pins, await (hidden), project menu search"],
   [571, 636, "media: code blocks"],
   [686, 686, "panel label (.lh2)"],
+  [713, 724, "ions: needs strip, collapsed"],
   [761, 831, "brain picker; work"],
+  [1051, 1066, "ions: project ion rows, fan-out card"],
 ];
 
 const out = [

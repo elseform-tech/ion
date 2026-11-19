@@ -1,4 +1,4 @@
-import { type ChatInfo, EV, type IonEvent } from "@ion/schema";
+import { type ChatInfo, EV, type IonEvent, stripControl } from "@ion/schema";
 import type { Db, View } from "../store/index.js";
 
 type D = Record<string, unknown>;
@@ -8,15 +8,17 @@ export const chatsView: View & {
   list(db: Db): ChatInfo[];
   worktree(db: Db, chatId: string): string | null;
   session(db: Db, chatId: string): { harness: string; sessionId: string } | null;
+  /** The agent the project's most recently active chat ran on, if any ran. */
+  lastAgent(db: Db, projectId: string): string | null;
 } = {
   name: "chats",
-  version: 4,
+  version: 5,
   tables: ["view_chats"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_chats (
       chat_id TEXT PRIMARY KEY, title TEXT NOT NULL, project_id TEXT, worktree TEXT, branch TEXT,
       archived INTEGER NOT NULL DEFAULT 0, last_run_status TEXT, harness TEXT, session_id TEXT, last_activity TEXT,
-      preview TEXT)`);
+      preview TEXT, by TEXT)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_chats");
@@ -26,8 +28,18 @@ export const chatsView: View & {
     const d = e.data as D;
     if (e.type === EV.chatCreated) {
       db.prepare(
-        "INSERT OR IGNORE INTO view_chats (chat_id, title, project_id, worktree, branch, last_activity) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(e.chatId, String(d.title), d.projectId ?? null, d.worktree ?? null, d.branch ?? null, e.ts);
+        "INSERT OR IGNORE INTO view_chats (chat_id, title, project_id, worktree, branch, last_activity, by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run(
+        e.chatId,
+        String(d.title),
+        d.projectId ?? null,
+        d.worktree ?? null,
+        d.branch ?? null,
+        e.ts,
+        d.by ?? null,
+      );
+    } else if (e.type === EV.chatRenamed) {
+      db.prepare("UPDATE view_chats SET title = ? WHERE chat_id = ?").run(String(d.title), e.chatId);
     } else if (e.type === EV.chatArchived) {
       db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
     } else {
@@ -39,10 +51,18 @@ export const chatsView: View & {
       db
         .prepare(
           `SELECT chat_id AS chatId, title, project_id AS projectId, branch, archived, last_run_status AS lastRunStatus,
-             last_activity AS lastActivityAt, preview FROM view_chats ORDER BY rowid`,
+             last_activity AS lastActivityAt, preview, by FROM view_chats ORDER BY rowid`,
         )
         .all() as (Omit<ChatInfo, "archived"> & { archived: number })[]
     ).map((r) => ({ ...r, archived: r.archived === 1 }));
+  },
+  lastAgent(db, projectId) {
+    const r = db
+      .prepare(
+        "SELECT harness FROM view_chats WHERE project_id = ? AND harness IS NOT NULL ORDER BY last_activity DESC LIMIT 1",
+      )
+      .get(projectId) as { harness: string } | undefined;
+    return r?.harness ?? null;
   },
   session(db, chatId) {
     const r = db
@@ -59,13 +79,10 @@ export const chatsView: View & {
 };
 
 const PREVIEW_MAX = 120;
-/** Control characters and invisible direction marks: an agent's text can't drive a terminal or reorder what's shown. */
-const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /** The start of a reply, as one line of plain words: Markdown marks and line breaks go. */
 function previewOf(text: string): string {
-  const plain = text
-    .replace(CONTROL, "")
+  const plain = stripControl(text)
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/[*`#>]+/g, "")
     .replace(/\s+/g, " ")

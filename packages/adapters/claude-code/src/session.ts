@@ -110,6 +110,9 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...(opts.resume ? { resume: opts.resume } : {}),
     ...mcpOptions(opts),
+    // With ion's MCP server, questions go through its ask tool (a question in the app); Claude's own pop-up
+    // question can't be shown in a headless session and comes back empty.
+    ...(opts.mcp ? { disallowedTools: ["AskUserQuestion"] } : {}),
     ...(opts.gate ? { hooks: gateHooks(opts.gate.url) } : {}),
     thinking: { type: "adaptive", display: "summarized" },
     includePartialMessages: true,

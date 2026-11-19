@@ -17,6 +17,10 @@ import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
+import { Ions } from "../ions/service.js";
+import { IonQuestions } from "../ions/questions.js";
+import { createSame } from "../ions/same.js";
+import { harnessInfos } from "./commands.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -102,6 +106,13 @@ function autoAccess(
   });
 }
 
+/** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
+const followAsk = (chatId: string, m: { harness: string | null; text: string }) => ({
+  chatId,
+  text: m.text,
+  ...(m.harness ? { harness: m.harness } : {}),
+});
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
@@ -136,20 +147,21 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     db,
     needs,
     match: createMatcher(quick),
-    followUp: async (chatId, harness, text, request) =>
-      (await runs.ask({ chatId, text, ...(harness ? { harness } : {}) }, { request })).runId,
+    ion: new IonQuestions({ store, db, needs, same: createSame(quick) }),
+    followUp: async (chatId, m) =>
+      (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown })).runId,
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  return {
+  const ions = new Ions({
     store,
     db,
-    needs,
-    decisions,
-    grants,
-    runs,
     configFile: opts.configFile,
-    startedAt: Date.now(),
-    version: VERSION,
-  };
+    runs,
+    quick,
+    agents: () => harnessInfos.list(),
+  });
+  ions.watch();
+  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
+  return { store, db, needs, decisions, grants, runs, ions, ...base0 };
 }

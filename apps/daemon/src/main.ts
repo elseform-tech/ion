@@ -2,6 +2,7 @@ import { closeSync, mkdirSync, openSync, realpathSync, rmSync, writeFileSync } f
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ionPaths } from "@ion/config";
+import { harnessInfos } from "./api/commands.js";
 import { startServer } from "./api/server.js";
 import { acquireDaemonLock } from "./store/index.js";
 
@@ -18,6 +19,8 @@ async function main() {
   }
   const infoFile = join(dataDir, "daemon.json");
   const srv = await startServer({ dataDir, configFile });
+  // Ask each agent what it is now, so the app's first list of agents and models doesn't wait.
+  harnessInfos.warm();
   // Never follow a planted file or symlink: remove it, then create exclusively with 0600.
   rmSync(infoFile, { force: true });
   const fd = openSync(infoFile, "wx", 0o600);

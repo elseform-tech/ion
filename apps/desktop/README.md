@@ -26,6 +26,10 @@ through `@ion/client/browser`, and it keeps nothing of its own (lint: no `node:*
     the conversation. `Resizer` lets you drag the sidebar's and the panel's widths; the conversation keeps 520 px.
   - The sidebar groups your chats by project, each row with the start of the agent's last reply and a mark when
     its last run failed or was stopped. The avatar slot stays empty for your chats: it marks threads ion started.
+- `src/ions/`: the Ions screen (Plan 09). ion chief and each project's ion on the left (the project's colour on its
+  agent's shape; ion chief's orbit), the open ion's chat on the right: your messages, its lines, the threads it
+  started (a link, or the fan-out card for several), its "always?" suggestions, and what needs you pinned atop
+  ion chief. Threads ion started show their ion in the sidebar's first slot; your own chats never do.
 - Left out of the lab until ion does them: Library, attachments, Preview, Terminal and Viewer tabs, Open in editor,
   Share, the Ions, Settings and Search rail buttons, temporary chats, and a light theme (the lab is dark only).
 - Agents' text is Markdown with no raw HTML; links show where they point but open nothing.

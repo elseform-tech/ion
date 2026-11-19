@@ -3,7 +3,16 @@ import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
 import { memoryView } from "../views/memory.js";
-import { addProject, loadUserConfig, saveUserConfig, setProjectAccess } from "@ion/config";
+import {
+  addProject,
+  loadUserConfig,
+  removeProject,
+  renameProject,
+  saveUserConfig,
+  setProjectAccess,
+  setProjectStarred,
+  type UserConfig,
+} from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
 import { decisionsView } from "../views/decisions.js";
@@ -14,6 +23,10 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
+import { HarnessInfos } from "./harness-infos.js";
+import { renameChat } from "../runs/ready.js";
+import { ionsView } from "../views/ions.js";
+import type { Ions } from "../ions/service.js";
 
 export { UserError } from "./errors.js";
 
@@ -24,6 +37,7 @@ export type Ctx = {
   decisions: Decisions;
   grants: Grants;
   runs: RunManager;
+  ions: Ions;
   configFile: string;
   startedAt: number;
   version: string;
@@ -39,7 +53,7 @@ type Handlers = {
 export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
-  "harnesses.list": () => Promise.all(harnessIds().map(harnessInfo)),
+  "harnesses.list": () => harnessInfos.list(),
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
   "memory.forget": (a, ctx) => {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
@@ -52,6 +66,10 @@ export const handlers: Handlers = {
     const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
     if (!worktree || !project) return { files: [] };
     return chatDiff(project.path, worktree);
+  },
+  "chat.rename": (a, ctx) => {
+    renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));
+    return { ok: true as const };
   },
   "chat.archive": async (a, ctx) => {
     await ctx.runs.archive(String(a.chatId ?? ""));
@@ -94,6 +112,17 @@ export const handlers: Handlers = {
     };
   },
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,
+  "ions.list": (_a, ctx) => ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects),
+  "ion.message": async (a, ctx) => {
+    const text = String(a.text ?? "").trim();
+    if (!text) throw new UserError("Say something");
+    await ctx.ions.message(String(a.ionId ?? ""), text);
+    return { ok: true as const };
+  },
+  "suggestion.answer": (a, ctx) => {
+    ctx.decisions.suggestion(String(a.suggestionId ?? ""), a.keep === true);
+    return { ok: true as const };
+  },
   "projects.add": (a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
@@ -114,6 +143,34 @@ export const handlers: Handlers = {
     });
     saveUserConfig(ctx.configFile, made.config);
     return made.config.projects.find((p) => p.id === made.id)!;
+  },
+  "project.rename": (a, ctx) => {
+    changeConfig(ctx.configFile, (c) => renameProject(c, String(a.projectId ?? ""), String(a.name ?? "")));
+    return { ok: true as const };
+  },
+  "project.remove": async (a, ctx) => {
+    const id = String(a.projectId ?? "");
+    // Refuses default and an unknown project before anything is archived.
+    changeConfig(ctx.configFile, (c) => (removeProject(c, id), c));
+    const chats = chatsView.list(ctx.db).filter((c) => c.projectId === id && !c.archived);
+    if (chats.some((c) => ["queued", "running"].includes(c.lastRunStatus ?? "")))
+      throw new UserError("Stop its running chats first");
+    for (const c of chats) await ctx.runs.archive(c.chatId);
+    changeConfig(ctx.configFile, (c) => removeProject(c, id));
+    return { ok: true as const };
+  },
+  "project.star": (a, ctx) => {
+    const { config, error } = loadUserConfig(ctx.configFile);
+    if (error) throw new UserError(`Fix your config first. ${error}`);
+    try {
+      saveUserConfig(
+        ctx.configFile,
+        setProjectStarred(config, String(a.projectId ?? ""), a.starred === true),
+      );
+    } catch (e) {
+      throw new UserError((e as Error).message);
+    }
+    return { ok: true as const };
   },
   "project.setAccess": (a, ctx) => {
     const access = a.access;
@@ -137,7 +194,22 @@ export const handlers: Handlers = {
     }),
 };
 
+/** Loads your config, changes it, saves it; a refusal (or a config that doesn't parse) is the error you see. */
+function changeConfig(file: string, change: (c: UserConfig) => UserConfig): void {
+  const { config, error } = loadUserConfig(file);
+  if (error) throw new UserError(`Fix your config first. ${error}`);
+  try {
+    saveUserConfig(file, change(config));
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
+}
+
+/** Every agent's info, kept and read again in the background (asking each CLI takes seconds). */
+export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs: 60_000 });
+
 /** A harness, whether it's ready, and (only when it is) its own model list. */
+
 async function harnessInfo(id: string): Promise<HarnessInfo> {
   const h = getHarness(id)!;
   // One harness that fails to answer shows as not ready; it doesn't break the list.

@@ -11,10 +11,19 @@ const Project = z.object({
   id: z.string().min(1),
   path: z.string().min(1),
   starred: z.boolean().default(false),
+  /** The name ion shows, when you renamed it (its id stays: events, decisions and threads refer to it). */
+  name: z.string().min(1).max(60).optional(),
   /** This project's access mode; without it, `[access] default` applies. */
   access: Access.optional(),
   /** False: ion (the chief) never reads this project's chats. Absent means true. */
   shareWithIon: z.boolean().optional(),
+  /** Its ion's colour (identity only); absent: the palette, by the project's place in this list. */
+  color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .optional(),
+  /** The agent its ion's threads run on; absent: ion's default. */
+  harness: z.string().min(1).optional(),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.

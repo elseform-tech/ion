@@ -23,6 +23,10 @@ export const ADAPTER_EVENT_TYPES = [
 export const DAEMON_EVENT_TYPES = [
   "chat.created",
   "chat.archived",
+  "chat.renamed",
+  "ion.heard",
+  "ion.said",
+  "suggestion.answered",
   "message.sent",
   "run.queued",
   "run.waiting",
@@ -64,6 +68,10 @@ export const EV = {
   error: "error",
   chatCreated: "chat.created",
   chatArchived: "chat.archived",
+  chatRenamed: "chat.renamed",
+  ionHeard: "ion.heard",
+  ionSaid: "ion.said",
+  suggestionAnswered: "suggestion.answered",
   messageSent: "message.sent",
   runQueued: "run.queued",
   runWaiting: "run.waiting",
@@ -108,15 +116,51 @@ export const DECISION_SCOPES = ["chat", "project", "everywhere"] as const;
 const text = z.object({ text: z.string() });
 const count = z.number().int().min(0);
 
+/** What an ion's message can carry: threads it started, a suggestion, or a decision that keeps failing. */
+const IonCardSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("threads"),
+    threads: z.array(z.object({ chatId: z.string(), projectId: z.string() })),
+  }),
+  z.object({
+    kind: z.literal("suggest"),
+    suggestionId: z.string(),
+    question: z.string(),
+    choice: z.string(),
+  }),
+  z.object({
+    kind: z.literal("flag"),
+    decisionId: z.string(),
+    question: z.string(),
+    choice: z.string(),
+    failed: z.number().int().min(1),
+  }),
+]);
+export type IonCard = z.infer<typeof IonCardSchema>;
+
 export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "chat.created": z.object({
     title: z.string(),
     projectId: z.string().nullable(),
     worktree: z.string().nullable().optional(),
     branch: z.string().nullable().optional(),
+    /** A thread ion started (Plan 09): its questions go through the project's ion. Your own chats have none. */
+    by: z.literal("ion").optional(),
   }),
+  /** Your message to an ion, on its chat ("ion:<ionId>"). */
+  "ion.heard": z.object({ text: z.string() }),
+  /** What an ion says in its chat, with a card when it has one. */
+  "ion.said": z.object({ text: z.string(), card: IonCardSchema.optional() }),
+  /** Your answer to an ion's suggestion. */
+  "suggestion.answered": z.object({ suggestionId: z.string(), keep: z.boolean() }),
+  /** You renamed the chat. */
+  "chat.renamed": z.object({ title: z.string().min(1) }),
   /** What you asked: the text of an ask, stored before its run is queued. */
-  "message.sent": z.object({ text: z.string() }),
+  "message.sent": z.object({
+    text: z.string(),
+    /** What the chat shows as yours, when `text` is ion's wording for the agent (your answer to its question). */
+    shown: z.string().optional(),
+  }),
   /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
   "memory.written": z.object({
     memoryId: z.string(),
@@ -134,6 +178,11 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     dedupeKey: z.string(),
     /** ion's own question about a tool call it stopped (the call waits for the answer, up to 4 minutes). */
     blocked: z.boolean().optional(),
+    /** In an ion thread: the project's ion's one line of context for you. */
+    via: z.object({ note: z.string() }).optional(),
+    /** In an ion thread: the same question is already waiting (this need), so this one isn't shown; it's settled
+     * by that answer, or raised if that one closes another way. */
+    heldFor: z.string().optional(),
     /** An agent's question (kind "ask"): its choices, each with what it leads to. */
     choices: z
       .array(

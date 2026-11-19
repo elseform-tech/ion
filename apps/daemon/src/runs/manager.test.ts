@@ -169,6 +169,37 @@ describe("RunManager", () => {
     });
   });
 
+  // Final review I2: a thread ion started runs in Auto every time, whatever the project's access.
+  it("runs every run of an ion thread in Auto, even in a Full access project", async () => {
+    saveUserConfig(configFile, setProjectAccess(addProject(DEFAULT_CONFIG, repo), "repo", "full"));
+    runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
+    const first = await runs.ask({ text: "shell", projectId: "repo", harness: "fake" }, { by: "ion" });
+    expect(approval(await finished(first.runId))).toMatchObject({ by: "ion" });
+    const next = await runs.ask({ text: "shell", chatId: first.chatId, harness: "fake", access: "full" });
+    expect(approval(await finished(next.runId))).toMatchObject({ by: "ion" });
+  });
+
+  // Final review I1: archiving a chat closes its questions, so nothing waits behind them unseen.
+  it("closes a chat's open questions when it's archived", async () => {
+    const { chatId, runId } = await ask("hello");
+    await finished(runId);
+    const needId = needs.raiseAsk({
+      chatId,
+      runId,
+      question: "Q?",
+      choices: [
+        { label: "A", consequence: "a" },
+        { label: "B", consequence: "b" },
+      ],
+    });
+    await runs.archive(chatId);
+    expect(needs.open(chatId, true)).toEqual([]);
+    expect(store.read({ chatId }).find((e) => e.type === "need.resolved")?.data).toMatchObject({
+      needId,
+      decision: "superseded",
+    });
+  });
+
   it("archives a chat: removes its worktree, keeps the branch, refuses while running", async () => {
     const { chatId, runId } = await ask("slow");
     await expect(runs.archive(chatId)).rejects.toThrow(new UserError("Stop the chat's run first"));
@@ -400,6 +431,26 @@ describe("RunManager", () => {
     const key = info.headers.Authorization.replace("Bearer ", "");
     expect(key).toMatch(/^[0-9a-f]{64}$/);
     expect(grants.check(key)).toBeNull();
+  });
+
+  // The user, 2026-11-18: Claude and Grok wrote their questions as text (you got no question to answer); only
+  // opencode used ion's ask tool. Every run with ion's tools is told to ask through it.
+  it("tells each run with ion's tools to ask you through ion's ask tool", async () => {
+    runs = new RunManager(
+      store,
+      {
+        configFile,
+        dataDir,
+        random: () => 0,
+        access,
+        mcp: { grants: createGrants(), url: () => "http://127.0.0.1:9/mcp" },
+      },
+      needs,
+      db,
+    );
+    const told = said(await finished((await ask("instructions")).runId))[0] ?? "";
+    expect(told).toContain("ask tool");
+    expect(told).toContain("never");
   });
 
   it("refuses a model the harness doesn't list, and runs one it does", async () => {

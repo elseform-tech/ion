@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { type Bot, botFor, hash, type Tokens, tracePath } from "./bots.js";
+import { type Bot, botFor, hash, ionBot, railGlyph, type Tokens, tracePath } from "./bots.js";
 
 /*
   Drawing and motion, ported from the design lab (drawEyes, targetPose, easePose, drawBot, frame: lines
@@ -155,19 +155,57 @@ function fillOf(ctx: CanvasRenderingContext2D, b: Bot, t: Tokens): string | Canv
 /** What a frame reads once for every avatar: the time, the page's colours, and whether motion is reduced. */
 type Frame = { t: number; dt: number; tk: Tokens; still: boolean };
 
-function draw(ctx: CanvasRenderingContext2D, v: View, size: number, f: Frame): void {
+/** Half of an orbit: the back half (behind the body, faint) or the front half, with the dots on that side. */
+function drawOrbit(
+  ctx: CanvasRenderingContext2D,
+  o: { R: number; b: Bot; f: Frame & { tt: number } },
+  layer: "back" | "front",
+) {
+  const { R, f } = o;
+  const orbit = o.b.orbit!;
+  const RX = R * 1.6;
+  const RY = R * 0.52;
+  ctx.save();
+  ctx.rotate(orbit.tilt);
+  const paint = (p: string | ((t: Tokens) => string)) => (typeof p === "function" ? p(f.tk) : p);
+  ctx.strokeStyle = orbit.stroke ? paint(orbit.stroke) : f.tk.accent;
+  ctx.lineWidth = Math.max(1, R * 0.08);
+  ctx.lineCap = "round";
+  ctx.globalAlpha = layer === "back" ? 0.35 : 1;
+  ctx.beginPath();
+  if (layer === "back") ctx.ellipse(0, 0, RX, RY, 0, Math.PI, TAU);
+  else ctx.ellipse(0, 0, RX, RY, 0, 0, Math.PI);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  orbit.colors.forEach((c, i) => {
+    const a = (f.still ? 0.6 : f.tt * orbit.speed) + (i * TAU) / orbit.colors.length;
+    const front = Math.sin(a) > 0;
+    if ((layer === "front") !== front) return;
+    ctx.fillStyle = paint(c);
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * RX, Math.sin(a) * RY, Math.max(1.3, R * 0.17) * (front ? 1 : 0.8), 0, TAU);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+/** The body: its shape in its colour, its decor, and its eyes, on a unit scale around the centre. */
+function drawBody(ctx: CanvasRenderingContext2D, v: View, R: number, f: Frame): void {
   const tk = f.tk;
-  const R = size * 0.4;
-  const dy = f.still || v.state !== "idle" ? 0 : Math.sin((f.t + v.seed) * 1.5) * R * 0.025;
   const pose = easePose(v, f.t, f.dt, f.still);
   ctx.save();
-  ctx.translate(size / 2, size / 2 + dy);
   ctx.rotate(((v.bot.tilt ?? 0) * Math.PI) / 180);
   ctx.scale(R, R);
   const p = new Path2D();
   tracePath(v.bot.shape, p);
-  ctx.fillStyle = fillOf(ctx, v.bot, tk);
-  ctx.fill(p);
+  if (v.bot.hollow) {
+    ctx.strokeStyle = v.bot.hollow(tk);
+    ctx.lineWidth = 0.16;
+    ctx.stroke(p);
+  } else {
+    ctx.fillStyle = fillOf(ctx, v.bot, tk);
+    ctx.fill(p);
+  }
   if (v.bot.decor) {
     ctx.save();
     ctx.clip(p);
@@ -178,7 +216,21 @@ function draw(ctx: CanvasRenderingContext2D, v: View, size: number, f: Frame): v
   ctx.translate(ex, ey);
   ctx.scale(v.bot.es ?? 1, v.bot.es ?? 1);
   const eye = v.bot.eye;
-  drawEyes(ctx, pose, typeof eye === "function" ? eye(tk) : (eye ?? tk.win));
+  const eyeColour = typeof eye === "function" ? eye(tk) : (eye ?? tk.win);
+  drawEyes(ctx, pose, v.bot.hollow ? v.bot.hollow(tk) : eyeColour);
+  ctx.restore();
+}
+
+function draw(ctx: CanvasRenderingContext2D, v: View, size: number, f: Frame): void {
+  // A bot with an orbit is smaller, so its ring fits (the lab's fill 0.29 against 0.4).
+  const R = size * (v.bot.orbit ? 0.29 : 0.4);
+  const dy = f.still || v.state !== "idle" ? 0 : Math.sin((f.t + v.seed) * 1.5) * R * 0.025;
+  const o = { R, b: v.bot, f: { ...f, tt: f.t + v.seed } };
+  ctx.save();
+  ctx.translate(size / 2, size / 2 + dy);
+  if (v.bot.orbit) drawOrbit(ctx, o, "back");
+  drawBody(ctx, v, R, f);
+  if (v.bot.orbit) drawOrbit(ctx, o, "front");
   ctx.restore();
 }
 
@@ -225,24 +277,38 @@ function paint(v: View, f: Frame): void {
   draw(ctx, v, w, f);
 }
 
-/** A harness's avatar, as the lab draws it (class "av": the lab's sizes apply). */
-export function Avatar({
-  harness,
-  seed = 0.4,
-  state = "idle",
-}: {
-  harness: string;
-  seed?: number;
-  state?: BotState;
-}) {
+/** The bot a key names: a harness ("h:<id>"), the rail glyph, or an ion. */
+function botOf(key: string): Bot {
+  if (key.startsWith("h:")) return botFor(key.slice(2));
+  const ion = JSON.parse(key) as Parameters<typeof ionBot>[0] | "glyph" | "glyph-on";
+  if (ion === "glyph" || ion === "glyph-on") return railGlyph(ion === "glyph-on");
+  return ionBot(ion);
+}
+
+type Who =
+  | { harness: string; ion?: never }
+  | {
+      ion: { harness: string | null; color: string | null } | "chief" | "glyph" | "glyph-on";
+      harness?: never;
+    };
+
+/**
+ * A harness's avatar, or an ion's (its project's colour on its harness's shape; ion chief with its orbit), as the
+ * lab draws them (class "av": the lab's sizes apply).
+ */
+export function Avatar(p: Who & { seed?: number; state?: BotState }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const seed = p.seed ?? 0.4;
+  const state = p.state ?? "idle";
+  const key = p.ion ? JSON.stringify(p.ion) : `h:${p.harness}`;
   useEffect(() => {
     const cv = ref.current;
     if (!cv || typeof Path2D === "undefined") return;
-    const v: View = { cv, bot: botFor(harness), seed, state, w: 0 };
+    const bot = botOf(key);
+    const v: View = { cv, bot, seed, state, w: 0 };
     views.add(v);
     start();
     return () => void views.delete(v);
-  }, [harness, seed, state]);
+  }, [key, seed, state]);
   return <canvas ref={ref} className="av" aria-hidden="true" />;
 }

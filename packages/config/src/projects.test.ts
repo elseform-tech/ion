@@ -2,7 +2,15 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addProject, DEFAULT_CONFIG, DEFAULT_PROJECT, projectNameError, setProjectAccess } from "./index.js";
+import {
+  addProject,
+  DEFAULT_CONFIG,
+  DEFAULT_PROJECT,
+  projectNameError,
+  removeProject,
+  renameProject,
+  setProjectAccess,
+} from "./index.js";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-proj-")), name);
@@ -60,5 +68,44 @@ describe("projects by name", () => {
   it("keeps projects in a folder you can change; default ~/ion/projects", () => {
     expect(DEFAULT_CONFIG.folders.projects).toBe("~/ion/projects");
     expect(DEFAULT_PROJECT).toBe("default");
+  });
+});
+
+// Final review I11: "chief" is ion chief's; no project takes it.
+describe("reserved names", () => {
+  it("never names a project chief", async () => {
+    const { projectNameError } = await import("./projects.js");
+    expect(projectNameError("chief")).toBe("That name is ion's own");
+  });
+});
+
+// The user, 2026-11-19: rename and remove projects. A rename is the name ion shows (its id stays: every event,
+// decision and thread refers to it); removing takes it out of ion and never touches its folder.
+describe("rename and remove", () => {
+  const two = () => ({
+    ...DEFAULT_CONFIG,
+    projects: [
+      { id: "shop", path: "/p/shop", starred: false },
+      { id: "api", path: "/p/api", starred: false },
+    ],
+  });
+
+  it("renames a project's shown name, keeping its id", () => {
+    const c = renameProject(two(), "shop", "  Storefront  ");
+    expect(c.projects[0]).toMatchObject({ id: "shop", name: "Storefront" });
+    expect(renameProject(c, "shop", "shop").projects[0]!.name).toBeUndefined();
+  });
+
+  it("refuses an empty name, a taken one, default and an unknown project", () => {
+    expect(() => renameProject(two(), "shop", "  ")).toThrow("Give the project a name");
+    expect(() => renameProject(two(), "shop", "api")).toThrow("That name is taken");
+    expect(() => renameProject(two(), DEFAULT_PROJECT, "x")).toThrow("default can't be renamed");
+    expect(() => renameProject(two(), "nope", "x")).toThrow("Unknown project: nope");
+  });
+
+  it("removes a project from ion, but never default", () => {
+    expect(removeProject(two(), "shop").projects.map((p) => p.id)).toEqual(["api"]);
+    expect(() => removeProject(two(), DEFAULT_PROJECT)).toThrow("default can't be removed");
+    expect(() => removeProject(two(), "nope")).toThrow("Unknown project: nope");
   });
 });

@@ -5,15 +5,11 @@ import type { EventStore } from "../store/index.js";
 const BUSY = "This chat is already running";
 
 /** Your answer on its way back into a chat: the message, what the judge treats as your request, and the agent. */
-export type Message = { harness: string | null; text: string; request: string };
+/** `shown`: what the chat shows as yours (your choice), when `text` is ion's wording for the agent. */
+export type Message = { harness: string | null; text: string; request: string; shown?: string };
 /** decisionId: the decision whose outcome the run is, if any (a one-off answer has none). */
 type Pending = Message & { decisionId?: string };
-export type Start = (
-  chatId: string,
-  harness: string | null,
-  text: string,
-  request: string,
-) => Promise<string | null>;
+export type Start = (chatId: string, m: Message) => Promise<string | null>;
 type Ended = (chatId: string | null, decisionId: string, how: { ok: boolean; why?: string }) => void;
 
 /**
@@ -61,7 +57,14 @@ export class FollowUps {
 
   private async attempt(chatId: string, m: Message): Promise<string | "busy"> {
     try {
-      return (await this.start(chatId, m.harness, m.text, m.request)) ?? "";
+      return (
+        (await this.start(chatId, {
+          harness: m.harness,
+          text: m.text,
+          request: m.request,
+          ...(m.shown ? { shown: m.shown } : {}),
+        })) ?? ""
+      );
     } catch (e) {
       if (e instanceof UserError && e.message === BUSY) return "busy";
       throw e;
