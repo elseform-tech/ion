@@ -10,7 +10,7 @@ import {
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
-import { Readiness, titleOf } from "./ready.js";
+import { type Chat, chatFor, Readiness } from "./ready.js";
 import { UserError } from "../api/errors.js";
 import type { Access } from "../access/index.js";
 import type { Grants } from "../mcp/index.js";
@@ -29,7 +29,6 @@ import { ION_INSTRUCTIONS } from "./instructions.js";
 
 type AskArgs = Commands["ask"]["args"];
 type Active = { chatId: string; session: Session };
-type Chat = { chatId: string | null; projectId: string | null; title: string };
 type Launch = {
   h: HarnessEntry;
   args: AskArgs;
@@ -74,6 +73,8 @@ export class RunManager {
   private stopping = false;
   /** Runs from launch to end, for the gate to find by its key's run. */
   private readonly launches = new Map<string, Launch>();
+  /** Told when a chat's run has ended and the chat is free (its queue sends the next). */
+  private readonly ends: ((chatId: string) => void)[] = [];
 
   constructor(
     private readonly store: EventStore,
@@ -116,13 +117,12 @@ export class RunManager {
     // A new chat with no project goes to `default` (made the first time): every thread has a project.
     if (!args.chatId && !args.projectId)
       args = { ...args, projectId: await defaultProject(this.ctx.configFile) };
-    const chat = this.chatFor(args, opts.title);
+    const chat = chatFor(this.db, args, opts.title);
     // An existing chat stays in its own project: its worktree belongs to that repo.
     const repo = projectPath(this.ctx.configFile, chat.chatId ? chat.projectId : args.projectId);
     if (this.stopping) throw new UserError("ion is stopping");
     const key = chat.chatId;
-    if (key && (this.reserved.has(key) || this.runningIn(key)))
-      throw new UserError("This chat is already running");
+    if (key && this.busy(key)) throw new UserError("This chat is already running");
     if (key) this.reserved.add(key);
     let launch: Launch;
     try {
@@ -200,7 +200,28 @@ export class RunManager {
       this.ctx.mcp?.grants.revoke(l.runId);
       this.launches.delete(l.runId);
       this.approvals.forget(l.runId);
+      this.ended(l.chatId);
     }
+  }
+
+  /** `fn` hears each time a chat's run ends, however it ended, once the chat is free for its next. */
+  onEnded(fn: (chatId: string) => void): void {
+    this.ends.push(fn);
+  }
+
+  private ended(chatId: string): void {
+    if (!this.stopping) for (const fn of this.ends) fn(chatId);
+  }
+
+  /** Whether the chat has a run starting, waiting or going. */
+  busy(chatId: string): boolean {
+    return this.reserved.has(chatId) || this.runOf(chatId) !== undefined;
+  }
+
+  /** Stops the chat's run, as Esc twice does (nothing when none is going). */
+  async stopChat(chatId: string): Promise<void> {
+    const runId = this.runOf(chatId);
+    if (runId) await this.interrupt(runId);
   }
 
   /** Whether a try that ended this way is retried; if so, records run.retrying and updates the effort. */
@@ -307,6 +328,7 @@ export class RunManager {
       this.queued.delete(runId);
       const data = { status: "interrupted" };
       this.store.append({ chatId: waiting.chatId, runId, origin: "daemon", type: EV.runFinished, data });
+      this.ended(waiting.chatId);
       return;
     }
     const b = this.between.get(runId);
@@ -324,8 +346,8 @@ export class RunManager {
    * for a project already out of your config (being removed).
    */
   async archive(chatId: string, repo?: string): Promise<void> {
-    if (this.runningIn(chatId)) throw new UserError("Stop the chat's run first");
-    const chat = this.chatFor({ chatId, text: "" });
+    if (this.runOf(chatId)) throw new UserError("Stop the chat's run first");
+    const chat = chatFor(this.db, { chatId, text: "" });
     const worktree = chatsView.worktree(this.db, chatId);
     if (worktree) await removeWorktree(repo ?? projectPath(this.ctx.configFile, chat.projectId), worktree);
     this.needs.supersedeChat(chatId);
@@ -356,9 +378,9 @@ export class RunManager {
       }
   }
 
-  private runningIn(chatId: string): boolean {
-    const all = [...this.queued.values(), ...this.between.values()];
-    return all.some((a) => a.chatId === chatId);
+  /** The chat's run waiting for a slot or going, if any. */
+  private runOf(chatId: string): string | undefined {
+    return [...this.queued, ...this.between].find(([, r]) => r.chatId === chatId)?.[0];
   }
 
   private endFailed(chatId: string | null, runId: string, code: string, message: string): void {
@@ -370,20 +392,6 @@ export class RunManager {
       data: { code, retryable: false, message },
     });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
-  }
-
-  /** `title`: a new chat's own title (a routine's name), instead of one from the text. */
-  private chatFor(args: { chatId?: string; projectId?: string; text: string }, title?: string): Chat {
-    if (!args.chatId)
-      return {
-        chatId: null,
-        projectId: args.projectId ?? null,
-        title: title ?? titleOf(args.text),
-      };
-    const chat = chatsView.list(this.db).find((c) => c.chatId === args.chatId);
-    if (!chat) throw new UserError(`Unknown chat: ${args.chatId}`);
-    if (chat.archived) throw new UserError("That chat is archived");
-    return { chatId: chat.chatId, projectId: chat.projectId, title: chat.title };
   }
 
   /** `by`: "ion" for a thread ion started (Plan 09); your own chats have none. */

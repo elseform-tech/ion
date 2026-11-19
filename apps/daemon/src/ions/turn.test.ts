@@ -11,7 +11,7 @@ import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { ionsView } from "../views/ions.js";
 import { ionInstructions } from "./instructions.js";
-import { IonTurns, NO_AGENT, TOO_LONG } from "./turn.js";
+import { IonTurns, NO_AGENT, STOPPED, TOO_LONG } from "./turn.js";
 
 process.env.ION_ALLOW_FAKE = "1";
 
@@ -345,4 +345,23 @@ describe("an ion's turn", () => {
       expect(grants.check(key, "gate")).toBeNull();
     }
   });
+
+  // The user, 2026-11-19: "there is no stop (double esc) for both plain chat and ions". Esc twice stops an ion's turn:
+  // it says it stopped, and its next turn (a queued message) goes on.
+  it("stop ends the ion's turn as stopped, and the next turn goes on", async () => {
+    const t = turns();
+    const going = t.turn("storefront", "take-your-time");
+    const next = t.turn("storefront", "hello");
+    await vi.waitFor(() => expect(onIon("storefront").some((e) => e.type === EV.toolStarted)).toBe(true));
+    expect(t.busy("storefront")).toBe(true);
+    expect(t.busy("chief")).toBe(false);
+    const started = Date.now();
+    expect(t.stop("storefront")).toBe(true);
+    expect((await going).reply).toBe(STOPPED);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect((await next).reply).toBe("This is storefront.");
+    expect(t.busy("storefront")).toBe(false);
+    // Nothing to stop: nothing happens.
+    expect(t.stop("storefront")).toBe(false);
+  }, 10_000);
 });

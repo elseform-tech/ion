@@ -15,6 +15,23 @@ export function titleOf(text: string): string {
   return `${(word > TITLE_MAX / 2 ? cut.slice(0, word) : cut).trimEnd()}…`;
 }
 
+/** A run's chat: an existing one (refused when unknown or archived), or the one a new ask makes. */
+export type Chat = { chatId: string | null; projectId: string | null; title: string };
+
+/** `title`: a new chat's own title (a routine's name), instead of one from the text. */
+export function chatFor(
+  db: Db,
+  args: { chatId?: string; projectId?: string; text: string },
+  title?: string,
+): Chat {
+  if (!args.chatId)
+    return { chatId: null, projectId: args.projectId ?? null, title: title ?? titleOf(args.text) };
+  const chat = chatsView.list(db).find((c) => c.chatId === args.chatId);
+  if (!chat) throw new UserError(`Unknown chat: ${args.chatId}`);
+  if (chat.archived) throw new UserError("That chat is archived");
+  return { chatId: chat.chatId, projectId: chat.projectId, title: chat.title };
+}
+
 /** A new name for a chat, trimmed; at most 120 characters. */
 export function renameChat(store: EventStore, db: Db, chatId: string, title: string): void {
   if (!chatsView.list(db).some((c) => c.chatId === chatId)) throw new UserError(`Unknown chat: ${chatId}`);

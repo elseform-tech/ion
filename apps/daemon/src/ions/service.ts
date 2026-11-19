@@ -68,7 +68,7 @@ export type IonsDeps = {
   configFile: string;
   runs: { ask: Ask };
   /** An ion's turn: a session of its own agent with ion's tools; its reply and the threads it started. */
-  turns: Pick<IonTurns, "turn">;
+  turns: Pick<IonTurns, "turn"> & Partial<Pick<IonTurns, "busy" | "stop">>;
   /** The agents and whether each is ready, to pick one for a project with none set. */
   agents?: () => Promise<HarnessInfo[]>;
 };
@@ -89,11 +89,38 @@ export class Ions {
   private readonly perTurn = new Map<string, number>();
   /** ion is stopping: nothing more is said. */
   private stopped = false;
+  /** Told when an ion's turn ends and it has said its line (its queue sends the next). */
+  private readonly ends: ((ionId: string) => void)[] = [];
 
   constructor(private readonly d: IonsDeps) {}
 
   private projects(): { id: string; harness?: string; shareWithIon?: boolean }[] {
     return loadUserConfig(this.d.configFile).config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
+  }
+
+  /** Whether there's such an ion: ion chief, or a project's (never `default`). */
+  knows(ionId: string): boolean {
+    return ionId === "chief" || this.projects().some((p) => p.id === ionId);
+  }
+
+  /** Whether the ion is thinking (a turn going, or waiting for one). */
+  busy(ionId: string): boolean {
+    return this.d.turns.busy?.(ionId) ?? false;
+  }
+
+  /** Esc twice: stops the ion's turn; it says it stopped. */
+  stopTurn(ionId: string): void {
+    if (!this.knows(ionId)) throw new UserError(`Unknown ion: ${ionId}`);
+    this.d.turns.stop?.(ionId);
+  }
+
+  /** `fn` hears each time one of an ion's turns ends, once its line is said. */
+  onTurnEnd(fn: (ionId: string) => void): void {
+    this.ends.push(fn);
+  }
+
+  private ended(ionId: string): void {
+    if (!this.stopped) for (const fn of this.ends) fn(ionId);
   }
 
   /** ion is stopping: from now its ions say nothing (a turn ending late can't write to a closed store). */
@@ -128,8 +155,7 @@ export class Ions {
    * wrong, the ion answers (else "Thinking" would stay): your mistake in its words, else NO_AGENT.
    */
   async message(ionId: string, text: string): Promise<void> {
-    if (ionId !== "chief" && !this.projects().some((p) => p.id === ionId))
-      throw new UserError(`Unknown ion: ${ionId}`);
+    if (!this.knows(ionId)) throw new UserError(`Unknown ion: ${ionId}`);
     this.heard(ionId, text);
     const answering = this.answer(ionId, text);
     if (ionId === "chief") this.chiefAnswering = answering;
@@ -142,6 +168,8 @@ export class Ions {
       this.say(ionId, reply, threadsCard(threads), turnId);
     } catch (e) {
       this.say(ionId, e instanceof UserError ? e.message : NO_AGENT);
+    } finally {
+      this.ended(ionId);
     }
   }
 
@@ -279,6 +307,7 @@ export class Ions {
     const failed = !r || r.reply === NO_AGENT || r.reply === TOO_LONG;
     const text = failed ? plainReport(title, status, reply) : capped(r.reply);
     this.say(projectId, text, undefined, r?.turnId);
+    this.ended(projectId);
     if (!this.chiefStarted(chat.chatId)) return;
     await this.chiefAnswering;
     this.say("chief", text);

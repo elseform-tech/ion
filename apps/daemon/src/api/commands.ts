@@ -30,6 +30,8 @@ import type { Ions } from "../ions/service.js";
 import { changeConfig, settingsHandlers } from "./settings.js";
 import { workspaceHandlers } from "./workspace.js";
 import { routineHandlers } from "./routines.js";
+import { queueHandlers } from "./queue.js";
+import type { PromptQueue } from "../queue/index.js";
 import type { Routines } from "../scheduler/index.js";
 import type { Suggestions } from "../ions/suggestions.js";
 
@@ -55,6 +57,7 @@ export type Ctx = {
   ions: Ions;
   routines: Routines;
   suggestions: Suggestions;
+  queue: PromptQueue;
   configFile: string;
   startedAt: number;
   version: string;
@@ -71,6 +74,7 @@ export const handlers: Handlers = {
   ...settingsHandlers,
   ...workspaceHandlers,
   ...routineHandlers,
+  ...queueHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
