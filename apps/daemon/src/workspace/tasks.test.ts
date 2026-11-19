@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listTasks, readWorktreeFile, stopTask } from "./tasks.js";
+import { listTasks, markedInProc, readWorktreeFile, stopTask } from "./tasks.js";
 
 const kids: number[] = [];
 afterEach(() => {
@@ -26,6 +26,20 @@ function leave(dir: string): number {
 
 const worktree = () => realpathSync(mkdtempSync(join(tmpdir(), "ion-wt-")));
 
+/**
+ * A background process an agent's tool call left in `dir` (`cd dir && server &`), its environment carrying the
+ * agent's `ION_CHAT`. It's node, not /bin/sleep: macOS hides the environment of its own system binaries.
+ */
+function leaveFrom(dir: string, chat: string): number {
+  const server = `'${process.execPath}' -e 'setTimeout(() => {}, 30000)'`;
+  const out = execFileSync("sh", ["-c", `cd '${dir}' && { ${server} >/dev/null 2>&1 & echo $!; }`], {
+    env: { ...process.env, ION_CHAT: chat },
+  }).toString();
+  const pid = Number(out.trim());
+  kids.push(pid);
+  return pid;
+}
+
 // The user, 2026-11-18: a preview of the workspace, with background tasks and their PIDs.
 describe("background tasks in a worktree", () => {
   it("lists what's still running in the worktree, with its PID, and nothing from elsewhere", async () => {
@@ -33,7 +47,7 @@ describe("background tasks in a worktree", () => {
     const pid = leave(wt);
     const other = leave(worktree());
     await new Promise((r) => setTimeout(r, 200));
-    const tasks = await listTasks(wt);
+    const tasks = await listTasks(wt, "c1");
     expect(tasks.map((t) => t.pid)).toContain(pid);
     expect(tasks.map((t) => t.pid)).not.toContain(other);
     expect(tasks.find((t) => t.pid === pid)?.command).toContain("sleep 30");
@@ -44,10 +58,79 @@ describe("background tasks in a worktree", () => {
     const pid = leave(wt);
     const other = leave(worktree());
     await new Promise((r) => setTimeout(r, 200));
-    await expect(stopTask(wt, other)).rejects.toThrow("That isn't running in this chat");
-    await stopTask(wt, pid);
+    await expect(stopTask(wt, "c1", other)).rejects.toThrow("That isn't running in this chat");
+    await stopTask(wt, "c1", pid);
     await new Promise((r) => setTimeout(r, 300));
-    expect((await listTasks(wt)).map((t) => t.pid)).not.toContain(pid);
+    expect((await listTasks(wt, "c1")).map((t) => t.pid)).not.toContain(pid);
+  });
+});
+
+// The user, 2026-11-19: the workspace lists every process a chat's tool calls left running, background ones
+// included, wherever they run (`cd /tmp/x && npm run dev &`), found by the ION_CHAT its agent's environment carries.
+describe("a chat's processes, wherever they run", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 400));
+
+  it("lists a background process started elsewhere by the chat's agent, and where it runs", async () => {
+    const wt = worktree();
+    const elsewhere = worktree();
+    const pid = leaveFrom(elsewhere, "c1");
+    await settle();
+    const task = (await listTasks(wt, "c1")).find((t) => t.pid === pid);
+    expect(task).toMatchObject({ where: elsewhere });
+    expect(task?.command).toContain("setTimeout");
+  });
+
+  it("never lists another chat's process, or one of yours outside ion", async () => {
+    const wt = worktree();
+    const theirs = leaveFrom(worktree(), "c12");
+    const yours = leave(worktree());
+    await settle();
+    const pids = (await listTasks(wt, "c1")).map((t) => t.pid);
+    expect(pids).not.toContain(theirs);
+    expect(pids).not.toContain(yours);
+    // The marker counts only in the environment, never as an argument.
+    const named = execFileSync(
+      "sh",
+      ["-c", `'${process.execPath}' -e 'setTimeout(()=>{},30000)' ION_CHAT=c1 >/dev/null 2>&1 & echo $!`],
+      { cwd: worktree() },
+    );
+    kids.push(Number(String(named).trim()));
+    await settle();
+    expect((await listTasks(wt, "c1")).map((t) => t.pid)).not.toContain(Number(String(named).trim()));
+    // A chat id that isn't one matches nothing (it's never built into a pattern).
+    expect(await listTasks(wt, "c1 ION_CHAT=c12")).toEqual([]);
+  });
+
+  it("stops one, and refuses a PID that isn't the chat's", async () => {
+    const wt = worktree();
+    const pid = leaveFrom(worktree(), "c1");
+    const theirs = leaveFrom(worktree(), "c2");
+    await settle();
+    await expect(stopTask(wt, "c1", theirs)).rejects.toThrow("That isn't running in this chat");
+    await stopTask(wt, "c1", pid);
+    await settle();
+    expect((await listTasks(wt, "c1")).map((t) => t.pid)).not.toContain(pid);
+    expect((await listTasks(wt, "c2")).map((t) => t.pid)).toContain(theirs);
+  });
+
+  // Plan 15 review focus 5: the task ended and its PID went to another program; Stop refuses it.
+  it("refuses a PID that's gone", async () => {
+    await expect(stopTask(worktree(), "c1", 2 ** 22 + 7)).rejects.toThrow("That isn't running in this chat");
+  });
+
+  // Linux has no `ps -E`: the environment is read from /proc, your own processes only, the marker as a whole entry.
+  it("reads the marker from /proc on Linux, as a whole entry", async () => {
+    const proc = worktree();
+    const env = (pid: number, vars: string[]) => {
+      mkdirSync(join(proc, String(pid)));
+      writeFileSync(join(proc, String(pid), "environ"), vars.join("\0") + "\0");
+    };
+    env(11, ["PATH=/bin", "ION_CHAT=c1"]);
+    env(12, ["ION_CHAT=c12"]);
+    env(13, ["X=ION_CHAT=c1"]);
+    mkdirSync(join(proc, "self"));
+    expect([...(await markedInProc("ION_CHAT=c1", undefined, proc))]).toEqual([11]);
+    expect([...(await markedInProc("ION_CHAT=c1", 12, proc))]).toEqual([]);
   });
 });
 
@@ -100,7 +183,7 @@ describe("a worktree whose name has a line break", () => {
     const pid = leave(odd);
     const other = leave(worktree());
     await new Promise((r) => setTimeout(r, 200));
-    const tasks = (await listTasks(base)).map((t) => t.pid);
+    const tasks = (await listTasks(base, "c1")).map((t) => t.pid);
     expect(tasks).toContain(pid);
     expect(tasks).not.toContain(other);
     expect(tasks).not.toContain(99999);

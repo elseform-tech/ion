@@ -119,8 +119,8 @@ export type ProjectPatch = {
 /** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
 export type IonSettings = { quick: string; effort: EffortLevel | null };
 
-/** A process still running in a chat's worktree. */
-export type TaskInfo = { pid: number; command: string; elapsed: string; ports: number[] };
+/** A process a chat's agent left running, in its worktree or anywhere else; `where` is its working folder. */
+export type TaskInfo = { pid: number; command: string; elapsed: string; ports: number[]; where: string };
 
 /** A file as the preview shows it: text, HTML (rendered locked), an image, or a binary it can't show. */
 export type FilePreview =
@@ -170,9 +170,9 @@ export type Commands = {
   "settings.get": { args: Record<string, never>; result: IonSettings };
   /** An ion's threads' runs over the last 30 days (ion chief: every ion's). */
   "ion.stats": { args: { ionId: string }; result: IonStats };
-  /** What's still running in a chat's worktree (dev servers, watchers), with PIDs and ports. */
+  /** What a chat's agent left running (dev servers, watchers), wherever it runs, with PIDs and ports. */
   "chat.tasks": { args: { chatId: string }; result: TaskInfo[] };
-  /** Stops one of them (only if it's still running in that worktree). */
+  /** Stops one of them (only if it's still that chat's). */
   "task.stop": { args: { chatId: string; pid: number }; result: { ok: true } };
   /** A file in a chat's worktree, for the preview (at most 1 MB). */
   "chat.file": { args: { chatId: string; path: string }; result: FilePreview };

@@ -15,6 +15,8 @@ export type Script = {
   /** The text this session was sent. */
   text(): string;
   mcp(): unknown;
+  /** What ion added to the agent process's environment. */
+  env(): Record<string, string>;
   /** ion's standing instructions for the run, if any. */
   instructions(): string;
   /** Reports a call to ion's gate like a real hook (allow when the run has no gate). */
@@ -135,6 +137,10 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   },
   async mcpinfo(s) {
     say(s, JSON.stringify(s.mcp()));
+    return "done";
+  },
+  async envinfo(s) {
+    say(s, JSON.stringify(s.env()));
     return "done";
   },
   /** Answers like ion's judge: deny when the action mentions "deny-me", else allow. */

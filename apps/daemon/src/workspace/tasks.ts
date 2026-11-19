@@ -1,11 +1,11 @@
 import type { FilePreview, TaskInfo } from "@ion/schema";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
+import { open, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, sep } from "node:path";
 import { UserError } from "../api/errors.js";
 
-/** A process still running in a chat's worktree (a dev server, a watcher): what the preview's Tasks tab shows. */
+/** A process a chat's agent left running (a dev server, a watcher): what the preview's Tasks tab shows. */
 export type Task = TaskInfo;
 
 const run = (cmd: string, args: string[]) =>
@@ -53,16 +53,84 @@ async function ports(pids: number[]): Promise<Map<number, number[]>> {
 function row(line: string): (Task & { ppid: number }) | null {
   const [pid, ppid, elapsed, ...rest] = line.trim().split(/\s+/);
   if (!pid || !ppid || !elapsed || !rest.length || !/^\d+$/.test(pid)) return null;
-  return { pid: Number(pid), ppid: Number(ppid), elapsed, command: rest.join(" ").slice(0, 500), ports: [] };
+  const command = rest.join(" ").slice(0, 500);
+  return {
+    pid: Number(pid),
+    ppid: Number(ppid),
+    elapsed,
+    command,
+    ports: [],
+    where: "",
+  };
+}
+
+/** ion's chat ids (`chat_<uuid>`); anything else is never built into the marker. */
+const CHAT_ID = /^[\w-]{1,100}$/;
+const uid = () => process.getuid?.() ?? -1;
+
+/** `pid command` lines from ps, by PID. */
+function byPid(out: string): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const line of out.split("\n")) {
+    const m = /^\s*(\d+) (.*)$/.exec(line);
+    if (m) map.set(Number(m[1]), m[2]!);
+  }
+  return map;
 }
 
 /**
- * What's running in the worktree, but not ion's own (the daemon and the agent CLIs it runs, its direct children):
- * what an agent left behind or started in the background.
+ * macOS: your own processes whose environment has `marker` as a whole word. `ps -E` prints the command, then the
+ * environment; only what comes after the plain command is read, so an argument can't pass for the marker.
  */
-export async function listTasks(worktree: string): Promise<Task[]> {
+async function markedByPs(marker: string, only?: number): Promise<Set<number>> {
+  const which = only ? ["-p", String(only)] : ["-x", "-U", String(uid())];
+  const [plain, withEnv] = await Promise.all([
+    run("ps", ["-ww", "-o", "pid=,command=", ...which]).then(byPid),
+    run("ps", ["-E", "-ww", "-o", "pid=,command=", ...which]).then(byPid),
+  ]);
+  const pids = new Set<number>();
+  for (const [pid, line] of withEnv) {
+    const command = plain.get(pid);
+    if (command === undefined || !line.startsWith(command)) continue;
+    if (line.slice(command.length).split(/\s+/).includes(marker)) pids.add(pid);
+  }
+  return pids;
+}
+
+/** Linux: your own processes whose environment (`/proc/<pid>/environ`, NUL-separated) has `marker` as an entry. */
+export async function markedInProc(marker: string, only?: number, proc = "/proc"): Promise<Set<number>> {
+  const names = only ? [String(only)] : await readdir(proc).catch(() => []);
+  const pids = new Set<number>();
+  await Promise.all(
+    names
+      .filter((n) => /^\d+$/.test(n))
+      .map(async (n) => {
+        const st = await stat(join(proc, n)).catch(() => null);
+        if (st?.uid !== uid()) return;
+        const env = await readFile(join(proc, n, "environ"), "utf8").catch(() => "");
+        if (env.split("\0").includes(marker)) pids.add(Number(n));
+      }),
+  );
+  return pids;
+}
+
+/** Your own processes carrying this chat's marker (`ION_CHAT=<chatId>`), inherited from the agent ion ran for it. */
+function markedFor(chatId: string, only?: number): Promise<Set<number>> {
+  if (!CHAT_ID.test(chatId)) return Promise.resolve(new Set());
+  const marker = `ION_CHAT=${chatId}`;
+  return process.platform === "linux" ? markedInProc(marker, only) : markedByPs(marker, only);
+}
+
+/**
+ * What a chat's agent left running, but not ion's own (the daemon and the agent CLIs it runs, its direct children):
+ * processes in the worktree, and processes anywhere carrying the chat's marker (a dev server started elsewhere, a
+ * background job whose folder moved). Each says where it runs.
+ */
+export async function listTasks(worktree: string, chatId: string): Promise<Task[]> {
   const dir = await realpath(worktree).catch(() => worktree);
-  const pids = [...(await cwds())].filter(([, cwd]) => inside(dir, cwd)).map(([pid]) => pid);
+  const [where, marked] = await Promise.all([cwds(), markedFor(chatId)]);
+  const inWorktree = [...where].filter(([, cwd]) => inside(dir, cwd)).map(([pid]) => pid);
+  const pids = [...new Set([...inWorktree, ...marked])];
   if (!pids.length) return [];
   const rows = (await run("ps", ["-o", "pid=,ppid=,etime=,command=", "-p", pids.join(",")])).split("\n");
   const open = await ports(pids);
@@ -70,17 +138,27 @@ export async function listTasks(worktree: string): Promise<Task[]> {
     .map(row)
     .filter((t): t is Task & { ppid: number } => t !== null)
     .filter((t) => t.pid !== process.pid && t.ppid !== process.pid)
-    .map(({ ppid: _p, ...t }) => ({ ...t, ports: open.get(t.pid) ?? [] }));
+    .map(({ ppid: _p, ...t }) => ({
+      ...t,
+      ports: open.get(t.pid) ?? [],
+      where: where.get(t.pid) ?? "",
+    }));
 }
 
-/** Stops a task, only when it's still running in this worktree (a PID can be reused). */
-export async function stopTask(worktree: string, pid: number): Promise<void> {
-  if (!(await listTasks(worktree)).some((t) => t.pid === pid))
-    throw new UserError("That isn't running in this chat");
-  // Checked again for this one process right before the signal, so a PID reused meanwhile isn't hit.
+/** Whether this one process is still the chat's: running in its worktree, or carrying its marker. */
+async function stillTheChats(worktree: string, chatId: string, pid: number): Promise<boolean> {
   const dir = await realpath(worktree).catch(() => worktree);
   const cwd = (await cwds(pid)).get(pid);
-  if (!cwd || !inside(dir, cwd)) throw new UserError("That isn't running in this chat");
+  if (cwd && inside(dir, cwd)) return true;
+  return (await markedFor(chatId, pid)).has(pid);
+}
+
+/** Stops a task, only when it's still the chat's (a PID can be reused). */
+export async function stopTask(worktree: string, chatId: string, pid: number): Promise<void> {
+  if (!(await listTasks(worktree, chatId)).some((t) => t.pid === pid))
+    throw new UserError("That isn't running in this chat");
+  // Checked again for this one process right before the signal, so a PID reused meanwhile isn't hit.
+  if (!(await stillTheChats(worktree, chatId, pid))) throw new UserError("That isn't running in this chat");
   try {
     process.kill(pid, "SIGTERM");
   } catch {

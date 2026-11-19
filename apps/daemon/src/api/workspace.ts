@@ -13,9 +13,9 @@ function worktreeOf(db: Db, chatId: unknown): string {
 
 /** The side panel's Preview and Tasks: a chat's files, and what's still running in its worktree. */
 export const workspaceHandlers: Pick<Handlers, "chat.tasks" | "task.stop" | "chat.file"> = {
-  "chat.tasks": (a, ctx) => listTasks(worktreeOf(ctx.db, a.chatId)),
+  "chat.tasks": (a, ctx) => listTasks(worktreeOf(ctx.db, a.chatId), String(a.chatId)),
   "task.stop": async (a, ctx) => {
-    await stopTask(worktreeOf(ctx.db, a.chatId), Number(a.pid));
+    await stopTask(worktreeOf(ctx.db, a.chatId), String(a.chatId), Number(a.pid));
     return { ok: true as const };
   },
   "chat.file": (a, ctx) => readWorktreeFile(worktreeOf(ctx.db, a.chatId), String(a.path ?? "")),

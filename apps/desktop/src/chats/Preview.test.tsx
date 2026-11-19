@@ -11,7 +11,7 @@ const patch = "@@ -0,0 +1 @@\n+hi\n";
 function client(files: Record<string, unknown> = {}) {
   const call = vi.fn(async (cmd: string, a: { path?: string }) => {
     if (cmd === "chat.tasks")
-      return [{ pid: 4242, command: "node vite --port 3000", elapsed: "02:15", ports: [3000] }];
+      return [{ pid: 4242, command: "node vite --port 3000", elapsed: "02:15", ports: [3000], where: "/wt" }];
     if (cmd === "chat.file")
       return files[a.path ?? ""] ?? { path: a.path, kind: "text", text: "# Notes\n", size: 8 };
     return { ok: true };
