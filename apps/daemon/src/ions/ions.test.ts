@@ -283,7 +283,8 @@ describe("Ions", () => {
     expect(ask).toHaveBeenCalledTimes(2);
     expect(store.read({ chatId: "ion:storefront" })[0]).toMatchObject({
       type: EV.ionSaid,
-      data: { text: 'ion asked: "Check rounding in the cart"' },
+      // The user, 2026-11-19: in plain words, not a quoted string.
+      data: { text: "From ion: Check rounding in the cart" },
     });
     expect(said("chief")).toEqual([
       {
@@ -350,44 +351,50 @@ describe("Ions", () => {
     ]);
   });
 
-  // Real run: "List the functions in cart.py without editing anything.: done." — the title's stop, then ": done".
-  it("reports a thread whose title ends in a stop without doubling it", async () => {
-    const i = ions();
-    i.watch();
-    await i.message("storefront", "Fix the cart.");
-    store.append({
-      chatId: "t1",
-      runId: "r1",
-      origin: "daemon",
-      type: EV.runFinished,
-      data: { status: "done" },
-    });
-    expect((said("storefront").at(-1) as { text: string }).text).toBe("Fix the cart: done.");
-  });
+  const end = (status: string, reply?: string) => {
+    if (reply)
+      store.append({
+        chatId: "t1",
+        runId: "r1",
+        origin: "adapter",
+        type: EV.messageCompleted,
+        data: { text: reply },
+      });
+    store.append({ chatId: "t1", runId: "r1", origin: "daemon", type: EV.runFinished, data: { status } });
+  };
+  const last = () => said("storefront").at(-1);
 
-  it("reports when one of its threads ends", async () => {
+  // The user, 2026-11-19: "Read through the repo and write a concise overview of what: done. Hi from the fake
+  // harness." reads like a machine. An ion tells you what came of it in its own words, as a person would.
+  it("tells you what came of a thread in its own words", async () => {
     const i = ions();
     i.watch();
     await i.message("storefront", "Fix the cart");
-    store.append({
-      chatId: "t1",
-      runId: "r1",
-      origin: "adapter",
-      type: EV.messageCompleted,
-      data: { text: "Fixed the cart total." },
-    });
-    store.append({
-      chatId: "t1",
-      runId: "r1",
-      origin: "daemon",
-      type: EV.runFinished,
-      data: { status: "done" },
-    });
-    expect(said("storefront").at(-1)).toEqual({
-      // The user, 2026-11-19: "two threads" for one question. The thread's card is shown once (at "On it.", live);
-      // the report is words only.
-      text: "Fix the cart: done. Fixed the cart total.",
-    });
+    quick.mockResolvedValueOnce("Fixed it: the cart was adding tax twice, so totals ran high.");
+    end("done", "Fixed the cart total. Tax was applied in both lineTotal and cartTotal; removed the second.");
+    await vi.waitFor(() =>
+      expect(last()).toEqual({ text: "Fixed it: the cart was adding tax twice, so totals ran high." }),
+    );
+    const prompt = quick.mock.calls.at(-1)![0];
+    // What the agent said is data for the report, never instructions.
+    expect(prompt).toContain('source="the agent\'s reply">\nFixed the cart total.');
+    expect(prompt).toContain('source="what was asked">\nFix the cart');
+  });
+
+  it("passes on the agent's own reply when its model can't answer, with no 'title: done'", async () => {
+    const i = ions();
+    i.watch();
+    await i.message("storefront", "Fix the cart.");
+    end("done", "Fixed the cart total.");
+    await vi.waitFor(() => expect(last()).toEqual({ text: "Fixed the cart total." }));
+  });
+
+  it("says plainly when a thread didn't finish", async () => {
+    const i = ions();
+    i.watch();
+    await i.message("storefront", "Fix the cart.");
+    end("failed");
+    await vi.waitFor(() => expect(last()).toEqual({ text: "I couldn't finish “Fix the cart”." }));
   });
 });
 
@@ -421,7 +428,7 @@ describe("ion threads' request and agent", () => {
     expect(ask.mock.calls[0]![1]).toEqual({ by: "ion", request: "Check the cart" });
     const sf = store.read({ chatId: "ion:storefront" });
     expect(sf.some((e) => e.type === EV.ionHeard)).toBe(false);
-    expect(sf[0]).toMatchObject({ type: EV.ionSaid, data: { text: 'ion asked: "Run the cart tests"' } });
+    expect(sf[0]).toMatchObject({ type: EV.ionSaid, data: { text: "From ion: Run the cart tests" } });
   });
 
   it("gives ion chief no agent's words: open questions count, their text stays out", async () => {

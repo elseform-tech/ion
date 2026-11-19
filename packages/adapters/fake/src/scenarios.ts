@@ -97,6 +97,12 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, JSON.stringify(asked ? { answer: `This is ${project}.` } : { thread: message }));
     return "done";
   },
+  /** Tells you what came of a thread like a project's ion: the agent's reply, in a sentence. */
+  async report(s) {
+    const reply = /source="the agent's reply">\n([\s\S]*?)\n<\/ion-data/.exec(s.text())?.[1] ?? "";
+    say(s, reply && reply !== "(no reply)" ? `It's done. ${reply}` : "It's done.");
+    return "done";
+  },
   async hello(s) {
     say(s, "Hi from the fake harness.");
     return "done";

@@ -264,7 +264,7 @@ describe("daemon api", () => {
           (e) =>
             e.chatId === "ion:app" &&
             e.type === "ion.said" &&
-            (e.data as { text: string }).text.startsWith("hello from your ion: done"),
+            (e.data as { text: string }).text.startsWith("It's done."),
         ),
       5000,
     );

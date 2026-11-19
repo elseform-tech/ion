@@ -5,7 +5,14 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { chiefPrompt, contextOf, parseRoute, type Route } from "./route.js";
-import { parseProjectDecision, projectContextOf, projectPrompt } from "./project.js";
+import {
+  parseProjectDecision,
+  plainReport,
+  projectContextOf,
+  projectPrompt,
+  reportOf,
+  reportPrompt,
+} from "./project.js";
 
 const TIMEOUT_MS = 30_000;
 const NO_MODEL = "I couldn't reach my model; try again.";
@@ -22,7 +29,7 @@ type Ask = (
   opts: { by: "ion"; request?: string; title?: string },
 ) => Promise<{ chatId: string; runId: string }>;
 
-/** A title without its closing stops or spaces ("Fix the cart." → "Fix the cart"), so ": done." reads right. */
+/** A title without its closing stops or spaces ("Fix the cart." → "Fix the cart"), to quote it in a sentence. */
 function trimEnd(title: string): string {
   let end = title.length;
   while (end > 0 && ".!?… ".includes(title[end - 1]!)) end--;
@@ -203,7 +210,7 @@ export class Ions {
     const missed: string[] = [];
     for (const { projectId, brief } of r.route) {
       // The brief is ion chief's words, not yours.
-      this.say(projectId, `ion asked: ${JSON.stringify(brief)}`);
+      this.say(projectId, `From ion: ${brief.trim()}`);
       const t = await this.thread(projectId, brief, { request: text });
       if ("why" in t) missed.push(`Couldn't reach ${projectId}: ${t.why}`);
       else {
@@ -248,17 +255,30 @@ export class Ions {
     }
   }
 
-  /** When one of an ion's threads ends, its ion says so: title, how it ended, and the start of the reply. */
+  /** When one of an ion's threads ends, its ion tells you what came of it, in its own words. */
   watch(): void {
     this.d.store.onAppend((e) => {
       if (e.type !== EV.runFinished || !e.chatId) return;
       const chat = chatsView.list(this.d.db).find((c) => c.chatId === e.chatId);
       if (chat?.by !== "ion" || !chat.projectId) return;
-      const status = (e.data as { status: string }).status;
-      const title = trimEnd(chat.title);
-      const line = [`${title}: ${status}.`, chat.preview].filter(Boolean).join(" ");
-      // Words only: the thread's card was shown when it started, and it updates as the thread runs.
-      this.say(chat.projectId, line);
+      // The report takes a moment (ion's model); one that ends after ion stopped is dropped, never an error.
+      this.report(chat.projectId, chat, (e.data as { status: string }).status).catch(() => {});
     });
+  }
+
+  /** Words only: the thread's line was shown when it started, and it updates as the thread runs. */
+  private async report(projectId: string, chat: { chatId: string; title: string }, status: string) {
+    const reply = this.lastReply(chat.chatId);
+    const title = trimEnd(chat.title);
+    const said = await this.think(reportPrompt(chat.title, reply, status));
+    this.say(projectId, reportOf(said) ?? plainReport(title, status, reply));
+  }
+
+  /** The agent's last whole message in a chat ("" when it said nothing). */
+  private lastReply(chatId: string): string {
+    const e = this.d.store
+      .read({ chatId })
+      .findLast((x) => x.type === EV.messageCompleted && x.origin === "adapter");
+    return e ? String((e.data as { text?: unknown }).text ?? "") : "";
   }
 }
