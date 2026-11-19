@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { IonClient } from "@ion/client/browser";
+import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { HarnessInfo, IonInfo, ProjectInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -71,12 +71,13 @@ const activity = {
   yesterday: [],
 };
 
-function client() {
+function client(o: { projects?: ProjectInfo[]; fail?: string[] } = {}) {
   const call = vi.fn(async (cmd: string) => {
+    if (o.fail?.includes(cmd)) throw new ApiCallError("invalid", "Fix your config first.");
     if (cmd === "harnesses.list") return [claude, grok];
     if (cmd === "settings.get") return { quick: "grok-build" };
     if (cmd === "ions.list") return ions;
-    if (cmd === "projects.list") return projects;
+    if (cmd === "projects.list") return o.projects ?? projects;
     if (cmd === "activity.list") return activity;
     if (cmd === "ion.stats")
       return { runs: 3, succeeded: 2, costUsd: 0.75, perDay: [...Array(29).fill(0), 3] };
@@ -193,5 +194,69 @@ describe("Settings", () => {
     fireEvent.change(screen.getByLabelText("Every"), { target: { value: "6" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(c.call).toHaveBeenCalledWith("routine.add", expect.objectContaining({ when: "every 6h" }));
+  });
+});
+
+// Review, 2026-11-19: Settings' controls failed with no sign; what Settings showed wasn't what it saved.
+describe("Settings, reviewed", () => {
+  const openShop = async (c: ReturnType<typeof client>) => {
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
+    await screen.findByRole("heading", { name: "Shop" });
+  };
+
+  it("saves the agent it shows with a model picked for a project with none of its own", async () => {
+    const c = client({ projects: [{ ...projects[0]!, harness: undefined } as ProjectInfo] });
+    await openShop(c);
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
+    expect(c.call).toHaveBeenCalledWith("project.update", {
+      projectId: "shop",
+      harness: "grok-build",
+      model: "grok-code-fast",
+    });
+  });
+
+  it("says why a change to an ion didn't save, until one does", async () => {
+    const fail = ["project.update"];
+    const c = client({ fail });
+    await openShop(c);
+    fireEvent.click(screen.getByRole("button", { name: "High" }));
+    expect(await screen.findByText("Fix your config first.")).toBeTruthy();
+    fail.length = 0;
+    fireEvent.click(screen.getByRole("button", { name: "Low" }));
+    await waitFor(() => expect(screen.queryByText("Fix your config first.")).toBeNull());
+  });
+
+  it("says why a routine change didn't save", async () => {
+    const c = client({ fail: ["routine.update"] });
+    await openShop(c);
+    fireEvent.click(await screen.findByRole("switch", { name: "Deps" }));
+    expect(await screen.findByText("Fix your config first.")).toBeTruthy();
+  });
+
+  it("says why ion's model didn't change", async () => {
+    const c = client({ fail: ["settings.update"] });
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
+    );
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
+    expect(await screen.findByText("Fix your config first.")).toBeTruthy();
+  });
+
+  it("shows a routine that's off as Off, its effort plainly, and refuses an empty time", async () => {
+    const off = { ...projects[0]!, routines: [{ ...projects[0]!.routines![0]!, on: false }] } as ProjectInfo;
+    const c = client({ projects: [off] });
+    await openShop(c);
+    expect(await screen.findByText("Off")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Effort: Default" }).getAttribute("title")).toBe("Effort");
+    fireEvent.click(screen.getByRole("button", { name: "Add routine" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "x" } });
+    fireEvent.change(screen.getByLabelText("What to do"), { target: { value: "y" } });
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByText("Pick a time")).toBeTruthy();
+    expect(c.call).not.toHaveBeenCalledWith("routine.add", expect.anything());
   });
 });

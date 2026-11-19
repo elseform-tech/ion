@@ -709,3 +709,10 @@ body.resizing {
   padding: 2px 8px;
   border-radius: 999px;
 }
+/* Why a change in Settings or Activity did not save, by the control. */
+.group > .perr,
+.acol > .perr {
+  color: var(--del-ink);
+  font-size: 12px;
+  padding: 6px 14px;
+}

@@ -1,6 +1,7 @@
 import type { IonClient } from "@ion/client/browser";
 import { Avatar, Zap } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
+import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 
@@ -29,7 +30,12 @@ function AgentRow({ h }: { h: HarnessInfo }) {
  * The model ion thinks with: an agent (its shape), then one of its models from a menu ("Default": the agent's
  * own). Only agents that are ready.
  */
-function QuickModel(p: { data: SettingsData; quick: string; onPick: (spec: string) => void }) {
+function QuickModel(p: {
+  data: SettingsData;
+  quick: string;
+  onPick: (spec: string) => void;
+  error: string | null;
+}) {
   const [agent, model = ""] = p.quick.split(/:(.*)/);
   const ok = p.data.harnesses.filter(ready);
   const models = ok.find((h) => h.id === agent)?.models ?? [];
@@ -51,6 +57,7 @@ function QuickModel(p: { data: SettingsData; quick: string; onPick: (spec: strin
             onChange={(m) => p.onPick(m ? `${agent}:${m}` : String(agent))}
           />
         </div>
+        {p.error && <div className="perr">{p.error}</div>}
       </div>
     </div>
   );
@@ -59,8 +66,8 @@ function QuickModel(p: { data: SettingsData; quick: string; onPick: (spec: strin
 /** Settings → Agents: each coding agent and whether it's ready; the model ion thinks with. */
 export function Agents({ client, data }: { client: IonClient; data: SettingsData }) {
   const quick = data.settings?.quick ?? "";
-  const pick = (spec: string) =>
-    void client.call("settings.update", { quick: spec }).then(data.reload, () => {});
+  const [error, run] = useCallError();
+  const pick = (spec: string) => run(client.call("settings.update", { quick: spec }), data.reload);
   return (
     <>
       <div>
@@ -71,7 +78,7 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
           ))}
         </div>
       </div>
-      <QuickModel data={data} quick={quick} onPick={pick} />
+      <QuickModel data={data} quick={quick} onPick={pick} error={error} />
     </>
   );
 }

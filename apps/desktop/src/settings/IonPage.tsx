@@ -2,6 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import { Avatar, ChevronLeft, ChevronRight, MessageCircle, Zap } from "@ion/design-system";
 import { ION_COLORS, type IonInfo, type IonStats, type ProjectInfo, type ProjectPatch } from "@ion/schema";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { Routines } from "./Routines.js";
@@ -123,16 +124,20 @@ function ColorPick({ ion, patch }: Pick<SetupProps, "ion" | "patch">) {
   );
 }
 
-/** The model and effort its threads run on (the agent's own when Default). */
+/**
+ * The model and effort its threads run on (the agent's own when Default). A model is saved with the agent shown
+ * (its last chat's, when it has none of its own), so what's shown is what runs.
+ */
 function BrainPick({ ion, project, data, patch }: SetupProps) {
   const agent = data.harnesses.find((h) => h.id === (project.harness ?? ion.harness));
+  const pinned = !project.harness && agent ? { harness: agent.id } : {};
   return (
     <>
       <Row label="Model">
         <ModelMenu
           models={agent?.models ?? []}
           value={project.model ?? ""}
-          onChange={(m) => patch({ model: m || null })}
+          onChange={(m) => patch({ ...pinned, model: m || null })}
         />
       </Row>
       <Row label="Effort">
@@ -154,7 +159,7 @@ function BrainPick({ ion, project, data, patch }: SetupProps) {
 }
 
 /** The project's folder and rules: access, and whether ion chief may read it. */
-function Rules({ project, patch }: Pick<SetupProps, "project" | "patch">) {
+function Rules({ project, patch, error }: Pick<SetupProps, "project" | "patch"> & { error: ReactNode }) {
   const share = project.shareWithIon !== false;
   return (
     <div>
@@ -187,6 +192,7 @@ function Rules({ project, patch }: Pick<SetupProps, "project" | "patch">) {
             onClick={() => patch({ shareWithIon: !share })}
           />
         </Row>
+        {error}
       </div>
     </div>
   );
@@ -238,10 +244,19 @@ export function IonPage(p: PageProps) {
     () => void p.client.call("ion.stats", { ionId: p.ionId }).then(setStats, () => {}),
     [p.client, p.ionId],
   );
+  const [error, run] = useCallError();
+  const [at, setAt] = useState<"setup" | "rules">("setup");
   if (!ion) return null;
-  const patch: Patch = (fields) =>
-    void p.client.call("project.update", { projectId: p.ionId, ...fields }).then(p.data.reload, () => {});
-  const setup = { ion, data: p.data, patch };
+  // Why a change didn't save shows under the group it was made in.
+  const patchIn =
+    (where: typeof at): Patch =>
+    (fields) => {
+      setAt(where);
+      run(p.client.call("project.update", { projectId: p.ionId, ...fields }), p.data.reload);
+    };
+  const patch = patchIn("rules");
+  const setup = { ion, data: p.data, patch: patchIn("setup") };
+  const shown = (where: typeof at) => error && at === where && <div className="perr">{error}</div>;
   return (
     <>
       <button className="back" type="button" onClick={p.onBack}>
@@ -262,9 +277,10 @@ export function IonPage(p: PageProps) {
           ) : (
             <ChiefSetup quick={p.data.settings?.quick ?? ""} onAgents={p.onAgents} />
           )}
+          {shown("setup")}
         </div>
       </div>
-      {project && <Rules project={project} patch={patch} />}
+      {project && <Rules project={project} patch={patch} error={shown("rules")} />}
       {project && <Routines client={p.client} project={project} onChanged={p.data.reload} />}
     </>
   );

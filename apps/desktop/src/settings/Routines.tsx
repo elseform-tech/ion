@@ -10,6 +10,7 @@ import {
   whenLabel,
 } from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
+import { useCallError } from "../callError.js";
 import { Bars, effortLabel } from "../chats/BrainPopover.js";
 
 const EFFORT_CYCLE: ("" | EffortLevel)[] = ["", "low", "medium", "high", "max"];
@@ -21,7 +22,8 @@ function RoutineRow({ r, next, call }: { r: RoutineInfo; next: UpcomingRun | und
   const ids = { routineId: r.id };
   const effort = r.effort ?? "";
   const bump = EFFORT_CYCLE[(EFFORT_CYCLE.indexOf(effort) + 1) % EFFORT_CYCLE.length]!;
-  const at = next?.next ? `Next: ${timeLabel(new Date(next.next), new Date())}` : "Paused";
+  let at = next?.next ? `Next: ${timeLabel(new Date(next.next), new Date())}` : "Paused";
+  if (!r.on) at = "Off";
   return (
     <div className="srow">
       <div className="g">
@@ -32,7 +34,7 @@ function RoutineRow({ r, next, call }: { r: RoutineInfo; next: UpcomingRun | und
       <button
         className="val"
         type="button"
-        title="Effort (click to change)"
+        title="Effort"
         aria-label={`Effort: ${effortLabel(effort)}`}
         onClick={() => call("routine.update", { ...ids, effort: bump || null })}
       >
@@ -72,10 +74,11 @@ const KINDS: [Kind, string][] = [
 const EVERY = ["1", "2", "3", "4", "6", "8", "12"];
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
 
-/** The schedule a pick makes: "daily 09:00", "fri 09:00", "every 4h". */
-function whenOf(p: Pick): string {
+/** The schedule a pick makes: "daily 09:00", "fri 09:00", "every 4h"; null without a time. */
+function whenOf(p: Pick): string | null {
   if (p.kind === "hours") return `every ${p.every}h`;
-  return `${p.kind === "weekly" ? p.day : p.kind} ${p.time || "09:00"}`;
+  if (!p.time) return null;
+  return `${p.kind === "weekly" ? p.day : p.kind} ${p.time}`;
 }
 
 function Seg<T extends string>(p: { items: [T, string][]; value: T; onPick: (v: T) => void }) {
@@ -133,15 +136,13 @@ function AddRoutine(p: { client: IonClient; projectId: string; onAdded: () => vo
   const [text, setText] = useState("");
   const [pick, setPick] = useState(FRESH);
   const [error, setError] = useState<string | null>(null);
-  const add = () =>
+  const add = () => {
+    const when = whenOf(pick);
+    if (!when) return setError("Pick a time");
     void p.client
-      .call("routine.add", {
-        projectId: p.projectId,
-        name: name.trim(),
-        when: whenOf(pick),
-        text: text.trim(),
-      })
+      .call("routine.add", { projectId: p.projectId, name: name.trim(), when, text: text.trim() })
       .then(p.onAdded, (e: Error) => setError(e.message));
+  };
   return (
     <div className="srow stack radd">
       <input
@@ -196,8 +197,9 @@ export function Routines(p: { client: IonClient; project: ProjectInfo; onChanged
     p.onChanged();
     readUp();
   };
+  const [error, run] = useCallError();
   const call: Call = (cmd, args) =>
-    void p.client.call(cmd, { projectId: p.project.id, ...args } as never).then(changed, () => {});
+    run(p.client.call(cmd, { projectId: p.project.id, ...args } as never), changed);
   const list = p.project.routines ?? [];
   return (
     <div>
@@ -206,6 +208,7 @@ export function Routines(p: { client: IonClient; project: ProjectInfo; onChanged
         {list.map((r) => (
           <RoutineRow key={r.id} r={r} next={up.find((u) => u.routineId === r.id)} call={call} />
         ))}
+        {error && <div className="perr">{error}</div>}
         {adding ? (
           <AddRoutine
             client={p.client}

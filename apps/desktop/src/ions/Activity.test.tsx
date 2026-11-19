@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { IonClient } from "@ion/client/browser";
+import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { ActivityInfo, IonInfo, RecentRun, UpcomingRun } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -154,6 +154,24 @@ describe("Activity", () => {
       expect((b as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Resume all" }));
     await waitFor(() => expect(p.c.call).toHaveBeenCalledWith("routines.pause", { paused: false }));
+  });
+
+  // Review, 2026-11-19: run now, skip, pause and pause all failed with no sign.
+  it("says why a routine didn't run or pause, until one works", async () => {
+    const { c } = await open();
+    const fail = (cmd: string) =>
+      c.call.mockImplementationOnce(async (x: string) => {
+        if (x === cmd) throw new ApiCallError("invalid", "Unknown routine: check");
+        return [];
+      });
+    fail("routine.run");
+    fireEvent.click(screen.getAllByRole("button", { name: "Run now" })[0]!);
+    expect(await screen.findByText("Unknown routine: check")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Skip next run" })[0]!);
+    await waitFor(() => expect(screen.queryByText("Unknown routine: check")).toBeNull());
+    fail("routines.pause");
+    fireEvent.click(screen.getByRole("switch", { name: "Pause all" }));
+    expect(await screen.findByText("Unknown routine: check")).toBeTruthy();
   });
 
   it("says when there are no routines", async () => {

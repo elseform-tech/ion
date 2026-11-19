@@ -19,6 +19,7 @@ import {
   type UpcomingRun,
 } from "@ion/schema";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type Run, useCallError } from "../callError.js";
 import { effortLabel } from "../chats/BrainPopover.js";
 import { IonAvatar } from "./IonChat.js";
 
@@ -195,11 +196,9 @@ function Recent(p: PageProps & { day: "Today" | "Yesterday"; runs: RecentRun[] }
   );
 }
 
-function Upcoming(p: PageProps & { paused: boolean }) {
+function Upcoming(p: PageProps & { paused: boolean; run: Run }) {
   const act: Act = (cmd, u, extra = {}) =>
-    void p.client
-      .call(cmd, { projectId: u.projectId, routineId: u.routineId, ...extra })
-      .then(p.reload, () => {});
+    p.run(p.client.call(cmd, { projectId: u.projectId, routineId: u.routineId, ...extra }), p.reload);
   const list = p.activity?.upcoming ?? [];
   return (
     <>
@@ -227,8 +226,8 @@ function Upcoming(p: PageProps & { paused: boolean }) {
 /** The lab's Activity page: pause all, what's next, and what ion's threads did today and yesterday. */
 export function ActivityPage(p: PageProps) {
   const paused = p.activity?.paused ?? false;
-  const pause = (on: boolean) =>
-    void p.client.call("routines.pause", { paused: on }).then(p.reload, () => {});
+  const [error, run] = useCallError();
+  const pause = (on: boolean) => run(p.client.call("routines.pause", { paused: on }), p.reload);
   return (
     <section className="ichat">
       <header className="head" data-tauri-drag-region>
@@ -260,7 +259,8 @@ export function ActivityPage(p: PageProps) {
               </button>
             </div>
           )}
-          <Upcoming {...p} paused={paused} />
+          {error && <div className="perr">{error}</div>}
+          <Upcoming {...p} paused={paused} run={run} />
           <Recent {...p} day="Today" runs={p.activity?.today ?? []} />
           <Recent {...p} day="Yesterday" runs={p.activity?.yesterday ?? []} />
         </div>
