@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listTasks, markedInProc, readWorktreeFile, stopTask } from "./tasks.js";
+import { ionsOwn, isShell, listTasks, markedInProc, readWorktreeFile, stopTask } from "./tasks.js";
 
 const kids: number[] = [];
 afterEach(() => {
@@ -161,6 +161,22 @@ describe("a chat's processes, wherever they run", () => {
       expect(listed, `pid ${own}`).not.toContain(own);
     await expect(stopTask(wt, "c1", pids.helper)).rejects.toThrow("That isn't running in this chat");
     await expect(stopTask(wt, "c1", pids.agent)).rejects.toThrow("That isn't running in this chat");
+  });
+
+  // Task review, 2026-11-19: if `ps -A` fails or times out (no process table), the agent ion runs directly is still
+  // ion's own, never listed or stoppable.
+  it("keeps the daemon's direct child out even with no process table", () => {
+    expect(ionsOwn({ pid: 999_999, ppid: process.pid }, new Map())).toBe(true);
+    expect(ionsOwn({ pid: process.pid, ppid: 1 }, new Map())).toBe(true);
+    expect(ionsOwn({ pid: 999_999, ppid: 1 }, new Map())).toBe(false);
+  });
+
+  // Task review, 2026-11-19: more shells count as a tool call's shell, whatever their case.
+  it("knows a tool call's shell by its name", () => {
+    for (const name of ["Bash", "/bin/ksh", "-zsh", "mksh", "tcsh", "csh", "nu", "pwsh", "xonsh", "dash"])
+      expect(isShell(name), name).toBe(true);
+    expect(isShell("/usr/local/bin/node")).toBe(false);
+    expect(isShell("codex")).toBe(false);
   });
 
   // Plan 15 review focus 5: the task ended and its PID went to another program; Stop refuses it.

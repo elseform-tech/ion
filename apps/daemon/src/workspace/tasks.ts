@@ -116,8 +116,24 @@ export async function markedInProc(marker: string, only?: number, proc = "/proc"
   return pids;
 }
 
-const SHELLS = new Set(["sh", "bash", "zsh", "fish", "dash"]);
+const SHELLS = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "dash",
+  "ksh",
+  "mksh",
+  "tcsh",
+  "csh",
+  "nu",
+  "pwsh",
+  "xonsh",
+]);
 type Proc = { ppid: number; shell: boolean };
+
+/** Whether an executable (`comm`, a path or a login shell's `-zsh`) is a shell, whatever its case. */
+export const isShell = (comm: string) => SHELLS.has(basename(comm).replace(/^-/, "").toLowerCase());
 
 /** Every process's parent, and whether it's a shell (by its executable's name). */
 async function processTable(): Promise<Map<number, Proc>> {
@@ -125,8 +141,7 @@ async function processTable(): Promise<Map<number, Proc>> {
   for (const line of (await run("ps", ["-A", "-o", "pid=,ppid=,comm="])).split("\n")) {
     const [pid, ppid, ...comm] = line.trim().split(/\s+/);
     if (!pid || !ppid || !/^\d+$/.test(pid)) continue;
-    const name = basename(comm.join(" ")).replace(/^-/, "");
-    table.set(Number(pid), { ppid: Number(ppid), shell: SHELLS.has(name) });
+    table.set(Number(pid), { ppid: Number(ppid), shell: isShell(comm.join(" ")) });
   }
   return table;
 }
@@ -136,9 +151,15 @@ async function processTable(): Promise<Map<number, Proc>> {
  * their wrappers, the helpers and MCP servers they start). A shell the daemon starts itself is a launch wrapper (an
  * npm or cmux shim), not a tool call. What a tool call left in the background, its shell gone, is no longer below
  * the daemon at all.
+ *
+ * Names are a heuristic for the list: a tool call that is one command (`<shell> -lc 'cmd'` execs it, so no shell
+ * stays in the chain; Codex, likely opencode) is hidden while its agent runs and shows once the agent exits. A name
+ * it doesn't know fails closed (hidden, not stoppable), and Stop still re-checks the chat. The daemon and its direct
+ * children are ion's own even without the table (`ps -A` failed or timed out).
  */
-function ionsOwn(pid: number, table: Map<number, Proc>): boolean {
-  for (let at = pid, hops = 0; hops < 128; hops++) {
+export function ionsOwn(proc: { pid: number; ppid: number }, table: Map<number, Proc>): boolean {
+  if (proc.pid === process.pid || proc.ppid === process.pid) return true;
+  for (let at = proc.pid, hops = 0; hops < 128; hops++) {
     if (at === process.pid) return true;
     const p = table.get(at);
     if (!p || at <= 1 || (p.shell && p.ppid !== process.pid)) return false;
@@ -164,13 +185,14 @@ export async function listTasks(worktree: string, chatId: string): Promise<Task[
   const dir = await realpath(worktree).catch(() => worktree);
   const [where, marked, table] = await Promise.all([cwds(), markedFor(chatId), processTable()]);
   const inWorktree = [...where].filter(([, cwd]) => inside(dir, cwd)).map(([pid]) => pid);
-  const pids = [...new Set([...inWorktree, ...marked])].filter((pid) => !ionsOwn(pid, table));
+  const pids = [...new Set([...inWorktree, ...marked])];
   if (!pids.length) return [];
   const rows = (await run("ps", ["-o", "pid=,ppid=,etime=,command=", "-p", pids.join(",")])).split("\n");
   const open = await ports(pids);
   return rows
     .map(row)
     .filter((t): t is Task & { ppid: number } => t !== null)
+    .filter((t) => !ionsOwn(t, table))
     .map(({ ppid: _p, ...t }) => ({
       ...t,
       ports: open.get(t.pid) ?? [],
@@ -180,7 +202,8 @@ export async function listTasks(worktree: string, chatId: string): Promise<Task[
 
 /** Whether this one process is still the chat's: running in its worktree, or carrying its marker. */
 async function stillTheChats(worktree: string, chatId: string, pid: number): Promise<boolean> {
-  if (ionsOwn(pid, await processTable())) return false;
+  const [table, parent] = await Promise.all([processTable(), run("ps", ["-o", "ppid=", "-p", String(pid)])]);
+  if (ionsOwn({ pid, ppid: Number(parent.trim()) || 0 }, table)) return false;
   const dir = await realpath(worktree).catch(() => worktree);
   const cwd = (await cwds(pid)).get(pid);
   if (cwd && inside(dir, cwd)) return true;
