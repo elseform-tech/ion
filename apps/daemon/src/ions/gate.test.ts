@@ -56,6 +56,11 @@ describe("an ion's gate", () => {
     expect(decideForIon(cmd("file -C -m x"), ctx)).toBe("deny");
   });
 
+  // Re-review, 2026-11-19: file's flags can write (-C in any group or prefix); it isn't worth allowing.
+  it("denies file -bC", () => {
+    expect(decideForIon(cmd("file -bC -m x"), ctx)).toBe("deny");
+  });
+
   // Task review, 2026-11-19: `ask` and `report_outcome` are run tools; an ion has no run to ask or report in.
   it("denies run-only tools to an ion", () => {
     for (const t of ["ask", "report_outcome"])

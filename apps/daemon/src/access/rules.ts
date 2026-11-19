@@ -23,19 +23,7 @@ const SECRETS = [
   ".pypirc",
 ];
 /** Commands that only look: allowed in Auto when every path they name stays in the worktree. */
-const READ_ONLY = new Set([
-  "ls",
-  "cat",
-  "head",
-  "tail",
-  "wc",
-  "grep",
-  "pwd",
-  "echo",
-  "which",
-  "stat",
-  "file",
-]);
+const READ_ONLY = new Set(["ls", "cat", "head", "tail", "wc", "grep", "pwd", "echo", "which", "stat"]);
 const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "blame"]);
 /** Secret folders and files named anywhere in an action (any case) are denied: they never belong to a project. */
 const SECRET_NAMES = [
@@ -98,8 +86,6 @@ function readOnly(command: string): boolean {
     const args = word === "git" ? rest : [sub, ...rest].filter((x): x is string => x !== undefined);
     if (!args.every((t) => FLAG.test(t) || (PLAIN.test(t) && !t.startsWith("/") && !t.startsWith("-"))))
       return false;
-    // `file -C` / `--compile` writes a .mgc file.
-    if (word === "file" && args.some((a) => a === "--compile" || a.startsWith("-C"))) return false;
     if (word === "tail" && /\s(-[a-zA-Z]*[fF]|--follow)/.test(part)) return false;
     return word === "git"
       ? READ_ONLY_GIT.has(sub ?? "") && !/--output|--ext-diff/.test(part)
