@@ -649,6 +649,7 @@ body.resizing {
 .task .ib {
   grid-row: 1 / span 2;
   grid-column: 2;
+}
 
 /* Routines on an ion's page (Plan 10): Add routine, its form and the when picker. */
 .radd-btn {

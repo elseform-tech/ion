@@ -11,7 +11,7 @@ import type { Db, EventStore } from "../store/index.js";
 import { routinesView } from "../views/routines.js";
 
 /** How often ion looks for a routine that's due. */
-const TICK_MS = 30_000;
+const TICK_MS = 60_000;
 
 /** Starts a routine's thread, as its ion does: the thread, or why it couldn't. */
 export type StartThread = (
@@ -47,7 +47,7 @@ export class Routines {
 
   constructor(private readonly d: { store: EventStore; db: Db; configFile: string; start: StartThread }) {}
 
-  /** Looks now (a run missed while ion was stopped goes now), then every 30 seconds. Returns stop. */
+  /** Looks now (a run missed while ion was stopped goes now), then every minute. Returns stop. */
   start(): () => void {
     const timer = setInterval(() => void this.tick(), TICK_MS);
     void this.tick();
@@ -68,8 +68,11 @@ export class Routines {
     this.ticking = true;
     try {
       const now = new Date();
-      const paused = this.paused();
-      for (const p of this.projects()) for (const r of p.routines ?? []) await this.due(p.id, r, now, paused);
+      // Your config, read once a tick: who has routines, and whether all are paused.
+      const { config } = loadUserConfig(this.d.configFile);
+      const paused = config.routines?.paused === true;
+      for (const p of config.projects.filter((x) => x.id !== DEFAULT_PROJECT))
+        for (const r of p.routines ?? []) await this.due(p.id, r, now, paused);
     } finally {
       this.ticking = false;
     }

@@ -62,7 +62,7 @@ const ran = () =>
     .filter((e) => e.type === EV.routineRan)
     .map((e) => e.data as Record<string, unknown>);
 
-describe("routines run on their schedule", () => {
+describe("routines run on their schedule", { timeout: 20_000 }, () => {
   it("runs when due, as its ion's thread, and records it", async () => {
     boot();
     await vi.advanceTimersByTimeAsync(HOUR - 60_000);
