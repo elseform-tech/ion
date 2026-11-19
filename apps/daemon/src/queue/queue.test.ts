@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addProject, DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UserError } from "../api/errors.js";
 import { Decisions } from "../decisions/index.js";
 import { NeedsService } from "../needs/index.js";
@@ -65,12 +65,15 @@ function fakeIons() {
   return { ions, heard, end, stopped, known };
 }
 
+/** How a chat's queued message goes out (the run manager's ask, unless a test breaks it). */
+let askVia: (a: { chatId?: string; text: string }) => unknown = (a) => runs.ask({ ...fake, ...a });
+
 function makeQueue(ions = fakeIons().ions): PromptQueue {
   queue = new PromptQueue({
     store,
     db,
     chats: {
-      ask: (a) => runs.ask({ ...fake, ...a }),
+      ask: (a) => askVia(a),
       busy: (id) => runs.busy(id),
       stop: (id) => runs.stopChat(id),
       onEnded: (fn) => runs.onEnded(fn),
@@ -100,6 +103,7 @@ beforeEach(() => {
   store = new EventStore(db, allViews);
   needs = new NeedsService(store, db);
   runs = manager();
+  askVia = (a) => runs.ask({ ...fake, ...a });
   decisions = new Decisions({
     ...{ store, db, needs },
     followUp: async (chatId, m) => (await runs.ask({ chatId, text: m.text, ...fake })).runId,
@@ -356,5 +360,80 @@ describe("the prompt queue", () => {
     queue.add({ ionId: "chief" }, "x", {});
     queue.clear({ ionId: "chief" });
     expect(queue.list({ ionId: "chief" })).toEqual([]);
+  });
+
+  /** A chat that's idle, with a queued message that failed to go out (its agent signed out). */
+  async function failedOne(): Promise<{ chatId: string; failed: string }> {
+    const { chatId, runId } = await working();
+    await runs.interrupt(runId);
+    await finishedAll(chatId);
+    process.env.ION_FAKE_SIGNED_OUT = "1";
+    try {
+      const failed = queue.add({ chatId }, "hello failed", { harness: "fake", model: "fake-big" });
+      await until(() => queue.list({ chatId })[0]?.why);
+      return { chatId, failed };
+    } finally {
+      delete process.env.ION_FAKE_SIGNED_OUT;
+    }
+  }
+
+  // Task review, 2026-11-19: the hold after a failed send only lifted on Send now, Edit or Remove of that one
+  // message. A later run that goes well lifts it too: the failed one is tried again, and the rest follow.
+  it("a run that goes well after a failed send lifts the hold", async () => {
+    const { chatId } = await failedOne();
+    queue.add({ chatId }, "hello next", fake);
+    await runs.ask({ chatId, text: "hello direct", ...fake });
+    await until(() => sent(chatId).length === 4);
+    await finishedAll(chatId);
+    expect(sent(chatId)).toEqual(["slow", "hello direct", "hello failed", "hello next"]);
+    expect(queue.list({ chatId })).toEqual([]);
+  });
+
+  // Task review, 2026-11-19: removing (or editing) another message of the held queue lifts the hold too.
+  it("removing another queued message lifts the hold", async () => {
+    const { chatId } = await failedOne();
+    const other = queue.add({ chatId }, "hello other", fake);
+    queue.add({ chatId }, "hello last", fake);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(sent(chatId)).toEqual(["slow"]);
+    queue.remove(other);
+    await until(() => sent(chatId).length === 3);
+    await finishedAll(chatId);
+    expect(sent(chatId)).toEqual(["slow", "hello failed", "hello last"]);
+  });
+
+  // Task review, 2026-11-19: `why` showed any error's own text (paths, SQLite, git). Only ion's own words show;
+  // anything else says it plainly, and the daemon logs the rest.
+  it("a send that fails for another reason says so plainly", async () => {
+    const { chatId, runId } = await working();
+    askVia = async () => {
+      throw new Error("SQLITE_BUSY: /Users/me/.ion/ion.db is locked");
+    };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      queue.add({ chatId }, "hello", fake);
+      await runs.interrupt(runId);
+      expect(await until(() => queue.list({ chatId })[0]?.why)).toBe("Couldn't send it");
+      expect(log).toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  // Task review, 2026-11-19: a message held behind the agent's question said nothing; it says it waits for your answer.
+  it("a message held behind an open question says so", async () => {
+    const { chatId, runId } = await working();
+    queue.add({ chatId }, "hello queued", fake);
+    expect(queue.list({ chatId })[0]?.held).toBeUndefined();
+    needs.raiseAsk({
+      chatId,
+      runId,
+      question: "Which one?",
+      choices: [
+        { label: "Alpha", consequence: "a" },
+        { label: "Beta", consequence: "b" },
+      ],
+    });
+    expect(queue.list({ chatId })[0]?.held).toBe("answer");
   });
 });

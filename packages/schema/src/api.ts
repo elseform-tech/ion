@@ -368,6 +368,8 @@ export type QueuedInfo = {
   addedAt: string;
   /** Why it couldn't go out, when its last try failed (it holds the queue until you send it now, edit or remove it). */
   why?: string;
+  /** It waits for your answer to the agent's question (or for your answers to go in first). */
+  held?: "answer";
 };
 
 export type Command = keyof Commands;

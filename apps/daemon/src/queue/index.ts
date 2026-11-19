@@ -68,22 +68,39 @@ export class PromptQueue {
   constructor(private readonly d: QueueDeps) {
     const drain = (to: QueueTarget) => void this.drain(to).catch(() => {});
     d.chats.onEnded((chatId) => drain({ chatId }));
-    d.ions.onTurnEnd((ionId) => drain({ ionId }));
+    d.ions.onTurnEnd((ionId) => {
+      this.unhold({ ionId });
+      drain({ ionId });
+    });
     d.store.onAppend((e) => {
       const chatId = e.chatId;
       if (!chatId || chatId.startsWith("ion:")) return;
       // A chat archived with messages waiting: they go with it.
       if (e.type === EV.chatArchived) this.clear({ chatId });
+      // A run there went well: a failed send's hold lifts (the run's end then drains).
+      else if (e.type === EV.runFinished && (e.data as { status?: unknown }).status === "done")
+        this.unhold({ chatId });
       // A question answered (or closed): the queue goes on, after your answer has gone in or taken its turn.
       else if (e.type === EV.needResolved) queueMicrotask(() => drain({ chatId }));
     });
   }
 
   list(to: QueueTarget): QueuedInfo[] {
+    const held = "chatId" in to && this.waitsForAnswer(to.chatId) ? { held: "answer" as const } : {};
     return queueView.waiting(this.d.db, to).map(({ queueId, text, brain, addedAt, why }) => ({
       ...{ queueId, text, brain, addedAt },
       ...(why ? { why } : {}),
+      ...held,
     }));
+  }
+
+  /** The chat's agent asked you something, or your answers wait to go in: its queue waits for them. */
+  private waitsForAnswer(chatId: string): boolean {
+    return this.d.chats.answersWaiting(chatId) || this.asking(chatId);
+  }
+
+  private asking(chatId: string): boolean {
+    return needsView.open(this.d.db, chatId, true).some((n) => n.kind === "ask");
   }
 
   /** Queues a message; when nothing is working it goes out at once (the work ended as you queued it). */
@@ -102,6 +119,7 @@ export class PromptQueue {
   remove(queueId: string): void {
     const q = this.waiting(queueId);
     this.append(q.to, EV.queueRemoved, { queueId });
+    this.unhold(q.to);
     this.wake(q.to);
   }
 
@@ -109,6 +127,7 @@ export class PromptQueue {
   take(queueId: string): { text: string } {
     const q = this.waiting(queueId);
     this.append(q.to, EV.queueRemoved, { queueId });
+    this.unhold(q.to);
     this.wake(q.to);
     return { text: q.text };
   }
@@ -185,7 +204,7 @@ export class PromptQueue {
     const failed = !chosen && waiting.some((w) => w.why);
     if (!("chatId" in to)) return failed;
     if (this.d.chats.answersWaiting(to.chatId)) return true;
-    const asking = needsView.open(this.d.db, to.chatId, true).some((n) => n.kind === "ask");
+    const asking = this.asking(to.chatId);
     if (failed || (asking && !chosen)) return true;
     if (asking) this.d.chats.dropQuestions(to.chatId);
     return false;
@@ -209,12 +228,21 @@ export class PromptQueue {
   private sent(q: QueuedRow, key: string): void {
     if (this.next.get(key) === q.queueId) this.next.delete(key);
     this.append(q.to, EV.queueSent, { queueId: q.queueId });
+    this.unhold(q.to);
+  }
+
+  /** Things moved (a send went out, you changed the queue, a run went well): a failed send no longer holds it. */
+  private unhold(to: QueueTarget): void {
+    for (const q of queueView.waiting(this.d.db, to))
+      if (q.why) this.append(to, EV.queueFailed, { queueId: q.queueId, why: null });
   }
 
   private failed(q: QueuedRow, e: unknown): void {
     const key = keyOf(q.to);
     if (this.next.get(key) === q.queueId) this.next.delete(key);
-    const why = (e instanceof Error && e.message) || "It couldn't be sent";
+    // Only ion's own words show; anything else (a path, SQLite, git) is logged, and said plainly.
+    const why = e instanceof UserError ? e.message : "Couldn't send it";
+    if (!(e instanceof UserError)) console.error(`ion couldn't send a queued message: ${String(e)}`);
     this.append(q.to, EV.queueFailed, { queueId: q.queueId, why });
   }
 

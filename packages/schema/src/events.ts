@@ -311,8 +311,11 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "queue.removed": z.object({ queueId: z.string().min(1) }),
   /** It went out: as the chat's next message, or to the ion. */
   "queue.sent": z.object({ queueId: z.string().min(1) }),
-  /** It couldn't go out (the agent signed out…): it waits, saying why, and holds the queue until you deal with it. */
-  "queue.failed": z.object({ queueId: z.string().min(1), why: z.string().min(1) }),
+  /**
+   * It couldn't go out (the agent signed out…): it waits, saying why, and holds the queue until things move (Send
+   * now, Edit or Remove in that queue, or a run there that goes well); `why` null: no longer held.
+   */
+  "queue.failed": z.object({ queueId: z.string().min(1), why: z.string().min(1).nullable() }),
   /**
    * A routine's time came (by "schedule", for the slot `due`) or you ran it now (by "you", due null): the thread it
    * started, why it couldn't start, or that you skipped this one. One per slot: missed slots run once, as the last.
