@@ -17,6 +17,8 @@ const MIGRATIONS = [
      UNIQUE (stream, seq)
    )`,
   `CREATE INDEX IF NOT EXISTS events_chat ON events (chat_id, id)`,
+  // Reads of one kind of event over a time window (the notifier's summary, the briefing).
+  `CREATE INDEX IF NOT EXISTS events_type_ts ON events (type, ts)`,
 ];
 
 /** Opens (or creates) the database in WAL mode and applies migrations. ":memory:" is allowed. */

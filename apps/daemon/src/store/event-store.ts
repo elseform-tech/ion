@@ -118,6 +118,7 @@ export class EventStore {
       types?: readonly EventType[];
     } = {},
   ): IonEvent[] {
+    if (q.types?.length === 0) return [];
     const where: string[] = [];
     const params: unknown[] = [];
     const add = (clause: string, value: unknown) => {
@@ -128,7 +129,7 @@ export class EventStore {
     if (q.runId !== undefined) add("run_id = ?", q.runId);
     if (q.since !== undefined) add("ts >= ?", q.since);
     if (q.types) {
-      where.push(`type IN (${q.types.map(() => "?").join(", ") || "NULL"})`);
+      where.push(`type IN (${q.types.map(() => "?").join(", ")})`);
       params.push(...q.types);
     }
     if (q.afterId !== undefined) {

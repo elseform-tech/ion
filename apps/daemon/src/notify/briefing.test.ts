@@ -163,3 +163,17 @@ describe("the daily briefing", () => {
     expect(posted()).toEqual(["2026-11-19"]);
   });
 });
+
+describe("the briefing's ticks", () => {
+  // Task review, 2026-11-20: every tick read the log for today's briefing; once it's posted, ticks read nothing.
+  it("ticks don't look for the briefing again once today's is posted", async () => {
+    chat("c1", "Fix the cart");
+    finished("c1");
+    boot();
+    await until(at(19, 8, 31));
+    expect(briefings()).toHaveLength(1);
+    const read = vi.spyOn(store, "read");
+    await until(at(19, 18));
+    expect(read).not.toHaveBeenCalled();
+  });
+});

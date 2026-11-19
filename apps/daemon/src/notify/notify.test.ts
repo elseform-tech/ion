@@ -9,8 +9,8 @@ import { allViews } from "../views/index.js";
 import { Notifier } from "./index.js";
 
 // The user, 2026-11-19: "also build the settings as well … notifications …"; the lab: "Roles tell ion; ion decides
-// how loud". Urgent things notify, needs pin (and notify by the project's level), updates wait for the briefing;
-// quiet hours hold every notification until they end, then one summary.
+// how loud". Urgent things notify; needs and updates notify by the project's level (else they're pinned or wait for
+// the briefing); quiet hours hold every notification until they end, then one summary.
 
 type Level = "all" | "needs" | "digest" | "muted";
 
@@ -71,7 +71,7 @@ function boot(): Notifier {
   return x;
 }
 
-function need(summary: string, blocked = false): void {
+function need(summary: string, blocked = false): string {
   const needId = `n${++n}`;
   store.append({
     chatId: "c1",
@@ -84,6 +84,7 @@ function need(summary: string, blocked = false): void {
       ...(blocked ? { blocked: true } : {}),
     },
   });
+  return needId;
 }
 
 function finished(status: string): void {
@@ -121,6 +122,16 @@ describe("the notifier", () => {
     finished("done");
     expect(notified().map((x) => x.kind)).toEqual(kinds);
     if (level === "all") expect(notified()[2]?.body).toBe("Finished: Fix the cart");
+  });
+
+  // Task review, 2026-11-20: a run ion's own stop or restart ended didn't give up; it's not a failure to tell.
+  it.each(["daemon_restarted", "daemon_stopped"])("a run ion's own %s ended isn't urgent", (code) => {
+    boot();
+    const runId = `r${++n}`;
+    const data = { code, retryable: false, message: "ion stopped" };
+    store.append({ chatId: "c1", runId, origin: "daemon", type: EV.error, data });
+    store.append({ chatId: "c1", runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
+    expect(notified()).toEqual([]);
   });
 
   it("a run that gave up is urgent; one you stopped isn't news", () => {
@@ -178,5 +189,63 @@ describe("quiet hours", () => {
     boot();
     await until(at(20, 9));
     expect(notified()).toHaveLength(1);
+  });
+});
+
+// Task review, 2026-11-20: the summary counted what it never held (a night with quiet hours off, the first start
+// after an upgrade, needs you already answered) and could go out during the next quiet hours.
+describe("the summary counts only what it held", () => {
+  it("turn quiet on at 15:00 after a night with needs: no summary", async () => {
+    save({ quiet: { on: false, from: "22:00", to: "08:00" } });
+    vi.setSystemTime(at(19, 23));
+    boot();
+    need("Allow call?", true);
+    need("Which database?");
+    await until(at(20, 15));
+    save();
+    await until(at(20, 15, 30));
+    expect(notified().map((x) => x.kind)).toEqual(["urgent", "needs"]);
+  });
+
+  it("first start after upgrade: no summary", async () => {
+    vi.setSystemTime(at(19, 23));
+    need("Allow call?", true);
+    vi.setSystemTime(at(20, 12));
+    boot();
+    await until(at(20, 13));
+    expect(notified()).toEqual([]);
+  });
+
+  it("answered needs aren't counted", async () => {
+    save({ level: "all" });
+    vi.setSystemTime(at(19, 23));
+    boot();
+    const answered = need("Allow call?", true);
+    need("Which database?");
+    finished("done");
+    const data = { needId: answered, decision: "answered", by: "you", choice: "Allow" };
+    store.append({ chatId: "c1", runId: "r1", origin: "daemon", type: EV.needResolved, data });
+    await until(at(20, 8));
+    expect(notified()).toEqual([{ title: "ion", body: "1 thing needs you", kind: "summary" }]);
+  });
+
+  it("no summary during the next quiet window", async () => {
+    vi.setSystemTime(at(19, 23));
+    boot();
+    need("Allow call?", true);
+    for (const s of stops) s();
+    stops = [];
+    vi.setSystemTime(at(20, 23));
+    boot();
+    await until(at(20, 23, 30));
+    expect(notified()).toEqual([]);
+  });
+
+  // Task review, 2026-11-20: every tick read the whole log; once the window is summed up, ticks read nothing.
+  it("ticks don't read the events again once the last window is settled", async () => {
+    boot();
+    const read = vi.spyOn(store, "read");
+    await until(at(19, 18));
+    expect(read).not.toHaveBeenCalled();
   });
 });

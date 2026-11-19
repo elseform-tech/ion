@@ -38,7 +38,7 @@ function shared(c: UserConfig): Map<string, ProjectEntry> {
 /** " in <name>" for a project, nothing for your chats outside one. */
 function inProject(projects: Map<string, ProjectEntry>, projectId: string | null): string {
   const p = projectId && projectId !== DEFAULT_PROJECT ? projects.get(projectId) : undefined;
-  return p ? ` in ${p.name ?? p.id}` : "";
+  return p ? ` in ${line(p.name ?? p.id)}` : "";
 }
 
 /** A project ion chief may read, or no project. */

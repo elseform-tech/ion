@@ -73,8 +73,8 @@ export async function startServer(opts: {
   const addr = http.address();
   port = typeof addr === "object" && addr ? addr.port : 0;
   // Only now that ion listens (its tools have a port): the ions watch their threads end, notifications and ion
-  // chief's daily briefing start (before runs a crash left unfinished end, so those are told as runs that failed),
-  // and those runs end (their ions report them). Then what starts runs: routines on their schedule (one missed while
+  // chief's daily briefing start (a run ion's own restart ends isn't told as a failure), and runs a crash left
+  // unfinished end (their ions report them). Then what starts runs: routines on their schedule (one missed while
   // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
   ctx.ions.watch();
   const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile });
