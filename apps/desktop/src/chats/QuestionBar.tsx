@@ -47,7 +47,25 @@ function OwnAnswer({ busy, onSend }: { busy: boolean; onSend: (text: string) => 
 
 type Answer = (pick: Pick) => void;
 
-/** The open panel's body: one line per option with its reasons, your own words, and Always (no separate hint). */
+/** Why ion stopped a call, and its exact input: at most 3 lines, all of it on a click. */
+function Why({ text }: { text: string }) {
+  const [full, setFull] = useState(false);
+  return (
+    <div
+      className={`why${full ? "" : " clamp"}`}
+      role="button"
+      tabIndex={0}
+      aria-expanded={full}
+      title={full ? undefined : text}
+      onClick={() => setFull(!full)}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setFull(!full)}
+    >
+      {text}
+    </div>
+  );
+}
+
+/** The open panel's body: a stopped call's reason and input, one line per option, your own words, and Always. */
 function Details(p: {
   q: Question;
   busy: boolean;
@@ -57,6 +75,8 @@ function Details(p: {
 }) {
   return (
     <div className="qd">
+      {/* An agent's question carries its context itself; a call ion stopped shows what it would run. */}
+      {p.q.blocked && p.q.why && <Why text={p.q.why} />}
       {p.q.choices.map((c, i) => (
         <button
           type="button"
