@@ -4,6 +4,7 @@ import { ION_COLORS, type IonInfo, type IonStats, type ProjectInfo, type Project
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
+import { Routines } from "./Routines.js";
 
 const EFFORTS = [
   ["", "Default"],
@@ -264,6 +265,7 @@ export function IonPage(p: PageProps) {
         </div>
       </div>
       {project && <Rules project={project} patch={patch} />}
+      {project && <Routines client={p.client} project={project} onChanged={p.data.reload} />}
     </>
   );
 }

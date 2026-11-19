@@ -649,4 +649,44 @@ body.resizing {
 .task .ib {
   grid-row: 1 / span 2;
   grid-column: 2;
+
+/* Routines on an ion's page (Plan 10): Add routine, its form and the when picker. */
+.radd-btn {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.radd-btn:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+.radd-btn .lucide {
+  width: 15px;
+  height: 15px;
+}
+.wpick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.wpick .fin {
+  width: auto;
+  padding: 5px 8px;
+}
+.radd .perr {
+  color: var(--del-ink);
+  font-size: 12px;
+}
+.srow .nx {
+  min-width: 0;
+}
+/* Activity: a run's outcome icon. */
+.arow .out [role="img"] {
+  display: inline-flex;
 }

@@ -1,2 +1,2 @@
 export { createRunQueue, maxRuns, type Queued } from "./queue.js";
-export { Routines, type StartThread } from "./routines.js";
+export { Routines } from "./routines.js";

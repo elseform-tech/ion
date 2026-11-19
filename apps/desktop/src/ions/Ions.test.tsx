@@ -76,6 +76,7 @@ function client(events: IonEvent[] = []) {
         { id: "payments-api", path: "/p/p", starred: false },
       ];
     if (cmd === "chats.list") return [thread];
+    if (cmd === "activity.list") return { paused: false, upcoming: [], today: [], yesterday: [] };
     if (cmd === "needs.list")
       return [
         {

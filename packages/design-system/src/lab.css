@@ -279,6 +279,38 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .spk rect.b:hover{opacity:1}
 .spk rect.z{fill:var(--line)}
 
+/* lab lines 331-360: activity: its row, upcoming and recent runs, pause all */
+/* activity */
+.actrow{margin:0 8px;width:calc(100% - 16px)}
+.aico{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--hover);color:var(--ink)}
+.aico.sm{width:24px;height:24px}
+.aico.sm .lucide{width:14px;height:14px}
+.acol{max-width:760px;margin:0 auto;padding:0 28px 24px;display:grid;gap:8px}
+.ag{font-size:12px;color:var(--faint);font-weight:500;padding:12px 2px 2px}
+.arow{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto auto;gap:12px;align-items:center;padding:10px 12px 10px 14px;border:0;background:transparent;width:100%;text-align:left}
+.arow+.arow{border-top:1px solid var(--line)}
+button.arow{cursor:pointer}
+button.arow:hover{background:var(--hover)}
+.arow canvas{width:28px;height:28px}
+.arow b{font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow small{display:block;font-size:12px;color:var(--muted)}
+.arow .when{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;min-width:44px;justify-content:flex-end}
+.arow .when .lucide{width:12px;height:12px}
+.arow .cost{font-size:12.5px;color:var(--faint);font-variant-numeric:tabular-nums;min-width:40px;text-align:right}
+.arow .out{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.arow .out .lucide{width:14px;height:14px}
+.ok{color:var(--good)} .no{color:var(--bad)}
+.arow .wd{width:7px;height:7px;border-radius:50%;background:var(--wait)}
+.arow .ra{display:flex;gap:0}
+.arow .ra .ib{width:28px;height:28px}
+.arow .ra .lucide{width:14px;height:14px}
+.arow.off b,.arow.off canvas{opacity:.45}
+.ib[disabled]{opacity:.35;pointer-events:none}
+.pall{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.pall .sw{border:0;cursor:pointer;padding:0}
+.pban{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 12px;border-radius:var(--r-lg);background:var(--hover);font-size:13px;margin-top:8px}
+.pban .g{flex:1}
+
 /* lab lines 361-378: project menu */
 /* project menu */
 .pwrap{position:relative;margin-right:auto}
@@ -299,11 +331,21 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tile .tname{font-size:15px;line-height:1.2;letter-spacing:-.04em}
 .head .hname{font-size:17px;line-height:1;letter-spacing:-.04em;overflow:visible}
 
+/* lab lines 396-397: form fields */
+.fin{width:100%;font:inherit;color:var(--ink);background:var(--hover);border:1px solid transparent;border-radius:var(--r-md);padding:8px 10px;resize:none;outline:none}
+.fin:focus{border-color:var(--accent)}
+
+/* lab lines 400-400: field labels */
+.fl{display:grid;gap:8px;font-size:12.5px;color:var(--faint);font-weight:500}
+
 /* lab lines 404-407: segmented control */
 .seg{display:inline-flex;background:var(--hover);border-radius:var(--r-md);padding:2px;justify-self:start}
 .seg button{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--muted);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12.5px}
 .seg button.on{background:var(--sel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
 .seg .lucide{width:14px;height:14px}
+
+/* lab lines 411-411: disabled button */
+.btn[disabled]{opacity:.4;pointer-events:none}
 
 /* lab lines 456-463: ions: ion chief tile */
 .ihead .pwrap{margin-left:14px}
@@ -548,6 +590,9 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .wsum .wst .lucide{width:13px;height:13px}
 .wsrc{font-size:11px;color:var(--faint);margin-left:6px}
 
+/* lab lines 861-861: settings: effort bars in a value */
+.srow .val .ebars{color:var(--ink)}
+
 /* lab lines 890-891: settings: ion's model slots */
 .slot{display:inline-flex;align-items:center;gap:6px}
 .slot .lucide{width:14px;height:14px;color:var(--accent)}
@@ -575,7 +620,10 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}
 .srow.stack .chips{justify-content:flex-start}
 
-/* lab lines 1051-1066: ions: project ion rows, fan-out card */
+/* lab lines 988-988: activity: rows */
+.arow,.drow{box-sizing:border-box}
+
+/* lab lines 1051-1068: ions: project ion rows, fan-out card; routines' instructions */
 /* project ions */
 .prow .pmain canvas{width:30px;height:30px;flex-shrink:0}
 .pmain small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -592,6 +640,8 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .ft2{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;min-width:0}
 .ft2 .lucide{width:13px;height:13px;flex-shrink:0}
 .fanr>.lucide{width:14px;height:14px;color:var(--faint)}
+.rin{margin-top:3px;font-size:12px;color:var(--faint);font-style:italic}
+.rh2 canvas{width:18px;height:18px;display:block}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

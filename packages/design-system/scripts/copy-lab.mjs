@@ -17,8 +17,12 @@ const RANGES = [
   [267, 283, "ions: new-ion card, notes"],
   [305, 305, "empty lists"],
   [310, 330, "chips, project picker"],
+  [331, 360, "activity: its row, upcoming and recent runs, pause all"],
   [361, 378, "project menu"],
+  [396, 397, "form fields"],
+  [400, 400, "field labels"],
   [404, 407, "segmented control"],
+  [411, 411, "disabled button"],
   [456, 463, "ions: ion chief tile"],
   [478, 484, "ions: route card"],
   [503, 515, "ions: scalable panel rows"],
@@ -32,10 +36,12 @@ const RANGES = [
   [686, 686, "panel label (.lh2)"],
   [713, 724, "ions: needs strip, collapsed"],
   [761, 831, "brain picker; work"],
+  [861, 861, "settings: effort bars in a value"],
   [890, 891, "settings: ion's model slots"],
   [896, 896, "settings: model separator"],
   [902, 919, "settings: tools rows, agents' status, stacked rows"],
-  [1051, 1066, "ions: project ion rows, fan-out card"],
+  [988, 988, "activity: rows"],
+  [1051, 1068, "ions: project ion rows, fan-out card; routines' instructions"],
 ];
 
 const out = [
