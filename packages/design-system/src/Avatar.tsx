@@ -129,8 +129,11 @@ function decor(ctx: CanvasRenderingContext2D, d: Bot["decor"], t: Tokens): void 
       ctx.restore();
     }
   } else if (d === "opencode") {
-    ctx.globalAlpha = 0.16;
-    ctx.fillRect(-0.5, -0.5, 1, 1);
+    // Its logo's hollow (the frame's inner 2/5 wide, 3/5 high): open at the top, a lighter block below.
+    ctx.fillRect(-0.4, -0.6, 0.8, 1.2);
+    ctx.fillStyle = t.ink;
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(-0.4, -0.2, 0.8, 0.8);
   } else if (d === "cursor") {
     ctx.globalAlpha = 0.16;
     ctx.beginPath();
