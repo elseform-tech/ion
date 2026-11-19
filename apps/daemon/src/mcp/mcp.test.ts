@@ -108,6 +108,8 @@ describe("ion's MCP server", () => {
     expect(ask.description).toContain("full sentence");
     expect(schema).toContain("one-line sentence");
     expect(schema).toContain("pros and cons");
+    // No separate hint is shown: the question and its options carry the context.
+    expect(ask.description).not.toContain("(why)");
     await c.close();
   });
 

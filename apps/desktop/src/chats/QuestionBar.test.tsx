@@ -33,7 +33,8 @@ describe("QuestionBar", () => {
   it("opens expanded: the question, why, each option with its reasoning, your own words and Always", () => {
     const { container } = bar();
     expect(container.querySelector(".qbox .qq")?.textContent).toBe("Merge it?");
-    expect(container.querySelector(".qbox .why")?.textContent).toBe("Tests pass");
+    // The user, 2026-11-19: no hint under the question; the options carry the reasons.
+    expect(container.querySelector(".qbox .why")).toBeNull();
     expect([...container.querySelectorAll(".qbox .qopt")].map((r) => r.textContent)).toEqual([
       "Mergemain gets the change",
       "WaitNothing yet",
@@ -146,15 +147,9 @@ describe("QuestionBar", () => {
     );
   });
 
-  // The user, 2026-11-19: a cleaner box that doesn't crowd the chat: options one line each, the hint at most 3
-  // lines (all of it on a click), and your own answer with Always on one row.
-  it("keeps the hint to 3 lines until you open it, and each option to one line", () => {
-    const long = { ...question, why: "A long reason. ".repeat(40) };
-    const { container } = bar(long);
-    const why = container.querySelector<HTMLElement>(".qbox .why")!;
-    expect(why.classList.contains("clamp")).toBe(true);
-    fireEvent.click(why);
-    expect(why.classList.contains("clamp")).toBe(false);
+  // The user, 2026-11-19: a cleaner box: options one line each, and your own answer with Always on one row.
+  it("keeps each option to one line, with your own answer and Always on one row", () => {
+    const { container } = bar();
     expect(container.querySelectorAll(".qopt b")).toHaveLength(2);
     expect(container.querySelector(".qd-f")?.textContent).toContain("Always");
   });

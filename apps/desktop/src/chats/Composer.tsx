@@ -1,7 +1,7 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import { ArrowUp, Folder, type LucideIcon, Shield, ShieldCheck, ShieldOff, Square } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
-import { type KeyboardEvent, useCallback, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { type Brain, BrainPill, BrainPopover, useEffortKey } from "./BrainPopover.js";
 import { useDismiss } from "./dismiss.js";
 
@@ -101,7 +101,28 @@ function askArgs(
   };
 }
 
-/** Send, or Stop while the chat's run is going. */
+/** How close two presses of Esc must be to stop a run. */
+const DOUBLE_ESC_MS = 500;
+
+/** Esc twice, quickly, stops the chat's run (one Esc only closes what's open). */
+function useDoubleEscStop(client: IonClient, running: string | null): void {
+  useEffect(() => {
+    if (!running) return;
+    let last = 0;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const now = Date.now();
+      if (now - last < DOUBLE_ESC_MS) {
+        last = 0;
+        void client.call("run.interrupt", { runId: running }).catch(() => {});
+      } else last = now;
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [client, running]);
+}
+
+/** Send, or Stop while the chat's run is going (Esc twice stops it too). */
 function SendOrStop(p: {
   client: IonClient;
   running: string | null;
@@ -225,6 +246,7 @@ const withAgent = (brain: Brain, own: string | undefined, first: string): Brain 
 export function Composer(p: Props) {
   const { client, harnesses, to, running, onSent, harness, project, onBrainOpen, locked, onSending } = p;
   const { ready, own, first } = defaults(harnesses, harness);
+  useDoubleEscStop(client, running);
   const [brain, setBrain] = useBrain(to, p.current);
   const [access, setAccess] = useState<Access>("");
   const [text, setText] = useState("");

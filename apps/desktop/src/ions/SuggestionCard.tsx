@@ -106,7 +106,7 @@ function Acts({ card, send }: { card: Chief; send: (a: Answer) => void }) {
       <button className="btn pri" type="button" onClick={() => send("took")}>
         {card.kind === "routine" ? "Add routine" : "Resume"}
       </button>
-      <button className="btn" type="button" onClick={() => send("later")}>
+      <button className="mute" type="button" onClick={() => send("later")}>
         Not now
       </button>
       <button

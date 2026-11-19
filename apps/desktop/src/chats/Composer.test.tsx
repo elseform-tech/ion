@@ -290,4 +290,23 @@ describe("Composer", () => {
       expect(call).toHaveBeenCalledWith("ask", { text: "go on", chatId: "c10", harness: "grok-build" }),
     );
   });
+
+  // The user, 2026-11-19: no way to stop with the keyboard. Esc twice, quickly, stops the chat's run.
+  it("stops the run on a double Esc, never on one", () => {
+    const call = vi.fn(async () => ({ ok: true }));
+    render(
+      <Composer
+        client={{ call } as unknown as IonClient}
+        harnesses={[grok]}
+        to={{ chatId: "c11" }}
+        running="r9"
+        onSent={() => {}}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(call).not.toHaveBeenCalledWith("run.interrupt", { runId: "r9" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(call).toHaveBeenCalledWith("run.interrupt", { runId: "r9" });
+  });
 });
+
