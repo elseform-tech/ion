@@ -73,6 +73,10 @@ describe("ruleFor, reading and searching", () => {
     expect(ruleFor(tool("read", { file_path: "../other/a.ts" }), ctx)).toBeNull();
     expect(ruleFor(tool("search", { pattern: "x", path: "src/../../.." }), ctx)).toBeNull();
     expect(ruleFor(tool("search", { pattern: "x", path: "~/code" }), ctx)).toBeNull();
+    // Security review, 2026-11-19: a glob's braces can hide a climb or an absolute path from the check.
+    expect(ruleFor(tool("search", { pattern: "x", glob: "{..,src}/secret" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", glob: "{/etc,src}/*" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", glob: "src..x/a" }), ctx)).toBeNull();
     expect(ruleFor(tool("read", { file_path: `${home}/.ssh/id_rsa` }), ctx)?.decision).toBe("deny");
   });
 

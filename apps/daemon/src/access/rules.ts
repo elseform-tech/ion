@@ -155,6 +155,9 @@ function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
     .map((v) => realish(resolve(c.roots[0] ?? "/", v)));
 }
 
-/** A path in the input that climbs out ("..") or starts at your home ("~", $HOME): the judge decides those. */
+/**
+ * Input the rule can't fully read, left to the judge: ".." anywhere, braces (a glob's {a,b} can hide a climb or an
+ * absolute path), or a start at your home ("~", $HOME). Plain globs (*, **) stay: they can't leave the folder.
+ */
 const climbs = (req: ApprovalRequest) =>
-  [...strings(req.input)].some((v) => /(^|[\\/])\.\.([\\/]|$)|^~|\$\{?HOME/.test(v));
+  [...strings(req.input)].some((v) => v.includes("..") || /[{}]/.test(v) || /^~|\$\{?HOME/.test(v));
