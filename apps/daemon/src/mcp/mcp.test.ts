@@ -99,6 +99,18 @@ describe("ion's MCP server", () => {
     await c.close();
   });
 
+  // The user, 2026-11-19: "Merge it?" with "Merge" / "Wait" read oddly. The ask tool asks for a question that
+  // stands on its own as a full sentence, and options that are one-line sentences with their pros and cons.
+  it("asks agents for a full-sentence question and one-line sentence options", async () => {
+    const c = await client();
+    const ask = (await c.listTools()).tools.find((t) => t.name === "ask")!;
+    const schema = JSON.stringify(ask.inputSchema);
+    expect(ask.description).toContain("full sentence");
+    expect(schema).toContain("one-line sentence");
+    expect(schema).toContain("pros and cons");
+    await c.close();
+  });
+
   it("lets an agent ask you, and see your decisions as data", async () => {
     const c = await client();
     const choices = [

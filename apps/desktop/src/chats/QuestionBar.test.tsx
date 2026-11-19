@@ -158,4 +158,10 @@ describe("QuestionBar", () => {
     expect(container.querySelectorAll(".qopt b")).toHaveLength(2);
     expect(container.querySelector(".qd-f")?.textContent).toContain("Always");
   });
+
+  // The user, 2026-11-19: no yellow dot in the question box.
+  it("has no dot before the question", () => {
+    const { container } = bar();
+    expect(container.querySelector(".qbox .wd")).toBeNull();
+  });
 });

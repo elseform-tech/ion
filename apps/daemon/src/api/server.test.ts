@@ -78,14 +78,19 @@ describe("daemon api", () => {
     const { chatId, runId } = await client.call("ask", { text: "asks", harness: "fake", projectId: "app" });
     await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"), 5000);
     const [need] = await client.call("needs.list", { chatId });
-    expect(need).toMatchObject({ kind: "ask", summary: "Merge it?" });
+    expect(need).toMatchObject({ kind: "ask", summary: "Should I merge the cart drawer fix into main now?" });
     await client.call("need.answer", { needId: need!.needId, choice: 2, scope: "project" });
     await until(() => seen.some((e) => e.type === "message.sent" && e.runId !== runId), 5000);
     const sent = seen.filter((e) => e.type === "message.sent").at(-1)!;
-    expect(sent).toMatchObject({ chatId, data: { text: 'You asked: "Merge it?". The user chose: "Wait".' } });
+    expect(sent).toMatchObject({
+      chatId,
+      data: {
+        text: `You asked: "Should I merge the cart drawer fix into main now?". The user chose: "Wait until you've tried it yourself".`,
+      },
+    });
     await until(() => seen.some((e) => e.type === "decision.outcome"), 5000);
     expect(await client.call("decisions.list", {})).toMatchObject([
-      { choice: "Wait", scope: "project", outcomes: [{ kind: "ran" }] },
+      { choice: "Wait until you've tried it yourself", scope: "project", outcomes: [{ kind: "ran" }] },
     ]);
   });
 
@@ -397,7 +402,7 @@ describe("daemon api", () => {
     );
     await client.call("run.interrupt", { runId: slow.runId });
     await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.finished"), 5000);
-    // A decision you made for the project (here: "Merge it?" → Wait, for the project).
+    // A decision you made for the project (here: whether to merge → wait, for the project).
     const asked = await client.call("ask", { text: "asks", harness: "fake", projectId: "app" });
     await until(() => seen.some((e) => e.runId === asked.runId && e.type === "run.finished"), 5000);
     const [need] = await client.call("needs.list", { chatId: asked.chatId });

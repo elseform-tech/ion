@@ -156,7 +156,6 @@ export function QuestionBar({ client, question }: { client: IonClient; question:
   return (
     <div className="qbox" role="group" aria-label="Question">
       <div className="qhead">
-        <i className="wd" />
         <span className="qq" title={question.question}>
           {question.question}
         </span>

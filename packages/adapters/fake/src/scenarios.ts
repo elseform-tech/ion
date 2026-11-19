@@ -183,8 +183,15 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     const server = s.mcp() as { url: string; headers: Record<string, string> } | null;
     if (!server) return "failed";
     const choices = [
-      { label: "Merge", consequence: "main gets the change" },
-      { label: "Wait", consequence: "Nothing yet" },
+      {
+        label: "Merge the fix into main now",
+        consequence: "Ships today; the tests pass, and it touches only the cart drawer",
+        recommended: true,
+      },
+      {
+        label: "Wait until you've tried it yourself",
+        consequence: "Safer if you want to see it first; the branch stays open meanwhile",
+      },
     ];
     const res = await fetch(server.url, {
       method: "POST",
@@ -200,7 +207,7 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
         params: {
           name: "ask",
           arguments: {
-            question: "Merge it?",
+            question: "Should I merge the cart drawer fix into main now?",
             why: "The tests pass and the change touches only the cart drawer, so merging is low risk.",
             choices,
           },

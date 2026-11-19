@@ -1159,7 +1159,7 @@ details a{color:var(--accent)}
 .qbox:has(.qd) .qhead .qq{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .qd{max-height:34vh} .qd .why{cursor:pointer;font-size:12.5px} .qd .why.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .qopt{display:flex;align-items:center;gap:8px;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.qopt:hover{background:var(--hover)} .qopt b{font-weight:500;flex-shrink:0} .qopt span{min-width:0;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qopt:hover{background:var(--hover)} .qopt b{font-weight:500;flex-shrink:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .qhead>.btn{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .qopt span{min-width:0;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qopt .rec{width:13px;height:13px;color:var(--accent);flex-shrink:0} .qd-f label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .qd .bp-row .rec{width:13px;height:13px;color:var(--accent)}
 .bp-row .g,.bp-row small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1421,17 +1421,16 @@ export function sumLines(lines: Line[]) {
               <div class="foot"><div class="fcol">
                 <div class="qbox" role="group" aria-label="Question" id="askBox">
                   <div class="qhead">
-                    <i class="wd"></i>
-                    <span class="qq" title="Keep the old breakpoints?">Keep the old breakpoints?</span>
-                    <button type="button" class="btn pri" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done" hidden>Keep them</button>
-                    <button type="button" class="btn" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done" hidden>Use the defaults</button>
+                    <span class="qq" title="Should I keep your custom xs breakpoint when moving to Tailwind 4?">Should I keep your custom xs breakpoint when moving to Tailwind 4?</span>
+                    <button type="button" class="btn pri" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done" hidden>Keep xs by moving it into the theme</button>
+                    <button type="button" class="btn" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done" hidden>Drop xs and use Tailwind's defaults</button>
                     <button type="button" class="ib qtog" aria-label="Collapse" aria-expanded="true" data-qtog><i data-lucide="chevron-down"></i><i data-lucide="chevron-up"></i></button>
                   </div>
                   <div class="qd">
                     <div class="why clamp" role="button" tabindex="0" onclick="this.classList.toggle('clamp')">Tailwind 4 drops your custom <code>xs</code> screen (420px).</div>
-                    <button type="button" class="qopt" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done"><b>Keep them</b><span>Moves xs into the theme; nothing changes on screen</span><i data-lucide="star" class="rec" aria-label="Recommended"></i></button>
-                    <button type="button" class="qopt" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done"><b>Use the defaults</b><span>Drops xs; 9 components shift on small phones</span></button>
-                    <button type="button" class="qopt" title="One fewer breakpoint; small phones get the sm layout" data-need="tw4" data-a="done"><b>Map xs to sm</b><span>One fewer breakpoint; small phones get the sm layout</span></button>
+                    <button type="button" class="qopt" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done"><b>Keep xs by moving it into the theme</b><span>Moves xs into the theme; nothing changes on screen</span><i data-lucide="star" class="rec" aria-label="Recommended"></i></button>
+                    <button type="button" class="qopt" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done"><b>Drop xs and use Tailwind's defaults</b><span>Drops xs; 9 components shift on small phones</span></button>
+                    <button type="button" class="qopt" title="One fewer breakpoint; small phones get the sm layout" data-need="tw4" data-a="done"><b>Map xs onto the sm breakpoint</b><span>One fewer breakpoint; small phones get the sm layout</span></button>
                     <div class="qd-f">
                       <input class="own" aria-label="Your own answer" placeholder="Something else…">
                       <label title="Always for this project"><input type="checkbox" aria-label="Always for this project"> Always</label>

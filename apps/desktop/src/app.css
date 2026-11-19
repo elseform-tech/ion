@@ -764,6 +764,17 @@ body.resizing {
 .qopt b {
   font-weight: 500;
   flex-shrink: 0;
+  max-width: 60%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Collapsed, an option's button keeps to a sensible width (all of it on hover). */
+.qhead > .btn {
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .qopt span {
   min-width: 0;
