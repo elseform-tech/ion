@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Grants, Scope } from "../mcp/index.js";
+import type { Grants, RunScope } from "../mcp/index.js";
 
 const MAX_BODY = 1024 * 1024;
 
@@ -50,13 +50,13 @@ export function readJson(req: IncomingMessage): Promise<unknown> {
  */
 export function createGateHandler(d: {
   grants: Grants;
-  decide: (scope: Scope, payload: unknown) => Promise<GateAnswer | null>;
+  decide: (scope: RunScope, payload: unknown) => Promise<GateAnswer | null>;
 }) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (req.headers.origin !== undefined) return send(res, 403, "Forbidden");
     const key = /^\/gate\/([0-9a-f]{64})$/.exec((req.url ?? "").split("?")[0]!)?.[1];
     const scope = key ? d.grants.check(key, "gate") : null;
-    if (!scope) return send(res, 401, "Unknown key");
+    if (scope?.kind !== "run") return send(res, 401, "Unknown key");
     if (req.method !== "POST") return send(res, 405, "Use POST");
     const answer = await d.decide(scope, await readJson(req));
     if (!answer) return send(res, 400, { decision: "deny", reason: "ion couldn't read this tool call" });

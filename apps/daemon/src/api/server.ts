@@ -16,7 +16,7 @@ import { createMatcher, Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
-import { createGrants, createMcpHandler } from "../mcp/index.js";
+import { createGrants, createMcpHandler, type RunScope } from "../mcp/index.js";
 import { Ions } from "../ions/service.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
@@ -25,6 +25,14 @@ import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
 import { chatsView } from "../views/chats.js";
 import { addRoutineTo } from "./routines.js";
+
+/** The scope of a run that ion asks you about. */
+const runScopeOf = (r: AskingRun): RunScope => ({
+  kind: "run",
+  projectId: r.projectId,
+  chatId: r.chatId,
+  runId: r.runId,
+});
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -38,7 +46,7 @@ export async function startServer(opts: {
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
   let port = 0;
   const ctx = openState(opts, () => `http://127.0.0.1:${port}`);
-  const { store, db } = ctx;
+  const { store, db, grants } = ctx;
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   // Routines run on their schedule while the daemon runs (a run missed while it was stopped goes now).
   const stopRoutines = ctx.routines.start();
@@ -48,9 +56,9 @@ export async function startServer(opts: {
   void ctx.decisions.resume().catch(() => {});
   const auth = createAuth();
   const http = httpServer(
-    createMcpHandler({ store, db, grants: ctx.grants, decisions: ctx.decisions }),
+    createMcpHandler({ store, db, grants, decisions: ctx.decisions, configFile: opts.configFile }),
     createGateHandler({
-      grants: ctx.grants,
+      grants,
       decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
     }),
   );
@@ -184,8 +192,7 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     // When ion stops a tool call it asks you; made here, answered through the decisions made below.
     askBlocked: {
       ask: (r: AskingRun, b: Blocked) =>
-        late.decisions?.askBlocked({ projectId: r.projectId, chatId: r.chatId, runId: r.runId }, b) ??
-        Promise.resolve("timeout" as const),
+        late.decisions?.askBlocked(runScopeOf(r), b) ?? Promise.resolve("timeout" as const),
       allowed: (r: AskingRun, key: string) =>
         late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
     },

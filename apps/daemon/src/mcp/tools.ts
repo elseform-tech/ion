@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { MemoryInfo, NeedInfo } from "@ion/schema";
 import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
@@ -7,43 +8,44 @@ import { HISTORY_CHARS } from "../runs/history.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { memoryView } from "../views/memory.js";
-import { messagesView } from "../views/messages.js";
+import { messagesView, type SearchHit } from "../views/messages.js";
 import { needsView } from "../views/needs.js";
 import type { Decisions } from "../decisions/index.js";
 import { askTools } from "./ask.js";
-import type { Grants, Scope } from "./grants.js";
+import { guard, ok, q } from "./result.js";
+import type { Grants, RunScope } from "./grants.js";
 
-type Deps = { store: EventStore; db: Db; grants: Grants; decisions?: Decisions };
+export type Deps = { store: EventStore; db: Db; grants: Grants; decisions?: Decisions };
 
 const WRITES_PER_RUN = 5;
-type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
-
-const SEARCH_MAX = 20;
+export const SEARCH_MAX = 20;
 const HIT_CHARS = 500;
-const ok = (text: string): Result => ({ content: [{ type: "text", text }] });
-const refuse = (text: string): Result => ({ content: [{ type: "text", text }], isError: true });
-const q = (s: string) => JSON.stringify(s);
 
-/** Runs a tool body; a refusal (UserError) becomes an error result the agent can read. */
-const guard =
-  <A>(f: (a: A) => Result) =>
-  (a: A): Result => {
-    try {
-      return f(a);
-    } catch (e) {
-      if (e instanceof UserError) return refuse(e.message);
-      throw e;
-    }
-  };
+/** A chat's last `limit` messages, as data. */
+export const historyData = (db: Db, chatId: string, limit: number) => {
+  const lines = messagesView.history(db, chatId, HISTORY_CHARS).slice(-limit);
+  return ok(wrapData(`chat ${chatId}`, lines.map((m) => `${m.role}: ${q(m.text)}`).join("\n")));
+};
+export const searchData = (hits: SearchHit[]) =>
+  ok(
+    wrapData(
+      "search results",
+      hits.map((h) => `${h.chatId} ${h.role}: ${q(h.text.slice(0, HIT_CHARS))}`).join("\n"),
+    ),
+  );
+export const needsData = (needs: NeedInfo[]) =>
+  ok(wrapData("open needs", needs.map((n) => `${n.needId} ${n.chatId}: ${q(n.summary)}`).join("\n")));
+export const memoryData = (list: MemoryInfo[]) =>
+  ok(wrapData("memory", list.map((m) => `${m.memoryId} (${m.scope}): ${q(m.text)}`).join("\n")));
 
 /** The tools a run gets, all limited to its own project. Everything they return is labelled as data. */
-export function registerTools(server: McpServer, scope: Scope, d: Deps): void {
+export function registerTools(server: McpServer, scope: RunScope, d: Deps): void {
   historyTools(server, scope, d);
   memoryTools(server, scope, d);
   if (d.decisions) askTools(server, scope, { db: d.db, decisions: d.decisions });
 }
 
-function historyTools(server: McpServer, scope: Scope, d: Deps): void {
+function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
   server.registerTool(
     "chat_history",
     {
@@ -54,8 +56,7 @@ function historyTools(server: McpServer, scope: Scope, d: Deps): void {
       const id = chatId ?? scope.chatId;
       if (chatsView.list(d.db).find((c) => c.chatId === id)?.projectId !== scope.projectId)
         throw new UserError("Not allowed");
-      const lines = messagesView.history(d.db, id, HISTORY_CHARS).slice(-(limit ?? 200));
-      return ok(wrapData(`chat ${id}`, lines.map((m) => `${m.role}: ${q(m.text)}`).join("\n")));
+      return historyData(d.db, id, limit ?? 200);
     }),
   );
   server.registerTool(
@@ -71,29 +72,24 @@ function historyTools(server: McpServer, scope: Scope, d: Deps): void {
         query,
         Math.min(limit ?? SEARCH_MAX, SEARCH_MAX),
       );
-      const lines = hits.map((h) => `${h.chatId} ${h.role}: ${q(h.text.slice(0, HIT_CHARS))}`);
-      return ok(wrapData("search results", lines.join("\n")));
+      return searchData(hits);
     }),
   );
   server.registerTool(
     "open_needs",
     { description: "What in this project is waiting on the user.", inputSchema: {} },
     guard(() => {
-      const needs = needsView.open(d.db).filter((n) => n.projectId === scope.projectId);
-      return ok(
-        wrapData("open needs", needs.map((n) => `${n.needId} ${n.chatId}: ${q(n.summary)}`).join("\n")),
-      );
+      return needsData(needsView.open(d.db).filter((n) => n.projectId === scope.projectId));
     }),
   );
 }
 
-function memoryTools(server: McpServer, scope: Scope, d: Deps): void {
+function memoryTools(server: McpServer, scope: RunScope, d: Deps): void {
   server.registerTool(
     "memory_list",
     { description: "What ion remembers for this project, and for the user.", inputSchema: {} },
     guard(() => {
-      const list = memoryView.list(d.db, scope.projectId);
-      return ok(wrapData("memory", list.map((m) => `${m.memoryId} (${m.scope}): ${q(m.text)}`).join("\n")));
+      return memoryData(memoryView.list(d.db, scope.projectId));
     }),
   );
   server.registerTool(

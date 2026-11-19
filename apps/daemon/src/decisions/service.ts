@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { type DecisionScope, EV, type NeedInfo } from "@ion/schema";
 import { UserError } from "../api/errors.js";
-import type { Scope } from "../mcp/index.js";
+import type { RunScope } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -124,7 +124,7 @@ export class Decisions {
     );
   }
 
-  async ask(s: Scope, q: AskInput): Promise<string> {
+  async ask(s: RunScope, q: AskInput): Promise<string> {
     const labels = q.choices.map((c) => c.label);
     if (new Set(labels).size !== labels.length) throw new UserError("Give each choice its own label");
     if (q.choices.filter((c) => c.recommended).length > 1)
@@ -157,7 +157,7 @@ export class Decisions {
    * or 4 minutes pass ("timeout": the call is refused; the question stays open while its run goes on, and a yes
    * meanwhile still counts).
    */
-  askBlocked(s: Scope, b: Blocked): Promise<Held> {
+  askBlocked(s: RunScope, b: Blocked): Promise<Held> {
     const q = blockedQuestion(b);
     const needId = this.d.needs.raiseAsk({
       chatId: s.chatId,
@@ -311,7 +311,7 @@ export class Decisions {
   }
 
   /** An outcome the agent reports (at most 3 per run), for a decision it may see. */
-  report(s: Scope, decisionId: string, text: string): void {
+  report(s: RunScope, decisionId: string, text: string): void {
     // Only decisions of the agent's own project: an agent can't annotate another project's decisions.
     const mine = decisionsView.find(this.d.db, decisionId);
     if (!mine || mine.projectId !== s.projectId || (mine.scope === "chat" && mine.chatId !== s.chatId))
@@ -349,7 +349,7 @@ export class Decisions {
   }
 
   /** ion's answer from an "always" decision, when the matcher names one of this question's own choices. */
-  private async fromPast(s: Scope, q: AskInput): Promise<string | null> {
+  private async fromPast(s: RunScope, q: AskInput): Promise<string | null> {
     // In a thread ion started, any of your decisions in the project counts; in your own chats, only "always" ones.
     const thread = this.d.ion?.isThread(s.chatId) ?? false;
     const past = this.pastFor(s, thread);
@@ -375,7 +375,7 @@ export class Decisions {
    * In a thread ion started, also ones you kept to a chat, but only chats ion started: a decision kept to one of
    * your own chats stays there. Answers allowing a stopped tool call are never reused this way.
    */
-  private pastFor(s: Scope, thread: boolean) {
+  private pastFor(s: RunScope, thread: boolean) {
     if (!thread)
       return decisionsView
         .applicable(this.d.db, s.projectId, s.chatId)

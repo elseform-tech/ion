@@ -1,0 +1,203 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
+import type { NewEvent } from "@ion/schema";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeMemory } from "../memory/index.js";
+import { type Db, EventStore, openDb } from "../store/index.js";
+import { allViews } from "../views/index.js";
+import { memoryView } from "../views/memory.js";
+import { createGrants, createMcpHandler, type Grants } from "./index.js";
+
+let db: Db;
+let store: EventStore;
+let grants: Grants;
+let http: Server;
+let url: string;
+let configFile: string;
+let startThread: ReturnType<typeof vi.fn>;
+
+const put = (e: Omit<NewEvent, "origin">) => store.append({ origin: "daemon", ...e } as NewEvent);
+const ALL = ["app", "shop", "private", "default"];
+
+beforeEach(async () => {
+  db = openDb(":memory:");
+  store = new EventStore(db, allViews);
+  const root = mkdtempSync(join(tmpdir(), "ion-iontools-"));
+  writeFileSync(join(root, "README.md"), "# Shop\n\nThe shop's cart and checkout.\n");
+  configFile = join(root, "config.toml");
+  saveUserConfig(configFile, {
+    ...DEFAULT_CONFIG,
+    projects: [
+      { id: "app", path: "/p/app", starred: false, profile: "The mobile app" },
+      { id: "shop", path: root, starred: false },
+      { id: "private", path: "/p/private", starred: false, shareWithIon: false },
+      { id: "default", path: "/p/default", starred: false },
+    ],
+  });
+  put({ chatId: "c1", runId: null, type: "chat.created", data: { title: "One", projectId: "app" } });
+  put({ chatId: "c2", runId: null, type: "chat.created", data: { title: "Two", projectId: "shop" } });
+  put({ chatId: "c3", runId: null, type: "chat.created", data: { title: "Hush", projectId: "private" } });
+  put({ chatId: "c1", runId: "r0", type: "message.sent", data: { text: "kiwi in the app" } });
+  put({ chatId: "c2", runId: "r9", type: "message.sent", data: { text: "kiwi in the shop" } });
+  put({ chatId: "c3", runId: "r8", type: "message.sent", data: { text: "kiwi kept private" } });
+  writeMemory(store, db, { scope: { projectId: "private" }, text: "Private note", source: "you" });
+  grants = createGrants();
+  startThread = vi.fn(async (projectId: string) => ({ chatId: `t-${projectId}` }));
+  const handle = createMcpHandler({ store, db, grants, configFile, startThread });
+  http = createServer((req, res) => void handle(req, res));
+  await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
+  const addr = http.address();
+  url = `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : 0}/mcp`;
+});
+
+afterEach(async () => {
+  await new Promise((r) => http.close(r));
+});
+
+async function client(k: string) {
+  const c = new Client({ name: "test", version: "0" });
+  await c.connect(
+    new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: { headers: { Authorization: `Bearer ${k}` } },
+    }),
+  );
+  return c;
+}
+const text = (r: unknown) => ((r as { content: { text: string }[] }).content[0]?.text ?? "") as string;
+const chief = () => client(grants.create({ kind: "ion", ionId: "chief", projects: ALL, turnId: "t1" }));
+const shopIon = () => client(grants.create({ kind: "ion", ionId: "shop", projects: ["shop"], turnId: "t2" }));
+const NOT_ALLOWED = { isError: true, content: [{ text: "Not allowed" }] };
+
+// The user, 2026-11-19: ion chief and project ions get real tools, each only over what it may see.
+describe("ion tools", () => {
+  it("ion chief's key lists only projects shared with ion, never default", async () => {
+    const c = await chief();
+    const listed = text(await c.callTool({ name: "projects", arguments: {} }));
+    expect(listed).toMatch(/^<ion-data id="\w+" source="projects">/);
+    expect(listed).toContain("app");
+    expect(listed).toContain("The mobile app");
+    expect(listed).toContain("The shop's cart and checkout.");
+    expect(listed).toContain("0 questions waiting");
+    expect(listed).not.toContain("private");
+    expect(listed).not.toMatch(/^default/m);
+    const ranked = text(await c.callTool({ name: "projects", arguments: { query: "checkout" } }));
+    expect(ranked.indexOf("shop")).toBeLessThan(ranked.indexOf("app"));
+    expect(
+      await c.callTool({ name: "search_chats", arguments: { query: "kiwi", projectId: "private" } }),
+    ).toMatchObject(NOT_ALLOWED);
+    const everywhere = text(await c.callTool({ name: "search_chats", arguments: { query: "kiwi" } }));
+    expect(everywhere).toContain("kiwi in the shop");
+    expect(everywhere).toContain("kiwi in the app");
+    expect(everywhere).not.toContain("private");
+    expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c3" } })).toMatchObject(
+      NOT_ALLOWED,
+    );
+    expect(text(await c.callTool({ name: "memory_list", arguments: {} }))).not.toContain("Private note");
+    await c.close();
+  });
+
+  it("a project's ion sees only its project", async () => {
+    const c = await shopIon();
+    expect(text(await c.callTool({ name: "chat_history", arguments: { chatId: "c2" } }))).toContain(
+      "kiwi in the shop",
+    );
+    expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c1" } })).toMatchObject(
+      NOT_ALLOWED,
+    );
+    expect(await c.callTool({ name: "decisions", arguments: { projectId: "app" } })).toMatchObject(
+      NOT_ALLOWED,
+    );
+    expect(await c.callTool({ name: "open_needs", arguments: { projectId: "app" } })).toMatchObject(
+      NOT_ALLOWED,
+    );
+    await c.callTool({ name: "set_profile", arguments: { text: "Cart, checkout\u0007 and orders" } });
+    expect(loadUserConfig(configFile).config.projects.find((p) => p.id === "shop")?.profile).toBe(
+      "Cart, checkout and orders",
+    );
+    await c.close();
+  });
+
+  it("start_thread starts at most 5 threads a turn and refuses default", async () => {
+    const c = await chief();
+    expect(
+      await c.callTool({ name: "start_thread", arguments: { projectId: "default", brief: "x" } }),
+    ).toMatchObject(NOT_ALLOWED);
+    expect(
+      await c.callTool({ name: "start_thread", arguments: { projectId: "private", brief: "x" } }),
+    ).toMatchObject(NOT_ALLOWED);
+    for (let i = 0; i < 5; i++) {
+      const r = await c.callTool({
+        name: "start_thread",
+        arguments: { projectId: "shop", brief: `do ${i}` },
+      });
+      expect(text(r)).toBe("Started t-shop");
+    }
+    const sixth = await c.callTool({ name: "start_thread", arguments: { projectId: "app", brief: "more" } });
+    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough threads for one turn" }] });
+    expect(startThread).toHaveBeenCalledTimes(5);
+    expect(startThread).toHaveBeenCalledWith("shop", "do 0", "t1");
+    await c.close();
+  });
+
+  it("memory_write writes you-memory for ion chief and project memory for a project's ion", async () => {
+    const c = await chief();
+    await c.callTool({ name: "memory_write", arguments: { text: "Likes short replies" } });
+    expect(memoryView.list(db, null).find((m) => m.text === "Likes short replies")?.scope).toBe("you");
+    await c.close();
+    const s = await shopIon();
+    await s.callTool({ name: "memory_write", arguments: { text: "Uses Stripe" } });
+    expect(memoryView.list(db, null).find((m) => m.text === "Uses Stripe")?.scope).toBe("shop");
+    for (let i = 0; i < 4; i++) await s.callTool({ name: "memory_write", arguments: { text: `note ${i}` } });
+    const sixth = await s.callTool({ name: "memory_write", arguments: { text: "one more" } });
+    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough memory for one turn" }] });
+    await s.close();
+  });
+
+  it("a run's key opens no ion tools and an ion's key no run tools", async () => {
+    const run = await client(grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r1" }));
+    const runTools = (await run.listTools()).tools.map((t) => t.name);
+    for (const n of ["projects", "start_thread", "set_profile"]) expect(runTools).not.toContain(n);
+    await run.close();
+    const c = await chief();
+    const names = (await c.listTools()).tools.map((t) => t.name).sort();
+    expect(names).toEqual([
+      "chat_history",
+      "decisions",
+      "memory_list",
+      "memory_write",
+      "open_needs",
+      "projects",
+      "search_chats",
+      "start_thread",
+    ]);
+    await c.close();
+    const s = await shopIon();
+    expect((await s.listTools()).tools.map((t) => t.name)).toContain("set_profile");
+    await s.close();
+  });
+
+  it("refuses start_thread when ion can't start threads here", async () => {
+    await new Promise((r) => http.close(r));
+    const handle = createMcpHandler({ store, db, grants, configFile });
+    http = createServer((req, res) => void handle(req, res));
+    await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
+    const addr = http.address();
+    url = `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : 0}/mcp`;
+    const c = await chief();
+    const r = await c.callTool({ name: "start_thread", arguments: { projectId: "shop", brief: "x" } });
+    expect(r).toMatchObject({ isError: true, content: [{ text: "Not available here" }] });
+    await c.close();
+  });
+
+  it("revokes an ion's key with its turn", async () => {
+    const key = grants.create({ kind: "ion", ionId: "chief", projects: ALL, turnId: "t9" });
+    expect(grants.check(key)).toMatchObject({ kind: "ion", turnId: "t9" });
+    grants.revoke("t9");
+    expect(grants.check(key)).toBeNull();
+  });
+});
