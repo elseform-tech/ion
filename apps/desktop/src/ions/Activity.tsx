@@ -160,7 +160,8 @@ function RecentRow({ r, ion, onOpen }: { r: RecentRun; ion?: IonInfo; onOpen: ()
       {ion ? <IonAvatar ion={ion} /> : <span />}
       <span className="g">
         <b>{r.title}</b>
-        <small>{[r.ion, r.routine].filter(Boolean).join(" · ")}</small>
+        {/* The routine that started it, unless it is the title already. */}
+        <small>{[r.ion, r.routine === r.title ? null : r.routine].filter(Boolean).join(" · ")}</small>
       </span>
       <span className="out">
         <Outcome status={r.status} />

@@ -67,3 +67,12 @@ on `ion:<ionId>` (`ion.heard`, `ion.said`).
 - Questions in ion threads go through the project's ion (`questions.ts`): an answer from your decisions there, a
   duplicate held behind the same question waiting (settled only when identical), else your question with the
   ion's note; "always?" after the same answer three times; a decision whose runs failed twice is flagged.
+
+## Routines (Plan 10)
+
+`src/scheduler/routines.ts`: each project's routines (in your config) run when they're due, as a thread their ion
+starts (`Ions.routine`: Auto, `by: "ion"`, titled by the routine's name, briefed with its text, at its effort). It
+looks at start and once a minute. Every slot handled is a `routine.ran` event, so a slot runs at most once, across
+restarts too; slots missed while ion was stopped run once, as the latest. Off, or with pause all on, a routine's slots
+pass; turned on again it waits for its next one. `src/scheduler/activity.ts` builds `activity.list`; the commands
+are in `src/api/routines.ts`. See `docs/routines.md`.

@@ -691,3 +691,10 @@ body.resizing {
 .arow .out [role="img"] {
   display: inline-flex;
 }
+/* The Activity row's icon: centred in its circle (`.ir span` would make it a block). */
+.ir .aico {
+  display: grid;
+}
+.radd .fin {
+  box-sizing: border-box;
+}

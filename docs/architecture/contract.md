@@ -34,9 +34,12 @@ Adapter events: `run.started`, `run.finished` (done | failed | interrupted | cap
 `approval.requested`, `artifact.attached`, `usage.reported`, `error` (code, retryable).
 
 Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `approval.resolved`,
-`need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`,
+`need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`, `routine.ran`,
 `briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
 `decision.recorded`, `decision.outcome`, `decision.forgotten`.
+
+A `routine.ran` (chatId null) is one slot of a routine handled: the thread it started, why it couldn't, or that
+you skipped it; `by: "you"` with `due: null` is a run you started now.
 
 A `need.raised` with `kind: "ask"` is an agent's question with `choices`; its `need.resolved` has
 `decision: "answered"`, the `choice` and its `scope`. Old allow/deny needs still read.

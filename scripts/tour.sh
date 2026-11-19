@@ -35,6 +35,10 @@ ion ask "edit the onboarding email copy so it reads warmer and mentions the free
 ion ions message storefront "edit the readme" >/dev/null 2>&1
 ion ions message storefront "what project am i in?" >/dev/null 2>&1 # answered by its ion, no thread
 ion ions message chief "please check storefront and payments-api for the rounding bug" >/dev/null 2>&1
+# Plan 10: routines, so Activity has what's next and a routine's run today.
+ion routines add "Morning check" -p storefront -w "weekdays 9:00" -d "edit" >/dev/null
+ion routines add "Dependency update" -p payments-api -w "mon 10:00" -d "edit the readme" --effort low >/dev/null
+ion routines run morning-check >/dev/null 2>&1
 (ion ask "slow" -p payments-api --harness fake >/dev/null 2>&1 &) # running while you look
 pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
 sleep 3
