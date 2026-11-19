@@ -362,6 +362,23 @@ describe("a thread's end", () => {
     expect(reply.length).toBeLessThanOrEqual(2000);
   });
 
+  // Live eval on Grok (22 projects), 2026-11-19: docs' thread added a line to its README, and docs' ion reported
+  // "that line is not in the file": it read the project's folder, but the thread's edit is in the thread's own
+  // worktree until you merge it. The report turn is told so, with the files the thread changed.
+  it("a report turn knows the thread's changes are on its own branch, and which files changed", async () => {
+    const i = ions();
+    i.watch();
+    await i.startThread("storefront", "Add a line", { ionId: "storefront", request: "x", turnId: "turn_1" });
+    const change = { path: "README.md", change: "modify", added: 3, removed: 1 };
+    store.append({ chatId: "t1", runId: "r1", origin: "adapter", type: EV.fileChanged, data: change });
+    end("done", "Added the line.");
+    await vi.waitFor(() => expect(turn).toHaveBeenCalled());
+    const prompt = turn.mock.calls[0]![1];
+    expect(words(prompt)).toMatch(/own branch/);
+    expect(words(prompt)).toMatch(/not in the project's folder/);
+    expect(/source="thread">\n([\s\S]*?)\n<\/ion-data/.exec(prompt)?.[1]).toContain("README.md");
+  });
+
   // Task review, 2026-11-19: a report is a chat line, not a wall of text.
   it("cuts a long report at a sentence end, within 1200 characters", async () => {
     const i = ions();
