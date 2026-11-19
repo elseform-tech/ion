@@ -334,4 +334,51 @@ describe("Ions", () => {
     await waitFor(() => expect(after.container.querySelector(".bi")?.textContent).toBe("Hi."));
     expect(after.container.querySelector(".bcol .pending")).toBeNull();
   });
+
+  // Plan 14 (2026-11-19): an ion thinks as an agent session; its tool calls and thinking show as one work line above
+  // its reply ("Worked for 12s"), open to its steps, like a plain chat's.
+  it("shows an ion's tool calls as one work line above its reply, open to its steps", async () => {
+    const at = (e: IonEvent, ts: string, runId: string | null = "turn1") => ({ ...e, ts, runId }) as IonEvent;
+    const events = [
+      at(ev("ion:chief", EV.ionHeard, { text: "What's open?" }), "2026-11-18T10:00:00.000Z", null),
+      at(ev("ion:chief", EV.thinkingDelta, { text: "Check the needs." }), "2026-11-18T10:00:02.000Z"),
+      at(
+        ev("ion:chief", EV.toolStarted, { toolId: "x1", kind: "mcp", name: "needs", summary: "storefront" }),
+        "2026-11-18T10:00:03.000Z",
+      ),
+      at(ev("ion:chief", EV.toolFinished, { toolId: "x1", ok: true }), "2026-11-18T10:00:05.000Z"),
+      at(ev("ion:chief", EV.ionSaid, { text: "One question." }), "2026-11-18T10:00:12.000Z", null),
+    ];
+    expect(ionTimeline(events).map((i) => i.kind)).toEqual(["you", "work", "ion"]);
+    const { container } = render(<Ions client={client(events)} onOpenChat={() => {}} />);
+    const head = await screen.findByRole("button", { name: /Worked for 12s/ });
+    // The work line sits in the ion's reply, above its words.
+    const bm = head.closest(".bm") as HTMLElement;
+    expect(bm.querySelector(".work + .bi")?.textContent).toBe("One question.");
+    expect(container.querySelectorAll(".work")).toHaveLength(1);
+    fireEvent.click(head);
+    expect(within(bm).getByText("needs")).toBeTruthy();
+    expect(within(bm).getByText("storefront")).toBeTruthy();
+    expect(within(bm).getByText("Thought for 1s")).toBeTruthy();
+  });
+
+  it("shows an ion's live work as its current step, not as thinking dots", async () => {
+    const events = [
+      ev("ion:chief", EV.ionHeard, { text: "What's open?" }),
+      {
+        ...ev("ion:chief", EV.toolStarted, {
+          toolId: "x1",
+          kind: "mcp",
+          name: "needs",
+          summary: "storefront",
+        }),
+        runId: "turn1",
+      } as IonEvent,
+    ];
+    const { container } = render(<Ions client={client(events)} onOpenChat={() => {}} />);
+    await waitFor(() =>
+      expect(container.querySelector(".work .wh .now")?.textContent).toBe("needs storefront"),
+    );
+    expect(container.querySelector(".bcol .pending")).toBeNull();
+  });
 });

@@ -1,7 +1,7 @@
 import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig, type UserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
-import type { EffortLevel, ProjectPatch } from "@ion/schema";
+import { type EffortLevel, type ProjectPatch, stripControl } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
 import type { Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
@@ -33,10 +33,32 @@ function checked(p: ProjectPatch): Omit<ProjectPatch, "projectId"> {
   if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
   if (p.access && p.access !== "auto" && p.access !== "full") throw new UserError("Pick auto or full");
   if (p.model !== undefined && p.model !== null && !p.model.trim()) throw new UserError("Pick a model");
-  return onlyPatchable(p);
+  return onlyPatchable({ ...p, ...profileOf(p) });
 }
 
-const PATCHABLE = ["harness", "color", "model", "effort", "access", "shareWithIon"] as const;
+/**
+ * A profile as saved: trimmed, without control characters; empty clears it. A suggestion is its ion's to write: the
+ * app only clears one (you accepted or dismissed it).
+ */
+function profileOf({ profile, profileSuggestion }: ProjectPatch): Pick<ProjectPatch, "profile"> {
+  if (profileSuggestion !== undefined && profileSuggestion !== null)
+    throw new UserError("Only its ion suggests a profile");
+  if (typeof profile !== "string") return profile === undefined ? {} : { profile };
+  const text = stripControl(profile).trim();
+  if (text.length > 300) throw new UserError("Keep it under 300 characters");
+  return { profile: text || null };
+}
+
+const PATCHABLE = [
+  "harness",
+  "color",
+  "model",
+  "effort",
+  "access",
+  "shareWithIon",
+  "profile",
+  "profileSuggestion",
+] as const;
 
 /** Only the fields Settings may change: anything else sent (a path, an id) is never written. */
 function onlyPatchable(p: ProjectPatch): Omit<ProjectPatch, "projectId"> {

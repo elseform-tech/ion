@@ -425,6 +425,34 @@ describe("daemon api", () => {
     expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", path, color: "#ED712E" });
   });
 
+  // Plan 14 (2026-11-19): you set a project's profile in Settings; its ion's suggestion only counts once you accept
+  // it, so the app may clear a suggestion but never write one.
+  it("sets a project's profile, at most 300 characters, and only clears a suggestion", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    const file = join(home, "config.toml");
+    const { config } = loadUserConfig(file);
+    saveUserConfig(file, {
+      ...config,
+      projects: config.projects.map((p) => ({ ...p, profileSuggestion: "A shop." })),
+    });
+    await client.call("project.update", { projectId: "app", profile: "The storefront." });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({
+      profile: "The storefront.",
+      profileSuggestion: "A shop.",
+    });
+    await expect(
+      client.call("project.update", { projectId: "app", profile: "x".repeat(301) }),
+    ).rejects.toThrow("Keep it under 300 characters");
+    await expect(
+      client.call("project.update", { projectId: "app", profileSuggestion: "Mine." } as never),
+    ).rejects.toThrow("Only its ion suggests a profile");
+    expect((await client.call("projects.list", {}))[0]?.profileSuggestion).toBe("A shop.");
+    await client.call("project.update", { projectId: "app", profile: null, profileSuggestion: null });
+    const p = (await client.call("projects.list", {}))[0];
+    expect(p).not.toHaveProperty("profile");
+    expect(p).not.toHaveProperty("profileSuggestion");
+  });
+
   // The user, 2026-11-19: rename a project (the name ion shows; its id stays).
   it("renames a project, and its ion takes the name", async () => {
     await client.call("projects.add", { path: repo("app") });
