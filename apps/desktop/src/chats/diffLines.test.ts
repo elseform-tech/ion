@@ -37,6 +37,15 @@ describe("diffLines", () => {
     expect(fileMark("--- a/x\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n")).toBe("D");
   });
 
+  // Security review, 2026-11-19: a line the agent added could pass for a header ("++ /dev/null" shows as
+  // "+++ /dev/null") and mark the file deleted, hiding it from the preview. Only the header counts.
+  it("marks a file by its header only, never by lines a hunk adds", () => {
+    const head = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1,2 @@\n x\n";
+    expect(fileMark(`${head}+++ /dev/null\n`)).toBe("M");
+    expect(fileMark(`${head}+new file mode 100644\n`)).toBe("M");
+    expect(fileMark(`${head}+deleted file mode 100644\n`)).toBe("M");
+  });
+
   it("groups paths by folder for the tree, in order, files at the root last", () => {
     expect(treeOf(["src/cart/a.ts", "README.md", "src/cart/b.ts", "src/checkout/c.ts"])).toEqual([
       { folder: "src/cart", files: ["a.ts", "b.ts"] },

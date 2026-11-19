@@ -47,8 +47,11 @@ export function diffLines(patch: string): DiffLine[] {
 
 /** The Files tab's mark: A added, D deleted, M modified. */
 export function fileMark(patch: string): "A" | "D" | "M" {
-  if (/^new file mode/m.test(patch)) return "A";
-  return /^(deleted file mode|\+\+\+ \/dev\/null)/m.test(patch) ? "D" : "M";
+  // The header only (before the first hunk): a hunk's lines are the agent's, and can look like a header.
+  const hunk = patch.search(/^@@/m);
+  const head = hunk < 0 ? patch : patch.slice(0, hunk);
+  if (/^new file mode/m.test(head)) return "A";
+  return /^(deleted file mode|\+\+\+ \/dev\/null)/m.test(head) ? "D" : "M";
 }
 
 /** Paths grouped by folder, in the order they come; files at the root last. */
