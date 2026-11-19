@@ -156,6 +156,23 @@ describe("codex adapter", () => {
     expect(JSON.parse(said(events))).toEqual({ decision: "acceptForSession" });
   });
 
+  // Review, 2026-11-19: an approval with no command went to the judge as "", and one asking for network access or
+  // more permissions was judged as a plain command.
+  it.each(["none", "network", "perms"])(
+    "declines a command approval it can't judge (%s), without asking",
+    async (variant) => {
+      const seen: ApprovalRequest[] = [];
+      const events = await turn(`command ${variant}`, {
+        decide: async (r) => {
+          seen.push(r);
+          return "allow";
+        },
+      });
+      expect(seen).toEqual([]);
+      expect(JSON.parse(said(events))).toEqual({ decision: "decline" });
+    },
+  );
+
   it("asks ion about an edit by its files", async () => {
     const seen: ApprovalRequest[] = [];
     await turn("approve", {

@@ -74,7 +74,9 @@ function toolStarted(
 
 function editStarted(item: Json, s: CodexState, id: string): AdapterEvent[] {
   const files = changesOf(item).map(finalPath).filter(Boolean);
-  s.edits.set(id, files);
+  // What the approval is judged by: every path touched, a move's source as well as where it goes.
+  const touched = changesOf(item).flatMap((c) => [str(c.path), str(c.kind?.move_path)]);
+  s.edits.set(id, [...new Set(touched.filter(Boolean))]);
   const first = files[0] ? shorten(files[0], s.roots) : "files";
   const summary = files.length > 1 ? `${first} and ${files.length - 1} more` : first;
   const input = changesOf(item)

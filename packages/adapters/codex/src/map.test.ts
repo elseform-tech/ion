@@ -61,7 +61,8 @@ describe("Codex app-server notifications", () => {
       type: "tool.started",
       data: { toolId: "f1", name: "apply_patch", kind: "edit", summary: "notes.md and 3 more" },
     });
-    expect(s.edits.get("f1")).toEqual(["/w/notes.md", "/w/new.md", "/w/old.md", "/w/b.md"]);
+    // Review, 2026-11-19: a move is judged by both paths (it removes one file and writes another).
+    expect(s.edits.get("f1")).toEqual(["/w/notes.md", "/w/new.md", "/w/old.md", "/w/a.md", "/w/b.md"]);
     expect(map(s, "item/completed", completed({ ...item, status: "completed" }))).toEqual([
       { type: "tool.finished", data: { toolId: "f1", ok: true, summary: null } },
       { type: "file.changed", data: { path: "notes.md", change: "modify", added: 2, removed: 1 } },

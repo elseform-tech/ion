@@ -85,7 +85,11 @@ function verdict(d: Decision, offered: unknown): string {
 }
 
 async function commandApproval(p: Json, ask: Ask, cwd: string) {
-  const command = unwrapShell(String(p.command ?? ""));
+  const command = unwrapShell(typeof p.command === "string" ? p.command : "");
+  // ion judges a command and nothing more: none at all, or one asking for network access or more permissions
+  // too (which ion doesn't weigh), is declined.
+  if (!command.trim() || p.networkApprovalContext != null || p.additionalPermissions != null)
+    return { decision: "decline" };
   const d = await ask({
     toolId: String(p.itemId),
     toolName: "Bash",

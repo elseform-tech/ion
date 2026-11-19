@@ -118,6 +118,12 @@ const SCRIPTS = {
       status: "inProgress",
     };
     item("item/started", it);
+    // Variants: none (no command), network (a network approval), perms (more permissions).
+    const extra = {
+      none: { command: null },
+      network: { networkApprovalContext: { host: "example.com", protocol: "https" } },
+      perms: { additionalPermissions: { fileSystem: { write: ["/"] } } },
+    }[variant];
     const r = await ask("item/commandExecution/requestApproval", {
       ...T,
       itemId: "c1",
@@ -125,6 +131,7 @@ const SCRIPTS = {
       command: it.command,
       cwd: thread.cwd,
       availableDecisions: ["accept", "acceptForSession", "decline", "cancel"],
+      ...extra,
     });
     item("item/completed", {
       ...it,
