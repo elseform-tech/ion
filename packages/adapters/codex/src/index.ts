@@ -47,9 +47,11 @@ const LOGINS: [RegExp, string][] = [
  */
 function loginStatus(l: Launch): Promise<AuthStatus> {
   return new Promise((resolve) =>
-    execFile(l.bin, [...l.prefix, "login", "status"], { timeout: 10_000 }, (e, out) => {
+    execFile(l.bin, [...l.prefix, "login", "status"], { timeout: 10_000 }, (e, out, err) => {
       if (e) return resolve({ signedIn: false, method: "Not signed in" });
-      const method = LOGINS.find(([re]) => re.test(String(out)))?.[1] ?? "Signed in";
+      // It prints to stderr; read both, keep only the kind of login.
+      const text = `${out}${err}`;
+      const method = LOGINS.find(([re]) => re.test(text))?.[1] ?? "Signed in";
       resolve({ signedIn: true, method });
     }),
   );

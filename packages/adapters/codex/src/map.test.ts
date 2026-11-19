@@ -110,6 +110,8 @@ describe("Codex app-server notifications", () => {
       { type: "tool.output", data: { toolId: "m1", text: "found" } },
       { type: "tool.finished", data: { toolId: "m1", ok: true, summary: null } },
     ]);
+    // A finished call can't be approved any more (security review, 2026-11-19).
+    expect(s.mcp.has("m1")).toBe(false);
     expect(map(s, "item/started", started({ type: "webSearch", id: "w1", query: "ion" }))).toMatchObject([
       { type: "tool.started", data: { kind: "web", summary: "ion" } },
     ]);

@@ -44,28 +44,49 @@ describe.skipIf(!enabled)("Codex live", { timeout: 180_000 }, () => {
     expect(text.toLowerCase()).toContain("hi");
   });
 
-  // Every tool call reaches ion's gate before it runs; a deny stops it.
-  it("sends a command to ion's gate, which stops it", async () => {
+  /** A gate on localhost that records each call and answers `decision`. */
+  async function withGate(decision: "allow" | "deny", f: (url: string, calls: unknown[]) => Promise<void>) {
     const calls: unknown[] = [];
     const server = createServer((req, res) => {
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", () => {
         calls.push(codexGateCall(JSON.parse(body)));
-        res.end(JSON.stringify({ decision: "deny", reason: "Not now" }));
+        res.end(JSON.stringify({ decision, reason: "Not now" }));
       });
     });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/gate/k`;
     try {
+      await f(`http://127.0.0.1:${(server.address() as AddressInfo).port}/gate/k3y`, calls);
+    } finally {
+      server.close();
+    }
+  }
+
+  // Every tool call reaches ion's gate before it runs; a deny stops it.
+  it("sends a command to ion's gate, which stops it", () =>
+    withGate("deny", async (url, calls) => {
       const events = await run("Run the shell command `cat notes.txt` and tell me what it printed.", {
         gate: { url },
       });
       console.log("Codex gate:", calls, JSON.stringify(textOf(events).slice(0, 120)));
       expect(calls[0]).toMatchObject({ kind: "command" });
       expect(textOf(events)).not.toContain("kiwi-42");
-    } finally {
-      server.close();
-    }
-  });
+    }));
+
+  // Security review, 2026-11-19: the commands Codex runs must not see the gate's address and key.
+  it("keeps the gate's address from the commands it runs", () =>
+    withGate("allow", async (url, calls) => {
+      const events = await run(
+        "Run exactly this shell command: printenv ION_GATE_URL; echo end. Reply with its output verbatim.",
+        { gate: { url }, decide: async () => "allow" },
+      );
+      const out = events
+        .filter((e) => e.type === "tool.output")
+        .map((e) => (e.data as { text: string }).text);
+      console.log("Codex env:", calls, out);
+      expect(calls[0]).toMatchObject({ kind: "command" });
+      expect(out.join("")).toContain("end");
+      expect(JSON.stringify(events)).not.toContain("k3y");
+    }));
 });

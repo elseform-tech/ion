@@ -98,13 +98,21 @@ async function ionHook(rpc: Rpc, cwd: string): Promise<HookEntry | null> {
 }
 
 /**
+ * The gate's address (its key included) reaches ion's hook through the environment, but the commands Codex runs
+ * inherit that environment too: seen live, `printenv ION_GATE_URL` printed it. It's blanked for them (`set`,
+ * applied after Codex's shell snapshot; `exclude` alone didn't hide it), and hooks still get it.
+ */
+const HIDE_GATE = ["-c", 'shell_environment_policy.set.ION_GATE_URL=""'];
+
+/**
  * Codex with ion's PreToolUse hook running. A hook runs only once its exact content is trusted, so the first start
  * asks Codex for the hook's hash and starts again trusting it; later starts reuse it. Never runs without it.
  */
 async function withGate(l: Launch, cwd: string, env: Record<string, string>): Promise<Io> {
   const cacheKey = `${l.bin} ${l.prefix.join(" ")} ${hookCommand()}`;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const io = spawnAppServer(l, hookArgs(trusted.get(cacheKey) ?? null), env);
+    const args = [...hookArgs(trusted.get(cacheKey) ?? null), ...HIDE_GATE];
+    const io = spawnAppServer(l, args, env);
     const hook = await within(l, io, async () => {
       await initialize(io.rpc);
       return ionHook(io.rpc, cwd);
@@ -139,6 +147,8 @@ function threadParams(opts: StartOpts): Record<string, unknown> {
     approvalPolicy: "untrusted",
     approvalsReviewer: "user",
     sandbox: opts.bare ? "read-only" : "workspace-write",
+    // Network on, as for ion's other agents: every command still goes through ion's gate and judge first, and
+    // the gate's key is hidden from commands (HIDE_GATE); ion's MCP key is in the thread's config, not the env.
     config: { ...mcpConfig(opts.mcp), sandbox_workspace_write: { network_access: true } },
     ...(opts.instructions ? { developerInstructions: opts.instructions } : {}),
     ...(opts.bare ? { ephemeral: true } : {}),

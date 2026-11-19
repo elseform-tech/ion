@@ -194,6 +194,42 @@ describe("codex adapter", () => {
     });
   });
 
+  // Security review, 2026-11-19 (HIGH): an edit approval for files ion never saw went out as `file_path: ""`.
+  it("declines an edit whose files it doesn't know, without asking", async () => {
+    const seen: ApprovalRequest[] = [];
+    const events = await turn("editunknown", {
+      decide: async (r) => {
+        seen.push(r);
+        return "allow";
+      },
+    });
+    expect(seen).toEqual([]);
+    expect(JSON.parse(said(events))).toEqual({ decision: "decline" });
+  });
+
+  // Security review, 2026-11-19 (MEDIUM): the form was bound to the latest call on the same server, so an allow
+  // could go to the wrong tool. Only one call in flight, for the tool the form names, can be asked about.
+  it("asks about an MCP form only when it names exactly one call in flight", async () => {
+    const asked = async (variant: string) => {
+      const seen: ApprovalRequest[] = [];
+      const events = await turn(`mcpform ${variant}`, {
+        decide: async (r) => {
+          seen.push(r);
+          return "allow";
+        },
+      });
+      return { seen, answer: JSON.parse(said(events)) };
+    };
+    const one = await asked("one");
+    expect(one.seen.map((r) => [r.toolId, r.toolName])).toEqual([["m1", "mcp__ion__search_chats"]]);
+    expect(one.answer.action).toBe("accept");
+    for (const variant of ["two", "done", "other"]) {
+      const r = await asked(variant);
+      expect(r.seen).toEqual([]);
+      expect(r.answer).toEqual({ action: "decline", content: null, _meta: null });
+    }
+  });
+
   it("refuses Codex's own question card: questions go through ion's ask tool", async () => {
     const answer = JSON.parse(said(await turn("ask")));
     expect(answer.error.message).toMatch(/ion's ask tool/);
@@ -240,6 +276,13 @@ describe("codex adapter with ion's gate", () => {
     // Later runs reuse what ion learned: one start each.
     const starts = readFileSync(process.env.FAKE_CODEX_LOG, "utf8").trim().split("\n");
     expect(starts.length).toBeLessThanOrEqual(3);
+  });
+
+  // Security review, 2026-11-19 (MEDIUM): Codex's commands inherited ION_GATE_URL (gate key included; seen live
+  // with `printenv`). Only ion's hook needs it: the commands Codex runs get it blanked.
+  it("keeps the gate's address from the commands Codex runs", async () => {
+    const { overrides } = await whoami({ gate });
+    expect(overrides).toContain('shell_environment_policy.set.ION_GATE_URL=""');
   });
 
   it("won't run Codex without its gate (fail closed)", async () => {

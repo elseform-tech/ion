@@ -62,7 +62,9 @@ function inputFor(tool: string, input: Record<string, unknown>, cwd: string): Re
   if (tool === "apply_patch") {
     const patch = str(input.command) ?? str(input.input) ?? "";
     const files = patchFiles(patch, cwd);
-    return { file_path: files[0] ?? cwd, locations: files, patch };
+    // A patch ion can't read names no file: never a made-up one (the run's folder would read as inside the
+    // worktree and be allowed). An edit that names no file asks.
+    return files.length ? { file_path: files[0], locations: files, patch } : { patch };
   }
   const path = str(input.path);
   return KINDS[tool] === "read" && path ? { ...input, file_path: resolve(cwd, path) } : input;

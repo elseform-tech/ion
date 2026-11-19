@@ -99,33 +99,45 @@ async function commandApproval(p: Json, ask: Ask, cwd: string) {
 async function fileApproval(p: Json, ask: Ask, s: CodexState) {
   const toolId = String(p.itemId);
   const files = s.edits.get(toolId) ?? [];
-  const root = typeof p.grantRoot === "string" ? { root: p.grantRoot } : {};
+  // Files ion never saw (no item started for it): nothing to judge, so declined, never an empty path.
+  if (!files.length) return { decision: "decline" };
+  const root = typeof p.grantRoot === "string" && p.grantRoot ? { root: p.grantRoot } : {};
   const d = await ask({
     toolId,
     toolName: "apply_patch",
     kind: "edit",
-    summary: files[0] ?? "Edit files",
-    input: { file_path: files[0] ?? "", locations: files, ...root },
+    summary: files[0]!,
+    input: { file_path: files[0], locations: files, ...root },
   });
   return { decision: verdict(d, null) };
 }
 
 const elicitation = (action: string) => ({ action, content: null, _meta: null });
 
-/** An MCP tool's approval comes as a form named for the server only: the tool is the call Codex just started. */
+/**
+ * The one MCP call a form is about. Codex names only the server (and the tool in its message), never the call, so
+ * it must be the single call still running on that server, for that tool; none or several: no call (declined).
+ */
+function mcpCallFor(p: Json, s: CodexState) {
+  const server = String(p.serverName);
+  const named = /tool "([^"]+)"/.exec(String(p.message))?.[1];
+  const running = [...s.mcp].filter(([, c]) => c.server === server && (!named || c.tool === named));
+  return running.length === 1 ? running[0]! : null;
+}
+
 async function mcpApproval(p: Json, ask: Ask, s: CodexState) {
   const meta = (p._meta ?? {}) as Json;
   if (meta.codex_approval_kind !== "mcp_tool_call") return elicitation("decline");
-  const server = String(p.serverName);
-  const [toolId, call] = [...s.mcp].reverse().find(([, c]) => c.server === server) ?? ["", null];
-  const tool = call?.tool ?? /tool "([^"]+)"/.exec(String(p.message))?.[1] ?? "tool";
+  const found = mcpCallFor(p, s);
+  if (!found) return elicitation("decline");
+  const [toolId, call] = found;
   const d = await ask({
     toolId,
-    toolName: `mcp__${server}__${tool}`,
-    mcpServer: server,
+    toolName: `mcp__${call.server}__${call.tool}`,
+    mcpServer: call.server,
     kind: "mcp",
-    summary: `${server}: ${tool}`,
-    input: (meta.tool_params ?? call?.arguments ?? {}) as Record<string, unknown>,
+    summary: `${call.server}: ${call.tool}`,
+    input: (meta.tool_params ?? call.arguments ?? {}) as Record<string, unknown>,
   });
   return elicitation(d === "deny" ? "decline" : "accept");
 }

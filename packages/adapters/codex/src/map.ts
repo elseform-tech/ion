@@ -12,7 +12,7 @@ export type CodexState = {
   roots: string[];
   tools: Set<string>;
   edits: Map<string, string[]>;
-  /** Each MCP tool call by item id, for the approval Codex asks without naming the tool. */
+  /** Each MCP tool call still running, by item id, for the approval Codex asks without naming the call. */
   mcp: Map<string, { server: string; tool: string; arguments: unknown }>;
   usage: { inputTokens: number; outputTokens: number } | null;
   error: TurnError | null;
@@ -129,6 +129,8 @@ function itemCompleted(item: Json, s: CodexState): AdapterEvent[] {
     const text = str(item.text);
     return text ? [{ type: EV.messageCompleted, data: { text } }] : [];
   }
+  // A finished MCP call can't be approved any more.
+  s.mcp.delete(id);
   if (!s.tools.delete(id)) return [];
   const ok = item.status === "completed" || (item.type === "webSearch" && item.status === undefined);
   const text = outputOf(item);

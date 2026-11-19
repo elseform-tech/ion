@@ -12,7 +12,11 @@ Codex doesn't speak ACP). Protocol notes and why: `docs/research/acp-and-harness
 - **Gate:** with a run's gate, ion passes a `PreToolUse` hook with `-c` (`hook/ion-gate.mjs`, run with the daemon's
   Node) for every tool, and trusts exactly that hook by the hash Codex reports (`hooks/list`): learned on the first
   start, kept while the daemon runs. Nothing is written to your Codex folder. If Codex won't run the hook, ion
-  won't run Codex. `gate.ts` reads the hook's payload (an `apply_patch` becomes its files).
+  won't run Codex. `gate.ts` reads the hook's payload (an `apply_patch` becomes its files; one with none readable
+  names no file, so it asks). The commands Codex runs get `ION_GATE_URL` blanked
+  (`shell_environment_policy.set`), so they can't read the gate's key; network stays on, as for ion's other agents.
+- **Fail closed:** an edit approval for files ion never saw is declined; an MCP approval form is asked about only
+  when exactly one call to that tool is running on that server, else declined.
 - **Always off under ion:** Codex's question card (`features.default_mode_request_user_input=false`; a request is
   answered with an error pointing at ion's `ask` tool) and its background memory agent (`features.memories=false`).
 - **ion's MCP server** goes in the thread's `config.mcp_servers` over stdin, bearer header included, never in argv.

@@ -136,3 +136,17 @@ stops the call before its item even starts. Codex runs a hook only once its exac
   ion turns memories off for its runs (`features.memories=false`); ion has its own memory.
 
 The approval that follows a gate allow is matched by command (unwrapped from the shell) or by file, as for Grok.
+
+**Security review (2026-11-19).**
+- **The gate's address reached Codex's commands.** Commands inherit the app-server's environment: with
+  `ION_GATE_URL` set, `printenv ION_GATE_URL` printed it, key included. `shell_environment_policy.exclude` and
+  `inherit = "core"` didn't hide it (Codex's shell snapshot, a stable feature, brings it back); `exclude` with
+  `features.shell_snapshot=false` did, and so does `-c 'shell_environment_policy.set.ION_GATE_URL=""'`, which ion
+  uses (snapshot kept). Hooks still get the real value: the live test sees the call at the gate while the command
+  prints nothing. ion's MCP key is never in the environment (it's in the thread's config, sent over stdin).
+- **Network stays on** (`sandbox_workspace_write.network_access = true`), as for ion's other agents: every command
+  goes through ion's gate and judge before it runs, and neither of ion's keys is readable by commands.
+- **Fail closed on what ion can't tie down:** a patch with no files ion can read names no file (the policy asks;
+  it used to fall back to the run's folder, which reads as an in-worktree edit); an edit approval for an item ion
+  never saw start is declined; an MCP approval form, which names only the server and the tool, is asked about only
+  when exactly one call to that tool is still running on that server (finished calls are forgotten), else declined.

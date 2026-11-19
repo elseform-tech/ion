@@ -42,6 +42,19 @@ describe("Codex's hook payload as a gate call", () => {
     expect(call?.input.patch).toBe(patch);
   });
 
+  // Security review, 2026-11-19 (HIGH): a patch ion couldn't read fell back to the run's folder as its file,
+  // which ion's policy reads as an edit inside the worktree and allows. An edit that names no file must ask.
+  it("never makes up a file for a patch it can't read", () => {
+    for (const tool_input of [{}, { command: "" }, { command: "*** Begin Patch\n*** End Patch" }]) {
+      const call = codexGateCall({ tool_name: "apply_patch", tool_input, cwd: "/w" });
+      expect(call?.kind).toBe("edit");
+      expect(call?.input).not.toHaveProperty("file_path");
+      expect(call?.input).not.toHaveProperty("locations");
+      expect(JSON.stringify(call?.input)).not.toContain('"/w"');
+      expect(call?.summary).toBe("apply_patch");
+    }
+  });
+
   it("knows MCP tools and their server", () => {
     const ion = codexGateCall({ tool_name: "mcp__ion__search_chats", tool_input: { query: "kiwi" } });
     expect(ion).toMatchObject({ kind: "mcp", mcpServer: "ion", toolName: "mcp__ion__search_chats" });

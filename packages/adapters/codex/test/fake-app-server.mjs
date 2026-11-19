@@ -15,7 +15,8 @@ if (argv[0] === "--version") {
   process.exit(0);
 }
 if (argv[0] === "login" && argv[1] === "status") {
-  console.log(signedOut ? "Not logged in" : "Logged in using ChatGPT");
+  // The real `codex login status` prints to stderr (codex-cli 0.153.2).
+  console.error(signedOut ? "Not logged in" : "Logged in using ChatGPT");
   process.exit(signedOut ? 1 : 0);
 }
 if (argv.at(-1) !== "app-server") process.exit(2);
@@ -58,6 +59,8 @@ function hooks() {
 
 let thread = null;
 let turnParams = null;
+/** The prompt's second word: which variant of a script. */
+let variant = "";
 let interrupt = null;
 const T = { threadId: "thread-1", turnId: "turn-1" };
 const item = (method, it) => notify(method, { ...T, item: it, startedAtMs: 1, completedAtMs: 2 });
@@ -169,6 +172,44 @@ const SCRIPTS = {
     say(JSON.stringify({ tool: r, form }));
     end("completed");
   },
+  /** An edit approval for an item Codex never started (no files known). */
+  async editunknown() {
+    const r = await ask("item/fileChange/requestApproval", {
+      ...T,
+      itemId: "f9",
+      startedAtMs: 1,
+      reason: null,
+      grantRoot: null,
+    });
+    say(JSON.stringify(r));
+    end("completed");
+  },
+  /** An MCP approval form for search_chats, with these calls in flight: one | two | done | other. */
+  async mcpform() {
+    const call = (id, tool) => ({
+      type: "mcpToolCall",
+      id,
+      server: "ion",
+      tool,
+      arguments: { id },
+      status: "inProgress",
+    });
+    if (variant === "other") item("item/started", call("m1", "memory_write"));
+    else item("item/started", call("m1", "search_chats"));
+    if (variant === "two") item("item/started", call("m2", "search_chats"));
+    if (variant === "done") item("item/completed", { ...call("m1", "search_chats"), status: "completed" });
+    const r = await ask("mcpServer/elicitation/request", {
+      threadId: T.threadId,
+      turnId: T.turnId,
+      serverName: "ion",
+      mode: "form",
+      _meta: { codex_approval_kind: "mcp_tool_call" },
+      message: 'Allow the ion MCP server to run tool "search_chats"?',
+      requestedSchema: { type: "object", properties: {} },
+    });
+    say(JSON.stringify(r));
+    end("completed");
+  },
   async ask() {
     const r = await ask("item/tool/requestUserInput", {
       ...T,
@@ -263,6 +304,12 @@ const METHODS = {
       .join(" ")
       .trim()
       .split(/\s+/)[0];
+    variant =
+      p.input
+        .map((x) => x.text)
+        .join(" ")
+        .trim()
+        .split(/\s+/)[1] ?? "";
     setImmediate(() => void (SCRIPTS[word] ?? SCRIPTS.hello)());
     return { turn: { id: T.turnId, items: [], status: "inProgress", error: null } };
   },
