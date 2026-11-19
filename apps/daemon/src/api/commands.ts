@@ -1,4 +1,4 @@
-import { getHarness, harnessIds } from "../adapters/registry.js";
+import { getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
@@ -73,7 +73,11 @@ export const handlers: Handlers = {
   ...routineHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
-  "harnesses.list": () => harnessInfos.list(),
+  // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
+  "harnesses.list": async () => {
+    const listed = listedHarnessIds();
+    return (await harnessInfos.list()).filter((h) => listed.includes(h.id));
+  },
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
   "memory.forget": (a, ctx) => {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));

@@ -481,6 +481,35 @@ describe("ion threads' request and agent", () => {
     await i.message("storefront", "x");
     expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build" });
   });
+
+  // The user, 2026-11-19: only an agent that's ready is a default. The project last ran on opencode, whose key
+  // has since expired: its ion's next thread starts on one that's signed in, not on opencode.
+  it("skips the project's last agent when it's no longer signed in", async () => {
+    store.append({
+      chatId: "old",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "old", projectId: "storefront" },
+    });
+    store.append({
+      chatId: "old",
+      runId: "r0",
+      origin: "daemon",
+      type: EV.runStarted,
+      data: { harness: "opencode", model: "m", effort: null, authMethod: null },
+    });
+    const i = new Ions({
+      store,
+      db,
+      configFile,
+      runs: { ask },
+      quick,
+      agents: async () => [agent("opencode", false), agent("grok-build", true)],
+    });
+    await i.message("storefront", "x");
+    expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build" });
+  });
 });
 
 // Plan 10: a routine's thread starts like any of its ion's: Auto, by ion, on its agent.

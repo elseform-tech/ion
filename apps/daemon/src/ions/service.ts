@@ -174,9 +174,11 @@ export class Ions {
   private async agentFor(projectId: string): Promise<string | undefined> {
     const own = this.projects().find((p) => p.id === projectId)?.harness;
     if (own) return own;
+    // The one it last ran on only while it's still ready (a key can expire); you set the project's own on purpose.
+    const ok = await this.ready();
     const last = chatsView.lastAgent(this.d.db, projectId);
-    if (last) return last;
-    return firstOf(await this.ready());
+    if (last && (!this.d.agents || ok.includes(last))) return last;
+    return firstOf(ok);
   }
 
   /** The agents installed and signed in. */

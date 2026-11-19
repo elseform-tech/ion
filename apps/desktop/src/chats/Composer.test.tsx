@@ -267,4 +267,27 @@ describe("Composer", () => {
       }),
     );
   });
+
+  // The user, 2026-11-19: only a ready agent is a default. A chat on an agent that's since signed out goes on with
+  // the first ready one (on that agent's own model), instead of a Send that never turns on.
+  it("goes on with a ready agent when the chat's own isn't ready", async () => {
+    const call = vi.fn(async () => ({ chatId: "c9", runId: "r2" }));
+    render(
+      <Composer
+        client={{ call } as unknown as IonClient}
+        harnesses={[out, grok]}
+        to={{ chatId: "c10" }}
+        running={null}
+        harness="claude-code"
+        current={{ model: "opus", effort: "" }}
+        onSent={() => {}}
+      />,
+    );
+    expect(pill().getAttribute("aria-label")).toContain("Grok Build");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "go on" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("ask", { text: "go on", chatId: "c10", harness: "grok-build" }),
+    );
+  });
 });
