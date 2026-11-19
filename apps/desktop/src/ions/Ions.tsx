@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLive } from "../chats/live.js";
 import { NewProject, ProjectMenu } from "../chats/ProjectMenu.js";
 import { Star } from "@ion/design-system";
+import { Resizer } from "../chats/Resizer.js";
 import { IonAvatar, IonName } from "./IonAvatar.js";
 import { IonChat } from "./IonChat.js";
 import { ActivityPage, ActivityRow, useActivity } from "./Activity.js";
@@ -151,6 +152,7 @@ function IonsPanel(p: {
   const open = { ionId: openId };
   return (
     <aside className="ipanel" aria-label="Ions">
+      <Resizer name="--ions-w" label="Panel width" initial={300} min={220} max={460} edge="right" />
       <div className="ihead">
         <b className="brand ititle" aria-label="ions">
           i<i>o</i>ns

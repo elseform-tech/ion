@@ -26,7 +26,7 @@
 .dotb{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--wait);box-shadow:0 0 0 2px var(--rail)}
 
 /* rail (frame) */
-.rail{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
+.rail{background:var(--rail);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
 .lights{display:flex;gap:6px;margin-bottom:14px}
 .lights i{width:11px;height:11px;border-radius:50%;background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
 .rb{width:40px;height:40px;border-radius:11px;border:0;background:transparent;display:grid;place-items:center;color:var(--muted);cursor:pointer;position:relative}
@@ -37,12 +37,12 @@
 .rail .grow{flex:1}
 .me{width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--win);display:grid;place-items:center;font-size:11px;font-weight:600;margin-top:4px}
 
-.body{display:grid;min-height:0;min-width:0}
-.mode{display:grid;min-height:0;min-width:0}
+.body{display:grid;grid-template-rows:40px minmax(0,1fr);min-height:0;min-width:0;background:var(--rail)}
+.mode{display:grid;min-height:0;min-width:0;margin:0 8px 8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--win)}
 .mode[hidden],.chat[hidden],.tools[hidden],.panel[hidden]{display:none!important}
 
 /* chats sidebar */
-.chats{grid-template-columns:256px minmax(0,1fr)}
+.chats{grid-template-columns:var(--side-w,256px) minmax(0,1fr)}
 .side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .shead{display:flex;align-items:center;gap:4px;padding:12px 10px 8px 14px}
 .proj{display:flex;align-items:center;gap:6px;font-weight:600;margin-right:auto;border:0;background:transparent;padding:4px 6px;border-radius:7px;cursor:pointer}
@@ -138,7 +138,7 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 
 /* lab lines 165-202: ions: panel, ion chat, bubbles, thread links, quick replies */
 /* ions (agent layer) */
-.ions{grid-template-columns:300px minmax(0,1fr)}
+.ions{grid-template-columns:var(--ions-w,300px) minmax(0,1fr)}
 .ipanel{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .ihead{display:flex;align-items:center;gap:4px;padding:12px 10px 4px 18px}
 .ihead b{margin-right:auto;font-weight:600}
@@ -645,7 +645,7 @@ button.arow:hover{background:var(--hover)}
 /* lab lines 988-988: activity: rows */
 .arow,.drow{box-sizing:border-box}
 
-/* lab lines 1051-1068: ions: project ion rows, fan-out card; routines' instructions */
+/* lab lines 1051-1068: ions: project ion rows, a thread open beside its ion's chat; routines' instructions */
 /* project ions */
 .prow .pmain canvas{width:30px;height:30px;flex-shrink:0}
 .pmain small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -660,10 +660,18 @@ button.arow:hover{background:var(--hover)}
 .tpeek .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tpeek .head .muted{color:var(--muted);font-size:12.5px;white-space:nowrap}
 .tpeek .msgs{min-height:0;overflow:auto;padding:16px 0 12px}
-.tpeek .msgs .col,.tpeek .foot .fcol{max-width:none;padding:0 18px}
+.tpeek .msgs .col,.tpeek .foot .fcol{max-width:none;padding:0 18px;grid-template-columns:minmax(0,1fr)} .tpeek .qd .why{overflow-wrap:anywhere}
 .ichat.peek .bcol{max-width:560px}
 .rin{margin-top:3px;font-size:12px;color:var(--faint);font-style:italic}
 .rh2 canvas{width:18px;height:18px;display:block}
+
+/* lab lines 1074-1079: the frame: the top strip, each screen inside it; the sidebar hidden */
+/* the frame: the rail and a strip along the top, one colour; each screen sits inside it, its edge a quiet line */
+.frame{display:flex;align-items:center;gap:6px;padding:0 10px 0 2px}
+.frame .ib .lucide{width:16px;height:16px}
+.side-off .chats,.side-off .ions,.side-off .settings{grid-template-columns:minmax(0,1fr)}
+.side-off .side,.side-off .ipanel,.side-off .snav{display:none}
+.side,.ipanel{position:relative}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

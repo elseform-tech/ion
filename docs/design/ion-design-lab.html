@@ -53,7 +53,7 @@ button{font:inherit;color:inherit}
 .dotb{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--wait);box-shadow:0 0 0 2px var(--rail)}
 
 /* rail (frame) */
-.rail{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
+.rail{background:var(--rail);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
 .lights{display:flex;gap:6px;margin-bottom:14px}
 .lights i{width:11px;height:11px;border-radius:50%;background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
 .rb{width:40px;height:40px;border-radius:11px;border:0;background:transparent;display:grid;place-items:center;color:var(--muted);cursor:pointer;position:relative}
@@ -64,12 +64,12 @@ button{font:inherit;color:inherit}
 .rail .grow{flex:1}
 .me{width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--win);display:grid;place-items:center;font-size:11px;font-weight:600;margin-top:4px}
 
-.body{display:grid;min-height:0;min-width:0}
-.mode{display:grid;min-height:0;min-width:0}
+.body{display:grid;grid-template-rows:40px minmax(0,1fr);min-height:0;min-width:0;background:var(--rail)}
+.mode{display:grid;min-height:0;min-width:0;margin:0 8px 8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--win)}
 .mode[hidden],.chat[hidden],.tools[hidden],.panel[hidden]{display:none!important}
 
 /* chats sidebar */
-.chats{grid-template-columns:256px minmax(0,1fr)}
+.chats{grid-template-columns:var(--side-w,256px) minmax(0,1fr)}
 .side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .shead{display:flex;align-items:center;gap:4px;padding:12px 10px 8px 14px}
 .proj{display:flex;align-items:center;gap:6px;font-weight:600;margin-right:auto;border:0;background:transparent;padding:4px 6px;border-radius:7px;cursor:pointer}
@@ -163,7 +163,7 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tree .x{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--wait)}
 
 /* ions (agent layer) */
-.ions{grid-template-columns:300px minmax(0,1fr)}
+.ions{grid-template-columns:var(--ions-w,300px) minmax(0,1fr)}
 .ipanel{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .ihead{display:flex;align-items:center;gap:4px;padding:12px 10px 4px 18px}
 .ihead b{margin-right:auto;font-weight:600}
@@ -1062,7 +1062,7 @@ button.arow:hover{background:var(--hover)}
 .tpeek .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tpeek .head .muted{color:var(--muted);font-size:12.5px;white-space:nowrap}
 .tpeek .msgs{min-height:0;overflow:auto;padding:16px 0 12px}
-.tpeek .msgs .col,.tpeek .foot .fcol{max-width:none;padding:0 18px}
+.tpeek .msgs .col,.tpeek .foot .fcol{max-width:none;padding:0 18px;grid-template-columns:minmax(0,1fr)} .tpeek .qd .why{overflow-wrap:anywhere}
 .ichat.peek .bcol{max-width:560px}
 .rin{margin-top:3px;font-size:12px;color:var(--faint);font-style:italic}
 .rh2 canvas{width:18px;height:18px;display:block}
@@ -1071,6 +1071,12 @@ button.arow:hover{background:var(--hover)}
 .frow .pre{color:var(--faint)}
 .frow .fin{flex:1}
 .pname{font-size:16px;font-weight:600}
+/* the frame: the rail and a strip along the top, one colour; each screen sits inside it, its edge a quiet line */
+.frame{display:flex;align-items:center;gap:6px;padding:0 10px 0 2px}
+.frame .ib .lucide{width:16px;height:16px}
+.side-off .chats,.side-off .ions,.side-off .settings{grid-template-columns:minmax(0,1fr)}
+.side-off .side,.side-off .ipanel,.side-off .snav{display:none}
+.side,.ipanel{position:relative}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1189,6 +1195,7 @@ details a{color:var(--accent)}
     </nav>
 
     <div class="body">
+      <header class="frame"><button class="ib" type="button" title="Hide sidebar  ⌘B" data-sidebar><i data-lucide="panel-left"></i></button></header>
 
       <!-- ===== CHATS MODE ===== -->
       <div class="mode chats" data-mode="chats">
@@ -2900,6 +2907,9 @@ function newIonCard(k){
     <div class="meta"><span><i data-lucide="calendar-clock"></i>${esc(v.when)}</span><span><i data-lucide="folder"></i>${esc(pj(v))}</span><span>${hAv(v.harness)}${esc(hName(v.harness))}</span></div></div>${foot}</div>`;
 }
 /* a thread an ion started: one line like a tool call's (what it's doing now, shimmering, and for how long); opens beside the chat */
+/* the frame's sidebar button (and ⌘B): hide or show the screen's left panel */
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-sidebar]'); if(!b) return; const off=document.getElementById('win').classList.toggle('side-off'); b.title=(off?'Show':'Hide')+' sidebar  ⌘B'; });
+document.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='b'){ e.preventDefault(); document.querySelector('[data-sidebar]')?.click(); } });
 function tlHTML(pk,st,txt,time){
   const say=st==='wait'?'Waiting for you':txt;
   return `<button class="tl" type="button" data-peek="${esc(pk)}" data-pt="${esc(txt)}" data-ps="${st}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b>${st==='err'?'<i data-lucide="circle-alert"></i>':''}<span class="tt${st==='run'?' now':''}">${esc(say)}</span>${st==='wait'?'<i class="wd"></i>':time?`<span class="wn">· ${esc(time)}</span>`:''}<i data-lucide="chevron-right"></i></button>`;
@@ -2934,7 +2944,7 @@ function renderIon(k,ph){
           <div class="meta"><span><i data-lucide="calendar-clock"></i>${esc(r.w)}</span><span>${hAv(r.h||rv.harness)}${esc(LIB[r.h||rv.harness].name)}</span><span>${effLabel(r.effort||'medium')}</span></div></div>
           ${r.isNew?`<div class="acts"><button class="btn" type="button" data-rtadd="undo" data-k="${esc(rk)}" data-i="${ri}">Undo</button><button class="btn" type="button" data-ionedit="${esc(rk)}">Change</button><span class="sp"></span><button class="btn pri" type="button" data-rtadd="keep" data-k="${esc(rk)}" data-i="${ri}">Keep</button></div>`:`<div class="done"><i data-lucide="check"></i>Kept</div>`}</div>`;
       h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${body}</div></div>`; return; }
-    if(m.route){ const r=IONS[m.route.k]; h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div><button class="route" type="button" data-ionsel="${m.route.k}"><i data-lucide="corner-down-right"></i><span class="g"><span class="l1">Sent to <b>${esc(r.proj)}</b> · <canvas class="av" data-ion="${m.route.k}" aria-hidden="true"></canvas><b>${esc(r.name)}</b></span></span><i data-lucide="chevron-right"></i></button></div></div>`; return; }
+    if(m.route){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div><div class="tls">${tlHTML(m.route.k,'run','Delegating')}</div></div></div>`; return; }
     if(m.newIon){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${newIonCard(m.newIon)}</div></div>`; return; }
     if(m.quick){ h+=`<div class="quick">${m.quick.map(q=>`<button type="button">${esc(q)}</button>`).join('')}</div>`; return; }
     if(m.typing){ h+=`<div class="bm"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas><span class="typing"><i></i><i></i><i></i></span></div>`; return; }

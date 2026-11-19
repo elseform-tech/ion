@@ -42,7 +42,8 @@ const RANGES = [
   [896, 896, "settings: model separator"],
   [902, 919, "settings: tools rows, agents' status, stacked rows"],
   [988, 988, "activity: rows"],
-  [1051, 1068, "ions: project ion rows, fan-out card; routines' instructions"],
+  [1051, 1068, "ions: project ion rows, a thread open beside its ion's chat; routines' instructions"],
+  [1074, 1079, "the frame: the top strip, each screen inside it; the sidebar hidden"],
 ];
 
 const out = [

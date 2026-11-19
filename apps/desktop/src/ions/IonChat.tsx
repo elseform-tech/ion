@@ -252,11 +252,20 @@ function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
 export function IonChat(p: Omit<CardProps, "card" | "peek" | "onPeek">) {
   const items = useIonChat(p.client, p.ion.ionId);
   const [peek, setPeek] = useState<string | null>(null);
+  // The thread its panel shows when you open it from the header: the one you last looked at, else the latest.
+  const [last, setLast] = useState<string | null>(null);
+  const latest = latestThread(items);
   const open = peek ? p.chats.find((c) => c.chatId === peek) : undefined;
-  const toggle = (chatId: string) => setPeek((x) => (x === chatId ? null : chatId));
+  const show = (chatId: string | null) => {
+    setPeek(chatId);
+    if (chatId) setLast(chatId);
+  };
+  const toggle = (chatId: string) => show(peek === chatId ? null : chatId);
+  const again = last ?? latest;
+  const panel = again ? { open: Boolean(open), toggle: () => show(open ? null : again) } : undefined;
   return (
     <section className={`ichat${open ? " peek" : ""}`}>
-      <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} />
+      <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} {...(panel ? { panel } : {})} />
       <Bubbles items={items} {...p} peek={open ? peek : null} onPeek={toggle} />
       <IonBox client={p.client} ion={p.ion} />
       {open && (
@@ -270,4 +279,14 @@ export function IonChat(p: Omit<CardProps, "card" | "peek" | "onPeek">) {
       )}
     </section>
   );
+}
+
+/** The last thread an ion's chat shows. */
+function latestThread(items: IonItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    const c = it?.kind === "ion" ? it.card : undefined;
+    if (c?.kind === "threads") return c.threads.at(-1)?.chatId ?? null;
+  }
+  return null;
 }

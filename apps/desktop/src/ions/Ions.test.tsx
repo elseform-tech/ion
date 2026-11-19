@@ -204,6 +204,21 @@ describe("Ions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     expect(onOpenChat).toHaveBeenCalledWith("t1");
   });
+  // The user, 2026-11-19: an ion's threads' panel opens and closes from its header too, like a chat's side panel.
+  it("shows and hides its latest thread from the header", async () => {
+    const c = client([
+      ev("ion:chief", EV.ionSaid, {
+        text: "Asked 1 project.",
+        card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
+      }),
+    ]);
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Show thread" }));
+    expect(container.querySelector("aside.tpeek .title")?.textContent).toBe("Fix the cart");
+    fireEvent.click(screen.getByRole("button", { name: "Hide thread" }));
+    expect(container.querySelector("aside.tpeek")).toBeNull();
+  });
+
   // The user, 2026-11-19: several threads from one message are a line each, no box around them.
   it("shows several threads as a line each", async () => {
     const two = [

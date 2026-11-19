@@ -70,6 +70,7 @@ export {
   Wrench,
   Maximize2,
   X,
+  PanelLeft,
 } from "lucide-react";
 export { Avatar, type BotState } from "./Avatar.js";
 export { botFor } from "./bots.js";
