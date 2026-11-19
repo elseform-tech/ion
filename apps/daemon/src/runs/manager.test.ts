@@ -455,7 +455,7 @@ describe("RunManager", () => {
     expect(told).toContain("memory_list");
     expect(told).toContain("memory_write");
     // User, 2026-11-19: chain read-only lookups into one command to scale tools and save cost.
-    expect(told).toContain("chain them into one command with &&");
+    expect(told).toContain("When you need several read-only lookups, chain them into one command with &&");
   });
 
   it("refuses a model the harness doesn't list, and runs one it does", async () => {

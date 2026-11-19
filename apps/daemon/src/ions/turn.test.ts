@@ -178,7 +178,14 @@ describe("an ion's turn", () => {
   it("a turn is told it's an ion", () => {
     expect(ionInstructions("chief")).toMatch(/^You are ion,/);
     expect(ionInstructions("storefront")).toMatch(/^You are ion for the project "storefront"/);
-    expect(ionInstructions("chief")).toContain("&&");
+  });
+
+  // The user, 2026-11-19: chain bash commands more often rather than running tools in parallel or one by one,
+  // to scale tools and also save cost.
+  it("a turn is told to chain read-only lookups into one command", () => {
+    const sentence = "When you need several read-only lookups, chain them into one command with &&.";
+    expect(ionInstructions("chief")).toContain(sentence);
+    expect(ionInstructions("storefront")).toContain(sentence);
   });
 
   it("a turn resumes the ion's session", async () => {
