@@ -613,54 +613,6 @@ body.resizing {
   max-width: 100%;
   border-radius: 8px;
 }
-/* Tasks: what's running in the chat's worktree. */
-.tasks {
-  display: grid;
-  padding: 6px;
-}
-.task {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 8px;
-  align-items: center;
-  padding: 8px;
-  border-radius: 8px;
-}
-.task + .task {
-  border-top: 1px solid var(--line);
-}
-.task .tc {
-  font: 12.5px var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.task .tm {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  grid-column: 1;
-}
-.task .te {
-  color: var(--faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.task .ib {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-}
-/* A task running outside the chat's worktree: where, muted. */
-.task .tw {
-  color: var(--faint);
-  font: 11.5px var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.task:has(.tw) .ib {
-  grid-row: 1 / span 3;
-}
 /* What the chat made, in the Files tab: the lab's .mrow, as a button. */
 .inchat .mrow {
   color: inherit;

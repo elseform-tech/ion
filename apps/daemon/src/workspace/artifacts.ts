@@ -7,7 +7,15 @@ const MAX_ARTIFACTS = 200;
 /** The walk visits at most this many entries, so a huge tree can't stall the daemon. */
 const MAX_VISITED = 20_000;
 const SKIP = new Set([".git", "node_modules"]);
-const IMAGE = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"]);
+/** The images the preview shows, by extension: the list and the preview agree. SVG is text (markup, never rendered). */
+export const IMAGE_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+};
 const HTML = new Set([".html", ".htm"]);
 const TEXT = new Set([
   ".txt",
@@ -20,6 +28,7 @@ const TEXT = new Set([
   ".yaml",
   ".toml",
   ".xml",
+  ".svg",
   ".css",
   ".js",
   ".mjs",
@@ -44,7 +53,7 @@ const TEXT = new Set([
 
 function kindOf(name: string): ArtifactInfo["kind"] {
   const ext = extname(name).toLowerCase();
-  if (IMAGE.has(ext)) return "image";
+  if (IMAGE_TYPES[ext]) return "image";
   if (HTML.has(ext)) return "html";
   return TEXT.has(ext) ? "text" : "binary";
 }

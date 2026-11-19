@@ -1,7 +1,7 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { FileDiff } from "@ion/schema";
 import { Cpu, Eye, File as FileIcon, FolderOpen, FolderTree, GitCompare } from "@ion/design-system";
-import { InChat } from "./Artifacts.js";
+import { InChat, useArtifacts } from "./Artifacts.js";
 import { Preview, Tasks } from "./Preview.js";
 import { Fragment, memo, useEffect, useRef, useState } from "react";
 import { diffLines, fileMark, treeOf } from "./diffLines.js";
@@ -192,7 +192,7 @@ function ChatTabs(p: ChatTabsProps & { version?: number }) {
 function ChangeTabs(p: {
   tab: Tab;
   files: FileDiff[];
-  /** The changes have been read (an empty list then means none). */
+  /** The changes have been read and there's nothing else to show: an empty list then says "No changes". */
   read: boolean;
   onPick: ((path: string) => void) | undefined;
 }) {
@@ -217,6 +217,9 @@ export function ToolsPanel({ diff, error, focus, client, chatId, version }: Pane
   const omitted = diff?.omitted ?? 0;
   const files = diff?.files ?? [];
   const chat = client && chatId ? { client, chatId } : null;
+  // What the chat made that isn't among its changes (screenshots, builds), kept while you're on other tabs.
+  const made = useArtifacts(client, chatId, tab === "files", files);
+  const inChat = tab === "files" && made.length > 0;
   const open = (path: string) => {
     setPick(path);
     setTab("preview");
@@ -227,8 +230,13 @@ export function ToolsPanel({ diff, error, focus, client, chatId, version }: Pane
       <Tabs tab={tab} onTab={setTab} live={chat !== null} />
       <div className="panel">
         {error && <div className="changes-empty">{error}</div>}
-        {chat && tab === "files" && <InChat {...chat} changed={files.map((f) => f.path)} onOpen={open} />}
-        <ChangeTabs tab={tab} files={files} read={diff !== null && !error} onPick={chat ? open : undefined} />
+        {inChat && <InChat made={made} onOpen={open} />}
+        <ChangeTabs
+          tab={tab}
+          files={files}
+          read={diff !== null && !error && !inChat}
+          onPick={chat ? open : undefined}
+        />
         {chat && <ChatTabs tab={tab} {...chat} files={files} pick={pick} version={version} />}
         {omitted > 0 && <div className="changes-empty">{omitted} more files not shown</div>}
       </div>

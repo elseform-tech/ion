@@ -688,6 +688,15 @@ button.arow:hover{background:var(--hover)}
 .mrow:hover{background:var(--hover)}
 .mrow .lucide{color:var(--muted);width:15px;height:15px}
 .mrow small{display:block;font-size:11.5px;color:var(--faint)}
+.tasks{display:grid;padding:6px}
+.task{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:center;padding:8px;border-radius:8px}
+.task+.task{border-top:1px solid var(--line)}
+.task .tc{font:12.5px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task .tw{color:var(--faint);font:11.5px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task .tm{display:flex;gap:6px;align-items:center;grid-column:1}
+.task .te{color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+.task .ib{grid-row:1/span 2;grid-column:2}
+.task:has(.tw) .ib{grid-row:1/span 3}
 /* pin evidence */
 .pev{grid-column:1/-1;display:grid;gap:6px;margin-top:4px;padding:10px;border-radius:10px;background:var(--code);box-shadow:0 0 0 1px var(--line)}
 .pev pre{margin:0;font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--muted);white-space:pre-wrap}
@@ -1322,6 +1331,7 @@ export function sumLines(lines: Line[]) {
                 <button class="ib on" type="button" role="tab" data-tab="diff" title="Changes"><i data-lucide="git-compare"></i></button>
                 <button class="ib" type="button" role="tab" data-tab="term" title="Terminal"><i data-lucide="square-terminal"></i></button>
                 <button class="ib" type="button" role="tab" data-tab="files" title="Files and media"><i data-lucide="folder-tree"></i></button>
+                <button class="ib" type="button" role="tab" data-tab="tasks" title="Tasks"><i data-lucide="cpu"></i></button>
                 <button class="ib" type="button" role="tab" data-tab="view" title="Viewer"><i data-lucide="eye"></i></button>
               </div>
               <div class="panel" data-panel="view" hidden id="vPanel"></div>
@@ -1361,6 +1371,7 @@ export function sumLines(lines: Line[]) {
 
 <span class="dim">~/storefront</span> $ ▍</div>
               </div>
+              <div class="panel" data-panel="tasks" hidden><div class="tasks"><div class="task"><div class="tc">pnpm vite --port 5173</div><div class="tm"><span class="chip mono">PID 48211</span><span class="chip mono">:5173</span><span class="te">12:04</span></div><button class="ib" type="button" title="Stop"><i data-lucide="square"></i></button></div><div class="task"><div class="tc">node e2e/server.js</div><div class="tw">~/storefront-e2e</div><div class="tm"><span class="chip mono">PID 48377</span><span class="chip mono">:4000</span><span class="te">03:41</span></div><button class="ib" type="button" title="Stop"><i data-lucide="square"></i></button></div></div></div>
               <div class="panel" data-panel="files" hidden><div class="inchat" id="inChat"></div><div class="tree">
                 <div class="lh2">Changed files</div>
                 <div><i data-lucide="folder-open"></i>src/cart</div>
@@ -3284,6 +3295,7 @@ const MEDIA={
   money:{type:'code',icon:'file-code',title:'src/cart/money.ts',sub:'TypeScript · 18 lines',proj:'storefront',chat:'code',from:'Fix checkout rounding',when:'Today'},
   shot:{type:'compare',icon:'images',title:'Checkout, before and after',sub:'2 screenshots',proj:'storefront',chat:'code',from:'Fix checkout rounding',when:'Today'},
   rec:{type:'recording',icon:'clapperboard',title:'checkout e2e',sub:'Recording · 0:32',proj:'storefront',chat:'code',from:'Fix checkout rounding',when:'Today'},
+  shotout:{type:'file',icon:'image',title:'checkout.png',sub:'e2e/shots · 184 KB · 2m ago',proj:'storefront',chat:'code',from:'Fix checkout rounding',when:'Today'},
   cilog:{type:'file',icon:'file-text',title:'ci-log.txt',sub:'Text · 4 KB',proj:'storefront',chat:'code',from:'Fix checkout rounding',when:'Today'},
   pricing:{type:'artifact',icon:'file-text',title:'Pricing headline options',sub:'Document · v2',proj:'storefront',chat:'chat',from:'Pricing page headline',when:'1h ago'},
   changelog:{type:'artifact',icon:'file-text',title:'v2.3 changelog',sub:'Document · v3 · by docs',proj:'docs',ion:'docs',from:'docs',when:'Sun'},

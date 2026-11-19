@@ -13,12 +13,22 @@ const ICON: Record<ArtifactInfo["kind"], LucideIcon> = {
   binary: FileIcon,
 };
 
-/** The files the chat's runs made, newest first, read again every few seconds while shown. */
-function useArtifacts(client: IonClient, chatId: string): ArtifactInfo[] {
+/**
+ * The files the chat's runs made, newest first: read again every few seconds while `active` (the Files tab is
+ * shown), and kept in between so the list is there at once when you come back.
+ */
+export function useArtifacts(
+  client: IonClient | undefined,
+  chatId: string | undefined,
+  active: boolean,
+  /** The chat's changed files: listed in the tree already, so left out here. */
+  changed: { path: string }[],
+): ArtifactInfo[] {
   const [made, setMade] = useState<ArtifactInfo[]>([]);
+  useEffect(() => setMade([]), [chatId]);
   useEffect(() => {
+    if (!client || !chatId || !active) return;
     let live = true;
-    setMade([]);
     const read = () =>
       void client.call("chat.artifacts", { chatId }).then(
         (a) => live && setMade(a),
@@ -30,8 +40,8 @@ function useArtifacts(client: IonClient, chatId: string): ArtifactInfo[] {
       live = false;
       clearInterval(timer);
     };
-  }, [client, chatId]);
-  return made;
+  }, [client, chatId, active]);
+  return made.filter((a) => !changed.some((f) => f.path === a.path));
 }
 
 /** "212 KB", "3.2 MB". */
@@ -55,10 +65,9 @@ function Row({ a, onOpen }: { a: ArtifactInfo; onOpen: (path: string) => void })
   const name = a.path.slice(cut + 1);
   const sub = [a.path.slice(0, Math.max(cut, 0)), sizeText(a.size), agoText(a.changedAt)].filter(Boolean);
   const Icon = ICON[a.kind];
-  // A binary file has nothing to show.
-  const shown = a.kind !== "binary";
+  // Every row opens: the kind is a guess by name, and the preview reads the file and says if it can't show it.
   return (
-    <button type="button" className="mrow" title={a.path} disabled={!shown} onClick={() => onOpen(a.path)}>
+    <button type="button" className="mrow" title={a.path} onClick={() => onOpen(a.path)}>
       <Icon />
       <span className="g">
         {name}
@@ -72,19 +81,13 @@ function Row({ a, onOpen }: { a: ArtifactInfo; onOpen: (path: string) => void })
  * The lab's "In this chat": what the chat made that isn't among its changed files (a screenshot, a build, other
  * ignored outputs), newest first. Nothing made, no section.
  */
-export function InChat(p: {
-  client: IonClient;
-  chatId: string;
-  changed: string[];
-  onOpen: (path: string) => void;
-}) {
-  const made = useArtifacts(p.client, p.chatId).filter((a) => !p.changed.includes(a.path));
+export function InChat({ made, onOpen }: { made: ArtifactInfo[]; onOpen: (path: string) => void }) {
   if (!made.length) return null;
   return (
     <div className="inchat">
       <div className="lh2">In this chat</div>
       {made.map((a) => (
-        <Row key={a.path} a={a} onOpen={p.onOpen} />
+        <Row key={a.path} a={a} onOpen={onOpen} />
       ))}
     </div>
   );

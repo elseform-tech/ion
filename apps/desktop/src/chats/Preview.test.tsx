@@ -9,7 +9,7 @@ afterEach(cleanup);
 
 const patch = "@@ -0,0 +1 @@\n+hi\n";
 type Made = { path: string; size: number; changedAt: string; kind: string };
-const vite = { pid: 4242, command: "node vite --port 3000", elapsed: "02:15", ports: [3000], where: "/wt" };
+const vite = { pid: 4242, command: "node vite --port 3000", elapsed: "02:15", ports: [3000], where: "" };
 function client(files: Record<string, unknown> = {}, made: Made[] = [], tasks: unknown[] = [vite]) {
   const call = vi.fn(async (cmd: string, a: { path?: string }) => {
     if (cmd === "chat.tasks") return tasks;
@@ -122,14 +122,13 @@ describe("the workspace: what the chat made, and where its processes run", () =>
     fireEvent.click(screen.getByRole("tab", { name: "Files" }));
     await screen.findByText("shot.png");
     const rows = [...container.querySelectorAll(".inchat > *")].map((d) => d.textContent);
-    // notes.md is already among the changed files below; a binary is listed but doesn't open.
+    // notes.md is already among the changed files below.
     expect(rows).toEqual([
       "In this chat",
       "shot.pngout · 212 KB · 2m ago",
       "app.bindist · 3.2 MB · 1h ago",
       "report.html11 B · 3h ago",
     ]);
-    expect(screen.getByRole("button", { name: /app\.bin/ }).hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /shot\.png/ }));
     expect(screen.getByRole("tab", { name: "Preview" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() =>
@@ -152,13 +151,48 @@ describe("the workspace: what the chat made, and where its processes run", () =>
     expect(container.querySelector("iframe")?.getAttribute("sandbox")).toBe("");
   });
 
+  // Task review, 2026-11-19: the daemon says where ("" in the worktree, home as ~); the desktop shows it as is.
   it("a task started elsewhere shows where it runs", async () => {
     const tasks = [
-      { ...vite, where: "/Users/me/.ion/worktrees/c1/web" },
-      { pid: 77, command: "npm run dev", elapsed: "00:09", ports: [5173], where: "/Users/me/dev/site" },
+      vite,
+      { pid: 77, command: "npm run dev", elapsed: "00:09", ports: [5173], where: "~/dev/site" },
+      { pid: 78, command: "make watch", elapsed: "00:03", ports: [], where: "/Users/team/site" },
     ];
     const { container } = render(<Tasks client={client({}, [], tasks)} chatId="c1" />);
     await screen.findByText("npm run dev");
-    expect([...container.querySelectorAll(".task .tw")].map((d) => d.textContent)).toEqual(["~/dev/site"]);
+    const where = [...container.querySelectorAll(".task .tw")].map((d) => d.textContent);
+    expect(where).toEqual(["~/dev/site", "/Users/team/site"]);
+  });
+
+  // Task review, 2026-11-19: kind is a guess by extension (.vue, .swift); the preview reads the file and decides.
+  it("opens any made file, whatever its kind looks like", async () => {
+    const vue = { path: "App.vue", size: 40, changedAt: ago(1), kind: "binary" };
+    const c = client({ "App.vue": { path: "App.vue", kind: "text", text: "<template/>", size: 11 } }, [vue]);
+    const { container } = render(<ToolsPanel diff={{ files: [] }} error={null} client={c} chatId="c1" />);
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    fireEvent.click(await screen.findByRole("button", { name: /App\.vue/ }));
+    await waitFor(() => expect(container.querySelector(".preview pre")?.textContent).toBe("<template/>"));
+  });
+
+  // Task review, 2026-11-19: the section popped in again on each visit to the Files tab.
+  it("keeps what the chat made when you come back to the Files tab", async () => {
+    const c = client({}, made);
+    render(<ToolsPanel diff={{ files: [] }} error={null} client={c} chatId="c1" />);
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    await screen.findByText("shot.png");
+    fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    expect(screen.getByText("shot.png")).toBeTruthy();
+  });
+
+  // Task review, 2026-11-19: a bare "No changes" under what the chat made read as if it had made nothing.
+  it("shows nothing under what the chat made when nothing changed", async () => {
+    const { container } = render(
+      <ToolsPanel diff={{ files: [] }} error={null} client={client({}, made)} chatId="c1" />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    await screen.findByText("shot.png");
+    expect(container.querySelector(".panel")?.textContent).not.toContain("No changes");
+    expect(container.querySelector(".tree")).toBeNull();
   });
 });

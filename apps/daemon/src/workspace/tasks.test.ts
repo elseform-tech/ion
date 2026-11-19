@@ -2,8 +2,17 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ionsOwn, isShell, listTasks, markedInProc, readWorktreeFile, stopTask } from "./tasks.js";
+
+// Your home, for these tests: the temp folder the test worktrees are made in (so `where` shows as ~/…).
+vi.mock("node:os", async (real) => {
+  const os = await real<typeof import("node:os")>();
+  const { realpathSync: real2 } = await import("node:fs");
+  const homedir = () => real2(os.tmpdir());
+  return { ...os, default: { ...os, homedir }, homedir };
+});
+const home = realpathSync(tmpdir());
 
 const kids: number[] = [];
 afterEach(() => {
@@ -85,6 +94,8 @@ describe("background tasks in a worktree", () => {
     expect(tasks.map((t) => t.pid)).toContain(pid);
     expect(tasks.map((t) => t.pid)).not.toContain(other);
     expect(tasks.find((t) => t.pid === pid)?.command).toContain("sleep 30");
+    // Task review, 2026-11-19: the daemon says where, so the desktop doesn't guess from the path: "" in the worktree.
+    expect(tasks.find((t) => t.pid === pid)?.where).toBe("");
   });
 
   it("stops a task in the worktree, and refuses one that isn't", async () => {
@@ -110,7 +121,8 @@ describe("a chat's processes, wherever they run", () => {
     const pid = leaveFrom(elsewhere, "c1");
     await settle();
     const task = (await listTasks(wt, "c1")).find((t) => t.pid === pid);
-    expect(task).toMatchObject({ where: elsewhere });
+    // Task review, 2026-11-19: elsewhere, with your home shortened to ~.
+    expect(task).toMatchObject({ where: `~${elsewhere.slice(home.length)}` });
     expect(task?.command).toContain("setTimeout");
   });
 

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { listArtifacts } from "./artifacts.js";
+import { readWorktreeFile } from "./tasks.js";
 
 const worktree = () => realpathSync(mkdtempSync(join(tmpdir(), "ion-art-")));
 
@@ -92,5 +93,17 @@ describe("listArtifacts", () => {
     const dir = worktree();
     for (let i = 0; i < 40; i++) put(dir, `big/f${i}.txt`, "x", at(1));
     expect((await listArtifacts(dir, since, 10)).length).toBeLessThanOrEqual(9);
+  });
+
+  // Task review, 2026-11-19: the list called .svg and .avif images while the preview read neither as one. SVG stays
+  // text (markup is never rendered); AVIF is an image in both.
+  it("calls a file the same kind the preview reads it as", async () => {
+    const dir = worktree();
+    put(dir, "logo.svg", "<svg/>", at(1));
+    put(dir, "photo.avif", "avif", at(2));
+    const kinds = Object.fromEntries((await listArtifacts(dir, since)).map((a) => [a.path, a.kind]));
+    expect(kinds).toEqual({ "logo.svg": "text", "photo.avif": "image" });
+    expect(await readWorktreeFile(dir, "logo.svg")).toMatchObject({ kind: "text", text: "<svg/>" });
+    expect((await readWorktreeFile(dir, "photo.avif")).dataUrl).toMatch(/^data:image\/avif;base64,/);
   });
 });

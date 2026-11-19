@@ -119,7 +119,10 @@ export type ProjectPatch = {
 /** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
 export type IonSettings = { quick: string; effort: EffortLevel | null };
 
-/** A process a chat's agent left running, in its worktree or anywhere else; `where` is its working folder. */
+/**
+ * A process a chat's agent left running, in its worktree or anywhere else. `where`: "" in the worktree, else its
+ * working folder, your home shown as ~.
+ */
 export type TaskInfo = { pid: number; command: string; elapsed: string; ports: number[]; where: string };
 
 /** A file a chat's runs made, as the Artifacts tab lists it; `path` is relative to the worktree. */

@@ -2,8 +2,10 @@ import type { FilePreview, TaskInfo } from "@ion/schema";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { open, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, extname, isAbsolute, join, sep } from "node:path";
 import { UserError } from "../api/errors.js";
+import { IMAGE_TYPES } from "./artifacts.js";
 
 /** A process a chat's agent left running (a dev server, a watcher): what the preview's Tasks tab shows. */
 export type Task = TaskInfo;
@@ -35,6 +37,13 @@ async function cwds(pid?: number): Promise<Map<number, string>> {
 }
 
 const inside = (dir: string, path: string) => path === dir || path.startsWith(dir + sep);
+
+/** Where a task runs, as the panel shows it: "" in the worktree, else its folder with your home as ~. */
+function whereOf(dir: string, cwd: string | undefined): string {
+  if (!cwd || inside(dir, cwd)) return "";
+  const home = homedir();
+  return inside(home, cwd) ? `~${cwd.slice(home.length)}` : cwd;
+}
 
 /** The TCP ports each of these processes listens on. */
 async function ports(pids: number[]): Promise<Map<number, number[]>> {
@@ -196,7 +205,7 @@ export async function listTasks(worktree: string, chatId: string): Promise<Task[
     .map(({ ppid: _p, ...t }) => ({
       ...t,
       ports: open.get(t.pid) ?? [],
-      where: where.get(t.pid) ?? "",
+      where: whereOf(dir, where.get(t.pid)),
     }));
 }
 
@@ -224,13 +233,6 @@ export async function stopTask(worktree: string, chatId: string, pid: number): P
 }
 
 const MAX = 1_000_000;
-const IMAGES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
 
 /**
  * A plain file's bytes, at most `max`: opened once (never following a link, never waiting on a pipe), then checked
@@ -259,7 +261,7 @@ export async function readWorktreeFile(worktree: string, rel: string): Promise<F
   if (!real || !inside(dir, real)) throw new UserError("That file isn't in this chat");
   const { bytes, size } = await readPlain(real, MAX);
   const ext = extname(real).toLowerCase();
-  const image = IMAGES[ext];
+  const image = IMAGE_TYPES[ext];
   if (image)
     return { path: rel, kind: "image", dataUrl: `data:${image};base64,${bytes.toString("base64")}`, size };
   if (bytes.includes(0)) return { path: rel, kind: "binary", size };
