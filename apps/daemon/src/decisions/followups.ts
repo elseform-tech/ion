@@ -84,15 +84,36 @@ export class FollowUps {
   }
 
   /** The chat's run ended: send its next waiting answer (one; the run it starts makes the chat busy again). */
+  /** Chats whose next answer is being sent: one send at a time, so a retry and a run's end can't both send it. */
+  private readonly draining = new Set<string>();
+
   private async drain(chatId: string): Promise<void> {
+    if (this.draining.has(chatId)) return;
+    this.draining.add(chatId);
+    try {
+      // One answer, then the next while there is one (it usually reads busy: its run waits for this one's end).
+      while (await this.sendNext(chatId));
+    } finally {
+      this.draining.delete(chatId);
+    }
+  }
+
+  /** Sends the chat's next waiting answer; true when another waits to be tried now. */
+  private async sendNext(chatId: string): Promise<boolean> {
     const list = this.queue.get(chatId) ?? [];
     const next = list[0];
-    if (!next) return void this.queue.delete(chatId);
+    if (!next) {
+      this.queue.delete(chatId);
+      return false;
+    }
     try {
       const r = await this.attempt(chatId, next);
       // The run that just ended can still count for a moment: try again shortly, a few times. A run that really
       // is going ends with run.finished, which drains again anyway.
-      if (r === "busy") return this.retry(chatId);
+      if (r === "busy") {
+        this.retry(chatId);
+        return false;
+      }
       if (r) this.started(r, next.decisionId);
     } catch (e) {
       if (next.decisionId)
@@ -104,6 +125,6 @@ export class FollowUps {
     this.tries.delete(chatId);
     list.shift();
     if (list.length === 0) this.queue.delete(chatId);
-    else if (this.queue.get(chatId) === list) queueMicrotask(() => void this.drain(chatId));
+    return list.length > 0 && this.queue.get(chatId) === list;
   }
 }

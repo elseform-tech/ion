@@ -38,4 +38,25 @@ describe("FollowUps", () => {
     expect(start).toHaveBeenCalledTimes(3);
     expect(start).toHaveBeenLastCalledWith("c1", msg);
   });
+  // Security review, 2026-11-19: a retry and a run's end must not both send the same answer.
+  it("sends a waiting answer once, however many times the chat is drained at once", async () => {
+    let release: (v: string) => void = () => {};
+    const start = vi
+      .fn()
+      .mockRejectedValueOnce(new UserError("This chat is already running"))
+      .mockImplementationOnce(() => new Promise<string>((r) => (release = r)))
+      .mockResolvedValue("r3");
+    const f = new FollowUps(store, start, () => {});
+    expect(await f.tryNow("c1", msg)).toBe("busy");
+    f.later("c1", msg);
+    const end = (runId: string) =>
+      store.append({ chatId: "c1", runId, origin: "daemon", type: EV.runFinished, data: { status: "done" } });
+    end("r1");
+    await vi.advanceTimersByTimeAsync(0);
+    end("rX"); // another end arrives while the first send is still starting
+    await vi.advanceTimersByTimeAsync(0);
+    release("r2");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
 });
