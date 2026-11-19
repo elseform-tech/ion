@@ -1,3 +1,4 @@
+import { loadUserConfig } from "@ion/config";
 import { dropInheritedMarkers } from "../env.js";
 import { chmodSync, mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
@@ -64,6 +65,9 @@ export async function startServer(opts: {
   http.on("error", () => {});
   await new Promise<void>((r) => http.listen(opts.port ?? 0, "127.0.0.1", r));
   wss.on("connection", (ws) => new Connection(ws, ctx));
+  // A hand-edited setting that fell back to its default: say so once, in the daemon's log.
+  const { warning } = loadUserConfig(opts.configFile);
+  if (warning) console.warn(warning);
 
   const addr = http.address();
   port = typeof addr === "object" && addr ? addr.port : 0;

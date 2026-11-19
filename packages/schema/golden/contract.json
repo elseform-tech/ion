@@ -65,7 +65,6 @@
     "chat.artifacts",
     "task.stop",
     "chat.file",
-    "settings.update",
     "settings.set",
     "chat.create",
     "events.subscribe",

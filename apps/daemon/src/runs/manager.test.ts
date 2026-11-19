@@ -222,6 +222,40 @@ describe("RunManager", () => {
     expect(types.slice(0, 3)).toEqual(["message.sent", "run.queued", "run.started"]);
   });
 
+  // Task review, 2026-11-20: the limit was read from config.toml on every pump; it's read when the manager is made
+  // and when Settings changes it (limitChanged).
+  it("reads the limit once, and again when it changes", async () => {
+    limitTo(1);
+    saveUserConfig(configFile, { ...addProject(DEFAULT_CONFIG, repo), resources: { max_runs: 3 } });
+    const a = await ask("slow");
+    const b = await ask("slow");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["message.sent", "run.queued"]);
+    runs.limitChanged();
+    await until(() => store.read({ runId: b.runId }).find((e) => e.type === "run.started"));
+    await runs.interrupt(a.runId);
+    await runs.interrupt(b.runId);
+    await finished(a.runId);
+    await finished(b.runId);
+  });
+
+  // Task review, 2026-11-20: lowering max_runs only holds back new starts; chats already running carry on.
+  it("lowering the limit never stops running chats", async () => {
+    limitTo(2);
+    const a = await ask("slow");
+    const b = await ask("slow");
+    const c = await ask("slow");
+    await until(() => store.read({ runId: b.runId }).find((e) => e.type === "run.started"));
+    saveUserConfig(configFile, { ...addProject(DEFAULT_CONFIG, repo), resources: { max_runs: 1 } });
+    runs.limitChanged();
+    await new Promise((r) => setTimeout(r, 50));
+    for (const r of [a, b])
+      expect(store.read({ runId: r.runId }).some((e) => e.type === "run.finished")).toBe(false);
+    expect(store.read({ runId: c.runId }).some((e) => e.type === "run.started")).toBe(false);
+    for (const r of [a, b, c]) await runs.interrupt(r.runId);
+    for (const r of [a, b, c]) await finished(r.runId);
+  });
+
   it("interrupting a queued run finishes it without starting the harness", async () => {
     limitTo(1);
     const a = await ask("slow");

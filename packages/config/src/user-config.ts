@@ -15,7 +15,7 @@ const Clock = z.string().regex(CLOCK, "Use a time like 08:30");
 export const NOTIFY_LEVELS = ["all", "needs", "digest", "muted"] as const;
 const Notify = z.enum(NOTIFY_LEVELS);
 
-/** resources.max_runs: "auto" or a whole number of runs from MIN_RUNS to MAX_RUNS. */
+/** resources.max_runs: "auto" or how many chats run at once, from MIN_RUNS to MAX_RUNS. */
 export const MIN_RUNS = 1;
 export const MAX_RUNS = 32;
 
@@ -74,6 +74,8 @@ const Project = z.object({
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
+const MaxRuns = z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]);
+
 const UserConfigSchema = z.looseObject({
   ion: z
     .looseObject({
@@ -135,19 +137,58 @@ function describeIssue(file: string, issue: z.core.$ZodIssue): string {
   return [`${basename(file)}:`, where, what].filter(Boolean).join(" ");
 }
 
-/** Reads the config file. Missing file → defaults. Invalid file → defaults plus a one-line error. */
-export function loadUserConfig(file: string): { config: UserConfig; error: string | null } {
-  if (!existsSync(file)) return { config: defaults(), error: null };
+/** The settings a hand edit can get wrong without losing the rest of the file, each with what it must be. */
+const FALLBACKS: [path: string[], schema: z.ZodType][] = [
+  [["resources", "max_runs"], MaxRuns],
+  [["notifications", "briefing"], z.looseObject({})],
+  [["notifications", "briefing", "on"], z.boolean()],
+  [["notifications", "briefing", "at"], Clock],
+  [["notifications", "quiet"], z.looseObject({})],
+  [["notifications", "quiet", "on"], z.boolean()],
+  [["notifications", "quiet", "from"], Clock],
+  [["notifications", "quiet", "to"], Clock],
+];
+
+/** Drops each invalid setting from `raw` (its default applies) and says which, so the rest of the file still loads. */
+function dropBad(raw: unknown, file: string): string | null {
+  const dropped: string[] = [];
+  for (const [path, schema] of FALLBACKS) {
+    let parent: unknown = raw;
+    for (const k of path.slice(0, -1)) parent = (parent as Record<string, unknown> | undefined)?.[k];
+    const key = path.at(-1)!;
+    if (typeof parent !== "object" || parent === null || !(key in parent)) continue;
+    const holder = parent as Record<string, unknown>;
+    if (schema.safeParse(holder[key]).success) continue;
+    delete holder[key];
+    dropped.push(path.slice(1).join("."));
+  }
+  if (!dropped.length) return null;
+  const verb = dropped.length > 1 ? "are" : "is";
+  return `${basename(file)}: ${dropped.join(", ")} ${verb} not valid; using the default`;
+}
+
+/**
+ * Reads the config file. Missing file → defaults. Invalid file → defaults plus a one-line error. A bad notification
+ * time or max_runs alone falls back to its default, with a warning; the rest of the file loads.
+ */
+export function loadUserConfig(file: string): {
+  config: UserConfig;
+  error: string | null;
+  warning: string | null;
+} {
+  if (!existsSync(file)) return { config: defaults(), error: null, warning: null };
   let raw: unknown;
   try {
     raw = parse(readFileSync(file, "utf8"));
   } catch (e) {
     const first = String((e as Error).message).split("\n")[0];
-    return { config: defaults(), error: `${basename(file)}: ${first}` };
+    return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null };
   }
+  const warning = dropBad(raw, file);
   const r = UserConfigSchema.safeParse(raw);
-  if (!r.success) return { config: defaults(), error: describeIssue(file, r.error.issues[0]!) };
-  return { config: r.data, error: null };
+  if (!r.success)
+    return { config: defaults(), error: describeIssue(file, r.error.issues[0]!), warning: null };
+  return { config: r.data, error: null, warning };
 }
 
 /** Writes the config atomically (temp file, then rename). */

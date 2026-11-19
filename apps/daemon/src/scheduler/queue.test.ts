@@ -78,18 +78,16 @@ describe("maxRuns", () => {
 });
 
 // The user, 2026-11-19 (Settings): a changed max_runs applies to the run queue without a restart.
-describe("a limit read at each start", () => {
+describe("a limit set while it runs", () => {
   it("lets waiting starts go when the limit grows", async () => {
-    let limit = 1;
-    const q = createRunQueue(() => limit);
+    const q = createRunQueue(1);
     const started: number[] = [];
     const hold = () => new Promise<void>(() => {});
     q.enqueue(() => (started.push(1), hold()));
     q.enqueue(() => (started.push(2), hold()));
     await new Promise((r) => setTimeout(r, 5));
     expect(started).toEqual([1]);
-    limit = 2;
-    q.kick();
+    q.setLimit(2);
     await new Promise((r) => setTimeout(r, 5));
     expect(started).toEqual([1, 2]);
   });

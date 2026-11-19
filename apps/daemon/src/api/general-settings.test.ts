@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startServer } from "./server.js";
 
 const repo = (name: string) => {
@@ -111,5 +111,20 @@ describe("General and notification settings", () => {
     await client.call("project.remove", { projectId: id });
     expect((await client.call("settings.get", {})).notifications.projects).not.toHaveProperty(id);
     expect(readFileSync(file, "utf8")).not.toContain("muted");
+  });
+
+  // Task review, 2026-11-20: a bad hand-edited setting once emptied the whole config; now the daemon starts, keeps
+  // your projects and logs one warning.
+  it("starts with a bad hand-edited setting, keeps the projects and logs a warning", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    await srv.close();
+    writeFileSync(file, readFileSync(file, "utf8").replace('max_runs = "auto"', "max_runs = 40"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    srv = await startServer({ dataDir: join(home, "data"), configFile: file, port: 0 });
+    client = await connect({ port: srv.port, token: srv.token });
+    expect(warn.mock.calls.flat().join(" ")).toContain("max_runs");
+    warn.mockRestore();
+    expect((await client.call("projects.list", {})).length).toBeGreaterThan(0);
+    expect((await client.call("settings.get", {})).maxRuns).toBe("auto");
   });
 });

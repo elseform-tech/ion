@@ -102,7 +102,7 @@ describe("Settings", () => {
     );
     expect(screen.queryByRole("radio", { name: "Claude Code" })).toBeNull(); // not signed in
     fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
-    expect(c.call).toHaveBeenCalledWith("settings.update", { quick: "grok-build:grok-code-fast" });
+    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { quick: "grok-build:grok-code-fast" } });
   });
 
   // The user, 2026-11-19: you choose how hard ion thinks.
@@ -112,7 +112,7 @@ describe("Settings", () => {
     const effort = await screen.findByRole("group", { name: "ion's effort" });
     expect(within(effort).getByRole("button", { name: "Default" }).className).toContain("on");
     fireEvent.click(within(effort).getByRole("button", { name: "Low" }));
-    expect(c.call).toHaveBeenCalledWith("settings.update", { effort: "low" });
+    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { effort: "low" } });
   });
 
   it("opens an ion's page from the Ions list, with its stats", async () => {
@@ -248,7 +248,7 @@ describe("Settings, reviewed", () => {
   });
 
   it("says why ion's model didn't change", async () => {
-    const c = client({ fail: ["settings.update"] });
+    const c = client({ fail: ["settings.set"] });
     render(<Settings client={c} onOpenIon={() => {}} />);
     await waitFor(() =>
       expect(screen.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),

@@ -5,18 +5,17 @@ export type Queued = { id: number; cancel(): boolean };
  * At most `limit` starts run at once, first in first out. A start holds its slot until its promise settles,
  * so a run's start should resolve when the run ends.
  */
-export function createRunQueue(limit: number | (() => number)): {
+export function createRunQueue(limit: number): {
   enqueue(start: () => Promise<void>): Queued;
   size(): number;
-  /** The limit may have grown: start what now fits. */
-  kick(): void;
+  /** A new limit: starts what now fits; a start that's going is never stopped. */
+  setLimit(n: number): void;
 } {
-  const current = (): number => (typeof limit === "number" ? limit : limit());
   const waiting: { id: number; start: () => Promise<void> }[] = [];
   let running = 0;
   let next = 0;
   const pump = (): void => {
-    while (running < current() && waiting.length > 0) {
+    while (running < limit && waiting.length > 0) {
       const item = waiting.shift()!;
       running++;
       void item
@@ -44,7 +43,10 @@ export function createRunQueue(limit: number | (() => number)): {
       };
     },
     size: () => waiting.length,
-    kick: pump,
+    setLimit: (n) => {
+      limit = n;
+      pump();
+    },
   };
 }
 

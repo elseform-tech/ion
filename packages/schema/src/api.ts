@@ -135,7 +135,7 @@ export type SettingsInfo = IonSettings & {
 };
 
 /** What Settings changes: only the given fields; notifications by part. */
-export type SettingsPatch = Partial<Pick<SettingsInfo, "access" | "maxRuns">> & {
+export type SettingsPatch = Partial<Pick<SettingsInfo, "access" | "maxRuns" | "quick" | "effort">> & {
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
@@ -221,7 +221,6 @@ export type Commands = {
   "task.stop": { args: { chatId: string; pid: number }; result: { ok: true } };
   /** A file in a chat's worktree, for the preview (at most 1 MB). */
   "chat.file": { args: { chatId: string; path: string }; result: FilePreview };
-  "settings.update": { args: Partial<IonSettings>; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   /** fromNow: only events from now on, no backlog. */
   "events.subscribe": {
@@ -420,7 +419,6 @@ export const COMMANDS = [
   "chat.artifacts",
   "task.stop",
   "chat.file",
-  "settings.update",
   "settings.set",
   "chat.create",
   "events.subscribe",
