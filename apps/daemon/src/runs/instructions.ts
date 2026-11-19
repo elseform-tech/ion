@@ -10,4 +10,5 @@ export const ION_INSTRUCTIONS = [
   "Check ion's decisions tool first; the user may have decided already.",
   "ion's memory_list holds what earlier chats in this project learned: check it when the work depends on the",
   "project's conventions, and save lasting facts the user tells you with memory_write.",
+  "When you need several read-only lookups, chain them into one command with && rather than one call each.",
 ].join(" ");

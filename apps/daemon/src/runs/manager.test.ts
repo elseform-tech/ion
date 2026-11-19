@@ -454,6 +454,8 @@ describe("RunManager", () => {
     // Memory test on Grok, 2026-11-19: ion's memory worked, but only because Grok found its tools; every run is told.
     expect(told).toContain("memory_list");
     expect(told).toContain("memory_write");
+    // User, 2026-11-19: chain read-only lookups into one command to scale tools and save cost.
+    expect(told).toContain("chain them into one command with &&");
   });
 
   it("refuses a model the harness doesn't list, and runs one it does", async () => {
