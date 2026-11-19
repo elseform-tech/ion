@@ -1,10 +1,10 @@
 import type { IonClient } from "@ion/client/browser";
-import type { HarnessInfo, IonInfo, IonSettings, ProjectInfo } from "@ion/schema";
+import type { HarnessInfo, IonInfo, ProjectInfo, SettingsInfo } from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
 
 export type SettingsData = {
   harnesses: HarnessInfo[];
-  settings: IonSettings | null;
+  settings: SettingsInfo | null;
   ions: IonInfo[];
   projects: ProjectInfo[];
   /** Reads everything again (after a change made here). */
@@ -14,7 +14,7 @@ export type SettingsData = {
 /** What Settings shows, read when it opens and again after each change. */
 export function useSettingsData(client: IonClient): SettingsData {
   const [harnesses, setHarnesses] = useState<HarnessInfo[]>([]);
-  const [settings, setSettings] = useState<IonSettings | null>(null);
+  const [settings, setSettings] = useState<SettingsInfo | null>(null);
   const [ions, setIons] = useState<IonInfo[]>([]);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const reload = useCallback(() => {

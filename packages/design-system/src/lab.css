@@ -253,6 +253,9 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .note button{border:0;background:transparent;color:var(--accent);cursor:pointer;padding:0;font-size:12.5px}
 .ir .nw{font-size:10.5px;font-weight:500;font-style:normal;color:var(--accent);margin-left:6px}
 
+/* lab lines 293-293: keys (kbd) */
+kbd{font-family:var(--body);font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:5px;padding:0 5px;min-width:18px;text-align:center;display:inline-block;line-height:17px}
+
 /* lab lines 305-305: empty lists */
 .pempty{padding:28px;text-align:center;color:var(--faint)}
 
@@ -429,7 +432,8 @@ button.arow:hover{background:var(--hover)}
 .pmenu .nb{margin-left:auto}
 .pmenu .nb+.ck{margin-left:6px}
 
-/* lab lines 568-568: segmented control, small */
+/* lab lines 567-568: notification icons; segmented control, small */
+.nic{color:var(--muted)}
 .seg.sm button{padding:4px 9px;font-size:12px}
 
 /* lab lines 571-636: media: code blocks */
@@ -695,6 +699,13 @@ button.arow:hover{background:var(--hover)}
 .qline .why{flex-shrink:1;max-width:45%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--faint);margin:0 6px}
 .qline .ib{width:26px;height:26px}
 .qline .ib .lucide{width:14px;height:14px}
+
+/* lab lines 1096-1100: settings: chats at once, times, a shortcut's keys */
+/* settings: General's chats at once (Auto or a number), times typed in a row, a shortcut's keys */
+.stepper .n{width:auto;min-width:26px;padding:0 6px}
+.fin.time{width:auto;padding:4px 8px;font-variant-numeric:tabular-nums}
+.acts2{align-items:center}.acts2 .dash{color:var(--faint)}
+.keys{display:flex;gap:4px}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

@@ -29,6 +29,7 @@
 | [14 Ions with tools](superpowers/plans/2026-11-19-14-ions-with-tools.md): ions think as agent sessions with ion's tools and reading only; project profiles; ion chief routes among 20+ projects and asks which one when unsure | Done |
 | [15 Workspace artifacts and processes](superpowers/plans/2026-11-19-15-workspace-artifacts-processes.md): the panel lists a chat's artifacts and every process its tool calls left running, wherever | Planned |
 | [16 Prompt queue](superpowers/plans/2026-11-19-16-prompt-queue.md): queue your next messages while a chat's agent or an ion works (Enter queues, ⌘Enter sends now, Esc twice stops, ions too); Send now, Edit, Remove | Planned |
+| [17 Settings](superpowers/plans/2026-11-19-17-settings.md): General (default access, chats at once), Notifications (how loud, daily briefing, quiet hours, each project's level) and Shortcuts; ion notifies you through the system and briefs you each morning | In progress |
 
 ## Packages
 

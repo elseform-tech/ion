@@ -1093,6 +1093,11 @@ button.arow:hover{background:var(--hover)}
 .qline .why{flex-shrink:1;max-width:45%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--faint);margin:0 6px}
 .qline .ib{width:26px;height:26px}
 .qline .ib .lucide{width:14px;height:14px}
+/* settings: General's chats at once (Auto or a number), times typed in a row, a shortcut's keys */
+.stepper .n{width:auto;min-width:26px;padding:0 6px}
+.fin.time{width:auto;padding:4px 8px;font-variant-numeric:tabular-nums}
+.acts2{align-items:center}.acts2 .dash{color:var(--faint)}
+.keys{display:flex;gap:4px}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1515,15 +1520,22 @@ export function sumLines(lines: Line[]) {
       <div class="mode settings" data-mode="settings" hidden>
         <nav class="snav">
           <b>Settings</b>
-          <div><i data-lucide="sliders-horizontal"></i>General</div>
+          <button type="button" data-snav="general"><i data-lucide="sliders-horizontal"></i>General</button>
           <button type="button" data-snav="harness" class="on"><i data-lucide="plug"></i>Agents</button>
           <button type="button" data-snav="ions"><i data-lucide="orbit"></i>Ions</button>
           <button type="button" data-snav="tools"><i data-lucide="blocks"></i>Tools</button>
           <button type="button" data-snav="notif"><i data-lucide="bell"></i>Notifications</button>
-          <div><i data-lucide="keyboard"></i>Shortcuts</div>
+          <button type="button" data-snav="keys"><i data-lucide="keyboard"></i>Shortcuts</button>
         </nav>
         <div class="sbody">
           <div class="spage" data-spage="projects" hidden id="sProj"></div>
+          <div class="spage" data-spage="general" hidden>
+            <div><h4>Chats</h4><div class="group">
+              <div class="srow"><div class="g">Default access</div><span class="seg sm"><button type="button" class="on">Auto</button><button type="button">Full access</button></span></div>
+              <div class="srow"><div class="g">Chats at once</div><div class="stepper"><button class="ib" type="button" title="Less" disabled><i data-lucide="minus"></i></button><span class="n">Auto</span><button class="ib" type="button" title="More"><i data-lucide="plus"></i></button></div></div>
+            </div></div>
+          </div>
+          <div class="spage" data-spage="keys" hidden id="sKeys"></div>
           <div class="spage" data-spage="notif" hidden id="sNotif"></div>
           <div class="spage" data-spage="tools" hidden id="sTools"></div>
           <div class="spage" data-spage="ions" hidden>
@@ -3006,6 +3018,7 @@ function showS(page){
   document.querySelectorAll('.snav [data-snav]').forEach(b=>b.classList.toggle('on',b.dataset.snav===(page==='ion'?'ions':page)));
   if(page==='projects') renderProjects();
   if(page==='notif') renderNotif();
+  if(page==='keys') renderKeys();
   if(page==='tools') renderTools();
   if(page==='ions'){
     const order=[['lead',IONS.lead],...PROJECTS.flatMap(p=>live().filter(([k,v])=>k!=='lead'&&v.proj===p))];
@@ -3033,13 +3046,19 @@ function renderNotif(){
       ${row('inbox','Updates','','<span class="chip">Briefing</span>')}
     </div></div>
     <div><h4>Timing</h4><div class="group">
-      ${row('sunrise','Daily briefing','',`<div class="acts2"><button class="val" type="button">8:30<i data-lucide="chevrons-up-down"></i></button><span class="sw on"></span></div>`)}
-      ${row('moon','Quiet hours','',`<div class="acts2"><button class="val" type="button">22:00–08:00<i data-lucide="chevrons-up-down"></i></button><span class="sw on"></span></div>`)}
+      ${row('sunrise','Daily briefing','',`<div class="acts2"><input class="fin time" type="time" value="08:30" aria-label="Briefing time"><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Daily briefing"></button></div>`)}
+      ${row('moon','Quiet hours','',`<div class="acts2"><input class="fin time" type="time" value="22:00" aria-label="Quiet from"><span class="dash">–</span><input class="fin time" type="time" value="08:00" aria-label="Quiet until"><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Quiet hours"></button></div>`)}
     </div></div>
     <div><h4>Per project</h4><div class="group">
       ${PROJECTS.map(p=>`<div class="srow"><div class="g">${esc(p)}${STARRED.has(p)?' <i data-lucide="star" class="stari sm"></i>':''}</div><span class="seg sm">${NLEVELS.map(([id,l])=>`<button type="button" class="${PINFO[p].notif===id?'on':''}" data-nlevel="${id}" data-p="${esc(p)}">${l}</button>`).join('')}</span></div>`).join('')}
     </div></div>`;
   hydrate(el); icons(el);
+}
+/* Settings → Shortcuts: the app's one table of hotkeys (apps/desktop/src/hotkeys.ts), in its order */
+const KEYS=[['Hide sidebar',['⌘','B']],['Next effort',['⌘','.']],['Send',['↵']],['Queue while it works',['↵']],['Send now',['⌘','↵']],['New line',['⇧','↵']],['Stop',['esc','esc']]];
+function renderKeys(){
+  const el=document.getElementById('sKeys');
+  el.innerHTML=`<div><h4>Shortcuts</h4><div class="group">${KEYS.map(([n,ks])=>`<div class="srow"><div class="g">${esc(n)}</div><span class="keys">${ks.map(k=>`<kbd>${esc(k)}</kbd>`).join('')}</span></div>`).join('')}</div></div>`;
 }
 /* preview: this ion's color on another harness's shape */
 function pv(k,h){ const key=`pv:${k}:${h}`; LIB[key]=hybrid(h,IONS[k].color); return key; }

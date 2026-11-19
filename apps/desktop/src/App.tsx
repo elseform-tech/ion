@@ -5,6 +5,7 @@ import { Down } from "./Down.js";
 import { Frame, useSidebar } from "./Frame.js";
 import { Ions } from "./ions/Ions.js";
 import { useIon } from "./ion.js";
+import { useSystemNotifications } from "./notify.js";
 import { type Mode, Rail, useNeedCount } from "./Rail.js";
 import { Settings } from "./settings/Settings.js";
 
@@ -17,9 +18,20 @@ function useInitial(): string {
   return initial;
 }
 
+/** Opens a chat a notification is about: an ion's chat on the Ions screen, any other on Chats. */
+function openChat(
+  chatId: string,
+  go: { setIonId: (id: string) => void; setOpenId: (id: string) => void; setMode: (m: Mode) => void },
+) {
+  const ion = chatId.startsWith("ion:") ? chatId.slice(4) : null;
+  if (ion) go.setIonId(ion);
+  else go.setOpenId(chatId);
+  go.setMode(ion ? "ions" : "chats");
+}
+
 /**
  * The window, as the design lab draws it: the rail (the window's own buttons sit in its top strip), then the
- * Chats or the Ions screen. Search and Settings join the rail when they exist.
+ * Chats, Ions or Settings screen. ion's notifications show as the system's own; clicking one opens its chat.
  */
 export function App() {
   const { state, client } = useIon();
@@ -31,6 +43,7 @@ export function App() {
   // The ion the Ions screen opens on (Settings' "Open chat" picks one).
   const [ionId, setIonId] = useState("chief");
   const [sidebar, toggleSidebar] = useSidebar();
+  useSystemNotifications(client, (chatId) => openChat(chatId, { setIonId, setOpenId, setMode }));
   if (state === "connecting") return <div className="app--empty" />;
   if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
   return (

@@ -3,6 +3,7 @@ import { ArrowUp, Pencil, X } from "@ion/design-system";
 import { type AskBrain, EV, type QueuedInfo, type QueueTarget } from "@ion/schema";
 import { type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useRef, useState } from "react";
 import { useCallError } from "../callError.js";
+import { hit } from "../hotkeys.js";
 
 /** Events after which a queue is read again (a question raised or answered: whether it waits for your answer). */
 const CHANGES = new Set<string>([
@@ -89,9 +90,9 @@ export function useQueue(client: IonClient, to: QueueTarget | null): Queue {
  * or Enter picking a word in an input method.
  */
 function enterKey(e: KeyboardEvent<HTMLTextAreaElement>): "queue" | "now" | null {
-  if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)
-    return null;
-  return e.metaKey || e.ctrlKey ? "now" : "queue";
+  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return null;
+  if (hit("now", e)) return "now";
+  return hit("queue", e) ? "queue" : null;
 }
 
 type Box = {
@@ -209,7 +210,7 @@ export function useDoubleEsc(going: string | null, stop: (going: string) => void
     if (!going) return;
     let last = 0;
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (!hit("stop", e)) return;
       const now = Date.now();
       if (now - last < DOUBLE_ESC_MS) {
         last = 0;

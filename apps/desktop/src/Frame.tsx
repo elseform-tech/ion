@@ -1,5 +1,6 @@
 import { PanelLeft } from "@ion/design-system";
 import { useEffect, useState } from "react";
+import { hit } from "./hotkeys.js";
 
 /** Whether the screen's left panel shows: one choice for the window, like the chat's side panel. */
 export function useSidebar(): [boolean, () => void] {
@@ -7,7 +8,7 @@ export function useSidebar(): [boolean, () => void] {
   const toggle = () => setOpen((was) => !was);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+      if (hit("sidebar", e)) {
         e.preventDefault();
         toggle();
       }

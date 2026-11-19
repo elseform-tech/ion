@@ -72,6 +72,14 @@ export {
   Maximize2,
   X,
   PanelLeft,
+  SlidersHorizontal,
+  Keyboard,
+  Bell,
+  BellRing,
+  Sunrise,
+  Moon,
+  Inbox,
+  Minus,
 } from "lucide-react";
 export { Avatar, type BotState } from "./Avatar.js";
 export { botFor } from "./bots.js";

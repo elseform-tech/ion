@@ -32,12 +32,12 @@ export const EFFORTS = [
   ["max", "Max"],
 ] as const;
 
-const ACCESS = [
+export const ACCESS = [
   ["auto", "Auto"],
   ["full", "Full access"],
 ] as const;
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="srow">
       <div className="g">{label}</div>
