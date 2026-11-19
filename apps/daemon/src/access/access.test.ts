@@ -48,6 +48,47 @@ describe("ruleFor", () => {
   });
 });
 
+// Real run on Grok, 2026-11-19: a grep for "tip" in split.js and Grok's own tool lookup went to the judge, which
+// stopped the lookup as "unrelated"; the question then waited 4 minutes. Auto decides what goes outside the
+// worktree: reading and searching inside it is allowed by rule.
+describe("ruleFor, reading and searching", () => {
+  const tool = (kind: "read" | "search", input: Record<string, unknown>): ApprovalRequest => ({
+    ...cmd("x"),
+    toolName: kind === "read" ? "read_file" : "grep",
+    kind,
+    input,
+  });
+
+  it("allows reads and searches that stay in the worktree", () => {
+    expect(ruleFor(tool("search", { pattern: "tip", glob: "**/split.js" }), ctx)).toMatchObject({
+      decision: "allow",
+      reason: "Only looks inside the project",
+    });
+    expect(ruleFor(tool("read", { file_path: join(wt, "split.js") }), ctx)?.decision).toBe("allow");
+    expect(ruleFor(tool("search", { query: "ion decisions ask", limit: 10 }), ctx)?.decision).toBe("allow");
+  });
+
+  it("leaves to the judge a read or search that reaches outside, by path or by ..", () => {
+    expect(ruleFor(tool("read", { file_path: "/etc/hosts" }), ctx)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: "../other/a.ts" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", path: "src/../../.." }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", path: "~/code" }), ctx)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: `${home}/.ssh/id_rsa` }), ctx)?.decision).toBe("deny");
+  });
+
+  // Self-review, 2026-11-19: a repo can hold a link that points out of it; a relative path through it isn't inside.
+  it("follows links in a tool's relative paths", () => {
+    const tree = mkdtempSync(join(tmpdir(), "ion-wt-"));
+    const away = mkdtempSync(join(tmpdir(), "ion-away-"));
+    writeFileSync(join(away, "secret"), "x");
+    symlinkSync(away, join(tree, "link"));
+    const c = { roots: [tree], home, ionDirs: [] };
+    expect(ruleFor(tool("read", { file_path: "link/secret" }), c)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", path: "link" }), c)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: "a.ts" }), c)?.decision).toBe("allow");
+  });
+});
+
 // Security review: commands the simple rule can't fully read go to the judge; paths are resolved for real.
 describe("ruleFor, hardened", () => {
   it("never allows by rule what it can't fully read: newlines, background &, redirects, subshells, write flags, ..", () => {

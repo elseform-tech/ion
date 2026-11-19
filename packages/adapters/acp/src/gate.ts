@@ -45,6 +45,8 @@ const GROK_KINDS: Record<string, Kind> = {
   write: "edit",
   write_file: "edit",
   grep: "search",
+  // Grok's own lookup of its tools (ion's among them): it reads no file.
+  search_tool: "search",
   list_dir: "search",
   glob: "search",
   web_fetch: "web",

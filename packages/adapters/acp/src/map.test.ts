@@ -157,3 +157,24 @@ describe("tool input and output", () => {
     ]);
   });
 });
+
+// Real run on Grok, 2026-11-19: a grep showed as "other grep" (ACP's kind, then the title). A tool of no known kind
+// is named by its title, with what it looked for.
+describe("a tool of no known kind", () => {
+  it("is named by its title, with its pattern or query", () => {
+    const st = s();
+    const grep = { sessionUpdate: "tool_call", toolCallId: "g", title: "grep", kind: "other" };
+    expect(
+      mapUpdate({ ...grep, rawInput: { pattern: "tip", glob: "**/split.js" } }, st)[0]?.data,
+    ).toMatchObject({
+      name: "grep",
+      kind: "other",
+      summary: "tip",
+    });
+    const find = { sessionUpdate: "tool_call", toolCallId: "f", title: "search_tool", kind: "other" };
+    expect(mapUpdate({ ...find, rawInput: { query: "ion decisions ask" } }, st)[0]?.data).toMatchObject({
+      name: "Find tool",
+      summary: "ion decisions ask",
+    });
+  });
+});

@@ -135,5 +135,23 @@ export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
   const command = typeof req.input.command === "string" ? req.input.command : null;
   if (req.kind === "command" && command && readOnly(command) && paths.every(inWorktree))
     return { decision: "allow", reason: "Only looks inside the project" };
+  // A read or search tool (not a shell) names its paths as they are: inside the worktree, it only looks.
+  if (
+    (req.kind === "read" || req.kind === "search") &&
+    !climbs(req) &&
+    [...paths, ...toolPaths(req, c)].every(inWorktree)
+  )
+    return { decision: "allow", reason: "Only looks inside the project" };
   return null;
 }
+
+/** A tool's relative paths (fields named for a path, a file, a folder or a glob), from the worktree, links followed. */
+function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
+  return Object.entries(req.input)
+    .filter(([k, v]) => /path|file|dir|glob|cwd/i.test(k) && typeof v === "string" && !/^[/~$]/.test(v))
+    .map(([, v]) => realish(resolve(c.roots[0] ?? "/", v as string)));
+}
+
+/** A path in the input that climbs out ("..") or starts at your home ("~", $HOME): the judge decides those. */
+const climbs = (req: ApprovalRequest) =>
+  [...strings(req.input)].some((v) => /(^|[\\/])\.\.([\\/]|$)|^~|\$\{?HOME/.test(v));

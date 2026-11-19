@@ -105,16 +105,29 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
     inputSent: Boolean(input),
   });
   const title = typeof u.title === "string" ? u.title : "Tool";
+  const kind = acpToolKind(u.kind);
+  // A tool of no known kind is named by its title ("grep"), with what it looked for.
+  const known = kind !== "other";
   return {
     type: EV.toolStarted,
     data: {
       toolId,
-      name: String(u.kind ?? "other"),
-      kind: acpToolKind(u.kind),
-      summary: title.slice(0, 80),
+      name: known ? String(u.kind) : (TITLES[title] ?? title).slice(0, 40),
+      kind,
+      summary: (known ? title : lookedFor(u.rawInput)).slice(0, 80),
       ...(input ? { input } : {}),
     },
   };
+}
+
+/** Agents' own tools, by a plain name. */
+const TITLES: Record<string, string> = { search_tool: "Find tool" };
+
+/** What a tool looked for: its pattern, query, path or address, when it has one. */
+function lookedFor(raw: unknown): string {
+  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const v = [r.pattern, r.query, r.path, r.file_path, r.url].find((x) => typeof x === "string" && x);
+  return typeof v === "string" ? v : "";
 }
 
 /** Translates one ACP `session/update` into ion events. Pure apart from `state`. */
