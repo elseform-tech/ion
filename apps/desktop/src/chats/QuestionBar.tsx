@@ -1,5 +1,6 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import { ChevronDown, ChevronUp, Star } from "@ion/design-system";
+import { stripControl } from "@ion/schema";
 import { type KeyboardEvent, useState } from "react";
 import type { Item } from "./timeline.js";
 
@@ -148,7 +149,23 @@ function BarButtons({ q, busy, answer }: { q: Question; busy: boolean; answer: A
  * An agent's open question, in one panel above the message box, open: the question, each option with its
  * reasoning, your own words and Always. Collapsed, it's one line with a button per option.
  */
-export function QuestionBar({ client, question }: { client: IonClient; question: Question }) {
+/** Everything an agent wrote, without control or invisible direction characters (they could disguise a command). */
+function clean(q: Question): Question {
+  return {
+    ...q,
+    question: stripControl(q.question),
+    ...(q.why ? { why: stripControl(q.why) } : {}),
+    ...(q.note ? { note: stripControl(q.note) } : {}),
+    choices: q.choices.map((c) => ({
+      ...c,
+      label: stripControl(c.label),
+      consequence: stripControl(c.consequence),
+    })),
+  };
+}
+
+export function QuestionBar({ client, question: raw }: { client: IonClient; question: Question }) {
+  const question = clean(raw);
   const [always, setAlways] = useState(false);
   const [open, setOpen] = useState(true);
   const { error, busy, answer } = useAnswer(client, question.needId);
