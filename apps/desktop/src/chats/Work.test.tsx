@@ -60,21 +60,14 @@ describe("a work step's name", () => {
     expect(container.textContent).not.toMatch(/[\u0000-\u0008\u001b]/);
   });
 
-  // Real run on Grok, 2026-11-19: steps read 'Use tool ion__projects'. Grok calls MCP tools through its own
-  // use_tool, so the real tool is in the summary; the step shows its plain name.
-  it("names a use_tool step by the tool in its summary", () => {
-    const steps = [
-      tool("Use tool", "ion__projects"),
-      tool("Use tool", "github__search_issues"),
-      tool("Use tool", "a.ts b"),
-    ];
+  // Security review, 2026-11-19: a step's label comes from the harness's structured call, never from free text.
+  it("labels a step by its name, never by its summary", () => {
+    const steps = [tool("ion__projects", ""), tool("Use tool", "ion__projects")];
     const { container } = render(<WorkBlock w={work(steps)} />);
     fireEvent.click(screen.getByRole("button", { name: /Worked/ }));
     const rows = [...container.querySelectorAll(".ws .wl")].map((r) => r.textContent);
     expect(rows[0]).toBe("Projects");
-    expect(rows[1]).toBe("search_issues");
-    expect(rows[2]).toBe("Use tool a.ts b");
-    expect(container.textContent).not.toContain("ion__projects");
+    expect(rows[1]).toBe("Use tool ion__projects");
   });
 
   it("shows a live step by its plain name", () => {

@@ -108,13 +108,18 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
   const kind = acpToolKind(u.kind);
   // A tool of no known kind is named by its title ("grep"), with what it looked for.
   const known = kind !== "other";
+  // Grok's use_tool routes another tool: its structured input names the real one, so that is the step's name.
+  const routed = title === "use_tool" ? (u.rawInput as Json | undefined)?.tool_name : undefined;
+  const via = typeof routed === "string" ? routed.slice(0, 40) : undefined;
+  const plain = known ? String(u.kind) : (TITLES[title] ?? title).slice(0, 40);
+  const said = known ? title : lookedFor(u.rawInput, s.roots);
   return {
     type: EV.toolStarted,
     data: {
       toolId,
-      name: known ? String(u.kind) : (TITLES[title] ?? title).slice(0, 40),
+      name: via ?? plain,
       kind,
-      summary: (known ? title : lookedFor(u.rawInput, s.roots)).slice(0, 80),
+      summary: via !== undefined ? "" : said.slice(0, 80),
       ...(input ? { input } : {}),
     },
   };

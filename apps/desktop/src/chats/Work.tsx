@@ -62,16 +62,8 @@ export function stepName(raw: string): string {
   return name.replace(/^mcp__.+?__(?=[^_])/, "");
 }
 
-/** A step's name and summary as shown. Grok's "Use tool" carries the real tool in its summary: that is the name. */
+/** A step's name and summary as shown. The name alone is mapped to words: the summary is free text. */
 function stepText(s: ToolStep): { name: string; summary: string } {
-  const summary = stripControl(s.summary).trim();
-  if (stripControl(s.name) === "Use tool" && /^[\w.-]+$/.test(summary)) {
-    const ion = /^(?:mcp__ion__|ion__)/.test(summary);
-    return {
-      name: ion ? stepName(summary) : summary.replace(/^(?:mcp__)?[^_\s]+?__(?=[^_])/, ""),
-      summary: "",
-    };
-  }
   return { name: stepName(s.name), summary: stepSummary(s) };
 }
 

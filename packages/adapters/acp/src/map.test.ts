@@ -188,4 +188,18 @@ describe("a tool of no known kind", () => {
       summary: "/repo",
     });
   });
+
+  // Security review, 2026-11-19: a step's label comes from the harness's structured call, never from free text.
+  it("names a use_tool call by its structured tool_name", () => {
+    const [ev] = mapUpdate(
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "u1",
+        title: "use_tool",
+        rawInput: { tool_name: "ion__projects" },
+      },
+      s(),
+    );
+    expect(ev?.data).toMatchObject({ name: "ion__projects", summary: "" });
+  });
 });
