@@ -184,6 +184,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["harnesses"],
         ["routines"],
         ["routines", "add"],
+        ["suggestions"],
       ].map((a) => ion(...a, "--help")),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
@@ -208,6 +209,14 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("routines", "run", "nope")).err).toBe("Unknown routine: nope");
     expect((await ion("routines", "remove", "morning-check")).out).toBe("Removed morning-check");
     expect((await ion("routines")).out).toBe("No routines");
+  });
+
+  // Plan 11: ion chief's suggestions, from the command line.
+  it("lists suggestions, and says so for one it doesn't know", async () => {
+    await ion("daemon", "start");
+    expect((await ion("suggestions")).out).toBe("No suggestions");
+    expect(JSON.parse((await ion("suggestions", "--json")).out)).toEqual([]);
+    expect((await ion("suggestions", "take", "s0")).err).toBe("That suggestion is gone");
   });
 
   describe("ion ask", () => {

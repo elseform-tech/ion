@@ -31,6 +31,22 @@ for s in edit asks fail flaky overloaded gated; do ion ask "$s" -p storefront --
 ion ask "hello" --harness fake >/dev/null 2>&1 # a plain chat, in default
 ion ask "edit the onboarding email copy so it reads warmer and mentions the free trial length up front" \
   -p payments-api --harness fake >/dev/null 2>&1
+# Plan 11: what ion chief suggests. Written into the past while ion is stopped: storefront's ion asked the same thing
+# on three Fridays (a routine), and the "edit" chat's last run failed four days ago (stalled, with changes).
+ion daemon stop >/dev/null
+node --input-type=module -e '
+const { EventStore, openDb } = await import("./apps/daemon/dist/store/index.js");
+const { allViews } = await import("./apps/daemon/dist/views/index.js");
+const db = openDb(process.env.ION_HOME + "/data/ion.db");
+const store = new EventStore(db, allViews);
+const ago = (d, h, m = 0) => { const t = new Date(Date.now() - d * 864e5); t.setHours(h, m, 0, 0); return t.toISOString(); };
+const add = (chatId, type, data, ts) => store.append({ chatId, runId: null, origin: "daemon", type, data, ts });
+for (const [d, m] of [[15, 5], [8, 50], [1, 10]])
+  add("ion:storefront", "ion.heard", { text: "Summarize this week’s merged PRs" }, ago(d, d === 8 ? 16 : 17, m));
+const edit = db.prepare("SELECT chat_id AS id FROM view_chats WHERE title = ? AND project_id = ?").get("edit", "storefront");
+add(edit.id, "run.finished", { status: "failed" }, ago(4, 11));
+db.close();'
+ion daemon start >/dev/null
 # Plan 09: a thread storefront's ion started, and ion chief routing a message to two projects.
 ion ions message storefront "edit the readme" >/dev/null 2>&1
 ion ions message storefront "what project am i in?" >/dev/null 2>&1 # answered by its ion, no thread

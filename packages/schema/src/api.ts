@@ -72,6 +72,19 @@ export type ActivityInfo = {
   yesterday: RecentRun[];
 };
 
+/** One of ion chief's open suggestions: a routine for something you keep asking for, or a stalled chat to resume. */
+export type SuggestionInfo = {
+  suggestionId: string;
+  kind: "routine" | "stalled";
+  projectId: string;
+  /** What it asks: "Make Weekly PR summary a routine?", "Resume Tailwind 4 migration?". */
+  title: string;
+  /** Its evidence, in a few words: "Fridays 17:00 · asked on 3 days", "Stalled 6 days · 3 files". */
+  detail: string;
+  /** When ion suggested it. */
+  at: string;
+};
+
 /** A routine's fields to change; null clears effort (the project's again). skip: skip its next run, or undo that. */
 export type RoutinePatch = {
   projectId: string;
@@ -193,7 +206,12 @@ export type Commands = {
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
   "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
-  "suggestion.answer": { args: { suggestionId: string; keep: boolean }; result: { ok: true } };
+  /** keep: take it (add the routine, resume the chat); mute: not now, and no more like it for that project. */
+  "suggestion.answer": {
+    args: { suggestionId: string; keep: boolean; mute?: boolean };
+    result: { ok: true };
+  };
+  "suggestions.list": { args: Record<string, never>; result: SuggestionInfo[] };
   /** What a chat changed in its worktree since it started (empty once archived); omitted: files past the cap. */
   "chat.diff": { args: { chatId: string }; result: { files: FileDiff[]; omitted?: number } };
   "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
@@ -330,6 +348,7 @@ export const COMMANDS = [
   "ions.list",
   "ion.message",
   "suggestion.answer",
+  "suggestions.list",
   "chat.diff",
   "memory.list",
   "memory.forget",

@@ -72,6 +72,31 @@ const valid: [string, Record<string, unknown>, string?][] = [
     "daemon",
   ],
   ["suggestion.answered", { suggestionId: "s1", keep: true }, "daemon"],
+  // Plan 11: suggestions.
+  [
+    "ion.said",
+    {
+      text: "Make Weekly PR summary a routine?",
+      card: {
+        ...{ kind: "routine", suggestionId: "s2", projectId: "p", key: "weekly pr summary" },
+        ...{ name: "Weekly PR summary", text: "Summarize this week's PRs", when: "fri 17:00" },
+        dates: ["2026-11-07T17:02:00.000Z", "2026-10-31T16:58:00.000Z", "2026-10-24T17:10:00.000Z"],
+      },
+    },
+    "daemon",
+  ],
+  [
+    "ion.said",
+    {
+      text: "Resume Tailwind 4 migration?",
+      card: {
+        ...{ kind: "stalled", suggestionId: "s3", chatId: "c1", projectId: "p" },
+        ...{ title: "Tailwind 4 migration", since: "2026-11-13T10:00:00.000Z", files: 3 },
+      },
+    },
+    "daemon",
+  ],
+  ["suggestion.answered", { suggestionId: "s2", keep: false, mute: true }, "daemon"],
   [
     "need.raised",
     {
@@ -128,6 +153,40 @@ const invalid: [string, Record<string, unknown>, string?][] = [
   ["ion.said", { text: "x", card: { kind: "threads" } }, "daemon"],
   ["ion.said", { text: "x", card: { kind: "nope" } }, "daemon"],
   ["suggestion.answered", { suggestionId: "s1", keep: "yes" }, "daemon"],
+  ["suggestion.answered", { suggestionId: "s1", keep: true, mute: true }, "daemon"],
+  [
+    "ion.said",
+    {
+      text: "x",
+      card: {
+        kind: "routine",
+        suggestionId: "s",
+        projectId: "p",
+        key: "k",
+        name: "n",
+        text: "t",
+        when: "soon",
+        dates: [],
+      },
+    },
+    "daemon",
+  ],
+  [
+    "ion.said",
+    {
+      text: "x",
+      card: {
+        kind: "stalled",
+        suggestionId: "s",
+        chatId: "c",
+        projectId: "p",
+        title: "t",
+        since: "x",
+        files: 0,
+      },
+    },
+    "daemon",
+  ],
   ["routine.ran", { projectId: "p", routineId: "r", name: "x", due: "soon", by: "schedule" }, "daemon"],
   ["routine.ran", { projectId: "p", routineId: "r", name: "x", due: null, by: "cron" }, "daemon"],
   ["routine.ran", { projectId: "p", routineId: "r", name: "x", due: null, by: "you" }, "adapter"],

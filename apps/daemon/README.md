@@ -76,3 +76,18 @@ looks at start and once a minute. Every slot handled is a `routine.ran` event, s
 restarts too; slots missed while ion was stopped run once, as the latest. Off, or with pause all on, a routine's slots
 pass; turned on again it waits for its next one. `src/scheduler/activity.ts` builds `activity.list`; the commands
 are in `src/api/routines.ts`. See `docs/routines.md`.
+
+## Suggestions (Plan 11)
+
+`src/ions/suggestions.ts`: ion chief looks at start and then hourly, and suggests in its chat (`ion:chief`):
+- a routine, when you asked a project (its ion, or a chat you started there) for the same thing on 3 different days
+  in the last four weeks (`habits.ts`: your words lowercased, without dates and punctuation; its time is their one
+  weekday, else daily, at their median time to the half hour). Never for `default`, a project with
+  `shareWithIon = false`, or what a routine there already does. Taking it adds the routine as `routine.add` does.
+- resuming a chat of yours whose last run failed or was stopped, untouched for 3 days, with changes in its worktree.
+  Taking it sends "Pick up where you left off." through the normal ask, on the chat's own agent. Touched again and
+  stalled again, it can come back once more.
+
+Each suggestion is an `ion.said` card and each answer a `suggestion.answered`, read back by
+`src/views/suggestions.ts` (`suggestionsView`, and `asksView`: what you asked per project), so after a restart it
+never offers the same one twice. "Fewer like this" (`mute`) stops that kind for that project.

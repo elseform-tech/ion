@@ -75,6 +75,7 @@
     "ions.list",
     "ion.message",
     "suggestion.answer",
+    "suggestions.list",
     "chat.diff",
     "memory.list",
     "memory.forget",

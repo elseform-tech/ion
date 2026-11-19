@@ -1,4 +1,12 @@
-import { addRoutine, loadUserConfig, removeRoutine, type RoutinePatch, updateRoutine } from "@ion/config";
+import {
+  addRoutine,
+  loadUserConfig,
+  type NewRoutine,
+  removeRoutine,
+  type RoutineEntry,
+  type RoutinePatch,
+  updateRoutine,
+} from "@ion/config";
 import { type EffortLevel, nextRun, type RoutinePatch as PatchArgs } from "@ion/schema";
 import { activityOf } from "../scheduler/activity.js";
 import type { Handlers } from "./commands.js";
@@ -29,24 +37,31 @@ function fieldsOf(a: PatchArgs, configFile: string): RoutinePatch {
   return fields;
 }
 
+/** Adds a routine to a project's ion, in your config; it waits for its first time from now on. */
+export function addRoutineTo(
+  ctx: { configFile: string; routines: { hold(projectId: string, routineId: string): void } },
+  projectId: string,
+  r: NewRoutine,
+): RoutineEntry {
+  let added: RoutineEntry | undefined;
+  changeConfig(ctx.configFile, (c) => {
+    const x = addRoutine(c, projectId, r);
+    added = x.routine;
+    return x.config;
+  });
+  ctx.routines.hold(projectId, added!.id);
+  return added!;
+}
+
 /** Routines (kept in your config, per project) and Activity. */
 export const routineHandlers: Pick<
   Handlers,
   "routine.add" | "routine.update" | "routine.remove" | "routine.run" | "routines.pause" | "activity.list"
 > = {
   "routine.add": (a, ctx) => {
-    const projectId = String(a.projectId ?? "");
     const effort = checkEffort(a.effort);
     const input = { name: String(a.name ?? ""), when: String(a.when ?? ""), text: String(a.text ?? "") };
-    let added: ReturnType<typeof addRoutine>["routine"] | undefined;
-    changeConfig(ctx.configFile, (c) => {
-      const r = addRoutine(c, projectId, effort ? { ...input, effort } : input);
-      added = r.routine;
-      return r.config;
-    });
-    // It waits for its first time from now on.
-    ctx.routines.hold(projectId, added!.id);
-    return added!;
+    return addRoutineTo(ctx, String(a.projectId ?? ""), effort ? { ...input, effort } : input);
   },
   "routine.update": (a, ctx) => {
     const fields = fieldsOf(a, ctx.configFile);

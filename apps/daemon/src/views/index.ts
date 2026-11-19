@@ -6,6 +6,7 @@ import { ionsView } from "./ions.js";
 import { needsView } from "./needs.js";
 import { routinesView } from "./routines.js";
 import { runsView } from "./runs.js";
+import { asksView, suggestionsView } from "./suggestions.js";
 
 /** Applied in this order on every append; needs reads the chats table, so chats comes first. */
 export const allViews = [
@@ -17,4 +18,6 @@ export const allViews = [
   decisionsView,
   ionsView,
   routinesView,
+  asksView,
+  suggestionsView,
 ];

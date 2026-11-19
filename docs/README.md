@@ -23,7 +23,7 @@
 | [09 ion chief and the Ions screen](superpowers/plans/2026-11-18-09-ion-chief.md): a project ion per project and ion chief over them; message any ion; questions in ion threads go through the project's ion (answers from your decisions, holds duplicates, suggests "always", flags failing decisions); `default` has no ion; plus the user's app fixes (no spinners, closed panel, files changed, rename and archive, a sidebar that scales) | Done |
 | [10 Routines and Activity](routines.md): routines kept in your config per project, run by the daemon as ion threads (once per slot, a missed one once at start, pause all); the Activity page and an ion's Routines in Settings; `ion routines` | Done |
 | 10 Artifacts, Tools | Not written |
-| 11 Suggestions | Not written |
+| 11 Suggestions: ion chief suggests a routine for what you asked a project for on 3 days, and resuming a chat of yours that stalled with changes; cards in its chat (Add routine or Resume / Not now / fewer like this), `ion suggestions` | Done |
 | 12 More adapters: Codex (through its app-server, not ACP) | Codex done; Cursor and Gemini CLI not started (not installed to verify) |
 
 ## Packages

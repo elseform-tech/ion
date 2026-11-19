@@ -59,6 +59,19 @@ describe("ions view", () => {
     expect(ionsView.list(db, projects(["storefront"]))[0]!.last).toBe("Asked 2 projects.");
   });
 
+  // Plan 11: suggestions are optional; ion chief's tile keeps what it last told you.
+  it("keeps ion chief's last line when it makes a suggestion", () => {
+    store.append(d({ chatId: "ion:chief", runId: null, type: "ion.said", data: { text: "Morning." } }));
+    const card = {
+      ...{ kind: "stalled", suggestionId: "s1", chatId: "c1", projectId: "storefront", title: "T" },
+      ...{ since: "2026-11-13T10:00:00.000Z", files: 2 },
+    };
+    store.append(
+      d({ chatId: "ion:chief", runId: null, type: "ion.said", data: { text: "Resume “T”?", card } }),
+    );
+    expect(ionsView.list(db, projects(["storefront"]))[0]!.last).toBe("Morning.");
+  });
+
   // The user, 2026-11-19: ions showed a plain orb, not the lab's agent shapes. With no agent set for the project,
   // its ion wears the agent its latest chat ran on (the one ion's threads would use).
   it("draws an ion on its project's latest agent when the project names none", () => {

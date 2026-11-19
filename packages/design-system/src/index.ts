@@ -1,5 +1,9 @@
 export {
   Activity,
+  BellOff,
+  CalendarClock,
+  Hourglass,
+  Repeat,
   CircleCheck,
   CirclePause,
   CirclePlay,

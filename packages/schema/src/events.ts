@@ -118,7 +118,14 @@ export const DECISION_SCOPES = ["chat", "project", "everywhere"] as const;
 const text = z.object({ text: z.string() });
 const count = z.number().int().min(0);
 
-/** What an ion's message can carry: threads it started, a suggestion, or a decision that keeps failing. */
+/** The same schedule check as `parseWhen` (a routine's `when`). */
+const WHEN_TEXT =
+  /^(?:(?:daily|weekdays|sun|mon|tue|wed|thu|fri|sat) (?:[01]\d|2[0-3]):[0-5]\d|every (?:[1-9]|1\d|2[0-3])h)$/;
+
+/**
+ * What an ion's message can carry: threads it started, a suggestion, or a decision that keeps failing. ion chief's
+ * own suggestions (Plan 11): a routine for something you keep asking for, or a chat of yours that stalled.
+ */
 const IonCardSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("threads"),
@@ -137,6 +144,29 @@ const IonCardSchema = z.discriminatedUnion("kind", [
     choice: z.string(),
     failed: z.number().int().min(1),
   }),
+  z.object({
+    kind: z.literal("routine"),
+    suggestionId: z.string(),
+    projectId: z.string(),
+    /** What makes it the same thing (your words, normalised): never suggested twice. */
+    key: z.string().min(1),
+    name: z.string().min(1),
+    text: z.string().min(1),
+    when: z.string().regex(WHEN_TEXT),
+    /** When you asked (ISO), newest first, one per day. */
+    dates: z.array(z.iso.datetime()).min(1),
+  }),
+  z.object({
+    kind: z.literal("stalled"),
+    suggestionId: z.string(),
+    chatId: z.string(),
+    projectId: z.string(),
+    title: z.string(),
+    /** The chat's last activity: it stalled from then. */
+    since: z.iso.datetime(),
+    /** Files changed in its worktree. */
+    files: z.number().int().min(1),
+  }),
 ]);
 export type IonCard = z.infer<typeof IonCardSchema>;
 
@@ -153,8 +183,10 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "ion.heard": z.object({ text: z.string() }),
   /** What an ion says in its chat, with a card when it has one. */
   "ion.said": z.object({ text: z.string(), card: IonCardSchema.optional() }),
-  /** Your answer to an ion's suggestion. */
-  "suggestion.answered": z.object({ suggestionId: z.string(), keep: z.boolean() }),
+  /** Your answer to an ion's suggestion: taken (keep), not now, or not now and fewer like this (mute). */
+  "suggestion.answered": z
+    .object({ suggestionId: z.string(), keep: z.boolean(), mute: z.literal(true).optional() })
+    .refine((d) => !(d.keep && d.mute), { message: "A suggestion you took isn't muted" }),
   /** You renamed the chat. */
   "chat.renamed": z.object({ title: z.string().min(1) }),
   /** What you asked: the text of an ask, stored before its run is queued. */

@@ -30,6 +30,9 @@ export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[]
   apply(db, e: IonEvent) {
     const ionId = e.chatId ? ionOf(e.chatId) : null;
     if (!ionId || e.type !== EV.ionSaid) return;
+    // ion chief's suggestions are optional: its last line stays what it last told you.
+    const kind = (e.data as { card?: IonCard }).card?.kind;
+    if (kind === "routine" || kind === "stalled") return;
     db.prepare(
       "INSERT INTO view_ions (ion_id, last) VALUES (?, ?) ON CONFLICT(ion_id) DO UPDATE SET last = excluded.last",
     ).run(ionId, lineOf(e.data as { text: string; card?: IonCard }));

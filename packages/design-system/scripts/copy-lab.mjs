@@ -36,6 +36,7 @@ const RANGES = [
   [686, 686, "panel label (.lh2)"],
   [713, 724, "ions: needs strip, collapsed"],
   [761, 831, "brain picker; work"],
+  [832, 851, "ions: suggestion cards"],
   [861, 861, "settings: effort bars in a value"],
   [890, 891, "settings: ion's model slots"],
   [896, 896, "settings: model separator"],

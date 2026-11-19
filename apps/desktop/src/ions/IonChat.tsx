@@ -16,6 +16,7 @@ import { type KeyboardEvent, useEffect, useState } from "react";
 import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
+import { SuggestionCard } from "./SuggestionCard.js";
 
 /** An ion's avatar: ion chief's orbit bot, or its project's colour on its agent's shape. */
 export const IonAvatar = ({ ion }: { ion: IonInfo }) => (
@@ -69,6 +70,7 @@ type CardProps = {
   onOpenChat: (chatId: string) => void;
   /** A suggestion card's recorded answer, when you've given it. */
   answered?: boolean;
+  muted?: true;
 };
 
 /** What needs you, pinned atop ion chief's chat (the lab's): one quiet line until you open it. */
@@ -216,6 +218,7 @@ function Suggest({
 function Card(p: CardProps) {
   if (p.card.kind === "threads") return <Threads {...p} card={p.card} />;
   if (p.card.kind === "suggest") return <Suggest {...p} card={p.card} />;
+  if (p.card.kind === "routine" || p.card.kind === "stalled") return <SuggestionCard {...p} card={p.card} />;
   return (
     <div className="note">
       <CircleAlert />
@@ -223,6 +226,8 @@ function Card(p: CardProps) {
     </div>
   );
 }
+
+const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled";
 
 /** The bubbles: yours on the right; the ion's on the left, its avatar on the last of a run of its lines. */
 function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
@@ -242,12 +247,14 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
             <div className="bm" key={i}>
               {last ? <IonAvatar ion={p.ion} /> : <span />}
               <div>
-                {m.text && <div className="bi">{m.text}</div>}
+                {/* ion chief's suggestion cards carry their own words. */}
+                {m.text && !ownWords(m.card) && <div className="bi">{m.text}</div>}
                 {m.card && (
                   <Card
                     {...p}
                     card={m.card}
                     {...(m.answered !== undefined ? { answered: m.answered } : {})}
+                    {...(m.muted ? { muted: m.muted } : {})}
                   />
                 )}
               </div>

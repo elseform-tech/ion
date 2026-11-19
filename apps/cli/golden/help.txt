@@ -16,6 +16,7 @@ Commands:
   chats                              Your chats
   ions                               ion and your projects' ions
   routines                           What your projects' ions do on a schedule
+  suggestions                        What ion suggests
   memory                             What ion remembers
   decisions                          Your answers, and what came of them
   harnesses                          Coding agents and their models
@@ -142,3 +143,19 @@ Options:
   -d, --do <text>     What to do
   --effort <level>    low, medium, high or max
   -h, --help          display help for command
+
+---
+
+Usage: ion suggestions [options] [command]
+
+What ion suggests
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  ls              List them
+  take <id>       Do it: add the routine, or resume the chat
+  dismiss <id>    Not now
+  mute <id>       Not now, and fewer like this
+  help [command]  display help for command

@@ -20,11 +20,16 @@ import { createGrants, createMcpHandler } from "../mcp/index.js";
 import { Ions } from "../ions/service.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
-import { harnessInfos } from "./commands.js";
+import { diffOfChat, harnessInfos } from "./commands.js";
 import { Routines } from "../scheduler/index.js";
+import { Suggestions } from "../ions/suggestions.js";
+import { chatsView } from "../views/chats.js";
+import { addRoutineTo } from "./routines.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
+/** What a stalled chat is sent when you resume it from ion chief's suggestion. */
+const RESUME = "Pick up where you left off.";
 
 export async function startServer(opts: {
   dataDir: string;
@@ -37,6 +42,8 @@ export async function startServer(opts: {
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   // Routines run on their schedule while the daemon runs (a run missed while it was stopped goes now).
   const stopRoutines = ctx.routines.start();
+  // ion chief looks for something to suggest now, then hourly.
+  const stopSuggestions = ctx.suggestions.start();
   // Answers still waiting when ion stopped go into their chats now.
   void ctx.decisions.resume().catch(() => {});
   const auth = createAuth();
@@ -66,6 +73,7 @@ export async function startServer(opts: {
     token: auth.token,
     close: async () => {
       stopRoutines();
+      stopSuggestions();
       await ctx.runs.shutdown();
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
@@ -117,7 +125,22 @@ const followAsk = (chatId: string, m: { harness: string | null; text: string }) 
   ...(m.harness ? { harness: m.harness } : {}),
 });
 
-/** The data folder, the event store and the services every connection shares. */
+/**
+ * ion chief's suggestions: a routine is added the way you'd add it; a stalled chat gets its follow-up through the
+ * normal ask, on the chat's own agent.
+ */
+function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | "routines">): Suggestions {
+  return new Suggestions({
+    ...{ store: c.store, db: c.db, configFile: c.configFile },
+    changes: async (chatId) => (await diffOfChat(c, chatId)).files.length,
+    addRoutine: (projectId, r) => void addRoutineTo(c, projectId, r),
+    resume: async (chatId) => {
+      const harness = chatsView.session(c.db, chatId)?.harness ?? null;
+      await c.runs.ask(followAsk(chatId, { harness, text: RESUME }));
+    },
+  });
+}
+
 /** ion chief and the project ions, thinking with ion's quick model, watching their threads end. */
 function startIons(d: Omit<ConstructorParameters<typeof Ions>[0], "agents">): Ions {
   const ions = new Ions({ ...d, agents: () => harnessInfos.list() });
@@ -125,6 +148,7 @@ function startIons(d: Omit<ConstructorParameters<typeof Ions>[0], "agents">): Io
   return ions;
 }
 
+/** The data folder, the event store and the services every connection shares. */
 function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
@@ -177,6 +201,7 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     configFile: opts.configFile,
     start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
+  const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
   const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
-  return { store, db, needs, decisions, grants, runs, ions, routines, ...base0 };
+  return { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0 };
 }

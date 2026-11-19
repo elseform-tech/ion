@@ -30,8 +30,19 @@ import { changeConfig, settingsHandlers } from "./settings.js";
 import { workspaceHandlers } from "./workspace.js";
 import { routineHandlers } from "./routines.js";
 import type { Routines } from "../scheduler/index.js";
+import type { Suggestions } from "../ions/suggestions.js";
 
 export { UserError } from "./errors.js";
+
+/** What a chat changed in its worktree since it started (nothing once archived). */
+export async function diffOfChat(ctx: { db: Db; configFile: string }, chatId: string) {
+  const chat = chatsView.list(ctx.db).find((c) => c.chatId === chatId);
+  if (!chat) throw new UserError(`Unknown chat: ${chatId}`);
+  const worktree = chat.archived ? null : chatsView.worktree(ctx.db, chat.chatId);
+  const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
+  if (!worktree || !project) return { files: [] };
+  return chatDiff(project.path, worktree);
+}
 
 export type Ctx = {
   store: EventStore;
@@ -42,6 +53,7 @@ export type Ctx = {
   runs: RunManager;
   ions: Ions;
   routines: Routines;
+  suggestions: Suggestions;
   configFile: string;
   startedAt: number;
   version: string;
@@ -66,14 +78,7 @@ export const handlers: Handlers = {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
     return { ok: true as const };
   },
-  "chat.diff": async (a, ctx) => {
-    const chat = chatsView.list(ctx.db).find((c) => c.chatId === a.chatId);
-    if (!chat) throw new UserError(`Unknown chat: ${String(a.chatId)}`);
-    const worktree = chat.archived ? null : chatsView.worktree(ctx.db, chat.chatId);
-    const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
-    if (!worktree || !project) return { files: [] };
-    return chatDiff(project.path, worktree);
-  },
+  "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
     renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));
     return { ok: true as const };
@@ -126,10 +131,15 @@ export const handlers: Handlers = {
     await ctx.ions.message(String(a.ionId ?? ""), text);
     return { ok: true as const };
   },
-  "suggestion.answer": (a, ctx) => {
-    ctx.decisions.suggestion(String(a.suggestionId ?? ""), a.keep === true);
+  // ion chief's own suggestions (a routine, a stalled chat), else a project ion's "always?".
+  "suggestion.answer": async (a, ctx) => {
+    const id = String(a.suggestionId ?? "");
+    if (ctx.suggestions.owns(id))
+      await ctx.suggestions.answer(id, { keep: a.keep === true, mute: a.mute === true });
+    else ctx.decisions.suggestion(id, a.keep === true);
     return { ok: true as const };
   },
+  "suggestions.list": (_a, ctx) => ctx.suggestions.list(),
   "projects.add": (a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
