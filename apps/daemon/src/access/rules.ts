@@ -155,17 +155,24 @@ function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
     .map((v) => realish(resolve(c.roots[0] ?? "/", v)));
 }
 
-/** What a search looks for: text matched in files, not a path (its wildcards are a pattern's, not a glob's). */
+/**
+ * What a search looks for: text matched in files, not a path. A glob tool's `pattern` is a path, though (as in
+ * runs/policy.ts).
+ */
 const CONTENT = new Set(["pattern", "query", "regex", "search", "text"]);
+const isContent = (req: ApprovalRequest, k: string) =>
+  CONTENT.has(k) && !(k === "pattern" && /glob/i.test(req.toolName));
 
 /** Every string of a tool's input that can name a path: all but what it searches for, however deep. */
 const pathStrings = (req: ApprovalRequest) =>
-  Object.entries(req.input).flatMap(([k, v]) => (CONTENT.has(k) ? [] : [...strings(v)]));
+  Object.entries(req.input).flatMap(([k, v]) => (isContent(req, k) ? [] : [...strings(v)]));
 
 /**
- * Paths the rule can't fully read, left to the judge: ".." anywhere, a glob's braces or wildcards (they can hide a
- * climb, an absolute path, or match through a link out of the worktree), or a start at your home ("~", $HOME).
+ * Input the rule can't fully read, left to the judge: in any string, "..", a glob's braces (they can hide a climb
+ * or an absolute path) or a start at your home ("~", $HOME); in a path, wildcards too (they can match through a
+ * link out of the worktree). What a search looks for keeps its wildcards.
  */
 const climbs = (req: ApprovalRequest) =>
-  [...strings(req.input)].some((v) => /\$\{?HOME/.test(v)) ||
-  pathStrings(req).some((v) => v.includes("..") || /[{}*?[\]]/.test(v) || v.startsWith("~"));
+  [...strings(req.input)].some(
+    (v) => v.includes("..") || /[{}]/.test(v) || v.startsWith("~") || /\$\{?HOME/.test(v),
+  ) || pathStrings(req).some((v) => /[*?[\]]/.test(v));

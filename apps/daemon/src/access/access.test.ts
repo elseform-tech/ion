@@ -82,6 +82,11 @@ describe("ruleFor, reading and searching", () => {
     expect(ruleFor(tool("read", { file_path: "*/passwd" }), ctx)).toBeNull();
     // What's searched for is text, not a path: its wildcards stay allowed.
     expect(ruleFor(tool("search", { pattern: "tip.*[0-9]?" }), ctx)?.decision).toBe("allow");
+    // Security review, 2026-11-19: a glob tool's pattern is a path; braces, .. and ~ go to the judge in any field.
+    const glob: ApprovalRequest = { ...tool("search", { pattern: "*/passwd" }), toolName: "Glob" };
+    expect(ruleFor(glob, ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "{/etc,src}" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { query: "../x" }), ctx)).toBeNull();
     expect(ruleFor(tool("read", { file_path: `${home}/.ssh/id_rsa` }), ctx)?.decision).toBe("deny");
   });
 
