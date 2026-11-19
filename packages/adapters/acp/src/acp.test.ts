@@ -298,6 +298,21 @@ describe("acp adapter", () => {
     });
   });
 
+  // Real run, 2026-11-19: opencode's key had expired; over ACP it took the prompt and said nothing, and the chat
+  // waited forever. An agent that sends nothing at all after a prompt fails the run, saying so.
+  it("fails a run whose agent says nothing after the prompt", async () => {
+    const events = await turn({ ...fake, silenceMs: 300 }, "silent");
+    expect(events.at(-2)).toMatchObject({
+      type: "error",
+      data: {
+        code: "agent",
+        retryable: false,
+        message: "Fake ACP didn't answer. Check that it's signed in: fake login",
+      },
+    });
+    expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
+  });
+
   it("treats the agent cancelling on its own (after a refusal) as done, not interrupted", async () => {
     expect((await turn(fake, "refuse")).at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
   });

@@ -17,6 +17,8 @@ export type AcpHarness = {
   toCall?: (payload: unknown) => GateCall | null;
   /** `_meta` sent with `session/new` (agent-specific session options). */
   sessionMeta?: Record<string, unknown>;
+  /** How long an agent may say nothing at all after a prompt before the run fails (default 2 minutes). */
+  silenceMs?: number;
 };
 
 export const GROK_BUILD: AcpHarness = {

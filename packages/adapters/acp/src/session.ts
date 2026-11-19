@@ -107,7 +107,7 @@ function startedEvent(
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
-  run: { harness: string; model: string },
+  run: { harness: string; model: string; silent?: { ms: number; why: string } },
 ): Session {
   const events = createEventQueue<AdapterEvent>();
   const state = createAcpState(projectRoots(opts.cwd));
@@ -137,14 +137,17 @@ export function startAcpSession(
     setTimeout(() => c.child.kill(), 100).unref();
   };
 
+  let heard = false;
   c.rpc.onNotification("session/update", (p) => {
+    heard = true;
     for (const e of mapUpdate((p.update ?? {}) as Record<string, unknown>, state)) emit(e);
   });
-  c.rpc.onRequest("session/request_permission", (p) =>
-    interrupted
+  c.rpc.onRequest("session/request_permission", (p) => {
+    heard = true;
+    return interrupted
       ? Promise.resolve({ outcome: { outcome: "cancelled" } })
-      : answerPermission(p, opts.decide, emit),
-  );
+      : answerPermission(p, opts.decide, emit);
+  });
   c.child.on("exit", () => finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : CRASH));
   opts.signal.addEventListener("abort", () => c.child.kill());
 
@@ -153,6 +156,12 @@ export function startAcpSession(
     nativeId: c.sessionId,
     async send({ text: t }) {
       emit(startedEvent(run, opts, c.sessionId));
+      // Not a word after the prompt: the agent is stuck (an expired key leaves opencode like this), so say why.
+      const silent = run.silent;
+      if (silent)
+        setTimeout(() => {
+          if (!heard) finish("failed", { code: "agent", retryable: false, message: silent.why });
+        }, silent.ms).unref();
       c.rpc
         .request("session/prompt", { sessionId: c.sessionId, prompt: promptOf(t, opts.instructions) })
         .then((r) => {

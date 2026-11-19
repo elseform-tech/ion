@@ -11,6 +11,14 @@ import { connect, probeModels, probeSignedIn, setOption } from "./connection.js"
 import type { AcpHarness } from "./harnesses.js";
 import { startAcpSession } from "./session.js";
 
+/** An agent that says nothing at all this long after a prompt is stuck (an expired key does this to opencode). */
+const SILENCE_MS = 120_000;
+
+const silenceOf = (h: AcpHarness) => ({
+  ms: h.silenceMs ?? SILENCE_MS,
+  why: `${h.label} didn't answer. Check that it's signed in: ${h.loginHint}`,
+});
+
 export { type AcpHarness, GROK_BUILD, OPENCODE } from "./harnesses.js";
 
 /** Everything but the model list, which comes from the agent itself. */
@@ -73,7 +81,7 @@ export function createAcpAdapter(
       const model =
         (await setOption(c, "model", opts.model ?? h.defaultModel)) ?? h.defaultModel ?? "default";
       await setOption(c, "thought_level", opts.effort === "max" ? "high" : opts.effort);
-      return startAcpSession(c, opts, { harness: h.id, model });
+      return startAcpSession(c, opts, { harness: h.id, model, silent: silenceOf(h) });
     },
   };
 }

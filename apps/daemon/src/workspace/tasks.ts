@@ -1,6 +1,6 @@
 import type { FilePreview, TaskInfo } from "@ion/schema";
 import { execFile } from "node:child_process";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { open, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, sep } from "node:path";
 import { UserError } from "../api/errors.js";
 
@@ -15,14 +15,20 @@ const run = (cmd: string, args: string[]) =>
     ),
   );
 
-/** Each process's working folder, from lsof's field output (`p<pid>` then `n<path>`). */
-async function cwds(): Promise<Map<number, string>> {
-  const out = await run("lsof", ["-a", "-d", "cwd", "-Fpn"]);
+/** lsof's NUL-ended fields, each without the line break that ends a process's set. */
+const fieldsOf = (out: string) => out.split("\0").map((f) => (f.startsWith("\n") ? f.slice(1) : f));
+
+/**
+ * Each process's working folder, from lsof's field output (`p<pid>`, then `n<path>`). Fields end in NUL (`-F0`), so
+ * a folder name with a line break can't pass for another field.
+ */
+async function cwds(pid?: number): Promise<Map<number, string>> {
+  const out = await run("lsof", ["-a", ...(pid ? ["-p", String(pid)] : []), "-d", "cwd", "-F0pn"]);
   const map = new Map<number, string>();
-  let pid = 0;
-  for (const line of out.split("\n")) {
-    if (line.startsWith("p")) pid = Number(line.slice(1));
-    else if (line.startsWith("n") && pid) map.set(pid, line.slice(1));
+  let at = 0;
+  for (const field of fieldsOf(out)) {
+    if (field.startsWith("p")) at = /^p\d+$/.test(field) ? Number(field.slice(1)) : 0;
+    else if (field.startsWith("n") && at) map.set(at, field.slice(1));
   }
   return map;
 }
@@ -70,6 +76,10 @@ export async function listTasks(worktree: string): Promise<Task[]> {
 export async function stopTask(worktree: string, pid: number): Promise<void> {
   if (!(await listTasks(worktree)).some((t) => t.pid === pid))
     throw new UserError("That isn't running in this chat");
+  // Checked again for this one process right before the signal, so a PID reused meanwhile isn't hit.
+  const dir = await realpath(worktree).catch(() => worktree);
+  const cwd = (await cwds(pid)).get(pid);
+  if (!cwd || !inside(dir, cwd)) throw new UserError("That isn't running in this chat");
   try {
     process.kill(pid, "SIGTERM");
   } catch {
@@ -86,14 +96,28 @@ const IMAGES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
+/** At most `max` bytes of a file, however big it has grown since it was checked. */
+async function readAtMost(path: string, max: number): Promise<Buffer> {
+  const f = await open(path, "r");
+  try {
+    const buf = Buffer.alloc(max);
+    const { bytesRead } = await f.read(buf, 0, max, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await f.close();
+  }
+}
+
 /** A file in the worktree, never outside it (by path or by link), and at most 1 MB. */
 export async function readWorktreeFile(worktree: string, rel: string): Promise<FilePreview> {
   const dir = await realpath(worktree);
   const real = isAbsolute(rel) ? null : await realpath(join(dir, rel)).catch(() => null);
   if (!real || !inside(dir, real)) throw new UserError("That file isn't in this chat");
-  const size = (await stat(real)).size;
-  if (size > MAX) throw new UserError("Too big to preview");
-  const bytes = await readFile(real);
+  const st = await stat(real);
+  if (!st.isFile()) throw new UserError("Can't preview this file");
+  if (st.size > MAX) throw new UserError("Too big to preview");
+  const size = st.size;
+  const bytes = await readAtMost(real, MAX);
   const ext = extname(real).toLowerCase();
   const image = IMAGES[ext];
   if (image)

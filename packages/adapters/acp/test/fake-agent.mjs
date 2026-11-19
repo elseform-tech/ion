@@ -24,6 +24,8 @@ const QUICK = {
   crash: () => process.exit(3),
   ratelimit: (id) => send({ id, error: { code: -32603, message: "Rate limit exceeded (429)" } }),
   badinput: (id) => send({ id, error: { code: -32602, message: "Invalid params" } }),
+  // Like opencode with an expired key: takes the prompt and never says anything.
+  silent: () => {},
 };
 
 /** The prompt's text, and ion's standing instructions (their own first block) apart from it. */

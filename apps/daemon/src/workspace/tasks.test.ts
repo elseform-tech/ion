@@ -80,4 +80,29 @@ describe("reading a worktree's file for the preview", () => {
     writeFileSync(join(wt, "big.txt"), "x".repeat(1_100_000));
     await expect(readWorktreeFile(wt, "big.txt")).rejects.toThrow("Too big to preview");
   });
+  // Security review, 2026-11-19: only a plain file is read (never a FIFO, device or folder), at most 1 MB.
+  it("previews only plain files", async () => {
+    const wt = worktree();
+    mkdirSync(join(wt, "dir"));
+    execFileSync("mkfifo", [join(wt, "pipe")]);
+    await expect(readWorktreeFile(wt, "dir")).rejects.toThrow("Can't preview this file");
+    await expect(readWorktreeFile(wt, "pipe")).rejects.toThrow("Can't preview this file");
+  });
+});
+
+// Security review, 2026-11-19: a folder name with a line break can't make another process look like it's in the
+// worktree (lsof's output is read NUL-separated).
+describe("a worktree whose name has a line break", () => {
+  it("still lists only what's really in it", async () => {
+    const base = worktree();
+    const odd = join(base, "a\np99999\nn" + base);
+    mkdirSync(odd, { recursive: true });
+    const pid = leave(odd);
+    const other = leave(worktree());
+    await new Promise((r) => setTimeout(r, 200));
+    const tasks = (await listTasks(base)).map((t) => t.pid);
+    expect(tasks).toContain(pid);
+    expect(tasks).not.toContain(other);
+    expect(tasks).not.toContain(99999);
+  });
 });
