@@ -7,6 +7,27 @@ const Effort = z.enum(["low", "medium", "high", "max"]);
 
 const Access = z.enum(["auto", "full"]);
 
+/**
+ * When a routine runs, local time: "daily 09:00", "weekdays 09:00", "mon 09:00" (any weekday), "every 4h" (1-23).
+ * The same format @ion/schema's `parseWhen` reads.
+ */
+export const WHEN =
+  /^((daily|weekdays|sun|mon|tue|wed|thu|fri|sat) ([01]\d|2[0-3]):[0-5]\d|every ([1-9]|1\d|2[0-3])h)$/;
+
+/** Something a project's ion does on a schedule: a thread titled `name`, briefed with `text`. */
+const Routine = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(80),
+  when: z.string().regex(WHEN, "must be like daily 09:00, weekdays 09:00, mon 09:00 or every 4h"),
+  text: z.string().min(1).max(4000),
+  /** Off: it doesn't run until you turn it on. */
+  on: z.boolean().default(true),
+  /** The effort its threads run at; absent: the project's. */
+  effort: Effort.optional(),
+  /** The due time (ISO) of the one run you skipped. */
+  skip: z.string().optional(),
+});
+
 const Project = z.object({
   id: z.string().min(1),
   path: z.string().min(1),
@@ -27,6 +48,8 @@ const Project = z.object({
   /** The model and effort its ion's threads run on (else the agent's own defaults). */
   model: z.string().min(1).max(200).optional(),
   effort: Effort.optional(),
+  /** What its ion does on a schedule. */
+  routines: z.array(Routine).optional(),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
@@ -51,6 +74,8 @@ const UserConfigSchema = z.looseObject({
       judge: z.string().default("claude-code:haiku"),
     })
     .prefault({}),
+  /** Pause all: no routine runs until you resume. Absent: none paused. */
+  routines: z.looseObject({ paused: z.boolean().default(false) }).optional(),
   resources: z
     .looseObject({ max_runs: z.union([z.literal("auto"), z.number().int().min(1)]).default("auto") })
     .default({ max_runs: "auto" }),
@@ -58,6 +83,7 @@ const UserConfigSchema = z.looseObject({
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
 export type ProjectEntry = UserConfig["projects"][number];
+export type RoutineEntry = NonNullable<ProjectEntry["routines"]>[number];
 
 export const DEFAULT_CONFIG: UserConfig = Object.freeze(UserConfigSchema.parse({})) as UserConfig;
 

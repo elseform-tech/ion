@@ -109,14 +109,14 @@ export class RunManager {
    */
   async ask(
     args: AskArgs,
-    opts: { request?: string; shown?: string; by?: "ion" } = {},
+    opts: { request?: string; shown?: string; by?: "ion"; title?: string } = {},
   ): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     // A new chat with no project goes to `default` (made the first time): every thread has a project.
     if (!args.chatId && !args.projectId)
       args = { ...args, projectId: await defaultProject(this.ctx.configFile) };
-    const chat = this.chatFor(args);
+    const chat = this.chatFor(args, opts.title);
     // An existing chat stays in its own project: its worktree belongs to that repo.
     const repo = projectPath(this.ctx.configFile, chat.chatId ? chat.projectId : args.projectId);
     if (this.stopping) throw new UserError("ion is stopping");
@@ -369,12 +369,13 @@ export class RunManager {
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
   }
 
-  private chatFor(args: { chatId?: string; projectId?: string; text: string }): Chat {
+  /** `title`: a new chat's own title (a routine's name), instead of one from the text. */
+  private chatFor(args: { chatId?: string; projectId?: string; text: string }, title?: string): Chat {
     if (!args.chatId)
       return {
         chatId: null,
         projectId: args.projectId ?? null,
-        title: titleOf(args.text),
+        title: title ?? titleOf(args.text),
       };
     const chat = chatsView.list(this.db).find((c) => c.chatId === args.chatId);
     if (!chat) throw new UserError(`Unknown chat: ${args.chatId}`);

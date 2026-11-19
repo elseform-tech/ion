@@ -15,6 +15,7 @@ Commands:
                                      your own words
   chats                              Your chats
   ions                               ion and your projects' ions
+  routines                           What your projects' ions do on a schedule
   memory                             What ion remembers
   decisions                          Your answers, and what came of them
   harnesses                          Coding agents and their models
@@ -112,3 +113,32 @@ Coding agents and their models
 
 Options:
   -h, --help  display help for command
+
+---
+
+Usage: ion routines [options] [command]
+
+What your projects' ions do on a schedule
+
+Options:
+  -h, --help             display help for command
+
+Commands:
+  ls                     List them and when each runs next
+  add [options] <name>   Give a project's ion a routine
+  remove [options] <id>  Remove a routine
+  run [options] <id>     Run it now
+  help [command]         display help for command
+
+---
+
+Usage: ion routines add [options] <name>
+
+Give a project's ion a routine
+
+Options:
+  -p, --project <id>  Project
+  -w, --when <when>   daily 9:00, weekdays 9:00, mon 9:00 or every 4h
+  -d, --do <text>     What to do
+  --effort <level>    low, medium, high or max
+  -h, --help          display help for command

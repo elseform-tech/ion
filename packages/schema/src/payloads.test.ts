@@ -81,6 +81,36 @@ const valid: [string, Record<string, unknown>, string?][] = [
     },
     "daemon",
   ],
+  // Plan 10: routines.
+  [
+    "routine.ran",
+    {
+      projectId: "p",
+      routineId: "r",
+      name: "Check",
+      due: "2026-11-19T09:00:00.000Z",
+      by: "schedule",
+      chatId: "c3",
+    },
+    "daemon",
+  ],
+  [
+    "routine.ran",
+    { projectId: "p", routineId: "r", name: "Check", due: null, by: "you", why: "No agent" },
+    "daemon",
+  ],
+  [
+    "routine.ran",
+    {
+      projectId: "p",
+      routineId: "r",
+      name: "Check",
+      due: "2026-11-19T09:00:00.000Z",
+      by: "schedule",
+      skipped: true,
+    },
+    "daemon",
+  ],
 ];
 
 const invalid: [string, Record<string, unknown>, string?][] = [
@@ -98,6 +128,9 @@ const invalid: [string, Record<string, unknown>, string?][] = [
   ["ion.said", { text: "x", card: { kind: "threads" } }, "daemon"],
   ["ion.said", { text: "x", card: { kind: "nope" } }, "daemon"],
   ["suggestion.answered", { suggestionId: "s1", keep: "yes" }, "daemon"],
+  ["routine.ran", { projectId: "p", routineId: "r", name: "x", due: "soon", by: "schedule" }, "daemon"],
+  ["routine.ran", { projectId: "p", routineId: "r", name: "x", due: null, by: "cron" }, "daemon"],
+  ["routine.ran", { projectId: "p", routineId: "r", name: "x", due: null, by: "you" }, "adapter"],
 ];
 
 describe("event payloads", () => {

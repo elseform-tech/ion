@@ -9,6 +9,7 @@ import { decisionsCommands } from "./commands/decisions.js";
 import { memoryCommands } from "./commands/memory.js";
 import { needsCommands } from "./commands/needs.js";
 import { projectCommands } from "./commands/projects.js";
+import { routinesCommands } from "./commands/routines.js";
 import { statusCommand } from "./commands/status.js";
 
 const program = new Command("ion").option("--json", "Machine-readable output").showHelpAfterError();
@@ -21,6 +22,7 @@ askCommand(program, out);
 needsCommands(program, out);
 chatsCommands(program, out);
 ionsCommands(program, out);
+routinesCommands(program, out);
 memoryCommands(program, out);
 decisionsCommands(program, out);
 harnessesCommand(program, out);

@@ -11,6 +11,14 @@ export type RunRow = {
   finishedAt: string | null;
 };
 
+export type RunSince = {
+  runId: string;
+  chatId: string;
+  status: string;
+  cost: number | null;
+  startedAt: string;
+};
+
 const ended = new Set<string>(RUN_END_STATUSES);
 
 /** One row per run: its latest status. */
@@ -23,6 +31,8 @@ const DAY_MS = 86_400_000;
 export const runsView: View & {
   rows(db: Db): RunRow[];
   stats(db: Db, chatIds: string[], now: Date): RunStats;
+  /** Some chats' runs that started at or after `since` (ISO), newest first. */
+  since(db: Db, chatIds: string[], since: string): RunSince[];
 } = {
   name: "runs",
   version: 2,
@@ -86,6 +96,16 @@ export const runsView: View & {
       costUsd: Math.round(rows.reduce((n, r) => n + (r.cost ?? 0), 0) * 100) / 100,
       perDay,
     };
+  },
+  since(db, chatIds, since) {
+    if (!chatIds.length) return [];
+    const marks = chatIds.map(() => "?").join(",");
+    return db
+      .prepare(
+        `SELECT run_id AS runId, chat_id AS chatId, status, cost, started_at AS startedAt FROM view_runs
+         WHERE chat_id IN (${marks}) AND started_at >= ? ORDER BY started_at DESC, rowid DESC`,
+      )
+      .all(...chatIds, since) as RunSince[];
   },
   rows(db) {
     return db

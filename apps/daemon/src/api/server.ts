@@ -21,6 +21,7 @@ import { Ions } from "../ions/service.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
 import { harnessInfos } from "./commands.js";
+import { Routines } from "../scheduler/index.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -34,6 +35,8 @@ export async function startServer(opts: {
   const ctx = openState(opts, () => `http://127.0.0.1:${port}`);
   const { store, db } = ctx;
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
+  // Routines run on their schedule while the daemon runs (a run missed while it was stopped goes now).
+  const stopRoutines = ctx.routines.start();
   // Answers still waiting when ion stopped go into their chats now.
   void ctx.decisions.resume().catch(() => {});
   const auth = createAuth();
@@ -62,6 +65,7 @@ export async function startServer(opts: {
     port,
     token: auth.token,
     close: async () => {
+      stopRoutines();
       await ctx.runs.shutdown();
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
@@ -166,6 +170,13 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   });
   late.decisions = decisions;
   const ions = startIons({ store, db, configFile: opts.configFile, runs, quick: ionQuick });
+  // A routine's time came (or you ran it now): its ion starts its thread.
+  const routines = new Routines({
+    store,
+    db,
+    configFile: opts.configFile,
+    start: (projectId, r, by) => ions.routine(projectId, r, by),
+  });
   const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
-  return { store, db, needs, decisions, grants, runs, ions, ...base0 };
+  return { store, db, needs, decisions, grants, runs, ions, routines, ...base0 };
 }

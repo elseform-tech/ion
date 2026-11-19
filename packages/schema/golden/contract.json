@@ -33,6 +33,7 @@
     "claim.checked",
     "checks.finished",
     "routine.proposed",
+    "routine.ran",
     "briefing.written",
     "signal.raised",
     "proposal.made",
@@ -77,6 +78,12 @@
     "chat.diff",
     "memory.list",
     "memory.forget",
-    "harnesses.list"
+    "harnesses.list",
+    "routine.add",
+    "routine.update",
+    "routine.remove",
+    "routine.run",
+    "routines.pause",
+    "activity.list"
   ]
 }

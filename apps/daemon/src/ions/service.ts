@@ -19,7 +19,7 @@ type Ask = (
     effort?: Effort;
     access: "auto";
   },
-  opts: { by: "ion"; request?: string },
+  opts: { by: "ion"; request?: string; title?: string },
 ) => Promise<{ chatId: string; runId: string }>;
 
 /** A title without its closing stops or spaces ("Fix the cart." → "Fix the cart"), so ": done." reads right. */
@@ -91,20 +91,35 @@ export class Ions {
     const d = said === null ? null : parseProjectDecision(said);
     if (!d) return this.say(projectId, NO_MODEL);
     if (!d.thread) return this.say(projectId, d.answer ?? "");
-    const t = await this.thread(projectId, d.thread, text);
+    const t = await this.thread(projectId, d.thread, { request: text });
     if ("why" in t) this.say(projectId, [d.answer, t.why].filter(Boolean).join(" "));
     else this.say(projectId, d.answer ?? "On it.", { kind: "threads", threads: [t] });
   }
 
-  /** Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. */
   /**
-   * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `request` is what the judge
-   * treats as your request: your own message (to ion chief), never a brief its model wrote.
+   * A routine's time came (or you ran it now): its thread, titled by its name and briefed with its text (your own
+   * words, so the judge reads them as your request), at its effort.
+   */
+  async routine(
+    projectId: string,
+    r: { name: string; text: string; effort?: Effort },
+    by: "schedule" | "you",
+  ): Promise<{ chatId: string; projectId: string } | { why: string }> {
+    const t = await this.thread(projectId, r.text, { request: r.text, title: r.name, effort: r.effort });
+    if ("why" in t) this.say(projectId, `${r.name} didn't start: ${t.why}`);
+    else this.say(projectId, by === "you" ? "On it." : "On schedule.", { kind: "threads", threads: [t] });
+    return t;
+  }
+
+  /**
+   * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `o.request` is what the
+   * judge treats as your request: your own message (to ion chief), never a brief its model wrote. `o.title`: the
+   * thread's title; `o.effort`: its effort, over the project's.
    */
   private async thread(
     projectId: string,
     text: string,
-    request?: string,
+    o: { request?: string; title?: string; effort?: Effort } = {},
   ): Promise<{ chatId: string; projectId: string } | { why: string }> {
     const harness = await this.agentFor(projectId);
     try {
@@ -114,9 +129,11 @@ export class Ions {
         text,
         ...(harness ? { harness } : {}),
         ...this.brainOf(projectId, harness),
+        ...(o.effort ? { effort: o.effort } : {}),
         access: "auto" as const,
       };
-      const { chatId } = await this.d.runs.ask(args, { by: "ion", ...(request ? { request } : {}) });
+      const opts = { by: "ion" as const, ...(o.request ? { request: o.request } : {}) };
+      const { chatId } = await this.d.runs.ask(args, o.title ? { ...opts, title: o.title } : opts);
       return { chatId, projectId };
     } catch (e) {
       if (e instanceof UserError) return { why: e.message };
@@ -151,7 +168,7 @@ export class Ions {
     for (const { projectId, brief } of r.route) {
       // The brief is ion chief's words, not yours.
       this.say(projectId, `ion asked: ${JSON.stringify(brief)}`);
-      const t = await this.thread(projectId, brief, text);
+      const t = await this.thread(projectId, brief, { request: text });
       if ("why" in t) missed.push(`Couldn't reach ${projectId}: ${t.why}`);
       else {
         threads.push(t);

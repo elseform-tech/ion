@@ -393,6 +393,40 @@ describe("ion threads' request and agent", () => {
   });
 });
 
+// Plan 10: a routine's thread starts like any of its ion's: Auto, by ion, on its agent.
+describe("a routine's thread", () => {
+  const routine = { id: "m", name: "Morning check", when: "daily 09:00", text: "Run the tests.", on: true };
+
+  it("is titled by its name, briefed with its text, judged by it, at its effort", async () => {
+    const t = await ions().routine("payments-api", { ...routine, effort: "low" as const }, "schedule");
+    expect(t).toEqual({ chatId: "t1", projectId: "payments-api" });
+    expect(ask).toHaveBeenCalledWith(
+      {
+        projectId: "payments-api",
+        text: "Run the tests.",
+        harness: "opencode",
+        effort: "low",
+        access: "auto",
+      },
+      { by: "ion", request: "Run the tests.", title: "Morning check" },
+    );
+    expect(said("payments-api")).toEqual([
+      {
+        text: "On schedule.",
+        card: { kind: "threads", threads: [{ chatId: "t1", projectId: "payments-api" }] },
+      },
+    ]);
+  });
+
+  it("says it started when you run it now, and why when it can't", async () => {
+    await ions().routine("payments-api", routine, "you");
+    expect(said("payments-api")[0]?.text).toBe("On it.");
+    ask.mockRejectedValueOnce(new UserError("No agent is ready"));
+    expect(await ions().routine("payments-api", routine, "schedule")).toEqual({ why: "No agent is ready" });
+    expect(said("payments-api")[1]).toEqual({ text: "Morning check didn't start: No agent is ready" });
+  });
+});
+
 describe("parseRoute", () => {
   const projects = ["storefront", "payments-api"];
   it("keeps routes to known projects, never default", () => {

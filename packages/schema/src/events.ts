@@ -38,6 +38,7 @@ export const DAEMON_EVENT_TYPES = [
   "claim.checked",
   "checks.finished",
   "routine.proposed",
+  "routine.ran",
   "briefing.written",
   "signal.raised",
   "proposal.made",
@@ -83,6 +84,7 @@ export const EV = {
   claimChecked: "claim.checked",
   checksFinished: "checks.finished",
   routineProposed: "routine.proposed",
+  routineRan: "routine.ran",
   briefingWritten: "briefing.written",
   signalRaised: "signal.raised",
   proposalMade: "proposal.made",
@@ -233,6 +235,20 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     by: z.enum(["ion", "agent", "you"]),
   }),
   "decision.forgotten": z.object({ decisionId: z.string() }),
+  /**
+   * A routine's time came (by "schedule", for the slot `due`) or you ran it now (by "you", due null): the thread it
+   * started, why it couldn't start, or that you skipped this one. One per slot: missed slots run once, as the last.
+   */
+  "routine.ran": z.object({
+    projectId: z.string(),
+    routineId: z.string(),
+    name: z.string(),
+    due: z.iso.datetime().nullable(),
+    by: z.enum(["schedule", "you"]),
+    chatId: z.string().optional(),
+    why: z.string().optional(),
+    skipped: z.literal(true).optional(),
+  }),
   "run.queued": z.object({}),
   "run.retrying": z.object({
     attempt: z.number().int().min(1),
