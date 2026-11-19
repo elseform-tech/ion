@@ -52,6 +52,8 @@ const Project = z.object({
   routines: z.array(Routine).optional(),
   /** What the project is, in a line or two (its ion writes it); absent: its README's first paragraph. */
   profile: z.string().max(300).optional(),
+  /** A profile its ion suggested; ion never reads it as the profile until you accept it in Settings. */
+  profileSuggestion: z.string().max(300).optional(),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.

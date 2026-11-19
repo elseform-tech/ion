@@ -35,7 +35,7 @@ const TITLES = 5;
 type Ion = {
   scope: IonScope;
   d: IonDeps;
-  /** The key's projects that still exist, never `default`; for ion chief, only those shared with it. */
+  /** The key's projects that still exist, never `default`; ion chief's shared with it, a project's ion its own. */
   projects(): ProjectEntry[];
   /** The project, when this key may see it; else "Not allowed". */
   need(projectId: string): ProjectEntry;
@@ -47,7 +47,8 @@ function ionOf(scope: IonScope, d: IonDeps): Ion {
       (p) =>
         scope.projects.includes(p.id) &&
         p.id !== DEFAULT_PROJECT &&
-        (scope.ionId !== "chief" || p.shareWithIon !== false),
+        // A project's ion sees its own project only, whatever its key lists.
+        (scope.ionId === "chief" ? p.shareWithIon !== false : p.id === scope.ionId),
     );
   const need = (projectId: string) => {
     const p = projects().find((x) => x.id === projectId);
@@ -164,7 +165,9 @@ function needsTools(server: McpServer, ion: Ion): void {
       inputSchema: { projectId: z.string().min(1) },
     },
     guard(({ projectId }: { projectId: string }) => {
-      const list = decisionsView.list(db, ion.need(projectId).id);
+      // An "everywhere" decision made in a project this key can't see stays hidden.
+      const seen = new Set(idsOf(ion));
+      const list = decisionsView.list(db, ion.need(projectId).id).filter((x) => seen.has(x.projectId));
       return ok(wrapData("your decisions", list.map((x) => decisionLine(x, projectId)).join("\n")));
     }),
   );
@@ -214,10 +217,19 @@ function threadTool(server: McpServer, ion: Ion): void {
     guard(async ({ projectId, brief }: { projectId: string; brief: string }) => {
       if (!d.startThread) throw new UserError("Not available here");
       ion.need(projectId);
-      if (d.grants.noteThread(scope.turnId) > PER_TURN)
+      // A slot is taken before starting (two calls at once can't both take the 5th) and given back unless it started.
+      if (d.grants.noteThread(scope.turnId) > PER_TURN) {
+        d.grants.noteThread(scope.turnId, -1);
         throw new UserError("That's enough threads for one turn");
-      const r = await d.startThread(projectId, brief, scope.turnId);
-      if ("why" in r) throw new UserError(r.why);
+      }
+      const r = await d.startThread(projectId, brief, scope.turnId).catch((e: unknown) => {
+        d.grants.noteThread(scope.turnId, -1);
+        throw e;
+      });
+      if ("why" in r) {
+        d.grants.noteThread(scope.turnId, -1);
+        throw new UserError(r.why);
+      }
       return ok(`Started ${r.chatId}`);
     }),
   );
@@ -228,19 +240,21 @@ function profileTool(server: McpServer, ion: Ion): void {
   server.registerTool(
     "set_profile",
     {
-      description: "Say what your project is, in a line or two: what ion chief reads to send it work.",
+      description:
+        "Suggest what your project is, in a line or two. The user decides in Settings whether ion uses it.",
       inputSchema: { text: z.string().min(1).max(PROFILE_CHARS) },
     },
     guard(({ text }: { text: string }) => {
-      const projectId = ion.need(scope.ionId).id;
-      const profile = cleanProfile(text);
-      if (!profile) throw new UserError("A profile can't be empty");
+      // Security review, 2026-11-19: an agent's words never become the profile ion chief reads; only a suggestion.
+      const profileSuggestion = cleanProfile(text);
+      if (!profileSuggestion) throw new UserError("A profile can't be empty");
       const { config, error } = loadUserConfig(d.configFile);
       // A config ion can't read loads as the defaults: saving that would drop every project.
-      if (error) throw new UserError(error);
-      const projects = config.projects.map((p) => (p.id === projectId ? { ...p, profile } : p));
+      if (error) throw new UserError("Can't read the config");
+      const projectId = ion.need(scope.ionId).id;
+      const projects = config.projects.map((p) => (p.id === projectId ? { ...p, profileSuggestion } : p));
       saveUserConfig(d.configFile, { ...config, projects });
-      return ok("Saved");
+      return ok("Saved as a suggestion; the user decides in Settings.");
     }),
   );
 }

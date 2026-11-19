@@ -1,4 +1,5 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { linkSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,6 +22,29 @@ describe("profileOf", () => {
     ).toHaveLength(300);
     expect(profileOf({ id: "a", path: dir(), starred: false })).toBe("");
     expect(profileOf({ id: "a", path: "/nowhere/at/all", starred: false })).toBe("");
+  });
+});
+
+// Task 1 review, 2026-11-19: a huge README is never read whole; its head has the first paragraph.
+it("reads only the head of a README over 1 MB", () => {
+  const path = dir(`# Big\n\nA big project.\n\n${"x".repeat(2 * 1024 * 1024)}\n`);
+  expect(profileOf({ id: "a", path, starred: false })).toBe("A big project.");
+});
+
+// Security review, 2026-11-19: a cloned repo's README could be a link to your secrets.
+describe("a README that isn't a plain file of the repo", () => {
+  it("yields nothing for a symlink out of the repo, a hard link or a FIFO", () => {
+    const secret = join(dir(), "secret.txt");
+    writeFileSync(secret, "My secret token.\n");
+    const linked = dir();
+    symlinkSync(secret, join(linked, "README.md"));
+    expect(profileOf({ id: "a", path: linked, starred: false })).toBe("");
+    const hard = dir();
+    linkSync(secret, join(hard, "README.md"));
+    expect(profileOf({ id: "a", path: hard, starred: false })).toBe("");
+    const fifo = dir();
+    execFileSync("mkfifo", [join(fifo, "README.md")]);
+    expect(profileOf({ id: "a", path: fifo, starred: false })).toBe("");
   });
 });
 

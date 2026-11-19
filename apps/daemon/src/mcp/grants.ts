@@ -23,8 +23,8 @@ export type Grants = {
   check(key: string, kind?: KeyKind): Scope | null;
   /** Counts one memory write for the run or turn; the count goes away when its grants are revoked. */
   noteWrite(id: string): number;
-  /** Counts one thread started in the turn; the count goes away when its grants are revoked. */
-  noteThread(id: string): number;
+  /** Counts one thread started in the turn (-1 gives a slot back); the count goes away with its grants. */
+  noteThread(id: string, by?: 1 | -1): number;
 };
 
 const hash = (key: string) => createHash("sha256").update(key).digest("hex");
@@ -34,8 +34,8 @@ const idOf = (s: Scope) => (s.kind === "run" ? s.runId : s.turnId);
 export function createGrants(): Grants {
   const byHash = new Map<string, { scope: Scope; kind: KeyKind }>();
   const counts = new Map<string, number>();
-  const note = (id: string, what: Counted) => {
-    const n = (counts.get(`${what}:${id}`) ?? 0) + 1;
+  const note = (id: string, what: Counted, by = 1) => {
+    const n = (counts.get(`${what}:${id}`) ?? 0) + by;
     counts.set(`${what}:${id}`, n);
     return n;
   };
@@ -51,7 +51,7 @@ export function createGrants(): Grants {
       counts.delete(`thread:${id}`);
     },
     noteWrite: (id) => note(id, "write"),
-    noteThread: (id) => note(id, "thread"),
+    noteThread: (id, by = 1) => note(id, "thread", by),
     check(key, kind = "mcp") {
       const s = byHash.get(hash(key));
       return s && s.kind === kind ? structuredClone(s.scope) : null;

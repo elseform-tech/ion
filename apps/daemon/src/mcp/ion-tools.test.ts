@@ -115,10 +115,48 @@ describe("ion tools", () => {
     expect(await c.callTool({ name: "open_needs", arguments: { projectId: "app" } })).toMatchObject(
       NOT_ALLOWED,
     );
-    await c.callTool({ name: "set_profile", arguments: { text: "Cart, checkout\u0007 and orders" } });
-    expect(loadUserConfig(configFile).config.projects.find((p) => p.id === "shop")?.profile).toBe(
-      "Cart, checkout and orders",
-    );
+    await c.close();
+  });
+
+  // Security review, 2026-11-19: an agent's words never become what ion chief reads as a project's profile; a
+  // project's ion only suggests one, and the user decides in Settings.
+  it("set_profile saves a suggestion that ion chief never reads", async () => {
+    const s = await shopIon();
+    const r = await s.callTool({
+      name: "set_profile",
+      arguments: { text: "Cart, checkout\u0007 and orders" },
+    });
+    expect(text(r)).toBe("Saved as a suggestion; the user decides in Settings.");
+    const shop = loadUserConfig(configFile).config.projects.find((p) => p.id === "shop");
+    expect(shop?.profileSuggestion).toBe("Cart, checkout and orders");
+    expect(shop?.profile).toBeUndefined();
+    await s.close();
+    const c = await chief();
+    const listed = text(await c.callTool({ name: "projects", arguments: {} }));
+    expect(listed).not.toContain("Cart, checkout and orders");
+    expect(listed).toContain("The shop's cart and checkout.");
+    await c.close();
+  });
+
+  // Security review, 2026-11-19: an "everywhere" decision made in a project kept from ion chief stays hidden.
+  it("shows no decision made in a project the key can't see", async () => {
+    const where = { chatId: "c3", runId: "r8" };
+    const decided = { needId: "n", choice: "Yes", scope: "everywhere", by: "you" };
+    put({
+      ...where,
+      type: "decision.recorded",
+      data: { ...decided, decisionId: "dp", projectId: "private", question: "Private Q?" },
+    });
+    put({
+      chatId: "c1",
+      runId: "r0",
+      type: "decision.recorded",
+      data: { ...decided, decisionId: "da", projectId: "app", question: "App Q?" },
+    });
+    const c = await chief();
+    const shown = text(await c.callTool({ name: "decisions", arguments: { projectId: "app" } }));
+    expect(shown).toContain("App Q?");
+    expect(shown).not.toContain("Private Q?");
     await c.close();
   });
 
@@ -191,6 +229,43 @@ describe("ion tools", () => {
     const c = await chief();
     const r = await c.callTool({ name: "start_thread", arguments: { projectId: "shop", brief: "x" } });
     expect(r).toMatchObject({ isError: true, content: [{ text: "Not available here" }] });
+    await c.close();
+  });
+
+  // Task 1 review, 2026-11-19: a project's ion sees its own project whatever its key lists.
+  it("a project's ion sees only its own project even when its key lists more", async () => {
+    const c = await client(
+      grants.create({ kind: "ion", ionId: "shop", projects: ["shop", "app"], turnId: "t3" }),
+    );
+    const listed = text(await c.callTool({ name: "projects", arguments: {} }));
+    expect(listed).toContain("shop:");
+    expect(listed).not.toContain("app:");
+    expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c1" } })).toMatchObject(
+      NOT_ALLOWED,
+    );
+    await c.close();
+  });
+
+  // Task 1 review, 2026-11-19: a config ion can't read is never saved over, and its text isn't shown to the ion.
+  it("refuses set_profile when the config can't be read", async () => {
+    const c = await shopIon();
+    writeFileSync(configFile, "projects = [ broken");
+    const r = await c.callTool({ name: "set_profile", arguments: { text: "Orders" } });
+    expect(r).toMatchObject({ isError: true, content: [{ text: "Can't read the config" }] });
+    await c.close();
+  });
+
+  // Task 1 review, 2026-11-19: a thread that didn't start doesn't use one of the turn's 5.
+  it("counts only threads that started", async () => {
+    startThread.mockResolvedValue({ why: "Busy" });
+    const c = await chief();
+    for (let i = 0; i < 5; i++) {
+      const r = await c.callTool({ name: "start_thread", arguments: { projectId: "shop", brief: "x" } });
+      expect(r).toMatchObject({ isError: true, content: [{ text: "Busy" }] });
+    }
+    startThread.mockResolvedValue({ chatId: "t-shop" });
+    const r = await c.callTool({ name: "start_thread", arguments: { projectId: "shop", brief: "x" } });
+    expect(text(r)).toBe("Started t-shop");
     await c.close();
   });
 

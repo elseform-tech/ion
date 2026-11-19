@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import type { ProjectEntry } from "@ion/config";
 import { stripControl } from "@ion/schema";
 
@@ -14,11 +14,32 @@ export const cleanProfile = (s: string): string =>
 /** A README line that isn't prose: a heading, an image or badge, HTML. */
 const notProse = (line: string) => /^(#|!\[|\[!\[|<)/.test(line);
 
+const README_BYTES = 16 * 1024;
+
+/**
+ * The head of the project's README.md: only a plain file inside the project (no link out of it, no hard link, FIFO
+ * or device), at most 16 KB. Security review, 2026-11-19: a cloned repo's README could be a link to your secrets.
+ */
 function readmeOf(path: string): string {
+  const file = join(path, "README.md");
+  let fd: number;
   try {
-    return readFileSync(join(path, "README.md"), "utf8");
+    // O_NONBLOCK: a FIFO or device named README.md must not block the daemon.
+    fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
     return "";
+  }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.nlink !== 1) return "";
+    const rel = relative(realpathSync(path), realpathSync(file));
+    if (rel.startsWith("..") || isAbsolute(rel)) return "";
+    const buf = Buffer.alloc(Math.min(st.size, README_BYTES));
+    return buf.toString("utf8", 0, readSync(fd, buf, 0, buf.length, 0));
+  } catch {
+    return "";
+  } finally {
+    closeSync(fd);
   }
 }
 

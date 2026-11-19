@@ -197,6 +197,12 @@ describe("gate keys", () => {
     expect((await post(`/gate/${gateKey}`)).status).toBe(401);
   });
 
+  // Task 1 review, 2026-11-19: an ion's key (for ion's MCP server) never opens the gate.
+  it("refuses an ion's key at the gate", async () => {
+    const ionKey = grants.create({ kind: "ion", ionId: "chief", projects: ["app"], turnId: "t1" });
+    expect((await post(`/gate/${ionKey}`)).status).toBe(401);
+  });
+
   it("is a 400 (a deny, for the hook) when the call can't be read", async () => {
     grants = createGrants();
     const key = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r1" }, "gate");
