@@ -436,6 +436,10 @@ describe("daemon api", () => {
       "That file isn't in this chat",
     );
     expect(await client.call("chat.tasks", { chatId })).toEqual([]);
+    // The user, 2026-11-19: the workspace preview should also list artifacts.
+    const made = await client.call("chat.artifacts", { chatId });
+    expect(made.map((f) => f.path)).toContain("notes.md");
+    expect(await client.call("chat.artifacts", { chatId: "nope" })).toEqual([]);
     await expect(client.call("task.stop", { chatId, pid: 1 })).rejects.toThrow(
       "That isn't running in this chat",
     );

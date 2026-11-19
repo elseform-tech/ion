@@ -122,6 +122,14 @@ export type IonSettings = { quick: string; effort: EffortLevel | null };
 /** A process a chat's agent left running, in its worktree or anywhere else; `where` is its working folder. */
 export type TaskInfo = { pid: number; command: string; elapsed: string; ports: number[]; where: string };
 
+/** A file a chat's runs made, as the Artifacts tab lists it; `path` is relative to the worktree. */
+export type ArtifactInfo = {
+  path: string;
+  size: number;
+  changedAt: string;
+  kind: "image" | "html" | "text" | "binary";
+};
+
 /** A file as the preview shows it: text, HTML (rendered locked), an image, or a binary it can't show. */
 export type FilePreview =
   | { path: string; kind: "text" | "html"; text: string; size: number }
@@ -172,6 +180,8 @@ export type Commands = {
   "ion.stats": { args: { ionId: string }; result: IonStats };
   /** What a chat's agent left running (dev servers, watchers), wherever it runs, with PIDs and ports. */
   "chat.tasks": { args: { chatId: string }; result: TaskInfo[] };
+  /** The files a chat's runs made (newest first, at most 200); none until it has a workspace. */
+  "chat.artifacts": { args: { chatId: string }; result: ArtifactInfo[] };
   /** Stops one of them (only if it's still that chat's). */
   "task.stop": { args: { chatId: string; pid: number }; result: { ok: true } };
   /** A file in a chat's worktree, for the preview (at most 1 MB). */
@@ -338,6 +348,7 @@ export const COMMANDS = [
   "settings.get",
   "ion.stats",
   "chat.tasks",
+  "chat.artifacts",
   "task.stop",
   "chat.file",
   "settings.update",
