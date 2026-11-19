@@ -47,7 +47,25 @@ function OwnAnswer({ busy, onSend }: { busy: boolean; onSend: (text: string) => 
 
 type Answer = (pick: Pick) => void;
 
-/** The open panel's body: why it's asked, each option with its reasoning, your own words, and Always. */
+/** Why it's asked: at most 3 lines, all of it on a click. */
+function Why({ text }: { text: string }) {
+  const [full, setFull] = useState(false);
+  return (
+    <div
+      className={`why${full ? "" : " clamp"}`}
+      role="button"
+      tabIndex={0}
+      aria-expanded={full}
+      title={full ? undefined : text}
+      onClick={() => setFull(!full)}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setFull(!full)}
+    >
+      {text}
+    </div>
+  );
+}
+
+/** The open panel's body: why it's asked, one line per option with its reasoning, your own words, and Always. */
 function Details(p: {
   q: Question;
   busy: boolean;
@@ -57,28 +75,32 @@ function Details(p: {
 }) {
   return (
     <div className="qd">
-      {p.q.why && <div className="why">{p.q.why}</div>}
+      {p.q.why && <Why text={p.q.why} />}
       {p.q.choices.map((c, i) => (
         <button
           type="button"
           key={`${i}-${c.label}`}
-          className="bp-row"
+          className="qopt"
+          title={c.consequence}
           disabled={p.busy}
           onClick={() => p.answer({ choice: i + 1 })}
         >
-          <span className="g">
-            {c.label}
-            <small>{c.consequence}</small>
-          </span>
+          <b>{c.label}</b>
+          <span>{c.consequence}</span>
           {c.recommended && <Star className="rec" aria-label="Recommended" />}
         </button>
       ))}
       <div className="qd-f">
         <OwnAnswer busy={p.busy} onSend={(text) => p.answer({ text })} />
         {!p.q.blocked && (
-          <label>
-            <input type="checkbox" checked={p.always} onChange={(e) => p.setAlways(e.target.checked)} />
-            Always for this project
+          <label title="Always for this project">
+            <input
+              type="checkbox"
+              aria-label="Always for this project"
+              checked={p.always}
+              onChange={(e) => p.setAlways(e.target.checked)}
+            />
+            Always
           </label>
         )}
       </div>

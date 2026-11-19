@@ -68,17 +68,18 @@ const cards = [
 
 // Plan 11: ion chief's suggestion cards, as the lab draws them.
 describe("ion chief's suggestions", () => {
+  // The user, 2026-11-19: slimmer cards. Two lines: what it asks with your answer beside it; then its evidence,
+  // when and where, in small words.
   it("draws a routine card: its question, the days you asked, when and where it would run", async () => {
     const { container } = render(<Ions client={client(cards)} onOpenChat={() => {}} />);
     await waitFor(() => expect(container.querySelectorAll(".sugg")).toHaveLength(2));
     const card = container.querySelector(".sugg")!;
     expect(card.querySelector("b")?.textContent).toBe("Make “Summarize PRs” a routine?");
-    expect([...card.querySelectorAll(".ev > *")].map((x) => x.textContent)).toEqual([
+    expect(card.querySelector(".sh .acts")?.textContent).toContain("Add routine");
+    expect([...card.querySelectorAll(".sm2 > *")].map((x) => x.textContent)).toEqual([
       "Fri 13 Nov",
       "Fri 6 Nov",
       "Fri 30 Oct",
-    ]);
-    expect([...card.querySelectorAll(".sm2 > span")].map((x) => x.textContent)).toEqual([
       "Fridays 17:00",
       "storefront",
     ]);
@@ -92,9 +93,10 @@ describe("ion chief's suggestions", () => {
     await waitFor(() => expect(container.querySelectorAll(".sugg")).toHaveLength(2));
     const card = container.querySelectorAll(".sugg")[1]!;
     expect(card.querySelector("b")?.textContent).toBe("Resume “Tailwind 4 migration”?");
-    expect([...card.querySelectorAll(".ev > *")].map((x) => x.textContent)).toEqual([
+    expect([...card.querySelectorAll(".sm2 > *")].map((x) => x.textContent)).toEqual([
       "Stalled 6 days",
       "3 files",
+      "storefront",
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Stalled 6 days" }));
     expect(onOpenChat).toHaveBeenCalledWith("c1");
@@ -107,7 +109,7 @@ describe("ion chief's suggestions", () => {
     expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "s1", keep: true });
     await waitFor(() => expect(container.querySelector(".sugg .done")?.textContent).toBe("Fridays 17:00"));
     // Its time isn't said twice once it's a routine.
-    expect(container.querySelector(".sugg .sm2")?.textContent).toBe("storefront");
+    expect(container.querySelector(".sugg .sm2")?.textContent).not.toContain("Fridays");
     fireEvent.click(screen.getByRole("button", { name: "Fewer like this" }));
     expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "s2", keep: false, mute: true });
     await waitFor(() =>

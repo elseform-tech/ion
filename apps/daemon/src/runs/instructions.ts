@@ -8,4 +8,6 @@ export const ION_INSTRUCTIONS = [
   "the user only sees a question asked with that tool. Never put a question for the user in your reply text, and",
   "never use your own question or plan-approval tools: nobody can answer them here.",
   "Check ion's decisions tool first; the user may have decided already.",
+  "ion's memory_list holds what earlier chats in this project learned: check it when the work depends on the",
+  "project's conventions, and save lasting facts the user tells you with memory_write.",
 ].join(" ");

@@ -2,9 +2,21 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Session } from "@ion/adapter-kit";
-import { loadUserConfig } from "@ion/config";
+import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { getHarness } from "../adapters/registry.js";
+
+/**
+ * The agent, model and effort a prompt runs on: ion's quick model at the effort you picked (`agent` overrides the
+ * agent, on its default model), or the judge at its agent's default effort.
+ */
+export function startOf(c: UserConfig, which: "judge" | "quick", agent?: string) {
+  const spec = agent ?? (which === "quick" ? c.ion.quick : c.access.judge);
+  const id = spec.split(":")[0]!;
+  const model = spec.includes(":") ? spec.slice(spec.indexOf(":") + 1) : null;
+  const effort = which === "quick" ? (c.ion.quickEffort ?? null) : null;
+  return { id, model, effort };
+}
 
 /**
  * Runs one prompt on a model from your config: the Auto judge's ("judge", the default), or ion's own quick model
@@ -17,9 +29,7 @@ export function harnessRunner(
   which: "judge" | "quick" = "judge",
 ): (prompt: string, signal: AbortSignal, agent?: string) => Promise<string> {
   return async (prompt, signal, agent) => {
-    const c = loadUserConfig(configFile).config;
-    const spec = agent ?? (which === "quick" ? c.ion.quick : c.access.judge);
-    const [id, model] = [spec.split(":")[0]!, spec.includes(":") ? spec.slice(spec.indexOf(":") + 1) : null];
+    const { id, model, effort } = startOf(loadUserConfig(configFile).config, which, agent);
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
     const dir = mkdtempSync(join(tmpdir(), "ion-judge-"));
@@ -27,7 +37,7 @@ export function harnessRunner(
       const session = await h.adapter.start({
         cwd: dir,
         model,
-        effort: null,
+        effort,
         bare: true,
         signal,
         decide: async () => "deny",

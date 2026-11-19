@@ -34,7 +34,7 @@ describe("QuestionBar", () => {
     const { container } = bar();
     expect(container.querySelector(".qbox .qq")?.textContent).toBe("Merge it?");
     expect(container.querySelector(".qbox .why")?.textContent).toBe("Tests pass");
-    expect([...container.querySelectorAll(".qbox .bp-row")].map((r) => r.textContent)).toEqual([
+    expect([...container.querySelectorAll(".qbox .qopt")].map((r) => r.textContent)).toEqual([
       "Mergemain gets the change",
       "WaitNothing yet",
     ]);
@@ -144,5 +144,18 @@ describe("QuestionBar", () => {
     expect(container.querySelector(".qbox .qnote")?.textContent).toBe(
       "storefront's ion: first time this comes up",
     );
+  });
+
+  // The user, 2026-11-19: a cleaner box that doesn't crowd the chat: options one line each, the hint at most 3
+  // lines (all of it on a click), and your own answer with Always on one row.
+  it("keeps the hint to 3 lines until you open it, and each option to one line", () => {
+    const long = { ...question, why: "A long reason. ".repeat(40) };
+    const { container } = bar(long);
+    const why = container.querySelector<HTMLElement>(".qbox .why")!;
+    expect(why.classList.contains("clamp")).toBe(true);
+    fireEvent.click(why);
+    expect(why.classList.contains("clamp")).toBe(false);
+    expect(container.querySelectorAll(".qopt b")).toHaveLength(2);
+    expect(container.querySelector(".qd-f")?.textContent).toContain("Always");
   });
 });

@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { createAccess, createJudge, harnessRunner, judgePrompt, parseVerdict, ruleFor } from "./index.js";
+import { startOf } from "./runner.js";
 
 const home = "/Users/me";
 const wt = "/data/worktrees/c1";
@@ -312,6 +313,21 @@ describe("createAccess", () => {
     // Security review: a different request in the same chat asks again.
     await access.decide({ ...at, text: "delete everything" }, cmd("pnpm test"));
     expect(judge).toHaveBeenCalledTimes(3);
+  });
+});
+
+// The user, 2026-11-19: ion's own thinking runs at the effort you pick; the judge stays at the agent's default.
+describe("what ion's model runs on", () => {
+  const config = {
+    ...DEFAULT_CONFIG,
+    ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build:grok-4.7", quickEffort: "low" as const },
+  };
+  it("thinks at the effort you picked, on the model you picked", () => {
+    expect(startOf(config, "quick")).toEqual({ id: "grok-build", model: "grok-4.7", effort: "low" });
+    expect(startOf(config, "quick", "opencode")).toEqual({ id: "opencode", model: null, effort: "low" });
+  });
+  it("judges at the agent's own effort", () => {
+    expect(startOf(config, "judge")).toEqual({ id: "claude-code", model: "haiku", effort: null });
   });
 });
 

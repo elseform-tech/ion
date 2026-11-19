@@ -7,7 +7,8 @@ import { ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { Routines } from "./Routines.js";
 
-const EFFORTS = [
+/** Effort choices: "" is the agent's own default. */
+export const EFFORTS = [
   ["", "Default"],
   ["low", "Low"],
   ["medium", "Medium"],

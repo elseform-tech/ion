@@ -197,10 +197,18 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: "ask", arguments: { question: "Merge it?", choices } },
+        params: {
+          name: "ask",
+          arguments: {
+            question: "Merge it?",
+            why: "The tests pass and the change touches only the cart drawer, so merging is low risk.",
+            choices,
+          },
+        },
       }),
     });
-    say(s, await res.text());
+    // Like an agent: it ends its turn with a word, not ion's raw reply (the tour once showed the JSON).
+    say(s, res.ok ? "I asked you whether to merge." : "I couldn't ask you.");
     return "done";
   },
   async fail(s) {

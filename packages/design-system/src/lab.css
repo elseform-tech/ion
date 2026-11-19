@@ -591,25 +591,25 @@ button.arow:hover{background:var(--hover)}
 .wsrc{font-size:11px;color:var(--faint);margin-left:6px}
 
 /* lab lines 832-851: ions: suggestion cards */
-/* suggestions: optional, never counted as needs */
-.sugg{display:grid;gap:8px;padding:12px 14px;border-radius:16px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:460px}
-.sugg .sk{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint)}
+/* suggestions: optional, never counted as needs; two slim lines (what it asks and your answer; its evidence) */
+.sugg{display:grid;gap:2px;padding:6px 8px 8px 12px;border-radius:12px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:560px}
+.sugg .sk{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);padding-left:22px}
 .sugg .sk .lucide{width:13px;height:13px;color:var(--accent)}
-.sugg b{font-weight:600;line-height:1.4;display:flex;gap:8px;align-items:flex-start}
-.sugg b .si{width:15px;height:15px;color:var(--accent);margin-top:2px;flex-shrink:0}
-.sugg .ev{display:flex;flex-wrap:wrap;gap:4px}
-.sugg .ev button{display:inline-flex;align-items:center;gap:4px;border:0;background:var(--hover);color:var(--muted);font-size:12px;padding:2px 8px;border-radius:999px;cursor:pointer}
-.sugg .ev button:hover{color:var(--ink)}
-.sugg .ev .lucide{width:12px;height:12px}
-.sugg .sm2{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
-.sugg .sm2 span{display:inline-flex;align-items:center;gap:4px}
+.sugg .sh{display:flex;align-items:center;gap:8px;min-height:30px}
+.sugg b{flex:1;min-width:0;font-weight:500;display:flex;gap:8px;align-items:center}
+.sugg b .si{width:14px;height:14px;color:var(--accent);flex-shrink:0} .sugg b .st{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sugg .sm2{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;font-size:12px;color:var(--muted);padding-left:22px}
+.sugg .sm2 span,.sugg .sm2 button{display:inline-flex;align-items:center;gap:4px}
+.sugg .sm2 button{border:0;background:transparent;color:var(--muted);font:inherit;padding:0;cursor:pointer}
+.sugg .sm2 button:hover{color:var(--ink)}
 .sugg .sm2 .lucide{width:12px;height:12px}
 .sugg .sm2 canvas{width:14px;height:14px}
-.sugg .acts{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:10px}
-.sugg .acts .sp{flex:1}
+.sugg .acts{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.sugg .acts .btn{height:26px;padding:0 10px;font-size:12.5px}
+.sugg .acts .ib{width:26px;height:26px}
 .sugg .mute{border:0;background:transparent;color:var(--faint);font-size:12px;cursor:pointer;padding:0}
 .sugg .mute:hover{color:var(--ink)}
-.sugg .done{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.sugg .done{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);flex-shrink:0}
 .sugg .done .lucide{width:14px;height:14px;color:var(--good)}
 
 /* lab lines 861-861: settings: effort bars in a value */

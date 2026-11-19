@@ -64,8 +64,8 @@ Ask a coding agent to do something in a project
 Options:
   -p, --project <id>  Project
   --chat <id>         Continue a chat
-  --harness <id>      claude-code, codex, grok-build or opencode (default:
-                      "claude-code")
+  --harness <id>      claude-code, codex, grok-build or opencode (default: the
+                      chat's, else one signed in)
   --model <model>     Model
   --effort <level>    low, medium, high or max
   --access <mode>     auto (ion decides) or full

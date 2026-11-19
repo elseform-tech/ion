@@ -109,7 +109,8 @@ export type ProjectPatch = {
 };
 
 /** ion's own models: "quick" thinks for ion chief and the project ions ("<agent>" or "<agent>:<model>"). */
-export type IonSettings = { quick: string };
+/** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
+export type IonSettings = { quick: string; effort: EffortLevel | null };
 
 /** A process still running in a chat's worktree. */
 export type TaskInfo = { pid: number; command: string; elapsed: string; ports: number[] };

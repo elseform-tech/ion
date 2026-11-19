@@ -56,14 +56,14 @@ function Project({ id, ions }: { id: string; ions: IonInfo[] }) {
 function Evidence({ card, onOpenChat }: Pick<SuggestionProps, "card" | "onOpenChat">) {
   if (card.kind === "routine")
     return (
-      <div className="ev">
+      <>
         {card.dates.map((d) => (
           <span key={d}>
             <MessageSquare />
             {dayLabel(d)}
           </span>
         ))}
-      </div>
+      </>
     );
   const days = Math.max(0, Math.floor((Date.now() - Date.parse(card.since)) / 86_400_000));
   const chip = (icon: ReactNode, text: string) => (
@@ -73,10 +73,10 @@ function Evidence({ card, onOpenChat }: Pick<SuggestionProps, "card" | "onOpenCh
     </button>
   );
   return (
-    <div className="ev">
+    <>
       {chip(<Hourglass />, `Stalled ${plural(days, "day")}`)}
       {chip(<FileDiff />, plural(card.files, "file"))}
-    </div>
+    </>
   );
 }
 
@@ -109,7 +109,6 @@ function Acts({ card, send }: { card: Chief; send: (a: Answer) => void }) {
       <button className="btn" type="button" onClick={() => send("later")}>
         Not now
       </button>
-      <span className="sp" />
       <button
         className="ib"
         type="button"
@@ -124,8 +123,8 @@ function Acts({ card, send }: { card: Chief; send: (a: Answer) => void }) {
 }
 
 /**
- * One of ion chief's suggestions, as the lab's `.sugg` card: what it asks, its evidence, when and where, and Add
- * routine (or Resume) / Not now / fewer like this. Once answered, what came of it.
+ * One of ion chief's suggestions, as the lab's slim `.sugg` card: what it asks with Add routine (or Resume) / Not now
+ * / fewer like this beside it (once answered, what came of it); under it, its evidence, when and where.
  */
 export function SuggestionCard(p: SuggestionProps) {
   const { card } = p;
@@ -149,12 +148,17 @@ export function SuggestionCard(p: SuggestionProps) {
   const shown = answer ?? (moved ? "moved" : null);
   return (
     <div className="sugg">
-      <b>
-        {card.kind === "routine" ? <Repeat className="si" /> : <Hourglass className="si" />}
-        {askOf(card)}
-      </b>
-      <Evidence card={card} onOpenChat={p.onOpenChat} />
+      <div className="sh">
+        <b>
+          {card.kind === "routine" ? <Repeat className="si" /> : <Hourglass className="si" />}
+          <span className="st" title={askOf(card)}>
+            {askOf(card)}
+          </span>
+        </b>
+        {shown ? <Done card={card} answer={shown} /> : <Acts card={card} send={send} />}
+      </div>
       <div className="sm2">
+        <Evidence card={card} onOpenChat={p.onOpenChat} />
         {card.kind === "routine" && shown !== "took" && (
           <span>
             <CalendarClock />
@@ -169,7 +173,6 @@ export function SuggestionCard(p: SuggestionProps) {
           {error}
         </div>
       )}
-      {shown ? <Done card={card} answer={shown} /> : <Acts card={card} send={send} />}
     </div>
   );
 }

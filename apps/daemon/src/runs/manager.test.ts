@@ -451,6 +451,9 @@ describe("RunManager", () => {
     const told = said(await finished((await ask("instructions")).runId))[0] ?? "";
     expect(told).toContain("ask tool");
     expect(told).toContain("never");
+    // Memory test on Grok, 2026-11-19: ion's memory worked, but only because Grok found its tools; every run is told.
+    expect(told).toContain("memory_list");
+    expect(told).toContain("memory_write");
   });
 
   it("refuses a model the harness doesn't list, and runs one it does", async () => {

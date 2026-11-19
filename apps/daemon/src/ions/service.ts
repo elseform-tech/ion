@@ -1,5 +1,6 @@
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
+import { defaultAgent } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -48,9 +49,8 @@ function unreadable(said: string): void {
   logThink(`an answer ion couldn't read${start}`, undefined);
 }
 
-/** Without a project's own agent or a last one: the first ready of these (quota-friendly first), else any. */
-const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
-const firstOf = (ready: string[]) => PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
+/** Without a project's own agent or a last one: the first ready (quota-friendly first). */
+const firstOf = (ready: string[]) => defaultAgent(ready, null);
 
 export type IonsDeps = {
   store: EventStore;

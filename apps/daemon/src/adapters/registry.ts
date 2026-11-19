@@ -46,3 +46,12 @@ export function getHarness(id: string): HarnessEntry | null {
     };
   return ENTRIES[id]?.() ?? null;
 }
+
+/** Without one chosen: the first ready of these (quota-friendly first), else any ready one. */
+const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
+
+/** The agent to use when none is named: the chat's own while it's ready, else the first ready one. */
+export function defaultAgent(ready: string[], own: string | null): string | undefined {
+  if (own && ready.includes(own)) return own;
+  return PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
+}

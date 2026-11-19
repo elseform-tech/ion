@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { HarnessInfo, IonInfo, ProjectInfo } from "@ion/schema";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "./Settings.js";
 
@@ -75,7 +75,7 @@ function client(o: { projects?: ProjectInfo[]; fail?: string[] } = {}) {
   const call = vi.fn(async (cmd: string) => {
     if (o.fail?.includes(cmd)) throw new ApiCallError("invalid", "Fix your config first.");
     if (cmd === "harnesses.list") return [claude, grok];
-    if (cmd === "settings.get") return { quick: "grok-build" };
+    if (cmd === "settings.get") return { quick: "grok-build", effort: null };
     if (cmd === "ions.list") return ions;
     if (cmd === "projects.list") return o.projects ?? projects;
     if (cmd === "activity.list") return activity;
@@ -101,6 +101,16 @@ describe("Settings", () => {
     expect(screen.queryByRole("radio", { name: "Claude Code" })).toBeNull(); // not signed in
     fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
     expect(c.call).toHaveBeenCalledWith("settings.update", { quick: "grok-build:grok-code-fast" });
+  });
+
+  // The user, 2026-11-19: you choose how hard ion thinks.
+  it("picks the effort ion thinks at", async () => {
+    const c = client();
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const effort = await screen.findByRole("group", { name: "ion's effort" });
+    expect(within(effort).getByRole("button", { name: "Default" }).className).toContain("on");
+    fireEvent.click(within(effort).getByRole("button", { name: "Low" }));
+    expect(c.call).toHaveBeenCalledWith("settings.update", { effort: "low" });
   });
 
   it("opens an ion's page from the Ions list, with its stats", async () => {

@@ -1,4 +1,4 @@
-import { getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
+import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
@@ -110,9 +110,15 @@ export const handlers: Handlers = {
     ctx.decisions.forget(String(a.decisionId ?? ""));
     return { ok: true as const };
   },
-  ask: (a, ctx) => {
+  ask: async (a, ctx) => {
     if (typeof a.text !== "string" || !a.text.trim()) throw new UserError("Say what to do");
-    return ctx.runs.ask(a);
+    if (a.harness) return ctx.runs.ask(a);
+    // None named: the chat's own while it's ready, else the first ready one (never one that isn't signed in).
+    const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
+    const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
+    const harness = defaultAgent(ready, own);
+    if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
+    return ctx.runs.ask({ ...a, harness });
   },
   "run.interrupt": async (a, ctx) => {
     await ctx.runs.interrupt(String(a.runId ?? ""));

@@ -1,7 +1,7 @@
 import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig, type UserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
-import type { ProjectPatch } from "@ion/schema";
+import type { EffortLevel, ProjectPatch } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
 import type { Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
@@ -64,6 +64,14 @@ function patchProject(c: UserConfig, p: ProjectPatch): UserConfig {
   };
 }
 
+/** ion's own model and effort changed: undefined leaves one as it is; a null effort is the agent's default again. */
+function ionPatch(ion: UserConfig["ion"], quick: string | undefined, effort: EffortLevel | null | undefined) {
+  const next = { ...ion, ...(quick ? { quick } : {}) };
+  if (effort === null) delete next.quickEffort;
+  else if (effort) next.quickEffort = effort;
+  return next;
+}
+
 /** Settings: a project ion's setup and rules, and ion's own quick model. */
 export const settingsHandlers: Pick<
   Handlers,
@@ -84,10 +92,14 @@ export const settingsHandlers: Pick<
     changeConfig(ctx.configFile, (c) => patchProject(c, a));
     return { ok: true as const };
   },
-  "settings.get": (_a, ctx) => ({ quick: loadUserConfig(ctx.configFile).config.ion.quick }),
+  "settings.get": (_a, ctx) => {
+    const { quick, quickEffort } = loadUserConfig(ctx.configFile).config.ion;
+    return { quick, effort: quickEffort ?? null };
+  },
   "settings.update": (a, ctx) => {
     const quick = a.quick === undefined ? undefined : checkAgent(String(a.quick));
-    changeConfig(ctx.configFile, (c) => (quick ? { ...c, ion: { ...c.ion, quick } } : c));
+    if (a.effort && !EFFORTS.includes(a.effort)) throw new UserError("Pick low, medium, high or max");
+    changeConfig(ctx.configFile, (c) => ({ ...c, ion: ionPatch(c.ion, quick, a.effort) }));
     return { ok: true as const };
   },
 };
