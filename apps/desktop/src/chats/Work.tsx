@@ -59,7 +59,7 @@ export function stepName(raw: string): string {
   const name = stripControl(raw);
   const ion = /^(?:mcp__ion__|ion__)(.+)$/.exec(name)?.[1];
   if (ion) return ION_TOOLS[ion] ?? ion;
-  return name.replace(/^mcp__.+?__(?=[^_])/, "");
+  return name.replace(/^mcp__.+?__(?=[^_])/, "").trim() || "Tool";
 }
 
 /** A step's name and summary as shown. The name alone is mapped to words: the summary is free text. */

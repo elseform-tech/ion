@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from "node:path";
 import { type AdapterEvent, blocksText, TOOL_INPUT_MAX, TOOL_OUTPUT_MAX, toolText } from "@ion/adapter-kit";
-import { EV, type ToolKind } from "@ion/schema";
+import { EV, stripControl, type ToolKind } from "@ion/schema";
 
 type Json = Record<string, unknown>;
 
@@ -110,7 +110,9 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
   const known = kind !== "other";
   // Grok's use_tool routes another tool: its structured input names the real one, so that is the step's name.
   const routed = title === "use_tool" ? (u.rawInput as Json | undefined)?.tool_name : undefined;
-  const via = typeof routed === "string" ? routed.slice(0, 40) : undefined;
+  // The routed name labels the step only when it is plain; otherwise the step keeps "Use tool".
+  const clean = typeof routed === "string" ? stripControl(routed).trim() : "";
+  const via = /^[\w.-]{1,40}$/.test(clean) ? clean : undefined;
   const plain = known ? String(u.kind) : (TITLES[title] ?? title).slice(0, 40);
   const said = known ? title : lookedFor(u.rawInput, s.roots);
   return {
@@ -119,7 +121,7 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
       toolId,
       name: via ?? plain,
       kind,
-      summary: via !== undefined ? "" : said.slice(0, 80),
+      summary: (via !== undefined ? lookedFor(withoutToolName(u.rawInput), s.roots) : said).slice(0, 80),
       ...(input ? { input } : {}),
     },
   };
@@ -133,6 +135,14 @@ const TITLES: Record<string, string> = {
   list_dir: "List",
   grep: "Grep",
 };
+
+/** A tool's input without its routed name (that is the step's name, not what it looked for). */
+function withoutToolName(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const rest = { ...(raw as Record<string, unknown>) };
+  delete rest.tool_name;
+  return rest;
+}
 
 /** What a tool looked for: its pattern, query, file, folder, tool or address (a path from the worktree). */
 function lookedFor(raw: unknown, roots: string[]): string {
