@@ -15,7 +15,8 @@ if [ "$1" = stop ]; then
 fi
 ion daemon stop >/dev/null 2>&1 || true
 rm -rf "$ION_HOME" && mkdir -p "$ION_HOME"
-printf '[access]\njudge = "fake"\n[folders]\nprojects = "%s/projects"\n' "$ION_HOME" > "$ION_HOME/config.toml"
+# ion thinks ([ion] quick) and judges ([access] judge) with the fake agent: no quota, no real model.
+printf '[ion]\nquick = "fake"\n[access]\njudge = "fake"\n[folders]\nprojects = "%s/projects"\n' "$ION_HOME" > "$ION_HOME/config.toml"
 ion daemon start >/dev/null
 ion projects new storefront >/dev/null
 ion projects new payments-api >/dev/null
@@ -32,6 +33,7 @@ ion ask "edit the onboarding email copy so it reads warmer and mentions the free
   -p payments-api --harness fake >/dev/null 2>&1
 # Plan 09: a thread storefront's ion started, and ion chief routing a message to two projects.
 ion ions message storefront "edit the readme" >/dev/null 2>&1
+ion ions message storefront "what project am i in?" >/dev/null 2>&1 # answered by its ion, no thread
 ion ions message chief "please check storefront and payments-api for the rounding bug" >/dev/null 2>&1
 (ion ask "slow" -p payments-api --harness fake >/dev/null 2>&1 &) # running while you look
 pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)

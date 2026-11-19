@@ -299,6 +299,12 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tile .tname{font-size:15px;line-height:1.2;letter-spacing:-.04em}
 .head .hname{font-size:17px;line-height:1;letter-spacing:-.04em;overflow:visible}
 
+/* lab lines 404-407: segmented control */
+.seg{display:inline-flex;background:var(--hover);border-radius:var(--r-md);padding:2px;justify-self:start}
+.seg button{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--muted);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12.5px}
+.seg button.on{background:var(--sel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.seg .lucide{width:14px;height:14px}
+
 /* lab lines 456-463: ions: ion chief tile */
 .ihead .pwrap{margin-left:14px}
 .chief{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;margin:4px 8px 6px;padding:10px;border-radius:14px;border:0;background:transparent;text-align:left;cursor:pointer;width:calc(100% - 16px)}
@@ -380,6 +386,9 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .pml{display:grid;max-height:300px;overflow:auto}
 .pmenu .nb{margin-left:auto}
 .pmenu .nb+.ck{margin-left:6px}
+
+/* lab lines 568-568: segmented control, small */
+.seg.sm button{padding:4px 9px;font-size:12px}
 
 /* lab lines 571-636: media: code blocks */
 /* ===== media ===== */

@@ -3,6 +3,7 @@ import { Avatar, ChevronLeft, ChevronRight, MessageCircle, Zap } from "@ion/desi
 import { ION_COLORS, type IonInfo, type IonStats, type ProjectInfo, type ProjectPatch } from "@ion/schema";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { ready, type SettingsData } from "./data.js";
+import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 
 const EFFORTS = [
   ["", "Default"],
@@ -89,22 +90,12 @@ function AgentPick({ ion, project, data, patch }: SetupProps) {
   const agent = project.harness ?? ion.harness;
   return (
     <Row label="Agent">
-      <div className="hpick" role="radiogroup" aria-label="Agent">
-        {data.harnesses.filter(ready).map((h) => (
-          <button
-            key={h.id}
-            type="button"
-            role="radio"
-            aria-checked={h.id === agent}
-            aria-label={h.label}
-            title={h.label}
-            className={h.id === agent ? "on" : ""}
-            onClick={() => patch({ harness: h.id, model: null })}
-          >
-            <Avatar ion={{ harness: h.id, color: ion.color }} />
-          </button>
-        ))}
-      </div>
+      <AgentPicker
+        agents={data.harnesses.filter(ready)}
+        value={agent}
+        color={ion.color}
+        onPick={(h) => patch({ harness: h, model: null })}
+      />
     </Row>
   );
 }
@@ -137,18 +128,11 @@ function BrainPick({ ion, project, data, patch }: SetupProps) {
   return (
     <>
       <Row label="Model">
-        <div className="chips">
-          {[{ id: "", label: "Default" }, ...(agent?.models ?? [])].map((m) => (
-            <button
-              key={m.id || "default"}
-              type="button"
-              className={`chip tog${(project.model ?? "") === m.id ? " on" : ""}`}
-              onClick={() => patch({ model: m.id || null })}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        <ModelMenu
+          models={agent?.models ?? []}
+          value={project.model ?? ""}
+          onChange={(m) => patch({ model: m || null })}
+        />
       </Row>
       <Row label="Effort">
         <span className="seg sm">

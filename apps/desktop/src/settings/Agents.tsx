@@ -2,6 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import { Avatar, Zap } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
 import { ready, type SettingsData } from "./data.js";
+import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 
 /** An agent's state, in plain words. */
 function stateOf(h: HarnessInfo): string {
@@ -24,59 +25,31 @@ function AgentRow({ h }: { h: HarnessInfo }) {
   );
 }
 
-/** One choice of ion's quick model: an agent's own default, or one of its models. */
-function Pick(p: {
-  spec: string;
-  label: string;
-  harness: string;
-  on: boolean;
-  onPick: (spec: string) => void;
-}) {
-  return (
-    <button type="button" className={`chip tog${p.on ? " on" : ""}`} onClick={() => p.onPick(p.spec)}>
-      <Avatar harness={p.harness} />
-      {p.label}
-    </button>
-  );
-}
-
-/** The model ion thinks with: an agent's own default, or one of its models, from the agents that are ready. */
+/**
+ * The model ion thinks with: an agent (its shape), then one of its models from a menu ("Default": the agent's
+ * own). Only agents that are ready.
+ */
 function QuickModel(p: { data: SettingsData; quick: string; onPick: (spec: string) => void }) {
+  const [agent, model = ""] = p.quick.split(/:(.*)/);
+  const ok = p.data.harnesses.filter(ready);
+  const models = ok.find((h) => h.id === agent)?.models ?? [];
   return (
     <div>
       <h4>ion’s model</h4>
       <div className="group">
-        <div className="srow stack">
+        <div className="srow">
           <div className="g">
             <span className="slot">
               <Zap />
               Quick
             </span>
           </div>
-          <div className="chips">
-            {p.data.harnesses
-              .filter(ready)
-              .flatMap((h) => [
-                <Pick
-                  key={h.id}
-                  spec={h.id}
-                  label={h.label}
-                  harness={h.id}
-                  on={p.quick === h.id}
-                  onPick={p.onPick}
-                />,
-                ...h.models.map((m) => (
-                  <Pick
-                    key={`${h.id}:${m.id}`}
-                    spec={`${h.id}:${m.id}`}
-                    label={m.label}
-                    harness={h.id}
-                    on={p.quick === `${h.id}:${m.id}`}
-                    onPick={p.onPick}
-                  />
-                )),
-              ])}
-          </div>
+          <AgentPicker agents={ok} value={agent} onPick={p.onPick} />
+          <ModelMenu
+            models={models}
+            value={model}
+            onChange={(m) => p.onPick(m ? `${agent}:${m}` : String(agent))}
+          />
         </div>
       </div>
     </div>

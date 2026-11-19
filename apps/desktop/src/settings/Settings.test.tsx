@@ -48,7 +48,7 @@ const projects = [
 function client() {
   const call = vi.fn(async (cmd: string) => {
     if (cmd === "harnesses.list") return [claude, grok];
-    if (cmd === "settings.get") return { quick: "claude-code" };
+    if (cmd === "settings.get") return { quick: "grok-build" };
     if (cmd === "ions.list") return ions;
     if (cmd === "projects.list") return projects;
     if (cmd === "ion.stats")
@@ -66,7 +66,12 @@ describe("Settings", () => {
     render(<Settings client={c} onOpenIon={() => {}} />);
     expect(await screen.findByText("Not signed in")).toBeTruthy();
     expect(screen.getByText("Signed in")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "grok-code-fast" }));
+    // An agent (its shape), then one of its models from a menu: a long model list stays one line.
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
+    );
+    expect(screen.queryByRole("radio", { name: "Claude Code" })).toBeNull(); // not signed in
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
     expect(c.call).toHaveBeenCalledWith("settings.update", { quick: "grok-build:grok-code-fast" });
   });
 
@@ -91,7 +96,7 @@ describe("Settings", () => {
       expect(c.call).toHaveBeenCalledWith("project.update", { projectId: "shop", ...p });
     fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
     patch({ color: "#3C82F6" });
-    fireEvent.click(screen.getByRole("button", { name: "grok-code-fast" }));
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
     patch({ model: "grok-code-fast" });
     fireEvent.click(screen.getByRole("button", { name: "High" }));
     patch({ effort: "high" });
