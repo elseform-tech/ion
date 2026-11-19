@@ -60,7 +60,7 @@ describe("ruleFor, reading and searching", () => {
   });
 
   it("allows reads and searches that stay in the worktree", () => {
-    expect(ruleFor(tool("search", { pattern: "tip", glob: "**/split.js" }), ctx)).toMatchObject({
+    expect(ruleFor(tool("search", { pattern: "tip", path: "src" }), ctx)).toMatchObject({
       decision: "allow",
       reason: "Only looks inside the project",
     });
@@ -77,6 +77,11 @@ describe("ruleFor, reading and searching", () => {
     expect(ruleFor(tool("search", { pattern: "x", glob: "{..,src}/secret" }), ctx)).toBeNull();
     expect(ruleFor(tool("search", { pattern: "x", glob: "{/etc,src}/*" }), ctx)).toBeNull();
     expect(ruleFor(tool("search", { pattern: "x", glob: "src..x/a" }), ctx)).toBeNull();
+    // Same review: a wildcard can match through a link out of the worktree (*/passwd via link -> /etc).
+    expect(ruleFor(tool("search", { pattern: "x", glob: "**/split.js" }), ctx)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: "*/passwd" }), ctx)).toBeNull();
+    // What's searched for is text, not a path: its wildcards stay allowed.
+    expect(ruleFor(tool("search", { pattern: "tip.*[0-9]?" }), ctx)?.decision).toBe("allow");
     expect(ruleFor(tool("read", { file_path: `${home}/.ssh/id_rsa` }), ctx)?.decision).toBe("deny");
   });
 

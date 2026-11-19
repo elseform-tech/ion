@@ -155,11 +155,17 @@ function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
     .map((v) => realish(resolve(c.roots[0] ?? "/", v)));
 }
 
+/** What a search looks for: text matched in files, not a path (its wildcards are a pattern's, not a glob's). */
+const CONTENT = new Set(["pattern", "query", "regex", "search", "text"]);
+
+/** Every string of a tool's input that can name a path: all but what it searches for, however deep. */
+const pathStrings = (req: ApprovalRequest) =>
+  Object.entries(req.input).flatMap(([k, v]) => (CONTENT.has(k) ? [] : [...strings(v)]));
+
 /**
- * Input the rule can't fully read, left to the judge: ".." anywhere, braces (a glob's {a,b} can hide a climb or an
- * absolute path), or a start at your home ("~", $HOME). Plain globs (*, **) stay: they can't leave the folder.
+ * Paths the rule can't fully read, left to the judge: ".." anywhere, a glob's braces or wildcards (they can hide a
+ * climb, an absolute path, or match through a link out of the worktree), or a start at your home ("~", $HOME).
  */
 const climbs = (req: ApprovalRequest) =>
-  [...strings(req.input)].some(
-    (v) => v.includes("..") || /[{}]/.test(v) || v.startsWith("~") || /\$\{?HOME/.test(v),
-  );
+  [...strings(req.input)].some((v) => /\$\{?HOME/.test(v)) ||
+  pathStrings(req).some((v) => v.includes("..") || /[{}*?[\]]/.test(v) || v.startsWith("~"));
