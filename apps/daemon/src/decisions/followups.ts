@@ -3,6 +3,9 @@ import { UserError } from "../api/errors.js";
 import type { EventStore } from "../store/index.js";
 
 const BUSY = "This chat is already running";
+/** A waiting answer that reads busy is tried again this often, this many times (then on the next run's end). */
+const RETRY_MS = 250;
+const RETRIES = 20;
 
 /** Your answer on its way back into a chat: the message, what the judge treats as your request, and the agent. */
 /** `shown`: what the chat shows as yours (your choice), when `text` is ion's wording for the agent. */
@@ -71,6 +74,15 @@ export class FollowUps {
     }
   }
 
+  private readonly tries = new Map<string, number>();
+
+  private retry(chatId: string): void {
+    const n = (this.tries.get(chatId) ?? 0) + 1;
+    if (n > RETRIES) return void this.tries.delete(chatId);
+    this.tries.set(chatId, n);
+    setTimeout(() => void this.drain(chatId), RETRY_MS).unref?.();
+  }
+
   /** The chat's run ended: send its next waiting answer (one; the run it starts makes the chat busy again). */
   private async drain(chatId: string): Promise<void> {
     const list = this.queue.get(chatId) ?? [];
@@ -78,7 +90,9 @@ export class FollowUps {
     if (!next) return void this.queue.delete(chatId);
     try {
       const r = await this.attempt(chatId, next);
-      if (r === "busy") return;
+      // The run that just ended can still count for a moment: try again shortly, a few times. A run that really
+      // is going ends with run.finished, which drains again anyway.
+      if (r === "busy") return this.retry(chatId);
       if (r) this.started(r, next.decisionId);
     } catch (e) {
       if (next.decisionId)
@@ -87,6 +101,7 @@ export class FollowUps {
           why: `Couldn't send your answer: ${(e as Error).message}`,
         });
     }
+    this.tries.delete(chatId);
     list.shift();
     if (list.length === 0) this.queue.delete(chatId);
     else if (this.queue.get(chatId) === list) queueMicrotask(() => void this.drain(chatId));
