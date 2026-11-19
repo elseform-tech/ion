@@ -197,6 +197,14 @@ describe("an ion's turn", () => {
     expect(ionInstructions("storefront")).toContain(sentence);
   });
 
+  // Real run on Grok, 2026-11-19: ion chief answered "I can't tell from here" instead of asking the project, after ~25 denied lookups.
+  it("ion chief asks the project when an answer needs its code; a project's ion reads it", () => {
+    const chief = ionInstructions("chief");
+    expect(chief).toContain("can't read projects' files");
+    expect(chief).toMatch(/needs a project's code[^.]*start a thread in that project/);
+    expect(ionInstructions("storefront")).toContain("read its project");
+  });
+
   it("a turn resumes the ion's session", async () => {
     const t = turns();
     await t.turn("storefront", "hello");

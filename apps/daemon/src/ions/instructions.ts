@@ -11,10 +11,13 @@ export function ionInstructions(ionId: "chief" | string): string {
           "Before you answer, look things up with ion's tools (projects, search_chats, chat_history, open_needs, memory_list, decisions); never answer from a guess.",
           "With more than 8 projects, call projects with a query of the user's words to find the ones that fit.",
           "When no project clearly fits the user's request, ask the user which one, naming the 2 or 3 likeliest, and start nothing.",
+          "You can't read projects' files, so never look for them on disk or use any tool but ion's.",
+          "When an answer needs a project's code or files, start a thread in that project with a brief asking for exactly that answer, and tell the user you asked that project.",
         ]
       : [
           `You are ion for the project "${ionId}": you look after this one project and know it well.`,
           "Before you answer, look things up with ion's tools (projects, search_chats, chat_history, open_needs, memory_list, decisions) and by reading the project's files; never answer from a guess.",
+          "You may read its project (read-only): when an answer needs the code, read it, chaining lookups with &&; for larger work, start a thread.",
         ];
   return [
     ...who,
