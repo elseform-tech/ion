@@ -28,6 +28,8 @@ let repo: string;
 let signedIn: boolean;
 let startThread: ReturnType<typeof vi.fn>;
 let current: IonTurns;
+/** Every IonTurns a test made: each is shut down before its server closes. */
+let made: IonTurns[] = [];
 
 const agents = async (): Promise<HarnessInfo[]> => [
   { id: "fake", label: "Fake", installed: true, signedIn, models: [], defaultModel: "fake" },
@@ -44,6 +46,7 @@ function turns(turnMs?: number): IonTurns {
     home,
     ...(turnMs ? { turnMs } : {}),
   });
+  made.push(current);
   return current;
 }
 
@@ -86,7 +89,11 @@ beforeEach(async () => {
   base = `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : 0}`;
 });
 
+// Task review, 2026-11-19: a turn still running when the server closed got ECONNRESET, unhandled, and failed the
+// run. Its turns end first.
 afterEach(async () => {
+  await Promise.all(made.map((t) => t.shutdown()));
+  made = [];
   http.closeAllConnections();
   await new Promise((r) => http.close(r));
 });
@@ -103,6 +110,7 @@ describe("an ion's turn", () => {
         { chatId: "t-storefront", projectId: "storefront" },
         { chatId: "t-payments-api", projectId: "payments-api" },
       ],
+      turnId: expect.stringMatching(/^turn_/),
     });
     // The judge reads your own words as the request, never the brief the ion's agent wrote.
     expect(startThread).toHaveBeenCalledWith("storefront", text, {
@@ -118,13 +126,14 @@ describe("an ion's turn", () => {
       "mcp__ion__start_thread",
     ]);
     expect(new Set(work.map((e) => e.runId)).size).toBe(1);
-    expect(work[0]!.runId).toMatch(/^turn_/);
+    // Task review, 2026-11-19: the turn's id comes with its reply, so the reply can carry it (its work goes above it).
+    expect(work[0]!.runId).toBe(r.turnId);
   });
 
   // Task review, 2026-11-19: run as the second project, so a scope mix-up (all projects) would answer "storefront".
   it("a project's ion sees only its project", async () => {
     const r = await turns().turn("payments-api", "what is this");
-    expect(r).toEqual({ reply: "This is payments-api.", threads: [] });
+    expect(r).toEqual({ reply: "This is payments-api.", threads: [], turnId: expect.any(String) });
   });
 
   it("ion chief can't start a thread in a project kept from it", async () => {
@@ -223,7 +232,7 @@ describe("an ion's turn", () => {
   it("a turn past its limit is stopped and says so", async () => {
     const started = Date.now();
     const r = await turns(100).turn("storefront", "take-your-time");
-    expect(r).toEqual({ reply: TOO_LONG, threads: [] });
+    expect(r).toEqual({ reply: TOO_LONG, threads: [], turnId: expect.any(String) });
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
@@ -231,7 +240,11 @@ describe("an ion's turn", () => {
     process.env.ION_FAKE_START_MS = "3000";
     try {
       const started = Date.now();
-      expect(await turns(100).turn("storefront", "hello")).toEqual({ reply: TOO_LONG, threads: [] });
+      expect(await turns(100).turn("storefront", "hello")).toEqual({
+        reply: TOO_LONG,
+        threads: [],
+        turnId: expect.any(String),
+      });
       expect(Date.now() - started).toBeLessThan(2000);
     } finally {
       delete process.env.ION_FAKE_START_MS;

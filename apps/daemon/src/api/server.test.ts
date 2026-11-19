@@ -447,6 +447,10 @@ describe("daemon api", () => {
       client.call("project.update", { projectId: "app", profileSuggestion: "Mine." } as never),
     ).rejects.toThrow("Only its ion suggests a profile");
     expect((await client.call("projects.list", {}))[0]?.profileSuggestion).toBe("A shop.");
+    // Task review, 2026-11-19: a profile that isn't text was written as is.
+    await expect(client.call("project.update", { projectId: "app", profile: 42 } as never)).rejects.toThrow(
+      "Write the profile as text",
+    );
     await client.call("project.update", { projectId: "app", profile: null, profileSuggestion: null });
     const p = (await client.call("projects.list", {}))[0];
     expect(p).not.toHaveProperty("profile");

@@ -43,7 +43,8 @@ function checked(p: ProjectPatch): Omit<ProjectPatch, "projectId"> {
 function profileOf({ profile, profileSuggestion }: ProjectPatch): Pick<ProjectPatch, "profile"> {
   if (profileSuggestion !== undefined && profileSuggestion !== null)
     throw new UserError("Only its ion suggests a profile");
-  if (typeof profile !== "string") return profile === undefined ? {} : { profile };
+  if (profile === undefined || profile === null) return profile === null ? { profile } : {};
+  if (typeof profile !== "string") throw new UserError("Write the profile as text");
   const text = stripControl(profile).trim();
   if (text.length > 300) throw new UserError("Keep it under 300 characters");
   return { profile: text || null };

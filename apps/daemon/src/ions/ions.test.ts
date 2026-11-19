@@ -18,7 +18,13 @@ let store: EventStore;
 let configFile: string;
 let ask: ReturnType<typeof vi.fn>;
 let turn: ReturnType<
-  typeof vi.fn<(ionId: string, text: string, o?: TurnOpts) => Promise<{ reply: string; threads: Thread[] }>>
+  typeof vi.fn<
+    (
+      ionId: string,
+      text: string,
+      o?: TurnOpts,
+    ) => Promise<{ reply: string; threads: Thread[]; turnId?: string }>
+  >
 >;
 let n = 0;
 
@@ -83,6 +89,15 @@ describe("an ion thinks through a turn", () => {
     expect(turn).toHaveBeenCalledWith("storefront", "what project am i in right now");
     expect(ask).not.toHaveBeenCalled();
     expect(said("storefront")).toEqual([{ text: "You're in storefront." }]);
+  });
+
+  // Task review, 2026-11-19: a daemon line said mid-turn ended the turn's work in the app and took it. The reply
+  // carries its turn's id, so the app puts each turn's work above its own reply.
+  it("writes a turn's reply with the turn's id, and a report's too", async () => {
+    turn.mockResolvedValueOnce({ reply: "You're in storefront.", threads: [], turnId: "turn_a" });
+    await ions().message("storefront", "what project am i in");
+    const reply = store.read({ chatId: "ion:storefront" }).find((e) => e.type === EV.ionSaid);
+    expect(reply?.runId).toBe("turn_a");
   });
 
   it("has no ion for default, nor for a project it doesn't know", async () => {
@@ -301,12 +316,24 @@ describe("a thread's end", () => {
   it("a thread's end is reported by its ion, and by ion chief when ion chief started it", async () => {
     const i = ions();
     await started(i, "chief");
-    turn.mockResolvedValueOnce({ reply: "Fixed it: the cart was adding tax twice.", threads: [] });
+    turn.mockResolvedValueOnce({
+      reply: "Fixed it: the cart was adding tax twice.",
+      threads: [],
+      turnId: "turn_r",
+    });
     end("done", "Fixed the cart total.");
     const report = { text: "Fixed it: the cart was adding tax twice." };
     await vi.waitFor(() => expect(said("chief").at(-1)).toEqual(report));
     expect(last()).toEqual(report);
     expect(turn).toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true });
+    // Task review, 2026-11-19: the report carries its turn's id; ion chief's repeat of it is no turn of its own.
+    const runOf = (ionId: string) =>
+      store
+        .read({ chatId: `ion:${ionId}` })
+        .filter((e) => e.type === EV.ionSaid)
+        .at(-1)?.runId;
+    expect(runOf("storefront")).toBe("turn_r");
+    expect(runOf("chief")).toBeNull();
     // A report is no message of yours: nothing is heard.
     expect(store.read({ chatId: "ion:storefront" }).some((e) => e.type === EV.ionHeard)).toBe(false);
   });

@@ -159,7 +159,9 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
             data: { code: "agent", retryable: false, message: "Prompt too long" },
           });
         let status: Awaited<ReturnType<typeof scenario>> = "interrupted";
-        if (!interrupted) status = resumedFails ? "failed" : await scenario(script);
+        // A scenario that throws (ion's server gone mid-call) ends its turn failed, never as an unhandled rejection.
+        if (!interrupted)
+          status = resumedFails ? "failed" : await scenario(script).catch(() => "failed" as const);
         queue.push({ type: EV.runFinished, data: { status } });
         queue.end();
       })();

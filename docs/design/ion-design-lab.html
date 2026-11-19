@@ -394,7 +394,7 @@ button.arow:hover{background:var(--hover)}
 .sprev{display:flex;align-items:center;gap:14px}
 .sprev canvas{width:64px;height:64px}
 .fin{width:100%;font:inherit;color:var(--ink);background:var(--hover);border:1px solid transparent;border-radius:var(--r-md);padding:8px 10px;resize:none;outline:none}
-.fin:focus{border-color:var(--accent)}
+.fin:focus{border-color:var(--accent)}.srow.stack .fin{box-sizing:border-box}
 .fin.big{font-size:18px;font-weight:600;background:transparent;padding:6px 4px;border-radius:0;border-bottom:1px solid var(--line)}
 .fin.big:focus{border-color:transparent;border-bottom-color:var(--accent)}
 .fl{display:grid;gap:8px;font-size:12.5px;color:var(--faint);font-weight:500}
@@ -3051,7 +3051,7 @@ function projRow(k,row){
   const I=PINFO[k]||{};
   return row('Folder','',`<span class="chip mono">${esc(I.path||'')}</span>`)
     +`<div class="srow stack"><div class="g">Profile</div><textarea class="fin" rows="2" aria-label="Profile">${esc(I.profile||'')}</textarea></div>`
-    +(I.sugg?`<div class="srow"><i data-lucide="sparkles"></i><div class="g s">${esc(I.sugg)}</div><button class="ib" type="button" title="Dismiss" data-psugg="${esc(k)}"><i data-lucide="x"></i></button><button class="ib" type="button" title="Accept" data-psugg="${esc(k)}" data-ok="1"><i data-lucide="check"></i></button></div>`:'')
+    +(I.sugg?`<div class="srow"><i data-lucide="sparkles"></i><div class="g s">${esc(I.sugg)}</div><button class="ib" type="button" title="Dismiss" aria-label="Dismiss" data-psugg="${esc(k)}"><i data-lucide="x"></i></button><button class="ib" type="button" title="Accept" aria-label="Accept" data-psugg="${esc(k)}" data-ok="1"><i data-lucide="check"></i></button></div>`:'')
     +row('Ask before merging','',`<button type="button" class="sw${I.merge?' on':''}" role="switch" aria-checked="${!!I.merge}" aria-label="Ask before merging" data-pmerge="${esc(k)}"></button>`);
 }
 function openIonSettings(k){

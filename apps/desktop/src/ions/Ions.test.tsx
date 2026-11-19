@@ -347,9 +347,9 @@ describe("Ions", () => {
         "2026-11-18T10:00:03.000Z",
       ),
       at(ev("ion:chief", EV.toolFinished, { toolId: "x1", ok: true }), "2026-11-18T10:00:05.000Z"),
-      at(ev("ion:chief", EV.ionSaid, { text: "One question." }), "2026-11-18T10:00:12.000Z", null),
+      at(ev("ion:chief", EV.ionSaid, { text: "One question." }), "2026-11-18T10:00:12.000Z"),
     ];
-    expect(ionTimeline(events).map((i) => i.kind)).toEqual(["you", "work", "ion"]);
+    expect(ionTimeline(events).map((i) => i.kind)).toEqual(["you", "ion"]);
     const { container } = render(<Ions client={client(events)} onOpenChat={() => {}} />);
     const head = await screen.findByRole("button", { name: /Worked for 12s/ });
     // The work line sits in the ion's reply, above its words.
@@ -360,6 +360,35 @@ describe("Ions", () => {
     expect(within(bm).getByText("needs")).toBeTruthy();
     expect(within(bm).getByText("storefront")).toBeTruthy();
     expect(within(bm).getByText("Thought for 1s")).toBeTruthy();
+  });
+
+  // Task review, 2026-11-19: a daemon line said mid-turn ("From ion: …", a report) ended the turn's work and took
+  // it. Only the turn's own reply (its runId) ends its work and carries it.
+  it("keeps an ion's work running through a line said meanwhile, and puts it above its own reply", async () => {
+    const at = (e: IonEvent, ts: string, runId: string | null = "turn1") => ({ ...e, ts, runId }) as IonEvent;
+    const step = { toolId: "x1", kind: "mcp", name: "needs", summary: "storefront" };
+    const live = [
+      at(ev("ion:storefront", EV.ionHeard, { text: "What's open?" }), "2026-11-18T10:00:00.000Z", null),
+      at(ev("ion:storefront", EV.toolStarted, step), "2026-11-18T10:00:02.000Z"),
+      at(
+        ev("ion:storefront", EV.ionSaid, { text: "From ion: check the cart" }),
+        "2026-11-18T10:00:03.000Z",
+        null,
+      ),
+    ];
+    const during = ionTimeline(live);
+    expect(during.map((i) => i.kind)).toEqual(["you", "work", "ion"]);
+    expect(during[1]?.kind === "work" && during[1].work.ended).toBeUndefined();
+    const done = ionTimeline([
+      ...live,
+      at(ev("ion:storefront", EV.toolFinished, { toolId: "x1", ok: true }), "2026-11-18T10:00:04.000Z"),
+      at(ev("ion:storefront", EV.ionSaid, { text: "Nothing open." }), "2026-11-18T10:00:09.000Z"),
+    ]);
+    expect(done.map((i) => i.kind)).toEqual(["you", "ion", "ion"]);
+    const reply = done[2];
+    expect(reply?.kind === "ion" && reply.text).toBe("Nothing open.");
+    expect(reply?.kind === "ion" && reply.work?.ended).toBe("2026-11-18T10:00:09.000Z");
+    expect(done[1]?.kind === "ion" && done[1].work).toBeUndefined();
   });
 
   it("shows an ion's live work as its current step, not as thinking dots", async () => {

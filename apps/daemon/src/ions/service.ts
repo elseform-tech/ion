@@ -96,11 +96,12 @@ export class Ions {
     this.stopped = true;
   }
 
-  private say(ionId: string, text: string, card?: IonCard): void {
+  /** The ion's line; a turn's reply carries the turn's id (its work, kept under that id, goes above it). */
+  private say(ionId: string, text: string, card?: IonCard, turnId?: string): void {
     if (this.stopped) return;
     this.d.store.append({
       chatId: `ion:${ionId}`,
-      runId: null,
+      runId: turnId ?? null,
       origin: "daemon",
       type: EV.ionSaid,
       data: { text, ...(card ? { card } : {}) },
@@ -132,8 +133,8 @@ export class Ions {
 
   private async answer(ionId: string, text: string): Promise<void> {
     try {
-      const { reply, threads } = await this.d.turns.turn(ionId, text);
-      this.say(ionId, reply, threadsCard(threads));
+      const { reply, threads, turnId } = await this.d.turns.turn(ionId, text);
+      this.say(ionId, reply, threadsCard(threads), turnId);
     } catch (e) {
       this.say(ionId, e instanceof UserError ? e.message : NO_AGENT);
     }
@@ -265,7 +266,7 @@ export class Ions {
       .catch(() => null);
     const failed = !r || r.reply === NO_AGENT || r.reply === TOO_LONG;
     const text = failed ? plainReport(title, status, reply) : capped(r.reply);
-    this.say(projectId, text);
+    this.say(projectId, text, undefined, r?.turnId);
     if (!this.chiefStarted(chat.chatId)) return;
     await this.chiefAnswering;
     this.say("chief", text);

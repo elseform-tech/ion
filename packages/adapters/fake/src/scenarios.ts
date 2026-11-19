@@ -60,7 +60,12 @@ const callIon = (server: IonServer, name: string, args: Record<string, unknown>)
 async function ionTool(s: Script, server: IonServer, name: string, args: Record<string, unknown>) {
   const toolId = `ion-${name}-${String(args.projectId ?? "")}`;
   tool(s, { toolId, name: `mcp__ion__${name}`, kind: "read", summary: name });
-  const res = await callIon(server, name, args);
+  const res = await callIon(server, name, args).catch(() => null);
+  // ion's server unreachable: the step failed, as an agent's MCP client would say.
+  if (!res) {
+    done(s, toolId, false);
+    return "";
+  }
   const body = (await res.json().catch(() => null)) as {
     result?: { content?: { text?: string }[]; isError?: boolean };
   } | null;

@@ -695,10 +695,6 @@ body.resizing {
 .ir .aico {
   display: grid;
 }
-/* A box filling a stacked row (a new routine's fields, a project's profile) stays inside it. */
-.srow.stack .fin {
-  box-sizing: border-box;
-}
 /* ion chief's suggestions: a day you asked is a chip like the lab's, but nothing to click. */
 .sugg .ev span {
   display: inline-flex;

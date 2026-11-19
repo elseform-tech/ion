@@ -52,6 +52,12 @@ type StartIonThread = (
  */
 export type TurnOpts = { request?: string; noThreads?: true };
 
+/**
+ * A turn's reply and the threads it started; `turnId`: the turn whose work its chat keeps (none when no session
+ * started), which its reply carries so the app puts that work above it.
+ */
+export type TurnResult = { reply: string; threads: Thread[]; turnId?: string };
+
 export type IonTurnsDeps = {
   store: EventStore;
   db: Db;
@@ -121,7 +127,7 @@ export class IonTurns {
   constructor(private readonly d: IonTurnsDeps) {}
 
   /** Your message to an ion: waits for its turn before (one session per ion at a time), then thinks. */
-  turn(ionId: string, text: string, o: TurnOpts = {}): Promise<{ reply: string; threads: Thread[] }> {
+  turn(ionId: string, text: string, o: TurnOpts = {}): Promise<TurnResult> {
     const next = (this.chains.get(ionId) ?? Promise.resolve())
       .catch(() => {})
       .then(() => this.run(ionId, text, o.noThreads ? null : (o.request ?? text)));
@@ -163,11 +169,7 @@ export class IonTurns {
     clearTimeout(timer);
   }
 
-  private async run(
-    ionId: string,
-    text: string,
-    request: string | null,
-  ): Promise<{ reply: string; threads: Thread[] }> {
+  private async run(ionId: string, text: string, request: string | null): Promise<TurnResult> {
     if (this.stopping) return { reply: NO_AGENT, threads: [] };
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
@@ -179,11 +181,11 @@ export class IonTurns {
     this.live.set(turnId, live);
     try {
       const end = await this.session({ ionId, turnId, text, cwd, rules }, brain, h.adapter);
-      return { reply: this.settle(ionId, brain.harness, end), threads: live.threads };
+      return { reply: this.settle(ionId, brain.harness, end), threads: live.threads, turnId };
     } catch (e) {
       console.error(`ion's agent (${brain.harness}): ${e instanceof Error ? e.name : "an error"}`);
       if (!this.stopping) this.forgetSession(ionId);
-      return { reply: NO_AGENT, threads: live.threads };
+      return { reply: NO_AGENT, threads: live.threads, turnId };
     } finally {
       this.live.delete(turnId);
       this.d.grants.revoke(turnId);

@@ -7,7 +7,6 @@ import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
 import { Markdown } from "../chats/Message.js";
-import type { Work } from "../chats/steps.js";
 import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
 import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
@@ -168,15 +167,11 @@ function Card(p: CardProps) {
 const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled";
 const ions = (m: IonItem | undefined) => m !== undefined && m.kind !== "you";
 
-type LineProps = Omit<CardProps, "card"> & {
-  m: Exclude<IonItem, { kind: "you" }>;
-  work?: Work;
-  last: boolean;
-};
+type LineProps = Omit<CardProps, "card"> & { m: Exclude<IonItem, { kind: "you" }>; last: boolean };
 
 /** One of the ion's lines (its avatar on the last of a run): a turn's work above its words and card. */
-function IonLine({ m, work, last, ...p }: LineProps) {
-  const w = m.kind === "work" ? m.work : work;
+function IonLine({ m, last, ...p }: LineProps) {
+  const w = m.work;
   return (
     <div className="bm">
       {last ? <IonAvatar ion={p.ion} /> : <span />}
@@ -214,12 +209,7 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
                 {m.text}
               </div>
             );
-          const next = p.items[i + 1];
-          // A turn's work shows above the reply that ends it; until then (live), on its own.
-          if (m.kind === "work" && next?.kind === "ion") return null;
-          const prev = p.items[i - 1];
-          const work = m.kind === "ion" && prev?.kind === "work" ? prev.work : undefined;
-          return <IonLine key={i} {...p} m={m} {...(work ? { work } : {})} last={!ions(next)} />;
+          return <IonLine key={i} {...p} m={m} last={!ions(p.items[i + 1])} />;
         })}
         {/* Your message is the last thing: the ion is thinking (its reply takes this place). */}
         {p.items.at(-1)?.kind === "you" && (
