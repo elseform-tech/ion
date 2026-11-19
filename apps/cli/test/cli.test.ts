@@ -22,7 +22,8 @@ function ion(...args: string[]): Promise<{ code: number; out: string; err: strin
     execFile(
       "node",
       [BIN, ...args],
-      { env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1" } },
+      // Debug mode: `ion harnesses` lists the fake agent too (it's hidden otherwise).
+      { env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1", ION_DEBUG: "1" } },
       (e, out, err) =>
         resolve({ code: e ? ((e as { code?: number }).code ?? 1) : 0, out: out.trim(), err: err.trim() }),
     );

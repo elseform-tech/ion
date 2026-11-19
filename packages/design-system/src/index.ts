@@ -68,6 +68,8 @@ export {
   SquareTerminal,
   SquarePen,
   Wrench,
+  Maximize2,
+  X,
 } from "lucide-react";
 export { Avatar, type BotState } from "./Avatar.js";
 export { botFor } from "./bots.js";

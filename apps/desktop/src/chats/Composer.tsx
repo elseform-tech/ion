@@ -205,22 +205,31 @@ function useBrain(to: Props["to"], current: Props["current"]): [Brain, (b: Brain
   return [brain, set];
 }
 
+/**
+ * Only a ready agent is a default: the chat's own while it's ready (or while the list loads), else the first one
+ * ready. Until the list arrives, nothing is sent.
+ */
+function defaults(harnesses: HarnessInfo[], harness: string | null | undefined) {
+  const ready = harnesses.filter((h) => h.installed && h.signedIn);
+  const own = harness && (!harnesses.length || ready.some((h) => h.id === harness)) ? harness : undefined;
+  return { ready, own, first: own ?? ready[0]?.id ?? "" };
+}
+
+/** The brain to send with: what you picked, else the default agent (on its own model when it isn't the chat's). */
+const withAgent = (brain: Brain, own: string | undefined, first: string): Brain =>
+  brain.harness || own
+    ? { ...brain, harness: brain.harness || first }
+    : { ...brain, harness: first, model: "" };
+
 /** The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running. */
 export function Composer(p: Props) {
   const { client, harnesses, to, running, onSent, harness, project, onBrainOpen, locked, onSending } = p;
-  // Only a ready agent is a default: the chat's own while it's ready (or while the list loads), else the first
-  // one ready, on its own model. Until the list arrives, nothing is sent.
-  const ready = harnesses.filter((h) => h.installed && h.signedIn);
-  const own = harness && (!harnesses.length || ready.some((h) => h.id === harness)) ? harness : undefined;
-  const first = own ?? ready[0]?.id ?? "";
+  const { ready, own, first } = defaults(harnesses, harness);
   const [brain, setBrain] = useBrain(to, p.current);
   const [access, setAccess] = useState<Access>("");
   const [text, setText] = useState("");
   const { error, pending, send } = useSend(client, onSent);
-  const b =
-    brain.harness || own
-      ? { ...brain, harness: brain.harness || first }
-      : { ...brain, harness: first, model: "" };
+  const b = withAgent(brain, own, first);
   const canSend = !locked && Boolean(text.trim()) && ready.some((h) => h.id === b.harness);
   const put = (t: string) => {
     setText(t);

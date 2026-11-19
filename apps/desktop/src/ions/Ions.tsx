@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useLive } from "../chats/live.js";
 import { NewProject, ProjectMenu } from "../chats/ProjectMenu.js";
 import { Star } from "@ion/design-system";
-import { IonAvatar, IonChat, IonName } from "./IonChat.js";
+import { IonAvatar, IonName } from "./IonAvatar.js";
+import { IonChat } from "./IonChat.js";
 import { ActivityPage, ActivityRow, useActivity } from "./Activity.js";
 
 /** The Activity page's place in the panel (no ion has this id). */

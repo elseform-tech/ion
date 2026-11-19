@@ -190,12 +190,12 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .bm canvas{width:28px;height:28px}
 .bi{background:var(--hover);border-radius:18px 18px 18px 6px;padding:9px 14px;justify-self:start;max-width:86%}
 .bu{justify-self:end;background:var(--ink);color:var(--win);border-radius:18px 18px 6px 18px;padding:9px 14px;max-width:78%}
-.tlink{display:flex;align-items:center;gap:10px;margin-top:8px;padding:8px 10px;border-radius:12px;background:var(--win);border:0;width:100%;text-align:left;cursor:pointer;box-shadow:0 0 0 1px var(--line)}
-.tlink:hover{box-shadow:0 0 0 1px var(--faint)}
-.tlink .g{flex:1;min-width:0}
-.tlink .g small{display:block;color:var(--muted);font-size:12px}
-.tlink .lucide{color:var(--faint)}
-.tlink .wd{width:7px;height:7px;border-radius:50%;background:var(--wait)}
+.tls{display:grid;justify-items:start;margin-top:6px}
+.tl{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:3px 6px 3px 0;border:0;background:transparent;color:var(--muted);font-size:13px;text-align:left;cursor:pointer}
+.tl:hover,.tl.on{color:var(--ink)} .tl b{font-weight:500;color:var(--ink);white-space:nowrap}
+.tl canvas{width:16px;height:16px;flex-shrink:0} .tl .lucide{width:14px;height:14px;flex-shrink:0;color:var(--faint)} .tl .lucide-circle-alert{color:var(--wait)}
+.tl .tt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .tl .wn{color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+.tl .wd{width:7px;height:7px;border-radius:50%;background:var(--wait);flex-shrink:0} .tl>.lucide:last-child{opacity:0} .tl:hover>.lucide:last-child,.tl.on>.lucide:last-child{opacity:1}
 .quick{display:flex;gap:6px;flex-wrap:wrap;margin-left:38px}
 .quick button{border:1px solid var(--line);background:var(--win);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
 .quick button:hover{background:var(--hover)}
@@ -1054,16 +1054,16 @@ button.arow:hover{background:var(--hover)}
 .addp{display:flex;align-items:center;gap:8px;width:100%;margin-top:6px;padding:9px 10px;border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);cursor:pointer;font-size:13px}
 .addp:hover{color:var(--ink);border-color:var(--faint)}
 .addp .lucide{width:15px;height:15px}
-.fan{display:grid;gap:2px;padding:8px;border-radius:14px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:460px}
-.fanh{display:flex;align-items:center;gap:6px;padding:2px 6px 6px;font-size:12px;color:var(--muted)}
-.fanh .lucide{width:13px;height:13px}
-.fanr{display:grid;grid-template-columns:22px 110px minmax(0,1fr) 14px;gap:8px;align-items:center;padding:7px 6px;border:0;border-radius:9px;background:transparent;text-align:left;cursor:pointer;color:var(--ink);font-size:13px}
-.fanr:hover{background:var(--hover)}
-.fanr canvas{width:22px;height:22px}
-.fanr b{font-weight:500}
-.ft2{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;min-width:0}
-.ft2 .lucide{width:13px;height:13px;flex-shrink:0}
-.fanr>.lucide{width:14px;height:14px;color:var(--faint)}
+/* a thread an ion started, open beside its chat (like a chat's side panel) */
+.ichat.peek{grid-template-columns:minmax(0,1fr) min(var(--peek-w,420px),calc(100% - 420px))}
+.ichat.peek>:not(.tpeek){grid-column:1}
+.tpeek{grid-column:2;grid-row:1/4;position:relative;display:grid;grid-template-rows:56px minmax(0,1fr) auto;min-height:0;min-width:0;border-left:1px solid var(--line);background:var(--win)}
+.tpeek .head{gap:8px;padding:0 10px 0 16px}
+.tpeek .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpeek .head .muted{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.tpeek .msgs{min-height:0;overflow:auto;padding:16px 0 12px}
+.tpeek .msgs .col,.tpeek .foot .fcol{max-width:none;padding:0 18px}
+.ichat.peek .bcol{max-width:560px}
 .rin{margin-top:3px;font-size:12px;color:var(--faint);font-style:italic}
 .rh2 canvas{width:18px;height:18px;display:block}
 .chip.mono,.mono{font-family:var(--mono);font-size:12px}
@@ -2714,7 +2714,7 @@ const IONS={
       {f:'i',t:'Morning. 4 things need you across 3 projects. They’re pinned above, most urgent first.',meta:'deep',work:'brief'},
       {sugg:'friday'},{sugg:'tw4'},
       {f:'u',t:'The checkout rounding bug might be in other services too. Check.'},
-      {work:'fan',fanout:[['payments-api','run','Checking totals rounding'],['billing','ok','Not affected: already sums in cents'],['mobile-app','ok','Not affected: uses payments-api totals']]},
+      {work:'fan',fanout:[['payments-api','run','Read src/money/round.ts','42s'],['billing','ok','Not affected: already sums in cents','1m 12s'],['mobile-app','ok','Not affected: uses payments-api totals','38s']]},
       {f:'u',t:'Every Monday, update storefront’s dependencies and open a PR if the tests pass.'},
       {routineAdded:{k:'storefront',ri:1}},
       {f:'u',t:'Do the same CI triage on payments-api.'},
@@ -2724,7 +2724,7 @@ const IONS={
               RT('Dependency update','Mondays 9:00','Mon 9:00',{h:'codex',effort:'low',isNew:1,instr:'Update minor and patch versions; open a PR if tests pass.'})],
     msgs:[
       {f:'i',t:'Cart drawer e2e failed twice on main (CI triage). I started a chat to reproduce it.'},
-      {f:'i',link:{title:'Cart drawer e2e',sub:'storefront · Grok Build',wait:true}},
+      {f:'i',link:['storefront','wait','Cart drawer e2e']},
       {f:'i',t:'It needs a staging login. Should I use the QA account?'},
       {quick:['Use QA account','I’ll sign in','Skip for now']}]},
   'payments-api':{name:'payments-api',color:PAL.Green,harness:'claude',proj:'payments-api',state:'working',effort:'high',last:'Checking totals rounding',stats:{runs:9,ok:8,prs:6,cost:'$11.40'},
@@ -2732,14 +2732,14 @@ const IONS={
               RT('CI triage','When CI fails on main','Next CI failure',{h:'grok',effort:'medium',isNew:1,instr:'Re-run failing e2e twice; open a chat if it still fails.'})],
     msgs:[
       {f:'i',t:'ion asked me to check whether payments has storefront’s rounding bug.'},
-      {f:'i',link:{title:'Totals rounding check',sub:'payments-api · Claude Code',run:true}},
+      {f:'i',link:['payments-api','run','Bash pnpm test totals','1m 05s']},
       {f:'i',t:'Quick answer while it runs: payments looks safe. It already sums in cents.',proof:'none'},
       {f:'i',t:'Webhook retry backoff is still running too.'},
-      {f:'i',link:{title:'Webhook retry backoff',sub:'payments-api · Claude Code',run:true}},
+      {f:'i',link:['payments-api','run','Edit src/webhooks/retry.ts','3m 20s']},
       {f:'i',workOnly:'payLive'}]},
   docs:{name:'docs',color:PAL.Amber,harness:'pi',proj:'docs',state:'idle',last:'Changelog draft is up',stats:{runs:4,ok:4,prs:3,cost:'$0.90'},
     routines:[RT('Changelog draft','After each release','After v2.4',{effort:'low',instr:'Draft the changelog from merged PRs.'})],
-    msgs:[{f:'i',t:'v2.3 changelog is drafted from the merged PRs.'},{f:'i',link:{title:'v2.3 changelog',sub:'docs · Pi'}}]},
+    msgs:[{f:'i',t:'v2.3 changelog is drafted from the merged PRs.'},{f:'i',link:['docs','ok','v2.3 changelog','2m 41s']}]},
   'mobile-app':{name:'mobile-app',color:PAL.Blue,harness:'grok',proj:'mobile-app',state:'waiting',last:'App Store rejected 2 screenshots',stats:{runs:22,ok:19,prs:5,cost:'$7.30'},
     routines:[RT('Crash watch','Every day 7:00','Tomorrow 7:00',{effort:'low',instr:'Group new crashes; open a chat for anything new and frequent.'}),
               RT('Store review','When a build is rejected','Next rejection',{effort:'medium',instr:'Read the rejection and propose fixes.'}),
@@ -2899,8 +2899,27 @@ function newIonCard(k){
     <div><b>${esc(v.name)}</b>${v.status==='new'?'<span class="tag">New ion</span>':''}<div class="s">${esc(v.role)}</div>
     <div class="meta"><span><i data-lucide="calendar-clock"></i>${esc(v.when)}</span><span><i data-lucide="folder"></i>${esc(pj(v))}</span><span>${hAv(v.harness)}${esc(hName(v.harness))}</span></div></div>${foot}</div>`;
 }
+/* a thread an ion started: one line like a tool call's (what it's doing now, shimmering, and for how long); opens beside the chat */
+function tlHTML(pk,st,txt,time){
+  const say=st==='wait'?'Waiting for you':txt;
+  return `<button class="tl" type="button" data-peek="${esc(pk)}" data-pt="${esc(txt)}" data-ps="${st}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b>${st==='err'?'<i data-lucide="circle-alert"></i>':''}<span class="tt${st==='run'?' now':''}">${esc(say)}</span>${st==='wait'?'<i class="wd"></i>':time?`<span class="wn">· ${esc(time)}</span>`:''}<i data-lucide="chevron-right"></i></button>`;
+}
+function peekHTML(pk,txt,st){
+  const steps=st==='run'?[['file-text','Read','package.json','ok'],['search','Grep','round(','ok'],['file-text','Read',txt.replace(/^\S+ /,''),'run']]:[['file-text','Read','package.json','ok'],['square-terminal','Bash','pnpm test','ok']];
+  return `<aside class="tpeek" aria-label="${esc(txt)}"><header class="head"><span class="title">${esc(st==='run'?'Totals rounding check':txt)}</span><span class="muted">${esc(pk)}</span><span class="sp"></span><button class="ib" type="button" title="Open in Chats" data-go="code"><i data-lucide="maximize-2"></i></button><button class="ib" type="button" title="Close" data-peekx="1"><i data-lucide="x"></i></button></header>
+    <div class="msgs"><div class="col"><div class="u">${esc(st==='run'?'Check whether payments has storefront’s rounding bug.':txt)}</div><div class="work open"><button class="wh" type="button">${st==='run'?`<span class="now">${esc(txt)}</span><span class="wn">· 42s</span>`:'<i data-lucide="wrench"></i><span>Worked for 1m 12s</span>'}</button><div class="wb">${steps.map(([ic,n,a,s2])=>`<div class="ws w-${s2}">${s2==='run'?'<i class="spin"></i>':`<i data-lucide="${ic}"></i>`}<div class="wl"><b>${n}</b> <code>${esc(a)}</code></div><span></span></div>`).join('')}</div></div>${st==='run'?'':`<div class="a">${esc(txt)}.</div>`}</div></div></aside>`;
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-peek]'), x=e.target.closest('[data-peekx]');
+  if(!t&&!x) return;
+  chatEl.querySelector('.tpeek')?.remove(); chatEl.querySelectorAll('.tl.on').forEach(b=>b.classList.remove('on'));
+  const again=t&&chatEl.dataset.peeked===t.dataset.peek+t.dataset.pt;
+  if(x||again){ chatEl.classList.remove('peek'); delete chatEl.dataset.peeked; return; }
+  chatEl.insertAdjacentHTML('beforeend',peekHTML(t.dataset.peek,t.dataset.pt,t.dataset.ps)); t.classList.add('on');
+  chatEl.classList.add('peek'); chatEl.dataset.peeked=t.dataset.peek+t.dataset.pt; icons(chatEl);
+});
 function renderIon(k,ph){
-  curIon=k; const v=IONS[k]; actBtn.classList.remove('on');
+  curIon=k; const v=IONS[k]; actBtn.classList.remove('on'); chatEl.classList.remove('peek'); delete chatEl.dataset.peeked;
   document.querySelectorAll('[data-ionsel]').forEach(b=>b.classList.toggle('on',b.dataset.ionsel===k));
   let h=`<div class="head"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>${k==='lead'?'<span class="title brand hname" aria-label="ion">i<i>o</i>n</span>':`<span class="title">${esc(v.name)}</span>`}<span class="sp"></span>
     <button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${k}"><i data-lucide="sliders-horizontal"></i></button></div>
@@ -2908,7 +2927,7 @@ function renderIon(k,ph){
   v.msgs.forEach((m,i)=>{
     const isI=x=>x&&(x.f==='i'||x.newIon||x.route||x.fanout||x.routineAdded||x.sugg);
     const next=v.msgs[i+1], showAv=isI(m)&&!isI(next);
-    if(m.fanout){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${m.work?workHTML(m.work):''}<div class="fan"><div class="fanh"><i data-lucide="split"></i>Asked ${m.fanout.length} projects</div>${m.fanout.map(([pk,st,txt])=>`<button class="fanr" type="button" data-ionsel="${esc(pk)}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b><span class="ft2">${st==='run'?'<i class="spin"></i>':'<i data-lucide="circle-check" class="ok"></i>'}${esc(txt)}</span><i data-lucide="chevron-right"></i></button>`).join('')}</div></div></div>`; return; }
+    if(m.fanout){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${m.work?workHTML(m.work):''}<div class="tls">${m.fanout.map(r=>tlHTML(...r)).join('')}</div></div></div>`; return; }
     if(m.routineAdded){ const {k:rk,ri}=m.routineAdded, rv=IONS[rk], r=rv&&rv.routines[ri];
       const body=!r?`<div class="note">Removed. ${esc(rk)} keeps its other routines.</div>`
         :`<div class="ncard"><canvas class="av" data-ion="${esc(rk)}" aria-hidden="true"></canvas><div><b>${esc(r.n)}</b>${r.isNew?'<span class="tag">New routine</span>':''}<div class="s">Added to ${esc(rk)}</div>
@@ -2922,7 +2941,7 @@ function renderIon(k,ph){
     if(m.f==='u'){ h+=`<div class="bu">${esc(m.t)}</div>`; return; }
     if(m.sugg){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${suggHTML(m.sugg)}</div></div>`; return; }
     if(m.workOnly){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${workHTML(m.workOnly)}</div></div>`; return; }
-    const inner=m.link?`<button class="tlink" type="button" data-go="code"><i data-lucide="message-square"></i><span class="g">${esc(m.link.title)}<small>${esc(m.link.sub)}</small></span>${m.link.wait?'<i class="wd"></i>':m.link.run?'<i class="spin"></i>':''}<i data-lucide="chevron-right"></i></button>`:`<div class="bi">${esc(m.t)}</div>`;
+    const inner=m.link?`<div class="tls">${tlHTML(...m.link)}</div>`:`<div class="bi">${esc(m.t)}</div>`;
     const s2=m.meta==='deep'||m.meta==='reflect';
     const meta=m.meta?`<div class="bmeta">${m.meta==='deep'?'Briefing · Deep':m.meta==='reflect'?'Suggestions · Deep':'Quick'} · ${esc(s2?IONBRAIN.deep[1]:IONBRAIN.fast[1])}${s2?' · '+effLabel(IONBRAIN.eff):''}</div>`:'';
     const proof=m.proof==='none'?`<div class="proof warn"><i data-lucide="triangle-alert"></i>No tests run<span>·</span><button type="button">Ask for proof</button></div>`:'';

@@ -3,7 +3,7 @@ import type { ChatInfo, IonInfo } from "@ion/schema";
 import { useRef, useState } from "react";
 import { useDismiss } from "../chats/dismiss.js";
 import { relTime } from "../chats/live.js";
-import { IonAvatar, IonName } from "./IonChat.js";
+import { IonAvatar, IonName } from "./IonAvatar.js";
 
 /** The chats an ion started (ion chief: every ion's), newest first. */
 const startedBy = (ion: IonInfo, chats: ChatInfo[]) =>
