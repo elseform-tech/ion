@@ -145,11 +145,14 @@ export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
   return null;
 }
 
-/** A tool's relative paths (fields named for a path, a file, a folder or a glob), from the worktree, links followed. */
+/**
+ * Every string in a tool's input, anywhere and whatever its field is called, taken as a path from the worktree
+ * (links followed): a word ("tip") stays inside; a path through a link out of the worktree doesn't.
+ */
 function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
-  return Object.entries(req.input)
-    .filter(([k, v]) => /path|file|dir|glob|cwd/i.test(k) && typeof v === "string" && !/^[/~$]/.test(v))
-    .map(([, v]) => realish(resolve(c.roots[0] ?? "/", v as string)));
+  return [...strings(req.input)]
+    .filter((v) => !/^[/~$]/.test(v))
+    .map((v) => realish(resolve(c.roots[0] ?? "/", v)));
 }
 
 /** A path in the input that climbs out ("..") or starts at your home ("~", $HOME): the judge decides those. */

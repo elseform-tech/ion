@@ -85,6 +85,9 @@ describe("ruleFor, reading and searching", () => {
     const c = { roots: [tree], home, ionDirs: [] };
     expect(ruleFor(tool("read", { file_path: "link/secret" }), c)).toBeNull();
     expect(ruleFor(tool("search", { pattern: "x", path: "link" }), c)).toBeNull();
+    // Security review, 2026-11-19: whatever a field is called, and however deep, its path is followed.
+    expect(ruleFor(tool("read", { target: "link/secret" }), c)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", include: ["src", "link/secret"] }), c)).toBeNull();
     expect(ruleFor(tool("read", { file_path: "a.ts" }), c)?.decision).toBe("allow");
   });
 });

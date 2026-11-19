@@ -79,6 +79,18 @@ export class NeedsService {
       });
   }
 
+  /** At ion's start: no call from before is still held, so their questions can't be answered any more. */
+  supersedeStoppedCalls(): void {
+    for (const n of needsView.open(this.db, undefined, true).filter((x) => x.blocked))
+      this.store.append({
+        chatId: n.chatId,
+        runId: n.runId,
+        origin: "daemon",
+        type: EV.needResolved,
+        data: { needId: n.needId, decision: "superseded", by: "daemon" },
+      });
+  }
+
   open(chatId?: string, held = false): NeedInfo[] {
     return needsView.open(this.db, chatId, held);
   }

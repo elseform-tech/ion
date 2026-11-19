@@ -154,7 +154,8 @@ export class Decisions {
 
   /**
    * ion stopped a tool call (the judge said no, or couldn't decide): ask you, and hold the call until you answer
-   * or 4 minutes pass ("timeout": the call is refused, the question stays open, and a later yes still counts).
+   * or 4 minutes pass ("timeout": the call is refused; the question stays open while its run goes on, and a yes
+   * meanwhile still counts).
    */
   askBlocked(s: Scope, b: Blocked): Promise<Held> {
     const q = blockedQuestion(b);

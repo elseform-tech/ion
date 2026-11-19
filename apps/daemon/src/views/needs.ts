@@ -57,11 +57,14 @@ export const needsView: View & {
       .get(chatId, dedupeKey) as { id: string } | undefined;
     return r?.id ?? null;
   },
-  // An agent's question outlives the run that asked it (the agent ends its turn to wait for you).
+  // An agent's question outlives the run that asked it (the agent ends its turn to wait for you); a question about
+  // a call ion stopped doesn't: the call ended with its run.
   openForRun(db, runId) {
     return (
       db
-        .prepare("SELECT need_id AS id FROM view_needs WHERE open = 1 AND run_id = ? AND kind != 'ask'")
+        .prepare(
+          "SELECT need_id AS id FROM view_needs WHERE open = 1 AND run_id = ? AND (kind != 'ask' OR blocked = 1)",
+        )
         .all(runId) as {
         id: string;
       }[]
