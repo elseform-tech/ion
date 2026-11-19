@@ -23,6 +23,25 @@ const Choice = z.object({
   recommended: z.boolean().optional().describe("Your own pick; at most one"),
 });
 
+/** What ion's ask tool tells an agent about asking well. */
+const ASK_DESCRIPTION =
+  'Ask the user to decide something before you do it. Write the question as one full sentence that stands on its own (what you\'ll do and to what, e.g. "Should I merge the cart drawer fix into main now that its tests pass?", never just "Merge it?") with the context they need in it, and give 2 to 4 real options, each a one-line sentence with its pros and cons, marking your recommended one. The user can also answer in their own words. Then end your turn; the answer comes as the next message. Check `decisions` first: the user may have decided already.';
+
+/** What an agent passes to ask. */
+const ASK_INPUT = {
+  question: z
+    .string()
+    .min(1)
+    .max(500)
+    .describe("One full sentence that stands on its own: what you'd do, and to what"),
+  choices: z.array(Choice).min(2).max(4),
+  why: z
+    .string()
+    .max(1000)
+    .optional()
+    .describe("Not shown to the user: put the context in the question and the options instead"),
+};
+
 /** One decision and, when it was made in `projectId`, what came of it. */
 export function decisionLine(x: DecisionInfo, projectId: string): string {
   return (
@@ -39,17 +58,8 @@ export function askTools(server: McpServer, scope: RunScope, d: { db: Db; decisi
   server.registerTool(
     "ask",
     {
-      description:
-        'Ask the user to decide something before you do it. Write the question as one full sentence that stands on its own (what you\'ll do and to what, e.g. "Should I merge the cart drawer fix into main now that its tests pass?", never just "Merge it?"), add the context they need (why), and give 2 to 4 real options, each a one-line sentence with its pros and cons, marking your recommended one. The user can also answer in their own words. Then end your turn; the answer comes as the next message. Check `decisions` first: the user may have decided already.',
-      inputSchema: {
-        question: z
-          .string()
-          .min(1)
-          .max(500)
-          .describe("One full sentence that stands on its own: what you'd do, and to what"),
-        choices: z.array(Choice).min(2).max(4),
-        why: z.string().max(1000).optional().describe("Why you're asking: the situation and what's at stake"),
-      },
+      description: ASK_DESCRIPTION,
+      inputSchema: ASK_INPUT,
     },
     guard((a: { question: string; choices: z.infer<typeof Choice>[]; why?: string }) =>
       d.decisions.ask(scope, a).then(ok),

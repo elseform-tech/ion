@@ -793,3 +793,7 @@ body.resizing {
   gap: 4px;
   white-space: nowrap;
 }
+/* The question in ion's accent, its options in ink with their reasons muted: you tell them apart at a glance. */
+.qhead .qq {
+  color: var(--accent);
+}

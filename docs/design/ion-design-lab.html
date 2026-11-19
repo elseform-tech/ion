@@ -843,9 +843,9 @@ button.arow:hover{background:var(--hover)}
 .sugg .sm2 .lucide{width:12px;height:12px}
 .sugg .sm2 canvas{width:14px;height:14px}
 .sugg .acts{display:flex;gap:4px;align-items:center;flex-shrink:0}
-.sugg .acts .btn{height:26px;padding:0 10px;font-size:12.5px}
+.sugg .acts .btn{height:24px;padding:0 9px;font-size:12px;border-radius:7px}
 .sugg .acts .ib{width:26px;height:26px}
-.sugg .mute{border:0;background:transparent;color:var(--faint);font-size:12px;cursor:pointer;padding:0}
+.sugg .mute{border:0;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;padding:0 6px}
 .sugg .mute:hover{color:var(--ink)}
 .sugg .done{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);flex-shrink:0}
 .sugg .done .lucide{width:14px;height:14px;color:var(--good)}
@@ -1157,6 +1157,7 @@ details a{color:var(--accent)}
 .qd .why{color:var(--muted);padding:0 0 6px 15px}
 /* open: the question wraps to 2 lines, its hint at most 3 (all of it on a click), each option one line */
 .qbox:has(.qd) .qhead .qq{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.qhead .qq{color:var(--accent)}
 .qd{max-height:34vh} .qd .why{cursor:pointer;font-size:12.5px} .qd .why.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .qopt{display:flex;align-items:center;gap:8px;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .qopt:hover{background:var(--hover)} .qopt b{font-weight:500;flex-shrink:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .qhead>.btn{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .qopt span{min-width:0;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1427,8 +1428,7 @@ export function sumLines(lines: Line[]) {
                     <button type="button" class="ib qtog" aria-label="Collapse" aria-expanded="true" data-qtog><i data-lucide="chevron-down"></i><i data-lucide="chevron-up"></i></button>
                   </div>
                   <div class="qd">
-                    <div class="why clamp" role="button" tabindex="0" onclick="this.classList.toggle('clamp')">Tailwind 4 drops your custom <code>xs</code> screen (420px).</div>
-                    <button type="button" class="qopt" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done"><b>Keep xs by moving it into the theme</b><span>Moves xs into the theme; nothing changes on screen</span><i data-lucide="star" class="rec" aria-label="Recommended"></i></button>
+                                        <button type="button" class="qopt" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done"><b>Keep xs by moving it into the theme</b><span>Moves xs into the theme; nothing changes on screen</span><i data-lucide="star" class="rec" aria-label="Recommended"></i></button>
                     <button type="button" class="qopt" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done"><b>Drop xs and use Tailwind's defaults</b><span>Drops xs; 9 components shift on small phones</span></button>
                     <button type="button" class="qopt" title="One fewer breakpoint; small phones get the sm layout" data-need="tw4" data-a="done"><b>Map xs onto the sm breakpoint</b><span>One fewer breakpoint; small phones get the sm layout</span></button>
                     <div class="qd-f">
@@ -2688,7 +2688,7 @@ const suggState={};
 function suggHTML(id){
   const g=SUGG[id], st=suggState[id];
   const m=([ic,t])=>ic.startsWith('ion')?`<span><canvas class="av" data-ion="${ic==='ion'?'lead':ic.slice(4)}" aria-hidden="true"></canvas>${esc(t)}</span>`:`<span><i data-lucide="${ic}"></i>${esc(t)}</span>`;
-  const foot=!st?`<div class="acts"><button class="btn pri" type="button" data-sg="keep" data-id="${id}">${esc(g.act)}</button><button class="btn" type="button" data-sg="later" data-id="${id}">Not now</button><span class="sp"></span><button class="ib" type="button" title="Fewer like this" data-sg="mute" data-id="${id}"><i data-lucide="bell-off"></i></button></div>`
+  const foot=!st?`<div class="acts"><button class="btn pri" type="button" data-sg="keep" data-id="${id}">${esc(g.act)}</button><button class="mute" type="button" data-sg="later" data-id="${id}">Not now</button><span class="sp"></span><button class="ib" type="button" title="Fewer like this" data-sg="mute" data-id="${id}"><i data-lucide="bell-off"></i></button></div>`
     :`<div class="done"><i data-lucide="${st==='keep'?'check':'bell-off'}"></i>${st==='keep'?esc(g.done):st==='later'?'Later':'Fewer like this'}</div>`;
   return `<div class="sugg"><div class="sh"><b><i data-lucide="${g.icon}" class="si"></i><span class="st">${esc(g.t)}</span></b>${foot}</div>
     <div class="sm2">${g.ev.map(([ic,t])=>`<button type="button"><i data-lucide="${ic}"></i>${esc(t)}</button>`).join('')}</div></div>`;
