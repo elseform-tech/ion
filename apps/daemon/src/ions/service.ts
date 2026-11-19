@@ -1,23 +1,11 @@
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
-import { defaultAgent } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
-import { needsView } from "../views/needs.js";
-import { brainOf, projectAgent, readyAgents } from "./brain.js";
-import { chiefPrompt, contextOf, parseRoute, type Route } from "./route.js";
-import {
-  parseProjectDecision,
-  plainReport,
-  projectContextOf,
-  projectPrompt,
-  reportOf,
-  reportPrompt,
-} from "./project.js";
-
-const TIMEOUT_MS = 30_000;
-const NO_MODEL = "I couldn't reach my model; try again.";
+import { brainOf, projectAgent } from "./brain.js";
+import { plainReport } from "./project.js";
+import { type IonTurns, NO_AGENT, TOO_LONG } from "./turn.js";
 
 type Ask = (
   args: {
@@ -38,38 +26,30 @@ function trimEnd(title: string): string {
   return title.slice(0, end);
 }
 
-/** ion's own model failing goes to the daemon's log (its output): the chat only says it couldn't reach it. */
-function logThink(why: string, agent: string | undefined): void {
-  const who = agent ? `ion's model (${agent})` : "ion's model";
-  console.error(`${who}: ${why.split("\n")[0]!.slice(0, 300)}`);
-}
-
-/** An answer ion couldn't read, logged; in debug mode (ION_DEBUG=1) with its start, to see why. */
-function unreadable(said: string): void {
-  const start = process.env.ION_DEBUG === "1" ? `: ${JSON.stringify(said.slice(0, 300))}` : "";
-  logThink(`an answer ion couldn't read${start}`, undefined);
-}
-
-/** Without a project's own agent or a last one: the first ready (quota-friendly first). */
-const firstOf = (ready: string[]) => defaultAgent(ready, null);
-
 export type IonsDeps = {
   store: EventStore;
   db: Db;
   configFile: string;
   runs: { ask: Ask };
-  /** ion's quick model (System 1): a prompt in, its last message out; `agent`: think on it instead of [ion] quick. */
-  quick: (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>;
+  /** An ion's turn: a session of its own agent with ion's tools; its reply and the threads it started. */
+  turns: Pick<IonTurns, "turn">;
   /** The agents and whether each is ready, to pick one for a project with none set. */
   agents?: () => Promise<HarnessInfo[]>;
 };
 
+type Thread = { chatId: string; projectId: string };
+
 /**
- * The ions: ion chief, and one per project (never `default`). A project's ion starts a thread (a chat marked
- * `by: "ion"`) for what you ask, and says how it ended. ion chief answers from what the daemon knows, or sends your
- * message on to project ions. Neither edits code. Each ion's chat is its events on "ion:<ionId>".
+ * The ions: ion chief, and one per project (never `default`). Each message to an ion is a turn of its own agent
+ * session (IonTurns) with ion's tools: it answers, and starts threads (chats marked `by: "ion"`) for work. When a
+ * thread ends, its ion says what came of it. No ion edits code. Each ion's chat is its events on "ion:<ionId>".
  */
 export class Ions {
+  /** Threads ion chief started while ion runs (its card is said only when its turn ends, maybe after the thread). */
+  private readonly fromChief = new Set<string>();
+  /** ion chief's answer being made: what came of a thread it started is passed on after it, never before. */
+  private chiefAnswering: Promise<void> = Promise.resolve();
+
   constructor(private readonly d: IonsDeps) {}
 
   private projects(): { id: string; harness?: string; shareWithIon?: boolean }[] {
@@ -96,16 +76,25 @@ export class Ions {
     });
   }
 
-  /** Whatever goes wrong, the ion answers (else "Thinking" would stay): your mistake in its words, else NO_MODEL. */
+  /**
+   * Your message: a turn of the ion's agent; its reply and the threads it started are one message. Whatever goes
+   * wrong, the ion answers (else "Thinking" would stay): your mistake in its words, else NO_AGENT.
+   */
   async message(ionId: string, text: string): Promise<void> {
     if (ionId !== "chief" && !this.projects().some((p) => p.id === ionId))
       throw new UserError(`Unknown ion: ${ionId}`);
     this.heard(ionId, text);
+    const answering = this.answer(ionId, text);
+    if (ionId === "chief") this.chiefAnswering = answering;
+    await answering;
+  }
+
+  private async answer(ionId: string, text: string): Promise<void> {
     try {
-      if (ionId === "chief") await this.chief(text);
-      else await this.project(ionId, text);
+      const { reply, threads } = await this.d.turns.turn(ionId, text);
+      this.say(ionId, reply, threadsCard(threads));
     } catch (e) {
-      this.say(ionId, e instanceof UserError ? e.message : NO_MODEL);
+      this.say(ionId, e instanceof UserError ? e.message : NO_AGENT);
     }
   }
 
@@ -115,58 +104,64 @@ export class Ions {
       const talk = this.d.store
         .read({ chatId: `ion:${ionId}` })
         .filter((e) => e.type === EV.ionHeard || e.type === EV.ionSaid);
-      if (talk.at(-1)?.type === EV.ionHeard) this.say(ionId, NO_MODEL);
+      if (talk.at(-1)?.type === EV.ionHeard) this.say(ionId, NO_AGENT);
     }
   }
 
   /**
-   * A project's ion thinks: answers itself, starts a thread for work (judged by your own words), or both. When its
-   * model can't be reached, your own words start the thread.
+   * An ion's turn starts a thread (its start_thread tool): the thread's chat, or why it couldn't. `turn.request` is
+   * your own message, what the judge reads as your request. From ion chief, the project's ion says the brief (ion
+   * chief's words, not yours) and shows the thread's line; a project's own ion shows it with its reply.
    */
-  private async project(projectId: string, text: string): Promise<void> {
-    const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId)!;
-    const context = projectContextOf(p, chatsView.list(this.d.db), needsView.open(this.d.db));
-    const said = await this.think(projectPrompt(text, context));
-    const d = (said === null ? null : parseProjectDecision(said)) ?? { thread: text };
-    if (!d.thread) return this.say(projectId, d.answer ?? "");
-    const t = await this.thread(projectId, d.thread, { request: text });
-    if ("why" in t) this.say(projectId, [d.answer, t.why].filter(Boolean).join(" "));
-    else this.say(projectId, d.answer ?? "On it.", { kind: "threads", threads: [t] });
+  async startThread(
+    projectId: string,
+    brief: string,
+    turn: { ionId: string; request: string },
+  ): Promise<{ chatId: string } | { why: string }> {
+    const chief = turn.ionId === "chief";
+    if (chief) this.say(projectId, `From ion: ${brief.trim()}`);
+    const t = await this.thread(projectId, brief, { request: turn.request });
+    if ("why" in t) return t;
+    if (chief) {
+      this.fromChief.add(t.chatId);
+      this.say(projectId, "On it.", threadsCard([t]));
+    }
+    return { chatId: t.chatId };
   }
 
   /**
    * A routine's time came (or you ran it now): its thread, titled by its name and briefed with its text (your own
-   * words, so the judge reads them as your request), at its effort.
+   * words, so the judge reads them as your request), at its effort. It starts directly: no turn, nothing to decide.
    */
   async routine(
     projectId: string,
     r: { name: string; text: string; effort?: Effort },
     by: "schedule" | "you",
-  ): Promise<{ chatId: string; projectId: string } | { why: string }> {
+  ): Promise<Thread | { why: string }> {
     const t = await this.thread(projectId, r.text, { request: r.text, title: r.name, effort: r.effort });
     if ("why" in t) this.say(projectId, `${r.name} didn't start: ${t.why}`);
-    else this.say(projectId, by === "you" ? "On it." : "On schedule.", { kind: "threads", threads: [t] });
+    else this.say(projectId, by === "you" ? "On it." : "On schedule.", threadsCard([t]));
     return t;
   }
 
   /**
    * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `o.request` is what the
-   * judge treats as your request: your own message (to ion chief), never a brief its model wrote. `o.title`: the
-   * thread's title; `o.effort`: its effort, over the project's.
+   * judge treats as your request: your own message, never a brief an ion's agent wrote. `o.title`: the thread's
+   * title; `o.effort`: its effort, over the project's.
    */
   private async thread(
     projectId: string,
     text: string,
     o: { request?: string; title?: string; effort?: Effort } = {},
-  ): Promise<{ chatId: string; projectId: string } | { why: string }> {
-    const harness = await this.agentFor(projectId);
+  ): Promise<Thread | { why: string }> {
+    const harness = await projectAgent(this.d, projectId);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
       const args = {
         projectId,
         text,
         ...(harness ? { harness } : {}),
-        ...this.brainOf(projectId, harness),
+        ...brainOf(this.d.configFile, projectId, harness),
         ...(o.effort ? { effort: o.effort } : {}),
         access: "auto" as const,
       };
@@ -179,112 +174,38 @@ export class Ions {
     }
   }
 
-  /** The project's own agent, else the one its last chat ran on, else the first ready. */
-  private agentFor(projectId: string): Promise<string | undefined> {
-    return projectAgent(this.d, projectId);
-  }
-
-  private brainOf(projectId: string, harness: string | undefined): { model?: string; effort?: Effort } {
-    return brainOf(this.d.configFile, projectId, harness);
-  }
-
-  /** The agent ion thinks with: none (as [ion] quick says) when that one is ready, else the first ready. */
-  private async quickAgent(): Promise<string | undefined> {
-    if (!this.d.agents) return undefined;
-    const ok = await readyAgents(this.d.agents);
-    const set = loadUserConfig(this.d.configFile).config.ion.quick.split(":")[0]!;
-    return ok.includes(set) ? undefined : firstOf(ok);
-  }
-
-  private async chief(text: string): Promise<void> {
-    const r = await this.decide(text);
-    if (!r) return this.say("chief", NO_MODEL);
-    if (!("route" in r)) return this.say("chief", r.answer);
-    const threads: { chatId: string; projectId: string }[] = [];
-    const missed: string[] = [];
-    for (const { projectId, brief } of r.route) {
-      // The brief is ion chief's words, not yours.
-      this.say(projectId, `From ion: ${brief.trim()}`);
-      const t = await this.thread(projectId, brief, { request: text });
-      if ("why" in t) missed.push(`Couldn't reach ${projectId}: ${t.why}`);
-      else {
-        threads.push(t);
-        this.say(projectId, "On it.", { kind: "threads", threads: [t] });
-      }
-    }
-    // The card shows the threads it started; the words say only what the card can't (a project it couldn't reach).
-    const card: IonCard | undefined = threads.length ? { kind: "threads", threads } : undefined;
-    this.say("chief", [r.answer, ...missed].filter(Boolean).join(" "), card);
-  }
-
-  /** ion chief's System 1: what to do with your message, or null when its model fails, is slow, or answers junk. */
-  private async decide(text: string): Promise<Route | null> {
-    // A project kept from ion chief (shareWithIon = false) gives it nothing to read and nothing to route to.
-    const ids = this.projects()
-      .filter((p) => p.shareWithIon !== false)
-      .map((p) => p.id);
-    const context = contextOf(ids, chatsView.list(this.d.db), needsView.open(this.d.db));
-    const prompt = chiefPrompt(text, ids, context);
-    // A model now and then answers in another shape than asked: ion asks once more before it gives up.
-    for (let tries = 0; tries < 2; tries++) {
-      const said = await this.think(prompt);
-      if (said === null) return null;
-      const r = parseRoute(said, ids);
-      if (r) return r;
-      unreadable(said);
-    }
-    return null;
-  }
-
-  /** ion's quick model on a prompt: its answer, or null when it fails or is slow. */
-  private async think(prompt: string): Promise<string | null> {
-    const agent = await this.quickAgent();
-    const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // A hard deadline: the model is told to stop, and ion doesn't wait past it even if it doesn't.
-    const late = new Promise<null>((r) => {
-      timer = setTimeout(() => {
-        abort.abort();
-        logThink(`no answer in ${TIMEOUT_MS / 1000} s`, agent);
-        r(null);
-      }, TIMEOUT_MS);
-    });
-    try {
-      return await Promise.race([this.d.quick(prompt, abort.signal, agent), late]);
-    } catch (e) {
-      // Its kind only: an agent's message can echo a provider's reply (debug mode logs it whole).
-      const kind = e instanceof Error ? e.name : "an error";
-      logThink(process.env.ION_DEBUG === "1" && e instanceof Error ? `${kind}: ${e.message}` : kind, agent);
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   /** When one of an ion's threads ends, its ion tells you what came of it, in its own words. */
   watch(): void {
     this.d.store.onAppend((e) => {
       if (e.type !== EV.runFinished || !e.chatId) return;
       const chat = chatsView.list(this.d.db).find((c) => c.chatId === e.chatId);
       if (chat?.by !== "ion" || !chat.projectId) return;
-      // The report takes a moment (ion's model); one that ends after ion stopped is dropped, never an error.
+      // The report takes a turn; one that ends after ion stopped is dropped, never an error.
       this.report(chat.projectId, chat, (e.data as { status: string }).status).catch(() => {});
     });
   }
 
-  /** Words only: the thread's line was shown when it started, and it updates as the thread runs. */
+  /**
+   * A turn of the project's ion says what came of the thread (it reads the thread with its tools); without its
+   * agent, the thread agent's own reply. You asked ion chief: it passes its project ion's words on, under the
+   * thread's line in its chat (repeated, not a turn of its own: the same words, no second session).
+   */
   private async report(projectId: string, chat: { chatId: string; title: string }, status: string) {
-    const reply = this.lastReply(chat.chatId);
     const title = trimEnd(chat.title);
-    const said = await this.think(reportPrompt(chat.title, reply, status));
-    const text = reportOf(said) ?? plainReport(title, status, reply);
-    this.say(projectId, text);
-    // You asked ion chief: it passes the answer on, under the thread's line in its chat.
-    if (this.chiefStarted(chat.chatId)) this.say("chief", text);
+    const r = await this.d.turns
+      .turn(projectId, `Thread ${title} ended: ${status}. Tell the user what came of it.`)
+      .catch(() => null);
+    const failed = !r || r.reply === NO_AGENT || r.reply === TOO_LONG;
+    const text = failed ? plainReport(title, status, this.lastReply(chat.chatId)) : r.reply;
+    this.say(projectId, text, r ? threadsCard(r.threads) : undefined);
+    if (!this.chiefStarted(chat.chatId)) return;
+    await this.chiefAnswering;
+    this.say("chief", text);
   }
 
-  /** Whether ion chief started this thread (a threads card of its names it). */
+  /** Whether ion chief started this thread (while ion runs, or a threads card of its names it). */
   private chiefStarted(chatId: string): boolean {
+    if (this.fromChief.has(chatId)) return true;
     return this.d.store.read({ chatId: "ion:chief" }).some((e) => {
       const card = e.type === EV.ionSaid ? (e.data as { card?: IonCard }).card : undefined;
       return card?.kind === "threads" && card.threads.some((t) => t.chatId === chatId);
@@ -298,4 +219,9 @@ export class Ions {
       .findLast((x) => x.type === EV.messageCompleted && x.origin === "adapter");
     return e ? String((e.data as { text?: unknown }).text ?? "") : "";
   }
+}
+
+/** The threads a reply carries, as its card (none when it started none). */
+function threadsCard(threads: Thread[]): IonCard | undefined {
+  return threads.length ? { kind: "threads", threads } : undefined;
 }

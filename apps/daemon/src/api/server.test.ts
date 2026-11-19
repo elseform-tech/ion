@@ -245,12 +245,14 @@ describe("daemon api", () => {
     ]);
   });
 
-  it("starts a thread when you message a project's ion, and ion chief routes with the fake model", async () => {
+  // Plan 14: an ion's turn is a session of its own agent (here the fake one) with ion's tools over MCP: ion chief
+  // starts threads with start_thread, and each thread's end comes back through a turn of its project's ion.
+  it("ion chief routes with the fake agent through start_thread", async () => {
     process.env.ION_ALLOW_FAKE = "1";
     await client.call("projects.add", { path: repo("app") });
     const seen: IonEvent[] = [];
     await client.subscribe({}, (e) => seen.push(e));
-    // ion thinks with its own quick model ([ion] quick), and judges with [access] judge: both fake here.
+    // ion thinks with its own agent ([ion] quick), and judges with [access] judge: both fake here.
     const cf = join(home, "config.toml");
     const { config } = loadUserConfig(cf);
     // Its project's ion runs on the fake agent too: with none set, ion would pick a real one that's ready.
@@ -260,26 +262,29 @@ describe("daemon api", () => {
       access: { ...config.access, judge: "fake" },
       projects: config.projects.map((p) => ({ ...p, harness: "fake" })),
     });
-    await client.call("ion.message", { ionId: "app", text: "hello from your ion" });
-    const thread = (await client.call("chats.list", {})).find((c) => c.by === "ion");
-    expect(thread).toMatchObject({ projectId: "app", title: "hello from your ion" });
-    await until(
-      () =>
-        seen.some(
-          (e) =>
-            e.chatId === "ion:app" &&
-            e.type === "ion.said" &&
-            (e.data as { text: string }).text.startsWith("It's done."),
-        ),
-      5000,
-    );
+    const ionSaid = (ionId: string) =>
+      seen
+        .filter((e) => e.chatId === `ion:${ionId}` && e.type === "ion.said")
+        .map((e) => e.data as { text: string; card?: { kind: string; threads: { chatId: string }[] } });
     await client.call("ion.message", { ionId: "chief", text: "please check app" });
-    await until(() => seen.some((e) => e.chatId === "ion:chief" && e.type === "ion.said"), 15_000);
-    const chief = seen.filter((e) => e.chatId === "ion:chief" && e.type === "ion.said").at(-1)!.data as {
-      text: string;
-    };
-    expect(chief).toMatchObject({ text: "", card: { kind: "threads" } });
-    // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
+    const chief = ionSaid("chief").at(-1)!;
+    expect(chief).toMatchObject({ text: "Asked 1 project.", card: { kind: "threads" } });
+    // Its turn used ion's tools: its work is on its chat.
+    const tools = seen.filter((e) => e.chatId === "ion:chief" && e.type === "tool.started");
+    expect(tools.map((e) => (e.data as { name: string }).name)).toEqual([
+      "mcp__ion__projects",
+      "mcp__ion__start_thread",
+    ]);
+    const thread = (await client.call("chats.list", {})).find((c) => c.by === "ion");
+    expect(thread).toMatchObject({
+      projectId: "app",
+      title: "please check app",
+      chatId: chief.card!.threads[0]!.chatId,
+    });
+    expect(ionSaid("app")[0]).toEqual({ text: "From ion: please check app" });
+    // The thread ends: app's ion says what came of it, and ion chief passes it on.
+    await until(() => ionSaid("chief").at(-1)?.text === "It's done.", 15_000);
+    expect(ionSaid("app").at(-1)).toEqual({ text: "It's done." });
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.

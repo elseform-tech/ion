@@ -69,6 +69,39 @@ async function ionTool(s: Script, server: IonServer, name: string, args: Record<
   return ok ? (body?.result?.content?.[0]?.text ?? "") : "";
 }
 
+/** How an ion's turn answers a thread's end ("Thread <title> ended: <status>. …"), or null for anything else. */
+function endOf(message: string): string | null {
+  const status = /^Thread [\s\S]* ended: (\w+)\. Tell the user what came of it\.$/.exec(message)?.[1];
+  if (!status) return null;
+  return status === "done" ? "It's done." : "It didn't finish.";
+}
+
+/** The projects a message names: "please check <a> and <b> for …", each the first word of its part. */
+function namedIn(message: string): string[] {
+  return (message.split("please check ")[1] ?? "")
+    .replaceAll(" and ", ",")
+    .split(",")
+    .map((p) => p.trim().split(/\s+/)[0]!)
+    .filter(Boolean);
+}
+
+/** An ion's turn on your message (see SCENARIOS.ion). */
+async function ionTurn(s: Script): Promise<"done" | "failed" | "interrupted"> {
+  const server = s.mcp() as IonServer | null;
+  if (!server) return "failed";
+  const message = s.text();
+  const listed = await ionTool(s, server, "projects", {});
+  const first = /^(\S+): /m.exec(listed)?.[1] ?? "nothing";
+  const edit = message.includes("try-edit") && !(await tryEdit(s)) ? "I couldn't edit notes.md. " : "";
+  if (message.includes("take-your-time") && (await s.wait(30_000)) === "interrupted") return "interrupted";
+  let started = 0;
+  for (const projectId of namedIn(message))
+    if (await ionTool(s, server, "start_thread", { projectId, brief: message })) started++;
+  const asked = `Asked ${started} project${started === 1 ? "" : "s"}.`;
+  say(s, edit + (started ? asked : `This is ${first}.`));
+  return "done";
+}
+
 /** "try-edit": an ion's agent tries to write a file, as a harness would, through ion's gate first. */
 async function tryEdit(s: Script): Promise<boolean> {
   const input = { file_path: "notes.md", content: "hello\n" };
@@ -108,36 +141,6 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
         deny ? { allow: false, reason: "Looks risky" } : { allow: true, reason: "Part of the task" },
       ),
     );
-    return "done";
-  },
-  /** ion chief's System 1: route to every project your message names, else answer. */
-  async route(s) {
-    const block = (source: string) =>
-      new RegExp(`source="${source}">\\n([\\s\\S]*?)\\n</ion-data`).exec(s.text())?.[1] ?? "";
-    const message = block("your message");
-    const named = block("projects")
-      .split("\n")
-      .filter((p) => p && message.includes(p));
-    const reply = named.length
-      ? { route: named.map((projectId) => ({ projectId, brief: message })) }
-      : { answer: "Nothing needs you right now." };
-    say(s, JSON.stringify(reply));
-    return "done";
-  },
-  /** Answers like a project's ion: a question about the project is answered, anything else becomes a thread. */
-  async decide(s) {
-    const block = (source: string) =>
-      new RegExp(`source="${source}">\\n([\\s\\S]*?)\\n</ion-data`).exec(s.text())?.[1] ?? "";
-    const message = block("your message");
-    const project = /^Project: (.+?) \(id/.exec(block("project state"))?.[1] ?? "this project";
-    const asked = /\?\s*$|^(what|which|who|where|how many)\b/i.test(message.trim());
-    say(s, JSON.stringify(asked ? { answer: `This is ${project}.` } : { thread: message }));
-    return "done";
-  },
-  /** Tells you what came of a thread like a project's ion: the agent's reply, in a sentence. */
-  async report(s) {
-    const reply = /source="the agent's reply">\n([\s\S]*?)\n<\/ion-data/.exec(s.text())?.[1] ?? "";
-    say(s, reply && reply !== "(no reply)" ? `It's done. ${reply}` : "It's done.");
     return "done";
   },
   async hello(s) {
@@ -217,26 +220,15 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   },
   /**
    * An ion's turn (ion chief or a project's): looks its projects up, starts a thread in each project the message
-   * names ("please check <a> and <b>"), tries a write when it says "try-edit", waits on "take-your-time", and
-   * replies "Asked <n> projects." or "This is <its first project>.".
+   * names ("please check <a> and <b> for …": a project is the first word of each), tries a write when it says
+   * "try-edit", waits on "take-your-time", and replies "Asked <n> projects." or "This is <its first project>.". A
+   * thread's end is answered "It's done." (or "It didn't finish.").
    */
   async ion(s) {
-    const server = s.mcp() as IonServer | null;
-    if (!server) return "failed";
-    const message = s.text();
-    const listed = await ionTool(s, server, "projects", {});
-    const first = /^(\S+): /m.exec(listed)?.[1] ?? "nothing";
-    const edit = message.includes("try-edit") && !(await tryEdit(s)) ? "I couldn't edit notes.md. " : "";
-    if (message.includes("take-your-time") && (await s.wait(30_000)) === "interrupted") return "interrupted";
-    const named = (message.split("please check ")[1] ?? "")
-      .replaceAll(" and ", ",")
-      .split(",")
-      .map((p) => p.trim())
-      .filter(Boolean);
-    let started = 0;
-    for (const projectId of named)
-      if (await ionTool(s, server, "start_thread", { projectId, brief: message })) started++;
-    say(s, edit + (started ? `Asked ${started} projects.` : `This is ${first}.`));
+    const ended = endOf(s.text());
+    // A thread's end: said in a word, starting nothing (its title may name projects).
+    if (!ended) return ionTurn(s);
+    say(s, ended);
     return "done";
   },
   /** Asks the user through ion's MCP server (tool "ask"), then ends its turn, as told. */

@@ -8,7 +8,7 @@ import { chatsView } from "../views/chats.js";
 export type BrainDeps = { configFile: string; db: Db; agents?: () => Promise<HarnessInfo[]> };
 
 /** The agents installed and signed in. */
-export async function readyAgents(agents?: () => Promise<HarnessInfo[]>): Promise<string[]> {
+async function readyAgents(agents?: () => Promise<HarnessInfo[]>): Promise<string[]> {
   const all = (await agents?.().catch(() => [])) ?? [];
   return all.filter((h) => h.installed && h.signedIn).map((h) => h.id);
 }

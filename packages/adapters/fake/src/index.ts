@@ -38,15 +38,12 @@ const triesByCwd = new Map<string, number>();
 
 /**
  * Which scenario a message plays: an ion's turn by its instructions (ion's ions start "You are ion"; a run's
- * start "You're running under ion"), ion's judge and ion chief's routing by their first words, else its first word.
+ * start "You're running under ion"), ion's judge by its first words, else its first word.
  */
 function scenarioOf(text: string, own: string, instructions = ""): string {
   if (instructions.startsWith("You are ion")) return "ion";
-  // ion's prompts carry data blocks too; they're recognised by their first words.
+  // ion's judge prompt carries data blocks too; it's recognised by its first words.
   if (text.startsWith("Judge this action")) return "judge";
-  if (text.startsWith("Route this message for ion")) return "route";
-  if (text.startsWith("Decide for this project's ion")) return "decide";
-  if (text.startsWith("Tell the user what came of a thread")) return "report";
   return own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
 }
 

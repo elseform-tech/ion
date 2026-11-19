@@ -47,8 +47,9 @@ const edit = db.prepare("SELECT chat_id AS id FROM view_chats WHERE title = ? AN
 add(edit.id, "run.finished", { status: "failed" }, ago(4, 11));
 db.close();'
 ion daemon start >/dev/null
-# Plan 09: a thread storefront's ion started, and ion chief routing a message to two projects.
-ion ions message storefront "edit the readme" >/dev/null 2>&1
+# Plan 09, 14: a thread storefront's ion started, and ion chief routing a message to two projects (each a turn of
+# the fake agent, starting threads with ion's start_thread tool).
+ion ions message storefront "please check storefront for the readme typo" >/dev/null 2>&1
 ion ions message storefront "what project am i in?" >/dev/null 2>&1 # answered by its ion, no thread
 ion ions message chief "please check storefront and payments-api for the rounding bug" >/dev/null 2>&1
 # Plan 10: routines, so Activity has what's next and a routine's run today.
