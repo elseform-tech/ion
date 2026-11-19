@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  rmSync,
   readFileSync,
   statSync,
   symlinkSync,
@@ -39,12 +40,46 @@ const repo = (name: string) => {
   return p;
 };
 
+const DAEMON_MAIN = fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url));
+const started: number[] = [];
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const isIonDaemon = (pid: number) => {
+  try {
+    return execFileSync("ps", ["-o", "command=", "-p", String(pid)])
+      .toString()
+      .includes("daemon/dist/main.js");
+  } catch {
+    return false;
+  }
+};
+const daemonPid = (): number[] => {
+  try {
+    return [JSON.parse(readFileSync(join(home, "data", "daemon.json"), "utf8")).pid as number];
+  } catch {
+    return [];
+  }
+};
+
 describe("ion cli", { timeout: 20_000 }, () => {
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "ion-cli-"));
   });
+  // Found 2026-11-19: CLI tests left 11 daemons running in temp homes.
+  // Every daemon a test starts (through the CLI or directly) is gone, and its home removed, afterwards.
   afterEach(async () => {
+    const pids = [...started.splice(0), ...daemonPid()];
     await ion("daemon", "stop");
+    for (const pid of pids) if (alive(pid) && isIonDaemon(pid)) process.kill(pid, "SIGKILL");
+    const leaked = pids.filter((pid) => isIonDaemon(pid) && alive(pid));
+    rmSync(home, { recursive: true, force: true });
+    expect(leaked).toEqual([]);
   });
 
   it("says ion isn't running before start, with exit 2", async () => {
@@ -96,6 +131,14 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("status")).code).toBe(0);
   });
 
+  // The leak: a daemon still starting (no daemon.json yet) when a test ends was missed by `ion daemon stop`.
+  // afterEach asserts it is gone.
+  it("cleans up a daemon that is still starting when the test ends", () => {
+    const d = spawn("node", [DAEMON_MAIN], { env: { ...process.env, ION_HOME: home }, stdio: "ignore" });
+    started.push(d.pid!);
+    expect(alive(d.pid!)).toBe(true);
+  });
+
   it("writes daemon.json readable only by you", async () => {
     await ion("daemon", "start");
     expect(statSync(join(home, "data", "daemon.json")).mode & 0o777).toBe(0o600);
@@ -107,25 +150,16 @@ describe("ion cli", { timeout: 20_000 }, () => {
     mkdirSync(join(home, "data"), { recursive: true });
     symlinkSync(target, join(home, "data", "daemon.json"));
     // Start the daemon itself (not through the CLI, which clears the file first).
-    spawn("node", [fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url))], {
+    const d = spawn("node", [fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url))], {
       env: { ...process.env, ION_HOME: home },
       stdio: "ignore",
     });
+    started.push(d.pid!);
     for (let i = 0; i < 50 && (await ion("status")).code !== 0; i++)
       await new Promise((r) => setTimeout(r, 100));
     expect(readFileSync(target, "utf8")).toBe("keep me");
     expect(lstatSync(join(home, "data", "daemon.json")).isSymbolicLink()).toBe(false);
   });
-
-  const DAEMON_MAIN = fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url));
-  const alive = (pid: number) => {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
 
   // Regression (final review C2): two daemons could run on one data folder.
   it("runs only one daemon when two start at the same moment", async () => {
@@ -133,6 +167,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
     const a = spawn("node", [DAEMON_MAIN], { env, stdio: "ignore" });
     const b = spawn("node", [DAEMON_MAIN], { env, stdio: "ignore" });
     await new Promise((r) => setTimeout(r, 1500));
+    started.push(a.pid!, b.pid!);
     const live = [a.pid!, b.pid!].filter(alive);
     expect(live).toHaveLength(1);
     expect((await ion("status")).code).toBe(0);
