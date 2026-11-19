@@ -23,6 +23,9 @@
       "path": "../../packages/adapters/acp"
     },
     {
+      "path": "../../packages/adapters/codex"
+    },
+    {
       "path": "../../packages/adapters/fake"
     }
   ]

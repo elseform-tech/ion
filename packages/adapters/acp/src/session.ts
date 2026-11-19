@@ -6,13 +6,13 @@ import {
   type EventQueue,
   type Decision,
   projectRoots,
+  RpcError,
   type Session,
   type StartOpts,
 } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 import type { Connection } from "./connection.js";
 import { acpToolKind, createAcpState, mapUpdate } from "./map.js";
-import { RpcError } from "./rpc.js";
 
 type Option = { optionId: string; kind: string };
 /** Acceptable option kinds per decision, best first. Never wider than asked: "allow" is never "always". */

@@ -30,7 +30,7 @@ function trimEnd(title: string): string {
 }
 
 /** Without a project's own agent or a last one: the first ready of these (quota-friendly first), else any. */
-const PREFERRED = ["opencode", "grok-build", "claude-code"];
+const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
 
 export type IonsDeps = {
   store: EventStore;
@@ -131,7 +131,7 @@ export class Ions {
     return { ...(p.model ? { model: p.model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
   }
 
-  /** The project's own agent, else the one its last chat ran on, else the first ready (opencode, Grok, Claude). */
+  /** The project's own agent, else the one its last chat ran on, else the first ready (opencode, Grok, Codex, Claude). */
   private async agentFor(projectId: string): Promise<string | undefined> {
     const own = this.projects().find((p) => p.id === projectId)?.harness;
     if (own) return own;

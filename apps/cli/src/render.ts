@@ -3,6 +3,7 @@ import { clean, detailLines, text } from "./sanitize.js";
 
 const HARNESS: Record<string, string> = {
   "claude-code": "Claude Code",
+  codex: "Codex",
   "grok-build": "Grok Build",
   opencode: "opencode",
   fake: "Fake",

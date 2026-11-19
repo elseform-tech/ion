@@ -69,7 +69,7 @@ export function askCommand(program: Command, out: () => Out) {
     .description("Ask a coding agent to do something in a project")
     .option("-p, --project <id>", "Project")
     .option("--chat <id>", "Continue a chat")
-    .option("--harness <id>", "claude-code, grok-build or opencode", "claude-code")
+    .option("--harness <id>", "claude-code, codex, grok-build or opencode", "claude-code")
     .option("--model <model>", "Model")
     .option("--effort <level>", "low, medium, high or max")
     .option("--access <mode>", "auto (ion decides) or full")

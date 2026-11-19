@@ -1,6 +1,7 @@
 // The only place the daemon loads harness adapters (lint: ion/walls).
 import { createAcpAdapter, GROK_BUILD, OPENCODE } from "@ion/adapter-acp";
 import { createClaudeCodeAdapter } from "@ion/adapter-claude-code";
+import { createCodexAdapter } from "@ion/adapter-codex";
 import { createFakeAdapter } from "@ion/adapter-fake";
 import type { HarnessAdapter } from "@ion/adapter-kit";
 
@@ -12,6 +13,7 @@ const ENTRIES: Record<string, () => HarnessEntry> = {
     label: "Claude Code",
     loginHint: "claude auth login",
   }),
+  codex: () => ({ adapter: createCodexAdapter(), label: "Codex", loginHint: "codex login" }),
   "grok-build": () => ({
     adapter: createAcpAdapter(GROK_BUILD),
     label: GROK_BUILD.label,

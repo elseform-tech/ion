@@ -10,9 +10,10 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/config` | Config files and paths (`config.toml`, projects). |
 | `packages/client` | Typed WebSocket client: Node entry for the CLI, `/browser` entry for the desktop app. |
 | `packages/design-system` | Tokens (CSS variables from the spec), `Button`, `Spinner`, Lucide icons. |
-| `packages/adapter-kit` | Harness contract, shared contract tests (`/contract`), event queue, delta batching, PATH/version helpers. |
+| `packages/adapter-kit` | Harness contract, shared contract tests (`/contract`), event queue, delta batching, JSON-RPC over stdio, PATH/version helpers. |
 | `packages/adapters/claude-code` | Claude Code via the Agent SDK; Claude login only. |
 | `packages/adapters/acp` | Any ACP agent: Grok Build (`grok agent stdio`), opencode (`opencode acp`). |
+| `packages/adapters/codex` | Codex through its app-server (`codex app-server`, JSON-RPC on stdio). |
 | `packages/adapters/fake` | Scripted harness for tests (`ION_ALLOW_FAKE=1`). |
 | `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries; `src/access` decides Auto (rules, then a judge model); `src/gate` takes every tool call from each harness's own hook before it runs; `src/decisions` keeps your answers to agents' questions and what came of them; `src/needs` holds questions only you can answer; `src/ions` is ion chief and the project ions (messages, routing, questions in ion threads); `src/scheduler` queues runs; `src/workspace` owns git worktrees; `src/mcp` is ion's MCP server for runs (history, needs, memory, ask, decisions; a key per run); `src/adapters/registry.ts` is the only place adapters load. |
 | `apps/cli` | The `ion` command. |
@@ -39,7 +40,7 @@ child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter
 - Test first. Every bug fix adds a test that fails without the fix, next to the code it covers (`<file>.test.ts`),
   with a comment saying what broke (who found it and when, or the issue number).
 - No real model calls in tests. Live tests are opt-in: `ION_LIVE=1` (opencode, free model), `ION_LIVE_GROK=1`,
-  `ION_LIVE_CLAUDE=1`. The live evals (`apps/daemon/src/evals`) check ion's promises on each real agent; see
+  `ION_LIVE_CLAUDE=1`, `ION_LIVE_CODEX=1`. The live evals (`apps/daemon/src/evals`) check ion's promises on each real agent; see
   `docs/research/acp-and-harnesses.md`.
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints. Prefer an icon (with its name on hover)
   to a word, and fewer boxes.

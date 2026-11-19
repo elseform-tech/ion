@@ -9,13 +9,15 @@ import { startServer } from "../api/server.js";
 
 /**
  * Live evals: what ion promises, on real agents, end to end through the daemon. Opt in per agent (each costs that
- * agent's quota): ION_LIVE=1 opencode (free model), ION_LIVE_GROK=1 Grok, ION_LIVE_CLAUDE=1 Claude (haiku).
+ * agent's quota): ION_LIVE=1 opencode (free model), ION_LIVE_GROK=1 Grok, ION_LIVE_CLAUDE=1 Claude (haiku),
+ * ION_LIVE_CODEX=1 Codex (ION_CODEX_MODEL picks its model).
  * Run: `ION_LIVE=1 pnpm --filter @ion/daemon exec vitest run src/evals`. A table of results prints at the end.
  */
 const AGENTS: { id: string; model?: string; on: boolean }[] = [
   { id: "opencode", on: process.env.ION_LIVE === "1" },
   { id: "grok-build", on: process.env.ION_LIVE_GROK === "1" },
   { id: "claude-code", model: "haiku", on: process.env.ION_LIVE_CLAUDE === "1" },
+  { id: "codex", model: process.env.ION_CODEX_MODEL, on: process.env.ION_LIVE_CODEX === "1" },
 ];
 const live = AGENTS.filter((a) => a.on);
 const results: { agent: string; evalName: string; ok: boolean; note: string }[] = [];

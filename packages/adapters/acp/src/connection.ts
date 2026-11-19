@@ -3,9 +3,8 @@ import type { Readable, Writable } from "node:stream";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Catalog, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
+import { type Catalog, createRpc, ResumeFailed, type Rpc, RpcError, type StartOpts } from "@ion/adapter-kit";
 import type { AcpHarness } from "./harnesses.js";
-import { createRpc, type Rpc, RpcError } from "./rpc.js";
 
 type Choice = { value?: unknown; name?: unknown; options?: Choice[] };
 type ConfigOption = { id: string; category?: string; currentValue?: unknown; options?: Choice[] };
