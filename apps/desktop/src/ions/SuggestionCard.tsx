@@ -155,7 +155,7 @@ export function SuggestionCard(p: SuggestionProps) {
       </b>
       <Evidence card={card} onOpenChat={p.onOpenChat} />
       <div className="sm2">
-        {card.kind === "routine" && (
+        {card.kind === "routine" && shown !== "took" && (
           <span>
             <CalendarClock />
             {whenLabel(card.when)}

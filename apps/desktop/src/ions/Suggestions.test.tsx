@@ -106,6 +106,8 @@ describe("ion chief's suggestions", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add routine" }));
     expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "s1", keep: true });
     await waitFor(() => expect(container.querySelector(".sugg .done")?.textContent).toBe("Fridays 17:00"));
+    // Its time isn't said twice once it's a routine.
+    expect(container.querySelector(".sugg .sm2")?.textContent).toBe("storefront");
     fireEvent.click(screen.getByRole("button", { name: "Fewer like this" }));
     expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "s2", keep: false, mute: true });
     await waitFor(() =>
