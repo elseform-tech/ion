@@ -16,18 +16,40 @@ function lineOf(d: { text: string; card?: IonCard }): string {
   return `Asked ${n} project${n === 1 ? "" : "s"}.`;
 }
 
-/** Each ion's last line; the rest of an ion (its needs, whether it's working) is read from the chats and needs. */
-export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[] } = {
+function noteSession(db: Db, d: { ionId: string; harness: string; nativeId: string }): void {
+  db.prepare(
+    "INSERT INTO view_ion_sessions (ion_id, harness, native_id) VALUES (?, ?, ?) " +
+      "ON CONFLICT(ion_id) DO UPDATE SET harness = excluded.harness, native_id = excluded.native_id",
+  ).run(d.ionId, d.harness, d.nativeId);
+}
+
+type IonsView = View & {
+  list(db: Db, projects: ProjectInfo[]): IonInfo[];
+  /** The agent session the ion last thought in, to resume on its next turn; null before its first. */
+  session(db: Db, ionId: string): { harness: string; nativeId: string } | null;
+};
+
+/**
+ * Each ion's last line and its agent session; the rest of an ion (its needs, whether it's working) is read from
+ * the chats and needs.
+ */
+export const ionsView: IonsView = {
   name: "ions",
-  version: 2,
-  tables: ["view_ions"],
+  version: 3,
+  tables: ["view_ions", "view_ion_sessions"],
   migrate(db) {
     db.exec("CREATE TABLE IF NOT EXISTS view_ions (ion_id TEXT PRIMARY KEY, last TEXT)");
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS view_ion_sessions (ion_id TEXT PRIMARY KEY, harness TEXT NOT NULL, native_id TEXT NOT NULL)",
+    );
   },
   reset(db) {
     db.exec("DELETE FROM view_ions");
+    db.exec("DELETE FROM view_ion_sessions");
   },
   apply(db, e: IonEvent) {
+    if (e.type === EV.ionSession)
+      return noteSession(db, e.data as { ionId: string; harness: string; nativeId: string });
     const ionId = e.chatId ? ionOf(e.chatId) : null;
     if (!ionId || e.type !== EV.ionSaid) return;
     // ion chief's suggestions are optional: its last line stays what it last told you.
@@ -36,6 +58,12 @@ export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[]
     db.prepare(
       "INSERT INTO view_ions (ion_id, last) VALUES (?, ?) ON CONFLICT(ion_id) DO UPDATE SET last = excluded.last",
     ).run(ionId, lineOf(e.data as { text: string; card?: IonCard }));
+  },
+  session(db, ionId) {
+    const r = db
+      .prepare("SELECT harness, native_id AS nativeId FROM view_ion_sessions WHERE ion_id = ?")
+      .get(ionId) as { harness: string; nativeId: string } | undefined;
+    return r ? { harness: r.harness, nativeId: r.nativeId } : null;
   },
   /** ion chief first, then one ion per project; `default` has none (it pools chats without a project). */
   list(db, projects) {

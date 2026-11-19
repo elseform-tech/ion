@@ -26,6 +26,7 @@ export const DAEMON_EVENT_TYPES = [
   "chat.renamed",
   "ion.heard",
   "ion.said",
+  "ion.session",
   "suggestion.answered",
   "message.sent",
   "run.queued",
@@ -72,6 +73,7 @@ export const EV = {
   chatRenamed: "chat.renamed",
   ionHeard: "ion.heard",
   ionSaid: "ion.said",
+  ionSession: "ion.session",
   suggestionAnswered: "suggestion.answered",
   messageSent: "message.sent",
   runQueued: "run.queued",
@@ -183,6 +185,12 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "ion.heard": z.object({ text: z.string() }),
   /** What an ion says in its chat, with a card when it has one. */
   "ion.said": z.object({ text: z.string(), card: IonCardSchema.optional() }),
+  /** The agent session an ion thinks in, kept between its turns (resumed while its agent stays the same). */
+  "ion.session": z.object({
+    ionId: z.string().min(1),
+    harness: z.string().min(1),
+    nativeId: z.string().min(1),
+  }),
   /** Your answer to an ion's suggestion: taken (keep), not now, or not now and fewer like this (mute). */
   "suggestion.answered": z
     .object({ suggestionId: z.string(), keep: z.boolean(), mute: z.literal(true).optional() })

@@ -5,6 +5,7 @@ import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
+import { brainOf, projectAgent, readyAgents } from "./brain.js";
 import { chiefPrompt, contextOf, parseRoute, type Route } from "./route.js";
 import {
   parseProjectDecision,
@@ -178,38 +179,19 @@ export class Ions {
     }
   }
 
-  /**
-   * The project's model and effort (Settings). Effort always; the model on the agent it was picked for: the
-   * project's own, or (none set) the one Settings showed, which is the one `agentFor` picks.
-   */
+  /** The project's own agent, else the one its last chat ran on, else the first ready. */
+  private agentFor(projectId: string): Promise<string | undefined> {
+    return projectAgent(this.d, projectId);
+  }
+
   private brainOf(projectId: string, harness: string | undefined): { model?: string; effort?: Effort } {
-    const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId);
-    if (!p) return {};
-    const model = p.model && (!p.harness || p.harness === harness) ? p.model : undefined;
-    return { ...(model ? { model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
-  }
-
-  /** The project's own agent, else the one its last chat ran on, else the first ready (opencode, Grok, Codex, Claude). */
-  private async agentFor(projectId: string): Promise<string | undefined> {
-    const own = this.projects().find((p) => p.id === projectId)?.harness;
-    if (own) return own;
-    // The one it last ran on only while it's still ready (a key can expire); you set the project's own on purpose.
-    const ok = await this.ready();
-    const last = chatsView.lastAgent(this.d.db, projectId);
-    if (last && (!this.d.agents || ok.includes(last))) return last;
-    return firstOf(ok);
-  }
-
-  /** The agents installed and signed in. */
-  private async ready(): Promise<string[]> {
-    const all = (await this.d.agents?.().catch(() => [])) ?? [];
-    return all.filter((h) => h.installed && h.signedIn).map((h) => h.id);
+    return brainOf(this.d.configFile, projectId, harness);
   }
 
   /** The agent ion thinks with: none (as [ion] quick says) when that one is ready, else the first ready. */
   private async quickAgent(): Promise<string | undefined> {
     if (!this.d.agents) return undefined;
-    const ok = await this.ready();
+    const ok = await readyAgents(this.d.agents);
     const set = loadUserConfig(this.d.configFile).config.ion.quick.split(":")[0]!;
     return ok.includes(set) ? undefined : firstOf(ok);
   }

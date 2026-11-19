@@ -36,8 +36,12 @@ const HISTORY_END = /<\/ion-data id="\w+">\n\n/;
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
 
-/** Which scenario a message plays: ion's judge and ion chief's routing by their first words, else its first word. */
-function scenarioOf(text: string, own: string): string {
+/**
+ * Which scenario a message plays: an ion's turn by its instructions (ion's ions start "You are ion"; a run's
+ * start "You're running under ion"), ion's judge and ion chief's routing by their first words, else its first word.
+ */
+function scenarioOf(text: string, own: string, instructions = ""): string {
+  if (instructions.startsWith("You are ion")) return "ion";
   // ion's prompts carry data blocks too; they're recognised by their first words.
   if (text.startsWith("Judge this action")) return "judge";
   if (text.startsWith("Route this message for ion")) return "route";
@@ -135,7 +139,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     async send({ text }) {
       // The scenario is the first word of your message, after any history ion put before it.
       const own = text.split(HISTORY_END).at(-1) ?? text;
-      const name = scenarioOf(text, own);
+      const name = scenarioOf(text, own, start.instructions);
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
       sent = text;
       queue.push({
