@@ -140,6 +140,7 @@ function describeIssue(file: string, issue: z.core.$ZodIssue): string {
 /** The settings a hand edit can get wrong without losing the rest of the file, each with what it must be. */
 const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["resources", "max_runs"], MaxRuns],
+  [["notifications"], z.looseObject({})],
   [["notifications", "briefing"], z.looseObject({})],
   [["notifications", "briefing", "on"], z.boolean()],
   [["notifications", "briefing", "at"], Clock],
@@ -149,19 +150,37 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["notifications", "quiet", "to"], Clock],
 ];
 
+/** A project's bad `notify` is dropped (its default applies); returns "<id>.notify" for each. */
+function dropBadNotify(raw: unknown): string[] {
+  const projects = (raw as { projects?: unknown } | null)?.projects;
+  const bad = (Array.isArray(projects) ? projects : []).filter((p): p is Record<string, unknown> =>
+    isBadNotify(p),
+  );
+  for (const p of bad) delete p.notify;
+  return bad.map((p) => `${String(p.id)}.notify`);
+}
+
+const isBadNotify = (p: unknown): boolean =>
+  typeof p === "object" && p !== null && "notify" in p && !Notify.safeParse(p.notify).success;
+
+/** Removes `path`'s value from `raw` when it's there and `schema` refuses it; true if it did. */
+function dropIfBad(raw: unknown, path: string[], schema: z.ZodType): boolean {
+  let parent: unknown = raw;
+  for (const k of path.slice(0, -1)) parent = (parent as Record<string, unknown> | undefined)?.[k];
+  const key = path.at(-1)!;
+  if (typeof parent !== "object" || parent === null || !(key in parent)) return false;
+  const holder = parent as Record<string, unknown>;
+  if (schema.safeParse(holder[key]).success) return false;
+  delete holder[key];
+  return true;
+}
+
 /** Drops each invalid setting from `raw` (its default applies) and says which, so the rest of the file still loads. */
 function dropBad(raw: unknown, file: string): string | null {
-  const dropped: string[] = [];
-  for (const [path, schema] of FALLBACKS) {
-    let parent: unknown = raw;
-    for (const k of path.slice(0, -1)) parent = (parent as Record<string, unknown> | undefined)?.[k];
-    const key = path.at(-1)!;
-    if (typeof parent !== "object" || parent === null || !(key in parent)) continue;
-    const holder = parent as Record<string, unknown>;
-    if (schema.safeParse(holder[key]).success) continue;
-    delete holder[key];
-    dropped.push(path.slice(1).join("."));
-  }
+  const dropped = FALLBACKS.filter(([path, schema]) => dropIfBad(raw, path, schema)).map(([path]) =>
+    path.length === 1 ? path[0]! : path.slice(1).join("."),
+  );
+  dropped.push(...dropBadNotify(raw));
   if (!dropped.length) return null;
   const verb = dropped.length > 1 ? "are" : "is";
   return `${basename(file)}: ${dropped.join(", ")} ${verb} not valid; using the default`;

@@ -159,4 +159,22 @@ describe("a bad hand-edited setting", () => {
   it("has no warning when everything is fine", () => {
     expect(loadUserConfig(join(tmp(), "none.toml")).warning).toBeNull();
   });
+
+  // Task review, 2026-11-20: a bad project `notify`, or `notifications` that isn't a table, still failed the load.
+  it("drops a bad project notify and a non-table notifications alone", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(
+      f,
+      'notifications = "on"\n[[projects]]\nid = "storefront"\npath = "/s"\nnotify = "loud"\n[[projects]]\nid = "api"\npath = "/a"\nnotify = "muted"\n',
+    );
+    const { config, error, warning } = loadUserConfig(f);
+    expect(error).toBeNull();
+    expect(config.projects.map((p) => [p.id, p.notify])).toEqual([
+      ["storefront", undefined],
+      ["api", "muted"],
+    ]);
+    expect(config.notifications.briefing).toEqual({ on: true, at: "08:30" });
+    expect(warning).toContain("storefront.notify");
+    expect(warning).toContain("notifications");
+  });
 });
