@@ -3,12 +3,14 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ionPaths } from "@ion/config";
 import { harnessInfos } from "./api/commands.js";
+import { dropInheritedMarkers } from "./env.js";
 import { startServer } from "./api/server.js";
 import { acquireDaemonLock } from "./store/index.js";
 
 export { startServer, VERSION } from "./api/server.js";
 
 async function main() {
+  dropInheritedMarkers();
   const { dataDir, configFile } = ionPaths();
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   // One daemon per data folder; the OS releases this lock if the process dies.

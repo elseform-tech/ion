@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ionsOwn, isShell, listTasks, markedInProc, readWorktreeFile, stopTask } from "./tasks.js";
+import { ionsOwn, isShell, listTasks, markedInProc, readWorktreeFile, stopTask, whereOf } from "./tasks.js";
 
 // Your home, for these tests: the temp folder the test worktrees are made in (so `where` shows as ~/…).
 vi.mock("node:os", async (real) => {
@@ -265,5 +265,25 @@ describe("a worktree whose name has a line break", () => {
     expect(tasks).toContain(pid);
     expect(tasks).not.toContain(other);
     expect(tasks).not.toContain(99999);
+  });
+});
+
+describe("whereOf", () => {
+  // Final review, 2026-11-19: when lsof failed for a process its folder was unknown, and it showed as in the worktree.
+  it("says unknown (null), not the worktree, when the folder isn't known", () => {
+    expect(whereOf("/w", undefined, "/Users/me", "darwin")).toBeNull();
+    expect(whereOf("/w", "/w/sub", "/Users/me", "darwin")).toBe("");
+  });
+
+  // Tour, 2026-11-19: on macOS a task in /tmp showed as /private/tmp/… (the real path); people expect /tmp/….
+  it("shows /tmp and /var for macOS's /private/tmp and /private/var, home as ~", () => {
+    // Built from parts: these are paths to show, never folders the test writes to.
+    const [ptmp, tmp] = ["/private/tmp", "/tmp"].map((d) => `${d}/site`);
+    expect(whereOf("/w", ptmp, "/Users/me", "darwin")).toBe(tmp);
+    expect(whereOf("/w", "/private/var/folders/x", "/Users/me", "darwin")).toBe("/var/folders/x");
+    expect(whereOf("/w", "/private/tmp", "/Users/me", "darwin")).toBe("/tmp");
+    expect(whereOf("/w", "/private/tmpfoo", "/Users/me", "darwin")).toBe("/private/tmpfoo");
+    expect(whereOf("/w", ptmp, "/Users/me", "linux")).toBe(ptmp);
+    expect(whereOf("/w", "/Users/me/dev/site", "/Users/me", "darwin")).toBe("~/dev/site");
   });
 });

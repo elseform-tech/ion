@@ -62,6 +62,20 @@ describe("listArtifacts", () => {
     expect(list[0]?.path).toBe("f229.txt");
   });
 
+  // Final review, 2026-11-19: the Files tab filled with dependency and cache files, and real outputs dropped out
+  // of the 200. Well-known dependency and cache folders are skipped; dist, build and out stay (people's outputs).
+  it("a venv and __pycache__ don't crowd out out/shot.png", async () => {
+    const dir = worktree();
+    put(dir, "out/shot.png", "png", at(1));
+    for (let i = 0; i < 120; i++) put(dir, `.venv/lib/m${i}.py`, "x", at(2));
+    for (let i = 0; i < 120; i++) put(dir, `app/__pycache__/m${i}.pyc`, "x", at(2));
+    put(dir, "target/debug/app", "x", at(2));
+    put(dir, ".next/cache/x.json", "x", at(2));
+    put(dir, "build/app.js", "x", at(1));
+    const list = (await listArtifacts(dir, since)).map((a) => a.path);
+    expect(list.sort()).toEqual(["build/app.js", "out/shot.png"]);
+  });
+
   // Task review, 2026-11-19: in an ion worktree `.git` is a file (a gitdir pointer), and it was listed.
   it("skips a .git file", async () => {
     const dir = worktree();

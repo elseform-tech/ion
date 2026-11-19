@@ -6,7 +6,26 @@ import type { ArtifactInfo } from "@ion/schema";
 const MAX_ARTIFACTS = 200;
 /** The walk visits at most this many entries, so a huge tree can't stall the daemon. */
 const MAX_VISITED = 20_000;
-const SKIP = new Set([".git", "node_modules"]);
+/** Dependency and cache folders, never people's outputs (dist, build and out are listed). */
+const SKIP = new Set([
+  ".git",
+  "node_modules",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  "target",
+  ".next",
+  ".nuxt",
+  ".turbo",
+  ".cache",
+  ".gradle",
+  ".pnpm-store",
+  ".parcel-cache",
+  ".svelte-kit",
+]);
 /** The images the preview shows, by extension: the list and the preview agree. SVG is text (markup, never rendered). */
 export const IMAGE_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -60,8 +79,8 @@ function kindOf(name: string): ArtifactInfo["kind"] {
 
 /**
  * The files a chat's runs made: everything under the worktree modified at or after `since` (ISO), ignored
- * outputs included, newest first, at most 200. Links are never followed or listed, `.git` and `node_modules`
- * are skipped. Newest-first needs every candidate, so the walk is bounded (20,000 entries), then sorted and cut.
+ * outputs included, newest first, at most 200. Links are never followed or listed; `.git`, `node_modules` and
+ * other dependency and cache folders (SKIP) are skipped. Newest-first needs every candidate, so the walk is bounded (20,000 entries), then sorted and cut.
  */
 export async function listArtifacts(
   worktree: string,

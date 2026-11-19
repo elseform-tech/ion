@@ -41,7 +41,7 @@ export function Tasks({ client, chatId }: { client: IonClient; chatId: string })
       {tasks?.map((t) => (
         <div className="task" key={t.pid}>
           <div className="tc">{t.command}</div>
-          {/* Where it runs, when that isn't the chat's worktree (the daemon says so). */}
+          {/* Where it runs, when that isn't the chat's worktree and is known (the daemon says so). */}
           {t.where && <div className="tw">{t.where}</div>}
           <div className="tm">
             <span className="chip mono">PID {t.pid}</span>

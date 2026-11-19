@@ -38,11 +38,23 @@ async function cwds(pid?: number): Promise<Map<number, string>> {
 
 const inside = (dir: string, path: string) => path === dir || path.startsWith(dir + sep);
 
-/** Where a task runs, as the panel shows it: "" in the worktree, else its folder with your home as ~. */
-function whereOf(dir: string, cwd: string | undefined): string {
-  if (!cwd || inside(dir, cwd)) return "";
-  const home = homedir();
-  return inside(home, cwd) ? `~${cwd.slice(home.length)}` : cwd;
+/** macOS's real paths for /tmp and /var, shown as people type them. */
+const PRIVATE = /^\/private(\/(?:tmp|var))(?=\/|$)/;
+
+/**
+ * Where a task runs, as the panel shows it: "" in the worktree, null when its folder isn't known (lsof failed), else
+ * its folder with your home as ~ (and, on macOS, /private/tmp and /private/var as /tmp and /var).
+ */
+export function whereOf(
+  dir: string,
+  cwd: string | undefined,
+  home = homedir(),
+  platform: string = process.platform,
+): string | null {
+  if (cwd === undefined || cwd === "") return null;
+  if (inside(dir, cwd)) return "";
+  if (inside(home, cwd)) return `~${cwd.slice(home.length)}`;
+  return platform === "darwin" ? cwd.replace(PRIVATE, "$1") : cwd;
 }
 
 /** The TCP ports each of these processes listens on. */
@@ -69,7 +81,7 @@ function row(line: string): (Task & { ppid: number }) | null {
     elapsed,
     command,
     ports: [],
-    where: "",
+    where: null,
   };
 }
 

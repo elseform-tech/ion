@@ -164,6 +164,16 @@ describe("the workspace: what the chat made, and where its processes run", () =>
     expect(where).toEqual(["~/dev/site", "/Users/team/site"]);
   });
 
+  // Final review, 2026-11-19: a task whose folder the daemon couldn't read looked like it ran in the worktree; the
+  // daemon says unknown (null) now, and the desktop shows nothing extra for it (no "?").
+  it("a task whose folder is unknown shows no place", async () => {
+    const tasks = [{ pid: 79, command: "make serve", elapsed: "00:01", ports: [], where: null }];
+    const { container } = render(<Tasks client={client({}, [], tasks)} chatId="c1" />);
+    await screen.findByText("make serve");
+    expect(container.querySelector(".task .tw")).toBeNull();
+    expect(container.querySelector(".task")?.textContent).not.toContain("?");
+  });
+
   // Task review, 2026-11-19: kind is a guess by extension (.vue, .swift); the preview reads the file and decides.
   it("opens any made file, whatever its kind looks like", async () => {
     const vue = { path: "App.vue", size: 40, changedAt: ago(1), kind: "binary" };
