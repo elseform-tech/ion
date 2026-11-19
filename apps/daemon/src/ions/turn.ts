@@ -43,8 +43,14 @@ type TurnRef = { ionId: string; turnId: string };
 type StartIonThread = (
   projectId: string,
   brief: string,
-  turn: { ionId: string; request: string },
+  turn: { ionId: string; request: string; turnId: string },
 ) => Promise<{ chatId: string } | { why: string }>;
+
+/**
+ * How a turn may act: `request`: your own words, what the judge reads for a thread it starts (by default the
+ * turn's text); `noThreads`: a turn the daemon asked for (a report) starts none, and has no request of yours.
+ */
+export type TurnOpts = { request?: string; noThreads?: true };
 
 export type IonTurnsDeps = {
   store: EventStore;
@@ -62,8 +68,16 @@ export type IonTurnsDeps = {
   home?: string;
 };
 
-/** A turn while it runs: what its tools and its gate need. */
-type Live = { ionId: string; request: string; adapter: HarnessAdapter; rules: RuleCtx; threads: Thread[] };
+/** A turn while it runs: what its tools and its gate need, and how to stop it (set once its session starts). */
+type Live = {
+  ionId: string;
+  /** Your words, for the judge; null: this turn starts no threads. */
+  request: string | null;
+  adapter: HarnessAdapter;
+  rules: RuleCtx;
+  threads: Thread[];
+  halt?: () => void;
+};
 
 /** How a turn's session ended: its last message, its native id, and whether it ran past its limit. */
 type Ended = { last: string; nativeId: string | null; late: boolean; failed: boolean };
@@ -101,14 +115,16 @@ function note(e: AdapterEvent, end: Ended): void {
 export class IonTurns {
   private readonly chains = new Map<string, Promise<unknown>>();
   private readonly live = new Map<string, Live>();
+  /** ion is stopping: no turn starts, and nothing more is written. */
+  private stopping = false;
 
   constructor(private readonly d: IonTurnsDeps) {}
 
   /** Your message to an ion: waits for its turn before (one session per ion at a time), then thinks. */
-  turn(ionId: string, text: string): Promise<{ reply: string; threads: Thread[] }> {
+  turn(ionId: string, text: string, o: TurnOpts = {}): Promise<{ reply: string; threads: Thread[] }> {
     const next = (this.chains.get(ionId) ?? Promise.resolve())
       .catch(() => {})
-      .then(() => this.run(ionId, text));
+      .then(() => this.run(ionId, text, o.noThreads ? null : (o.request ?? text)));
     this.chains.set(ionId, next);
     return next;
   }
@@ -117,7 +133,8 @@ export class IonTurns {
   readonly startThread = async (projectId: string, brief: string, turnId: string) => {
     const t = this.live.get(turnId);
     if (!t) return { why: "That turn is over" };
-    const r = await this.d.startThread(projectId, brief, { ionId: t.ionId, request: t.request });
+    if (t.request === null) return { why: "Not in a report" };
+    const r = await this.d.startThread(projectId, brief, { ionId: t.ionId, request: t.request, turnId });
     if ("chatId" in r) t.threads.push({ chatId: r.chatId, projectId });
     return r;
   };
@@ -133,31 +150,55 @@ export class IonTurns {
       : { decision: "deny", reason: READ_ONLY };
   }
 
-  private async run(ionId: string, text: string): Promise<{ reply: string; threads: Thread[] }> {
+  /** Stops every live turn (its agent told to stop, its session closed) and waits for them; none starts after. */
+  async shutdown(): Promise<void> {
+    this.stopping = true;
+    for (const t of this.live.values()) t.halt?.();
+    // A live turn ends at once and closes within CLOSE_MS; one still finding its agent writes nothing once it does.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bound = new Promise<void>((r) => {
+      timer = setTimeout(r, CLOSE_MS + 500);
+    });
+    await Promise.race([Promise.allSettled([...this.chains.values()]), bound]);
+    clearTimeout(timer);
+  }
+
+  private async run(
+    ionId: string,
+    text: string,
+    request: string | null,
+  ): Promise<{ reply: string; threads: Thread[] }> {
+    if (this.stopping) return { reply: NO_AGENT, threads: [] };
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
     const h = brain && getHarness(brain.harness);
-    if (!brain || !h) return { reply: NO_AGENT, threads: [] };
+    if (!brain || !h || this.stopping) return { reply: NO_AGENT, threads: [] };
     const turnId = `turn_${randomUUID()}`;
     const rules = this.rulesFor(cwd);
-    const live: Live = { ionId, request: text, adapter: h.adapter, rules, threads: [] };
+    const live: Live = { ionId, request, adapter: h.adapter, rules, threads: [] };
     this.live.set(turnId, live);
     try {
       const end = await this.session({ ionId, turnId, text, cwd, rules }, brain, h.adapter);
-      const reply = end.late ? TOO_LONG : end.last.trim() || NO_AGENT;
-      // A session that failed or said nothing is forgotten: resuming it would likely fail again (its context too long).
-      const broken = !end.late && (end.failed || reply === NO_AGENT);
-      if (broken) this.forgetSession(ionId);
-      else if (end.nativeId) this.keepSession(ionId, brain.harness, end.nativeId);
-      return { reply, threads: live.threads };
+      return { reply: this.settle(ionId, brain.harness, end), threads: live.threads };
     } catch (e) {
       console.error(`ion's agent (${brain.harness}): ${e instanceof Error ? e.name : "an error"}`);
-      this.forgetSession(ionId);
+      if (!this.stopping) this.forgetSession(ionId);
       return { reply: NO_AGENT, threads: live.threads };
     } finally {
       this.live.delete(turnId);
       this.d.grants.revoke(turnId);
     }
+  }
+
+  /** A turn's reply from how its session ended; its session kept for the next turn, or forgotten when broken. */
+  private settle(ionId: string, harness: string, end: Ended): string {
+    if (this.stopping) return NO_AGENT;
+    const reply = end.late ? TOO_LONG : end.last.trim() || NO_AGENT;
+    // A session that failed or said nothing is forgotten: resuming it would likely fail again (its context too long).
+    const broken = !end.late && (end.failed || reply === NO_AGENT);
+    if (broken) this.forgetSession(ionId);
+    else if (end.nativeId) this.keepSession(ionId, harness, end.nativeId);
+    return reply;
   }
 
   /** ion chief: an empty folder of its own (made now); a project's ion: its project's folder. */
@@ -214,7 +255,9 @@ export class IonTurns {
       decide: async (req: ApprovalRequest) => decideForIon(req, t.rules),
     };
     const resume = this.resumeOf(t.ionId, brain.harness);
-    return this.within(abort, (end, hold) => this.drive({ ...t, adapter, opts, resume }, end, hold));
+    return this.within(abort, t.turnId, (end, hold) =>
+      this.drive({ ...t, adapter, opts, resume }, end, hold),
+    );
   }
 
   /**
@@ -223,18 +266,25 @@ export class IonTurns {
    */
   private async within(
     abort: AbortController,
+    turnId: string,
     work: (end: Ended, hold: (s: Session) => void) => Promise<void>,
   ): Promise<Ended> {
     const end: Ended = { last: "", nativeId: null, late: false, failed: false };
     let session: Session | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<void>((r) => {
-      timer = setTimeout(() => {
+      const stop = () => {
+        clearTimeout(timer);
         end.late = true;
         abort.abort();
         void session?.interrupt().catch(() => {});
         r();
-      }, this.d.turnMs ?? ION_TURN_MS);
+      };
+      timer = setTimeout(stop, this.d.turnMs ?? ION_TURN_MS);
+      // ion stopping ends the turn as its limit would.
+      const live = this.live.get(turnId);
+      if (live) live.halt = stop;
+      if (this.stopping) stop();
     });
     // A session that starts after the limit is closed as soon as it does.
     const hold = (s: Session) => {

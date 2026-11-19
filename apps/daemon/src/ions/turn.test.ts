@@ -105,7 +105,11 @@ describe("an ion's turn", () => {
       ],
     });
     // The judge reads your own words as the request, never the brief the ion's agent wrote.
-    expect(startThread).toHaveBeenCalledWith("storefront", text, { ionId: "chief", request: text });
+    expect(startThread).toHaveBeenCalledWith("storefront", text, {
+      ionId: "chief",
+      request: text,
+      turnId: expect.stringMatching(/^turn_/),
+    });
     // Its work is kept on its chat under the turn's id, for the app to draw.
     const work = onIon("chief").filter((e: IonEvent) => e.type === EV.toolStarted);
     expect(work.map((e) => (e.data as { name: string }).name)).toEqual([
@@ -233,6 +237,32 @@ describe("an ion's turn", () => {
     expect(r.reply).toBe("I couldn't edit notes.md. This is storefront.");
     expect(existsSync(join(repo, "notes.md"))).toBe(false);
   });
+
+  // Security review, 2026-11-19: a report turn's prompt holds an agent's words; it must not start work from them,
+  // and no thread may be judged against words the daemon or an agent composed.
+  it("a report turn starts no thread, even when its agent tries", async () => {
+    const r = await turns().turn("chief", "please check storefront", { noThreads: true });
+    expect(startThread).not.toHaveBeenCalled();
+    expect(r.threads).toEqual([]);
+    expect(r.reply).toBe("This is storefront.");
+  });
+
+  // Task review, 2026-11-19: closing ion left an ion's turn running; its late writes hit a closed store.
+  it("shutdown ends a running turn, and nothing is written after", async () => {
+    const t = turns();
+    const going = t.turn("storefront", "take-your-time");
+    await vi.waitFor(() => expect(onIon("storefront").some((e) => e.type === EV.toolStarted)).toBe(true));
+    const started = Date.now();
+    await t.shutdown();
+    const append = vi.spyOn(store, "append");
+    const r = await going;
+    expect(r.threads).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(append).not.toHaveBeenCalled();
+    // A turn asked for after shutdown starts nothing.
+    expect((await t.turn("storefront", "hello")).reply).toBe(NO_AGENT);
+    expect(append).not.toHaveBeenCalled();
+  }, 10_000);
 
   it("a turn's keys stop working when it ends", async () => {
     const create = vi.spyOn(grants, "create");

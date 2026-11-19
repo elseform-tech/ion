@@ -69,9 +69,9 @@ async function ionTool(s: Script, server: IonServer, name: string, args: Record<
   return ok ? (body?.result?.content?.[0]?.text ?? "") : "";
 }
 
-/** How an ion's turn answers a thread's end ("Thread <title> ended: <status>. …"), or null for anything else. */
+/** How an ion's turn answers a thread's end ("A thread you started has ended: <status>. …"), or null. */
 function endOf(message: string): string | null {
-  const status = /^Thread [\s\S]* ended: (\w+)\. Tell the user what came of it\.$/.exec(message)?.[1];
+  const status = /^A thread you started has ended: (\w+)\./.exec(message)?.[1];
   if (!status) return null;
   return status === "done" ? "It's done." : "It didn't finish.";
 }
@@ -226,8 +226,11 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
    */
   async ion(s) {
     const ended = endOf(s.text());
-    // A thread's end: said in a word, starting nothing (its title may name projects).
     if (!ended) return ionTurn(s);
+    // A thread's end: it looks with ion's tools first (as an agent would), then says it in a word, starting nothing.
+    const server = s.mcp() as IonServer | null;
+    const listed = server ? await ionTool(s, server, "projects", {}).catch(() => "") : "";
+    if (!listed) return "failed";
     say(s, ended);
     return "done";
   },

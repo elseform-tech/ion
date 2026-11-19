@@ -148,6 +148,49 @@ describe("daemon api", () => {
     await s2.close();
   });
 
+  // Task review, 2026-11-19: ions watched their threads before ion listened, so a report turn for a run a crash left
+  // unfinished could get ion's tools at port 0. Its ion now reports it through its tools, once ion listens.
+  it("reports an ion thread a crash left unfinished, through its ion's tools", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const h = mkdtempSync(join(tmpdir(), "ion-sweep-"));
+    const { openDb, EventStore } = await import("../store/index.js");
+    const { allViews } = await import("../views/index.js");
+    const { DEFAULT_CONFIG } = await import("@ion/config");
+    const cf = join(h, "config.toml");
+    saveUserConfig(cf, {
+      ...DEFAULT_CONFIG,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "fake" },
+      projects: [{ id: "app", path: repo("app"), starred: false, harness: "fake" }],
+    });
+    mkdirSync(join(h, "data"), { recursive: true });
+    const db = openDb(join(h, "data", "ion.db"));
+    const st = new EventStore(db, allViews);
+    const at = { chatId: "c", origin: "daemon" as const };
+    st.append({
+      ...at,
+      runId: null,
+      type: "chat.created",
+      data: { title: "Fix it", projectId: "app", by: "ion" },
+    });
+    st.append({
+      ...at,
+      runId: "r-crashed",
+      type: "run.started",
+      data: { harness: "fake", model: "m", effort: null, authMethod: null },
+    });
+    db.close();
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: cf, port: 0 });
+    const c2 = await connect({ port: s2.port, token: s2.token });
+    const seen: IonEvent[] = [];
+    await c2.subscribe({ chatId: "ion:app" }, (e) => seen.push(e));
+    // The first look at which agents are ready (each one's CLI) is slow while the whole suite runs.
+    await until(() => seen.some((e) => e.type === "ion.said"), 25_000);
+    expect(seen.find((e) => e.type === "ion.said")!.data).toEqual({ text: "It didn't finish." });
+    expect(seen.some((e) => e.type === "tool.started")).toBe(true);
+    c2.close();
+    await s2.close();
+  }, 30_000);
+
   it("keeps its data folder private", () => {
     expect(statSync(join(home, "data")).mode & 0o777).toBe(0o700);
   });

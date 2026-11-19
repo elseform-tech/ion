@@ -48,7 +48,6 @@ export async function startServer(opts: {
   let port = 0;
   const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
   const { db } = ctx;
-  ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   // Routines run on their schedule while the daemon runs (a run missed while it was stopped goes now).
   const stopRoutines = ctx.routines.start();
   // ion chief looks for something to suggest now, then hourly.
@@ -71,12 +70,19 @@ export async function startServer(opts: {
 
   const addr = http.address();
   port = typeof addr === "object" && addr ? addr.port : 0;
+  // Only now that ion listens (its tools have a port): the ions watch their threads end, and runs a crash left
+  // unfinished end (their ions report them).
+  ctx.ions.watch();
+  ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   return {
     port,
     token: auth.token,
     close: async () => {
       stopRoutines();
       stopSuggestions();
+      // ion's turns stop first; nothing an ion says after is written.
+      ctx.ions.stop();
+      await turns.shutdown();
       await ctx.runs.shutdown();
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
@@ -155,7 +161,7 @@ function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | 
 
 /**
  * ion chief and the project ions: each message a turn of the ion's own agent session (IonTurns) with ion's tools
- * (MCP) and a gate that only lets it read; they watch their threads end.
+ * (MCP) and a gate that only lets it read. They watch their threads end once ion listens (startServer).
  */
 function startIons(
   d: Omit<ConstructorParameters<typeof Ions>[0], "agents" | "turns"> & {
@@ -179,7 +185,6 @@ function startIons(
   late.ions = ions;
   // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
   ions.answerUnanswered();
-  ions.watch();
   return { ions, turns };
 }
 
