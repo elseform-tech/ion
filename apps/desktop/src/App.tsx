@@ -5,6 +5,7 @@ import { Down } from "./Down.js";
 import { Ions } from "./ions/Ions.js";
 import { useIon } from "./ion.js";
 import { type Mode, Rail, useNeedCount } from "./Rail.js";
+import { Settings } from "./settings/Settings.js";
 
 /** The first letter of your account's name, for the rail (the lab's "Y"). */
 function useInitial(): string {
@@ -26,23 +27,39 @@ export function App() {
   // The open chat outlives a dropped connection: after ion comes back you're where you were.
   const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("chats");
+  // The ion the Ions screen opens on (Settings' "Open chat" picks one).
+  const [ionId, setIonId] = useState("chief");
   if (state === "connecting") return <div className="app--empty" />;
   if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
   return (
     <div className="win">
       <Rail mode={mode} setMode={setMode} initial={initial} needs={needs} />
       <div className="body">
-        {mode === "chats" ? (
+        {mode === "chats" && (
           <div className="mode chats">
             <Chats client={client} openId={openId} setOpenId={setOpenId} />
           </div>
-        ) : (
+        )}
+        {mode === "ions" && (
           <div className="mode ions">
             <Ions
+              key={ionId}
               client={client}
+              start={ionId}
               onOpenChat={(chatId) => {
                 setOpenId(chatId);
                 setMode("chats");
+              }}
+            />
+          </div>
+        )}
+        {mode === "settings" && (
+          <div className="mode settings">
+            <Settings
+              client={client}
+              onOpenIon={(id) => {
+                setIonId(id);
+                setMode("ions");
               }}
             />
           </div>

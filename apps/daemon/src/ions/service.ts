@@ -1,17 +1,25 @@
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
-import { EV, type HarnessInfo, type IonCard } from "@ion/schema";
+import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { chiefPrompt, contextOf, parseRoute, type Route } from "./route.js";
+import { parseProjectDecision, projectContextOf, projectPrompt } from "./project.js";
 
 const TIMEOUT_MS = 30_000;
 const NO_MODEL = "I couldn't reach my model; try again.";
 
 type Ask = (
-  args: { projectId: string; text: string; harness?: string; access: "auto" },
-  opts: { by: "ion"; request?: string },
+  args: {
+    projectId: string;
+    text: string;
+    harness?: string;
+    model?: string;
+    effort?: Effort;
+    access: "auto";
+  },
+  opts: { by: "ion"; request?: string; title?: string },
 ) => Promise<{ chatId: string; runId: string }>;
 
 /** A title without its closing stops or spaces ("Fix the cart." → "Fix the cart"), so ": done." reads right. */
@@ -22,15 +30,16 @@ function trimEnd(title: string): string {
 }
 
 /** Without a project's own agent or a last one: the first ready of these (quota-friendly first), else any. */
-const PREFERRED = ["opencode", "grok-build", "claude-code"];
+const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
+const firstOf = (ready: string[]) => PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
 
 export type IonsDeps = {
   store: EventStore;
   db: Db;
   configFile: string;
   runs: { ask: Ask };
-  /** ion's quick model (System 1): a prompt in, its last message out. */
-  quick: (prompt: string, signal: AbortSignal) => Promise<string>;
+  /** ion's quick model (System 1): a prompt in, its last message out; `agent`: think on it instead of [ion] quick. */
+  quick: (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>;
   /** The agents and whether each is ready, to pick one for a project with none set. */
   agents?: () => Promise<HarnessInfo[]>;
 };
@@ -67,31 +76,82 @@ export class Ions {
     });
   }
 
+  /** Whatever goes wrong, the ion answers (else "Thinking" would stay): your mistake in its words, else NO_MODEL. */
   async message(ionId: string, text: string): Promise<void> {
     if (ionId !== "chief" && !this.projects().some((p) => p.id === ionId))
       throw new UserError(`Unknown ion: ${ionId}`);
     this.heard(ionId, text);
-    if (ionId === "chief") return this.chief(text);
-    const r = await this.thread(ionId, text);
-    if ("why" in r) this.say(ionId, r.why);
-    else this.say(ionId, "On it.", { kind: "threads", threads: [r] });
+    try {
+      if (ionId === "chief") await this.chief(text);
+      else await this.project(ionId, text);
+    } catch (e) {
+      this.say(ionId, e instanceof UserError ? e.message : NO_MODEL);
+    }
   }
 
-  /** Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. */
+  /** At the start: a message ion stopped before answering gets its answer now (else "Thinking" would stay). */
+  answerUnanswered(): void {
+    for (const ionId of ["chief", ...this.projects().map((p) => p.id)]) {
+      const talk = this.d.store
+        .read({ chatId: `ion:${ionId}` })
+        .filter((e) => e.type === EV.ionHeard || e.type === EV.ionSaid);
+      if (talk.at(-1)?.type === EV.ionHeard) this.say(ionId, NO_MODEL);
+    }
+  }
+
   /**
-   * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `request` is what the judge
-   * treats as your request: your own message (to ion chief), never a brief its model wrote.
+   * A project's ion thinks: answers itself, starts a thread for work (judged by your own words), or both. When its
+   * model can't be reached, your own words start the thread.
+   */
+  private async project(projectId: string, text: string): Promise<void> {
+    const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId)!;
+    const context = projectContextOf(p, chatsView.list(this.d.db), needsView.open(this.d.db));
+    const said = await this.think(projectPrompt(text, context));
+    const d = (said === null ? null : parseProjectDecision(said)) ?? { thread: text };
+    if (!d.thread) return this.say(projectId, d.answer ?? "");
+    const t = await this.thread(projectId, d.thread, { request: text });
+    if ("why" in t) this.say(projectId, [d.answer, t.why].filter(Boolean).join(" "));
+    else this.say(projectId, d.answer ?? "On it.", { kind: "threads", threads: [t] });
+  }
+
+  /**
+   * A routine's time came (or you ran it now): its thread, titled by its name and briefed with its text (your own
+   * words, so the judge reads them as your request), at its effort.
+   */
+  async routine(
+    projectId: string,
+    r: { name: string; text: string; effort?: Effort },
+    by: "schedule" | "you",
+  ): Promise<{ chatId: string; projectId: string } | { why: string }> {
+    const t = await this.thread(projectId, r.text, { request: r.text, title: r.name, effort: r.effort });
+    if ("why" in t) this.say(projectId, `${r.name} didn't start: ${t.why}`);
+    else this.say(projectId, by === "you" ? "On it." : "On schedule.", { kind: "threads", threads: [t] });
+    return t;
+  }
+
+  /**
+   * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `o.request` is what the
+   * judge treats as your request: your own message (to ion chief), never a brief its model wrote. `o.title`: the
+   * thread's title; `o.effort`: its effort, over the project's.
    */
   private async thread(
     projectId: string,
     text: string,
-    request?: string,
+    o: { request?: string; title?: string; effort?: Effort } = {},
   ): Promise<{ chatId: string; projectId: string } | { why: string }> {
     const harness = await this.agentFor(projectId);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
-      const args = { projectId, text, ...(harness ? { harness } : {}), access: "auto" as const };
-      const { chatId } = await this.d.runs.ask(args, { by: "ion", ...(request ? { request } : {}) });
+      const args = {
+        projectId,
+        text,
+        ...(harness ? { harness } : {}),
+        ...this.brainOf(projectId, harness),
+        ...(o.effort ? { effort: o.effort } : {}),
+        access: "auto" as const,
+      };
+      const opts = { by: "ion" as const, ...(o.request ? { request: o.request } : {}) };
+      const { chatId } = await this.d.runs.ask(args, o.title ? { ...opts, title: o.title } : opts);
       return { chatId, projectId };
     } catch (e) {
       if (e instanceof UserError) return { why: e.message };
@@ -99,15 +159,38 @@ export class Ions {
     }
   }
 
-  /** The project's own agent, else the one its last chat ran on, else the first ready (opencode, Grok, Claude). */
+  /**
+   * The project's model and effort (Settings). Effort always; the model on the agent it was picked for: the
+   * project's own, or (none set) the one Settings showed, which is the one `agentFor` picks.
+   */
+  private brainOf(projectId: string, harness: string | undefined): { model?: string; effort?: Effort } {
+    const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId);
+    if (!p) return {};
+    const model = p.model && (!p.harness || p.harness === harness) ? p.model : undefined;
+    return { ...(model ? { model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
+  }
+
+  /** The project's own agent, else the one its last chat ran on, else the first ready (opencode, Grok, Codex, Claude). */
   private async agentFor(projectId: string): Promise<string | undefined> {
     const own = this.projects().find((p) => p.id === projectId)?.harness;
     if (own) return own;
     const last = chatsView.lastAgent(this.d.db, projectId);
     if (last) return last;
-    const ready = (await this.d.agents?.().catch(() => [])) ?? [];
-    const ok = ready.filter((h) => h.installed && h.signedIn).map((h) => h.id);
-    return PREFERRED.find((id) => ok.includes(id)) ?? ok[0];
+    return firstOf(await this.ready());
+  }
+
+  /** The agents installed and signed in. */
+  private async ready(): Promise<string[]> {
+    const all = (await this.d.agents?.().catch(() => [])) ?? [];
+    return all.filter((h) => h.installed && h.signedIn).map((h) => h.id);
+  }
+
+  /** The agent ion thinks with: none (as [ion] quick says) when that one is ready, else the first ready. */
+  private async quickAgent(): Promise<string | undefined> {
+    if (!this.d.agents) return undefined;
+    const ok = await this.ready();
+    const set = loadUserConfig(this.d.configFile).config.ion.quick.split(":")[0]!;
+    return ok.includes(set) ? undefined : firstOf(ok);
   }
 
   private async chief(text: string): Promise<void> {
@@ -119,7 +202,7 @@ export class Ions {
     for (const { projectId, brief } of r.route) {
       // The brief is ion chief's words, not yours.
       this.say(projectId, `ion asked: ${JSON.stringify(brief)}`);
-      const t = await this.thread(projectId, brief, text);
+      const t = await this.thread(projectId, brief, { request: text });
       if ("why" in t) missed.push(`Couldn't reach ${projectId}: ${t.why}`);
       else {
         threads.push(t);
@@ -138,6 +221,13 @@ export class Ions {
       .filter((p) => p.shareWithIon !== false)
       .map((p) => p.id);
     const context = contextOf(ids, chatsView.list(this.d.db), needsView.open(this.d.db));
+    const said = await this.think(chiefPrompt(text, ids, context));
+    return said === null ? null : parseRoute(said, ids);
+  }
+
+  /** ion's quick model on a prompt: its answer, or null when it fails or is slow. */
+  private async think(prompt: string): Promise<string | null> {
+    const agent = await this.quickAgent();
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     // A hard deadline: the model is told to stop, and ion doesn't wait past it even if it doesn't.
@@ -148,8 +238,7 @@ export class Ions {
       }, TIMEOUT_MS);
     });
     try {
-      const said = await Promise.race([this.d.quick(chiefPrompt(text, ids, context), abort.signal), late]);
-      return said === null ? null : parseRoute(said, ids);
+      return await Promise.race([this.d.quick(prompt, abort.signal, agent), late]);
     } catch {
       return null;
     } finally {

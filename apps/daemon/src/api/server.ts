@@ -20,10 +20,16 @@ import { createGrants, createMcpHandler } from "../mcp/index.js";
 import { Ions } from "../ions/service.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
-import { harnessInfos } from "./commands.js";
+import { diffOfChat, harnessInfos } from "./commands.js";
+import { Routines } from "../scheduler/index.js";
+import { Suggestions } from "../ions/suggestions.js";
+import { chatsView } from "../views/chats.js";
+import { addRoutineTo } from "./routines.js";
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
+/** What a stalled chat is sent when you resume it from ion chief's suggestion. */
+const RESUME = "Pick up where you left off.";
 
 export async function startServer(opts: {
   dataDir: string;
@@ -34,6 +40,10 @@ export async function startServer(opts: {
   const ctx = openState(opts, () => `http://127.0.0.1:${port}`);
   const { store, db } = ctx;
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
+  // Routines run on their schedule while the daemon runs (a run missed while it was stopped goes now).
+  const stopRoutines = ctx.routines.start();
+  // ion chief looks for something to suggest now, then hourly.
+  const stopSuggestions = ctx.suggestions.start();
   // Answers still waiting when ion stopped go into their chats now.
   void ctx.decisions.resume().catch(() => {});
   const auth = createAuth();
@@ -62,6 +72,8 @@ export async function startServer(opts: {
     port,
     token: auth.token,
     close: async () => {
+      stopRoutines();
+      stopSuggestions();
       await ctx.runs.shutdown();
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
@@ -86,7 +98,7 @@ function httpServer(mcp: ReturnType<typeof createMcpHandler>, gate: ReturnType<t
 }
 
 /**
- * Auto: rules, then a judge on ion's quick harness. Your secrets and ion's own files (and a custom Grok folder,
+ * Auto: rules, then a judge on its own model ([access] judge). Your secrets and ion's own files (and a custom Grok folder,
  * where ion's gate hook lives; ~/.grok is covered by name) are always denied; the judge weighs your decisions.
  */
 function autoAccess(
@@ -113,6 +125,31 @@ const followAsk = (chatId: string, m: { harness: string | null; text: string }) 
   ...(m.harness ? { harness: m.harness } : {}),
 });
 
+/**
+ * ion chief's suggestions: a routine is added the way you'd add it; a stalled chat gets its follow-up through the
+ * normal ask, on the chat's own agent.
+ */
+function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | "routines">): Suggestions {
+  return new Suggestions({
+    ...{ store: c.store, db: c.db, configFile: c.configFile },
+    changes: async (chatId) => (await diffOfChat(c, chatId)).files.length,
+    addRoutine: (projectId, r) => void addRoutineTo(c, projectId, r),
+    resume: async (chatId) => {
+      const harness = chatsView.session(c.db, chatId)?.harness ?? null;
+      await c.runs.ask(followAsk(chatId, { harness, text: RESUME }));
+    },
+  });
+}
+
+/** ion chief and the project ions, thinking with ion's quick model, watching their threads end. */
+function startIons(d: Omit<ConstructorParameters<typeof Ions>[0], "agents">): Ions {
+  const ions = new Ions({ ...d, agents: () => harnessInfos.list() });
+  // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
+  ions.answerUnanswered();
+  ions.watch();
+  return ions;
+}
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
@@ -122,6 +159,11 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   const quick = harnessRunner(opts.configFile);
+  // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
+  const ionQuick = harnessRunner(opts.configFile, "quick");
+  const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
+  // Questions held behind one that closed while ion was stopped come to you now.
+  ionQuestions.sweep();
   // Made after the run manager it needs; the judge and the gate reach it through this holder.
   const late: { decisions?: Decisions } = {};
   const access = autoAccess(opts, quick, late);
@@ -146,22 +188,22 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     store,
     db,
     needs,
-    match: createMatcher(quick),
-    ion: new IonQuestions({ store, db, needs, same: createSame(quick) }),
+    match: createMatcher(ionQuick),
+    ion: ionQuestions,
     followUp: async (chatId, m) =>
       (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown })).runId,
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const ions = new Ions({
+  const ions = startIons({ store, db, configFile: opts.configFile, runs, quick: ionQuick });
+  // A routine's time came (or you ran it now): its ion starts its thread.
+  const routines = new Routines({
     store,
     db,
     configFile: opts.configFile,
-    runs,
-    quick,
-    agents: () => harnessInfos.list(),
+    start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
-  ions.watch();
+  const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
   const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
-  return { store, db, needs, decisions, grants, runs, ions, ...base0 };
+  return { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0 };
 }

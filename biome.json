@@ -16,6 +16,7 @@
       "!**/src-tauri/target",
       "!**/src-tauri/gen",
       "!.playwright-mcp",
+      "!.claude",
       "!**/design-system/src/lab.css"
     ]
   },

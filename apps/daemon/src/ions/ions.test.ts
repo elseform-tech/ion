@@ -43,8 +43,15 @@ beforeEach(() => {
     });
     return { chatId, runId: `r${n}` };
   });
-  quick = vi.fn();
+  // By default a project's ion starts a thread with your words as its brief (ion chief's tests set their own).
+  quick = vi.fn(async (prompt: string) =>
+    prompt.startsWith(PROJECT_PROMPT) ? JSON.stringify({ thread: yours(prompt) }) : "",
+  );
 });
+
+const PROJECT_PROMPT = "Decide for this project's ion";
+/** Your message, as the prompt carries it. */
+const yours = (prompt: string) => /source="your message">\n([\s\S]*?)\n<\/ion-data/.exec(prompt)?.[1] ?? "";
 
 const ions = () => new Ions({ store, db, configFile, runs: { ask }, quick });
 const said = (ionId: string) =>
@@ -53,6 +60,178 @@ const said = (ionId: string) =>
     .filter((e: IonEvent) => e.type === EV.ionSaid)
     .map((e) => e.data as { text: string; card?: unknown });
 
+// The user, 2026-11-19: "ions are not thinking": "what project am I in" started a thread. A project's ion now
+// decides: it answers itself from what it knows, starts a thread for work, or both.
+describe("a project's ion thinks", () => {
+  it("answers itself when it can, starting no thread", async () => {
+    quick.mockResolvedValueOnce(JSON.stringify({ answer: "You're in storefront." }));
+    await ions().message("storefront", "what project am i in right now");
+    expect(ask).not.toHaveBeenCalled();
+    expect(said("storefront")).toEqual([{ text: "You're in storefront." }]);
+  });
+
+  it("starts a thread with a brief for work, judged by your own words", async () => {
+    quick.mockResolvedValueOnce(
+      JSON.stringify({ answer: "I'll fix it.", thread: "Fix the cart total rounding" }),
+    );
+    await ions().message("storefront", "the cart total is off by a cent, fix it");
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ text: "Fix the cart total rounding" }), {
+      by: "ion",
+      request: "the cart total is off by a cent, fix it",
+    });
+    expect(said("storefront")).toEqual([
+      {
+        text: "I'll fix it.",
+        card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
+      },
+    ]);
+  });
+
+  it("thinks with what it knows of its own project only", async () => {
+    store.append({
+      chatId: "c7",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "Cart totals", projectId: "storefront" },
+    });
+    store.append({
+      chatId: "c8",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "Webhooks", projectId: "payments-api" },
+    });
+    quick.mockResolvedValueOnce(JSON.stringify({ answer: "ok" }));
+    await ions().message("storefront", "what's going on?");
+    const prompt = quick.mock.calls[0]![0] as string;
+    expect(prompt.startsWith(PROJECT_PROMPT)).toBe(true);
+    expect(prompt).toContain("storefront");
+    expect(prompt).toContain("Cart totals");
+    expect(prompt).not.toContain("Webhooks");
+  });
+
+  // Settings: a project ion's model and effort are what its threads run on (only with the agent they belong to).
+  it("runs its threads on the project's model and effort", async () => {
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [
+        {
+          id: "storefront",
+          path: "/p/storefront",
+          starred: false,
+          harness: "grok-build",
+          model: "grok-code",
+          effort: "high",
+        },
+      ],
+    });
+    await ions().message("storefront", "Fix the cart");
+    expect(ask.mock.calls[0]![0]).toMatchObject({
+      harness: "grok-build",
+      model: "grok-code",
+      effort: "high",
+    });
+  });
+
+  // Review, 2026-11-19: Settings shows a project's agent as its own or its last chat's, and the model and effort set
+  // there were dropped unless the agent had been picked explicitly.
+  it("runs its threads on the model and effort set for the agent Settings shows (its last chat's)", async () => {
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [
+        { id: "storefront", path: "/p/storefront", starred: false, model: "grok-code", effort: "high" },
+      ],
+    });
+    store.append({
+      chatId: "c1",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "Earlier", projectId: "storefront" },
+    });
+    store.append({
+      chatId: "c1",
+      runId: "r0",
+      origin: "daemon",
+      type: EV.runStarted,
+      data: { harness: "grok-build", model: "grok-code-fast", effort: null, authMethod: null },
+    });
+    await ions().message("storefront", "Fix the cart");
+    expect(ask.mock.calls[0]![0]).toMatchObject({
+      harness: "grok-build",
+      model: "grok-code",
+      effort: "high",
+    });
+  });
+
+  // Review, 2026-11-19: a project ion whose model is out of reach said "I couldn't reach my model" forever and
+  // started nothing; now it starts a thread with your own words.
+  it.each([
+    ["fails", () => quick.mockRejectedValueOnce(new Error("down"))],
+    ["answers junk", () => quick.mockResolvedValueOnce("sure!")],
+  ])("starts a thread with your own words when its model %s", async (_how, arrange) => {
+    arrange();
+    await ions().message("storefront", "fix it");
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ projectId: "storefront", text: "fix it" }), {
+      by: "ion",
+      request: "fix it",
+    });
+    expect(said("storefront")).toEqual([
+      { text: "On it.", card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] } },
+    ]);
+  });
+});
+
+const agent = (id: string, signedIn: boolean) => ({
+  id,
+  label: id,
+  installed: true,
+  signedIn,
+  models: [],
+  defaultModel: null,
+});
+
+// Review, 2026-11-19: [ion] quick defaults to Claude Code; with only opencode or Grok signed in, ion never thought.
+describe("ion's quick model", () => {
+  const withAgents = (list: ReturnType<typeof agent>[]) =>
+    new Ions({ store, db, configFile, runs: { ask }, quick, agents: async () => list });
+
+  it("thinks with the first ready agent when the one set isn't ready", async () => {
+    quick.mockResolvedValueOnce('{"answer":"ok"}');
+    const list = [agent("claude-code", false), agent("grok-build", true), agent("opencode", true)];
+    await withAgents(list).message("chief", "hi");
+    expect(quick.mock.calls[0]![2]).toBe("opencode");
+  });
+
+  it("thinks with the one set when it is ready", async () => {
+    quick.mockResolvedValueOnce('{"answer":"ok"}');
+    await withAgents([agent("claude-code", true), agent("opencode", true)]).message("chief", "hi");
+    expect(quick.mock.calls[0]![2]).toBeUndefined();
+  });
+});
+
+// Review, 2026-11-19: "Thinking" stayed forever when an ion's reply never came.
+describe("an ion always answers", () => {
+  const heard = (ionId: string, type: string, text: string) =>
+    store.append({ chatId: `ion:${ionId}`, runId: null, origin: "daemon", type, data: { text } });
+
+  it("says it couldn't reach its model when anything goes wrong", async () => {
+    ask.mockRejectedValueOnce(new Error("disk full"));
+    await ions().message("storefront", "fix it");
+    expect(said("storefront")).toEqual([{ text: "I couldn't reach my model; try again." }]);
+  });
+
+  it("answers, at the start, a message ion stopped before answering", () => {
+    heard("storefront", EV.ionHeard, "x");
+    heard("chief", EV.ionHeard, "y");
+    heard("chief", EV.ionSaid, "ok");
+    ions().answerUnanswered();
+    expect(said("storefront")).toEqual([{ text: "I couldn't reach my model; try again." }]);
+    expect(said("chief")).toEqual([{ text: "ok" }]);
+  });
+});
+
 // Plan 09: a project's ion starts a thread for what you ask; ion chief answers, or routes to project ions.
 describe("Ions", () => {
   it("starts a thread in the project when you message its ion, on its agent, and says so", async () => {
@@ -60,7 +239,7 @@ describe("Ions", () => {
     // Security review: ion's threads always run in Auto, so every action still goes through ion's checks.
     expect(ask).toHaveBeenCalledWith(
       { projectId: "payments-api", text: "Check totals rounding", harness: "opencode", access: "auto" },
-      { by: "ion" },
+      { by: "ion", request: "Check totals rounding" },
     );
     expect(store.read({ chatId: "ion:payments-api" })[0]).toMatchObject({
       type: EV.ionHeard,
@@ -301,6 +480,40 @@ describe("ion threads' request and agent", () => {
     });
     await i.message("storefront", "x");
     expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build" });
+  });
+});
+
+// Plan 10: a routine's thread starts like any of its ion's: Auto, by ion, on its agent.
+describe("a routine's thread", () => {
+  const routine = { id: "m", name: "Morning check", when: "daily 09:00", text: "Run the tests.", on: true };
+
+  it("is titled by its name, briefed with its text, judged by it, at its effort", async () => {
+    const t = await ions().routine("payments-api", { ...routine, effort: "low" as const }, "schedule");
+    expect(t).toEqual({ chatId: "t1", projectId: "payments-api" });
+    expect(ask).toHaveBeenCalledWith(
+      {
+        projectId: "payments-api",
+        text: "Run the tests.",
+        harness: "opencode",
+        effort: "low",
+        access: "auto",
+      },
+      { by: "ion", request: "Run the tests.", title: "Morning check" },
+    );
+    expect(said("payments-api")).toEqual([
+      {
+        text: "On schedule.",
+        card: { kind: "threads", threads: [{ chatId: "t1", projectId: "payments-api" }] },
+      },
+    ]);
+  });
+
+  it("says it started when you run it now, and why when it can't", async () => {
+    await ions().routine("payments-api", routine, "you");
+    expect(said("payments-api")[0]?.text).toBe("On it.");
+    ask.mockRejectedValueOnce(new UserError("No agent is ready"));
+    expect(await ions().routine("payments-api", routine, "schedule")).toEqual({ why: "No agent is ready" });
+    expect(said("payments-api")[1]).toEqual({ text: "Morning check didn't start: No agent is ready" });
   });
 });
 

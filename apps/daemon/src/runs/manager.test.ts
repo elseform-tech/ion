@@ -510,6 +510,16 @@ describe("RunManager", () => {
     );
   });
 
+  // Plan 10: a routine's thread is titled by the routine's name, not its instructions.
+  it("titles a new chat as asked when given a title", async () => {
+    const { chatId, runId } = await runs.ask(
+      { text: "Run the tests and say what broke", projectId: "repo", harness: "fake" },
+      { by: "ion", title: "Morning check" },
+    );
+    await finished(runId);
+    expect(chatsView.list(db).find((c) => c.chatId === chatId)?.title).toBe("Morning check");
+  });
+
   it("checks an agent is ready once, not on every message", async () => {
     const before = detects.n;
     const first = await ask("hello");

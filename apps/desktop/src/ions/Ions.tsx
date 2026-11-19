@@ -1,10 +1,14 @@
 import type { IonClient } from "@ion/client/browser";
-import { EV, type IonInfo } from "@ion/schema";
+import { type ActivityInfo, EV, type IonInfo } from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
 import { useLive } from "../chats/live.js";
 import { NewProject, ProjectMenu } from "../chats/ProjectMenu.js";
 import { Star } from "@ion/design-system";
 import { IonAvatar, IonChat, IonName } from "./IonChat.js";
+import { ActivityPage, ActivityRow, useActivity } from "./Activity.js";
+
+/** The Activity page's place in the panel (no ion has this id). */
+const ACTIVITY = "activity";
 
 /** What changes the ions list: an ion's line, its threads starting, running and ending, their questions. */
 const IONS_CHANGE = new Set<string>([
@@ -128,9 +132,58 @@ function IonList(p: {
   );
 }
 
+/** The left panel: the header (project picker), ion chief, each project's ion (Starred first), Add project. */
+function IonsPanel(p: {
+  ions: IonInfo[];
+  activity: ActivityInfo | null;
+  live: ReturnType<typeof useLive>;
+  openId: string | undefined;
+  onOpen: (id: string) => void;
+  onStar: (projectId: string, starred: boolean) => void;
+  onNew: (name: string) => Promise<unknown>;
+}) {
+  const [project, setProject] = useState<string | null>(null);
+  const [chief, ...all] = p.ions;
+  const projects = all.filter((x) => project === null || x.ionId === project);
+  const { live, onNew: addProject, onStar, openId } = p;
+  const setOpenId = p.onOpen;
+  const open = { ionId: openId };
+  return (
+    <aside className="ipanel" aria-label="Ions">
+      <div className="ihead">
+        <b className="brand ititle" aria-label="ions">
+          i<i>o</i>ns
+        </b>
+        <ProjectMenu
+          projects={live.projects}
+          needs={live.needs}
+          project={project}
+          onPick={setProject}
+          onNew={addProject}
+        />
+      </div>
+      <ActivityRow activity={p.activity} on={openId === ACTIVITY} onOpen={() => setOpenId(ACTIVITY)} />
+      {chief && <Chief ion={chief} on={open?.ionId === "chief"} onOpen={() => setOpenId("chief")} />}
+      <div className="ilist">
+        <IonList ions={projects} openId={open?.ionId} onOpen={setOpenId} onStar={onStar} />
+        {project === null && <NewProject onNew={addProject} label="Add project" className="addp" />}
+      </div>
+    </aside>
+  );
+}
+
 /** The Ions screen, as the lab's: the header (project picker), ion chief, each project's ion (Starred first) and
  * Add project on the left; the open ion's chat on the right. */
-export function Ions({ client, onOpenChat }: { client: IonClient; onOpenChat: (chatId: string) => void }) {
+export function Ions({
+  client,
+  onOpenChat,
+  start = "chief",
+}: {
+  client: IonClient;
+  onOpenChat: (chatId: string) => void;
+  /** The ion to open first (Settings' "Open chat"). */
+  start?: string;
+}) {
   const [ions, readIons] = useIons(client);
   const live = useLive(client);
   // Projects live in your config, not in ion's events: read them again after a change made here.
@@ -140,33 +193,20 @@ export function Ions({ client, onOpenChat }: { client: IonClient; onOpenChat: (c
   };
   const onStar = (projectId: string, starred: boolean) =>
     void client.call("project.star", { projectId, starred }).then(changed, () => {});
-  const [openId, setOpenId] = useState("chief");
-  const [project, setProject] = useState<string | null>(null);
-  const open = ions.find((x) => x.ionId === openId) ?? ions[0];
-  const [chief, ...all] = ions;
-  const projects = all.filter((x) => project === null || x.ionId === project);
+  const [openId, setOpenId] = useState(start);
+  const [activity, readActivity] = useActivity(client);
+  const open = openId === ACTIVITY ? undefined : (ions.find((x) => x.ionId === openId) ?? ions[0]);
   const addProject = (name: string) => client.call("project.create", { name }).then(changed);
+  const page = { client, activity, ions, reload: readActivity, onOpenChat };
   return (
     <>
-      <aside className="ipanel" aria-label="Ions">
-        <div className="ihead">
-          <b className="brand ititle" aria-label="ions">
-            i<i>o</i>ns
-          </b>
-          <ProjectMenu
-            projects={live.projects}
-            needs={live.needs}
-            project={project}
-            onPick={setProject}
-            onNew={addProject}
-          />
-        </div>
-        {chief && <Chief ion={chief} on={open?.ionId === "chief"} onOpen={() => setOpenId("chief")} />}
-        <div className="ilist">
-          <IonList ions={projects} openId={open?.ionId} onOpen={setOpenId} onStar={onStar} />
-          {project === null && <NewProject onNew={addProject} label="Add project" className="addp" />}
-        </div>
-      </aside>
+      <IonsPanel
+        {...{ ions, activity, live, onStar }}
+        openId={open?.ionId ?? openId}
+        onOpen={setOpenId}
+        onNew={addProject}
+      />
+      {openId === ACTIVITY && <ActivityPage {...page} />}
       {open && (
         <IonChat
           key={open.ionId}

@@ -11,7 +11,6 @@ import {
   saveUserConfig,
   setProjectAccess,
   setProjectStarred,
-  type UserConfig,
 } from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
@@ -25,10 +24,26 @@ import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
 import { HarnessInfos } from "./harness-infos.js";
 import { renameChat } from "../runs/ready.js";
+import { projectPath } from "../runs/projects.js";
 import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
+import { changeConfig, settingsHandlers } from "./settings.js";
+import { workspaceHandlers } from "./workspace.js";
+import { routineHandlers } from "./routines.js";
+import type { Routines } from "../scheduler/index.js";
+import type { Suggestions } from "../ions/suggestions.js";
 
 export { UserError } from "./errors.js";
+
+/** What a chat changed in its worktree since it started (nothing once archived). */
+export async function diffOfChat(ctx: { db: Db; configFile: string }, chatId: string) {
+  const chat = chatsView.list(ctx.db).find((c) => c.chatId === chatId);
+  if (!chat) throw new UserError(`Unknown chat: ${chatId}`);
+  const worktree = chat.archived ? null : chatsView.worktree(ctx.db, chat.chatId);
+  const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
+  if (!worktree || !project) return { files: [] };
+  return chatDiff(project.path, worktree);
+}
 
 export type Ctx = {
   store: EventStore;
@@ -38,12 +53,14 @@ export type Ctx = {
   grants: Grants;
   runs: RunManager;
   ions: Ions;
+  routines: Routines;
+  suggestions: Suggestions;
   configFile: string;
   startedAt: number;
   version: string;
 };
 
-type Handlers = {
+export type Handlers = {
   [C in Exclude<Command, "events.subscribe">]: (
     args: Commands[C]["args"],
     ctx: Ctx,
@@ -51,6 +68,9 @@ type Handlers = {
 };
 
 export const handlers: Handlers = {
+  ...settingsHandlers,
+  ...workspaceHandlers,
+  ...routineHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   "harnesses.list": () => harnessInfos.list(),
@@ -59,14 +79,7 @@ export const handlers: Handlers = {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
     return { ok: true as const };
   },
-  "chat.diff": async (a, ctx) => {
-    const chat = chatsView.list(ctx.db).find((c) => c.chatId === a.chatId);
-    if (!chat) throw new UserError(`Unknown chat: ${String(a.chatId)}`);
-    const worktree = chat.archived ? null : chatsView.worktree(ctx.db, chat.chatId);
-    const project = loadUserConfig(ctx.configFile).config.projects.find((p) => p.id === chat.projectId);
-    if (!worktree || !project) return { files: [] };
-    return chatDiff(project.path, worktree);
-  },
+  "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
     renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));
     return { ok: true as const };
@@ -119,10 +132,15 @@ export const handlers: Handlers = {
     await ctx.ions.message(String(a.ionId ?? ""), text);
     return { ok: true as const };
   },
-  "suggestion.answer": (a, ctx) => {
-    ctx.decisions.suggestion(String(a.suggestionId ?? ""), a.keep === true);
+  // ion chief's own suggestions (a routine, a stalled chat), else a project ion's "always?".
+  "suggestion.answer": async (a, ctx) => {
+    const id = String(a.suggestionId ?? "");
+    if (ctx.suggestions.owns(id))
+      await ctx.suggestions.answer(id, { keep: a.keep === true, mute: a.mute === true });
+    else ctx.decisions.suggestion(id, a.keep === true);
     return { ok: true as const };
   },
+  "suggestions.list": (_a, ctx) => ctx.suggestions.list(),
   "projects.add": (a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
@@ -155,8 +173,14 @@ export const handlers: Handlers = {
     const chats = chatsView.list(ctx.db).filter((c) => c.projectId === id && !c.archived);
     if (chats.some((c) => ["queued", "running"].includes(c.lastRunStatus ?? "")))
       throw new UserError("Stop its running chats first");
-    for (const c of chats) await ctx.runs.archive(c.chatId);
+    // Out of your config first, so nothing (a routine, an ion message) starts in it while it goes.
+    const repo = projectPath(ctx.configFile, id);
     changeConfig(ctx.configFile, (c) => removeProject(c, id));
+    for (const c of chats) await ctx.runs.archive(c.chatId, repo);
+    // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
+    for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
+    for (const m of memoryView.list(ctx.db, id))
+      if (m.scope === id) forgetMemory(ctx.store, ctx.db, m.memoryId);
     return { ok: true as const };
   },
   "project.star": (a, ctx) => {
@@ -193,17 +217,6 @@ export const handlers: Handlers = {
       data: { title: String(a.title ?? "New chat"), projectId: a.projectId ?? null },
     }),
 };
-
-/** Loads your config, changes it, saves it; a refusal (or a config that doesn't parse) is the error you see. */
-function changeConfig(file: string, change: (c: UserConfig) => UserConfig): void {
-  const { config, error } = loadUserConfig(file);
-  if (error) throw new UserError(`Fix your config first. ${error}`);
-  try {
-    saveUserConfig(file, change(config));
-  } catch (e) {
-    throw new UserError((e as Error).message);
-  }
-}
 
 /** Every agent's info, kept and read again in the background (asking each CLI takes seconds). */
 export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs: 60_000 });

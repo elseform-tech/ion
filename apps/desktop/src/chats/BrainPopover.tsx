@@ -9,10 +9,10 @@ type Effort = (typeof EFFORTS)[number];
 export type Brain = { harness: string; model: string; effort: "" | Effort };
 
 const cap = (x: string) => x[0]!.toUpperCase() + x.slice(1);
-const effortLabel = (e: Brain["effort"]) => (e ? cap(e) : "Default");
+export const effortLabel = (e: Brain["effort"]) => (e ? cap(e) : "Default");
 
 /** The lab's effort bars: one to four lit. */
-function Bars({ effort }: { effort: Brain["effort"] }) {
+export function Bars({ effort }: { effort: Brain["effort"] }) {
   const n = effort ? EFFORTS.indexOf(effort) + 1 : 0;
   return (
     <span className="ebars" aria-hidden="true">

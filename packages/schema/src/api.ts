@@ -15,7 +15,126 @@ export type ProjectInfo = {
   /** Its ion's colour and the agent its ion's threads run on (Plan 09). */
   color?: string;
   harness?: string;
+  /** The model and effort its ion's threads run on. */
+  model?: string;
+  effort?: "low" | "medium" | "high" | "max";
+  /** What its ion does on a schedule. */
+  routines?: RoutineInfo[];
 };
+
+/** Something a project's ion does on a schedule (`when`: see parseWhen): a thread titled `name`, briefed `text`. */
+export type RoutineInfo = {
+  id: string;
+  name: string;
+  when: string;
+  text: string;
+  on: boolean;
+  effort?: EffortLevel;
+  /** The due time (ISO) of the one run you skipped. */
+  skip?: string;
+};
+
+/** A routine's next run, for Activity. `next` is null while it, or every routine, is paused. */
+export type UpcomingRun = {
+  projectId: string;
+  routineId: string;
+  name: string;
+  when: string;
+  /** Its ion's name (the project's). */
+  ion: string;
+  next: string | null;
+  /** The effort it runs at: its own, else its project's; null: the agent's default. */
+  effort: EffortLevel | null;
+  on: boolean;
+  /** You skipped its next run (`next` is the one after). */
+  skipped: boolean;
+};
+
+/** One run of an ion's thread: its title, ion, how it went, what it cost and when it started. */
+export type RecentRun = {
+  runId: string;
+  chatId: string;
+  title: string;
+  projectId: string;
+  ion: string;
+  /** The routine that started it, if one did. */
+  routine: string | null;
+  status: string;
+  costUsd: number | null;
+  at: string;
+};
+
+/** Activity: pause all, what's next (soonest first), and ion threads' runs today and yesterday (newest first). */
+export type ActivityInfo = {
+  paused: boolean;
+  upcoming: UpcomingRun[];
+  today: RecentRun[];
+  yesterday: RecentRun[];
+};
+
+/** One of ion chief's open suggestions: a routine for something you keep asking for, or a stalled chat to resume. */
+export type SuggestionInfo = {
+  suggestionId: string;
+  kind: "routine" | "stalled";
+  projectId: string;
+  /** What it asks: "Make Weekly PR summary a routine?", "Resume Tailwind 4 migration?". */
+  title: string;
+  /** Its evidence, in a few words: "Fridays 17:00 · asked on 3 days", "Stalled 6 days · 3 files". */
+  detail: string;
+  /** When ion suggested it. */
+  at: string;
+};
+
+/** A routine's fields to change; null clears effort (the project's again). skip: skip its next run, or undo that. */
+export type RoutinePatch = {
+  projectId: string;
+  routineId: string;
+  name?: string;
+  when?: string;
+  text?: string;
+  on?: boolean;
+  effort?: EffortLevel | null;
+  skip?: boolean;
+};
+
+/** What Settings can change about a project's ion: each field set, or null to clear it. */
+export type ProjectPatch = {
+  projectId: string;
+  harness?: string | null;
+  color?: string | null;
+  model?: string | null;
+  effort?: "low" | "medium" | "high" | "max" | null;
+  access?: "auto" | "full" | null;
+  shareWithIon?: boolean | null;
+};
+
+/** ion's own models: "quick" thinks for ion chief and the project ions ("<agent>" or "<agent>:<model>"). */
+export type IonSettings = { quick: string };
+
+/** A process still running in a chat's worktree. */
+export type TaskInfo = { pid: number; command: string; elapsed: string; ports: number[] };
+
+/** A file as the preview shows it: text, HTML (rendered locked), an image, or a binary it can't show. */
+export type FilePreview =
+  | { path: string; kind: "text" | "html"; text: string; size: number }
+  | { path: string; kind: "image"; dataUrl: string; size: number }
+  | { path: string; kind: "binary"; size: number };
+
+/** The lab's ion colours, by name, in the order new projects take them. */
+export const ION_COLORS: { name: string; hex: string }[] = [
+  { name: "Orange", hex: "#ED712E" },
+  { name: "Green", hex: "#5BC67A" },
+  { name: "Amber", hex: "#F19D38" },
+  { name: "Blue", hex: "#3C82F6" },
+  { name: "Purple", hex: "#885CF5" },
+  { name: "Teal", hex: "#54B9A6" },
+  { name: "Pink", hex: "#EB4699" },
+  { name: "Red", hex: "#EA4045" },
+  { name: "Brown", hex: "#97683D" },
+];
+
+/** Runs over the last 30 days: how many, how many succeeded, their cost, runs per day (oldest first). */
+export type IonStats = { runs: number; succeeded: number; costUsd: number; perDay: number[] };
 
 export type StatusResult = {
   version: string;
@@ -37,6 +156,19 @@ export type Commands = {
   "project.rename": { args: { projectId: string; name: string }; result: { ok: true } };
   /** Takes the project out of ion: its chats are archived; its folder is never touched. */
   "project.remove": { args: { projectId: string }; result: { ok: true } };
+  /** A project's ion setup and rules; null clears a field (back to the default). */
+  "project.update": { args: ProjectPatch; result: { ok: true } };
+  /** ion's own models (Settings → Agents). */
+  "settings.get": { args: Record<string, never>; result: IonSettings };
+  /** An ion's threads' runs over the last 30 days (ion chief: every ion's). */
+  "ion.stats": { args: { ionId: string }; result: IonStats };
+  /** What's still running in a chat's worktree (dev servers, watchers), with PIDs and ports. */
+  "chat.tasks": { args: { chatId: string }; result: TaskInfo[] };
+  /** Stops one of them (only if it's still running in that worktree). */
+  "task.stop": { args: { chatId: string; pid: number }; result: { ok: true } };
+  /** A file in a chat's worktree, for the preview (at most 1 MB). */
+  "chat.file": { args: { chatId: string; path: string }; result: FilePreview };
+  "settings.update": { args: Partial<IonSettings>; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   /** fromNow: only events from now on, no backlog. */
   "events.subscribe": {
@@ -74,12 +206,28 @@ export type Commands = {
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
   "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
-  "suggestion.answer": { args: { suggestionId: string; keep: boolean }; result: { ok: true } };
+  /** keep: take it (add the routine, resume the chat); mute: not now, and no more like it for that project. */
+  "suggestion.answer": {
+    args: { suggestionId: string; keep: boolean; mute?: boolean };
+    result: { ok: true };
+  };
+  "suggestions.list": { args: Record<string, never>; result: SuggestionInfo[] };
   /** What a chat changed in its worktree since it started (empty once archived); omitted: files past the cap. */
   "chat.diff": { args: { chatId: string }; result: { files: FileDiff[]; omitted?: number } };
   "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
   "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
+  "routine.add": {
+    args: { projectId: string; name: string; when: string; text: string; effort?: EffortLevel };
+    result: RoutineInfo;
+  };
+  "routine.update": { args: RoutinePatch; result: { ok: true } };
+  "routine.remove": { args: { projectId: string; routineId: string }; result: { ok: true } };
+  /** Runs it now, whatever its schedule: the thread it started. */
+  "routine.run": { args: { projectId: string; routineId: string }; result: { chatId: string } };
+  /** Pause all: no routine runs until you resume. */
+  "routines.pause": { args: { paused: boolean }; result: { ok: true } };
+  "activity.list": { args: Record<string, never>; result: ActivityInfo };
 };
 
 export type HarnessInfo = {
@@ -178,6 +326,13 @@ export const COMMANDS = [
   "project.star",
   "project.rename",
   "project.remove",
+  "project.update",
+  "settings.get",
+  "ion.stats",
+  "chat.tasks",
+  "task.stop",
+  "chat.file",
+  "settings.update",
   "chat.create",
   "events.subscribe",
   "ask",
@@ -193,10 +348,17 @@ export const COMMANDS = [
   "ions.list",
   "ion.message",
   "suggestion.answer",
+  "suggestions.list",
   "chat.diff",
   "memory.list",
   "memory.forget",
   "harnesses.list",
+  "routine.add",
+  "routine.update",
+  "routine.remove",
+  "routine.run",
+  "routines.pause",
+  "activity.list",
 ] as const;
 
 export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };

@@ -1,7 +1,7 @@
 import type { Readable, Writable } from "node:stream";
 import { createInterface } from "node:readline";
 
-/** A JSON-RPC error from the agent. `-32000` means sign-in is needed. */
+/** A JSON-RPC error from the agent (ACP: `-32000` means sign-in is needed). */
 export class RpcError extends Error {
   constructor(
     public readonly code: number,
@@ -21,7 +21,7 @@ export interface Rpc {
   onNotification(method: string, handler: (params: Json) => void): void;
 }
 
-/** Newline-delimited JSON-RPC 2.0 over an agent's stdin/stdout (the ACP transport). */
+/** Newline-delimited JSON-RPC 2.0 over an agent's stdin/stdout (ACP, Codex's app-server). */
 export function createRpc(io: { stdin: Writable; stdout: Readable }): Rpc {
   let nextId = 0;
   let closed = false;

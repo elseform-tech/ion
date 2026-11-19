@@ -87,6 +87,16 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, JSON.stringify(reply));
     return "done";
   },
+  /** Answers like a project's ion: a question about the project is answered, anything else becomes a thread. */
+  async decide(s) {
+    const block = (source: string) =>
+      new RegExp(`source="${source}">\\n([\\s\\S]*?)\\n</ion-data`).exec(s.text())?.[1] ?? "";
+    const message = block("your message");
+    const project = /^Project: (.+?) \(id/.exec(block("project state"))?.[1] ?? "this project";
+    const asked = /\?\s*$|^(what|which|who|where|how many)\b/i.test(message.trim());
+    say(s, JSON.stringify(asked ? { answer: `This is ${project}.` } : { thread: message }));
+    return "done";
+  },
   async hello(s) {
     say(s, "Hi from the fake harness.");
     return "done";

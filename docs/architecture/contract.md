@@ -34,9 +34,21 @@ Adapter events: `run.started`, `run.finished` (done | failed | interrupted | cap
 `approval.requested`, `artifact.attached`, `usage.reported`, `error` (code, retryable).
 
 Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `approval.resolved`,
-`need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`,
+`need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`, `routine.ran`,
 `briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
 `decision.recorded`, `decision.outcome`, `decision.forgotten`.
+
+A `routine.ran` (chatId null) is one slot of a routine handled: the thread it started, why it couldn't, or that
+you skipped it; `by: "you"` with `due: null` is a run you started now.
+
+An ion's chat is its events on `ion:<ionId>`: `ion.heard` (your message) and `ion.said` (its words, with an
+optional `card`). Card kinds: `threads` (the threads it started), `suggest` (a project ion's "always?"), `flag` (a
+decision whose runs keep failing), and ion chief's own suggestions (Plan 11): `routine` (`projectId`, `key`: your
+words normalised, `name`, `text`, `when`, `dates`: the days you asked) and `stalled` (`chatId`, `projectId`,
+`title`, `since`: the chat's last activity, `files` changed). `suggestion.answered` is your answer to any of them:
+`keep` (take it: add the routine, resume the chat), or not, with `mute: true` for "fewer like this" (no more of
+that kind for that project). ion chief's suggestions live on `ion:chief`; the commands are `suggestions.list` and
+`suggestion.answer`.
 
 A `need.raised` with `kind: "ask"` is an agent's question with `choices`; its `need.resolved` has
 `decision: "answered"`, the `choice` and its `scope`. Old allow/deny needs still read.

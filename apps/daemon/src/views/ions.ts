@@ -1,21 +1,11 @@
 import { DEFAULT_PROJECT } from "@ion/config";
-import { type IonCard, EV, type IonEvent, type IonInfo, type ProjectInfo } from "@ion/schema";
+import { type IonCard, EV, type IonEvent, type IonInfo, type ProjectInfo, ION_COLORS } from "@ion/schema";
 import type { Db, View } from "../store/index.js";
 import { chatsView } from "./chats.js";
 import { needsView } from "./needs.js";
 
 /** Ion colours, from the lab's palette, in the order projects take them. Identity only, never status. */
-const PALETTE = [
-  "#ED712E",
-  "#5BC67A",
-  "#F19D38",
-  "#3C82F6",
-  "#885CF5",
-  "#54B9A6",
-  "#EB4699",
-  "#EA4045",
-  "#97683D",
-];
+const PALETTE = ION_COLORS.map((c) => c.hex);
 
 const ionOf = (chatId: string) => (chatId.startsWith("ion:") ? chatId.slice(4) : null);
 
@@ -40,6 +30,9 @@ export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[]
   apply(db, e: IonEvent) {
     const ionId = e.chatId ? ionOf(e.chatId) : null;
     if (!ionId || e.type !== EV.ionSaid) return;
+    // ion chief's suggestions are optional: its last line stays what it last told you.
+    const kind = (e.data as { card?: IonCard }).card?.kind;
+    if (kind === "routine" || kind === "stalled") return;
     db.prepare(
       "INSERT INTO view_ions (ion_id, last) VALUES (?, ?) ON CONFLICT(ion_id) DO UPDATE SET last = excluded.last",
     ).run(ionId, lineOf(e.data as { text: string; card?: IonCard }));

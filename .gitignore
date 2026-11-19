@@ -10,3 +10,4 @@ coverage/
 *.tsbuildinfo
 .health/
 .playwright-mcp/
+.claude/worktrees/

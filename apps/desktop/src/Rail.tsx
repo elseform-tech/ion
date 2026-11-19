@@ -1,9 +1,9 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar, MessageSquare } from "@ion/design-system";
+import { Avatar, MessageSquare, Settings as Cog } from "@ion/design-system";
 import { EV } from "@ion/schema";
 import { useEffect, useState } from "react";
 
-export type Mode = "chats" | "ions";
+export type Mode = "chats" | "ions" | "settings";
 
 /** How many questions wait for you, kept live (for the dot on Ions). */
 export function useNeedCount(client: IonClient | null): number {
@@ -60,6 +60,15 @@ export function Rail(p: { mode: Mode; setMode: (m: Mode) => void; initial: strin
         <i className="dotb" hidden={p.needs === 0} />
       </button>
       <span className="grow" />
+      <button
+        className={on("settings")}
+        type="button"
+        title="Settings"
+        aria-label="Settings"
+        onClick={() => p.setMode("settings")}
+      >
+        <Cog />
+      </button>
       <span className="me" title="You">
         {p.initial}
       </span>

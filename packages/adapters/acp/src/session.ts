@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   type AdapterEvent,
   createDeltaCoalescer,
@@ -6,13 +6,13 @@ import {
   type EventQueue,
   type Decision,
   projectRoots,
+  RpcError,
   type Session,
   type StartOpts,
 } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 import type { Connection } from "./connection.js";
 import { acpToolKind, createAcpState, mapUpdate } from "./map.js";
-import { RpcError } from "./rpc.js";
 
 type Option = { optionId: string; kind: string };
 /** Acceptable option kinds per decision, best first. Never wider than asked: "allow" is never "always". */
@@ -69,7 +69,12 @@ export function promptOf(text: string, instructions?: string): { type: "text"; t
   // Your text (or a brief ion chief's model wrote) can't open or close ion's block and pose as ion.
   const yours = { type: "text" as const, text: text.replace(/<\/?ion-instructions/gi, "‹ion-instructions") };
   if (!instructions) return [yours];
-  return [{ type: "text", text: `<ion-instructions>\n${instructions}\n</ion-instructions>` }, yours];
+  // A random id per turn fences ion's block (as ion's data blocks are): no text can guess its closing line.
+  const id = randomBytes(8).toString("hex");
+  return [
+    { type: "text", text: `<ion-instructions id="${id}">\n${instructions}\n</ion-instructions id="${id}">` },
+    yours,
+  ];
 }
 
 /** One ACP prompt turn mapped to ion events. The agent process lives as long as the turn. */
@@ -102,7 +107,7 @@ function startedEvent(
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
-  run: { harness: string; model: string },
+  run: { harness: string; model: string; silent?: { ms: number; why: string } },
 ): Session {
   const events = createEventQueue<AdapterEvent>();
   const state = createAcpState(projectRoots(opts.cwd));
@@ -132,14 +137,17 @@ export function startAcpSession(
     setTimeout(() => c.child.kill(), 100).unref();
   };
 
+  let heard = false;
   c.rpc.onNotification("session/update", (p) => {
+    heard = true;
     for (const e of mapUpdate((p.update ?? {}) as Record<string, unknown>, state)) emit(e);
   });
-  c.rpc.onRequest("session/request_permission", (p) =>
-    interrupted
+  c.rpc.onRequest("session/request_permission", (p) => {
+    heard = true;
+    return interrupted
       ? Promise.resolve({ outcome: { outcome: "cancelled" } })
-      : answerPermission(p, opts.decide, emit),
-  );
+      : answerPermission(p, opts.decide, emit);
+  });
   c.child.on("exit", () => finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : CRASH));
   opts.signal.addEventListener("abort", () => c.child.kill());
 
@@ -148,6 +156,12 @@ export function startAcpSession(
     nativeId: c.sessionId,
     async send({ text: t }) {
       emit(startedEvent(run, opts, c.sessionId));
+      // Not a word after the prompt: the agent is stuck (an expired key leaves opencode like this), so say why.
+      const silent = run.silent;
+      if (silent)
+        setTimeout(() => {
+          if (!heard) finish("failed", { code: "agent", retryable: false, message: silent.why });
+        }, silent.ms).unref();
       c.rpc
         .request("session/prompt", { sessionId: c.sessionId, prompt: promptOf(t, opts.instructions) })
         .then((r) => {

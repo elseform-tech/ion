@@ -245,12 +245,13 @@ describe("daemon api", () => {
     await client.call("projects.add", { path: repo("app") });
     const seen: IonEvent[] = [];
     await client.subscribe({}, (e) => seen.push(e));
-    // ion chief's model is the judge's: the fake one here (never a real model in tests).
+    // ion thinks with its own quick model ([ion] quick), and judges with [access] judge: both fake here.
     const cf = join(home, "config.toml");
     const { config } = loadUserConfig(cf);
     // Its project's ion runs on the fake agent too: with none set, ion would pick a real one that's ready.
     saveUserConfig(cf, {
       ...config,
+      ion: { ...config.ion, quick: "fake" },
       access: { ...config.access, judge: "fake" },
       projects: config.projects.map((p) => ({ ...p, harness: "fake" })),
     });
@@ -275,6 +276,93 @@ describe("daemon api", () => {
     expect(chief).toMatchObject({ text: "", card: { kind: "threads" } });
     // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
   }, 20_000);
+
+  // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
+  it("reads and sets ion's quick model, refusing an unknown agent", async () => {
+    expect(await client.call("settings.get", {})).toEqual({ quick: "claude-code" });
+    await client.call("settings.update", { quick: "grok-build" });
+    expect(await client.call("settings.get", {})).toEqual({ quick: "grok-build" });
+    await expect(client.call("settings.update", { quick: "nope:x" })).rejects.toThrow("Unknown agent: nope");
+  });
+
+  // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.
+  it("previews a chat's file and lists its background tasks", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { chatId, runId } = await client.call("ask", { text: "edit", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"), 5000);
+    expect(await client.call("chat.file", { chatId, path: "notes.md" })).toMatchObject({ kind: "text" });
+    await expect(client.call("chat.file", { chatId, path: "../../x" })).rejects.toThrow(
+      "That file isn't in this chat",
+    );
+    expect(await client.call("chat.tasks", { chatId })).toEqual([]);
+    await expect(client.call("task.stop", { chatId, pid: 1 })).rejects.toThrow(
+      "That isn't running in this chat",
+    );
+    await expect(client.call("chat.tasks", { chatId: "nope" })).rejects.toThrow("That chat has no workspace");
+  });
+
+  it("gives an ion's stats: its threads' runs over 30 days", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    expect(await client.call("ion.stats", { ionId: "app" })).toMatchObject({
+      runs: 0,
+      succeeded: 0,
+      costUsd: 0,
+    });
+    expect((await client.call("ion.stats", { ionId: "chief" })).perDay).toHaveLength(30);
+    await expect(client.call("ion.stats", { ionId: "nope" })).rejects.toThrow("Unknown ion: nope");
+  });
+
+  it("sets a project ion's agent, colour, model, effort and access, and checks them", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    await client.call("project.update", {
+      projectId: "app",
+      harness: "grok-build",
+      color: "#ED712E",
+      model: "grok-code",
+      effort: "high",
+      access: "full",
+      shareWithIon: false,
+    });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({
+      harness: "grok-build",
+      color: "#ED712E",
+      model: "grok-code",
+      effort: "high",
+      access: "full",
+      shareWithIon: false,
+    });
+    expect((await client.call("ions.list", {}))[1]).toMatchObject({
+      harness: "grok-build",
+      color: "#ED712E",
+    });
+    await client.call("project.update", { projectId: "app", model: null });
+    expect((await client.call("projects.list", {}))[0]).not.toHaveProperty("model");
+    await expect(client.call("project.update", { projectId: "app", harness: "nope" })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
+    await expect(client.call("project.update", { projectId: "app", color: "red" })).rejects.toThrow(
+      "Pick a colour",
+    );
+    await expect(client.call("project.update", { projectId: "app", effort: "huge" })).rejects.toThrow(
+      "Pick low, medium, high or max",
+    );
+  });
+
+  // Review, 2026-11-19: project.update wrote any field it was sent: `{projectId, path}` moved the project.
+  it("changes only the fields Settings may change on a project", async () => {
+    const path = repo("app");
+    await client.call("projects.add", { path });
+    await client.call("project.update", {
+      projectId: "app",
+      color: "#ED712E",
+      path: "/elsewhere",
+      id: "x",
+    } as never);
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", path, color: "#ED712E" });
+  });
 
   // The user, 2026-11-19: rename a project (the name ion shows; its id stays).
   it("renames a project, and its ion takes the name", async () => {
@@ -301,8 +389,17 @@ describe("daemon api", () => {
     );
     await client.call("run.interrupt", { runId: slow.runId });
     await until(() => seen.some((e) => e.runId === slow.runId && e.type === "run.finished"), 5000);
+    // A decision you made for the project (here: "Merge it?" → Wait, for the project).
+    const asked = await client.call("ask", { text: "asks", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === asked.runId && e.type === "run.finished"), 5000);
+    const [need] = await client.call("needs.list", { chatId: asked.chatId });
+    await client.call("need.answer", { needId: need!.needId, choice: 2, scope: "project" });
+    await until(() => seen.some((e) => e.type === "decision.outcome"), 5000);
+    expect(await client.call("decisions.list", { projectId: "app" })).toHaveLength(1);
     await client.call("project.remove", { projectId: "app" });
     expect(await client.call("projects.list", {})).toEqual([]);
+    // Security review: what you decided for it goes with it, so a later project of the same name starts clean.
+    expect(await client.call("decisions.list", { projectId: "app" })).toEqual([]);
     expect((await client.call("chats.list", {})).filter((c) => c.projectId === "app" && !c.archived)).toEqual(
       [],
     );
@@ -310,6 +407,25 @@ describe("daemon api", () => {
     await expect(client.call("project.remove", { projectId: "default" })).rejects.toThrow(
       "default can't be removed",
     );
+  });
+
+  // Review, 2026-11-19: removing a project kept it in your config while its chats were archived, so a routine or an
+  // ion message in that time could start a thread in it.
+  it("starts nothing in a project while it's being removed", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const first = await client.call("ask", { text: "edit", harness: "fake", projectId: "app" });
+    await until(() => seen.some((e) => e.runId === first.runId && e.type === "run.finished"), 5000);
+    const removing = client.call("project.remove", { projectId: "app" });
+    const late = client.call("ask", { text: "edit", harness: "fake", projectId: "app" }).then(
+      () => "started",
+      (e: Error) => e.message,
+    );
+    await removing;
+    expect(await late).toBe("Unknown project: app");
+    expect((await client.call("chats.list", {})).filter((c) => !c.archived)).toEqual([]);
   });
 
   // The lab: a project's ion can be starred (Starred first in Ions and the project menu).

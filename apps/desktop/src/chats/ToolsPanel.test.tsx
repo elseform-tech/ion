@@ -83,7 +83,7 @@ describe("ChangesPanel", () => {
     );
     await screen.findByText("src/a.ts");
     fireEvent.click(screen.getByRole("tab", { name: "Files" }));
-    const rows = [...container.querySelectorAll(".tree > div")].map((d) => d.textContent);
+    const rows = [...container.querySelectorAll(".tree > *")].map((d) => d.textContent);
     expect(rows).toEqual(["Changed files", "src", "a.tsM", "b.tsA"]);
     expect(container.querySelector(".code")).toBeNull();
   });

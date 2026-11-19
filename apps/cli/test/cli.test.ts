@@ -173,11 +173,50 @@ describe("ion cli", { timeout: 20_000 }, () => {
   // Golden: the CLI is a public interface; help text and messages change only on purpose.
   it("help output", async () => {
     const help = await Promise.all(
-      [[], ["daemon"], ["projects"], ["ask"], ["needs"], ["chats"], ["memory"], ["harnesses"]].map((a) =>
-        ion(...a, "--help"),
-      ),
+      [
+        [],
+        ["daemon"],
+        ["projects"],
+        ["ask"],
+        ["needs"],
+        ["chats"],
+        ["memory"],
+        ["harnesses"],
+        ["routines"],
+        ["routines", "add"],
+        ["suggestions"],
+      ].map((a) => ion(...a, "--help")),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
+  });
+
+  // Plan 10: routines, from the command line.
+  it("adds, lists, runs and removes a routine", async () => {
+    await ion("daemon", "start");
+    await ion("projects", "add", repo("app"));
+    expect((await ion("routines")).out).toBe("No routines");
+    const add = ["routines", "add", "Morning check", "-p", "app", "-w", "daily 9:00", "-d", "edit"];
+    expect((await ion(...add)).out).toBe("Added morning-check to app: Every day 9:00");
+    expect((await ion("routines", "add", "x", "-p", "app", "-w", "soon", "-d", "y")).err).toBe(
+      "Pick when it runs",
+    );
+    const list = (await ion("routines")).out;
+    expect(list).toMatch(/^morning-check {2}app {2}Every day 9:00 {2}\S/);
+    // Its ion's threads run on the fake agent.
+    const cfg = join(home, "config.toml");
+    writeFileSync(cfg, readFileSync(cfg, "utf8").replace(/^path = .*$/m, '$&\nharness = "fake"'));
+    expect((await ion("routines", "run", "morning-check")).out).toBe("Started Morning check");
+    expect((await ion("routines", "run", "nope")).err).toBe("Unknown routine: nope");
+    expect((await ion("routines", "remove", "morning-check")).out).toBe("Removed morning-check");
+    expect((await ion("routines")).out).toBe("No routines");
+  });
+
+  // Plan 11: ion chief's suggestions, from the command line.
+  it("lists suggestions, and says so for one it doesn't know", async () => {
+    await ion("daemon", "start");
+    expect((await ion("suggestions")).out).toBe("No suggestions");
+    expect(JSON.parse((await ion("suggestions", "--json")).out)).toEqual([]);
+    expect((await ion("suggestions", "take", "s0")).err).toBe("That suggestion is gone");
   });
 
   describe("ion ask", () => {
@@ -238,7 +277,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         code: 1,
         err: "Unknown model for Fake: nope",
       });
-    });
+    }, 60_000); // it asks each real agent CLI; slow under load
 
     // Final review minor 8: one harness that fails to answer doesn't break the list.
     it("lists the other harnesses when one fails to answer", async () => {
