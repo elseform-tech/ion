@@ -57,12 +57,12 @@ describe("loadUserConfig", () => {
   // Regression (final review I3): saving used to erase keys this version doesn't know.
   it("keeps keys it doesn't know when saving", () => {
     const f = join(tmp(), "config.toml");
-    writeFileSync(f, '[ion]\nfutureKnob = "on"\n\n[notifications]\nbriefing = "08:30"\n');
+    writeFileSync(f, '[ion]\nfutureKnob = "on"\n\n[notifications]\nsound = "ping"\n');
     const { config } = loadUserConfig(f);
     saveUserConfig(f, { ...config, projects: [{ id: "api", path: "/code/api", starred: false }] });
     const text = readFileSync(f, "utf8");
     expect(text).toContain('futureKnob = "on"');
-    expect(text).toContain('briefing = "08:30"');
+    expect(text).toContain('sound = "ping"');
     expect(text).toContain("[[projects]]");
   });
 
@@ -101,5 +101,21 @@ describe("a project's profile", () => {
       readFileSync(f, "utf8").replace("x".repeat(PROFILE_CHARS), "x".repeat(PROFILE_CHARS + 1)),
     );
     expect(loadUserConfig(f).error).toMatch(/profile/);
+  });
+});
+
+// The user, 2026-11-19: Settings (General, Notifications) are kept in your config.
+describe("general and notification settings", () => {
+  it("has defaults, and refuses a bad time or a count outside 1-32", () => {
+    expect(DEFAULT_CONFIG.debug).toBe(false);
+    expect(DEFAULT_CONFIG.notifications.briefing).toEqual({ on: true, at: "08:30" });
+    expect(DEFAULT_CONFIG.notifications.quiet).toEqual({ on: true, from: "22:00", to: "08:00" });
+    const file = join(mkdtempSync(join(tmpdir(), "ion-cfg-")), "config.toml");
+    for (const bad of ['[notifications.briefing]\nat = "25:00"', "[resources]\nmax_runs = 33"]) {
+      writeFileSync(file, bad);
+      expect(loadUserConfig(file).error).not.toBeNull();
+    }
+    writeFileSync(file, '[[projects]]\nid = "a"\npath = "/a"\nnotify = "muted"\n');
+    expect(loadUserConfig(file).config.projects[0]!.notify).toBe("muted");
   });
 });

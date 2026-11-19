@@ -33,3 +33,14 @@ describe("the default agent", () => {
     expect(defaultAgent([], null)).toBeUndefined();
   });
 });
+
+// The user, 2026-11-19 ("also build the settings as well… like the general if needed"): `debug` in config lists the
+// test agent like ION_DEBUG=1; either one is enough.
+describe("debug in config", () => {
+  it("lists the test agent without ION_DEBUG", () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    delete process.env.ION_DEBUG;
+    expect(listedHarnessIds(false)).not.toContain("fake");
+    expect(listedHarnessIds(true)).toContain("fake");
+  });
+});

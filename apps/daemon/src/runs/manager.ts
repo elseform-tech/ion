@@ -94,8 +94,10 @@ export class RunManager {
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
-    const setting = loadUserConfig(ctx.configFile).config.resources.max_runs;
-    this.queue = createRunQueue(maxRuns(setting, availableParallelism()));
+    // Read at every start, so a change in Settings applies without a restart.
+    this.queue = createRunQueue(() =>
+      maxRuns(loadUserConfig(ctx.configFile).config.resources.max_runs, availableParallelism()),
+    );
     this.approvals = new Approvals(
       store,
       ctx.access,
@@ -135,6 +137,11 @@ export class RunManager {
       if (key) this.reserved.delete(key);
     }
     return { chatId: launch.chatId, runId: launch.runId };
+  }
+
+  /** resources.max_runs changed: start the waiting runs that now fit. */
+  limitChanged(): void {
+    this.queue.kick();
   }
 
   /** Makes the chat's worktree (and the chat, if new), stores your message and queues the run. */

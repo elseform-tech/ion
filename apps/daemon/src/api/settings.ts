@@ -2,6 +2,7 @@ import { DEFAULT_PROJECT, loadUserConfig, PROFILE_CHARS, saveUserConfig, type Us
 import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
 import { type EffortLevel, type ProjectPatch, stripControl } from "@ion/schema";
+import { applyGeneral, generalOf } from "./general-settings.js";
 import { harnessIds } from "../adapters/registry.js";
 import type { Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
@@ -95,10 +96,14 @@ function ionPatch(ion: UserConfig["ion"], quick: string | undefined, effort: Eff
   return next;
 }
 
+function settingsOf(c: UserConfig) {
+  return { quick: c.ion.quick, effort: c.ion.quickEffort ?? null, ...generalOf(c) };
+}
+
 /** Settings: a project ion's setup and rules, and ion's own quick model. */
 export const settingsHandlers: Pick<
   Handlers,
-  "project.update" | "settings.get" | "settings.update" | "ion.stats"
+  "project.update" | "settings.get" | "settings.set" | "settings.update" | "ion.stats"
 > = {
   "ion.stats": (a, ctx) => {
     const ionId = String(a.ionId ?? "");
@@ -116,8 +121,13 @@ export const settingsHandlers: Pick<
     return { ok: true as const };
   },
   "settings.get": (_a, ctx) => {
-    const { quick, quickEffort } = loadUserConfig(ctx.configFile).config.ion;
-    return { quick, effort: quickEffort ?? null };
+    return settingsOf(loadUserConfig(ctx.configFile).config);
+  },
+  "settings.set": (a, ctx) => {
+    changeConfig(ctx.configFile, (c) => applyGeneral(c, a.patch ?? {}));
+    // A higher limit lets waiting runs start now.
+    ctx.runs.limitChanged();
+    return settingsOf(loadUserConfig(ctx.configFile).config);
   },
   "settings.update": (a, ctx) => {
     const quick = a.quick === undefined ? undefined : checkAgent(String(a.quick));

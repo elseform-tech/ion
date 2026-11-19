@@ -7,6 +7,18 @@ const Effort = z.enum(["low", "medium", "high", "max"]);
 
 const Access = z.enum(["auto", "full"]);
 
+/** A clock time, local: "08:30". */
+export const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+const Clock = z.string().regex(CLOCK, "Use a time like 08:30");
+
+/** How much a project may notify: everything, what needs you, only urgent things, nothing. */
+export const NOTIFY_LEVELS = ["all", "needs", "digest", "muted"] as const;
+const Notify = z.enum(NOTIFY_LEVELS);
+
+/** resources.max_runs: "auto" or a whole number of runs from MIN_RUNS to MAX_RUNS. */
+export const MIN_RUNS = 1;
+export const MAX_RUNS = 32;
+
 /**
  * When a routine runs, local time: "daily 09:00", "weekdays 09:00", "mon 09:00" (any weekday), "every 4h" (1-23).
  * The same format @ion/schema's `parseWhen` reads.
@@ -51,6 +63,8 @@ const Project = z.object({
   /** The model and effort its ion's threads run on (else the agent's own defaults). */
   model: z.string().min(1).max(200).optional(),
   effort: Effort.optional(),
+  /** What may notify you from this project; absent: "needs". */
+  notify: Notify.optional(),
   /** What its ion does on a schedule. */
   routines: z.array(Routine).optional(),
   /** What the project is, in a line or two (its ion writes it); absent: its README's first paragraph. */
@@ -86,8 +100,26 @@ const UserConfigSchema = z.looseObject({
   /** Pause all: no routine runs until you resume. Absent: none paused. */
   routines: z.looseObject({ paused: z.boolean().default(false) }).optional(),
   resources: z
-    .looseObject({ max_runs: z.union([z.literal("auto"), z.number().int().min(1)]).default("auto") })
+    .looseObject({
+      max_runs: z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]).default("auto"),
+    })
     .default({ max_runs: "auto" }),
+  /** True: the app lists the test agent (like ION_DEBUG=1). */
+  debug: z.boolean().default(false),
+  notifications: z
+    .looseObject({
+      /** One message from ion chief a day: what finished, what needs you. */
+      briefing: z.looseObject({ on: z.boolean().default(true), at: Clock.default("08:30") }).prefault({}),
+      /** System notifications wait until these hours end. */
+      quiet: z
+        .looseObject({
+          on: z.boolean().default(true),
+          from: Clock.default("22:00"),
+          to: Clock.default("08:00"),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

@@ -31,9 +31,9 @@ export function harnessIds(): string[] {
   return [...Object.keys(ENTRIES), ...(process.env.ION_ALLOW_FAKE === "1" ? ["fake"] : [])];
 }
 
-/** The agents the app lists: real ones only; the fake one too in debug mode (ION_DEBUG=1). */
-export function listedHarnessIds(): string[] {
-  return harnessIds().filter((id) => id !== "fake" || process.env.ION_DEBUG === "1");
+/** The agents the app lists: real ones only; the fake one too in debug mode (ION_DEBUG=1, or `debug` in config). */
+export function listedHarnessIds(debug = false): string[] {
+  return harnessIds().filter((id) => id !== "fake" || debug || process.env.ION_DEBUG === "1");
 }
 
 /** A harness by id, or null. The fake harness exists only for tests (ION_ALLOW_FAKE=1; ION_FAKE_SIGNED_OUT=1). */
