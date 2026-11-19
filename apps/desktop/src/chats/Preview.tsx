@@ -1,12 +1,11 @@
-import { ApiCallError, type IonClient } from "@ion/client/browser";
+import type { IonClient } from "@ion/client/browser";
 import { Square } from "@ion/design-system";
 import type { FilePreview, TaskInfo } from "@ion/schema";
 import { useEffect, useState } from "react";
+import { why } from "../callError.js";
 
 /** How often the Tasks tab reads again while it's open. */
 const TASKS_MS = 3000;
-
-const why = (e: unknown) => (e instanceof ApiCallError ? e.message : "Something went wrong");
 
 /** What's still running in the chat's worktree, read again every few seconds while shown. */
 function useTasks(client: IonClient, chatId: string): [TaskInfo[] | null, () => void] {
@@ -66,32 +65,48 @@ export function Tasks({ client, chatId }: { client: IonClient; chatId: string })
   );
 }
 
-/** A file of the chat's worktree as it is: code and text, HTML rendered in a locked frame, an image. */
-export function Preview({
-  client,
-  chatId,
-  path,
-}: {
+type PreviewProps = {
   client: IonClient;
   chatId: string;
   path: string | null;
-}) {
+  /** The chat's changes moved: the file is read again. */
+  version?: number;
+  /** The chat deleted it: nothing to read. */
+  deleted?: boolean;
+};
+
+/** The file as it is now: read when picked, and again each time the chat's changes move. */
+function useFile({ client, chatId, path, version, deleted }: PreviewProps) {
   const [file, setFile] = useState<FilePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!path) return;
-    let live = true;
     setFile(null);
     setError(null);
+  }, [chatId, path]);
+  useEffect(() => {
+    if (!path || deleted) return;
+    let live = true;
     void client.call("chat.file", { chatId, path }).then(
-      (f) => live && setFile(f),
+      (f) => {
+        if (!live) return;
+        setFile(f);
+        setError(null);
+      },
       (e: unknown) => live && setError(why(e)),
     );
     return () => {
       live = false;
     };
-  }, [client, chatId, path]);
+  }, [client, chatId, path, deleted, version]);
+  return { file, error };
+}
+
+/** A file of the chat's worktree as it is: code and text, HTML rendered in a locked frame, an image. */
+export function Preview(p: PreviewProps) {
+  const { file, error } = useFile(p);
+  const { path } = p;
   if (!path) return <div className="changes-empty">No files yet</div>;
+  if (p.deleted) return <div className="changes-empty">Deleted</div>;
   if (error) return <div className="changes-empty">{error}</div>;
   if (!file) return null;
   return (

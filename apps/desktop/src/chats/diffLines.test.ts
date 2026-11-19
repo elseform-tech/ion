@@ -33,6 +33,8 @@ describe("diffLines", () => {
     expect(fileMark("diff --git a/x b/x\nnew file mode 100644\n")).toBe("A");
     expect(fileMark("diff --git a/x b/x\ndeleted file mode 100644\n")).toBe("D");
     expect(fileMark("diff --git a/x b/x\n@@ -1 +1 @@\n")).toBe("M");
+    // Review, 2026-11-19: a patch can say it only by where the file goes.
+    expect(fileMark("--- a/x\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n")).toBe("D");
   });
 
   it("groups paths by folder for the tree, in order, files at the root last", () => {

@@ -9,7 +9,12 @@ import { Resizer } from "./Resizer.js";
 const SETTLE_MS = 500;
 
 /** A chat's changes as read: null until the first read. */
-export type Changes = { diff: { files: FileDiff[]; omitted?: number } | null; error: string | null };
+export type Changes = {
+  diff: { files: FileDiff[]; omitted?: number } | null;
+  error: string | null;
+  /** The version they were read for: the preview reads its file again when it moves. */
+  version?: number;
+};
 
 const fileId = (path: string) => `file-${encodeURIComponent(path)}`;
 
@@ -131,7 +136,7 @@ export function useDiff(client: IonClient, chatId: string, version: number): Cha
       clearTimeout(timer);
     };
   }, [client, chatId, version]);
-  return { diff, error };
+  return { diff, error, version };
 }
 
 /**
@@ -159,9 +164,25 @@ type PanelProps = Changes & {
   chatId?: string;
 };
 
-/** The chat's own tabs: a file as it is, and what's still running in its worktree. */
-function ChatTabs(p: { tab: Tab; client: IonClient; chatId: string; path: string | null }) {
-  if (p.tab === "preview") return <Preview client={p.client} chatId={p.chatId} path={p.path} />;
+type ChatTabsProps = { tab: Tab; client: IonClient; chatId: string; files: FileDiff[]; pick: string | null };
+
+/**
+ * The chat's own tabs: a file as it is (the one picked, else the first the chat didn't delete), and what's still
+ * running in its worktree.
+ */
+function ChatTabs(p: ChatTabsProps & { version?: number }) {
+  const deleted = (path: string) => p.files.some((f) => f.path === path && fileMark(f.patch) === "D");
+  const path = p.pick ?? p.files.find((f) => !deleted(f.path))?.path ?? null;
+  if (p.tab === "preview")
+    return (
+      <Preview
+        client={p.client}
+        chatId={p.chatId}
+        path={path}
+        deleted={path !== null && deleted(path)}
+        {...(p.version !== undefined ? { version: p.version } : {})}
+      />
+    );
   if (p.tab === "tasks") return <Tasks client={p.client} chatId={p.chatId} />;
   return null;
 }
@@ -181,7 +202,7 @@ function ChangeTabs(p: { tab: Tab; files: FileDiff[]; onPick: ((path: string) =>
   return null;
 }
 
-export function ToolsPanel({ diff, error, focus, client, chatId }: PanelProps) {
+export function ToolsPanel({ diff, error, focus, client, chatId, version }: PanelProps) {
   const [tab, setTab] = useState<Tab>("diff");
   const [pick, setPick] = useState<string | null>(null);
   useFocus(focus, diff !== null, setTab);
@@ -199,7 +220,7 @@ export function ToolsPanel({ diff, error, focus, client, chatId }: PanelProps) {
       <div className="panel">
         {error && <div className="changes-empty">{error}</div>}
         <ChangeTabs tab={tab} files={files} onPick={chat ? open : undefined} />
-        {chat && <ChatTabs tab={tab} {...chat} path={pick ?? files[0]?.path ?? null} />}
+        {chat && <ChatTabs tab={tab} {...chat} files={files} pick={pick} version={version} />}
         {omitted > 0 && <div className="changes-empty">{omitted} more files not shown</div>}
       </div>
     </aside>

@@ -57,3 +57,37 @@ describe("the preview", () => {
     await waitFor(() => expect(container.querySelector("pre")?.textContent).toBe("# Notes\n"));
   });
 });
+
+// Review, 2026-11-19: the preview never read the file again, and it could open on a file the chat deleted.
+describe("the preview, kept current", () => {
+  const gone = {
+    path: "gone.md",
+    added: 0,
+    removed: 1,
+    patch: "deleted file mode 100644\n@@ -1 +0,0 @@\n-x\n",
+  };
+  const notes = { path: "notes.md", added: 1, removed: 0, patch };
+  const reads = (c: ReturnType<typeof client>, path: string) =>
+    c.call.mock.calls.filter(([cmd, a]) => cmd === "chat.file" && a.path === path).length;
+
+  it("reads the file again when the chat's changes move", async () => {
+    const c = client();
+    const { rerender } = render(<Preview client={c} chatId="c1" path="notes.md" version={1} />);
+    await waitFor(() => expect(reads(c, "notes.md")).toBe(1));
+    rerender(<Preview client={c} chatId="c1" path="notes.md" version={2} />);
+    await waitFor(() => expect(reads(c, "notes.md")).toBe(2));
+  });
+
+  it("opens on a file that's still there, and says when a picked one was deleted", async () => {
+    const c = client();
+    const diff = { files: [gone, notes] };
+    const { container } = render(<ToolsPanel diff={diff} error={null} client={c} chatId="c1" version={1} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    await waitFor(() => expect(container.querySelector("pre")?.textContent).toBe("# Notes\n"));
+    expect(reads(c, "gone.md")).toBe(0);
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    fireEvent.click(screen.getByRole("button", { name: /gone\.md/ }));
+    expect(await screen.findByText("Deleted")).toBeTruthy();
+    expect(reads(c, "gone.md")).toBe(0);
+  });
+});

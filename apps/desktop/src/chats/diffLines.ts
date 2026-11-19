@@ -48,7 +48,7 @@ export function diffLines(patch: string): DiffLine[] {
 /** The Files tab's mark: A added, D deleted, M modified. */
 export function fileMark(patch: string): "A" | "D" | "M" {
   if (/^new file mode/m.test(patch)) return "A";
-  return /^deleted file mode/m.test(patch) ? "D" : "M";
+  return /^(deleted file mode|\+\+\+ \/dev\/null)/m.test(patch) ? "D" : "M";
 }
 
 /** Paths grouped by folder, in the order they come; files at the root last. */
