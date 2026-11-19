@@ -6,7 +6,7 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { brainOf, projectAgent } from "./brain.js";
 import { plainReport } from "./project.js";
-import { type IonTurns, NO_AGENT, TOO_LONG } from "./turn.js";
+import { type IonTurns, NO_AGENT, PER_TURN, TOO_LONG } from "./turn.js";
 
 type Ask = (
   args: {
@@ -33,8 +33,6 @@ const REPLY_MAX = 2000;
 const REPORT_MAX = 1200;
 /** Changed files a report prompt names. */
 const CHANGED_MAX = 20;
-/** Threads one turn may start (ion's start_thread tool counts them too). */
-const PER_TURN = 5;
 
 /**
  * What a report turn is sent: fixed words and the thread's end (an enum); the thread (its chat, title) and its
@@ -147,13 +145,19 @@ export class Ions {
     }
   }
 
-  /** At the start: a message ion stopped before answering gets its answer now (else "Thinking" would stay). */
+  /**
+   * At the start: a turn ion stopped mid-way (its work kept, no line carrying its id) and a message ion stopped
+   * before answering get NO_AGENT now (else "Thinking" would stay). The last such turn's line answers the message.
+   */
   answerUnanswered(): void {
     for (const ionId of ["chief", ...this.projects().map((p) => p.id)]) {
-      const talk = this.d.store
-        .read({ chatId: `ion:${ionId}` })
-        .filter((e) => e.type === EV.ionHeard || e.type === EV.ionSaid);
-      if (talk.at(-1)?.type === EV.ionHeard) this.say(ionId, NO_AGENT);
+      const events = this.d.store.read({ chatId: `ion:${ionId}` });
+      const replied = new Set(events.filter((e) => e.type === EV.ionSaid).map((e) => e.runId));
+      // Only a turn's work carries a run id on an ion's chat (its steps; its reply is an ion.said).
+      const open = new Set(events.flatMap((e) => (e.runId && !replied.has(e.runId) ? [e.runId] : [])));
+      for (const turnId of open) this.say(ionId, NO_AGENT, undefined, turnId);
+      const talk = events.filter((e) => e.type === EV.ionHeard || e.type === EV.ionSaid);
+      if (!open.size && talk.at(-1)?.type === EV.ionHeard) this.say(ionId, NO_AGENT);
     }
   }
 

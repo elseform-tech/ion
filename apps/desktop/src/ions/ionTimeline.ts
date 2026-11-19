@@ -30,22 +30,52 @@ type Raw = { kind: "you"; text: string } | { kind: "work"; runId: string } | { k
 /** What the reducer remembers: the lines so far, the turns' work, and when you last spoke (a turn's start). */
 type Acc = { raw: Raw[]; t: Timeline; heard: string | null };
 
+/** A turn's work block, by its id, when it has one. */
+const workAt = (t: Timeline, runId: string) => {
+  const at = t.work[runId];
+  const w = at !== undefined ? t.items[at] : undefined;
+  return w?.kind === "work" ? { at: at!, w } : undefined;
+};
+
+/**
+ * Every turn's work still running ends at `e` (your next message, another turn's line): an ion thinks one turn at
+ * a time, so a turn ion stopped mid-way (a restart) never stays "Thinking".
+ */
+function endOpen(t: Timeline, e: IonEvent): Timeline {
+  return Object.keys(t.work).reduce(
+    (acc, runId) => (workAt(acc, runId)?.w.ended ? acc : workEnded(acc, { ...e, runId })),
+    t,
+  );
+}
+
+/** A turn's work ended by a later line, live again: a step of its own came after it. */
+function reopened(t: Timeline, runId: string): Timeline {
+  const found = workAt(t, runId);
+  if (!found?.w.ended) return t;
+  const { w } = found;
+  const items = t.items.slice();
+  items[found.at] = { kind: "work", runId: w.runId, started: w.started, steps: w.steps };
+  return { ...t, items };
+}
+
 /** A tool call or thinking on a turn: its work counts from your message (else from its first step). */
 function step(acc: Acc, e: IonEvent, reduce: (t: Timeline, d: D, e: IonEvent) => Timeline): Acc {
   const runId = e.runId ?? "";
   const fresh = acc.t.work[runId] === undefined;
   const started = fresh ? { ...acc.t.started, [runId]: acc.heard ?? e.ts } : acc.t.started;
   const raw: Raw[] = fresh ? [...acc.raw, { kind: "work", runId }] : acc.raw;
-  return { ...acc, raw, t: reduce({ ...acc.t, started }, e.data as D, e) };
+  return { ...acc, raw, t: reduce({ ...reopened(acc.t, runId), started }, e.data as D, e) };
 }
 
-/** The ion's line; a turn's reply (it carries the turn's id) ends that turn's work, and no other line ends any. */
+/**
+ * The ion's line; a turn's line (a reply carries its turn's id) ends that turn's work and any other still running.
+ * A line with no turn ("From ion: …", a routine's) ends none: a turn may still be working.
+ */
 function said(acc: Acc, e: IonEvent): Acc {
   const raw: Raw[] = [...acc.raw, { kind: "said", e }];
   if (!e.runId) return { ...acc, raw };
-  const at = acc.t.work[e.runId];
-  const w = at !== undefined ? acc.t.items[at] : undefined;
-  return { ...acc, raw, t: w?.kind === "work" && !w.ended ? workEnded(acc.t, e) : acc.t, heard: null };
+  // Its own work ends at its reply even when your message meanwhile ended it early.
+  return { ...acc, raw, t: workEnded(endOpen(acc.t, e), e), heard: null };
 }
 
 /** The ion's line, with your answer to its suggestion card if you gave one, and its turn's work if it's a reply. */
@@ -75,18 +105,14 @@ export function ionTimeline(events: IonEvent[]): IonItem[] {
     const reduce = e.runId ? STEPS[e.type] : undefined;
     if (e.type === EV.ionHeard)
       acc = {
-        ...acc,
         raw: [...acc.raw, { kind: "you", text: String((e.data as D).text ?? "") }],
+        t: endOpen(acc.t, e),
         heard: e.ts,
       };
     else if (reduce) acc = step(acc, e, reduce);
     else if (e.type === EV.ionSaid) acc = said(acc, e);
   }
-  const workOf = (runId: string | null) => {
-    const at = runId ? acc.t.work[runId] : undefined;
-    const w = at !== undefined ? acc.t.items[at] : undefined;
-    return w?.kind === "work" ? w : undefined;
-  };
+  const workOf = (runId: string | null) => (runId ? workAt(acc.t, runId)?.w : undefined);
   const replied = new Set(acc.raw.flatMap((r) => (r.kind === "said" && r.e.runId ? [r.e.runId] : [])));
   return acc.raw.flatMap((r): IonItem[] => {
     if (r.kind === "you") return [r];

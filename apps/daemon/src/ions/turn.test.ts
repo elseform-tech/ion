@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
+import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
 import { EV, type HarnessInfo, type IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGateHandler } from "../gate/index.js";
@@ -266,6 +266,49 @@ describe("an ion's turn", () => {
     expect(r.threads).toEqual([]);
     expect(r.reply).toBe("This is storefront.");
   });
+
+  // Final review, 2026-11-19: a report turn's tools are told it's a report (no memory or profile writes there).
+  it("a report turn's key says it's a report", async () => {
+    const create = vi.spyOn(grants, "create");
+    await turns().turn("storefront", "hello", { noThreads: true });
+    await turns().turn("storefront", "hello");
+    const scopes = create.mock.calls.map((c) => c[0]);
+    expect(scopes.slice(0, 2).every((x) => x.kind === "ion" && x.report === true)).toBe(true);
+    expect(scopes.slice(2).every((x) => x.kind === "ion" && !x.report)).toBe(true);
+  });
+
+  // Final review, 2026-11-19: ion chief kept its session when what it may see changed, so it still knew of a
+  // project you'd kept from it or removed. It starts fresh when its shared projects change.
+  it("ion chief starts a fresh session when its shared projects change", async () => {
+    const t = turns();
+    await t.turn("chief", "hello");
+    const first = ionsView.session(db, "chief")!.nativeId;
+    await t.turn("chief", "hello");
+    expect(ionsView.session(db, "chief")!.nativeId).toBe(first);
+    const cf = join(home, "config.toml");
+    const { config } = loadUserConfig(cf);
+    const projects = config.projects.map((p) => (p.id === "storefront" ? { ...p, shareWithIon: false } : p));
+    saveUserConfig(cf, { ...config, projects });
+    await t.turn("chief", "hello");
+    // The fake agent keeps a resumed session's id: a new id is a fresh session.
+    expect(ionsView.session(db, "chief")!.nativeId).not.toBe(first);
+    expect(ionsView.session(db, "chief")!.projects).toEqual(["payments-api"]);
+  });
+
+  // Final review, 2026-11-19: a late turn whose session never closed kept it, so the next turn resumed a native
+  // session still open in the agent: two sessions on one id. It's forgotten instead.
+  it("a late turn whose session won't close forgets it", async () => {
+    const t = turns(100);
+    await t.turn("storefront", "hello");
+    expect(ionsView.session(db, "storefront")).not.toBeNull();
+    process.env.ION_FAKE_CLOSE_HANGS = "1";
+    try {
+      expect((await t.turn("storefront", "take-your-time")).reply).toBe(TOO_LONG);
+      expect(ionsView.session(db, "storefront")).toBeNull();
+    } finally {
+      delete process.env.ION_FAKE_CLOSE_HANGS;
+    }
+  }, 15_000);
 
   // Task review, 2026-11-19: closing ion left an ion's turn running; its late writes hit a closed store.
   it("shutdown ends a running turn, and nothing is written after", async () => {

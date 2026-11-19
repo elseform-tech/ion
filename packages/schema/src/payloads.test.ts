@@ -56,6 +56,7 @@ const valid: [string, Record<string, unknown>, string?][] = [
   // Plan 14: the agent session an ion thinks in.
   ["ion.session", { ionId: "chief", harness: "grok-build", nativeId: "s-1" }, "daemon"],
   ["ion.session", { ionId: "chief", harness: null, nativeId: null }, "daemon"],
+  ["ion.session", { ionId: "chief", harness: "grok-build", nativeId: "s-1", projects: ["a", "b"] }, "daemon"],
   [
     "ion.said",
     { text: "On it.", card: { kind: "threads", threads: [{ chatId: "c2", projectId: "p" }] } },

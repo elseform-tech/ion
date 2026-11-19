@@ -1,13 +1,11 @@
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
-import type { ProjectEntry } from "@ion/config";
+import { PROFILE_CHARS, type ProjectEntry } from "@ion/config";
 import { stripControl } from "@ion/schema";
 
-/** A profile is a line or two: what ion chief reads to know what a project is. */
-export const PROFILE_CHARS = 300;
 const RANKED = 10;
 
-/** One line, no control characters, at most 300 characters. */
+/** One line, no control characters, at most PROFILE_CHARS. */
 export const cleanProfile = (s: string): string =>
   stripControl(s).replace(/\s+/g, " ").trim().slice(0, PROFILE_CHARS);
 

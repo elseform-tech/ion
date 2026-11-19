@@ -9,7 +9,7 @@ import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { contextOf } from "./route.js";
 import { Ions } from "./service.js";
-import { NO_AGENT, TOO_LONG, type TurnOpts } from "./turn.js";
+import { NO_AGENT, PER_TURN, TOO_LONG, type TurnOpts } from "./turn.js";
 
 type Thread = { chatId: string; projectId: string };
 
@@ -128,6 +128,48 @@ describe("an ion always answers", () => {
     expect(said("storefront")).toEqual([{ text: NO_AGENT }]);
     expect(said("chief")).toEqual([{ text: "ok" }]);
   });
+
+  // Final review, 2026-11-19: a turn ion stopped mid-way (a restart, a crash) left its work line "Thinking"
+  // forever: no line carried its id. Each such turn gets NO_AGENT with its id; a dangling message is answered once.
+  it("ends, at the start, each turn's work no line carried", () => {
+    const step = (ionId: string, turnId: string) =>
+      store.append({
+        chatId: `ion:${ionId}`,
+        runId: turnId,
+        origin: "adapter",
+        type: EV.toolStarted,
+        data: { toolId: "x", kind: "mcp", name: "needs", summary: "" },
+      });
+    // A report's turn ion stopped, then a message whose turn ion stopped too.
+    step("storefront", "turn_report");
+    heard("storefront", EV.ionHeard, "x");
+    step("storefront", "turn_msg");
+    // A turn that replied, and one with no work whose message is left.
+    heard("chief", EV.ionHeard, "y");
+    step("chief", "turn_ok");
+    store.append({
+      chatId: "ion:chief",
+      runId: "turn_ok",
+      origin: "daemon",
+      type: EV.ionSaid,
+      data: { text: "ok" },
+    });
+    heard("chief", EV.ionHeard, "z");
+    ions().answerUnanswered();
+    const lines = (ionId: string) =>
+      store
+        .read({ chatId: `ion:${ionId}` })
+        .filter((e) => e.type === EV.ionSaid)
+        .map((e) => [e.runId, (e.data as { text: string }).text]);
+    expect(lines("storefront")).toEqual([
+      ["turn_report", NO_AGENT],
+      ["turn_msg", NO_AGENT],
+    ]);
+    expect(lines("chief")).toEqual([
+      ["turn_ok", "ok"],
+      [null, NO_AGENT],
+    ]);
+  });
 });
 
 // Plan 09, Plan 14: a thread an ion's turn starts (start_thread) runs in Auto, by ion, on the project's agent.
@@ -177,10 +219,12 @@ describe("a thread an ion starts", () => {
     expect(ask).not.toHaveBeenCalled();
   });
 
-  it("starts 5 threads in one turn at most", async () => {
+  // Final review, 2026-11-19: the limit is one constant, shared with ion's start_thread tool.
+  it("starts PER_TURN (5) threads in one turn at most", async () => {
+    expect(PER_TURN).toBe(5);
     const i = ions();
     const go = (turnId: string) => i.startThread("storefront", "x", { ionId: "chief", request: "x", turnId });
-    for (let k = 0; k < 5; k++) expect(await go("turn_1")).toHaveProperty("chatId");
+    for (let k = 0; k < PER_TURN; k++) expect(await go("turn_1")).toHaveProperty("chatId");
     expect(await go("turn_1")).toEqual({ why: "That's enough threads for one turn" });
     expect(await go("turn_2")).toHaveProperty("chatId");
     expect(ask).toHaveBeenCalledTimes(6);

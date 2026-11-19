@@ -196,6 +196,23 @@ describe("ion tools", () => {
     await s.close();
   });
 
+  // Final review, 2026-11-19: a report turn (its prompt holds a thread agent's words) could still write memory and
+  // suggest a profile from them. In a report, they refuse like start_thread.
+  it("refuses memory_write and set_profile in a report", async () => {
+    const s = await client(
+      grants.create({ kind: "ion", ionId: "shop", projects: ["shop"], turnId: "t3", report: true }),
+    );
+    for (const name of ["memory_write", "set_profile"]) {
+      const r = await s.callTool({ name, arguments: { text: "Uses Stripe" } });
+      expect(r).toMatchObject({ isError: true, content: [{ text: "Not in a report" }] });
+    }
+    expect(memoryView.list(db, null).map((m) => m.text)).toEqual(["Private note"]);
+    expect(
+      loadUserConfig(configFile).config.projects.find((p) => p.id === "shop")?.profileSuggestion,
+    ).toBeUndefined();
+    await s.close();
+  });
+
   it("a run's key opens no ion tools and an ion's key no run tools", async () => {
     const run = await client(grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r1" }));
     const runTools = (await run.listTools()).tools.map((t) => t.name);

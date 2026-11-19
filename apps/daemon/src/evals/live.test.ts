@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
@@ -219,9 +219,12 @@ describe.skipIf(process.env.ION_LIVE_GROK !== "1")("22 projects", { timeout: 900
   let client: IonClient;
   const seen: IonEvent[] = [];
   const turns: { evalName: string; ok: boolean; seconds: number; tools: string; reply: string }[] = [];
+  /** A temporary home, removed after (one you name in ION_EVAL_HOME stays, to look at). */
+  let temp: string | undefined;
 
   beforeAll(async () => {
-    const home = process.env.ION_EVAL_HOME ?? mkdtempSync(join(tmpdir(), "ion-eval22-"));
+    temp = process.env.ION_EVAL_HOME ? undefined : mkdtempSync(join(tmpdir(), "ion-eval22-"));
+    const home = process.env.ION_EVAL_HOME ?? temp!;
     const toml = [`[ion]\nquick = "grok-build"\n[access]\njudge = "grok-build"`];
     toml.push(`[folders]\nprojects = "${join(home, "projects")}"`);
     for (const [id, readme] of PROJECTS) {
@@ -241,6 +244,7 @@ describe.skipIf(process.env.ION_LIVE_GROK !== "1")("22 projects", { timeout: 900
     console.table(turns);
     client?.close();
     await srv?.close();
+    if (temp) rmSync(temp, { recursive: true, force: true });
   });
 
   /**
@@ -252,7 +256,7 @@ describe.skipIf(process.env.ION_LIVE_GROK !== "1")("22 projects", { timeout: 900
     const from = seen.length;
     const t0 = Date.now();
     await client.call("ion.message", { ionId: "chief", text });
-    const said = await until(() => seen.slice(from).find(isTurnReply), 30_000);
+    const said = await until(() => seen.slice(from).find(isTurnReply), 90_000);
     const seconds = Math.round((Date.now() - t0) / 1000);
     const d = said.data as { text: string; card?: { kind: string; threads?: { projectId: string }[] } };
     const during = seen.slice(from);

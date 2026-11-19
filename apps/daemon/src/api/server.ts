@@ -48,12 +48,6 @@ export async function startServer(opts: {
   let port = 0;
   const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
   const { db } = ctx;
-  // Routines run on their schedule while the daemon runs (a run missed while it was stopped goes now).
-  const stopRoutines = ctx.routines.start();
-  // ion chief looks for something to suggest now, then hourly.
-  const stopSuggestions = ctx.suggestions.start();
-  // Answers still waiting when ion stopped go into their chats now.
-  void ctx.decisions.resume().catch(() => {});
   const auth = createAuth();
   const http = httpServer(ctx, turns);
   const wss = new WebSocketServer({
@@ -71,9 +65,13 @@ export async function startServer(opts: {
   const addr = http.address();
   port = typeof addr === "object" && addr ? addr.port : 0;
   // Only now that ion listens (its tools have a port): the ions watch their threads end, and runs a crash left
-  // unfinished end (their ions report them).
+  // unfinished end (their ions report them). Then what starts runs: routines on their schedule (one missed while
+  // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
   ctx.ions.watch();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
+  const stopRoutines = ctx.routines.start();
+  const stopSuggestions = ctx.suggestions.start();
+  void ctx.decisions.resume().catch(() => {});
   return {
     port,
     token: auth.token,

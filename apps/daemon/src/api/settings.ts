@@ -1,4 +1,4 @@
-import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig, type UserConfig } from "@ion/config";
+import { DEFAULT_PROJECT, loadUserConfig, PROFILE_CHARS, saveUserConfig, type UserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
 import { type EffortLevel, type ProjectPatch, stripControl } from "@ion/schema";
@@ -46,7 +46,7 @@ function profileOf({ profile, profileSuggestion }: ProjectPatch): Pick<ProjectPa
   if (profile === undefined || profile === null) return profile === null ? { profile } : {};
   if (typeof profile !== "string") throw new UserError("Write the profile as text");
   const text = stripControl(profile).trim();
-  if (text.length > 300) throw new UserError("Keep it under 300 characters");
+  if (text.length > PROFILE_CHARS) throw new UserError(`Keep it under ${PROFILE_CHARS} characters`);
   return { profile: text || null };
 }
 

@@ -187,13 +187,15 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "ion.said": z.object({ text: z.string(), card: IonCardSchema.optional() }),
   /**
    * The agent session an ion thinks in, kept between its turns (resumed while its agent stays the same); both null:
-   * forgotten (a turn on it failed), so its next turn starts fresh.
+   * forgotten (a turn on it failed), so its next turn starts fresh. `projects`: the projects its tools could see
+   * (sorted ids); when they change, its next turn starts fresh.
    */
   "ion.session": z
     .object({
       ionId: z.string().min(1),
       harness: z.string().min(1).nullable(),
       nativeId: z.string().min(1).nullable(),
+      projects: z.array(z.string()).optional(),
     })
     .refine((d) => (d.harness === null) === (d.nativeId === null), {
       message: "A session has both its agent and its id, or neither (forgotten)",

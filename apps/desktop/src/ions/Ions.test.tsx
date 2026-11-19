@@ -391,6 +391,28 @@ describe("Ions", () => {
     expect(done[1]?.kind === "ion" && done[1].work).toBeUndefined();
   });
 
+  // Final review, 2026-11-19: a turn ion stopped mid-way (no reply ever carried its id) stayed "Thinking" forever.
+  // Its work ends once your next message, or another turn's line, follows it; a later step of its own reopens it.
+  it("ends a turn's work that never got its reply once a later message or turn's line follows", () => {
+    const at = (e: IonEvent, ts: string, runId: string | null = "turn1") => ({ ...e, ts, runId }) as IonEvent;
+    const step = { toolId: "x1", kind: "mcp", name: "needs", summary: "storefront" };
+    const base = [
+      at(ev("ion:chief", EV.ionHeard, { text: "What's open?" }), "2026-11-18T10:00:00.000Z", null),
+      at(ev("ion:chief", EV.toolStarted, step), "2026-11-18T10:00:02.000Z"),
+    ];
+    const workOf = (items: ReturnType<typeof ionTimeline>) => items.find((i) => i.kind === "work");
+    const heard = at(ev("ion:chief", EV.ionHeard, { text: "Hello?" }), "2026-11-18T11:00:00.000Z", null);
+    const w1 = workOf(ionTimeline([...base, heard]));
+    expect(w1?.kind === "work" && w1.work.ended).toBe("2026-11-18T11:00:00.000Z");
+    const other = at(ev("ion:chief", EV.ionSaid, { text: "Done." }), "2026-11-18T11:00:05.000Z", "turn2");
+    const w2 = workOf(ionTimeline([...base, other]));
+    expect(w2?.kind === "work" && w2.work.ended).toBe("2026-11-18T11:00:05.000Z");
+    // Still running while you wrote: its next step shows it live again.
+    const more = at(ev("ion:chief", EV.toolFinished, { toolId: "x1", ok: true }), "2026-11-18T11:00:01.000Z");
+    const w3 = workOf(ionTimeline([...base, heard, more]));
+    expect(w3?.kind === "work" && w3.work.ended).toBeUndefined();
+  });
+
   it("shows an ion's live work as its current step, not as thinking dots", async () => {
     const events = [
       ev("ion:chief", EV.ionHeard, { text: "What's open?" }),

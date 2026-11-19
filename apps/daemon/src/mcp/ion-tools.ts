@@ -1,11 +1,18 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DEFAULT_PROJECT, loadUserConfig, type ProjectEntry, saveUserConfig } from "@ion/config";
+import {
+  DEFAULT_PROJECT,
+  loadUserConfig,
+  PROFILE_CHARS,
+  type ProjectEntry,
+  saveUserConfig,
+} from "@ion/config";
 import type { ChatInfo } from "@ion/schema";
 import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import { contextOf } from "../ions/route.js";
-import { cleanProfile, PROFILE_CHARS, profileOf, rankProjects } from "../ions/profiles.js";
+import { cleanProfile, profileOf, rankProjects } from "../ions/profiles.js";
+import { PER_TURN } from "../ions/turn.js";
 import { writeMemory } from "../memory/index.js";
 import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
@@ -26,8 +33,6 @@ type StartThread = (
 
 export type IonDeps = Deps & { configFile: string; startThread?: StartThread };
 
-/** What one turn may do at most: write memory, start threads. */
-const PER_TURN = 5;
 const HISTORY_MAX = 200;
 const TITLES = 5;
 
@@ -196,6 +201,7 @@ function memoryTools(server: McpServer, ion: Ion): void {
       inputSchema: { text: z.string().min(1).max(2000) },
     },
     guard(({ text }: { text: string }) => {
+      notInReport(scope);
       const where = chief ? ("you" as const) : { projectId: ion.need(scope.ionId).id };
       if (d.grants.noteWrite(scope.turnId) > PER_TURN)
         throw new UserError("That's enough memory for one turn");
@@ -205,17 +211,22 @@ function memoryTools(server: McpServer, ion: Ion): void {
   );
 }
 
+/** A report turn (its prompt holds a thread agent's words) writes nothing: no memory, no profile, no thread. */
+function notInReport(scope: IonScope): void {
+  if (scope.report) throw new UserError("Not in a report");
+}
+
 function threadTool(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;
   server.registerTool(
     "start_thread",
     {
-      description:
-        "Start work in a project: a thread its agent runs, briefed with what to do there. At most 5 per turn.",
+      description: `Start work in a project: a thread its agent runs, briefed with what to do there. At most ${PER_TURN} per turn.`,
       inputSchema: { projectId: z.string().min(1), brief: z.string().min(1).max(4000) },
     },
     guard(async ({ projectId, brief }: { projectId: string; brief: string }) => {
       if (!d.startThread) throw new UserError("Not available here");
+      notInReport(scope);
       ion.need(projectId);
       // A slot is taken before starting (two calls at once can't both take the 5th) and given back unless it started.
       if (d.grants.noteThread(scope.turnId) > PER_TURN) {
@@ -245,6 +256,7 @@ function profileTool(server: McpServer, ion: Ion): void {
       inputSchema: { text: z.string().min(1).max(PROFILE_CHARS) },
     },
     guard(({ text }: { text: string }) => {
+      notInReport(scope);
       // Security review, 2026-11-19: an agent's words never become the profile ion chief reads; only a suggestion.
       const profileSuggestion = cleanProfile(text);
       if (!profileSuggestion) throw new UserError("A profile can't be empty");

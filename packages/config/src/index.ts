@@ -13,6 +13,7 @@ export { addRoutine, type NewRoutine, removeRoutine, type RoutinePatch, updateRo
 export {
   DEFAULT_CONFIG,
   loadUserConfig,
+  PROFILE_CHARS,
   type ProjectEntry,
   type RoutineEntry,
   saveUserConfig,

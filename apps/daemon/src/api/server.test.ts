@@ -1,14 +1,19 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
-import { connect as tcp } from "node:net";
+import { connect as tcp, Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { startServer } from "./server.js";
 import { loadUserConfig, saveUserConfig } from "@ion/config";
+import { Decisions } from "../decisions/index.js";
+import { Ions } from "../ions/service.js";
+import { Suggestions } from "../ions/suggestions.js";
+import { RunManager } from "../runs/manager.js";
+import { Routines } from "../scheduler/index.js";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
@@ -190,6 +195,78 @@ describe("daemon api", () => {
     c2.close();
     await s2.close();
   }, 30_000);
+
+  // Final review, 2026-11-19: routines started before ion listened, so a routine due at boot got ion's tools at
+  // port 0, and the sweep of runs a crash left unfinished then marked its live run failed.
+  it("starts a routine due at boot with ion's tools on its port, and doesn't sweep its run", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const h = mkdtempSync(join(tmpdir(), "ion-boot-"));
+    const { openDb, EventStore } = await import("../store/index.js");
+    const { allViews } = await import("../views/index.js");
+    const { DEFAULT_CONFIG } = await import("@ion/config");
+    const cf = join(h, "config.toml");
+    const routine = { id: "r1", name: "Check", when: "every 4h", text: "mcpinfo", on: true };
+    saveUserConfig(cf, {
+      ...DEFAULT_CONFIG,
+      projects: [{ id: "app", path: repo("app"), starred: false, harness: "fake", routines: [routine] }],
+    });
+    mkdirSync(join(h, "data"), { recursive: true });
+    const db = openDb(join(h, "data", "ion.db"));
+    // It last ran a day ago: a slot came while ion was stopped, so it runs as ion starts.
+    const due = new Date(Date.now() - 86_400_000).toISOString();
+    new EventStore(db, allViews).append({
+      chatId: null,
+      runId: null,
+      origin: "daemon",
+      type: "routine.ran",
+      data: { projectId: "app", routineId: "r1", name: "Check", due, by: "schedule", chatId: "old" },
+    });
+    db.close();
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: cf, port: 0 });
+    const c2 = await connect({ port: s2.port, token: s2.token });
+    const seen: IonEvent[] = [];
+    await c2.subscribe({}, (e) => seen.push(e));
+    await until(() => seen.some((e) => e.type === "run.finished" && e.chatId !== "old"), 10_000);
+    const said = seen.find((e) => e.type === "message.completed" && e.origin === "adapter");
+    const url = String((JSON.parse(String((said?.data as { text: string }).text)) as { url: string }).url);
+    expect(url).toBe(`http://127.0.0.1:${s2.port}/mcp`);
+    expect(seen.find((e) => e.type === "run.finished")).toMatchObject({ data: { status: "done" } });
+    c2.close();
+    await s2.close();
+  }, 15_000);
+
+  // Final review, 2026-11-19: routines, suggestions and waiting answers started before ion listened (their runs'
+  // tools at port 0, then swept as unfinished). Once ion listens: watch, sweep, routines, suggestions, answers.
+  it("starts its schedules only once it listens, after the sweep", async () => {
+    const order: string[] = [];
+    const listen = Server.prototype.listen;
+    const spies = [
+      vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...a: unknown[]) {
+        const done = a.at(-1) as () => void;
+        return listen.apply(this, [...a.slice(0, -1), () => (order.push("listen"), done())] as never);
+      }),
+      ...(
+        [
+          [Ions.prototype, "watch"],
+          [RunManager.prototype, "closeUnfinishedRuns"],
+          [Routines.prototype, "start"],
+          [Suggestions.prototype, "start"],
+          [Decisions.prototype, "resume"],
+        ] as const
+      ).map(([o, m]) => {
+        const f = o[m] as (...a: unknown[]) => unknown;
+        return vi.spyOn(o, m as never).mockImplementation(function (this: unknown, ...a: unknown[]) {
+          order.push(m === "start" ? o.constructor.name : m);
+          return f.apply(this, a);
+        } as never);
+      }),
+    ];
+    const h = mkdtempSync(join(tmpdir(), "ion-order-"));
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: join(h, "config.toml"), port: 0 });
+    for (const s of spies) s.mockRestore();
+    await s2.close();
+    expect(order).toEqual(["listen", "watch", "closeUnfinishedRuns", "Routines", "Suggestions", "resume"]);
+  });
 
   it("keeps its data folder private", () => {
     expect(statSync(join(home, "data")).mode & 0o777).toBe(0o700);

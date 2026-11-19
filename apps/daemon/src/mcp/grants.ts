@@ -4,7 +4,8 @@ import { createHash, randomBytes } from "node:crypto";
 export type RunScope = { kind: "run"; projectId: string; chatId: string; runId: string };
 
 /** What an ion's key may see for one turn: the projects it looks after (ion chief: those shared with it). */
-export type IonScope = { kind: "ion"; ionId: string; projects: string[]; turnId: string };
+/** An ion's turn; `report`: a turn the daemon asked for (a thread's report), which writes nothing and starts nothing. */
+export type IonScope = { kind: "ion"; ionId: string; projects: string[]; turnId: string; report?: true };
 
 export type Scope = RunScope | IonScope;
 
