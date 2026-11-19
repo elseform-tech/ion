@@ -35,6 +35,12 @@ describe("a work step's name", () => {
     expect(stepName("Read")).toBe("Read");
   });
 
+  // Security review, 2026-11-19: a routed tool name is checked before it names a step.
+  it("shows Tool for a step with no name", () => {
+    expect(stepName("")).toBe("Tool");
+    expect(stepName("\u202e")).toBe("Tool");
+  });
+
   it("shows plain names, no repeated summary, and no control characters", () => {
     const steps = [
       tool("mcp__ion__projects", "projects"),
