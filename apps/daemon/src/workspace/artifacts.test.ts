@@ -60,4 +60,37 @@ describe("listArtifacts", () => {
     expect(list).toHaveLength(200);
     expect(list[0]?.path).toBe("f229.txt");
   });
+
+  // Task review, 2026-11-19: in an ion worktree `.git` is a file (a gitdir pointer), and it was listed.
+  it("skips a .git file", async () => {
+    const dir = worktree();
+    put(dir, ".git", "gitdir: /x", at(1));
+    put(dir, "a.txt", "a", at(2));
+    expect((await listArtifacts(dir, since)).map((a) => a.path)).toEqual(["a.txt"]);
+  });
+
+  // Task review, 2026-11-19: a huge deep folder could use the whole budget before shallow files were seen.
+  it("walks wide first, so a big deep folder can't hide top-level files", async () => {
+    const dir = worktree();
+    for (const top of ["a", "b"]) {
+      for (let i = 0; i < 20; i++) put(dir, `${top}/deep/f${i}.txt`, "x", at(1));
+      put(dir, `${top}/shallow.txt`, "t", at(1));
+    }
+    const list = await listArtifacts(dir, since, 6);
+    expect(list.map((a) => a.path)).toEqual(expect.arrayContaining(["a/shallow.txt", "b/shallow.txt"]));
+  });
+
+  // Task review, 2026-11-19: an invalid `since` listed everything (NaN compares false).
+  it("lists nothing for an invalid since", async () => {
+    const dir = worktree();
+    put(dir, "a.txt", "a", at(1));
+    expect(await listArtifacts(dir, "not a date")).toEqual([]);
+  });
+
+  // Security review, 2026-11-19: a folder was read in full before the budget cut it; it's streamed now.
+  it("visits at most the budget in one big folder", async () => {
+    const dir = worktree();
+    for (let i = 0; i < 40; i++) put(dir, `big/f${i}.txt`, "x", at(1));
+    expect((await listArtifacts(dir, since, 10)).length).toBeLessThanOrEqual(9);
+  });
 });

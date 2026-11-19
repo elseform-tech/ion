@@ -1,5 +1,5 @@
 import { type Dirent } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, opendir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { ArtifactInfo } from "@ion/schema";
 
@@ -54,12 +54,18 @@ function kindOf(name: string): ArtifactInfo["kind"] {
  * outputs included, newest first, at most 200. Links are never followed or listed, `.git` and `node_modules`
  * are skipped. Newest-first needs every candidate, so the walk is bounded (20,000 entries), then sorted and cut.
  */
-export async function listArtifacts(worktree: string, since: string): Promise<ArtifactInfo[]> {
+export async function listArtifacts(
+  worktree: string,
+  since: string,
+  maxVisited = MAX_VISITED,
+): Promise<ArtifactInfo[]> {
   const from = Date.parse(since);
+  if (Number.isNaN(from)) return [];
   const found: ArtifactInfo[] = [];
   const dirs = [""];
-  const budget = { left: MAX_VISITED };
-  while (dirs.length && budget.left > 0) await walkDir(worktree, dirs.pop()!, { dirs, found, from, budget });
+  const budget = { left: maxVisited };
+  while (dirs.length && budget.left > 0)
+    await walkDir(worktree, dirs.shift()!, { dirs, found, from, budget });
   return found.sort((a, b) => b.changedAt.localeCompare(a.changedAt)).slice(0, MAX_ARTIFACTS);
 }
 
@@ -67,12 +73,13 @@ type Walk = { dirs: string[]; found: ArtifactInfo[]; from: number; budget: { lef
 
 /** One folder: queue its subfolders, collect its recent files. */
 async function walkDir(worktree: string, rel: string, w: Walk): Promise<void> {
-  const entries = (await readDir(join(worktree, rel))).slice(0, Math.max(0, w.budget.left));
+  const entries = await readDir(join(worktree, rel), w.budget.left);
   w.budget.left -= entries.length;
   for (const e of entries) {
     const path = rel ? `${rel}/${e.name}` : e.name;
-    if (e.isDirectory() && !SKIP.has(e.name)) w.dirs.push(path);
-    if (e.isFile()) await collect(worktree, path, w);
+    if (SKIP.has(e.name)) continue;
+    if (e.isDirectory()) w.dirs.push(path);
+    else if (e.isFile()) await collect(worktree, path, w);
   }
 }
 
@@ -81,13 +88,22 @@ async function collect(worktree: string, path: string, w: Walk): Promise<void> {
   if (info) w.found.push(info);
 }
 
-/** A folder's entries (links show as links, never as what they point to); none if it's gone or unreadable. */
-async function readDir(dir: string): Promise<Dirent[]> {
+/**
+ * Up to `limit` of a folder's entries, streamed so a folder with millions of files isn't read in full (links
+ * show as links, never as what they point to); none if it's gone or unreadable.
+ */
+async function readDir(dir: string, limit: number): Promise<Dirent[]> {
+  const out: Dirent[] = [];
+  if (limit <= 0) return out;
   try {
-    return await readdir(dir, { withFileTypes: true });
+    for await (const e of await opendir(dir)) {
+      out.push(e);
+      if (out.length >= limit) break; // the iterator closes the handle
+    }
   } catch {
-    return [];
+    // gone or unreadable: keep what was read
   }
+  return out;
 }
 
 async function describe(worktree: string, path: string, from: number): Promise<ArtifactInfo | null> {
