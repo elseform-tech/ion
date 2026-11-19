@@ -98,6 +98,8 @@ function readOnly(command: string): boolean {
     const args = word === "git" ? rest : [sub, ...rest].filter((x): x is string => x !== undefined);
     if (!args.every((t) => FLAG.test(t) || (PLAIN.test(t) && !t.startsWith("/") && !t.startsWith("-"))))
       return false;
+    // `file -C` / `--compile` writes a .mgc file.
+    if (word === "file" && args.some((a) => a === "--compile" || a.startsWith("-C"))) return false;
     if (word === "tail" && /\s(-[a-zA-Z]*[fF]|--follow)/.test(part)) return false;
     return word === "git"
       ? READ_ONLY_GIT.has(sub ?? "") && !/--output|--ext-diff/.test(part)

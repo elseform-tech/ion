@@ -20,6 +20,13 @@ const cmd = (command: string): ApprovalRequest => ({
 });
 
 describe("ruleFor", () => {
+  // Task review, 2026-11-19: `file -C` compiles a magic file and writes a .mgc, so `file` isn't read-only then.
+  it("does not allow file -C or --compile", () => {
+    for (const c of ["file -C -m x", "file --compile x", "file -Cm x"])
+      expect(ruleFor(cmd(c), ctx)?.decision).not.toBe("allow");
+    expect(ruleFor(cmd("file a.txt"), ctx)?.decision).toBe("allow");
+  });
+
   it("denies anything touching your secrets or ion's own files, whatever else it says", () => {
     for (const c of [
       "cat ~/.ssh/id_rsa",

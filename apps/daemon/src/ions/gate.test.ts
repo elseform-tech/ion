@@ -50,4 +50,22 @@ describe("an ion's gate", () => {
     expect(decideForIon(mcp("mcp__ion__projects", "other"), ctx)).toBe("deny");
     expect(decideForIon(mcp("mcp__ion__rm_rf", "ion"), ctx)).toBe("deny");
   });
+
+  // Task review, 2026-11-19: `file -C` writes a .mgc file; ions never write.
+  it("denies file -C", () => {
+    expect(decideForIon(cmd("file -C -m x"), ctx)).toBe("deny");
+  });
+
+  // Task review, 2026-11-19: `ask` and `report_outcome` are run tools; an ion has no run to ask or report in.
+  it("denies run-only tools to an ion", () => {
+    for (const t of ["ask", "report_outcome"])
+      expect(decideForIon(req({ kind: "mcp", toolName: `mcp__ion__${t}`, mcpServer: "ion" }), ctx)).toBe(
+        "deny",
+      );
+  });
+
+  // Task review, 2026-11-19: a third-party tool arriving as kind "other" (opencode's foo_bar) is denied.
+  it("denies a third-party tool of kind other", () => {
+    expect(decideForIon(req({ kind: "other", toolName: "foo_bar" }), ctx)).toBe("deny");
+  });
 });

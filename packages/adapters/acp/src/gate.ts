@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GateCall } from "@ion/adapter-kit";
+import { ION_ION_TOOLS, ION_RUN_TOOLS } from "@ion/schema";
 
 /** Where a run's gate is: its URL, and the worktree the harness runs in. */
 export type GateEnv = { url: string; cwd: string };
@@ -116,10 +117,9 @@ export function opencodeToCall(payload: unknown): GateCall | null {
   const tool = str(p?.tool);
   if (!tool) return null;
   // ion's own MCP server is "ion", so its tools come as ion_<tool>; other servers' tools stay "other".
-  const ion =
-    /^ion_(chat_history|search_chats|open_needs|memory_list|memory_write|ask|decisions|report_outcome)$/.exec(
-      tool,
-    )?.[1];
+  const ion = new RegExp(`^ion_(${[...new Set([...ION_RUN_TOOLS, ...ION_ION_TOOLS])].join("|")})$`).exec(
+    tool,
+  )?.[1];
   if (ion) return call(`ion__${ion}`, "mcp", obj(p?.args) ?? {}, "ion");
   return call(tool, OPENCODE_KINDS[tool] ?? "other", obj(p?.args) ?? {});
 }

@@ -2,6 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
+import { ION_RUN_TOOLS } from "@ion/schema";
 
 /** Every string in the input, however deeply nested, with the key it sits under. */
 function* strings(value: unknown, key = ""): Generator<[string, string]> {
@@ -18,8 +19,7 @@ function* strings(value: unknown, key = ""): Generator<[string, string]> {
 const PATH_KEY = /(path|locations|destination|dest|target|source|src|dir|directory|cwd|root)$/i;
 
 /** ion's own MCP tools: `mcp__ion__<tool>` (Claude Code) or `ion__<tool>` (Grok). */
-const ION_TOOL =
-  /^(mcp__)?ion__(chat_history|search_chats|open_needs|memory_list|memory_write|ask|decisions|report_outcome)$/;
+const ION_TOOL = new RegExp(`^(mcp__)?ion__(${ION_RUN_TOOLS.join("|")})$`);
 const URL_LIKE = /^[a-z][a-z0-9+.-]+:/i;
 const REACHES_OUT = /(^[~/])|(\.\.)/;
 

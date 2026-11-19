@@ -1,9 +1,9 @@
 import type { ApprovalRequest } from "@ion/adapter-kit";
+import { ION_ION_TOOLS } from "@ion/schema";
 import { ruleFor, type RuleCtx } from "../access/rules.js";
 
 /** ion's own MCP tools: `mcp__ion__<tool>` (Claude Code) or `ion__<tool>` (Grok). */
-const ION_TOOL =
-  /^(mcp__)?ion__(projects|search_chats|chat_history|open_needs|memory_list|memory_write|decisions|set_profile|start_thread|ask|report_outcome)$/;
+const ION_TOOL = new RegExp(`^(mcp__)?ion__(${ION_ION_TOOLS.join("|")})$`);
 
 /**
  * An ion's agent may look and ask ion, nothing else: ion's own tools, then Auto's read-only rules (commands that
