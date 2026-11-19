@@ -270,7 +270,9 @@ export class Ions {
     try {
       return await Promise.race([this.d.quick(prompt, abort.signal, agent), late]);
     } catch (e) {
-      logThink(e instanceof Error ? e.message : String(e), agent);
+      // Its kind only: an agent's message can echo a provider's reply (debug mode logs it whole).
+      const kind = e instanceof Error ? e.name : "an error";
+      logThink(process.env.ION_DEBUG === "1" && e instanceof Error ? `${kind}: ${e.message}` : kind, agent);
       return null;
     } finally {
       clearTimeout(timer);
