@@ -36,6 +36,18 @@ function trimEnd(title: string): string {
   return title.slice(0, end);
 }
 
+/** ion's own model failing goes to the daemon's log (its output): the chat only says it couldn't reach it. */
+function logThink(why: string, agent: string | undefined): void {
+  const who = agent ? `ion's model (${agent})` : "ion's model";
+  console.error(`${who}: ${why.split("\n")[0]!.slice(0, 300)}`);
+}
+
+/** An answer ion couldn't read, logged; in debug mode (ION_DEBUG=1) with its start, to see why. */
+function unreadable(said: string): void {
+  const start = process.env.ION_DEBUG === "1" ? `: ${JSON.stringify(said.slice(0, 300))}` : "";
+  logThink(`an answer ion couldn't read${start}`, undefined);
+}
+
 /** Without a project's own agent or a last one: the first ready of these (quota-friendly first), else any. */
 const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
 const firstOf = (ready: string[]) => PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
@@ -230,8 +242,16 @@ export class Ions {
       .filter((p) => p.shareWithIon !== false)
       .map((p) => p.id);
     const context = contextOf(ids, chatsView.list(this.d.db), needsView.open(this.d.db));
-    const said = await this.think(chiefPrompt(text, ids, context));
-    return said === null ? null : parseRoute(said, ids);
+    const prompt = chiefPrompt(text, ids, context);
+    // A model now and then answers in another shape than asked: ion asks once more before it gives up.
+    for (let tries = 0; tries < 2; tries++) {
+      const said = await this.think(prompt);
+      if (said === null) return null;
+      const r = parseRoute(said, ids);
+      if (r) return r;
+      unreadable(said);
+    }
+    return null;
   }
 
   /** ion's quick model on a prompt: its answer, or null when it fails or is slow. */
@@ -243,12 +263,14 @@ export class Ions {
     const late = new Promise<null>((r) => {
       timer = setTimeout(() => {
         abort.abort();
+        logThink(`no answer in ${TIMEOUT_MS / 1000} s`, agent);
         r(null);
       }, TIMEOUT_MS);
     });
     try {
       return await Promise.race([this.d.quick(prompt, abort.signal, agent), late]);
-    } catch {
+    } catch (e) {
+      logThink(e instanceof Error ? e.message : String(e), agent);
       return null;
     } finally {
       clearTimeout(timer);

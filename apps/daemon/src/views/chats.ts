@@ -81,7 +81,7 @@ export const chatsView: View & {
 const PREVIEW_MAX = 120;
 
 /** The start of a reply, as one line of plain words: Markdown marks and line breaks go. */
-function previewOf(text: string): string {
+export function previewOf(text: string): string {
   const plain = stripControl(text)
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/[*`#>]+/g, "")

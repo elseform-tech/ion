@@ -716,3 +716,10 @@ body.resizing {
   font-size: 12px;
   padding: 6px 14px;
 }
+/* An ion's words are Markdown: a bubble holds them without the paragraphs' outer space. */
+.bi .md > :first-child {
+  margin-top: 0;
+}
+.bi .md > :last-child {
+  margin-bottom: 0;
+}

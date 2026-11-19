@@ -114,20 +114,37 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
       toolId,
       name: known ? String(u.kind) : (TITLES[title] ?? title).slice(0, 40),
       kind,
-      summary: (known ? title : lookedFor(u.rawInput)).slice(0, 80),
+      summary: (known ? title : lookedFor(u.rawInput, s.roots)).slice(0, 80),
       ...(input ? { input } : {}),
     },
   };
 }
 
 /** Agents' own tools, by a plain name. */
-const TITLES: Record<string, string> = { search_tool: "Find tool" };
+const TITLES: Record<string, string> = {
+  search_tool: "Find tool",
+  use_tool: "Use tool",
+  read_file: "Read",
+  list_dir: "List",
+  grep: "Grep",
+};
 
-/** What a tool looked for: its pattern, query, path or address, when it has one. */
-function lookedFor(raw: unknown): string {
+/** What a tool looked for: its pattern, query, file, folder, tool or address (a path from the worktree). */
+function lookedFor(raw: unknown, roots: string[]): string {
   const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const v = [r.pattern, r.query, r.path, r.file_path, r.url].find((x) => typeof x === "string" && x);
-  return typeof v === "string" ? v : "";
+  const keys = [
+    "pattern",
+    "query",
+    "target_file",
+    "file_path",
+    "path",
+    "target_directory",
+    "tool_name",
+    "url",
+  ];
+  const v = keys.map((k) => r[k]).find((x) => typeof x === "string" && x);
+  if (typeof v !== "string") return "";
+  return isAbsolute(v) ? shorten(v, roots) : v;
 }
 
 /** Translates one ACP `session/update` into ion events. Pure apart from `state`. */

@@ -1,7 +1,7 @@
 import { DEFAULT_PROJECT } from "@ion/config";
 import { type IonCard, EV, type IonEvent, type IonInfo, type ProjectInfo, ION_COLORS } from "@ion/schema";
 import type { Db, View } from "../store/index.js";
-import { chatsView } from "./chats.js";
+import { chatsView, previewOf } from "./chats.js";
 import { needsView } from "./needs.js";
 
 /** Ion colours, from the lab's palette, in the order projects take them. Identity only, never status. */
@@ -11,7 +11,7 @@ const ionOf = (chatId: string) => (chatId.startsWith("ion:") ? chatId.slice(4) :
 
 /** An ion's words, or, when it said none, its card's gist (ion chief's routing says it with the card). */
 function lineOf(d: { text: string; card?: IonCard }): string {
-  if (d.text || d.card?.kind !== "threads") return d.text;
+  if (d.text || d.card?.kind !== "threads") return previewOf(d.text);
   const n = new Set(d.card.threads.map((t) => t.projectId)).size;
   return `Asked ${n} project${n === 1 ? "" : "s"}.`;
 }
@@ -19,7 +19,7 @@ function lineOf(d: { text: string; card?: IonCard }): string {
 /** Each ion's last line; the rest of an ion (its needs, whether it's working) is read from the chats and needs. */
 export const ionsView: View & { list(db: Db, projects: ProjectInfo[]): IonInfo[] } = {
   name: "ions",
-  version: 1,
+  version: 2,
   tables: ["view_ions"],
   migrate(db) {
     db.exec("CREATE TABLE IF NOT EXISTS view_ions (ion_id TEXT PRIMARY KEY, last TEXT)");

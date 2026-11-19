@@ -6,6 +6,7 @@ import { IonAvatar } from "./IonAvatar.js";
 import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
+import { Markdown } from "../chats/Message.js";
 import { SuggestionCard } from "./SuggestionCard.js";
 import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
 
@@ -183,7 +184,11 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
               {last ? <IonAvatar ion={p.ion} /> : <span />}
               <div>
                 {/* ion chief's suggestion cards carry their own words. */}
-                {m.text && !ownWords(m.card) && <div className="bi">{m.text}</div>}
+                {m.text && !ownWords(m.card) && (
+                  <div className="bi">
+                    <Markdown text={m.text} htmlAsText />
+                  </div>
+                )}
                 {m.card && (
                   <Card
                     {...p}

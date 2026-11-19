@@ -159,7 +159,7 @@ describe("tool input and output", () => {
 });
 
 // Real run on Grok, 2026-11-19: a grep showed as "other grep" (ACP's kind, then the title). A tool of no known kind
-// is named by its title, with what it looked for.
+// is named by its title (Grok's own in plain words), with what it looked for.
 describe("a tool of no known kind", () => {
   it("is named by its title, with its pattern or query", () => {
     const st = s();
@@ -167,7 +167,7 @@ describe("a tool of no known kind", () => {
     expect(
       mapUpdate({ ...grep, rawInput: { pattern: "tip", glob: "**/split.js" } }, st)[0]?.data,
     ).toMatchObject({
-      name: "grep",
+      name: "Grep",
       kind: "other",
       summary: "tip",
     });
@@ -175,6 +175,17 @@ describe("a tool of no known kind", () => {
     expect(mapUpdate({ ...find, rawInput: { query: "ion decisions ask" } }, st)[0]?.data).toMatchObject({
       name: "Find tool",
       summary: "ion decisions ask",
+    });
+    // Same run: Grok's read_file and list_dir came with no detail (they name target_file, target_directory).
+    const read = { sessionUpdate: "tool_call", toolCallId: "r", title: "read_file", kind: "other" };
+    expect(mapUpdate({ ...read, rawInput: { target_file: "/repo/split.js" } }, st)[0]?.data).toMatchObject({
+      name: "Read",
+      summary: "split.js",
+    });
+    const list = { sessionUpdate: "tool_call", toolCallId: "l", title: "list_dir", kind: "other" };
+    expect(mapUpdate({ ...list, rawInput: { target_directory: "/repo" } }, st)[0]?.data).toMatchObject({
+      name: "List",
+      summary: "/repo",
     });
   });
 });

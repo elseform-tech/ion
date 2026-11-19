@@ -184,6 +184,14 @@ describe("Ions", () => {
     expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "s1", keep: true });
   });
 
+  // Real run on Grok, 2026-11-19: an ion's report came with Markdown ("**0.15**", `split.js`) shown as is.
+  it("reads an ion's Markdown as formatting, and still shows HTML as text", async () => {
+    const c = client([ev("ion:chief", EV.ionSaid, { text: "The default tip in `split.js` is **0.15**." })]);
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    await waitFor(() => expect(container.querySelector(".bi strong")?.textContent).toBe("0.15"));
+    expect(container.querySelector(".bi code")?.textContent).toBe("split.js");
+  });
+
   // Review Focus 5.
   it("shows HTML in an ion's words or a thread's title as text", async () => {
     const c = client([ev("ion:chief", EV.ionSaid, { text: '<img src=x onerror="alert(1)">' })]);

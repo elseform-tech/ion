@@ -270,6 +270,16 @@ describe("Ions", () => {
     expect(ask).not.toHaveBeenCalled();
   });
 
+  // Real run on Grok, 2026-11-19: now and then Grok's answer wasn't the JSON asked for, and ion chief said it
+  // couldn't reach its model. It asks once more first.
+  it("asks its model once more when it can't read the answer", async () => {
+    quick
+      .mockResolvedValueOnce("Sure! I'll route that.")
+      .mockResolvedValueOnce('{"answer":"Nothing needs you."}');
+    await ions().message("chief", "status?");
+    expect(said("chief")).toEqual([{ text: "Nothing needs you." }]);
+  });
+
   it("lets ion chief route to project ions: a thread each, and one card", async () => {
     quick.mockResolvedValueOnce(
       JSON.stringify({

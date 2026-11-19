@@ -90,6 +90,19 @@ describe("ions view", () => {
     expect(ionsView.list(db, projects(["storefront", "payments-api"]))[2]!.harness).toBeNull();
   });
 
+  // Real run on Grok, 2026-11-19: the list's preview showed an ion's Markdown as is ("is **0....").
+  it("previews an ion's last line as plain text", () => {
+    store.append(
+      d({
+        chatId: "ion:a",
+        runId: null,
+        type: "ion.said",
+        data: { text: "The tip in `split.js` is **0.15**." },
+      }),
+    );
+    expect(ionsView.list(db, projects(["a"]))[1]?.last).toBe("The tip in split.js is 0.15.");
+  });
+
   it("keeps each ion's last line", () => {
     store.append(d({ chatId: "ion:storefront", runId: null, type: "ion.said", data: { text: "On it." } }));
     expect(ionsView.list(db, projects(["storefront"]))[1]!.last).toBe("On it.");
