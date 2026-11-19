@@ -29,6 +29,7 @@ import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
 import { chatsView } from "../views/chats.js";
 import { addRoutineTo } from "./routines.js";
+import { Notifier } from "../notify/index.js";
 
 /** The scope of a run that ion asks you about. */
 const runScopeOf = (r: AskingRun): RunScope => ({
@@ -71,13 +72,15 @@ export async function startServer(opts: {
 
   const addr = http.address();
   port = typeof addr === "object" && addr ? addr.port : 0;
-  // Only now that ion listens (its tools have a port): the ions watch their threads end, and runs a crash left
-  // unfinished end (their ions report them). Then what starts runs: routines on their schedule (one missed while
+  // Only now that ion listens (its tools have a port): the ions watch their threads end, notifications and ion
+  // chief's daily briefing start (before runs a crash left unfinished end, so those are told as runs that failed),
+  // and those runs end (their ions report them). Then what starts runs: routines on their schedule (one missed while
   // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
   ctx.ions.watch();
+  const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile });
+  notifier.start();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
-  const stopRoutines = ctx.routines.start();
-  const stopSuggestions = ctx.suggestions.start();
+  const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop()];
   // Your answers still waiting go in first; then what you queued while ion was stopped, to each chat or ion that
   // isn't working.
   void ctx.decisions
@@ -88,8 +91,7 @@ export async function startServer(opts: {
     port,
     token: auth.token,
     close: async () => {
-      stopRoutines();
-      stopSuggestions();
+      for (const stop of stops) stop();
       // ion's turns stop first; nothing an ion says after is written.
       ctx.ions.stop();
       await turns.shutdown();

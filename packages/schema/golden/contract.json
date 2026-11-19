@@ -47,7 +47,9 @@
     "queue.added",
     "queue.removed",
     "queue.sent",
-    "queue.failed"
+    "queue.failed",
+    "notify",
+    "briefing.posted"
   ],
   "commands": [
     "status",
