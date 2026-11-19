@@ -2,7 +2,7 @@ import type { FilePreview, TaskInfo } from "@ion/schema";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { open, readdir, readFile, realpath, stat } from "node:fs/promises";
-import { extname, isAbsolute, join, sep } from "node:path";
+import { basename, extname, isAbsolute, join, sep } from "node:path";
 import { UserError } from "../api/errors.js";
 
 /** A process a chat's agent left running (a dev server, a watcher): what the preview's Tasks tab shows. */
@@ -92,6 +92,8 @@ async function markedByPs(marker: string, only?: number): Promise<Set<number>> {
   for (const [pid, line] of withEnv) {
     const command = plain.get(pid);
     if (command === undefined || !line.startsWith(command)) continue;
+    // An environment value with spaces could fake the token, but only from something the chat's agent started (it
+    // could set ION_CHAT on anything it starts anyway): the marker finds the chat's processes, it isn't a boundary.
     if (line.slice(command.length).split(/\s+/).includes(marker)) pids.add(pid);
   }
   return pids;
@@ -114,6 +116,37 @@ export async function markedInProc(marker: string, only?: number, proc = "/proc"
   return pids;
 }
 
+const SHELLS = new Set(["sh", "bash", "zsh", "fish", "dash"]);
+type Proc = { ppid: number; shell: boolean };
+
+/** Every process's parent, and whether it's a shell (by its executable's name). */
+async function processTable(): Promise<Map<number, Proc>> {
+  const table = new Map<number, Proc>();
+  for (const line of (await run("ps", ["-A", "-o", "pid=,ppid=,comm="])).split("\n")) {
+    const [pid, ppid, ...comm] = line.trim().split(/\s+/);
+    if (!pid || !ppid || !/^\d+$/.test(pid)) continue;
+    const name = basename(comm.join(" ")).replace(/^-/, "");
+    table.set(Number(pid), { ppid: Number(ppid), shell: SHELLS.has(name) });
+  }
+  return table;
+}
+
+/**
+ * ion's own: the daemon, or below it with no tool call's shell on the way up (the agent CLIs, the processes behind
+ * their wrappers, the helpers and MCP servers they start). A shell the daemon starts itself is a launch wrapper (an
+ * npm or cmux shim), not a tool call. What a tool call left in the background, its shell gone, is no longer below
+ * the daemon at all.
+ */
+function ionsOwn(pid: number, table: Map<number, Proc>): boolean {
+  for (let at = pid, hops = 0; hops < 128; hops++) {
+    if (at === process.pid) return true;
+    const p = table.get(at);
+    if (!p || at <= 1 || (p.shell && p.ppid !== process.pid)) return false;
+    at = p.ppid;
+  }
+  return false;
+}
+
 /** Your own processes carrying this chat's marker (`ION_CHAT=<chatId>`), inherited from the agent ion ran for it. */
 function markedFor(chatId: string, only?: number): Promise<Set<number>> {
   if (!CHAT_ID.test(chatId)) return Promise.resolve(new Set());
@@ -122,22 +155,22 @@ function markedFor(chatId: string, only?: number): Promise<Set<number>> {
 }
 
 /**
- * What a chat's agent left running, but not ion's own (the daemon and the agent CLIs it runs, its direct children):
+ * What a chat's agent left running, but not ion's own (the daemon, the agent CLIs it runs and what they run without
+ * a tool call's shell; see ionsOwn):
  * processes in the worktree, and processes anywhere carrying the chat's marker (a dev server started elsewhere, a
  * background job whose folder moved). Each says where it runs.
  */
 export async function listTasks(worktree: string, chatId: string): Promise<Task[]> {
   const dir = await realpath(worktree).catch(() => worktree);
-  const [where, marked] = await Promise.all([cwds(), markedFor(chatId)]);
+  const [where, marked, table] = await Promise.all([cwds(), markedFor(chatId), processTable()]);
   const inWorktree = [...where].filter(([, cwd]) => inside(dir, cwd)).map(([pid]) => pid);
-  const pids = [...new Set([...inWorktree, ...marked])];
+  const pids = [...new Set([...inWorktree, ...marked])].filter((pid) => !ionsOwn(pid, table));
   if (!pids.length) return [];
   const rows = (await run("ps", ["-o", "pid=,ppid=,etime=,command=", "-p", pids.join(",")])).split("\n");
   const open = await ports(pids);
   return rows
     .map(row)
     .filter((t): t is Task & { ppid: number } => t !== null)
-    .filter((t) => t.pid !== process.pid && t.ppid !== process.pid)
     .map(({ ppid: _p, ...t }) => ({
       ...t,
       ports: open.get(t.pid) ?? [],
@@ -147,6 +180,7 @@ export async function listTasks(worktree: string, chatId: string): Promise<Task[
 
 /** Whether this one process is still the chat's: running in its worktree, or carrying its marker. */
 async function stillTheChats(worktree: string, chatId: string, pid: number): Promise<boolean> {
+  if (ionsOwn(pid, await processTable())) return false;
   const dir = await realpath(worktree).catch(() => worktree);
   const cwd = (await cwds(pid)).get(pid);
   if (cwd && inside(dir, cwd)) return true;

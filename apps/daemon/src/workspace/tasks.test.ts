@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,14 +30,48 @@ const worktree = () => realpathSync(mkdtempSync(join(tmpdir(), "ion-wt-")));
  * A background process an agent's tool call left in `dir` (`cd dir && server &`), its environment carrying the
  * agent's `ION_CHAT`. It's node, not /bin/sleep: macOS hides the environment of its own system binaries.
  */
-function leaveFrom(dir: string, chat: string): number {
+function leaveFrom(dir: string, chat: string | null): number {
   const server = `'${process.execPath}' -e 'setTimeout(() => {}, 30000)'`;
+  const env = { ...process.env };
+  delete env.ION_CHAT;
   const out = execFileSync("sh", ["-c", `cd '${dir}' && { ${server} >/dev/null 2>&1 & echo $!; }`], {
-    env: { ...process.env, ION_CHAT: chat },
+    env: chat ? { ...env, ION_CHAT: chat } : env,
   }).toString();
   const pid = Number(out.trim());
   kids.push(pid);
   return pid;
+}
+
+/** What the fake agent prints: its PID, a helper it started itself, and what its tool call's shell left behind. */
+const AGENT = `
+const { spawn, execFileSync } = require("node:child_process");
+const idle = ["-e", "setTimeout(() => {}, 30000)"];
+const helper = spawn(process.execPath, idle, { stdio: "ignore" });
+const cmd = "'" + process.execPath + "' -e 'setTimeout(() => {}, 30000)' >/dev/null 2>&1 & echo $!";
+const left = Number(String(execFileSync("sh", ["-c", cmd])).trim());
+console.log(JSON.stringify({ agent: process.pid, helper: helper.pid, left }));
+setTimeout(() => {}, 30000);
+`;
+
+/**
+ * An agent as ion runs it, the test process standing in for the daemon: a shell wrapper (like an npm or cmux
+ * shim) that runs the agent, in the worktree, with the chat's marker.
+ */
+async function startAgent(dir: string, chat: string) {
+  const file = join(dir, "agent.cjs");
+  writeFileSync(file, AGENT);
+  const wrapper = spawn("sh", ["-c", `'${process.execPath}' '${file}'; true`], {
+    cwd: dir,
+    env: { ...process.env, ION_CHAT: chat },
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const line = await new Promise<string>((resolve) => wrapper.stdout.once("data", (d) => resolve(String(d))));
+  const pids = {
+    ...(JSON.parse(line) as { agent: number; helper: number; left: number }),
+    wrapper: wrapper.pid!,
+  };
+  kids.push(pids.left, pids.helper, pids.agent, pids.wrapper);
+  return pids;
 }
 
 // The user, 2026-11-18: a preview of the workspace, with background tasks and their PIDs.
@@ -83,7 +117,8 @@ describe("a chat's processes, wherever they run", () => {
   it("never lists another chat's process, or one of yours outside ion", async () => {
     const wt = worktree();
     const theirs = leaveFrom(worktree(), "c12");
-    const yours = leave(worktree());
+    // Task review, 2026-11-19: node, not /bin/sleep (whose environment macOS hides), so this checks the marker.
+    const yours = leaveFrom(worktree(), null);
     await settle();
     const pids = (await listTasks(wt, "c1")).map((t) => t.pid);
     expect(pids).not.toContain(theirs);
@@ -111,6 +146,21 @@ describe("a chat's processes, wherever they run", () => {
     await settle();
     expect((await listTasks(wt, "c1")).map((t) => t.pid)).not.toContain(pid);
     expect((await listTasks(wt, "c2")).map((t) => t.pid)).toContain(theirs);
+  });
+
+  // Task review, 2026-11-19: the real Codex ran as a grandchild of the daemon (under a bash wrapper), carrying
+  // ION_CHAT in the worktree, so it showed as a task and Stop could kill a live run. Below the daemon, only what a
+  // tool call's shell started is the chat's; the agent, its wrapper's children and its helpers are ion's own.
+  it("never lists the agent's own processes, and can't stop them, but lists what its tool calls left", async () => {
+    const wt = worktree();
+    const pids = await startAgent(wt, "c1");
+    await settle();
+    const listed = (await listTasks(wt, "c1")).map((t) => t.pid);
+    expect(listed).toContain(pids.left);
+    for (const own of [pids.agent, pids.helper, pids.wrapper])
+      expect(listed, `pid ${own}`).not.toContain(own);
+    await expect(stopTask(wt, "c1", pids.helper)).rejects.toThrow("That isn't running in this chat");
+    await expect(stopTask(wt, "c1", pids.agent)).rejects.toThrow("That isn't running in this chat");
   });
 
   // Plan 15 review focus 5: the task ended and its PID went to another program; Stop refuses it.
