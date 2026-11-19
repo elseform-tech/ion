@@ -1057,7 +1057,7 @@ button.arow:hover{background:var(--hover)}
 /* a thread an ion started, open beside its chat (like a chat's side panel) */
 .ichat.peek{grid-template-columns:minmax(0,1fr) min(var(--peek-w,420px),calc(100% - 420px))}
 .ichat.peek>:not(.tpeek){grid-column:1}
-.tpeek{grid-column:2;grid-row:1/4;position:relative;display:grid;grid-template-rows:56px minmax(0,1fr) auto;min-height:0;min-width:0;border-left:1px solid var(--line);background:var(--win)}
+.tpeek{grid-column:2;grid-row:1/4;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:56px minmax(0,1fr) auto;min-height:0;min-width:0;border-left:1px solid var(--line);background:var(--win)}
 .tpeek .head{gap:8px;padding:0 10px 0 16px}
 .tpeek .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tpeek .head .muted{color:var(--muted);font-size:12.5px;white-space:nowrap}
