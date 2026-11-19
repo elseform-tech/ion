@@ -120,4 +120,16 @@ describe("listArtifacts", () => {
     expect(await readWorktreeFile(dir, "logo.svg")).toMatchObject({ kind: "text", text: "<svg/>" });
     expect((await readWorktreeFile(dir, "photo.avif")).dataUrl).toMatch(/^data:image\/avif;base64,/);
   });
+
+  // Security review, 2026-11-19: SKIP was checked before isDirectory, so a file named `target`, `.cache` or `venv`
+  // (a person's output) was hidden. Cache names skip only as folders; `.git` skips either way (a worktree's is a file).
+  it("lists a file named like a cache folder, and skips that folder's files", async () => {
+    const dir = worktree();
+    put(dir, "target", "out", at(5));
+    put(dir, "venv/lib.py", "x", at(5));
+    put(dir, "sub/target/a.txt", "x", at(5));
+    put(dir, ".git", "gitdir: /x", at(5));
+    const list = await listArtifacts(dir, since);
+    expect(list.map((a) => a.path)).toEqual(["target"]);
+  });
 });

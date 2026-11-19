@@ -8,7 +8,6 @@ const MAX_ARTIFACTS = 200;
 const MAX_VISITED = 20_000;
 /** Dependency and cache folders, never people's outputs (dist, build and out are listed). */
 const SKIP = new Set([
-  ".git",
   "node_modules",
   ".venv",
   "venv",
@@ -99,15 +98,18 @@ export async function listArtifacts(
 
 type Walk = { dirs: string[]; found: ArtifactInfo[]; from: number; budget: { left: number } };
 
+/** Dependency and cache names are skipped only as folders: a file named `target` is a person's output. */
+const skipDir = (name: string): boolean => name === ".git" || SKIP.has(name);
+
 /** One folder: queue its subfolders, collect its recent files. */
 async function walkDir(worktree: string, rel: string, w: Walk): Promise<void> {
   const entries = await readDir(join(worktree, rel), w.budget.left);
   w.budget.left -= entries.length;
   for (const e of entries) {
     const path = rel ? `${rel}/${e.name}` : e.name;
-    if (SKIP.has(e.name)) continue;
-    if (e.isDirectory()) w.dirs.push(path);
-    else if (e.isFile()) await collect(worktree, path, w);
+    if (e.isDirectory()) {
+      if (!skipDir(e.name)) w.dirs.push(path);
+    } else if (e.isFile() && e.name !== ".git") await collect(worktree, path, w);
   }
 }
 
