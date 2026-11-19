@@ -191,6 +191,8 @@ export const handlers: Handlers = {
     const repo = projectPath(ctx.configFile, id);
     changeConfig(ctx.configFile, (c) => removeProject(c, id));
     for (const c of chats) await ctx.runs.archive(c.chatId, repo);
+    // Its ion is gone: what you queued for it goes too.
+    ctx.queue.clear({ ionId: id });
     // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
     for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
     for (const m of memoryView.list(ctx.db, id))

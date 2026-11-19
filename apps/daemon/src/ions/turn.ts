@@ -147,6 +147,10 @@ export class IonTurns {
   private readonly live = new Map<string, Live>();
   /** Turns asked for and not yet over, per ion (its own and those waiting behind it). */
   private readonly pending = new Map<string, number>();
+  /** Ions whose current turn is starting (finding its agent, its session not yet up: nothing to halt yet). */
+  private readonly starting = new Set<string>();
+  /** You stopped an ion's turn while it was starting: it ends as stopped as soon as it can. */
+  private readonly stopAsked = new Set<string>();
   /** ion is stopping: no turn starts, and nothing more is written. */
   private stopping = false;
 
@@ -178,7 +182,11 @@ export class IonTurns {
   stop(ionId: string): boolean {
     const going = [...this.live.values()].filter((t) => t.ionId === ionId && t.halt);
     for (const t of going) t.halt!(true);
-    return going.length > 0;
+    if (going.length) return true;
+    // Still starting: only this turn ends, never one waiting behind it.
+    if (!this.starting.has(ionId)) return false;
+    this.stopAsked.add(ionId);
+    return true;
   }
 
   /** start_thread for a live turn (ion's MCP server): the thread joins the turn's reply. */
@@ -217,8 +225,19 @@ export class IonTurns {
 
   private async run(ionId: string, text: string, request: string | null): Promise<TurnResult> {
     if (this.stopping) return { reply: NO_AGENT, threads: [] };
+    this.starting.add(ionId);
+    try {
+      return await this.think(ionId, text, request);
+    } finally {
+      this.starting.delete(ionId);
+      this.stopAsked.delete(ionId);
+    }
+  }
+
+  private async think(ionId: string, text: string, request: string | null): Promise<TurnResult> {
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
+    if (this.stopAsked.delete(ionId)) return { reply: STOPPED, threads: [] };
     const h = brain && getHarness(brain.harness);
     if (!brain || !h || this.stopping) return { reply: NO_AGENT, threads: [] };
     const turnId = `turn_${randomUUID()}`;
@@ -358,7 +377,11 @@ export class IonTurns {
       timer = setTimeout(() => stop(), this.d.turnMs ?? ION_TURN_MS);
       // ion stopping ends the turn as its limit would.
       const live = this.live.get(turnId);
-      if (live) live.halt = stop;
+      if (live) {
+        live.halt = stop;
+        this.starting.delete(live.ionId);
+        if (this.stopAsked.delete(live.ionId)) stop(true);
+      }
       if (this.stopping) stop();
     });
     // A session that starts after the limit is closed as soon as it does.

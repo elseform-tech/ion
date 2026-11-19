@@ -364,4 +364,36 @@ describe("an ion's turn", () => {
     // Nothing to stop: nothing happens.
     expect(t.stop("storefront")).toBe(false);
   }, 10_000);
+
+  // Task review, 2026-11-19: Esc twice while an ion's turn was still finding its agent did nothing (and said ok).
+  it("stop before the session starts ends that turn as stopped, and not the one behind it", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let first = true;
+    const slowAgents = async () => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+      return agents();
+    };
+    current = new IonTurns({
+      ...{ store, db, configFile: join(home, "config.toml"), dataDir: join(home, "data") },
+      ...{ grants, agents: slowAgents, startThread, home },
+      mcpUrl: () => `${base}/mcp`,
+      gateUrl: () => `${base}/gate`,
+    });
+    made.push(current);
+    const t = current;
+    const going = t.turn("storefront", "hello");
+    const next = t.turn("storefront", "hello");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(t.stop("storefront")).toBe(true);
+    release();
+    expect((await going).reply).toBe(STOPPED);
+    expect((await next).reply).toBe("This is storefront.");
+    expect(onIon("storefront").filter((e) => e.type === EV.toolStarted)).toHaveLength(1);
+  }, 10_000);
 });

@@ -108,10 +108,10 @@ export class Ions {
     return this.d.turns.busy?.(ionId) ?? false;
   }
 
-  /** Esc twice: stops the ion's turn; it says it stopped. */
-  stopTurn(ionId: string): void {
+  /** Esc twice: stops the ion's turn (it says it stopped); whether one was going. */
+  stopTurn(ionId: string): boolean {
     if (!this.knows(ionId)) throw new UserError(`Unknown ion: ${ionId}`);
-    this.d.turns.stop?.(ionId);
+    return this.d.turns.stop?.(ionId) ?? false;
   }
 
   /** `fn` hears each time one of an ion's turns ends, once its line is said. */

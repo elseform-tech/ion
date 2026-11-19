@@ -234,7 +234,7 @@ export type Commands = {
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
   "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
   /** Stops the ion's turn (Esc twice): it says it stopped, and what's queued goes on. */
-  "ion.stop": { args: { ionId: string }; result: { ok: true } };
+  "ion.stop": { args: { ionId: string }; result: { ok: true; stopped: boolean } };
   /** What waits to go to a chat or an ion, oldest first. */
   "queue.list": { args: { to: QueueTarget }; result: QueuedInfo[] };
   /** Queues a message (at most 10 wait per chat or ion); it goes out when the work ends. */
@@ -361,7 +361,14 @@ export type QueueTarget = { chatId: string } | { ionId: string };
 export type AskBrain = Pick<Commands["ask"]["args"], "harness" | "model" | "effort" | "access">;
 
 /** A message waiting to go out. */
-export type QueuedInfo = { queueId: string; text: string; brain: AskBrain; addedAt: string };
+export type QueuedInfo = {
+  queueId: string;
+  text: string;
+  brain: AskBrain;
+  addedAt: string;
+  /** Why it couldn't go out, when its last try failed (it holds the queue until you send it now, edit or remove it). */
+  why?: string;
+};
 
 export type Command = keyof Commands;
 export const COMMANDS = [

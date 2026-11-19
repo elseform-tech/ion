@@ -46,7 +46,8 @@
     "decision.forgotten",
     "queue.added",
     "queue.removed",
-    "queue.sent"
+    "queue.sent",
+    "queue.failed"
   ],
   "commands": [
     "status",

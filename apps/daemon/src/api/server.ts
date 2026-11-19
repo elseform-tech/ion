@@ -72,11 +72,14 @@ export async function startServer(opts: {
   // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
   ctx.ions.watch();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
-  // Messages you queued while ion was stopped go out now, to each chat or ion that isn't working.
-  ctx.queue.resume();
   const stopRoutines = ctx.routines.start();
   const stopSuggestions = ctx.suggestions.start();
-  void ctx.decisions.resume().catch(() => {});
+  // Your answers still waiting go in first; then what you queued while ion was stopped, to each chat or ion that
+  // isn't working.
+  void ctx.decisions
+    .resume()
+    .catch(() => {})
+    .then(() => ctx.queue.resume());
   return {
     port,
     token: auth.token,
@@ -205,6 +208,8 @@ function promptQueue(c: Omit<Ctx, "queue">): PromptQueue {
       busy: (chatId) => runs.busy(chatId),
       stop: (chatId) => runs.stopChat(chatId),
       onEnded: (fn) => runs.onEnded(fn),
+      answersWaiting: (chatId) => c.decisions.hasWaiting(chatId),
+      dropQuestions: (chatId) => c.needs.supersedeChat(chatId),
     },
   });
   late.ctx = { ...c, queue };

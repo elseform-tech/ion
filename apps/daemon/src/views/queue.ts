@@ -15,9 +15,10 @@ type Row = {
   brain: string;
   state: State;
   addedAt: string;
+  why: string | null;
 };
 
-const SELECT = `SELECT queue_id AS queueId, kind, target, text, brain, state, added_at AS addedAt FROM view_queue`;
+const SELECT = `SELECT queue_id AS queueId, kind, target, text, brain, state, added_at AS addedAt, why FROM view_queue`;
 
 const targetOf = (to: QueueTarget): ["chat" | "ion", string] =>
   "chatId" in to ? ["chat", to.chatId] : ["ion", to.ionId];
@@ -30,6 +31,7 @@ function toRow(r: Row): QueuedRow {
     addedAt: r.addedAt,
     to: r.kind === "chat" ? { chatId: r.target } : { ionId: r.target },
     state: r.state,
+    ...(r.why ? { why: r.why } : {}),
   };
 }
 
@@ -47,18 +49,20 @@ export const queueView: View & {
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_queue (
       queue_id TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, text TEXT NOT NULL,
-      brain TEXT NOT NULL, state TEXT NOT NULL, added_at TEXT NOT NULL)`);
+      brain TEXT NOT NULL, state TEXT NOT NULL, added_at TEXT NOT NULL, why TEXT)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_queue");
   },
   apply(db, e: IonEvent) {
-    const d = e.data as { queueId: string; to: QueueTarget; text: string; brain: AskBrain };
+    const d = e.data as { queueId: string; to: QueueTarget; text: string; brain: AskBrain; why?: string };
     if (e.type === EV.queueAdded) {
       const [kind, target] = targetOf(d.to);
       db.prepare(
         "INSERT OR IGNORE INTO view_queue (queue_id, kind, target, text, brain, state, added_at) VALUES (?, ?, ?, ?, ?, 'waiting', ?)",
       ).run(d.queueId, kind, target, d.text, JSON.stringify(d.brain), e.ts);
+    } else if (e.type === EV.queueFailed) {
+      db.prepare("UPDATE view_queue SET why = ? WHERE queue_id = ?").run(String(d.why), d.queueId);
     } else if (e.type === EV.queueSent || e.type === EV.queueRemoved) {
       const state = e.type === EV.queueSent ? "sent" : "removed";
       db.prepare("UPDATE view_queue SET state = ? WHERE queue_id = ? AND state = 'waiting'").run(

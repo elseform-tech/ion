@@ -10,27 +10,35 @@ import {
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
+import { needsView } from "../views/needs.js";
 import { type QueuedRow, queueView } from "../views/queue.js";
 
 /** At most this many wait per chat or ion. */
 const MAX_WAITING = 10;
+/** What ask says when the chat is running: the message just waits for the run's end. */
+const BUSY = "This chat is already running";
 
 export type QueueDeps = {
   store: EventStore;
   db: Db;
-  /** A chat's runs: a message goes out as ask does; whether it's working; Esc twice; when its run ends. */
+  /**
+   * A chat's runs: a message goes out as ask does; whether it's working; Esc twice; when its run ends; whether your
+   * answers to its questions wait to go in (they go first); closing its open questions (Send now goes anyway).
+   */
   chats: {
     ask(args: Commands["ask"]["args"]): unknown;
     busy(chatId: string): boolean;
     stop(chatId: string): Promise<void>;
     onEnded(fn: (chatId: string) => void): void;
+    answersWaiting(chatId: string): boolean;
+    dropQuestions(chatId: string): void;
   };
-  /** The ions: your message to one; whether it's thinking; Esc twice; when its turn ends. */
+  /** The ions: whether one exists; your message to one; whether it's thinking; Esc twice; when its turn ends. */
   ions: {
     knows(ionId: string): boolean;
     message(ionId: string, text: string): Promise<void>;
     busy(ionId: string): boolean;
-    stopTurn(ionId: string): void;
+    stopTurn(ionId: string): boolean;
     onTurnEnd(fn: (ionId: string) => void): void;
   };
 };
@@ -43,7 +51,9 @@ const streamOf = (to: QueueTarget): string => ("chatId" in to ? to.chatId : `ion
 /**
  * Your next messages to a chat or an ion, while it works (Plan 16). Each waits as events (so it survives ion
  * stopping) and goes out, oldest first, when the chat's run ends (however it ended) or the ion's turn does: one at
- * a time, with the brain picked when it was queued. Send now stops the work and goes next.
+ * a time, with the brain picked when it was queued. Send now stops the work and goes next. A chat's queue waits
+ * while the agent's question is open and while your answers wait to go in; one that couldn't go out says why and
+ * holds its queue until you send it now, edit it or remove it.
  */
 export class PromptQueue {
   /** Messages going out now (until the chat's run is queued, or the ion has heard it): no longer yours to edit. */
@@ -52,23 +62,27 @@ export class PromptQueue {
   private readonly busyKeys = new Set<string>();
   /** The message Send now picked to go next, per chat or ion. */
   private readonly next = new Map<string, string>();
+  /** Send now while one was going out: the work it starts is stopped once it has started. */
+  private readonly stopAfter = new Set<string>();
 
   constructor(private readonly d: QueueDeps) {
     const drain = (to: QueueTarget) => void this.drain(to).catch(() => {});
     d.chats.onEnded((chatId) => drain({ chatId }));
     d.ions.onTurnEnd((ionId) => drain({ ionId }));
-    // A chat archived with messages waiting: they go with it.
     d.store.onAppend((e) => {
-      if (e.type === EV.chatArchived && e.chatId) this.clear({ chatId: e.chatId });
+      const chatId = e.chatId;
+      if (!chatId || chatId.startsWith("ion:")) return;
+      // A chat archived with messages waiting: they go with it.
+      if (e.type === EV.chatArchived) this.clear({ chatId });
+      // A question answered (or closed): the queue goes on, after your answer has gone in or taken its turn.
+      else if (e.type === EV.needResolved) queueMicrotask(() => drain({ chatId }));
     });
   }
 
   list(to: QueueTarget): QueuedInfo[] {
-    return queueView.waiting(this.d.db, to).map(({ queueId, text, brain, addedAt }) => ({
-      queueId,
-      text,
-      brain,
-      addedAt,
+    return queueView.waiting(this.d.db, to).map(({ queueId, text, brain, addedAt, why }) => ({
+      ...{ queueId, text, brain, addedAt },
+      ...(why ? { why } : {}),
     }));
   }
 
@@ -81,19 +95,21 @@ export class PromptQueue {
       throw new UserError("That's 10 waiting already");
     const queueId = `queue_${randomUUID()}`;
     this.append(to, EV.queueAdded, { queueId, to, text: t, brain: brainOf(brain) });
-    if (!this.working(to)) void this.drain(to).catch(() => {});
+    this.wake(to);
     return queueId;
   }
 
   remove(queueId: string): void {
     const q = this.waiting(queueId);
     this.append(q.to, EV.queueRemoved, { queueId });
+    this.wake(q.to);
   }
 
   /** Edit: its text back for the box, and out of the queue; refused once it went (or is going) out. */
   take(queueId: string): { text: string } {
     const q = this.waiting(queueId);
     this.append(q.to, EV.queueRemoved, { queueId });
+    this.wake(q.to);
     return { text: q.text };
   }
 
@@ -102,36 +118,77 @@ export class PromptQueue {
     const q = this.waiting(queueId);
     const key = keyOf(q.to);
     this.next.set(key, queueId);
-    if (!this.working(q.to)) return this.drain(q.to);
-    if ("chatId" in q.to) await this.d.chats.stop(q.to.chatId);
-    else this.d.ions.stopTurn(q.to.ionId);
+    if (this.busyKeys.has(key)) return void this.stopAfter.add(key);
+    if (this.working(q.to)) return this.stop(q.to);
+    return this.drain(q.to);
   }
 
   /** At the start: what waits for a chat or an ion that isn't working goes out (ion stopped while it waited). */
   resume(): void {
-    for (const to of queueView.targets(this.d.db)) void this.drain(to).catch(() => {});
+    for (const to of queueView.targets(this.d.db)) this.wake(to);
+  }
+
+  /** Everything waiting for a chat or an ion goes (its chat archived, its project removed). */
+  clear(to: QueueTarget): void {
+    for (const q of queueView.waiting(this.d.db, to))
+      this.append(to, EV.queueRemoved, { queueId: q.queueId });
+    this.next.delete(keyOf(to));
   }
 
   /** Sends the next message (Send now's pick, else the oldest) when the chat or ion is free; one at a time. */
   async drain(to: QueueTarget): Promise<void> {
     const key = keyOf(to);
     if (this.busyKeys.has(key) || this.working(to)) return;
-    const q = this.pick(to);
+    const q = this.ready(to);
     if (!q) return;
     this.busyKeys.add(key);
     this.sending.add(q.queueId);
     try {
       await this.send(q);
+    } catch (e) {
+      // A run that just started meanwhile: it waits for that run's end. Anything else: it says why, and holds.
+      if (!(e instanceof UserError && e.message === BUSY)) this.failed(q, e);
     } finally {
       this.sending.delete(q.queueId);
       this.busyKeys.delete(key);
     }
+    if (this.stopAfter.delete(key)) await this.stop(to);
   }
 
-  private pick(to: QueueTarget): QueuedRow | undefined {
+  private wake(to: QueueTarget): void {
+    if (!this.working(to)) void this.drain(to).catch(() => {});
+  }
+
+  private stop(to: QueueTarget): Promise<void> {
+    if ("chatId" in to) return this.d.chats.stop(to.chatId);
+    this.d.ions.stopTurn(to.ionId);
+    return Promise.resolve();
+  }
+
+  /**
+   * The message to send now, or none: an ion that's gone has its queue cleared; a chat waits for your answers, for
+   * its open question and after a failed send, unless you picked this one with Send now (its question is closed).
+   */
+  private ready(to: QueueTarget): QueuedRow | null {
+    if ("ionId" in to && !this.d.ions.knows(to.ionId)) {
+      this.clear(to);
+      return null;
+    }
     const waiting = queueView.waiting(this.d.db, to);
-    const chosen = this.next.get(keyOf(to));
-    return waiting.find((q) => q.queueId === chosen) ?? waiting[0];
+    const chosen = waiting.find((q) => q.queueId === this.next.get(keyOf(to)));
+    const q = chosen ?? waiting[0];
+    return q && !this.held(to, waiting, chosen !== undefined) ? q : null;
+  }
+
+  /** Whether the queue waits (see ready); a chat's open question is closed when Send now goes anyway. */
+  private held(to: QueueTarget, waiting: QueuedRow[], chosen: boolean): boolean {
+    const failed = !chosen && waiting.some((w) => w.why);
+    if (!("chatId" in to)) return failed;
+    if (this.d.chats.answersWaiting(to.chatId)) return true;
+    const asking = needsView.open(this.d.db, to.chatId, true).some((n) => n.kind === "ask");
+    if (failed || (asking && !chosen)) return true;
+    if (asking) this.d.chats.dropQuestions(to.chatId);
+    return false;
   }
 
   /**
@@ -152,6 +209,13 @@ export class PromptQueue {
   private sent(q: QueuedRow, key: string): void {
     if (this.next.get(key) === q.queueId) this.next.delete(key);
     this.append(q.to, EV.queueSent, { queueId: q.queueId });
+  }
+
+  private failed(q: QueuedRow, e: unknown): void {
+    const key = keyOf(q.to);
+    if (this.next.get(key) === q.queueId) this.next.delete(key);
+    const why = (e instanceof Error && e.message) || "It couldn't be sent";
+    this.append(q.to, EV.queueFailed, { queueId: q.queueId, why });
   }
 
   private working(to: QueueTarget): boolean {
@@ -176,12 +240,6 @@ export class PromptQueue {
     const chat = chatsView.list(this.d.db).find((c) => c.chatId === to.chatId);
     if (!chat) throw new UserError(`Unknown chat: ${to.chatId}`);
     if (chat.archived) throw new UserError("That chat is archived");
-  }
-
-  private clear(to: QueueTarget): void {
-    for (const q of queueView.waiting(this.d.db, to))
-      this.append(to, EV.queueRemoved, { queueId: q.queueId });
-    this.next.delete(keyOf(to));
   }
 
   private append(to: QueueTarget, type: EventType, data: Record<string, unknown>): void {

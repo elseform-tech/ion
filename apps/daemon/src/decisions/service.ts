@@ -265,6 +265,11 @@ export class Decisions {
     else if (started) this.followUps.started(started, decisionId);
   }
 
+  /** Whether the chat has your answers waiting to go in (they go before anything you queued). */
+  hasWaiting(chatId: string): boolean {
+    return this.followUps.waiting(chatId);
+  }
+
   /** After a restart: answers recorded but never sent into their chat (it was busy when ion stopped) go now. */
   async resume(): Promise<void> {
     for (const chat of chatsView.list(this.d.db))

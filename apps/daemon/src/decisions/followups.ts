@@ -57,6 +57,11 @@ export class FollowUps {
     this.queue.set(chatId, list);
   }
 
+  /** Whether the chat has answers waiting to go in. */
+  waiting(chatId: string): boolean {
+    return (this.queue.get(chatId)?.length ?? 0) > 0;
+  }
+
   started(runId: string, decisionId?: string): void {
     if (decisionId) this.runs.set(runId, decisionId);
   }

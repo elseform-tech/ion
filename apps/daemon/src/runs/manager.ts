@@ -346,7 +346,7 @@ export class RunManager {
    * for a project already out of your config (being removed).
    */
   async archive(chatId: string, repo?: string): Promise<void> {
-    if (this.runOf(chatId)) throw new UserError("Stop the chat's run first");
+    if (this.busy(chatId)) throw new UserError("Stop the chat's run first");
     const chat = chatFor(this.db, { chatId, text: "" });
     const worktree = chatsView.worktree(this.db, chatId);
     if (worktree) await removeWorktree(repo ?? projectPath(this.ctx.configFile, chat.projectId), worktree);

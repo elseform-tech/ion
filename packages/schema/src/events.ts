@@ -52,6 +52,7 @@ export const DAEMON_EVENT_TYPES = [
   "queue.added",
   "queue.removed",
   "queue.sent",
+  "queue.failed",
 ] as const;
 
 export const EVENT_TYPES = [...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES] as const;
@@ -102,6 +103,7 @@ export const EV = {
   queueAdded: "queue.added",
   queueRemoved: "queue.removed",
   queueSent: "queue.sent",
+  queueFailed: "queue.failed",
 } as const satisfies Record<string, EventType>;
 
 export type AdapterEventType = (typeof ADAPTER_EVENT_TYPES)[number];
@@ -309,6 +311,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "queue.removed": z.object({ queueId: z.string().min(1) }),
   /** It went out: as the chat's next message, or to the ion. */
   "queue.sent": z.object({ queueId: z.string().min(1) }),
+  /** It couldn't go out (the agent signed out…): it waits, saying why, and holds the queue until you deal with it. */
+  "queue.failed": z.object({ queueId: z.string().min(1), why: z.string().min(1) }),
   /**
    * A routine's time came (by "schedule", for the slot `due`) or you ran it now (by "you", due null): the thread it
    * started, why it couldn't start, or that you skipped this one. One per slot: missed slots run once, as the last.

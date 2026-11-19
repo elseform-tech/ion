@@ -6,6 +6,7 @@ import { addProject, DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { UserError } from "../api/errors.js";
+import { Decisions } from "../decisions/index.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
@@ -25,17 +26,20 @@ let queue: PromptQueue;
 let configFile: string;
 let dataDir: string;
 let made: RunManager[] = [];
+let needs: NeedsService;
+let decisions: Decisions;
 
 const fake = { harness: "fake" } as const;
 
 function manager(): RunManager {
-  const r = new RunManager(store, { configFile, dataDir, random: () => 0 }, new NeedsService(store, db), db);
+  const r = new RunManager(store, { configFile, dataDir, random: () => 0 }, needs, db);
   made.push(r);
   return r;
 }
 
 /** An ion that thinks one turn at a time; each turn waits until the test ends it. */
 function fakeIons() {
+  const known = new Set(["chief"]);
   const heard: string[] = [];
   const ends: ((ionId: string) => void)[] = [];
   const open: (() => void)[] = [];
@@ -45,7 +49,7 @@ function fakeIons() {
     for (const fn of ends) fn(ionId);
   };
   const ions: QueueDeps["ions"] = {
-    knows: (id) => id === "chief",
+    knows: (id) => known.has(id),
     message: (_id, text) => {
       heard.push(text);
       return new Promise<void>((r) => open.push(r));
@@ -54,10 +58,11 @@ function fakeIons() {
     stopTurn: (id) => {
       stopped.push(id);
       end(id);
+      return true;
     },
     onTurnEnd: (fn) => void ends.push(fn),
   };
-  return { ions, heard, end, stopped };
+  return { ions, heard, end, stopped, known };
 }
 
 function makeQueue(ions = fakeIons().ions): PromptQueue {
@@ -69,6 +74,8 @@ function makeQueue(ions = fakeIons().ions): PromptQueue {
       busy: (id) => runs.busy(id),
       stop: (id) => runs.stopChat(id),
       onEnded: (fn) => runs.onEnded(fn),
+      answersWaiting: (id) => decisions.hasWaiting(id),
+      dropQuestions: (id) => needs.supersedeChat(id),
     },
     ions,
   });
@@ -91,7 +98,12 @@ beforeEach(() => {
   saveUserConfig(configFile, addProject(DEFAULT_CONFIG, repo));
   db = openDb(":memory:");
   store = new EventStore(db, allViews);
+  needs = new NeedsService(store, db);
   runs = manager();
+  decisions = new Decisions({
+    ...{ store, db, needs },
+    followUp: async (chatId, m) => (await runs.ask({ chatId, text: m.text, ...fake })).runId,
+  });
   makeQueue();
 });
 
@@ -180,6 +192,7 @@ describe("the prompt queue", () => {
     // A new daemon on the same events: the views rebuild from the log, the run ion stopped is closed.
     store = new EventStore(db, allViews);
     store.rebuildViews();
+    needs = new NeedsService(store, db);
     runs = manager();
     makeQueue();
     expect(queue.list({ chatId })).toMatchObject([
@@ -253,5 +266,95 @@ describe("the prompt queue", () => {
     expect(queue.list({ ionId: "chief" })).toEqual([]);
     expect(() => queue.take(third)).toThrow(new UserError("Already sent"));
     expect(() => queue.add({ ionId: "nobody" }, "hi", {})).toThrow(UserError);
+  });
+
+  // Task review, 2026-11-19: a run that ends by asking you a question got the queued message as its "answer", and
+  // your real answer waited behind it. The queue holds while a question is open, and your answer goes first.
+  it("a run that ends by asking keeps the queue until answered, and the answer goes before the queued message", async () => {
+    const { chatId, runId } = await working();
+    const needId = needs.raiseAsk({
+      chatId,
+      runId,
+      question: "Which one?",
+      choices: [
+        { label: "Alpha", consequence: "a" },
+        { label: "Beta", consequence: "b" },
+      ],
+    });
+    queue.add({ chatId }, "hello queued", fake);
+    await runs.interrupt(runId);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(sent(chatId)).toEqual(["slow"]);
+    expect(queue.list({ chatId })).toHaveLength(1);
+    await decisions.answer(needId, 1);
+    await until(() => sent(chatId).length === 3);
+    await finishedAll(chatId);
+    expect(sent(chatId)[1]).toContain("Alpha");
+    expect(sent(chatId)[2]).toBe("hello queued");
+  });
+
+  // Task review, 2026-11-19: a send that failed (the agent signed out) stalled the queue silently. It says why, and
+  // the queue waits until you send it now, edit it or remove it.
+  it("a send that fails says why and holds the queue until you deal with it", async () => {
+    const { chatId, runId } = await working();
+    await runs.interrupt(runId);
+    await finishedAll(chatId);
+    process.env.ION_FAKE_SIGNED_OUT = "1";
+    try {
+      // A model the agent wasn't checked for yet: it's asked again, and it's signed out.
+      const failed = queue.add({ chatId }, "hello one", { harness: "fake", model: "other" });
+      const why = await until(() => queue.list({ chatId })[0]?.why);
+      expect(why).toBe("Fake isn't signed in. Run: ion fake login");
+      expect(store.read({ chatId }).some((e) => e.type === EV.queueFailed)).toBe(true);
+      delete process.env.ION_FAKE_SIGNED_OUT;
+      queue.add({ chatId }, "hello two", fake);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(sent(chatId)).toEqual(["slow"]);
+      queue.remove(failed);
+      await until(() => sent(chatId).length === 2);
+      await finishedAll(chatId);
+      expect(sent(chatId)).toEqual(["slow", "hello two"]);
+    } finally {
+      delete process.env.ION_FAKE_SIGNED_OUT;
+    }
+  });
+
+  // Task review, 2026-11-19: Send now while a queued message was still being sent (its run not started yet) didn't
+  // stop anything, so the picked one waited behind a 30-second run.
+  it("Send now while one is being sent stops it once it starts, and goes next", async () => {
+    const { chatId, runId } = await working();
+    await runs.interrupt(runId);
+    await finishedAll(chatId);
+    queue.add({ chatId }, "slow again", fake);
+    const two = queue.add({ chatId }, "hello two", fake);
+    await queue.sendNow(two);
+    await until(() => sent(chatId).length === 3, 10_000);
+    await finishedAll(chatId);
+    expect(sent(chatId)).toEqual(["slow", "slow again", "hello two"]);
+    const statuses = store
+      .read({ chatId })
+      .filter((e) => e.type === EV.runFinished)
+      .map((e) => (e.data as { status: string }).status);
+    expect(statuses).toEqual(["interrupted", "interrupted", "done"]);
+  });
+
+  // Task review, 2026-11-19: an ion whose project was removed kept its queue, and the next one was lost silently.
+  it("an ion that's gone has its queue cleared, not sent", async () => {
+    const ion = fakeIons();
+    makeQueue(ion.ions);
+    ion.known.add("storefront");
+    void ion.ions.message("storefront", "first");
+    queue.add({ ionId: "storefront" }, "second", {});
+    ion.known.delete("storefront");
+    ion.end("storefront");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ion.heard).toEqual(["first"]);
+    expect(queue.list({ ionId: "storefront" })).toEqual([]);
+    expect(store.read({ chatId: "ion:storefront" }).filter((e) => e.type === EV.queueRemoved)).toHaveLength(
+      1,
+    );
+    queue.add({ ionId: "chief" }, "x", {});
+    queue.clear({ ionId: "chief" });
+    expect(queue.list({ ionId: "chief" })).toEqual([]);
   });
 });
