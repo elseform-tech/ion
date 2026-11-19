@@ -271,7 +271,18 @@ export class Ions {
     const reply = this.lastReply(chat.chatId);
     const title = trimEnd(chat.title);
     const said = await this.think(reportPrompt(chat.title, reply, status));
-    this.say(projectId, reportOf(said) ?? plainReport(title, status, reply));
+    const text = reportOf(said) ?? plainReport(title, status, reply);
+    this.say(projectId, text);
+    // You asked ion chief: it passes the answer on, under the thread's line in its chat.
+    if (this.chiefStarted(chat.chatId)) this.say("chief", text);
+  }
+
+  /** Whether ion chief started this thread (a threads card of its names it). */
+  private chiefStarted(chatId: string): boolean {
+    return this.d.store.read({ chatId: "ion:chief" }).some((e) => {
+      const card = e.type === EV.ionSaid ? (e.data as { card?: IonCard }).card : undefined;
+      return card?.kind === "threads" && card.threads.some((t) => t.chatId === chatId);
+    });
   }
 
   /** The agent's last whole message in a chat ("" when it said nothing). */

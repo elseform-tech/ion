@@ -381,6 +381,20 @@ describe("Ions", () => {
     expect(prompt).toContain('source="what was asked">\nFix the cart');
   });
 
+  // Real run on Grok, 2026-11-19: you asked ion chief, it routed to the project's ion, and the answer showed only
+  // in that ion's chat. ion chief passes on what came of a thread it started.
+  it("tells you in ion chief's chat too when ion chief asked for the thread", async () => {
+    const i = ions();
+    i.watch();
+    quick.mockResolvedValueOnce(
+      JSON.stringify({ route: [{ projectId: "storefront", brief: "Fix the cart" }] }),
+    );
+    await i.message("chief", "fix the cart in storefront");
+    end("done", "Fixed the cart total.");
+    await vi.waitFor(() => expect(said("chief").at(-1)).toEqual({ text: "Fixed the cart total." }));
+    expect(last()).toEqual({ text: "Fixed the cart total." });
+  });
+
   it("passes on the agent's own reply when its model can't answer, with no 'title: done'", async () => {
     const i = ions();
     i.watch();
