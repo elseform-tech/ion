@@ -309,4 +309,3 @@ describe("Composer", () => {
     expect(call).toHaveBeenCalledWith("run.interrupt", { runId: "r9" });
   });
 });
-
