@@ -160,4 +160,6 @@ function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
  * absolute path), or a start at your home ("~", $HOME). Plain globs (*, **) stay: they can't leave the folder.
  */
 const climbs = (req: ApprovalRequest) =>
-  [...strings(req.input)].some((v) => v.includes("..") || /[{}]/.test(v) || /^~|\$\{?HOME/.test(v));
+  [...strings(req.input)].some(
+    (v) => v.includes("..") || /[{}]/.test(v) || v.startsWith("~") || /\$\{?HOME/.test(v),
+  );
