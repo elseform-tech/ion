@@ -1,6 +1,7 @@
 import type { FilePreview, TaskInfo } from "@ion/schema";
 import { execFile } from "node:child_process";
-import { open, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, realpath } from "node:fs/promises";
 import { extname, isAbsolute, join, sep } from "node:path";
 import { UserError } from "../api/errors.js";
 
@@ -96,13 +97,21 @@ const IMAGES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-/** At most `max` bytes of a file, however big it has grown since it was checked. */
-async function readAtMost(path: string, max: number): Promise<Buffer> {
-  const f = await open(path, "r");
+/**
+ * A plain file's bytes, at most `max`: opened once (never following a link, never waiting on a pipe), then checked
+ * and read through that same handle, so nothing can be swapped in between.
+ */
+async function readPlain(path: string, max: number): Promise<{ bytes: Buffer; size: number }> {
+  const f = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => {
+    throw new UserError("Can't preview this file");
+  });
   try {
+    const st = await f.stat();
+    if (!st.isFile()) throw new UserError("Can't preview this file");
+    if (st.size > max) throw new UserError("Too big to preview");
     const buf = Buffer.alloc(max);
     const { bytesRead } = await f.read(buf, 0, max, 0);
-    return buf.subarray(0, bytesRead);
+    return { bytes: buf.subarray(0, bytesRead), size: st.size };
   } finally {
     await f.close();
   }
@@ -113,11 +122,7 @@ export async function readWorktreeFile(worktree: string, rel: string): Promise<F
   const dir = await realpath(worktree);
   const real = isAbsolute(rel) ? null : await realpath(join(dir, rel)).catch(() => null);
   if (!real || !inside(dir, real)) throw new UserError("That file isn't in this chat");
-  const st = await stat(real);
-  if (!st.isFile()) throw new UserError("Can't preview this file");
-  if (st.size > MAX) throw new UserError("Too big to preview");
-  const size = st.size;
-  const bytes = await readAtMost(real, MAX);
+  const { bytes, size } = await readPlain(real, MAX);
   const ext = extname(real).toLowerCase();
   const image = IMAGES[ext];
   if (image)
