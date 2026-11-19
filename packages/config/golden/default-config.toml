@@ -1,5 +1,4 @@
 projects = []
-debug = false
 
 [ion]
 quick = "claude-code"

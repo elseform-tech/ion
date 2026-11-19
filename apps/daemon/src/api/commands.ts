@@ -88,8 +88,8 @@ export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
-  "harnesses.list": async (_a, ctx) => {
-    const listed = listedHarnessIds(loadUserConfig(ctx.configFile).config.debug);
+  "harnesses.list": async () => {
+    const listed = listedHarnessIds();
     return (await harnessInfos.list()).filter((h) => listed.includes(h.id));
   },
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),

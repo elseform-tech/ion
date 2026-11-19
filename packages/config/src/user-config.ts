@@ -104,8 +104,6 @@ const UserConfigSchema = z.looseObject({
       max_runs: z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]).default("auto"),
     })
     .default({ max_runs: "auto" }),
-  /** True: the app lists the test agent (like ION_DEBUG=1). */
-  debug: z.boolean().default(false),
   notifications: z
     .looseObject({
       /** One message from ion chief a day: what finished, what needs you. */

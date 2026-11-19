@@ -107,7 +107,6 @@ describe("a project's profile", () => {
 // The user, 2026-11-19: Settings (General, Notifications) are kept in your config.
 describe("general and notification settings", () => {
   it("has defaults, and refuses a bad time or a count outside 1-32", () => {
-    expect(DEFAULT_CONFIG.debug).toBe(false);
     expect(DEFAULT_CONFIG.notifications.briefing).toEqual({ on: true, at: "08:30" });
     expect(DEFAULT_CONFIG.notifications.quiet).toEqual({ on: true, from: "22:00", to: "08:00" });
     const file = join(mkdtempSync(join(tmpdir(), "ion-cfg-")), "config.toml");

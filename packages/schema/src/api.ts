@@ -126,7 +126,6 @@ export type NotifyLevel = "all" | "needs" | "digest" | "muted";
 export type SettingsInfo = IonSettings & {
   access: "auto" | "full";
   maxRuns: "auto" | number;
-  debug: boolean;
   notifications: {
     briefing: { on: boolean; at: string };
     quiet: { on: boolean; from: string; to: string };
@@ -136,7 +135,7 @@ export type SettingsInfo = IonSettings & {
 };
 
 /** What Settings changes: only the given fields; notifications by part. */
-export type SettingsPatch = Partial<Pick<SettingsInfo, "access" | "maxRuns" | "debug">> & {
+export type SettingsPatch = Partial<Pick<SettingsInfo, "access" | "maxRuns">> & {
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
