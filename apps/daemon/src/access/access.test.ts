@@ -290,6 +290,15 @@ describe("harnessRunner for ion's own thinking", () => {
       "Unknown harness: nope",
     );
   });
+
+  // Review, 2026-11-19: when [ion] quick's agent isn't ready, ion thinks on another one.
+  it("thinks on the agent it's given instead of [ion] quick", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-quick-")), "config.toml");
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "nope" } });
+    const said = await harnessRunner(configFile, "quick")("hello", new AbortController().signal, "fake");
+    expect(said).toBe("Hi from the fake harness.");
+  });
 });
 
 // Plan 06: Grok's gate hook lives in the worktree; in Auto, nothing may touch it.

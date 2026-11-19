@@ -134,11 +134,101 @@ describe("a project's ion thinks", () => {
     });
   });
 
-  it("says it couldn't think when its model fails, and starts nothing", async () => {
-    quick.mockRejectedValueOnce(new Error("down"));
+  // Review, 2026-11-19: Settings shows a project's agent as its own or its last chat's, and the model and effort set
+  // there were dropped unless the agent had been picked explicitly.
+  it("runs its threads on the model and effort set for the agent Settings shows (its last chat's)", async () => {
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [
+        { id: "storefront", path: "/p/storefront", starred: false, model: "grok-code", effort: "high" },
+      ],
+    });
+    store.append({
+      chatId: "c1",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "Earlier", projectId: "storefront" },
+    });
+    store.append({
+      chatId: "c1",
+      runId: "r0",
+      origin: "daemon",
+      type: EV.runStarted,
+      data: { harness: "grok-build", model: "grok-code-fast", effort: null, authMethod: null },
+    });
+    await ions().message("storefront", "Fix the cart");
+    expect(ask.mock.calls[0]![0]).toMatchObject({
+      harness: "grok-build",
+      model: "grok-code",
+      effort: "high",
+    });
+  });
+
+  // Review, 2026-11-19: a project ion whose model is out of reach said "I couldn't reach my model" forever and
+  // started nothing; now it starts a thread with your own words.
+  it.each([
+    ["fails", () => quick.mockRejectedValueOnce(new Error("down"))],
+    ["answers junk", () => quick.mockResolvedValueOnce("sure!")],
+  ])("starts a thread with your own words when its model %s", async (_how, arrange) => {
+    arrange();
     await ions().message("storefront", "fix it");
-    expect(ask).not.toHaveBeenCalled();
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ projectId: "storefront", text: "fix it" }), {
+      by: "ion",
+      request: "fix it",
+    });
+    expect(said("storefront")).toEqual([
+      { text: "On it.", card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] } },
+    ]);
+  });
+});
+
+const agent = (id: string, signedIn: boolean) => ({
+  id,
+  label: id,
+  installed: true,
+  signedIn,
+  models: [],
+  defaultModel: null,
+});
+
+// Review, 2026-11-19: [ion] quick defaults to Claude Code; with only opencode or Grok signed in, ion never thought.
+describe("ion's quick model", () => {
+  const withAgents = (list: ReturnType<typeof agent>[]) =>
+    new Ions({ store, db, configFile, runs: { ask }, quick, agents: async () => list });
+
+  it("thinks with the first ready agent when the one set isn't ready", async () => {
+    quick.mockResolvedValueOnce('{"answer":"ok"}');
+    const list = [agent("claude-code", false), agent("grok-build", true), agent("opencode", true)];
+    await withAgents(list).message("chief", "hi");
+    expect(quick.mock.calls[0]![2]).toBe("opencode");
+  });
+
+  it("thinks with the one set when it is ready", async () => {
+    quick.mockResolvedValueOnce('{"answer":"ok"}');
+    await withAgents([agent("claude-code", true), agent("opencode", true)]).message("chief", "hi");
+    expect(quick.mock.calls[0]![2]).toBeUndefined();
+  });
+});
+
+// Review, 2026-11-19: "Thinking" stayed forever when an ion's reply never came.
+describe("an ion always answers", () => {
+  const heard = (ionId: string, type: string, text: string) =>
+    store.append({ chatId: `ion:${ionId}`, runId: null, origin: "daemon", type, data: { text } });
+
+  it("says it couldn't reach its model when anything goes wrong", async () => {
+    ask.mockRejectedValueOnce(new Error("disk full"));
+    await ions().message("storefront", "fix it");
     expect(said("storefront")).toEqual([{ text: "I couldn't reach my model; try again." }]);
+  });
+
+  it("answers, at the start, a message ion stopped before answering", () => {
+    heard("storefront", EV.ionHeard, "x");
+    heard("chief", EV.ionHeard, "y");
+    heard("chief", EV.ionSaid, "ok");
+    ions().answerUnanswered();
+    expect(said("storefront")).toEqual([{ text: "I couldn't reach my model; try again." }]);
+    expect(said("chief")).toEqual([{ text: "ok" }]);
   });
 });
 

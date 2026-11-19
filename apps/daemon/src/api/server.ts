@@ -144,6 +144,8 @@ function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | 
 /** ion chief and the project ions, thinking with ion's quick model, watching their threads end. */
 function startIons(d: Omit<ConstructorParameters<typeof Ions>[0], "agents">): Ions {
   const ions = new Ions({ ...d, agents: () => harnessInfos.list() });
+  // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
+  ions.answerUnanswered();
   ions.watch();
   return ions;
 }

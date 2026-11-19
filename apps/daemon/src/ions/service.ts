@@ -31,14 +31,15 @@ function trimEnd(title: string): string {
 
 /** Without a project's own agent or a last one: the first ready of these (quota-friendly first), else any. */
 const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
+const firstOf = (ready: string[]) => PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
 
 export type IonsDeps = {
   store: EventStore;
   db: Db;
   configFile: string;
   runs: { ask: Ask };
-  /** ion's quick model (System 1): a prompt in, its last message out. */
-  quick: (prompt: string, signal: AbortSignal) => Promise<string>;
+  /** ion's quick model (System 1): a prompt in, its last message out; `agent`: think on it instead of [ion] quick. */
+  quick: (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>;
   /** The agents and whether each is ready, to pick one for a project with none set. */
   agents?: () => Promise<HarnessInfo[]>;
 };
@@ -75,21 +76,38 @@ export class Ions {
     });
   }
 
+  /** Whatever goes wrong, the ion answers (else "Thinking" would stay): your mistake in its words, else NO_MODEL. */
   async message(ionId: string, text: string): Promise<void> {
     if (ionId !== "chief" && !this.projects().some((p) => p.id === ionId))
       throw new UserError(`Unknown ion: ${ionId}`);
     this.heard(ionId, text);
-    if (ionId === "chief") return this.chief(text);
-    return this.project(ionId, text);
+    try {
+      if (ionId === "chief") await this.chief(text);
+      else await this.project(ionId, text);
+    } catch (e) {
+      this.say(ionId, e instanceof UserError ? e.message : NO_MODEL);
+    }
   }
 
-  /** A project's ion thinks: answers itself, starts a thread for work (judged by your own words), or both. */
+  /** At the start: a message ion stopped before answering gets its answer now (else "Thinking" would stay). */
+  answerUnanswered(): void {
+    for (const ionId of ["chief", ...this.projects().map((p) => p.id)]) {
+      const talk = this.d.store
+        .read({ chatId: `ion:${ionId}` })
+        .filter((e) => e.type === EV.ionHeard || e.type === EV.ionSaid);
+      if (talk.at(-1)?.type === EV.ionHeard) this.say(ionId, NO_MODEL);
+    }
+  }
+
+  /**
+   * A project's ion thinks: answers itself, starts a thread for work (judged by your own words), or both. When its
+   * model can't be reached, your own words start the thread.
+   */
   private async project(projectId: string, text: string): Promise<void> {
     const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId)!;
     const context = projectContextOf(p, chatsView.list(this.d.db), needsView.open(this.d.db));
     const said = await this.think(projectPrompt(text, context));
-    const d = said === null ? null : parseProjectDecision(said);
-    if (!d) return this.say(projectId, NO_MODEL);
+    const d = (said === null ? null : parseProjectDecision(said)) ?? { thread: text };
     if (!d.thread) return this.say(projectId, d.answer ?? "");
     const t = await this.thread(projectId, d.thread, { request: text });
     if ("why" in t) this.say(projectId, [d.answer, t.why].filter(Boolean).join(" "));
@@ -141,11 +159,15 @@ export class Ions {
     }
   }
 
-  /** The project's model and effort (Settings), only on the agent they were picked for. */
+  /**
+   * The project's model and effort (Settings). Effort always; the model on the agent it was picked for: the
+   * project's own, or (none set) the one Settings showed, which is the one `agentFor` picks.
+   */
   private brainOf(projectId: string, harness: string | undefined): { model?: string; effort?: Effort } {
     const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === projectId);
-    if (!p || !harness || p.harness !== harness) return {};
-    return { ...(p.model ? { model: p.model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
+    if (!p) return {};
+    const model = p.model && (!p.harness || p.harness === harness) ? p.model : undefined;
+    return { ...(model ? { model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
   }
 
   /** The project's own agent, else the one its last chat ran on, else the first ready (opencode, Grok, Codex, Claude). */
@@ -154,9 +176,21 @@ export class Ions {
     if (own) return own;
     const last = chatsView.lastAgent(this.d.db, projectId);
     if (last) return last;
-    const ready = (await this.d.agents?.().catch(() => [])) ?? [];
-    const ok = ready.filter((h) => h.installed && h.signedIn).map((h) => h.id);
-    return PREFERRED.find((id) => ok.includes(id)) ?? ok[0];
+    return firstOf(await this.ready());
+  }
+
+  /** The agents installed and signed in. */
+  private async ready(): Promise<string[]> {
+    const all = (await this.d.agents?.().catch(() => [])) ?? [];
+    return all.filter((h) => h.installed && h.signedIn).map((h) => h.id);
+  }
+
+  /** The agent ion thinks with: none (as [ion] quick says) when that one is ready, else the first ready. */
+  private async quickAgent(): Promise<string | undefined> {
+    if (!this.d.agents) return undefined;
+    const ok = await this.ready();
+    const set = loadUserConfig(this.d.configFile).config.ion.quick.split(":")[0]!;
+    return ok.includes(set) ? undefined : firstOf(ok);
   }
 
   private async chief(text: string): Promise<void> {
@@ -193,6 +227,7 @@ export class Ions {
 
   /** ion's quick model on a prompt: its answer, or null when it fails or is slow. */
   private async think(prompt: string): Promise<string | null> {
+    const agent = await this.quickAgent();
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     // A hard deadline: the model is told to stop, and ion doesn't wait past it even if it doesn't.
@@ -203,7 +238,7 @@ export class Ions {
       }, TIMEOUT_MS);
     });
     try {
-      return await Promise.race([this.d.quick(prompt, abort.signal), late]);
+      return await Promise.race([this.d.quick(prompt, abort.signal, agent), late]);
     } catch {
       return null;
     } finally {

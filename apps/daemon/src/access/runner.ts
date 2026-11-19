@@ -7,20 +7,18 @@ import { EV } from "@ion/schema";
 import { getHarness } from "../adapters/registry.js";
 
 /**
- * Runs a prompt on ion's judge (`[access] judge` = "<harness>:<model>") in an empty folder, as a bare session
- * (no tools where the harness allows it; every permission denied), and returns its last message.
- */
-/**
  * Runs one prompt on a model from your config: the Auto judge's ("judge", the default), or ion's own quick model
- * ("quick": how ion chief and the project ions think).
+ * ("quick": how ion chief and the project ions think); `agent` ("<harness>[:<model>]") instead, when given. It runs
+ * in an empty folder, as a bare session (no tools where the harness allows it; every permission denied), and
+ * returns its last message.
  */
 export function harnessRunner(
   configFile: string,
   which: "judge" | "quick" = "judge",
-): (prompt: string, signal: AbortSignal) => Promise<string> {
-  return async (prompt, signal) => {
+): (prompt: string, signal: AbortSignal, agent?: string) => Promise<string> {
+  return async (prompt, signal, agent) => {
     const c = loadUserConfig(configFile).config;
-    const spec = which === "quick" ? c.ion.quick : c.access.judge;
+    const spec = agent ?? (which === "quick" ? c.ion.quick : c.access.judge);
     const [id, model] = [spec.split(":")[0]!, spec.includes(":") ? spec.slice(spec.indexOf(":") + 1) : null];
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
