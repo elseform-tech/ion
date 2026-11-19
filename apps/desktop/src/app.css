@@ -650,6 +650,33 @@ body.resizing {
   grid-row: 1 / span 2;
   grid-column: 2;
 }
+/* A task running outside the chat's worktree: where, muted. */
+.task .tw {
+  color: var(--faint);
+  font: 11.5px var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task:has(.tw) .ib {
+  grid-row: 1 / span 3;
+}
+/* What the chat made, in the Files tab: the lab's .mrow, as a button. */
+.inchat .mrow {
+  color: inherit;
+  font-family: inherit;
+}
+.inchat .mrow .g {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inchat .mrow:disabled {
+  cursor: default;
+  background: transparent;
+}
 
 /* Routines on an ion's page (Plan 10): Add routine, its form and the when picker. */
 .radd-btn {

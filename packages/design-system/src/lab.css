@@ -500,8 +500,13 @@ button.arow:hover{background:var(--hover)}
 .acard>.lucide{color:var(--faint)}
 .aic{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--hover);color:var(--accent)}
 
-/* lab lines 686-686: panel label (.lh2) */
+/* lab lines 685-690: panel: in this chat (.inchat), its label (.lh2), media rows (.mrow) */
+.inchat{padding:8px 8px 4px;display:grid;gap:1px;border-bottom:1px solid var(--line)}
 .lh2{font-size:12px;color:var(--faint);font-weight:500;padding:6px 6px 4px}
+.mrow{display:flex;align-items:center;gap:10px;padding:6px;border-radius:8px;border:0;background:transparent;text-align:left;cursor:pointer;font-size:13px}
+.mrow:hover{background:var(--hover)}
+.mrow .lucide{color:var(--muted);width:15px;height:15px}
+.mrow small{display:block;font-size:11.5px;color:var(--faint)}
 
 /* lab lines 713-724: ions: needs strip, collapsed */
 

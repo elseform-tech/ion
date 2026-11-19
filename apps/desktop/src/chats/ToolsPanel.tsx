@@ -1,6 +1,7 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { FileDiff } from "@ion/schema";
 import { Cpu, Eye, File as FileIcon, FolderOpen, FolderTree, GitCompare } from "@ion/design-system";
+import { InChat } from "./Artifacts.js";
 import { Preview, Tasks } from "./Preview.js";
 import { Fragment, memo, useEffect, useRef, useState } from "react";
 import { diffLines, fileMark, treeOf } from "./diffLines.js";
@@ -226,6 +227,7 @@ export function ToolsPanel({ diff, error, focus, client, chatId, version }: Pane
       <Tabs tab={tab} onTab={setTab} live={chat !== null} />
       <div className="panel">
         {error && <div className="changes-empty">{error}</div>}
+        {chat && tab === "files" && <InChat {...chat} changed={files.map((f) => f.path)} onOpen={open} />}
         <ChangeTabs tab={tab} files={files} read={diff !== null && !error} onPick={chat ? open : undefined} />
         {chat && <ChatTabs tab={tab} {...chat} files={files} pick={pick} version={version} />}
         {omitted > 0 && <div className="changes-empty">{omitted} more files not shown</div>}

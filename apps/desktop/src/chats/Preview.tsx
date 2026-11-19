@@ -28,6 +28,13 @@ function useTasks(client: IonClient, chatId: string): [TaskInfo[] | null, () => 
   return [tasks, () => setN((x) => x + 1)];
 }
 
+/** A task's folder when it isn't the chat's worktree (`<data>/worktrees/<chatId>`), with your home as ~. */
+function elsewhere(where: string, chatId: string): string | null {
+  const own = `/worktrees/${chatId}`;
+  if (!where || where.endsWith(own) || where.includes(`${own}/`)) return null;
+  return where.replace(/^\/(Users|home)\/[^/]+(?=\/|$)/, "~");
+}
+
 /** Background tasks: each one's command, PID, ports and how long it's run; Stop ends it. */
 export function Tasks({ client, chatId }: { client: IonClient; chatId: string }) {
   const [tasks, again] = useTasks(client, chatId);
@@ -41,6 +48,7 @@ export function Tasks({ client, chatId }: { client: IonClient; chatId: string })
       {tasks?.map((t) => (
         <div className="task" key={t.pid}>
           <div className="tc">{t.command}</div>
+          {elsewhere(t.where, chatId) !== null && <div className="tw">{elsewhere(t.where, chatId)}</div>}
           <div className="tm">
             <span className="chip mono">PID {t.pid}</span>
             {t.ports.map((p) => (

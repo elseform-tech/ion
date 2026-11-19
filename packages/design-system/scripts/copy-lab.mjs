@@ -33,7 +33,7 @@ const RANGES = [
   [549, 560, "pins, await (hidden), project menu search"],
   [568, 568, "segmented control, small"],
   [571, 636, "media: code blocks"],
-  [686, 686, "panel label (.lh2)"],
+  [685, 690, "panel: in this chat (.inchat), its label (.lh2), media rows (.mrow)"],
   [713, 724, "ions: needs strip, collapsed"],
   [761, 831, "brain picker; work"],
   [832, 851, "ions: suggestion cards"],

@@ -42,6 +42,7 @@ export {
   FilePen,
   File,
   FileText,
+  Image,
   Folder,
   FolderOpen,
   FolderTree,
