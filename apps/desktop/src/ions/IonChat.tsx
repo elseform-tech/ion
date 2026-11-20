@@ -7,6 +7,7 @@ import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
 import { Markdown } from "../chats/Message.js";
+import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
 import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
 
@@ -164,6 +165,36 @@ function Card(p: CardProps) {
 }
 
 const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled";
+const ions = (m: IonItem | undefined) => m !== undefined && m.kind !== "you";
+
+type LineProps = Omit<CardProps, "card"> & { m: Exclude<IonItem, { kind: "you" }>; last: boolean };
+
+/** One of the ion's lines (its avatar on the last of a run): a turn's work above its words and card. */
+function IonLine({ m, last, ...p }: LineProps) {
+  const w = m.work;
+  return (
+    <div className="bm">
+      {last ? <IonAvatar ion={p.ion} /> : <span />}
+      <div>
+        {w && <WorkBlock w={w} />}
+        {/* ion chief's suggestion cards carry their own words. */}
+        {m.kind === "ion" && m.text && !ownWords(m.card) && (
+          <div className="bi">
+            <Markdown text={m.text} htmlAsText />
+          </div>
+        )}
+        {m.kind === "ion" && m.card && (
+          <Card
+            {...p}
+            card={m.card}
+            {...(m.answered !== undefined ? { answered: m.answered } : {})}
+            {...(m.muted ? { muted: m.muted } : {})}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** The bubbles: yours on the right; the ion's on the left, its avatar on the last of a run of its lines. */
 function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
@@ -178,28 +209,7 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
                 {m.text}
               </div>
             );
-          const last = p.items[i + 1]?.kind !== "ion";
-          return (
-            <div className="bm" key={i}>
-              {last ? <IonAvatar ion={p.ion} /> : <span />}
-              <div>
-                {/* ion chief's suggestion cards carry their own words. */}
-                {m.text && !ownWords(m.card) && (
-                  <div className="bi">
-                    <Markdown text={m.text} htmlAsText />
-                  </div>
-                )}
-                {m.card && (
-                  <Card
-                    {...p}
-                    card={m.card}
-                    {...(m.answered !== undefined ? { answered: m.answered } : {})}
-                    {...(m.muted ? { muted: m.muted } : {})}
-                  />
-                )}
-              </div>
-            </div>
-          );
+          return <IonLine key={i} {...p} m={m} last={!ions(p.items[i + 1])} />;
         })}
         {/* Your message is the last thing: the ion is thinking (its reply takes this place). */}
         {p.items.at(-1)?.kind === "you" && (

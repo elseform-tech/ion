@@ -42,7 +42,9 @@ A `routine.ran` (chatId null) is one slot of a routine handled: the thread it st
 you skipped it; `by: "you"` with `due: null` is a run you started now.
 
 An ion's chat is its events on `ion:<ionId>`: `ion.heard` (your message) and `ion.said` (its words, with an
-optional `card`). Card kinds: `threads` (the threads it started), `suggest` (a project ion's "always?"), `flag` (a
+optional `card`). Each turn an ion thinks is an agent session: its `tool.started`, `tool.finished` and
+`thinking.delta` are stored on its chat with the turn's id as `runId`, and `ion.session` (`ionId`, `harness`,
+`nativeId`) records the session it resumes next time. Card kinds: `threads` (the threads it started), `suggest` (a project ion's "always?"), `flag` (a
 decision whose runs keep failing), and ion chief's own suggestions (Plan 11): `routine` (`projectId`, `key`: your
 words normalised, `name`, `text`, `when`, `dates`: the days you asked) and `stalled` (`chatId`, `projectId`,
 `title`, `since`: the chat's last activity, `files` changed). `suggestion.answered` is your answer to any of them:

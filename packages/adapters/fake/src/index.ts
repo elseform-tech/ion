@@ -36,13 +36,14 @@ const HISTORY_END = /<\/ion-data id="\w+">\n\n/;
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
 
-/** Which scenario a message plays: ion's judge and ion chief's routing by their first words, else its first word. */
-function scenarioOf(text: string, own: string): string {
-  // ion's prompts carry data blocks too; they're recognised by their first words.
+/**
+ * Which scenario a message plays: an ion's turn by its instructions (ion's ions start "You are ion"; a run's
+ * start "You're running under ion"), ion's judge by its first words, else its first word.
+ */
+function scenarioOf(text: string, own: string, instructions = ""): string {
+  if (instructions.startsWith("You are ion")) return "ion";
+  // ion's judge prompt carries data blocks too; it's recognised by its first words.
   if (text.startsWith("Judge this action")) return "judge";
-  if (text.startsWith("Route this message for ion")) return "route";
-  if (text.startsWith("Decide for this project's ion")) return "decide";
-  if (text.startsWith("Tell the user what came of a thread")) return "report";
   return own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
 }
 
@@ -135,7 +136,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     async send({ text }) {
       // The scenario is the first word of your message, after any history ion put before it.
       const own = text.split(HISTORY_END).at(-1) ?? text;
-      const name = scenarioOf(text, own);
+      const name = scenarioOf(text, own, start.instructions);
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
       sent = text;
       queue.push({
@@ -158,7 +159,9 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
             data: { code: "agent", retryable: false, message: "Prompt too long" },
           });
         let status: Awaited<ReturnType<typeof scenario>> = "interrupted";
-        if (!interrupted) status = resumedFails ? "failed" : await scenario(script);
+        // A scenario that throws (ion's server gone mid-call) ends its turn failed, never as an unhandled rejection.
+        if (!interrupted)
+          status = resumedFails ? "failed" : await scenario(script).catch(() => "failed" as const);
         queue.push({ type: EV.runFinished, data: { status } });
         queue.end();
       })();
@@ -170,6 +173,8 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     },
     async close() {
       queue.end();
+      // Test switch: a harness whose close never returns.
+      if (process.env.ION_FAKE_CLOSE_HANGS) await new Promise(() => {});
     },
   };
 }

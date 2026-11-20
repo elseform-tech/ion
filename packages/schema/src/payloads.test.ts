@@ -53,6 +53,10 @@ const valid: [string, Record<string, unknown>, string?][] = [
   ["chat.created", { title: "t", projectId: "p", by: "ion" }, "daemon"],
   ["ion.heard", { text: "Check the totals" }, "daemon"],
   ["ion.said", { text: "On it." }, "daemon"],
+  // Plan 14: the agent session an ion thinks in.
+  ["ion.session", { ionId: "chief", harness: "grok-build", nativeId: "s-1" }, "daemon"],
+  ["ion.session", { ionId: "chief", harness: null, nativeId: null }, "daemon"],
+  ["ion.session", { ionId: "chief", harness: "grok-build", nativeId: "s-1", projects: ["a", "b"] }, "daemon"],
   [
     "ion.said",
     { text: "On it.", card: { kind: "threads", threads: [{ chatId: "c2", projectId: "p" }] } },
@@ -152,6 +156,8 @@ const invalid: [string, Record<string, unknown>, string?][] = [
   ["chat.created", { title: "t", projectId: "p", by: "you" }, "daemon"],
   ["ion.said", { text: "x", card: { kind: "threads" } }, "daemon"],
   ["ion.said", { text: "x", card: { kind: "nope" } }, "daemon"],
+  ["ion.session", { ionId: "chief", harness: "grok-build" }, "daemon"],
+  ["ion.session", { ionId: "chief", harness: "grok-build", nativeId: null }, "daemon"],
   ["suggestion.answered", { suggestionId: "s1", keep: "yes" }, "daemon"],
   ["suggestion.answered", { suggestionId: "s1", keep: true, mute: true }, "daemon"],
   [

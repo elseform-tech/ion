@@ -15,6 +15,9 @@ export const WHEN =
   /^((daily|weekdays|sun|mon|tue|wed|thu|fri|sat) ([01]\d|2[0-3]):[0-5]\d|every ([1-9]|1\d|2[0-3])h)$/;
 
 /** Something a project's ion does on a schedule: a thread titled `name`, briefed with `text`. */
+/** A project's profile is a line or two (what ion chief reads to know what a project is): at most this long. */
+export const PROFILE_CHARS = 300;
+
 const Routine = z.object({
   id: z.string().min(1).max(64),
   name: z.string().min(1).max(80),
@@ -50,6 +53,10 @@ const Project = z.object({
   effort: Effort.optional(),
   /** What its ion does on a schedule. */
   routines: z.array(Routine).optional(),
+  /** What the project is, in a line or two (its ion writes it); absent: its README's first paragraph. */
+  profile: z.string().max(PROFILE_CHARS).optional(),
+  /** A profile its ion suggested; ion never reads it as the profile until you accept it in Settings. */
+  profileSuggestion: z.string().max(PROFILE_CHARS).optional(),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.

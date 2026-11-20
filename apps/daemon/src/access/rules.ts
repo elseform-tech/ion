@@ -23,19 +23,7 @@ const SECRETS = [
   ".pypirc",
 ];
 /** Commands that only look: allowed in Auto when every path they name stays in the worktree. */
-const READ_ONLY = new Set([
-  "ls",
-  "cat",
-  "head",
-  "tail",
-  "wc",
-  "grep",
-  "pwd",
-  "echo",
-  "which",
-  "stat",
-  "file",
-]);
+const READ_ONLY = new Set(["ls", "cat", "head", "tail", "wc", "grep", "pwd", "echo", "which", "stat"]);
 const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "blame"]);
 /** Secret folders and files named anywhere in an action (any case) are denied: they never belong to a project. */
 const SECRET_NAMES = [

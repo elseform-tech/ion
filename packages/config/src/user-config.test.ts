@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CONFIG, ionPaths, loadUserConfig, saveUserConfig } from "./index.js";
+import { DEFAULT_CONFIG, ionPaths, loadUserConfig, PROFILE_CHARS, saveUserConfig } from "./index.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "ion-cfg-"));
 
@@ -85,5 +85,21 @@ describe("loadUserConfig", () => {
 
   it("leaves the models to each harness by default", () => {
     expect(DEFAULT_CONFIG.ion).toMatchObject({ quick: "claude-code", deep: "claude-code" });
+  });
+});
+
+// Final review, 2026-11-19: the profile's limit was written three times (the config, its ion's tool, Settings).
+// One constant, here, is what the config checks.
+describe("a project's profile", () => {
+  it("is at most PROFILE_CHARS long, as is a suggestion", () => {
+    const f = join(tmp(), "config.toml");
+    const at = (n: number) => ({ id: "a", path: "/a", starred: false, profile: "x".repeat(n) });
+    saveUserConfig(f, { ...DEFAULT_CONFIG, projects: [at(PROFILE_CHARS)] });
+    expect(loadUserConfig(f).error).toBeNull();
+    writeFileSync(
+      f,
+      readFileSync(f, "utf8").replace("x".repeat(PROFILE_CHARS), "x".repeat(PROFILE_CHARS + 1)),
+    );
+    expect(loadUserConfig(f).error).toMatch(/profile/);
   });
 });

@@ -20,7 +20,12 @@ const q = {
   ],
   why: "It's 2 GB of old output",
 };
-const scope = (chatId = "c1", runId = "r1", projectId = "app") => ({ projectId, chatId, runId });
+const scope = (chatId = "c1", runId = "r1", projectId = "app") => ({
+  kind: "run" as const,
+  projectId,
+  chatId,
+  runId,
+});
 
 function chat(chatId: string, projectId = "app") {
   store.append({

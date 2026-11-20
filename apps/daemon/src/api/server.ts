@@ -16,8 +16,9 @@ import { createMatcher, Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
-import { createGrants, createMcpHandler } from "../mcp/index.js";
+import { createGrants, createMcpHandler, type Grants, type RunScope } from "../mcp/index.js";
 import { Ions } from "../ions/service.js";
+import { IonTurns } from "../ions/turn.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
 import { diffOfChat, harnessInfos } from "./commands.js";
@@ -25,6 +26,14 @@ import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
 import { chatsView } from "../views/chats.js";
 import { addRoutineTo } from "./routines.js";
+
+/** The scope of a run that ion asks you about. */
+const runScopeOf = (r: AskingRun): RunScope => ({
+  kind: "run",
+  projectId: r.projectId,
+  chatId: r.chatId,
+  runId: r.runId,
+});
 
 export const VERSION = "0.0.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -37,23 +46,10 @@ export async function startServer(opts: {
   port?: number;
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
   let port = 0;
-  const ctx = openState(opts, () => `http://127.0.0.1:${port}`);
-  const { store, db } = ctx;
-  ctx.runs.closeUnfinishedRuns(runsView.rows(db));
-  // Routines run on their schedule while the daemon runs (a run missed while it was stopped goes now).
-  const stopRoutines = ctx.routines.start();
-  // ion chief looks for something to suggest now, then hourly.
-  const stopSuggestions = ctx.suggestions.start();
-  // Answers still waiting when ion stopped go into their chats now.
-  void ctx.decisions.resume().catch(() => {});
+  const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
+  const { db } = ctx;
   const auth = createAuth();
-  const http = httpServer(
-    createMcpHandler({ store, db, grants: ctx.grants, decisions: ctx.decisions }),
-    createGateHandler({
-      grants: ctx.grants,
-      decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
-    }),
-  );
+  const http = httpServer(ctx, turns);
   const wss = new WebSocketServer({
     server: http,
     maxPayload: MAX_MESSAGE_BYTES,
@@ -68,12 +64,23 @@ export async function startServer(opts: {
 
   const addr = http.address();
   port = typeof addr === "object" && addr ? addr.port : 0;
+  // Only now that ion listens (its tools have a port): the ions watch their threads end, and runs a crash left
+  // unfinished end (their ions report them). Then what starts runs: routines on their schedule (one missed while
+  // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
+  ctx.ions.watch();
+  ctx.runs.closeUnfinishedRuns(runsView.rows(db));
+  const stopRoutines = ctx.routines.start();
+  const stopSuggestions = ctx.suggestions.start();
+  void ctx.decisions.resume().catch(() => {});
   return {
     port,
     token: auth.token,
     close: async () => {
       stopRoutines();
       stopSuggestions();
+      // ion's turns stop first; nothing an ion says after is written.
+      ctx.ions.stop();
+      await turns.shutdown();
       await ctx.runs.shutdown();
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
@@ -85,10 +92,19 @@ export async function startServer(opts: {
 }
 
 /**
- * One port: the WebSocket API (upgrades), ion's MCP server at /mcp and the gate at /gate/<key>, both for runs
- * (with their own keys).
+ * One port: the WebSocket API (upgrades), ion's MCP server at /mcp and the gate at /gate/<key>, both for runs and
+ * ions' turns (with their own keys).
  */
-function httpServer(mcp: ReturnType<typeof createMcpHandler>, gate: ReturnType<typeof createGateHandler>) {
+function httpServer(ctx: Ctx, turns: IonTurns) {
+  const { store, db, grants, decisions, configFile } = ctx;
+  // An ion's turn starts threads with its start_thread tool.
+  const mcp = createMcpHandler({ store, db, grants, decisions, configFile, startThread: turns.startThread });
+  const gate = createGateHandler({
+    grants,
+    decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
+    // An ion's turn reports its tool calls here too: it may only read.
+    ion: (scope, payload) => turns.gate(scope, payload),
+  });
   return createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0]!;
     if (path === "/mcp") void mcp(req, res).catch(() => res.destroy());
@@ -141,13 +157,33 @@ function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | 
   });
 }
 
-/** ion chief and the project ions, thinking with ion's quick model, watching their threads end. */
-function startIons(d: Omit<ConstructorParameters<typeof Ions>[0], "agents">): Ions {
-  const ions = new Ions({ ...d, agents: () => harnessInfos.list() });
+/**
+ * ion chief and the project ions: each message a turn of the ion's own agent session (IonTurns) with ion's tools
+ * (MCP) and a gate that only lets it read. They watch their threads end once ion listens (startServer).
+ */
+function startIons(
+  d: Omit<ConstructorParameters<typeof Ions>[0], "agents" | "turns"> & {
+    dataDir: string;
+    grants: Grants;
+    base: () => string;
+  },
+): { ions: Ions; turns: IonTurns } {
+  const { dataDir, grants, base, ...deps } = d;
+  const agents = () => harnessInfos.list();
+  // Turns start threads through the ions, and the ions think through turns: the ions are made just below.
+  const late: { ions?: Ions } = {};
+  const turns = new IonTurns({
+    ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents },
+    mcpUrl: () => `${base()}/mcp`,
+    gateUrl: () => `${base()}/gate`,
+    startThread: (projectId, brief, turn) =>
+      late.ions ? late.ions.startThread(projectId, brief, turn) : Promise.resolve({ why: "ion is starting" }),
+  });
+  const ions = new Ions({ ...deps, turns, agents });
+  late.ions = ions;
   // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
   ions.answerUnanswered();
-  ions.watch();
-  return ions;
+  return { ions, turns };
 }
 
 /**
@@ -160,7 +196,10 @@ function sweepNeeds(needs: NeedsService, ionQuestions: IonQuestions): void {
 }
 
 /** The data folder, the event store and the services every connection shares. */
-function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
+function openState(
+  opts: { dataDir: string; configFile: string },
+  base: () => string,
+): { ctx: Ctx; turns: IonTurns } {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
   const db = openDb(join(opts.dataDir, "ion.db"));
@@ -184,8 +223,7 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     // When ion stops a tool call it asks you; made here, answered through the decisions made below.
     askBlocked: {
       ask: (r: AskingRun, b: Blocked) =>
-        late.decisions?.askBlocked({ projectId: r.projectId, chatId: r.chatId, runId: r.runId }, b) ??
-        Promise.resolve("timeout" as const),
+        late.decisions?.askBlocked(runScopeOf(r), b) ?? Promise.resolve("timeout" as const),
       allowed: (r: AskingRun, key: string) =>
         late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
     },
@@ -193,9 +231,7 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   const runs = new RunManager(store, runCtx, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({
-    store,
-    db,
-    needs,
+    ...{ store, db, needs },
     match: createMatcher(ionQuick),
     ion: ionQuestions,
     followUp: async (chatId, m) =>
@@ -203,15 +239,14 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const ions = startIons({ store, db, configFile: opts.configFile, runs, quick: ionQuick });
+  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base });
   // A routine's time came (or you ran it now): its ion starts its thread.
   const routines = new Routines({
-    store,
-    db,
-    configFile: opts.configFile,
+    ...{ store, db, configFile: opts.configFile },
     start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
   const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
-  return { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0 };
+  const ctx = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0 };
+  return { ctx, turns };
 }

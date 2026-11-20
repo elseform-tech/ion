@@ -1,6 +1,22 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar, ChevronLeft, ChevronRight, MessageCircle, Zap } from "@ion/design-system";
-import { ION_COLORS, type IonInfo, type IonStats, type ProjectInfo, type ProjectPatch } from "@ion/schema";
+import {
+  Avatar,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  MessageCircle,
+  Sparkles,
+  X,
+  Zap,
+} from "@ion/design-system";
+import {
+  ION_COLORS,
+  type IonInfo,
+  type IonStats,
+  type ProjectInfo,
+  type ProjectPatch,
+  stripControl,
+} from "@ion/schema";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
@@ -159,6 +175,67 @@ function BrainPick({ ion, project, data, patch }: SetupProps) {
   );
 }
 
+const PROFILE_MAX = 300;
+
+/** What the project's ion suggested as its profile: only used once you accept it. */
+function Suggested({ text, patch }: { text: string; patch: Patch }) {
+  return (
+    <div className="srow">
+      <Sparkles />
+      <div className="g s">{text}</div>
+      <button
+        className="ib"
+        type="button"
+        aria-label="Dismiss"
+        title="Dismiss"
+        onClick={() => patch({ profileSuggestion: null })}
+      >
+        <X />
+      </button>
+      <button
+        className="ib"
+        type="button"
+        aria-label="Accept"
+        title="Accept"
+        onClick={() => patch({ profile: text, profileSuggestion: null })}
+      >
+        <Check />
+      </button>
+    </div>
+  );
+}
+
+/** What the project is, in your words (saved when you leave the box), and what its ion suggested. */
+function Profile({ project, patch }: Pick<SetupProps, "project" | "patch">) {
+  const saved = stripControl(project.profile ?? "");
+  const [text, setText] = useState(saved);
+  const [long, setLong] = useState(false);
+  useEffect(() => setText(saved), [saved]);
+  const save = () => {
+    const t = text.trim();
+    setLong(t.length > PROFILE_MAX);
+    if (t.length <= PROFILE_MAX && t !== saved) patch({ profile: t || null });
+  };
+  const suggested = stripControl(project.profileSuggestion ?? "").trim();
+  return (
+    <>
+      <div className="srow stack">
+        <div className="g">Profile</div>
+        <textarea
+          className="fin"
+          aria-label="Profile"
+          rows={2}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={save}
+        />
+        {long && <div className="perr">Keep it under 300 characters</div>}
+      </div>
+      {suggested && <Suggested text={suggested} patch={patch} />}
+    </>
+  );
+}
+
 /** The project's folder and rules: access, and whether ion chief may read it. */
 function Rules({ project, patch, error }: Pick<SetupProps, "project" | "patch"> & { error: ReactNode }) {
   const share = project.shareWithIon !== false;
@@ -169,6 +246,7 @@ function Rules({ project, patch, error }: Pick<SetupProps, "project" | "patch"> 
         <Row label="Folder">
           <span className="chip mono">{project.path}</span>
         </Row>
+        <Profile project={project} patch={patch} />
         <Row label="Access">
           <span className="seg sm">
             {ACCESS.map(([id, label]) => (

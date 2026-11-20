@@ -21,6 +21,7 @@
     "chat.renamed",
     "ion.heard",
     "ion.said",
+    "ion.session",
     "suggestion.answered",
     "message.sent",
     "run.queued",

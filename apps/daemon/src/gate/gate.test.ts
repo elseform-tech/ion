@@ -162,7 +162,7 @@ describe("gate keys", () => {
     const store = new EventStore(db, allViews);
     grants = createGrants();
     const gate = createGateHandler({ grants, decide: async () => ({ decision: "allow" }) });
-    const mcp = createMcpHandler({ store, db, grants });
+    const mcp = createMcpHandler({ store, db, grants, configFile: "/nowhere/config.toml" });
     http = createServer((req, res) => {
       if (req.url?.startsWith("/gate/")) void gate(req, res);
       else void mcp(req, res);
@@ -184,7 +184,7 @@ describe("gate keys", () => {
     });
 
   it("answers only a live gate key, never from a browser, and keys don't cross", async () => {
-    const scope = { projectId: "app", chatId: "c1", runId: "r1" };
+    const scope = { kind: "run" as const, projectId: "app", chatId: "c1", runId: "r1" };
     const gateKey = grants.create(scope, "gate");
     const mcpKey = grants.create(scope);
     expect((await post(`/gate/${gateKey}`)).status).toBe(200);
@@ -197,9 +197,15 @@ describe("gate keys", () => {
     expect((await post(`/gate/${gateKey}`)).status).toBe(401);
   });
 
+  // Task 1 review, 2026-11-19: an ion's key (for ion's MCP server) never opens the gate.
+  it("refuses an ion's key at the gate", async () => {
+    const ionKey = grants.create({ kind: "ion", ionId: "chief", projects: ["app"], turnId: "t1" });
+    expect((await post(`/gate/${ionKey}`)).status).toBe(401);
+  });
+
   it("is a 400 (a deny, for the hook) when the call can't be read", async () => {
     grants = createGrants();
-    const key = grants.create({ projectId: "app", chatId: "c1", runId: "r1" }, "gate");
+    const key = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r1" }, "gate");
     const gate = createGateHandler({ grants, decide: async () => null });
     const one = createServer((req, res) => void gate(req, res));
     await new Promise<void>((r) => one.listen(0, "127.0.0.1", r));

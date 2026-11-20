@@ -188,4 +188,30 @@ describe("a tool of no known kind", () => {
       summary: "/repo",
     });
   });
+
+  // Security review, 2026-11-19: a step's label comes from the harness's structured call, never from free text.
+  it("names a use_tool call by its structured tool_name", () => {
+    const [ev] = mapUpdate(
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "u1",
+        title: "use_tool",
+        rawInput: { tool_name: "ion__projects" },
+      },
+      s(),
+    );
+    expect(ev?.data).toMatchObject({ name: "ion__projects", summary: "" });
+  });
+
+  // Security review, 2026-11-19: a routed tool name is checked before it labels a step.
+  it("labels a use_tool step by its routed name only when that name is plain", () => {
+    const call = (rawInput: object) =>
+      mapUpdate({ sessionUpdate: "tool_call", toolCallId: "u2", title: "use_tool", rawInput }, s())[0]?.data;
+    expect(call({ tool_name: "" })).toMatchObject({ name: "Use tool" });
+    expect(call({ tool_name: "a b\u202e" })).toMatchObject({ name: "Use tool" });
+    expect(call({ tool_name: "ion__search_chats", query: "login" })).toMatchObject({
+      name: "ion__search_chats",
+      summary: "login",
+    });
+  });
 });

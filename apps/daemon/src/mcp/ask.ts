@@ -1,27 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { DecisionInfo } from "@ion/schema";
 import { z } from "zod";
-import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { Decisions } from "../decisions/index.js";
 import type { Db } from "../store/index.js";
 import { decisionsView } from "../views/decisions.js";
-import type { Scope } from "./grants.js";
-
-type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
-const ok = (text: string): Result => ({ content: [{ type: "text", text }] });
-const refuse = (text: string): Result => ({ content: [{ type: "text", text }], isError: true });
-
-/** Runs a tool body; a refusal (UserError) becomes an error result the agent can read. */
-const guard =
-  <A>(f: (a: A) => Result | Promise<Result>) =>
-  async (a: A): Promise<Result> => {
-    try {
-      return await f(a);
-    } catch (e) {
-      if (e instanceof UserError) return refuse(e.message);
-      throw e;
-    }
-  };
+import type { RunScope } from "./grants.js";
+import { guard, ok } from "./result.js";
 
 const Choice = z.object({
   label: z
@@ -57,8 +42,19 @@ const ASK_INPUT = {
     .describe("Not shown to the user: put the context in the question and the options instead"),
 };
 
+/** One decision and, when it was made in `projectId`, what came of it. */
+export function decisionLine(x: DecisionInfo, projectId: string): string {
+  return (
+    `${x.decisionId} (${x.scope}, ${x.decidedAt.slice(0, 10)}): ${JSON.stringify(x.question)} → ${JSON.stringify(x.choice)}` +
+    // Notes on another project's "everywhere" decisions stay in that project.
+    (x.projectId === projectId ? x.outcomes : [])
+      .map((o) => `\n  ${o.kind} (${o.by}): ${JSON.stringify(o.text)}`)
+      .join("")
+  );
+}
+
 /** Asking the user instead of being approved, your past decisions, and what came of them. */
-export function askTools(server: McpServer, scope: Scope, d: { db: Db; decisions: Decisions }): void {
+export function askTools(server: McpServer, scope: RunScope, d: { db: Db; decisions: Decisions }): void {
   server.registerTool(
     "ask",
     {
@@ -77,15 +73,7 @@ export function askTools(server: McpServer, scope: Scope, d: { db: Db; decisions
     },
     guard(() => {
       const list = decisionsView.applicable(d.db, scope.projectId, scope.chatId);
-      const lines = list.map(
-        (x) =>
-          `${x.decisionId} (${x.scope}, ${x.decidedAt.slice(0, 10)}): ${JSON.stringify(x.question)} → ${JSON.stringify(x.choice)}` +
-          // Notes on another project's "everywhere" decisions stay in that project.
-          (x.projectId === scope.projectId ? x.outcomes : [])
-            .map((o) => `\n  ${o.kind} (${o.by}): ${JSON.stringify(o.text)}`)
-            .join(""),
-      );
-      return ok(wrapData("your decisions", lines.join("\n")));
+      return ok(wrapData("your decisions", list.map((x) => decisionLine(x, scope.projectId)).join("\n")));
     }),
   );
   server.registerTool(

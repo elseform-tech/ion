@@ -695,9 +695,6 @@ body.resizing {
 .ir .aico {
   display: grid;
 }
-.radd .fin {
-  box-sizing: border-box;
-}
 /* ion chief's suggestions: a day you asked is a chip like the lab's, but nothing to click. */
 .sugg .ev span {
   display: inline-flex;

@@ -1,14 +1,19 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
-import { connect as tcp } from "node:net";
+import { connect as tcp, Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { startServer } from "./server.js";
 import { loadUserConfig, saveUserConfig } from "@ion/config";
+import { Decisions } from "../decisions/index.js";
+import { Ions } from "../ions/service.js";
+import { Suggestions } from "../ions/suggestions.js";
+import { RunManager } from "../runs/manager.js";
+import { Routines } from "../scheduler/index.js";
 
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
@@ -148,6 +153,121 @@ describe("daemon api", () => {
     await s2.close();
   });
 
+  // Task review, 2026-11-19: ions watched their threads before ion listened, so a report turn for a run a crash left
+  // unfinished could get ion's tools at port 0. Its ion now reports it through its tools, once ion listens.
+  it("reports an ion thread a crash left unfinished, through its ion's tools", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const h = mkdtempSync(join(tmpdir(), "ion-sweep-"));
+    const { openDb, EventStore } = await import("../store/index.js");
+    const { allViews } = await import("../views/index.js");
+    const { DEFAULT_CONFIG } = await import("@ion/config");
+    const cf = join(h, "config.toml");
+    saveUserConfig(cf, {
+      ...DEFAULT_CONFIG,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "fake" },
+      projects: [{ id: "app", path: repo("app"), starred: false, harness: "fake" }],
+    });
+    mkdirSync(join(h, "data"), { recursive: true });
+    const db = openDb(join(h, "data", "ion.db"));
+    const st = new EventStore(db, allViews);
+    const at = { chatId: "c", origin: "daemon" as const };
+    st.append({
+      ...at,
+      runId: null,
+      type: "chat.created",
+      data: { title: "Fix it", projectId: "app", by: "ion" },
+    });
+    st.append({
+      ...at,
+      runId: "r-crashed",
+      type: "run.started",
+      data: { harness: "fake", model: "m", effort: null, authMethod: null },
+    });
+    db.close();
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: cf, port: 0 });
+    const c2 = await connect({ port: s2.port, token: s2.token });
+    const seen: IonEvent[] = [];
+    await c2.subscribe({ chatId: "ion:app" }, (e) => seen.push(e));
+    // The first look at which agents are ready (each one's CLI) is slow while the whole suite runs.
+    await until(() => seen.some((e) => e.type === "ion.said"), 25_000);
+    expect(seen.find((e) => e.type === "ion.said")!.data).toEqual({ text: "It didn't finish." });
+    expect(seen.some((e) => e.type === "tool.started")).toBe(true);
+    c2.close();
+    await s2.close();
+  }, 30_000);
+
+  // Final review, 2026-11-19: routines started before ion listened, so a routine due at boot got ion's tools at
+  // port 0, and the sweep of runs a crash left unfinished then marked its live run failed.
+  it("starts a routine due at boot with ion's tools on its port, and doesn't sweep its run", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const h = mkdtempSync(join(tmpdir(), "ion-boot-"));
+    const { openDb, EventStore } = await import("../store/index.js");
+    const { allViews } = await import("../views/index.js");
+    const { DEFAULT_CONFIG } = await import("@ion/config");
+    const cf = join(h, "config.toml");
+    const routine = { id: "r1", name: "Check", when: "every 4h", text: "mcpinfo", on: true };
+    saveUserConfig(cf, {
+      ...DEFAULT_CONFIG,
+      projects: [{ id: "app", path: repo("app"), starred: false, harness: "fake", routines: [routine] }],
+    });
+    mkdirSync(join(h, "data"), { recursive: true });
+    const db = openDb(join(h, "data", "ion.db"));
+    // It last ran a day ago: a slot came while ion was stopped, so it runs as ion starts.
+    const due = new Date(Date.now() - 86_400_000).toISOString();
+    new EventStore(db, allViews).append({
+      chatId: null,
+      runId: null,
+      origin: "daemon",
+      type: "routine.ran",
+      data: { projectId: "app", routineId: "r1", name: "Check", due, by: "schedule", chatId: "old" },
+    });
+    db.close();
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: cf, port: 0 });
+    const c2 = await connect({ port: s2.port, token: s2.token });
+    const seen: IonEvent[] = [];
+    await c2.subscribe({}, (e) => seen.push(e));
+    await until(() => seen.some((e) => e.type === "run.finished" && e.chatId !== "old"), 10_000);
+    const said = seen.find((e) => e.type === "message.completed" && e.origin === "adapter");
+    const url = String((JSON.parse(String((said?.data as { text: string }).text)) as { url: string }).url);
+    expect(url).toBe(`http://127.0.0.1:${s2.port}/mcp`);
+    expect(seen.find((e) => e.type === "run.finished")).toMatchObject({ data: { status: "done" } });
+    c2.close();
+    await s2.close();
+  }, 15_000);
+
+  // Final review, 2026-11-19: routines, suggestions and waiting answers started before ion listened (their runs'
+  // tools at port 0, then swept as unfinished). Once ion listens: watch, sweep, routines, suggestions, answers.
+  it("starts its schedules only once it listens, after the sweep", async () => {
+    const order: string[] = [];
+    const listen = Server.prototype.listen;
+    const spies = [
+      vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...a: unknown[]) {
+        const done = a.at(-1) as () => void;
+        return listen.apply(this, [...a.slice(0, -1), () => (order.push("listen"), done())] as never);
+      }),
+      ...(
+        [
+          [Ions.prototype, "watch"],
+          [RunManager.prototype, "closeUnfinishedRuns"],
+          [Routines.prototype, "start"],
+          [Suggestions.prototype, "start"],
+          [Decisions.prototype, "resume"],
+        ] as const
+      ).map(([o, m]) => {
+        const f = o[m] as (...a: unknown[]) => unknown;
+        return vi.spyOn(o, m as never).mockImplementation(function (this: unknown, ...a: unknown[]) {
+          order.push(m === "start" ? o.constructor.name : m);
+          return f.apply(this, a);
+        } as never);
+      }),
+    ];
+    const h = mkdtempSync(join(tmpdir(), "ion-order-"));
+    const s2 = await startServer({ dataDir: join(h, "data"), configFile: join(h, "config.toml"), port: 0 });
+    for (const s of spies) s.mockRestore();
+    await s2.close();
+    expect(order).toEqual(["listen", "watch", "closeUnfinishedRuns", "Routines", "Suggestions", "resume"]);
+  });
+
   it("keeps its data folder private", () => {
     expect(statSync(join(home, "data")).mode & 0o777).toBe(0o700);
   });
@@ -245,12 +365,14 @@ describe("daemon api", () => {
     ]);
   });
 
-  it("starts a thread when you message a project's ion, and ion chief routes with the fake model", async () => {
+  // Plan 14: an ion's turn is a session of its own agent (here the fake one) with ion's tools over MCP: ion chief
+  // starts threads with start_thread, and each thread's end comes back through a turn of its project's ion.
+  it("ion chief routes with the fake agent through start_thread", async () => {
     process.env.ION_ALLOW_FAKE = "1";
     await client.call("projects.add", { path: repo("app") });
     const seen: IonEvent[] = [];
     await client.subscribe({}, (e) => seen.push(e));
-    // ion thinks with its own quick model ([ion] quick), and judges with [access] judge: both fake here.
+    // ion thinks with its own agent ([ion] quick), and judges with [access] judge: both fake here.
     const cf = join(home, "config.toml");
     const { config } = loadUserConfig(cf);
     // Its project's ion runs on the fake agent too: with none set, ion would pick a real one that's ready.
@@ -260,26 +382,29 @@ describe("daemon api", () => {
       access: { ...config.access, judge: "fake" },
       projects: config.projects.map((p) => ({ ...p, harness: "fake" })),
     });
-    await client.call("ion.message", { ionId: "app", text: "hello from your ion" });
-    const thread = (await client.call("chats.list", {})).find((c) => c.by === "ion");
-    expect(thread).toMatchObject({ projectId: "app", title: "hello from your ion" });
-    await until(
-      () =>
-        seen.some(
-          (e) =>
-            e.chatId === "ion:app" &&
-            e.type === "ion.said" &&
-            (e.data as { text: string }).text.startsWith("It's done."),
-        ),
-      5000,
-    );
+    const ionSaid = (ionId: string) =>
+      seen
+        .filter((e) => e.chatId === `ion:${ionId}` && e.type === "ion.said")
+        .map((e) => e.data as { text: string; card?: { kind: string; threads: { chatId: string }[] } });
     await client.call("ion.message", { ionId: "chief", text: "please check app" });
-    await until(() => seen.some((e) => e.chatId === "ion:chief" && e.type === "ion.said"), 15_000);
-    const chief = seen.filter((e) => e.chatId === "ion:chief" && e.type === "ion.said").at(-1)!.data as {
-      text: string;
-    };
-    expect(chief).toMatchObject({ text: "", card: { kind: "threads" } });
-    // Two runs end to end (a thread, then ion chief routing): slower than 5 s when the whole suite runs at once.
+    const chief = ionSaid("chief").at(-1)!;
+    expect(chief).toMatchObject({ text: "Asked 1 project.", card: { kind: "threads" } });
+    // Its turn used ion's tools: its work is on its chat.
+    const tools = seen.filter((e) => e.chatId === "ion:chief" && e.type === "tool.started");
+    expect(tools.map((e) => (e.data as { name: string }).name)).toEqual([
+      "mcp__ion__projects",
+      "mcp__ion__start_thread",
+    ]);
+    const thread = (await client.call("chats.list", {})).find((c) => c.by === "ion");
+    expect(thread).toMatchObject({
+      projectId: "app",
+      title: "please check app",
+      chatId: chief.card!.threads[0]!.chatId,
+    });
+    expect(ionSaid("app")[0]).toEqual({ text: "From ion: please check app" });
+    // The thread ends: app's ion says what came of it, and ion chief passes it on.
+    await until(() => ionSaid("chief").at(-1)?.text === "It's done.", 15_000);
+    expect(ionSaid("app").at(-1)).toEqual({ text: "It's done." });
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
@@ -375,6 +500,38 @@ describe("daemon api", () => {
       id: "x",
     } as never);
     expect((await client.call("projects.list", {}))[0]).toMatchObject({ id: "app", path, color: "#ED712E" });
+  });
+
+  // Plan 14 (2026-11-19): you set a project's profile in Settings; its ion's suggestion only counts once you accept
+  // it, so the app may clear a suggestion but never write one.
+  it("sets a project's profile, at most 300 characters, and only clears a suggestion", async () => {
+    await client.call("projects.add", { path: repo("app") });
+    const file = join(home, "config.toml");
+    const { config } = loadUserConfig(file);
+    saveUserConfig(file, {
+      ...config,
+      projects: config.projects.map((p) => ({ ...p, profileSuggestion: "A shop." })),
+    });
+    await client.call("project.update", { projectId: "app", profile: "The storefront." });
+    expect((await client.call("projects.list", {}))[0]).toMatchObject({
+      profile: "The storefront.",
+      profileSuggestion: "A shop.",
+    });
+    await expect(
+      client.call("project.update", { projectId: "app", profile: "x".repeat(301) }),
+    ).rejects.toThrow("Keep it under 300 characters");
+    await expect(
+      client.call("project.update", { projectId: "app", profileSuggestion: "Mine." } as never),
+    ).rejects.toThrow("Only its ion suggests a profile");
+    expect((await client.call("projects.list", {}))[0]?.profileSuggestion).toBe("A shop.");
+    // Task review, 2026-11-19: a profile that isn't text was written as is.
+    await expect(client.call("project.update", { projectId: "app", profile: 42 } as never)).rejects.toThrow(
+      "Write the profile as text",
+    );
+    await client.call("project.update", { projectId: "app", profile: null, profileSuggestion: null });
+    const p = (await client.call("projects.list", {}))[0];
+    expect(p).not.toHaveProperty("profile");
+    expect(p).not.toHaveProperty("profileSuggestion");
   });
 
   // The user, 2026-11-19: rename a project (the name ion shows; its id stays).

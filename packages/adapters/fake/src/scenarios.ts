@@ -42,6 +42,81 @@ const done = (s: Script, toolId: string, ok: boolean, summary: string | null = n
 const edited = (s: Script) =>
   s.emit({ type: EV.fileChanged, data: { path: "notes.md", change: "add", added: 1, removed: null } });
 
+type IonServer = { url: string; headers: Record<string, string> };
+
+/** Calls one of ion's MCP tools over HTTP, as an agent's MCP client would (stateless: no handshake needed). */
+const callIon = (server: IonServer, name: string, args: Record<string, unknown>) =>
+  fetch(server.url, {
+    method: "POST",
+    headers: {
+      ...server.headers,
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+  });
+
+/** A tool of ion's, as a step of the session (so its turn shows its work): what it answered, or "" when refused. */
+async function ionTool(s: Script, server: IonServer, name: string, args: Record<string, unknown>) {
+  const toolId = `ion-${name}-${String(args.projectId ?? "")}`;
+  tool(s, { toolId, name: `mcp__ion__${name}`, kind: "read", summary: name });
+  const res = await callIon(server, name, args).catch(() => null);
+  // ion's server unreachable: the step failed, as an agent's MCP client would say.
+  if (!res) {
+    done(s, toolId, false);
+    return "";
+  }
+  const body = (await res.json().catch(() => null)) as {
+    result?: { content?: { text?: string }[]; isError?: boolean };
+  } | null;
+  const ok = res.ok && !body?.result?.isError;
+  done(s, toolId, ok);
+  return ok ? (body?.result?.content?.[0]?.text ?? "") : "";
+}
+
+/** How an ion's turn answers a thread's end ("A thread you started has ended: <status>. …"), or null. */
+function endOf(message: string): string | null {
+  const status = /^A thread you started has ended: (\w+)\./.exec(message)?.[1];
+  if (!status) return null;
+  return status === "done" ? "It's done." : "It didn't finish.";
+}
+
+/** The projects a message names: "please check <a> and <b> for …", each the first word of its part. */
+function namedIn(message: string): string[] {
+  return (message.split("please check ")[1] ?? "")
+    .replaceAll(" and ", ",")
+    .split(",")
+    .map((p) => p.trim().split(/\s+/)[0]!)
+    .filter(Boolean);
+}
+
+/** An ion's turn on your message (see SCENARIOS.ion). */
+async function ionTurn(s: Script): Promise<"done" | "failed" | "interrupted"> {
+  const server = s.mcp() as IonServer | null;
+  if (!server) return "failed";
+  const message = s.text();
+  const listed = await ionTool(s, server, "projects", {});
+  const first = /^(\S+): /m.exec(listed)?.[1] ?? "nothing";
+  const edit = message.includes("try-edit") && !(await tryEdit(s)) ? "I couldn't edit notes.md. " : "";
+  if (message.includes("take-your-time") && (await s.wait(30_000)) === "interrupted") return "interrupted";
+  let started = 0;
+  for (const projectId of namedIn(message))
+    if (await ionTool(s, server, "start_thread", { projectId, brief: message })) started++;
+  const asked = `Asked ${started} project${started === 1 ? "" : "s"}.`;
+  say(s, edit + (started ? asked : `This is ${first}.`));
+  return "done";
+}
+
+/** "try-edit": an ion's agent tries to write a file, as a harness would, through ion's gate first. */
+async function tryEdit(s: Script): Promise<boolean> {
+  const input = { file_path: "notes.md", content: "hello\n" };
+  tool(s, { toolId: "edit", name: "Write", kind: "edit", summary: "notes.md" });
+  const g = await s.gate({ kind: "edit", toolName: "Write", input, summary: "notes.md" });
+  if (g.decision === "allow") s.write("notes.md", "hello\n");
+  done(s, "edit", g.decision === "allow", g.decision === "allow" ? null : "Not allowed");
+  return g.decision === "allow";
+}
+
 const transient = async (s: Script) => {
   s.emit({ type: EV.error, data: { code: "rate_limit", retryable: true, message: "Rate limited" } });
   return "failed" as const;
@@ -71,36 +146,6 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
         deny ? { allow: false, reason: "Looks risky" } : { allow: true, reason: "Part of the task" },
       ),
     );
-    return "done";
-  },
-  /** ion chief's System 1: route to every project your message names, else answer. */
-  async route(s) {
-    const block = (source: string) =>
-      new RegExp(`source="${source}">\\n([\\s\\S]*?)\\n</ion-data`).exec(s.text())?.[1] ?? "";
-    const message = block("your message");
-    const named = block("projects")
-      .split("\n")
-      .filter((p) => p && message.includes(p));
-    const reply = named.length
-      ? { route: named.map((projectId) => ({ projectId, brief: message })) }
-      : { answer: "Nothing needs you right now." };
-    say(s, JSON.stringify(reply));
-    return "done";
-  },
-  /** Answers like a project's ion: a question about the project is answered, anything else becomes a thread. */
-  async decide(s) {
-    const block = (source: string) =>
-      new RegExp(`source="${source}">\\n([\\s\\S]*?)\\n</ion-data`).exec(s.text())?.[1] ?? "";
-    const message = block("your message");
-    const project = /^Project: (.+?) \(id/.exec(block("project state"))?.[1] ?? "this project";
-    const asked = /\?\s*$|^(what|which|who|where|how many)\b/i.test(message.trim());
-    say(s, JSON.stringify(asked ? { answer: `This is ${project}.` } : { thread: message }));
-    return "done";
-  },
-  /** Tells you what came of a thread like a project's ion: the agent's reply, in a sentence. */
-  async report(s) {
-    const reply = /source="the agent's reply">\n([\s\S]*?)\n<\/ion-data/.exec(s.text())?.[1] ?? "";
-    say(s, reply && reply !== "(no reply)" ? `It's done. ${reply}` : "It's done.");
     return "done";
   },
   async hello(s) {
@@ -178,9 +223,25 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, ran ? "Ran it." : `Blocked: ${g.reason ?? "denied"}`);
     return "done";
   },
+  /**
+   * An ion's turn (ion chief or a project's): looks its projects up, starts a thread in each project the message
+   * names ("please check <a> and <b> for …": a project is the first word of each), tries a write when it says
+   * "try-edit", waits on "take-your-time", and replies "Asked <n> projects." or "This is <its first project>.". A
+   * thread's end is answered "It's done." (or "It didn't finish.").
+   */
+  async ion(s) {
+    const ended = endOf(s.text());
+    if (!ended) return ionTurn(s);
+    // A thread's end: it looks with ion's tools first (as an agent would), then says it in a word, starting nothing.
+    const server = s.mcp() as IonServer | null;
+    const listed = server ? await ionTool(s, server, "projects", {}).catch(() => "") : "";
+    if (!listed) return "failed";
+    say(s, ended);
+    return "done";
+  },
   /** Asks the user through ion's MCP server (tool "ask"), then ends its turn, as told. */
   async asks(s) {
-    const server = s.mcp() as { url: string; headers: Record<string, string> } | null;
+    const server = s.mcp() as IonServer | null;
     if (!server) return "failed";
     const choices = [
       {
@@ -193,26 +254,10 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
         consequence: "Safer if you want to see it first; the branch stays open meanwhile",
       },
     ];
-    const res = await fetch(server.url, {
-      method: "POST",
-      headers: {
-        ...server.headers,
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "ask",
-          arguments: {
-            question: "Should I merge the cart drawer fix into main now?",
-            why: "The tests pass and the change touches only the cart drawer, so merging is low risk.",
-            choices,
-          },
-        },
-      }),
+    const res = await callIon(server, "ask", {
+      question: "Should I merge the cart drawer fix into main now?",
+      why: "The tests pass and the change touches only the cart drawer, so merging is low risk.",
+      choices,
     });
     // Like an agent: it ends its turn with a word, not ion's raw reply (the tour once showed the JSON).
     say(s, res.ok ? "I asked you whether to merge." : "I couldn't ask you.");

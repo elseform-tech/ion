@@ -176,7 +176,7 @@ export class RunManager {
    */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
-    const scope = { projectId: l.projectId, chatId: l.chatId, runId: l.runId };
+    const scope = { kind: "run" as const, projectId: l.projectId, chatId: l.chatId, runId: l.runId };
     l.mcpKey = this.ctx.mcp?.grants.create(scope);
     if (this.ctx.gate && l.h.adapter.gateCall) l.gateKey = this.ctx.mcp?.grants.create(scope, "gate");
     this.launches.set(l.runId, l);

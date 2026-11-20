@@ -150,3 +150,34 @@ The approval that follows a gate allow is matched by command (unwrapped from the
   it used to fall back to the run's folder, which reads as an in-worktree edit); an edit approval for an item ion
   never saw start is declined; an MCP approval form, which names only the server and the tool, is asked about only
   when exactly one call to that tool is still running on that server (finished calls are forgotten), else declined.
+
+## Ions with tools: 22 projects on Grok (2026-11-19, Plan 14)
+
+`ION_LIVE_GROK=1 pnpm -s vitest run apps/daemon/src/evals/live.test.ts -t "22 projects"`: a real daemon, 22 git repos
+with one-paragraph READMEs (`storefront` cart drawer and checkout, `payments-api` totals and webhook retries,
+`mobile-app` and `admin-portal` both with login, `ledger-lab` kept from ion chief with `shareWithIon = false`, 17
+more), `[ion] quick = "grok-build"`, every project on `grok-build` (grok-4.7). Judged by events: the turn's `ion.said`
+(its text and threads card) and the chats ion created; threads are interrupted once started (each would spend a run).
+One run, 107 s in all; all five passed.
+
+| Check | Result | What ion chief did | Turn |
+|---|---|---|---|
+| "The cart drawer total is wrong" goes to storefront only | pass | `projects`, `search_chats`, `open_needs`, `memory_list`, `decisions`, then `start_thread` in storefront: "The cart drawer lives in storefront…" | 33 s (first turn: Grok's tool search first) |
+| "Webhook retries…" goes to payments-api | pass | Same lookups, one thread in payments-api | 25 s |
+| "What's waiting on me?" answers without a thread | pass | `open_needs`, `projects`: "Nothing is waiting on you…" | 13 s |
+| "Fix the login bug." asks which, starts nothing | pass | "Is it mobile-app (email and Face ID) or admin-portal (staff SSO)? I have not started anything." | 12 s |
+| A project kept from it (`ledger-lab`) is never seen or routed to | pass | "None of your projects cover nightly crypto wallet reconciliation… closest are payments-api, billing, data-warehouse. Which one?" No thread. | 22 s |
+
+Each turn starts with the same lookups (projects, search_chats, open_needs, memory_list, often decisions), as its
+instructions say; Grok runs them in parallel, so they cost about a second. Project ions (storefront,
+payments-api) wrote the reports of the interrupted threads on Grok, and ion chief passed them on after its own
+answer, never before.
+
+**Real app** (`ION_HOME=/tmp/ion-live-22`, the CLI): `ion ions message chief "Have docs add one line to its README…"`
+(15 s) started a thread in docs; `ion ions message mobile-app "What is this project about…"` (22 s) answered from
+its README with no thread. The docs thread ran on Grok (gate and policy allowed its reads and the edit in its
+worktree) and finished in 30 s. **Bug found:** docs' ion then reported "that line is not in the file": it read the
+project's folder, while the thread's edit lives in its own worktree until you merge it. Fixed: a report turn is told
+that a thread's changes are on its own branch, not in the project's folder, and gets the files it changed (as data).
+After the fix, another docs thread was reported as "On the thread's branch, README.md now ends with… That stays on its
+own branch until you merge it." No error events; `daemon.log` stayed empty.

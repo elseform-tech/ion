@@ -394,7 +394,7 @@ button.arow:hover{background:var(--hover)}
 .sprev{display:flex;align-items:center;gap:14px}
 .sprev canvas{width:64px;height:64px}
 .fin{width:100%;font:inherit;color:var(--ink);background:var(--hover);border:1px solid transparent;border-radius:var(--r-md);padding:8px 10px;resize:none;outline:none}
-.fin:focus{border-color:var(--accent)}
+.fin:focus{border-color:var(--accent)}.srow.stack .fin{box-sizing:border-box}
 .fin.big{font-size:18px;font-weight:600;background:transparent;padding:6px 4px;border-radius:0;border-bottom:1px solid var(--line)}
 .fin.big:focus{border-color:transparent;border-bottom-color:var(--accent)}
 .fl{display:grid;gap:8px;font-size:12.5px;color:var(--faint);font-weight:500}
@@ -2636,6 +2636,8 @@ const LIB={
 const PROJECTS=['storefront','payments-api','docs','marketing-site','mobile-app','infra','auth-service','analytics','design-system','billing','admin','email-service'];
 const PINFO={};
 for(const p of PROJECTS) PINFO[p]={path:'~/code/'+p,merge:p==='docs'?0:1,notif:{docs:'digest','marketing-site':'muted',admin:'digest'}[p]||'needs'};
+/* a project's profile: yours; what its ion suggests shows under it until you accept or dismiss it */
+if(PINFO.storefront) Object.assign(PINFO.storefront,{profile:'The shop’s web front end: Next.js, Stripe checkout.',sugg:'The shop’s web front end: Next.js, Stripe checkout, Playwright e2e on every PR.'});
 const RT=(n,w,nx,o={})=>({n,w,nx,on:1,...o});
 /* one umbrella per assistant turn: thinking, tool calls (grouped when consecutive), then a summary.
    Collapsed by default once done; while live it shows the current step. "thinking" is whatever the harness exposes:
@@ -2664,6 +2666,10 @@ const WORK={
     {k:'group',ic:'database',n:'Checked 12 project maps',items:[['Found','totals code','3 projects'],['Skipped','no money math','9 projects']]},
     {k:'tool',ic:'split',n:'Sent briefs',a:'payments-api · billing · mobile-app',d:'0.4s',st:'ok',res:'3 runs'},
     {k:'sum',t:'Asked the 3 projects that compute totals. I’ll post one summary card when they’re all back.'}]},
+  docsLook:{dur:'12s',steps:[
+    {k:'think',d:'2s',t:'Look at what merged since the v2.3 tag.'},
+    {k:'tool',ic:'plug',n:'history',a:'docs',st:'ok'},
+    {k:'tool',ic:'square-terminal',n:'Bash',a:'git log v2.3..HEAD --oneline',st:'ok'}]},
   payLive:{live:true,dur:'1m 12s',steps:[
     {k:'think',d:'4s',t:'Find every place payments sums line items, then compare with storefront’s fix.'},
     {k:'group',ic:'file-search',n:'Searched and read 3 files',items:[['Search','reduce( in src/ledger','5 matches'],['Read','src/ledger/sum.ts','71 lines'],['Read','src/ledger/sum.test.ts','40 lines']]},
@@ -2702,12 +2708,12 @@ function workHTML(id){
   const tools=w.steps.reduce((n,s)=>n+(s.k==='group'?s.items.length:s.k==='tool'?1:0),0);
   const thinks=w.steps.filter(s=>s.k==='think').length, cur=w.steps[w.steps.length-1];
   const head=w.live
-    ?`<i class="spin"></i><span class="now">${esc(cur.n)} ${esc(cur.a||'')}</span><span class="wn">· ${w.dur}</span>`
+    ?`<span class="now">${esc(cur.n)} ${esc(cur.a||'')}</span><span class="wn">· ${w.dur}</span>`
     :`<i data-lucide="${w.sys===2?'brain':tools?'wrench':'sparkles'}"></i><span>${tools?`Worked for ${w.dur}`:`Thought for ${w.dur}`}</span>`;
   const step=(s,i)=>{
     if(s.k==='think') return `<div class="ws think" data-wfull="${id}:${i}"><i data-lucide="brain"></i><div class="wl"><b>Thought for ${s.d}</b><p>${esc(s.t)}</p></div><span></span></div>`;
     if(s.k==='group') return `<div class="ws"><i data-lucide="${s.ic}"></i><div class="wl"><b>${esc(s.n)}</b><div class="wg">${s.items.map(([v,a,r])=>`<div>${esc(v)} <code>${esc(a)}</code><span>${r}</span></div>`).join('')}</div></div><span></span></div>`;
-    if(s.k==='tool') return `<div class="ws w-${s.st}">${s.st==='run'?'<i class="spin"></i>':`<i data-lucide="${s.st==='err'?'circle-alert':s.ic}"${s.st==='ok'&&s.ic==='square-terminal'?' class="okc"':''}></i>`}<div class="wl"><b>${esc(s.n)}</b> <code>${esc(s.a)}</code>${s.res?` <span class="wn">· ${esc(s.res)}</span>`:''}${s.out?`<div class="wout">${esc(s.out)}</div>`:''}</div><span class="wd2">${s.d||''}</span></div>`;
+    if(s.k==='tool') return `<div class="ws w-${s.st}"><i data-lucide="${s.st==='err'?'circle-alert':s.ic}"${s.st==='ok'&&s.ic==='square-terminal'?' class="okc"':''}></i><div class="wl"><b${s.st==='run'?' class="now"':''}>${esc(s.n)}</b> <code>${esc(s.a)}</code>${s.res?` <span class="wn">· ${esc(s.res)}</span>`:''}${s.out?`<div class="wout">${esc(s.out)}</div>`:''}</div><span class="wd2">${s.d||''}</span></div>`;
     if(s.k==='sum') return `<div class="wsum">${s.t}</div>`;
     return '';
   };
@@ -2751,7 +2757,9 @@ const IONS={
       {f:'i',workOnly:'payLive'}]},
   docs:{name:'docs',color:PAL.Amber,harness:'pi',proj:'docs',state:'idle',last:'Changelog draft is up',stats:{runs:4,ok:4,prs:3,cost:'$0.90'},
     routines:[RT('Changelog draft','After each release','After v2.4',{effort:'low',instr:'Draft the changelog from merged PRs.'})],
-    msgs:[{f:'i',t:'v2.3 changelog is drafted from the merged PRs.'},{f:'i',link:['docs','ok','v2.3 changelog','2m 41s']}]},
+    msgs:[{f:'i',t:'v2.3 changelog is drafted from the merged PRs.'},{f:'i',link:['docs','ok','v2.3 changelog','2m 41s']},
+      {f:'u',t:'What changed since v2.3?'},
+      {f:'i',t:'Two fixes and the new pricing page. Want them in the changelog?',work:'docsLook'}]},
   'mobile-app':{name:'mobile-app',color:PAL.Blue,harness:'grok',proj:'mobile-app',state:'waiting',last:'App Store rejected 2 screenshots',stats:{runs:22,ok:19,prs:5,cost:'$7.30'},
     routines:[RT('Crash watch','Every day 7:00','Tomorrow 7:00',{effort:'low',instr:'Group new crashes; open a chat for anything new and frequent.'}),
               RT('Store review','When a build is rejected','Next rejection',{effort:'medium',instr:'Read the rejection and propose fixes.'}),
@@ -3042,6 +3050,8 @@ function projRow(k,row){
   if(k==='lead') return row('Projects','','<span class="chip">All</span>');
   const I=PINFO[k]||{};
   return row('Folder','',`<span class="chip mono">${esc(I.path||'')}</span>`)
+    +`<div class="srow stack"><div class="g">Profile</div><textarea class="fin" rows="2" aria-label="Profile">${esc(I.profile||'')}</textarea></div>`
+    +(I.sugg?`<div class="srow"><i data-lucide="sparkles"></i><div class="g s">${esc(I.sugg)}</div><button class="ib" type="button" title="Dismiss" aria-label="Dismiss" data-psugg="${esc(k)}"><i data-lucide="x"></i></button><button class="ib" type="button" title="Accept" aria-label="Accept" data-psugg="${esc(k)}" data-ok="1"><i data-lucide="check"></i></button></div>`:'')
     +row('Ask before merging','',`<button type="button" class="sw${I.merge?' on':''}" role="switch" aria-checked="${!!I.merge}" aria-label="Ask before merging" data-pmerge="${esc(k)}"></button>`);
 }
 function openIonSettings(k){
@@ -3241,7 +3251,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!sheet.hidden) clo
 
 /* ===== handlers: teams, routines, pause ===== */
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-waitgo],[data-disk],[data-need],[data-pinsall],[data-pinstoggle],[data-evtoggle],[data-star],[data-nlevel],[data-addproject],[data-rtadd],[data-pmerge],[data-rtoggle],[data-skip],[data-run],[data-pauseall],[data-setproj]'); if(!t) return;
+  const t=e.target.closest('[data-waitgo],[data-disk],[data-need],[data-pinsall],[data-pinstoggle],[data-evtoggle],[data-star],[data-nlevel],[data-addproject],[data-rtadd],[data-psugg],[data-pmerge],[data-rtoggle],[data-skip],[data-run],[data-pauseall],[data-setproj]'); if(!t) return;
   const d=t.dataset, k=d.k||d.rtoggle||d.skip||d.run, v=k&&IONS[k];
   if(d.setproj){ closeMenus(); setProj(d.setproj); return; }
   if(d.need){ const n=NEEDS.find(x=>x.id===d.need); if(!n) return;
@@ -3255,6 +3265,7 @@ document.addEventListener('click',e=>{
   if(d.nlevel){ PINFO[d.p].notif=d.nlevel; renderNotif(); return; }
   if('addproject' in d){ openSheet(); return; }
   if(d.rtadd){ const v=IONS[d.k], i=+d.i; if(d.rtadd==='keep') delete v.routines[i].isNew; else { v.routines.splice(i,1); v.role=`${v.routines.length} routine${v.routines.length===1?'':'s'}`; } rerenderRight(); return; }
+  if(d.psugg){ const I=PINFO[d.psugg]; if(d.ok) I.profile=I.sugg; delete I.sugg; openIonSettings(d.psugg); return; }
   if(d.pmerge){ PINFO[d.pmerge].merge=PINFO[d.pmerge].merge?0:1; openIonSettings(d.pmerge); return; }
   if('pauseall' in d){ pausedAll=!pausedAll; renderActivity(); return; }
   const r=v&&v.routines[+d.i];

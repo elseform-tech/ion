@@ -20,6 +20,17 @@ const cmd = (command: string): ApprovalRequest => ({
 });
 
 describe("ruleFor", () => {
+  // Task review, 2026-11-19: `file -C` compiles a magic file and writes a .mgc, so `file` isn't read-only then.
+  it("does not allow file -C or --compile", () => {
+    for (const c of ["file -C -m x", "file --compile x", "file -Cm x"])
+      expect(ruleFor(cmd(c), ctx)?.decision).not.toBe("allow");
+  });
+
+  // Re-review, 2026-11-19: file's flags can write (-C in any group or prefix); it isn't worth allowing.
+  it("does not allow the file command at all", () => {
+    for (const c of ["file -bC -m x", "file a.txt"]) expect(ruleFor(cmd(c), ctx)?.decision).not.toBe("allow");
+  });
+
   it("denies anything touching your secrets or ion's own files, whatever else it says", () => {
     for (const c of [
       "cat ~/.ssh/id_rsa",

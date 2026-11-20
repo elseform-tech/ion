@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Grants, Scope } from "../mcp/index.js";
+import type { Grants, IonScope, RunScope } from "../mcp/index.js";
 
 const MAX_BODY = 1024 * 1024;
 
@@ -45,20 +45,23 @@ export function readJson(req: IncomingMessage): Promise<unknown> {
 
 /**
  * ion's gate: `POST /gate/<key>` with the harness's hook payload, answered `{decision, reason?}`. The key is in
- * the path because hooks can't always set headers; it only answers for its own run. No browser (any Origin).
- * A call ion can't read is a 400 with a deny, so a hook that fails closed blocks it.
+ * the path because hooks can't always set headers; it only answers for its own run, or its own ion's turn (`ion`;
+ * without it an ion's key is unknown here). No browser (any Origin). A call ion can't read is a 400 with a deny,
+ * so a hook that fails closed blocks it.
  */
 export function createGateHandler(d: {
   grants: Grants;
-  decide: (scope: Scope, payload: unknown) => Promise<GateAnswer | null>;
+  decide: (scope: RunScope, payload: unknown) => Promise<GateAnswer | null>;
+  ion?: (scope: IonScope, payload: unknown) => Promise<GateAnswer | null>;
 }) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (req.headers.origin !== undefined) return send(res, 403, "Forbidden");
     const key = /^\/gate\/([0-9a-f]{64})$/.exec((req.url ?? "").split("?")[0]!)?.[1];
     const scope = key ? d.grants.check(key, "gate") : null;
-    if (!scope) return send(res, 401, "Unknown key");
+    if (!scope || (scope.kind === "ion" && !d.ion)) return send(res, 401, "Unknown key");
     if (req.method !== "POST") return send(res, 405, "Use POST");
-    const answer = await d.decide(scope, await readJson(req));
+    const payload = await readJson(req);
+    const answer = scope.kind === "run" ? await d.decide(scope, payload) : await d.ion!(scope, payload);
     if (!answer) return send(res, 400, { decision: "deny", reason: "ion couldn't read this tool call" });
     send(res, 200, answer);
   };

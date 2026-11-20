@@ -269,4 +269,42 @@ describe("Settings, reviewed", () => {
     expect(screen.getByText("Pick a time")).toBeTruthy();
     expect(c.call).not.toHaveBeenCalledWith("routine.add", expect.anything());
   });
+
+  // Plan 14 (2026-11-19): a project's profile (what it is, for its ion and ion chief) is yours to set in Settings;
+  // what its ion suggests only counts once you accept it.
+  it("shows and saves a project's profile, and refuses one over 300 characters", async () => {
+    const c = client({ projects: [{ ...projects[0]!, profile: "The\u0007 shop." } as ProjectInfo] });
+    await openShop(c);
+    const box = screen.getByLabelText("Profile") as HTMLTextAreaElement;
+    expect(box.value).toBe("The shop.");
+    fireEvent.change(box, { target: { value: "The storefront." } });
+    fireEvent.blur(box);
+    expect(c.call).toHaveBeenCalledWith("project.update", { projectId: "shop", profile: "The storefront." });
+    fireEvent.change(box, { target: { value: "x".repeat(301) } });
+    fireEvent.blur(box);
+    expect(await screen.findByText("Keep it under 300 characters")).toBeTruthy();
+    expect(c.call).not.toHaveBeenCalledWith("project.update", {
+      projectId: "shop",
+      profile: "x".repeat(301),
+    });
+    fireEvent.change(box, { target: { value: " " } });
+    fireEvent.blur(box);
+    expect(c.call).toHaveBeenCalledWith("project.update", { projectId: "shop", profile: null });
+  });
+
+  it("accepts or dismisses the profile its ion suggested", async () => {
+    const c = client({
+      projects: [{ ...projects[0]!, profileSuggestion: "A\u001b shop for socks." } as ProjectInfo],
+    });
+    await openShop(c);
+    expect(screen.getByText("A shop for socks.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(c.call).toHaveBeenCalledWith("project.update", {
+      projectId: "shop",
+      profile: "A shop for socks.",
+      profileSuggestion: null,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(c.call).toHaveBeenCalledWith("project.update", { projectId: "shop", profileSuggestion: null });
+  });
 });

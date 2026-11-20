@@ -20,6 +20,10 @@ export type ProjectInfo = {
   effort?: "low" | "medium" | "high" | "max";
   /** What its ion does on a schedule. */
   routines?: RoutineInfo[];
+  /** What the project is, in your words (at most 300 characters). */
+  profile?: string;
+  /** A profile its ion suggested: only used once you accept it. */
+  profileSuggestion?: string;
 };
 
 /** Something a project's ion does on a schedule (`when`: see parseWhen): a thread titled `name`, briefed `text`. */
@@ -106,6 +110,9 @@ export type ProjectPatch = {
   effort?: "low" | "medium" | "high" | "max" | null;
   access?: "auto" | "full" | null;
   shareWithIon?: boolean | null;
+  profile?: string | null;
+  /** Only cleared (you accepted or dismissed it): only its ion suggests a profile. */
+  profileSuggestion?: null;
 };
 
 /** ion's own models: "quick" thinks for ion chief and the project ions ("<agent>" or "<agent>:<model>"). */

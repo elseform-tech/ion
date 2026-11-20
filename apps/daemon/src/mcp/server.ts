@@ -1,9 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Db, EventStore } from "../store/index.js";
-import type { Decisions } from "../decisions/index.js";
 import type { Grants, Scope } from "./grants.js";
+import { type IonDeps, registerIonTools } from "./ion-tools.js";
 import { registerTools } from "./tools.js";
 
 const MAX_BODY = 1024 * 1024;
@@ -32,7 +31,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
-/** Who's calling: a live run key in the Authorization header, and no browser (any Origin header) at all. */
+/** Who's calling: a live run or ion key in the Authorization header, and no browser (any Origin header) at all. */
 function authorize(req: IncomingMessage, grants: Grants): { status: number; scope?: Scope } {
   if (req.headers.origin !== undefined) return { status: 403 };
   const m = /^Bearer ([0-9a-f]{64})$/.exec(req.headers.authorization ?? "");
@@ -41,10 +40,10 @@ function authorize(req: IncomingMessage, grants: Grants): { status: number; scop
 }
 
 /**
- * ion's MCP server over HTTP (stateless: one small server per request). Only `/mcp`, only from a run that
- * holds a live key, and only what that run's project may see.
+ * ion's MCP server over HTTP (stateless: one small server per request). Only `/mcp`, only from a run or an ion's
+ * turn that holds a live key, and only what that key may see: a run its project, an ion its projects.
  */
-export function createMcpHandler(d: { store: EventStore; db: Db; grants: Grants; decisions?: Decisions }) {
+export function createMcpHandler(d: IonDeps) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const auth = authorize(req, d.grants);
     if (!auth.scope) return reply(res, auth.status, auth.status === 403 ? "Forbidden" : "Unknown key");
@@ -55,7 +54,8 @@ export function createMcpHandler(d: { store: EventStore; db: Db; grants: Grants;
       return reply(res, 400, "Bad request");
     }
     const server = new McpServer({ name: "ion", version: "0.0.0" });
-    registerTools(server, auth.scope, d);
+    if (auth.scope.kind === "run") registerTools(server, auth.scope, d);
+    else registerIonTools(server, auth.scope, d);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

@@ -119,6 +119,12 @@ describe("opencode's gate plugin", () => {
       toolName: "ion__memory_write",
     });
     expect(OPENCODE.toCall!({ tool: "ion_memory_write_x", args: {} })).toMatchObject({ kind: "other" });
+    // Task review, 2026-11-19: ion's own tools (projects, set_profile, start_thread) map to mcp too.
+    for (const t of ["projects", "start_thread", "set_profile"])
+      expect(OPENCODE.toCall!({ tool: `ion_${t}`, args: {} })).toMatchObject({
+        kind: "mcp",
+        mcpServer: "ion",
+      });
     expect(OPENCODE.toCall!({})).toBeNull();
   });
 });
