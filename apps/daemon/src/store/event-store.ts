@@ -1,4 +1,4 @@
-import { type IonEvent, type NewEvent, parseEvent, SCHEMA_VERSION } from "@ion/schema";
+import { type EventType, type IonEvent, type NewEvent, parseEvent, SCHEMA_VERSION } from "@ion/schema";
 import { monotonicFactory } from "ulid";
 
 const ulid = monotonicFactory();
@@ -107,7 +107,18 @@ export class EventStore {
     return event;
   }
 
-  read(q: { chatId?: string; runId?: string; afterId?: string; limit?: number } = {}): IonEvent[] {
+  /** Events in order; `since`: at or after this time (ISO), `types`: only these. */
+  read(
+    q: {
+      chatId?: string;
+      runId?: string;
+      afterId?: string;
+      limit?: number;
+      since?: string;
+      types?: readonly EventType[];
+    } = {},
+  ): IonEvent[] {
+    if (q.types?.length === 0) return [];
     const where: string[] = [];
     const params: unknown[] = [];
     const add = (clause: string, value: unknown) => {
@@ -116,6 +127,11 @@ export class EventStore {
     };
     if (q.chatId !== undefined) add("chat_id = ?", q.chatId);
     if (q.runId !== undefined) add("run_id = ?", q.runId);
+    if (q.since !== undefined) add("ts >= ?", q.since);
+    if (q.types) {
+      where.push(`type IN (${q.types.map(() => "?").join(", ")})`);
+      params.push(...q.types);
+    }
     if (q.afterId !== undefined) {
       const at = this.db.prepare("SELECT rowid AS r FROM events WHERE id = ?").get(q.afterId) as
         | { r: number }

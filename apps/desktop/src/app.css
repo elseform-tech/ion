@@ -686,6 +686,8 @@ body.resizing {
   border-radius: 999px;
 }
 /* Why a change in Settings or Activity did not save, by the control. */
+/* Why your config didn't load, at the top of Settings. */
+.spage > .perr,
 .group > .perr,
 .acol > .perr {
   color: var(--del-ink);

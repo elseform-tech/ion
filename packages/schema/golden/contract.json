@@ -47,7 +47,9 @@
     "queue.added",
     "queue.removed",
     "queue.sent",
-    "queue.failed"
+    "queue.failed",
+    "notify",
+    "briefing.posted"
   ],
   "commands": [
     "status",
@@ -65,7 +67,7 @@
     "chat.artifacts",
     "task.stop",
     "chat.file",
-    "settings.update",
+    "settings.set",
     "chat.create",
     "events.subscribe",
     "ask",

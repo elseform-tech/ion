@@ -1,7 +1,8 @@
 import { DEFAULT_PROJECT, loadUserConfig, PROFILE_CHARS, saveUserConfig, type UserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
-import { type EffortLevel, type ProjectPatch, stripControl } from "@ion/schema";
+import { type EffortLevel, type ProjectPatch, type SettingsInfo, stripControl } from "@ion/schema";
+import { applyGeneral, generalOf } from "./general-settings.js";
 import { harnessIds } from "../adapters/registry.js";
 import type { Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
@@ -95,10 +96,17 @@ function ionPatch(ion: UserConfig["ion"], quick: string | undefined, effort: Eff
   return next;
 }
 
+/** Every setting as your config file has it; when it doesn't load, the defaults and why. */
+function settingsOf(file: string): SettingsInfo {
+  const { config: c, error } = loadUserConfig(file);
+  const settings = { quick: c.ion.quick, effort: c.ion.quickEffort ?? null, ...generalOf(c) };
+  return error ? { ...settings, problem: error } : settings;
+}
+
 /** Settings: a project ion's setup and rules, and ion's own quick model. */
 export const settingsHandlers: Pick<
   Handlers,
-  "project.update" | "settings.get" | "settings.update" | "ion.stats"
+  "project.update" | "settings.get" | "settings.set" | "ion.stats"
 > = {
   "ion.stats": (a, ctx) => {
     const ionId = String(a.ionId ?? "");
@@ -116,13 +124,15 @@ export const settingsHandlers: Pick<
     return { ok: true as const };
   },
   "settings.get": (_a, ctx) => {
-    const { quick, quickEffort } = loadUserConfig(ctx.configFile).config.ion;
-    return { quick, effort: quickEffort ?? null };
+    return settingsOf(ctx.configFile);
   },
-  "settings.update": (a, ctx) => {
-    const quick = a.quick === undefined ? undefined : checkAgent(String(a.quick));
-    if (a.effort && !EFFORTS.includes(a.effort)) throw new UserError("Pick low, medium, high or max");
-    changeConfig(ctx.configFile, (c) => ({ ...c, ion: ionPatch(c.ion, quick, a.effort) }));
-    return { ok: true as const };
+  "settings.set": (a, ctx) => {
+    const p = a.patch ?? {};
+    const quick = p.quick === undefined ? undefined : checkAgent(String(p.quick));
+    if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
+    changeConfig(ctx.configFile, (c) => ({ ...applyGeneral(c, p), ion: ionPatch(c.ion, quick, p.effort) }));
+    // A higher limit lets waiting runs start now.
+    ctx.runs.limitChanged();
+    return settingsOf(ctx.configFile);
   },
 };

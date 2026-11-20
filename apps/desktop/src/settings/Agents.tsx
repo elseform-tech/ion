@@ -103,7 +103,7 @@ function QuickEffort({
 export function Agents({ client, data }: { client: IonClient; data: SettingsData }) {
   const quick = data.settings?.quick ?? "";
   const [error, run] = useCallError();
-  const pick = (spec: string) => run(client.call("settings.update", { quick: spec }), data.reload);
+  const pick = (spec: string) => run(client.call("settings.set", { patch: { quick: spec } }), data.reload);
   return (
     <>
       <div>
@@ -117,7 +117,7 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
       <QuickModel data={data} quick={quick} onPick={pick} error={error}>
         <QuickEffort
           value={data.settings?.effort ?? null}
-          onPick={(effort) => run(client.call("settings.update", { effort }), data.reload)}
+          onPick={(effort) => run(client.call("settings.set", { patch: { effort } }), data.reload)}
         />
       </QuickModel>
     </>

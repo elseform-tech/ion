@@ -1,6 +1,7 @@
 import { Avatar, Check, ChevronUp, Layers, Search } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { hit } from "../hotkeys.js";
 
 const EFFORTS = ["low", "medium", "high", "max"] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -159,7 +160,7 @@ function ModelCol({ rows, pick }: { rows: Row[]; pick: (key: string) => void }) 
 export function useEffortKey(brain: Brain, onChange: (b: Brain) => void): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key !== ".") return;
+      if (!hit("effort", e)) return;
       e.preventDefault();
       const next = EFFORTS[(EFFORTS.indexOf(brain.effort as Effort) + 1) % EFFORTS.length]!;
       onChange({ ...brain, effort: next });

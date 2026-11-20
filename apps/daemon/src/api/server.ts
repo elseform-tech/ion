@@ -1,3 +1,4 @@
+import { loadUserConfig } from "@ion/config";
 import { dropInheritedMarkers } from "../env.js";
 import { chmodSync, mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
@@ -28,6 +29,7 @@ import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
 import { chatsView } from "../views/chats.js";
 import { addRoutineTo } from "./routines.js";
+import { Notifier } from "../notify/index.js";
 
 /** The scope of a run that ion asks you about. */
 const runScopeOf = (r: AskingRun): RunScope => ({
@@ -64,16 +66,21 @@ export async function startServer(opts: {
   http.on("error", () => {});
   await new Promise<void>((r) => http.listen(opts.port ?? 0, "127.0.0.1", r));
   wss.on("connection", (ws) => new Connection(ws, ctx));
+  // A hand-edited setting that fell back to its default: say so once, in the daemon's log.
+  const { warning } = loadUserConfig(opts.configFile);
+  if (warning) console.warn(warning);
 
   const addr = http.address();
   port = typeof addr === "object" && addr ? addr.port : 0;
-  // Only now that ion listens (its tools have a port): the ions watch their threads end, and runs a crash left
+  // Only now that ion listens (its tools have a port): the ions watch their threads end, notifications and ion
+  // chief's daily briefing start (a run ion's own restart ends isn't told as a failure), and runs a crash left
   // unfinished end (their ions report them). Then what starts runs: routines on their schedule (one missed while
   // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
   ctx.ions.watch();
+  const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile });
+  notifier.start();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
-  const stopRoutines = ctx.routines.start();
-  const stopSuggestions = ctx.suggestions.start();
+  const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop()];
   // Your answers still waiting go in first; then what you queued while ion was stopped, to each chat or ion that
   // isn't working.
   void ctx.decisions
@@ -84,8 +91,7 @@ export async function startServer(opts: {
     port,
     token: auth.token,
     close: async () => {
-      stopRoutines();
-      stopSuggestions();
+      for (const stop of stops) stop();
       // ion's turns stop first; nothing an ion says after is written.
       ctx.ions.stop();
       await turns.shutdown();

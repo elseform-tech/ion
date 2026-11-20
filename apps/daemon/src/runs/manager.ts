@@ -58,6 +58,9 @@ type Between = {
 };
 type TryEnd = { status: string; error: RunError | null };
 
+const limitIn = (file: string) =>
+  maxRuns(loadUserConfig(file).config.resources.max_runs, availableParallelism());
+
 /** Starts runs on harnesses in each chat's own worktree, and stores everything they emit. One run per chat. */
 export class RunManager {
   private readonly active = new Map<string, Active>();
@@ -94,8 +97,8 @@ export class RunManager {
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
-    const setting = loadUserConfig(ctx.configFile).config.resources.max_runs;
-    this.queue = createRunQueue(maxRuns(setting, availableParallelism()));
+    // Read now and when Settings changes it (limitChanged), not at every start.
+    this.queue = createRunQueue(limitIn(ctx.configFile));
     this.approvals = new Approvals(
       store,
       ctx.access,
@@ -135,6 +138,11 @@ export class RunManager {
       if (key) this.reserved.delete(key);
     }
     return { chatId: launch.chatId, runId: launch.runId };
+  }
+
+  /** resources.max_runs changed: start the waiting runs that now fit. */
+  limitChanged(): void {
+    this.queue.setLimit(limitIn(this.ctx.configFile));
   }
 
   /** Makes the chat's worktree (and the chat, if new), stores your message and queues the run. */

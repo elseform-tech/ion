@@ -408,19 +408,22 @@ describe("daemon api", () => {
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
+  // Task review, 2026-11-20: one call (settings.set) saves every setting, the model and effort included.
   it("reads and sets ion's quick model, refusing an unknown agent", async () => {
-    expect(await client.call("settings.get", {})).toEqual({ quick: "claude-code", effort: null });
-    await client.call("settings.update", { quick: "grok-build" });
-    expect(await client.call("settings.get", {})).toEqual({ quick: "grok-build", effort: null });
-    await expect(client.call("settings.update", { quick: "nope:x" })).rejects.toThrow("Unknown agent: nope");
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "claude-code", effort: null });
+    await client.call("settings.set", { patch: { quick: "grok-build" } });
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", effort: null });
+    await expect(client.call("settings.set", { patch: { quick: "nope:x" } })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
     // The user, 2026-11-19: you pick how hard ion thinks; null is the agent's own default again.
-    await client.call("settings.update", { effort: "low" });
-    expect(await client.call("settings.get", {})).toEqual({ quick: "grok-build", effort: "low" });
-    await expect(client.call("settings.update", { effort: "huge" as "low" })).rejects.toThrow(
+    await client.call("settings.set", { patch: { effort: "low" } });
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", effort: "low" });
+    await expect(client.call("settings.set", { patch: { effort: "huge" as "low" } })).rejects.toThrow(
       "Pick low, medium, high or max",
     );
-    await client.call("settings.update", { effort: null });
-    expect(await client.call("settings.get", {})).toEqual({ quick: "grok-build", effort: null });
+    await client.call("settings.set", { patch: { effort: null } });
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", effort: null });
   });
 
   // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.

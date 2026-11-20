@@ -15,3 +15,12 @@ judge = "claude-code:haiku"
 
 [resources]
 max_runs = "auto"
+
+[notifications.briefing]
+on = true
+at = "08:30"
+
+[notifications.quiet]
+on = true
+from = "22:00"
+to = "08:00"

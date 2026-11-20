@@ -8,6 +8,8 @@ export type Queued = { id: number; cancel(): boolean };
 export function createRunQueue(limit: number): {
   enqueue(start: () => Promise<void>): Queued;
   size(): number;
+  /** A new limit: starts what now fits; a start that's going is never stopped. */
+  setLimit(n: number): void;
 } {
   const waiting: { id: number; start: () => Promise<void> }[] = [];
   let running = 0;
@@ -41,6 +43,10 @@ export function createRunQueue(limit: number): {
       };
     },
     size: () => waiting.length,
+    setLimit: (n) => {
+      limit = n;
+      pump();
+    },
   };
 }
 

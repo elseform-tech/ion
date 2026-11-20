@@ -48,6 +48,7 @@ fn daemon_info() -> Option<DaemonInfo> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![daemon_info, user_initial])
         .run(tauri::generate_context!())
         .expect("ion couldn't open its window");

@@ -1,18 +1,25 @@
 import type { IonClient } from "@ion/client/browser";
-import { Orbit, Plug } from "@ion/design-system";
+import { Bell, Keyboard, Orbit, Plug, SlidersHorizontal } from "@ion/design-system";
 import { useState } from "react";
 import { Agents } from "./Agents.js";
 import { useSettingsData } from "./data.js";
+import { General } from "./General.js";
 import { IonPage } from "./IonPage.js";
 import { IonsList } from "./IonsList.js";
+import { Notifications } from "./Notifications.js";
+import { Shortcuts } from "./Shortcuts.js";
 
-type Page = { kind: "agents" } | { kind: "ions" } | { kind: "ion"; ionId: string };
+type Tab = "general" | "agents" | "ions" | "notifications" | "shortcuts";
+type Page = { kind: Tab } | { kind: "ion"; ionId: string };
 
-/** The lab's Settings: Agents (who's ready, the model ion thinks with) and Ions (each ion's setup and rules). */
+/**
+ * The lab's Settings: General (default access, chats at once), Agents (who's ready, the model ion thinks with), Ions
+ * (each ion's setup and rules), Notifications and Shortcuts.
+ */
 export function Settings({ client, onOpenIon }: { client: IonClient; onOpenIon: (ionId: string) => void }) {
   const data = useSettingsData(client);
   const [page, setPage] = useState<Page>({ kind: "agents" });
-  const tab = (kind: "agents" | "ions", label: string, Icon: typeof Plug) => {
+  const tab = (kind: Tab, label: string, Icon: typeof Plug) => {
     const on = page.kind === kind || (kind === "ions" && page.kind === "ion");
     return (
       <button type="button" className={on ? "on" : ""} onClick={() => setPage({ kind })}>
@@ -25,11 +32,16 @@ export function Settings({ client, onOpenIon }: { client: IonClient; onOpenIon: 
     <>
       <nav className="snav" aria-label="Settings">
         <b>Settings</b>
+        {tab("general", "General", SlidersHorizontal)}
         {tab("agents", "Agents", Plug)}
         {tab("ions", "Ions", Orbit)}
+        {tab("notifications", "Notifications", Bell)}
+        {tab("shortcuts", "Shortcuts", Keyboard)}
       </nav>
       <div className="sbody">
         <div className="spage">
+          {data.settings?.problem && <div className="perr">{data.settings.problem}</div>}
+          {page.kind === "general" && <General client={client} data={data} />}
           {page.kind === "agents" && <Agents client={client} data={data} />}
           {page.kind === "ions" && (
             <IonsList data={data} onOpen={(ionId) => setPage({ kind: "ion", ionId })} />
@@ -44,6 +56,8 @@ export function Settings({ client, onOpenIon }: { client: IonClient; onOpenIon: 
               onAgents={() => setPage({ kind: "agents" })}
             />
           )}
+          {page.kind === "notifications" && <Notifications client={client} data={data} />}
+          {page.kind === "shortcuts" && <Shortcuts />}
         </div>
       </div>
     </>

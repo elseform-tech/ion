@@ -1,0 +1,88 @@
+import { availableParallelism } from "node:os";
+import { CLOCK, MAX_RUNS, MIN_RUNS, NOTIFY_LEVELS, type UserConfig } from "@ion/config";
+import type { NotifyLevel, SettingsInfo, SettingsPatch } from "@ion/schema";
+import { maxRuns } from "../scheduler/index.js";
+import { UserError } from "./errors.js";
+
+/** General and Notifications as the app shows them, from your config (what's not set is its default). */
+export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort"> {
+  return {
+    access: c.access.default,
+    maxRuns: c.resources.max_runs,
+    autoRuns: maxRuns("auto", availableParallelism()),
+    notifications: {
+      briefing: { on: c.notifications.briefing.on, at: c.notifications.briefing.at },
+      quiet: {
+        on: c.notifications.quiet.on,
+        from: c.notifications.quiet.from,
+        to: c.notifications.quiet.to,
+      },
+      projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? "needs"])),
+    },
+  };
+}
+
+function flag(v: unknown): boolean {
+  if (typeof v !== "boolean") throw new UserError("Pick on or off");
+  return v;
+}
+
+function clock(v: unknown): string {
+  if (typeof v !== "string" || !CLOCK.test(v)) throw new UserError("Use a time like 08:30");
+  return v;
+}
+
+function runs(v: unknown): "auto" | number {
+  if (v === "auto") return v;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < MIN_RUNS || v > MAX_RUNS)
+    throw new UserError(`Between ${MIN_RUNS} and ${MAX_RUNS} chats`);
+  return v;
+}
+
+function level(v: unknown): NotifyLevel {
+  if (!NOTIFY_LEVELS.includes(v as NotifyLevel)) throw new UserError("Pick all, needs, digest or muted");
+  return v as NotifyLevel;
+}
+
+/** One group's fields, each checked by `check`; a field not in the patch stays. */
+function merged<T extends object>(
+  now: T,
+  patch: object | undefined,
+  check: Record<string, (v: unknown) => unknown>,
+): T {
+  const next = { ...now } as Record<string, unknown>;
+  const given = (patch ?? {}) as Record<string, unknown>;
+  for (const [k, f] of Object.entries(check)) if (given[k] !== undefined) next[k] = f(given[k]);
+  return next as T;
+}
+
+function projectLevels(
+  c: UserConfig,
+  levels: Record<string, NotifyLevel> | undefined,
+): UserConfig["projects"] {
+  for (const id of Object.keys(levels ?? {}))
+    if (!c.projects.some((p) => p.id === id)) throw new UserError(`Unknown project: ${id}`);
+  return c.projects.map((p) => (levels && p.id in levels ? { ...p, notify: level(levels[p.id]) } : p));
+}
+
+/** The config with the patch applied; the first bad value refuses the whole patch, in plain words. */
+export function applyGeneral(c: UserConfig, patch: SettingsPatch): UserConfig {
+  const n = patch.notifications;
+  const access = patch.access === undefined ? c.access : { ...c.access, default: accessOf(patch.access) };
+  return {
+    ...c,
+    access,
+    resources: patch.maxRuns === undefined ? c.resources : { ...c.resources, max_runs: runs(patch.maxRuns) },
+    notifications: {
+      ...c.notifications,
+      briefing: merged(c.notifications.briefing, n?.briefing, { on: flag, at: clock }),
+      quiet: merged(c.notifications.quiet, n?.quiet, { on: flag, from: clock, to: clock }),
+    },
+    projects: projectLevels(c, n?.projects),
+  };
+}
+
+function accessOf(v: unknown): "auto" | "full" {
+  if (v !== "auto" && v !== "full") throw new UserError("Pick auto or full");
+  return v;
+}

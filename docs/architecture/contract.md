@@ -37,7 +37,13 @@ Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `app
 `need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`, `routine.ran`,
 `briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
 `decision.recorded`, `decision.outcome`, `decision.forgotten`, `queue.added`, `queue.removed`, `queue.sent`,
-`queue.failed`.
+`queue.failed`, `notify`, `briefing.posted`.
+
+A system notification is a `notify` event on the `notify` stream (chatId `"notify"`): `title` (the project's name,
+or "ion"), `body` (a line), the `chatId` it opens, and `kind`: `urgent` (a call ion stopped, a run that gave up),
+`needs` (any other question), `update` (a run that finished), or `summary` (one, when quiet hours end, for what they
+held). Which kinds notify is the project's `notify` level. ion chief's daily briefing is an `ion.said` in its chat;
+`briefing.posted { day }` (local `YYYY-MM-DD`) keeps it to once a day.
 
 A queued message (your next message to a chat or an ion while it works) is its events on the chat's stream (an
 ion's: `ion:<ionId>`): `queue.added` (its text and brain), then `queue.sent`, or `queue.removed` (removed, edited,

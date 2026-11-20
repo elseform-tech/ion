@@ -119,6 +119,34 @@ export type ProjectPatch = {
 /** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
 export type IonSettings = { quick: string; effort: EffortLevel | null };
 
+/** How much a project may notify: everything, what needs you, only urgent things, nothing. */
+export type NotifyLevel = "all" | "needs" | "digest" | "muted";
+
+/** Every setting: ion's model, then General and Notifications. */
+export type SettingsInfo = IonSettings & {
+  access: "auto" | "full";
+  maxRuns: "auto" | number;
+  /** How many chats Auto lets work at once on this computer (half its cores, at least one). */
+  autoRuns: number;
+  notifications: {
+    briefing: { on: boolean; at: string };
+    quiet: { on: boolean; from: string; to: string };
+    /** By project id. */
+    projects: Record<string, NotifyLevel>;
+  };
+  /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
+  problem?: string;
+};
+
+/** What Settings changes: only the given fields; notifications by part. */
+export type SettingsPatch = Partial<Pick<SettingsInfo, "access" | "maxRuns" | "quick" | "effort">> & {
+  notifications?: {
+    briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
+    quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
+    projects?: Record<string, NotifyLevel>;
+  };
+};
+
 /**
  * A process a chat's agent left running, in its worktree or anywhere else. `where`: "" in the worktree, null when
  * unknown, else its working folder, your home shown as ~.
@@ -184,7 +212,9 @@ export type Commands = {
   /** A project's ion setup and rules; null clears a field (back to the default). */
   "project.update": { args: ProjectPatch; result: { ok: true } };
   /** ion's own models (Settings → Agents). */
-  "settings.get": { args: Record<string, never>; result: IonSettings };
+  "settings.get": { args: Record<string, never>; result: SettingsInfo };
+  /** Saves the given settings and returns them all; a bad value is refused with its reason. */
+  "settings.set": { args: { patch: SettingsPatch }; result: SettingsInfo };
   /** An ion's threads' runs over the last 30 days (ion chief: every ion's). */
   "ion.stats": { args: { ionId: string }; result: IonStats };
   /** What a chat's agent left running (dev servers, watchers), wherever it runs, with PIDs and ports. */
@@ -195,7 +225,6 @@ export type Commands = {
   "task.stop": { args: { chatId: string; pid: number }; result: { ok: true } };
   /** A file in a chat's worktree, for the preview (at most 1 MB). */
   "chat.file": { args: { chatId: string; path: string }; result: FilePreview };
-  "settings.update": { args: Partial<IonSettings>; result: { ok: true } };
   "chat.create": { args: { title: string; projectId?: string | null }; result: IonEvent };
   /** fromNow: only events from now on, no backlog. */
   "events.subscribe": {
@@ -394,7 +423,7 @@ export const COMMANDS = [
   "chat.artifacts",
   "task.stop",
   "chat.file",
-  "settings.update",
+  "settings.set",
   "chat.create",
   "events.subscribe",
   "ask",

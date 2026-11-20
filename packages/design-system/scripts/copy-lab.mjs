@@ -15,6 +15,7 @@ const RANGES = [
   [165, 202, "ions: panel, ion chat, bubbles, thread links, quick replies"],
   [209, 264, "settings: nav, groups, rows, switches, ion page, agent and colour pickers"],
   [267, 283, "ions: new-ion card, notes"],
+  [293, 293, "keys (kbd)"],
   [305, 305, "empty lists"],
   [310, 330, "chips, project picker"],
   [331, 360, "activity: its row, upcoming and recent runs, pause all"],
@@ -31,7 +32,7 @@ const RANGES = [
   [521, 522, "starred project"],
   [530, 548, "ions: needs pinned atop ion chief"],
   [549, 560, "pins, await (hidden), project menu search"],
-  [568, 568, "segmented control, small"],
+  [567, 568, "notification icons; segmented control, small"],
   [571, 636, "media: code blocks"],
   [685, 699, "panel: in this chat (.inchat), its label (.lh2), media rows (.mrow); tasks"],
   [722, 733, "ions: needs strip, collapsed"],
@@ -45,6 +46,7 @@ const RANGES = [
   [1060, 1077, "ions: project ion rows, a thread open beside its ion's chat; routines' instructions"],
   [1083, 1088, "the frame: the top strip, each screen inside it; the sidebar hidden"],
   [1089, 1095, "queued messages above the message box"],
+  [1096, 1100, "settings: chats at once, times, a shortcut's keys"],
 ];
 
 const out = [

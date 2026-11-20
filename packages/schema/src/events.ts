@@ -53,6 +53,8 @@ export const DAEMON_EVENT_TYPES = [
   "queue.removed",
   "queue.sent",
   "queue.failed",
+  "notify",
+  "briefing.posted",
 ] as const;
 
 export const EVENT_TYPES = [...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES] as const;
@@ -104,6 +106,8 @@ export const EV = {
   queueRemoved: "queue.removed",
   queueSent: "queue.sent",
   queueFailed: "queue.failed",
+  notify: "notify",
+  briefingPosted: "briefing.posted",
 } as const satisfies Record<string, EventType>;
 
 export type AdapterEventType = (typeof ADAPTER_EVENT_TYPES)[number];
@@ -115,6 +119,10 @@ export const isDaemonOnly = (t: EventType): boolean => daemonOnly.has(t);
 
 export const RUN_END_STATUSES = ["done", "failed", "interrupted", "capped"] as const;
 export type RunEndStatus = (typeof RUN_END_STATUSES)[number];
+
+/** How loud a notification is: Urgent and Needs you as they come, Updates by the project's level, Summary after quiet hours. */
+export const NOTIFY_KINDS = ["urgent", "needs", "update", "summary"] as const;
+export type NotifyKind = (typeof NOTIFY_KINDS)[number];
 
 /** Data schemas for types whose payload the daemon relies on. Other types accept any object. */
 export const TOOL_KINDS = ["read", "edit", "command", "search", "web", "mcp", "other"] as const;
@@ -330,6 +338,18 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     why: z.string().optional(),
     skipped: z.literal(true).optional(),
   }),
+  /**
+   * A system notification (on the "notify" stream): the project's name (or "ion"), what it's about in a line, and
+   * the chat it opens. Held through quiet hours; then one "summary" for what was held.
+   */
+  notify: z.object({
+    title: z.string().min(1).max(200),
+    body: z.string().min(1).max(400),
+    chatId: z.string().min(1).optional(),
+    kind: z.enum(NOTIFY_KINDS),
+  }),
+  /** ion chief's daily briefing went out for this local day (YYYY-MM-DD): never twice, also across a restart. */
+  "briefing.posted": z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
   "run.queued": z.object({}),
   "run.retrying": z.object({
     attempt: z.number().int().min(1),
