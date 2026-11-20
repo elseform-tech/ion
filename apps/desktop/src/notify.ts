@@ -12,7 +12,7 @@ import { useEffect, useRef } from "react";
 /** The stream the daemon puts system notifications on. */
 const STREAM = "notify";
 
-type Notice = { title: string; body: string; chatId?: string };
+type Notice = { title: string; body: string; chatId?: string; kind?: string };
 
 /** ion asked you once already (asked again only if asking failed). */
 let asked = false;
@@ -55,13 +55,23 @@ function forward(): void {
     .catch(() => {});
 }
 
+/** A notice about the chat you're looking at, in a window that has focus: you see it already. A summary always shows. */
+const seen = (n: Notice, watching: string | null) =>
+  n.kind !== "summary" && !!n.chatId && n.chatId === watching && document.hasFocus();
+
 /**
- * ion's notify events, shown as system notifications; clicking one opens its chat. Only in the app's window: the
- * browser dev app has no system notifications.
+ * ion's notify events, shown as system notifications (not for `watching`, the chat on screen, while the window has
+ * focus); clicking one opens its chat. Only in the app's window: the browser dev app has no system notifications.
  */
-export function useSystemNotifications(client: IonClient | null, open: (chatId: string) => void): void {
+export function useSystemNotifications(
+  client: IonClient | null,
+  open: (chatId: string) => void,
+  watching: string | null,
+): void {
   const openRef = useRef(open);
   openRef.current = open;
+  const watchingRef = useRef(watching);
+  watchingRef.current = watching;
   useEffect(() => {
     if (!client || !("__TAURI_INTERNALS__" in window)) return;
     asked = false;
@@ -80,7 +90,8 @@ export function useSystemNotifications(client: IonClient | null, open: (chatId: 
     );
     void client
       .subscribe({ chatId: STREAM, fromNow: true }, (e) => {
-        if (e.type === EV.notify) void show(e.data as Notice).catch(() => {});
+        const n = e.data as Notice;
+        if (e.type === EV.notify && !seen(n, watchingRef.current)) void show(n).catch(() => {});
       })
       .then(keep, () => {});
     return () => {

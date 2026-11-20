@@ -44,8 +44,8 @@ function daemon() {
   return { client, subscribe, send };
 }
 
-function Host({ client, open }: { client: IonClient; open: (chatId: string) => void }) {
-  useSystemNotifications(client, open);
+function Host(p: { client: IonClient; open: (chatId: string) => void; watching?: string | null }) {
+  useSystemNotifications(p.client, p.open, p.watching ?? null);
   return null;
 }
 
@@ -140,5 +140,24 @@ describe("system notifications", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(d.subscribe).not.toHaveBeenCalled();
     expect(plugin.onAction).not.toHaveBeenCalled();
+  });
+
+  // Final review, 2026-11-20: a notification popped up for the chat you were looking at.
+  it("shows nothing for the chat you're looking at while the window has focus; summaries always", async () => {
+    plugin.granted = true;
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const d = daemon();
+    render(<Host client={d.client} open={() => {}} watching="c1" />);
+    await waitFor(() => expect(d.subscribe).toHaveBeenCalled());
+    d.send({ title: "Shop", body: "Watched", chatId: "c1", kind: "needs" });
+    d.send({ title: "Shop", body: "Other", chatId: "c2", kind: "needs" });
+    d.send({ title: "ion", body: "2 things need you", kind: "summary" });
+    await waitFor(() => expect(plugin.sendNotification).toHaveBeenCalledTimes(2));
+    focus.mockReturnValue(false); // another app in front
+    d.send({ title: "Shop", body: "Watched", chatId: "c1", kind: "needs" });
+    await waitFor(() => expect(plugin.sendNotification).toHaveBeenCalledTimes(3));
+    const bodies = plugin.sendNotification.mock.calls.map((c) => (c[0] as { body: string }).body);
+    expect(bodies).toEqual(["Other", "2 things need you", "Watched"]);
+    focus.mockRestore();
   });
 });

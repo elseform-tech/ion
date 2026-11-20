@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
@@ -20,9 +20,14 @@ let configFile: string;
 let stops: (() => void)[] = [];
 let n = 0;
 
+/** The notifier looks again at least this often. */
+const LOOK = 5 * 60_000;
+
 const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m);
 
-function save(o: { level?: Level; quiet?: { on: boolean; from: string; to: string } } = {}) {
+function save(
+  o: { level?: Level; defaultLevel?: Level; quiet?: { on: boolean; from: string; to: string } } = {},
+) {
   saveUserConfig(configFile, {
     ...DEFAULT_CONFIG,
     notifications: {
@@ -36,6 +41,12 @@ function save(o: { level?: Level; quiet?: { on: boolean; from: string; to: strin
         path: "/p/storefront",
         starred: false,
         ...(o.level ? { notify: o.level } : {}),
+      },
+      {
+        id: "default",
+        path: "/p/default",
+        starred: false,
+        ...(o.defaultLevel ? { notify: o.defaultLevel } : {}),
       },
     ],
   });
@@ -247,5 +258,97 @@ describe("the summary counts only what it held", () => {
     const read = vi.spyOn(store, "read");
     await until(at(19, 18));
     expect(read).not.toHaveBeenCalled();
+  });
+});
+
+// Final review, 2026-11-20: the "default" project's level was shown and saved in Settings but ignored: your chats
+// outside a project always counted as "needs".
+describe("your chats outside a project", () => {
+  function plain(): void {
+    const data = { title: "Plain chat", projectId: "default" };
+    store.append({ chatId: "d1", runId: null, origin: "daemon", type: EV.chatCreated, data });
+  }
+  const done = () =>
+    store.append({
+      chatId: "d1",
+      runId: `r${++n}`,
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+
+  it("a muted default notifies nothing", () => {
+    save({ defaultLevel: "muted" });
+    plain();
+    boot();
+    store.append({
+      chatId: "d1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.needRaised,
+      data: {
+        needId: "dn",
+        requestId: "ask_dn",
+        kind: "ask",
+        summary: "Which?",
+        detail: null,
+        dedupeKey: "ask:dn",
+      },
+    });
+    done();
+    expect(notified()).toEqual([]);
+  });
+
+  it("default on All notifies a finished chat, titled ion", () => {
+    save({ defaultLevel: "all" });
+    plain();
+    boot();
+    done();
+    expect(notified()).toEqual([
+      { title: "ion", body: "Finished: Plain chat", chatId: "d1", kind: "update" },
+    ]);
+  });
+});
+
+// Final review, 2026-11-20: a laptop asleep through the end of quiet hours woke a tick past the slack, and the
+// summary was dropped. A daemon running since before the window ended still sends it, late.
+describe("a computer that slept", () => {
+  it("sends the summary when it wakes", async () => {
+    vi.setSystemTime(at(19, 21));
+    boot();
+    vi.setSystemTime(at(19, 23));
+    need("Allow call?", true);
+    vi.setSystemTime(at(20, 9)); // asleep: no timer fired
+    await vi.advanceTimersByTimeAsync(LOOK);
+    expect(notified()).toEqual([{ title: "ion", body: "1 thing needs you", kind: "summary" }]);
+    await until(at(20, 12));
+    expect(notified()).toHaveLength(1);
+  });
+});
+
+// Final review, 2026-11-20: a config that failed to load as a whole (a bad access.default) left the notifier on
+// defaults, every project "needs". It keeps the last settings it read, or, with none, notifies only Urgent.
+describe("a config that fails to load", () => {
+  const breakIt = () =>
+    writeFileSync(
+      configFile,
+      readFileSync(configFile, "utf8").replace('default = "auto"', 'default = "nope"'),
+    );
+
+  it("keeps the last good settings", () => {
+    save({ level: "muted" });
+    boot();
+    breakIt();
+    need("Allow npm install?", true);
+    expect(notified()).toEqual([]);
+  });
+
+  it("with none read yet, only Urgent notifies", () => {
+    breakIt();
+    boot();
+    need("Which database?");
+    finished("done");
+    need("Allow npm install?", true);
+    expect(notified().map((x) => x.kind)).toEqual(["urgent"]);
   });
 });

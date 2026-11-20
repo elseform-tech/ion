@@ -73,11 +73,11 @@ const activity = {
   yesterday: [],
 };
 
-function client(o: { projects?: ProjectInfo[]; fail?: string[] } = {}) {
+function client(o: { projects?: ProjectInfo[]; fail?: string[]; problem?: string } = {}) {
   const call = vi.fn(async (cmd: string) => {
     if (o.fail?.includes(cmd)) throw new ApiCallError("invalid", "Fix your config first.");
     if (cmd === "harnesses.list") return [claude, grok];
-    if (cmd === "settings.get") return { quick: "grok-build", effort: null };
+    if (cmd === "settings.get") return { quick: "grok-build", effort: null, problem: o.problem };
     if (cmd === "ions.list") return ions;
     if (cmd === "projects.list") return o.projects ?? projects;
     if (cmd === "activity.list") return activity;
@@ -91,6 +91,18 @@ function client(o: { projects?: ProjectInfo[]; fail?: string[] } = {}) {
 // The user, 2026-11-19: "where are the settings". The lab's Settings: Agents (who's ready, ion's quick model) and
 // Ions (each ion's agent, colour, model, effort, folder and rules).
 describe("Settings", () => {
+  // Final review, 2026-11-20: a config that didn't load left Settings on defaults without a word.
+  it("says at the top when your config doesn't load", async () => {
+    const problem = "config.toml: access.default must be one of auto, full";
+    render(<Settings client={client({ problem })} onOpenIon={() => {}} />);
+    const line = await screen.findByText(problem);
+    expect(line.className).toContain("perr");
+    cleanup();
+    render(<Settings client={client()} onOpenIon={() => {}} />);
+    await screen.findByText("Signed in");
+    expect(document.querySelector(".spage > .perr")).toBeNull();
+  });
+
   it("lists the agents and whether each is ready, and picks ion's quick model", async () => {
     const c = client();
     render(<Settings client={c} onOpenIon={() => {}} />);

@@ -40,6 +40,7 @@ export function Settings({ client, onOpenIon }: { client: IonClient; onOpenIon: 
       </nav>
       <div className="sbody">
         <div className="spage">
+          {data.settings?.problem && <div className="perr">{data.settings.problem}</div>}
           {page.kind === "general" && <General client={client} data={data} />}
           {page.kind === "agents" && <Agents client={client} data={data} />}
           {page.kind === "ions" && (

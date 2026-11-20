@@ -30,7 +30,8 @@ export const WHEN =
 /** A project's profile is a line or two (what ion chief reads to know what a project is): at most this long. */
 export const PROFILE_CHARS = 300;
 
-const Routine = z.object({
+// Loose, as a project is: a key you added by hand (or a newer ion did) survives a save.
+const Routine = z.looseObject({
   id: z.string().min(1).max(64),
   name: z.string().min(1).max(80),
   when: z.string().regex(WHEN, "must be like daily 09:00, weekdays 09:00, mon 09:00 or every 4h"),
@@ -43,7 +44,7 @@ const Routine = z.object({
   skip: z.string().optional(),
 });
 
-const Project = z.object({
+const Project = z.looseObject({
   id: z.string().min(1),
   path: z.string().min(1),
   starred: z.boolean().default(false),

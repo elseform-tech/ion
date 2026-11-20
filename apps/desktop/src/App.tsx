@@ -29,6 +29,12 @@ function openChat(
   go.setMode(ion ? "ions" : "chats");
 }
 
+/** The chat on screen: the open chat on Chats, the open ion's chat on Ions, none elsewhere. */
+function watched(mode: Mode, openId: string | null, ionId: string): string | null {
+  if (mode === "chats") return openId;
+  return mode === "ions" ? `ion:${ionId}` : null;
+}
+
 /**
  * The window, as the design lab draws it: the rail (the window's own buttons sit in its top strip), then the
  * Chats, Ions or Settings screen. ion's notifications show as the system's own; clicking one opens its chat.
@@ -43,7 +49,9 @@ export function App() {
   // The ion the Ions screen opens on (Settings' "Open chat" picks one).
   const [ionId, setIonId] = useState("chief");
   const [sidebar, toggleSidebar] = useSidebar();
-  useSystemNotifications(client, (chatId) => openChat(chatId, { setIonId, setOpenId, setMode }));
+  // The chat on screen: no system notification for it while the window has focus.
+  const watching = watched(mode, openId, ionId);
+  useSystemNotifications(client, (chatId) => openChat(chatId, { setIonId, setOpenId, setMode }), watching);
   if (state === "connecting") return <div className="app--empty" />;
   if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
   return (

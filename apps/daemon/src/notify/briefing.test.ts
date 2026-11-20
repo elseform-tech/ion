@@ -177,3 +177,28 @@ describe("the briefing's ticks", () => {
     expect(read).not.toHaveBeenCalled();
   });
 });
+
+// Final review, 2026-11-20: the first briefing after a long gap (a week away) named everything that finished since
+// the last one; it names at most a day back.
+describe("the briefing after a gap", () => {
+  it("names only what finished in the last day", async () => {
+    chat("c1", "Fix the cart");
+    finished("c1");
+    boot();
+    await until(at(19, 8, 31));
+    expect(briefings()).toHaveLength(1);
+    for (const s of stops) s();
+    stops = [];
+    vi.setSystemTime(at(22, 12));
+    chat("c2", "Old work");
+    finished("c2");
+    vi.setSystemTime(at(25, 7));
+    chat("c3", "New work");
+    finished("c3");
+    boot();
+    await until(at(25, 8, 31));
+    expect(briefings()).toHaveLength(2);
+    expect(briefings()[1]).toContain("New work");
+    expect(briefings()[1]).not.toContain("Old work");
+  });
+});

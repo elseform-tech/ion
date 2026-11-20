@@ -100,7 +100,7 @@ function briefingText(d: { store: EventStore; db: Db }, c: UserConfig, since: st
 /**
  * ion chief's daily briefing, once its time came today: "posted" (now, or earlier today: `briefing.posted` keeps
  * that across a restart), "nothing" to say today, or "waiting" (not yet its time, or it's off). It names what
- * finished since the last briefing (a day back for the first), what needs you, and today's routines.
+ * finished since the last briefing (a day back at most), what needs you, and today's routines.
  */
 export function briefIfDue(
   d: { store: EventStore; db: Db },
@@ -112,7 +112,10 @@ export function briefIfDue(
   const day = dayOf(now);
   const posts = d.store.read({ types: [EV.briefingPosted] });
   if (posts.some((e) => (e.data as { day: string }).day === day)) return "posted";
-  const since = posts.at(-1)?.ts ?? new Date(now.getTime() - DAY_MS).toISOString();
+  // A day back at most: after a week away, the first briefing doesn't name the whole week.
+  const dayBack = new Date(now.getTime() - DAY_MS).toISOString();
+  const last = posts.at(-1)?.ts;
+  const since = last && last > dayBack ? last : dayBack;
   const text = briefingText(d, c, since, now);
   if (!text) return "nothing";
   // Recorded first: a crash between the two loses a briefing rather than posting it twice.

@@ -1,4 +1,10 @@
-import { DEFAULT_PROJECT, loadUserConfig, type ProjectEntry, type UserConfig } from "@ion/config";
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_PROJECT,
+  loadUserConfig,
+  type ProjectEntry,
+  type UserConfig,
+} from "@ion/config";
 import { EV, type IonEvent, type NeedInfo, type NotifyKind } from "@ion/schema";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -10,7 +16,10 @@ import { dayOf, lastQuiet, nextAt, quietNow, type Window } from "./clock.js";
 const STREAM = "notify";
 /** The timer looks again at least this often, so a setting you changed (or a computer that slept) is noticed. */
 const LOOK_MS = 5 * 60_000;
-/** The summary goes when quiet hours end, or soon after (a tick late); a window that ended longer ago has none. */
+/**
+ * The summary goes when quiet hours end, or soon after (a tick late); a window that ended longer ago has none, unless
+ * ion was running since before it ended (the computer slept through its end).
+ */
 const SLACK_MS = LOOK_MS + 60_000;
 /** What can be worth a notification: a need raised, a run's end. */
 const SOURCES = [EV.needRaised, EV.runFinished];
@@ -64,16 +73,27 @@ function runEnd(base: Omit<Item, "kind" | "body">, title: string, status: string
   return null;
 }
 
-/** A project's own entry; none for your chats outside a project (or a project since removed). */
-const projectOf = (c: UserConfig, projectId: string | null) =>
-  projectId && projectId !== DEFAULT_PROJECT ? c.projects.find((p) => p.id === projectId) : undefined;
+/**
+ * The settings used while your config doesn't load and none loaded before: only Urgent notifies (every project
+ * counts as Digest), no briefing.
+ */
+const URGENT_ONLY: UserConfig = {
+  ...DEFAULT_CONFIG,
+  projects: [],
+  notifications: { ...DEFAULT_CONFIG.notifications, briefing: { on: false, at: "08:30" } },
+};
 
-/** Whether the project's level lets it notify you (no project, or one since removed: "needs"). */
-const allowed = (c: UserConfig, i: Item) => LOUD[projectOf(c, i.projectId)?.notify ?? "needs"].has(i.kind);
+/** A project's entry, `default` (your chats outside a project) too; none for a project since removed. */
+const entryOf = (c: UserConfig, projectId: string | null) =>
+  projectId ? c.projects.find((p) => p.id === projectId) : undefined;
 
-/** A notification's title: its project's name, or ion. */
+/** Whether the project's level lets it notify you (no entry, or one since removed: "needs"). */
+const allowed = (c: UserConfig, i: Item) =>
+  LOUD[entryOf(c, i.projectId)?.notify ?? (c === URGENT_ONLY ? "digest" : "needs")].has(i.kind);
+
+/** A notification's title: its project's name, or ion (your chats outside a project too). */
 const titleOf = (c: UserConfig, projectId: string | null) => {
-  const p = projectOf(c, projectId);
+  const p = projectId === DEFAULT_PROJECT ? undefined : entryOf(c, projectId);
   return p ? line(p.name ?? p.id) : "ion";
 };
 
@@ -116,10 +136,15 @@ export class Notifier {
   private looked: string | null = null;
   /** The end of the last quiet window whose summary is settled (sent, or nothing held): ticks don't look again. */
   private summarized: string | null = null;
+  /** When this notifier started: a window that ended after it may be summed up late (the computer slept). */
+  private started = 0;
+  /** The settings last read without an error: kept while a hand edit leaves the file unreadable. */
+  private good: UserConfig | null = null;
 
   constructor(private readonly d: { store: EventStore; db: Db; configFile: string }) {}
 
   start(): void {
+    this.started = Date.now();
     this.off = this.d.store.onAppend((e) => this.heard(e));
     this.tick();
   }
@@ -131,9 +156,11 @@ export class Notifier {
     this.timer = undefined;
   }
 
-  /** Settings are read each time: they change at any time. */
+  /** Settings are read each time: they change at any time. A file that doesn't load: the last good ones. */
   private config(): UserConfig {
-    return loadUserConfig(this.d.configFile).config;
+    const { config, error } = loadUserConfig(this.d.configFile);
+    if (!error) this.good = config;
+    return this.good ?? URGENT_ONLY;
   }
 
   private heard(e: IonEvent): void {
@@ -178,7 +205,7 @@ export class Notifier {
   }
 
   /**
-   * Once the last quiet hours ended (a tick ago at most; not during the next ones): one summary of what they held,
+   * Once the last quiet hours ended (a tick ago at most, or while ion ran; not during the next ones): one summary of what they held,
    * unless it went already. Settled once per window, so later ticks read nothing.
    */
   private summarize(c: UserConfig, now: Date): void {
@@ -186,7 +213,7 @@ export class Notifier {
     const w = lastQuiet(q, now);
     if (!w || quietNow(q, now) || this.summarized === w.end.toISOString()) return;
     this.summarized = w.end.toISOString();
-    if (now.getTime() - w.end.getTime() > SLACK_MS) return;
+    if (now.getTime() - w.end.getTime() > SLACK_MS && this.started > w.end.getTime()) return;
     const from = this.heldFrom(w);
     if (from === null) return;
     const held = heldIn(this.d, c, { from, end: w.end.toISOString() });

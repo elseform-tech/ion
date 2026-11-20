@@ -103,6 +103,29 @@ describe("General and notification settings", () => {
     expect(toml).toContain('at = "09:00"');
   });
 
+  // Final review, 2026-11-20: a Settings save dropped keys you added by hand inside [[projects]] and its routines.
+  it("keeps unknown keys in a project and its routines on save", async () => {
+    writeFileSync(
+      file,
+      '[[projects]]\nid = "app"\npath = "/p/app"\nmine = "keep"\n\n' +
+        '[[projects.routines]]\nid = "r"\nname = "R"\nwhen = "daily 09:00"\ntext = "Go."\nlabel = "x"\n',
+    );
+    await client.call("settings.set", { patch: { notifications: { projects: { app: "all" } } } });
+    const toml = readFileSync(file, "utf8");
+    expect(toml).toContain('mine = "keep"');
+    expect(toml).toContain('label = "x"');
+    expect(toml).toContain('notify = "all"');
+  });
+
+  // Final review, 2026-11-20: a config that failed to load as a whole left Settings on silent defaults; it says why.
+  it("says when the config doesn't load", async () => {
+    expect((await client.call("settings.get", {})).problem).toBeUndefined();
+    writeFileSync(file, '[access]\ndefault = "nope"\n');
+    const got = await client.call("settings.get", {});
+    expect(got.problem).toContain("config.toml");
+    expect(got.problem).toContain("access.default");
+  });
+
   it("a removed project's level goes with it", async () => {
     const added = await client.call("projects.add", { path: repo("app") });
     const id = (added as { id?: string }).id ?? "app";

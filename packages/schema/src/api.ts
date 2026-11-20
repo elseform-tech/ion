@@ -134,6 +134,8 @@ export type SettingsInfo = IonSettings & {
     /** By project id. */
     projects: Record<string, NotifyLevel>;
   };
+  /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
+  problem?: string;
 };
 
 /** What Settings changes: only the given fields; notifications by part. */
