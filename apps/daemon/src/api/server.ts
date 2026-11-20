@@ -1,3 +1,4 @@
+import { dropInheritedMarkers } from "../env.js";
 import { chmodSync, mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { homedir } from "node:os";
@@ -45,6 +46,7 @@ export async function startServer(opts: {
   configFile: string;
   port?: number;
 }): Promise<{ port: number; token: string; close(): Promise<void> }> {
+  dropInheritedMarkers(); // idempotent: embedders and tests start the server without main()
   let port = 0;
   const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
   const { db } = ctx;

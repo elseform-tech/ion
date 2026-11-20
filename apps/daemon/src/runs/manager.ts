@@ -411,6 +411,8 @@ export class RunManager {
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
       ...(l.resume ? { resume: l.resume } : {}),
+      // Every process the agent starts inherits it: the chat's Tasks find them wherever they run.
+      env: { ION_CHAT: l.chatId },
       ...(this.ctx.gate && l.gateKey ? { gate: { url: `${this.ctx.gate.url()}/${l.gateKey}` } } : {}),
       ...(this.ctx.mcp && l.mcpKey
         ? {

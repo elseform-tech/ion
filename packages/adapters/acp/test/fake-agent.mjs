@@ -48,6 +48,7 @@ function whoami(id, sessionId, told) {
       text: JSON.stringify({
         meta: metas.get(sessionId),
         env: process.env.FAKE_ACP_ENV ?? null,
+        chat: process.env.ION_CHAT ?? null,
         mcpServers: mcps.get(sessionId),
         ...(told ? { instructions: told } : {}),
       }),

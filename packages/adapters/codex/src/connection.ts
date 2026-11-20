@@ -175,7 +175,7 @@ async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string
 
 /** Starts Codex's app-server in the chat's folder (with ion's gate when the run has one) and opens a thread. */
 export async function connect(l: Launch, opts: StartOpts): Promise<Connection> {
-  const env: Record<string, string> = opts.gate ? { ION_GATE_URL: opts.gate.url } : {};
+  const env: Record<string, string> = { ...opts.env, ...(opts.gate ? { ION_GATE_URL: opts.gate.url } : {}) };
   const io = opts.gate ? await withGate(l, opts.cwd, env) : spawnAppServer(l, [], env);
   return within(l, io, async () => {
     if (!opts.gate) await initialize(io.rpc);

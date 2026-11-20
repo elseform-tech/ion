@@ -279,6 +279,15 @@ describe("codex adapter", () => {
 describe("codex adapter with ion's gate", () => {
   const gate = { url: "http://127.0.0.1:9/gate/k" };
 
+  // The user, 2026-11-19: a chat's processes are found by the marker its agent's environment carries.
+  it("passes ion's env to the agent process", async () => {
+    expect((await whoami({ env: { ION_CHAT: "chat_1" } })).chat).toBe("chat_1");
+    expect(await whoami({ env: { ION_CHAT: "chat_2" }, gate })).toMatchObject({
+      chat: "chat_2",
+      gate: gate.url,
+    });
+  });
+
   // Codex runs a hook only once you've trusted its exact content. ion learns the hash of its own hook from
   // Codex (`hooks/list`) once, then passes the hook and its trust with -c: nothing in your Codex folder changes.
   it("gives Codex ion's hook, trusted, and the gate's address", async () => {

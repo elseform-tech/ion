@@ -15,3 +15,4 @@ export { blocksText, TOOL_INPUT_MAX, TOOL_OUTPUT_MAX, toolText } from "./tool-te
 export { parseVersion, projectRoots, readVersion, whichOnPath } from "./system.js";
 export { type Catalog, cachedCatalog, capabilitiesWith, type Model } from "./catalog.js";
 export { createRpc, type Rpc, RpcError } from "./rpc.js";
+export { RUN_ENV_PREFIXES, RUN_ENV_VARS } from "./run-env.js";

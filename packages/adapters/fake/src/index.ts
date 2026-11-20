@@ -94,6 +94,13 @@ async function postGate(
   }
 }
 
+/** This session's try in its working folder (retries are new sessions). */
+function nextTry(cwd: string): number {
+  const tries = (triesByCwd.get(cwd) ?? 0) + 1;
+  triesByCwd.set(cwd, tries);
+  return tries;
+}
+
 function fakeSession(start: StartOpts, delayMs: number): Session {
   const queue = createEventQueue<AdapterEvent>();
   let interrupted = false;
@@ -107,8 +114,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
       };
     });
   let n = 0;
-  const tries = (triesByCwd.get(start.cwd) ?? 0) + 1;
-  triesByCwd.set(start.cwd, tries);
+  const tries = nextTry(start.cwd);
   const nativeId = start.resume ?? `fake-${randomUUID()}`;
   let sent = "";
   const script: Script = {
@@ -123,6 +129,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     tries: () => tries,
     text: () => sent,
     mcp: () => start.mcp ?? null,
+    env: () => start.env ?? {},
     instructions: () => start.instructions ?? "",
     gate: (req) => postGate(start.gate, req),
     wait: async (ms) => {

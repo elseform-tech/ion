@@ -119,7 +119,7 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     abortController: abort,
     canUseTool,
     pathToClaudeCodeExecutable: binaryPath,
-    env: { ...loginOnlyEnv(), ...mcpEnv(opts) },
+    env: { ...loginOnlyEnv(), ...opts.env, ...mcpEnv(opts) },
     // ion decides permissions: no settings files (a repo's .claude/ or your own allow rules and default mode
     // would skip canUseTool), and the default mode, so every non-read tool asks.
     settingSources: [],

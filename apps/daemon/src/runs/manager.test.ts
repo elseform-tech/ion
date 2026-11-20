@@ -433,6 +433,13 @@ describe("RunManager", () => {
     expect(grants.check(key)).toBeNull();
   });
 
+  // The user, 2026-11-19: the workspace lists every process a chat's tool calls left running, wherever they run;
+  // each run's agent carries the chat's marker, which those processes inherit.
+  it("marks each run's agent process with its chat", async () => {
+    const { chatId, runId } = await ask("envinfo");
+    expect(JSON.parse(said(await finished(runId))[0]!)).toEqual({ ION_CHAT: chatId });
+  });
+
   // The user, 2026-11-18: Claude and Grok wrote their questions as text (you got no question to answer); only
   // opencode used ion's ask tool. Every run with ion's tools is told to ask through it.
   it("tells each run with ion's tools to ask you through ion's ask tool", async () => {

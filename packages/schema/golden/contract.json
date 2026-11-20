@@ -58,6 +58,7 @@
     "settings.get",
     "ion.stats",
     "chat.tasks",
+    "chat.artifacts",
     "task.stop",
     "chat.file",
     "settings.update",

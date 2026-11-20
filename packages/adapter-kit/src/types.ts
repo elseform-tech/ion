@@ -36,6 +36,8 @@ export type StartOpts = {
   gate?: { url: string };
   /** ion's MCP server for this run: history, needs and memory of its project. */
   mcp?: { name: "ion"; url: string; headers: Record<string, string> };
+  /** Added to the agent process's environment (a chat's run: `ION_CHAT`, which its tool calls' processes inherit). */
+  env?: Record<string, string>;
   signal: AbortSignal;
   /** The daemon decides every permission prompt (policy now, a "Needs you" pin in Plan 3). */
   decide: (req: ApprovalRequest) => Promise<Decision>;

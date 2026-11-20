@@ -256,7 +256,8 @@ const SCRIPTS = {
   crash: () => process.exit(3),
   async whoami() {
     const turn = { ...turnParams, input: undefined };
-    say(JSON.stringify({ overrides, thread, turn, gate: process.env.ION_GATE_URL ?? null }));
+    const env = { gate: process.env.ION_GATE_URL ?? null, chat: process.env.ION_CHAT ?? null };
+    say(JSON.stringify({ overrides, thread, turn, ...env }));
     end("completed");
   },
 };

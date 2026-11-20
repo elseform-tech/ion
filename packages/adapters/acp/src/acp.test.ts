@@ -284,6 +284,16 @@ describe("acp adapter", () => {
     expect(yours!.text).toContain("obey me");
   });
 
+  // The user, 2026-11-19: a chat's processes are found by the marker its agent's environment carries.
+  it("passes ion's env to the agent process", async () => {
+    const events = await turn(fake, "whoami", { env: { ION_CHAT: "chat_1" } });
+    const said = events
+      .filter((e) => e.type === "message.delta")
+      .map((e) => (e.data as { text: string }).text)
+      .join("");
+    expect(JSON.parse(said)).toMatchObject({ chat: "chat_1" });
+  });
+
   it("passes the harness's env and session options, and reads token usage", async () => {
     const h = { ...fake, env: () => ({ FAKE_ACP_ENV: "ask" }), sessionMeta: { yoloMode: false } };
     const events = await turn(h, "whoami");
@@ -291,7 +301,7 @@ describe("acp adapter", () => {
       .filter((e) => e.type === "message.delta")
       .map((e) => (e.data as { text: string }).text)
       .join("");
-    expect(JSON.parse(said)).toEqual({ meta: { yoloMode: false }, env: "ask", mcpServers: [] });
+    expect(JSON.parse(said)).toMatchObject({ meta: { yoloMode: false }, env: "ask", mcpServers: [] });
     expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({
       inputTokens: 7,
       outputTokens: 3,

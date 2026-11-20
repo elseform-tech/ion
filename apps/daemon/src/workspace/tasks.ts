@@ -1,11 +1,13 @@
 import type { FilePreview, TaskInfo } from "@ion/schema";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
-import { extname, isAbsolute, join, sep } from "node:path";
+import { open, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, extname, isAbsolute, join, sep } from "node:path";
 import { UserError } from "../api/errors.js";
+import { IMAGE_TYPES } from "./artifacts.js";
 
-/** A process still running in a chat's worktree (a dev server, a watcher): what the preview's Tasks tab shows. */
+/** A process a chat's agent left running (a dev server, a watcher): what the preview's Tasks tab shows. */
 export type Task = TaskInfo;
 
 const run = (cmd: string, args: string[]) =>
@@ -36,6 +38,25 @@ async function cwds(pid?: number): Promise<Map<number, string>> {
 
 const inside = (dir: string, path: string) => path === dir || path.startsWith(dir + sep);
 
+/** macOS's real paths for /tmp and /var, shown as people type them. */
+const PRIVATE = /^\/private(\/(?:tmp|var))(?=\/|$)/;
+
+/**
+ * Where a task runs, as the panel shows it: "" in the worktree, null when its folder isn't known (lsof failed), else
+ * its folder with your home as ~ (and, on macOS, /private/tmp and /private/var as /tmp and /var).
+ */
+export function whereOf(
+  dir: string,
+  cwd: string | undefined,
+  home = homedir(),
+  platform: string = process.platform,
+): string | null {
+  if (cwd === undefined || cwd === "") return null;
+  if (inside(dir, cwd)) return "";
+  if (inside(home, cwd)) return `~${cwd.slice(home.length)}`;
+  return platform === "darwin" ? cwd.replace(PRIVATE, "$1") : cwd;
+}
+
 /** The TCP ports each of these processes listens on. */
 async function ports(pids: number[]): Promise<Map<number, number[]>> {
   const out = await run("lsof", ["-a", "-iTCP", "-sTCP:LISTEN", "-P", "-n", "-p", pids.join(","), "-Fpn"]);
@@ -53,34 +74,169 @@ async function ports(pids: number[]): Promise<Map<number, number[]>> {
 function row(line: string): (Task & { ppid: number }) | null {
   const [pid, ppid, elapsed, ...rest] = line.trim().split(/\s+/);
   if (!pid || !ppid || !elapsed || !rest.length || !/^\d+$/.test(pid)) return null;
-  return { pid: Number(pid), ppid: Number(ppid), elapsed, command: rest.join(" ").slice(0, 500), ports: [] };
+  const command = rest.join(" ").slice(0, 500);
+  return {
+    pid: Number(pid),
+    ppid: Number(ppid),
+    elapsed,
+    command,
+    ports: [],
+    where: null,
+  };
+}
+
+/** ion's chat ids (`chat_<uuid>`); anything else is never built into the marker. */
+const CHAT_ID = /^[\w-]{1,100}$/;
+const uid = () => process.getuid?.() ?? -1;
+
+/** `pid command` lines from ps, by PID. */
+function byPid(out: string): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const line of out.split("\n")) {
+    const m = /^\s*(\d+) (.*)$/.exec(line);
+    if (m) map.set(Number(m[1]), m[2]!);
+  }
+  return map;
 }
 
 /**
- * What's running in the worktree, but not ion's own (the daemon and the agent CLIs it runs, its direct children):
- * what an agent left behind or started in the background.
+ * macOS: your own processes whose environment has `marker` as a whole word. `ps -E` prints the command, then the
+ * environment; only what comes after the plain command is read, so an argument can't pass for the marker.
  */
-export async function listTasks(worktree: string): Promise<Task[]> {
+async function markedByPs(marker: string, only?: number): Promise<Set<number>> {
+  const which = only ? ["-p", String(only)] : ["-x", "-U", String(uid())];
+  const [plain, withEnv] = await Promise.all([
+    run("ps", ["-ww", "-o", "pid=,command=", ...which]).then(byPid),
+    run("ps", ["-E", "-ww", "-o", "pid=,command=", ...which]).then(byPid),
+  ]);
+  const pids = new Set<number>();
+  for (const [pid, line] of withEnv) {
+    const command = plain.get(pid);
+    if (command === undefined || !line.startsWith(command)) continue;
+    // An environment value with spaces could fake the token, but only from something the chat's agent started (it
+    // could set ION_CHAT on anything it starts anyway): the marker finds the chat's processes, it isn't a boundary.
+    if (line.slice(command.length).split(/\s+/).includes(marker)) pids.add(pid);
+  }
+  return pids;
+}
+
+/** Linux: your own processes whose environment (`/proc/<pid>/environ`, NUL-separated) has `marker` as an entry. */
+export async function markedInProc(marker: string, only?: number, proc = "/proc"): Promise<Set<number>> {
+  const names = only ? [String(only)] : await readdir(proc).catch(() => []);
+  const pids = new Set<number>();
+  await Promise.all(
+    names
+      .filter((n) => /^\d+$/.test(n))
+      .map(async (n) => {
+        const st = await stat(join(proc, n)).catch(() => null);
+        if (st?.uid !== uid()) return;
+        const env = await readFile(join(proc, n, "environ"), "utf8").catch(() => "");
+        if (env.split("\0").includes(marker)) pids.add(Number(n));
+      }),
+  );
+  return pids;
+}
+
+const SHELLS = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "dash",
+  "ksh",
+  "mksh",
+  "tcsh",
+  "csh",
+  "nu",
+  "pwsh",
+  "xonsh",
+]);
+type Proc = { ppid: number; shell: boolean };
+
+/** Whether an executable (`comm`, a path or a login shell's `-zsh`) is a shell, whatever its case. */
+export const isShell = (comm: string) => SHELLS.has(basename(comm).replace(/^-/, "").toLowerCase());
+
+/** Every process's parent, and whether it's a shell (by its executable's name). */
+async function processTable(): Promise<Map<number, Proc>> {
+  const table = new Map<number, Proc>();
+  for (const line of (await run("ps", ["-A", "-o", "pid=,ppid=,comm="])).split("\n")) {
+    const [pid, ppid, ...comm] = line.trim().split(/\s+/);
+    if (!pid || !ppid || !/^\d+$/.test(pid)) continue;
+    table.set(Number(pid), { ppid: Number(ppid), shell: isShell(comm.join(" ")) });
+  }
+  return table;
+}
+
+/**
+ * ion's own: the daemon, or below it with no tool call's shell on the way up (the agent CLIs, the processes behind
+ * their wrappers, the helpers and MCP servers they start). A shell the daemon starts itself is a launch wrapper (an
+ * npm or cmux shim), not a tool call. What a tool call left in the background, its shell gone, is no longer below
+ * the daemon at all.
+ *
+ * Names are a heuristic for the list: a tool call that is one command (`<shell> -lc 'cmd'` execs it, so no shell
+ * stays in the chain; Codex, likely opencode) is hidden while its agent runs and shows once the agent exits. A name
+ * it doesn't know fails closed (hidden, not stoppable), and Stop still re-checks the chat. The daemon and its direct
+ * children are ion's own even without the table (`ps -A` failed or timed out).
+ */
+export function ionsOwn(proc: { pid: number; ppid: number }, table: Map<number, Proc>): boolean {
+  if (proc.pid === process.pid || proc.ppid === process.pid) return true;
+  for (let at = proc.pid, hops = 0; hops < 128; hops++) {
+    if (at === process.pid) return true;
+    const p = table.get(at);
+    if (!p || at <= 1 || (p.shell && p.ppid !== process.pid)) return false;
+    at = p.ppid;
+  }
+  return false;
+}
+
+/** Your own processes carrying this chat's marker (`ION_CHAT=<chatId>`), inherited from the agent ion ran for it. */
+function markedFor(chatId: string, only?: number): Promise<Set<number>> {
+  if (!CHAT_ID.test(chatId)) return Promise.resolve(new Set());
+  const marker = `ION_CHAT=${chatId}`;
+  return process.platform === "linux" ? markedInProc(marker, only) : markedByPs(marker, only);
+}
+
+/**
+ * What a chat's agent left running, but not ion's own (the daemon, the agent CLIs it runs and what they run without
+ * a tool call's shell; see ionsOwn):
+ * processes in the worktree, and processes anywhere carrying the chat's marker (a dev server started elsewhere, a
+ * background job whose folder moved). Each says where it runs.
+ */
+export async function listTasks(worktree: string, chatId: string): Promise<Task[]> {
   const dir = await realpath(worktree).catch(() => worktree);
-  const pids = [...(await cwds())].filter(([, cwd]) => inside(dir, cwd)).map(([pid]) => pid);
+  const [where, marked, table] = await Promise.all([cwds(), markedFor(chatId), processTable()]);
+  const inWorktree = [...where].filter(([, cwd]) => inside(dir, cwd)).map(([pid]) => pid);
+  const pids = [...new Set([...inWorktree, ...marked])];
   if (!pids.length) return [];
   const rows = (await run("ps", ["-o", "pid=,ppid=,etime=,command=", "-p", pids.join(",")])).split("\n");
   const open = await ports(pids);
   return rows
     .map(row)
     .filter((t): t is Task & { ppid: number } => t !== null)
-    .filter((t) => t.pid !== process.pid && t.ppid !== process.pid)
-    .map(({ ppid: _p, ...t }) => ({ ...t, ports: open.get(t.pid) ?? [] }));
+    .filter((t) => !ionsOwn(t, table))
+    .map(({ ppid: _p, ...t }) => ({
+      ...t,
+      ports: open.get(t.pid) ?? [],
+      where: whereOf(dir, where.get(t.pid)),
+    }));
 }
 
-/** Stops a task, only when it's still running in this worktree (a PID can be reused). */
-export async function stopTask(worktree: string, pid: number): Promise<void> {
-  if (!(await listTasks(worktree)).some((t) => t.pid === pid))
-    throw new UserError("That isn't running in this chat");
-  // Checked again for this one process right before the signal, so a PID reused meanwhile isn't hit.
+/** Whether this one process is still the chat's: running in its worktree, or carrying its marker. */
+async function stillTheChats(worktree: string, chatId: string, pid: number): Promise<boolean> {
+  const [table, parent] = await Promise.all([processTable(), run("ps", ["-o", "ppid=", "-p", String(pid)])]);
+  if (ionsOwn({ pid, ppid: Number(parent.trim()) || 0 }, table)) return false;
   const dir = await realpath(worktree).catch(() => worktree);
   const cwd = (await cwds(pid)).get(pid);
-  if (!cwd || !inside(dir, cwd)) throw new UserError("That isn't running in this chat");
+  if (cwd && inside(dir, cwd)) return true;
+  return (await markedFor(chatId, pid)).has(pid);
+}
+
+/** Stops a task, only when it's still the chat's (a PID can be reused). */
+export async function stopTask(worktree: string, chatId: string, pid: number): Promise<void> {
+  if (!(await listTasks(worktree, chatId)).some((t) => t.pid === pid))
+    throw new UserError("That isn't running in this chat");
+  // Checked again for this one process right before the signal, so a PID reused meanwhile isn't hit.
+  if (!(await stillTheChats(worktree, chatId, pid))) throw new UserError("That isn't running in this chat");
   try {
     process.kill(pid, "SIGTERM");
   } catch {
@@ -89,13 +245,6 @@ export async function stopTask(worktree: string, pid: number): Promise<void> {
 }
 
 const MAX = 1_000_000;
-const IMAGES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
 
 /**
  * A plain file's bytes, at most `max`: opened once (never following a link, never waiting on a pipe), then checked
@@ -124,7 +273,7 @@ export async function readWorktreeFile(worktree: string, rel: string): Promise<F
   if (!real || !inside(dir, real)) throw new UserError("That file isn't in this chat");
   const { bytes, size } = await readPlain(real, MAX);
   const ext = extname(real).toLowerCase();
-  const image = IMAGES[ext];
+  const image = IMAGE_TYPES[ext];
   if (image)
     return { path: rel, kind: "image", dataUrl: `data:${image};base64,${bytes.toString("base64")}`, size };
   if (bytes.includes(0)) return { path: rel, kind: "binary", size };

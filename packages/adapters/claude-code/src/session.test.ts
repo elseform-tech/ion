@@ -302,6 +302,24 @@ describe("claude-code session", () => {
     });
   });
 
+  // The user, 2026-11-19: a chat's processes are found by the marker its agent's environment carries.
+  it("passes ion's env to the agent process", async () => {
+    const calls: FakeQueryCall[] = [];
+    const session = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      env: { ION_CHAT: "chat_1" },
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await session.send({ text: "hello" });
+    await drain(session);
+    const o = calls[0]!.options as { env: NodeJS.ProcessEnv };
+    expect(o.env.ION_CHAT).toBe("chat_1");
+    expect(o.env.PATH).toBeDefined();
+  });
+
   it("records the native session id for resume", async () => {
     const { session } = await run("hello");
     expect(session.nativeId).toBe("native-1");
