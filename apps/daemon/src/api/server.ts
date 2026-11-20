@@ -185,7 +185,7 @@ function startIons(
     mcpUrl: () => `${base()}/mcp`,
     gateUrl: () => `${base()}/gate`,
     startThread: (projectId, brief, turn) =>
-      late.ions?.startThread(projectId, brief, turn) ?? Promise.resolve({ why: "ion is starting" }),
+      late.ions ? late.ions.startThread(projectId, brief, turn) : Promise.resolve({ why: "ion is starting" }),
   });
   const ions = new Ions({ ...deps, turns, agents });
   late.ions = ions;
