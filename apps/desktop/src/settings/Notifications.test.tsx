@@ -6,6 +6,14 @@ import { Settings } from "./Settings.js";
 
 afterEach(cleanup);
 
+/** Types a time into a box and leaves it. */
+const type = (label: string, value: string) => {
+  const box = screen.getByLabelText(label);
+  fireEvent.focus(box);
+  fireEvent.change(box, { target: { value } });
+  fireEvent.blur(box);
+};
+
 const open = async (c: ReturnType<typeof settingsClient>) => {
   render(<Settings client={c} onOpenIon={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
@@ -25,13 +33,13 @@ describe("Settings → Notifications", () => {
     ] as const)
       expect(screen.getByText(kind).closest(".srow")?.textContent).toContain(what);
     const set = (patch: object) => expect(c.call).toHaveBeenCalledWith("settings.set", { patch });
-    fireEvent.change(screen.getByLabelText("Briefing time"), { target: { value: "07:15" } });
+    type("Briefing time", "07:15");
     set({ notifications: { briefing: { at: "07:15" } } });
     fireEvent.click(screen.getByRole("switch", { name: "Daily briefing" }));
     set({ notifications: { briefing: { on: false } } });
-    fireEvent.change(screen.getByLabelText("Quiet from"), { target: { value: "23:00" } });
+    type("Quiet from", "23:00");
     set({ notifications: { quiet: { from: "23:00" } } });
-    fireEvent.change(screen.getByLabelText("Quiet until"), { target: { value: "07:00" } });
+    type("Quiet until", "07:00");
     set({ notifications: { quiet: { to: "07:00" } } });
     fireEvent.click(screen.getByRole("switch", { name: "Quiet hours" }));
     set({ notifications: { quiet: { on: false } } });
@@ -41,10 +49,36 @@ describe("Settings → Notifications", () => {
     set({ notifications: { projects: { shop: "muted" } } });
   });
 
+  // Task review, 2026-11-20: the time boxes saved on every keystroke and were reset while you typed.
+  it("saves a time once, when you leave the box or press Enter, and only if it changed", async () => {
+    const c = settingsClient();
+    await open(c);
+    const box = screen.getByLabelText("Briefing time") as HTMLInputElement;
+    const saves = () => c.call.mock.calls.filter(([cmd]) => cmd === "settings.set");
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: "09:30" } });
+    fireEvent.change(box, { target: { value: "09:45" } });
+    expect(saves()).toHaveLength(0);
+    expect(box.value).toBe("09:45");
+    fireEvent.blur(box);
+    expect(saves()).toEqual([["settings.set", { patch: { notifications: { briefing: { at: "09:45" } } } }]]);
+    const until = screen.getByLabelText("Quiet until") as HTMLInputElement;
+    fireEvent.focus(until);
+    fireEvent.blur(until);
+    expect(saves()).toHaveLength(1); // unchanged: nothing to save
+    fireEvent.focus(until);
+    fireEvent.change(until, { target: { value: "06:30" } });
+    fireEvent.keyDown(until, { key: "Enter" });
+    expect(saves()).toHaveLength(2);
+    expect(c.call).toHaveBeenLastCalledWith("settings.set", {
+      patch: { notifications: { quiet: { to: "06:30" } } },
+    });
+  });
+
   it("shows the daemon's reason for a time it refuses", async () => {
     const c = settingsClient({ refuse: "Use a time like 08:30" });
     await open(c);
-    fireEvent.change(screen.getByLabelText("Briefing time"), { target: { value: "07:15" } });
+    type("Briefing time", "07:15");
     expect(await screen.findByText("Use a time like 08:30")).toBeTruthy();
   });
 });

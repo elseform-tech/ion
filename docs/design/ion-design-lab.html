@@ -1532,7 +1532,7 @@ export function sumLines(lines: Line[]) {
           <div class="spage" data-spage="general" hidden>
             <div><h4>Chats</h4><div class="group">
               <div class="srow"><div class="g">Default access</div><span class="seg sm"><button type="button" class="on">Auto</button><button type="button">Full access</button></span></div>
-              <div class="srow"><div class="g">Chats at once</div><div class="stepper"><button class="ib" type="button" title="Less" disabled><i data-lucide="minus"></i></button><span class="n">Auto</span><button class="ib" type="button" title="More"><i data-lucide="plus"></i></button></div></div>
+              <div class="srow"><div class="g">Chats at once</div><div class="stepper"><button class="ib" type="button" title="Less"><i data-lucide="minus"></i></button><span class="n">Auto</span><button class="ib" type="button" title="More"><i data-lucide="plus"></i></button></div></div>
             </div></div>
           </div>
           <div class="spage" data-spage="keys" hidden id="sKeys"></div>
@@ -3058,7 +3058,7 @@ function renderNotif(){
 const KEYS=[['Hide sidebar',['⌘','B']],['Next effort',['⌘','.']],['Send',['↵']],['Queue while it works',['↵']],['Send now',['⌘','↵']],['New line',['⇧','↵']],['Stop',['esc','esc']]];
 function renderKeys(){
   const el=document.getElementById('sKeys');
-  el.innerHTML=`<div><h4>Shortcuts</h4><div class="group">${KEYS.map(([n,ks])=>`<div class="srow"><div class="g">${esc(n)}</div><span class="keys">${ks.map(k=>`<kbd>${esc(k)}</kbd>`).join('')}</span></div>`).join('')}</div></div>`;
+  el.innerHTML=`<div class="group">${KEYS.map(([n,ks])=>`<div class="srow"><div class="g">${esc(n)}</div><span class="keys">${ks.map(k=>`<kbd>${esc(k)}</kbd>`).join('')}</span></div>`).join('')}</div>`;
 }
 /* preview: this ion's color on another harness's shape */
 function pv(k,h){ const key=`pv:${k}:${h}`; LIB[key]=hybrid(h,IONS[k].color); return key; }

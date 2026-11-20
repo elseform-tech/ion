@@ -1,5 +1,7 @@
+import { availableParallelism } from "node:os";
 import { CLOCK, MAX_RUNS, MIN_RUNS, NOTIFY_LEVELS, type UserConfig } from "@ion/config";
 import type { NotifyLevel, SettingsInfo, SettingsPatch } from "@ion/schema";
+import { maxRuns } from "../scheduler/index.js";
 import { UserError } from "./errors.js";
 
 /** General and Notifications as the app shows them, from your config (what's not set is its default). */
@@ -7,6 +9,7 @@ export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort">
   return {
     access: c.access.default,
     maxRuns: c.resources.max_runs,
+    autoRuns: maxRuns("auto", availableParallelism()),
     notifications: {
       briefing: { on: c.notifications.briefing.on, at: c.notifications.briefing.at },
       quiet: {

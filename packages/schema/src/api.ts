@@ -126,6 +126,8 @@ export type NotifyLevel = "all" | "needs" | "digest" | "muted";
 export type SettingsInfo = IonSettings & {
   access: "auto" | "full";
   maxRuns: "auto" | number;
+  /** How many chats Auto lets work at once on this computer (half its cores, at least one). */
+  autoRuns: number;
   notifications: {
     briefing: { on: boolean; at: string };
     quiet: { on: boolean; from: string; to: string };

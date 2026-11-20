@@ -8,6 +8,7 @@ export const settings: SettingsInfo = {
   effort: null,
   access: "auto",
   maxRuns: "auto",
+  autoRuns: 4,
   notifications: {
     briefing: { on: true, at: "08:30" },
     quiet: { on: true, from: "22:00", to: "08:00" },

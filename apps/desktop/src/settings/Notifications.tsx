@@ -1,7 +1,7 @@
 import type { IonClient } from "@ion/client/browser";
 import { BellRing, Inbox, type LucideIcon, Moon, Pin, Star, Sunrise } from "@ion/design-system";
 import type { NotifyLevel, SettingsInfo, SettingsPatch } from "@ion/schema";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useCallError } from "../callError.js";
 import type { SettingsData } from "./data.js";
 
@@ -31,15 +31,38 @@ function Line({ icon: Icon, label, children }: { icon?: LucideIcon; label: React
   );
 }
 
-/** A time, typed as HH:MM; saved when it's whole. */
+/**
+ * A time, typed as HH:MM: saved once, when you leave the box or press Enter, and only if it changed. While you're
+ * in the box, what you type stays; the saved time comes back only when you're not.
+ */
 function Time({ label, value, onPick }: { label: string; value: string; onPick: (at: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const inBox = useRef(false);
+  const sent = useRef(value);
+  useEffect(() => {
+    sent.current = value;
+    if (!inBox.current) setDraft(value);
+  }, [value]);
+  const save = () => {
+    if (!draft || draft === sent.current) return;
+    sent.current = draft;
+    onPick(draft);
+  };
   return (
     <input
       className="fin time"
       type="time"
       aria-label={label}
-      value={value}
-      onChange={(e) => e.target.value && onPick(e.target.value)}
+      value={draft}
+      onFocus={() => {
+        inBox.current = true;
+      }}
+      onBlur={() => {
+        inBox.current = false;
+        save();
+      }}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && save()}
     />
   );
 }

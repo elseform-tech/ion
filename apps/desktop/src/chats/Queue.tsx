@@ -85,16 +85,6 @@ export function useQueue(client: IonClient, to: QueueTarget | null): Queue {
   };
 }
 
-/**
- * What Enter does while the work goes: queue it, or (⌘Enter, Ctrl+Enter off macOS) send it now; null: not Enter,
- * or Enter picking a word in an input method.
- */
-function enterKey(e: KeyboardEvent<HTMLTextAreaElement>): "queue" | "now" | null {
-  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return null;
-  if (hit("now", e)) return "now";
-  return hit("queue", e) ? "queue" : null;
-}
-
 type Box = {
   q: Queue;
   /** The chat's agent (or the ion) is working. */
@@ -120,12 +110,16 @@ export function submit(b: Box, now: boolean): void {
   void b.q.add(text.trim(), brain, now).then((ok) => !ok && b.setText(text));
 }
 
-/** The message box's Enter (Shift+Enter is a new line): see submit; ⌘Enter sends now. */
+/**
+ * The message box's Enter: Shift+Enter is left to the box (a new line); ⌘Enter (Ctrl+Enter off macOS) sends now;
+ * Enter sends, or queues while the work goes (see submit). Enter picking a word in an input method is its own.
+ */
 export const onEnter = (b: Box) => (e: KeyboardEvent<HTMLTextAreaElement>) => {
-  const key = enterKey(e);
-  if (!key) return;
+  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || hit("newline", e)) return;
+  const now = hit("now", e);
+  if (!now && !hit(b.working ? "queue" : "send", e)) return;
   e.preventDefault();
-  submit(b, key === "now");
+  submit(b, now);
 };
 
 /** Edit: the taken text goes back in the box (see putBack), and you go on typing at its end. */

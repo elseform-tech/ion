@@ -1,5 +1,6 @@
 import type { IonClient } from "@ion/client/browser";
 import { EV } from "@ion/schema";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   isPermissionGranted,
   onAction,
@@ -13,14 +14,34 @@ const STREAM = "notify";
 
 type Notice = { title: string; body: string; chatId?: string };
 
-/** Whether you let ion notify: asked once, the first time there's something to show. */
-let allowed: Promise<boolean> | null = null;
-const ask = () =>
-  (allowed ??= isPermissionGranted().then(async (yes) => yes || (await requestPermission()) === "granted"));
+/** ion asked you once already (asked again only if asking failed). */
+let asked = false;
+
+/** Whether ion may notify: checked each time (you may turn it on in the system's settings), asking you once. */
+async function allowed(): Promise<boolean> {
+  if (await isPermissionGranted()) return true;
+  if (asked) return false;
+  asked = true;
+  try {
+    return (await requestPermission()) === "granted";
+  } catch (e) {
+    asked = false;
+    throw e;
+  }
+}
 
 async function show(n: Notice): Promise<void> {
-  if (!(await ask())) return;
+  if (!(await allowed())) return;
   sendNotification({ title: n.title, body: n.body, ...(n.chatId ? { extra: { chatId: n.chatId } } : {}) });
+}
+
+/** A click on a notification: the window comes forward, then its chat opens. */
+function forward(): void {
+  const w = getCurrentWindow();
+  void w
+    .unminimize()
+    .then(() => w.setFocus())
+    .catch(() => {});
 }
 
 /**
@@ -32,13 +53,14 @@ export function useSystemNotifications(client: IonClient | null, open: (chatId: 
   openRef.current = open;
   useEffect(() => {
     if (!client || !("__TAURI_INTERNALS__" in window)) return;
-    allowed = null;
+    asked = false;
     let gone = false;
     const stops: (() => void)[] = [];
     const keep = (stop: () => void) => (gone ? stop() : stops.push(stop));
     // A listener first: without one, a click on a desktop notification isn't reported.
     void onAction((e) => {
       const chatId = e.notification?.extra?.chatId;
+      forward();
       if (typeof chatId === "string") openRef.current(chatId);
     }).then(
       (l) => keep(() => void l.unregister()),

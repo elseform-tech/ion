@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +33,13 @@ describe("General and notification settings", () => {
   afterEach(async () => {
     client.close();
     await srv.close();
+  });
+
+  // Tour, 2026-11-20: More from Auto went to 1 chat, fewer than Auto's own (half the cores). The app steps from
+  // the number Auto means here, which only the daemon knows.
+  it("says how many chats Auto means here", async () => {
+    const got = await client.call("settings.get", {});
+    expect(got.autoRuns).toBe(Math.max(1, Math.floor(availableParallelism() / 2)));
   });
 
   it("saves each General setting and reads it back", async () => {

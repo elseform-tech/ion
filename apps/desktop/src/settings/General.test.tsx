@@ -23,31 +23,42 @@ describe("Settings → General", () => {
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { maxRuns: 3 } });
     fireEvent.click(screen.getByRole("button", { name: "Less" }));
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { maxRuns: 1 } });
+    expect(c.call).toHaveBeenLastCalledWith("settings.set", { patch: { maxRuns: 2 } });
     for (const gone of [/folder/i, /debug/i, /runs/i, /max/i]) expect(screen.queryByText(gone)).toBeNull();
   });
 
-  it("goes from Auto to one chat and back, and never past 32", async () => {
-    const c = settingsClient();
+  const general = async (maxRuns: number | "auto") => {
+    cleanup();
+    const c = settingsClient({ now: { ...settings, maxRuns, autoRuns: 4 } });
     render(<Settings client={c} onOpenIon={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
-    expect((await screen.findByLabelText("Chats at once")).textContent).toBe("Auto");
-    expect((screen.getByRole("button", { name: "Less" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { maxRuns: 1 } });
-    cleanup();
-    const one = settingsClient({ now: { ...settings, maxRuns: 1 } });
-    render(<Settings client={one} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "General" }));
-    await screen.findByText("1");
-    fireEvent.click(screen.getByRole("button", { name: "Less" }));
-    expect(one.call).toHaveBeenCalledWith("settings.set", { patch: { maxRuns: "auto" } });
-    cleanup();
-    const most = settingsClient({ now: { ...settings, maxRuns: 32 } });
-    render(<Settings client={most} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "General" }));
-    await screen.findByText("32");
-    expect((screen.getByRole("button", { name: "More" }) as HTMLButtonElement).disabled).toBe(true);
+    await screen.findByLabelText("Chats at once");
+    const step = (name: "Less" | "More") => fireEvent.click(screen.getByRole("button", { name }));
+    const button = (name: "Less" | "More") => screen.getByRole("button", { name }) as HTMLButtonElement;
+    const saved = (maxRuns: number | "auto") =>
+      expect(c.call).toHaveBeenLastCalledWith("settings.set", { patch: { maxRuns } });
+    return { step, button, saved };
+  };
+
+  // Tour, 2026-11-20: More from Auto went to 1, fewer than Auto's own (half the cores); quick clicks lost steps.
+  it("steps from the number Auto means, through Auto, and keeps quick clicks", async () => {
+    let g = await general("auto");
+    expect(screen.getByLabelText("Chats at once").textContent).toBe("Auto");
+    g.step("More");
+    g.saved(5);
+    expect(screen.getByLabelText("Chats at once").textContent).toBe("5"); // before the daemon answers
+    g.step("More");
+    g.saved(6);
+    g = await general("auto");
+    g.step("Less");
+    g.saved(3);
+    g = await general(3);
+    g.step("More");
+    g.saved("auto");
+    g = await general(1);
+    expect(g.button("Less").disabled).toBe(true);
+    g = await general(32);
+    expect(g.button("More").disabled).toBe(true);
   });
 
   it("shows the daemon's reason when it refuses", async () => {
