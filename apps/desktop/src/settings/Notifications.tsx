@@ -2,7 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import { BellRing, Inbox, type LucideIcon, Moon, Pin, Star, Sunrise } from "@ion/design-system";
 import type { NotifyLevel, SettingsInfo, SettingsPatch } from "@ion/schema";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useCallError } from "../callError.js";
+import { why } from "../callError.js";
 import type { SettingsData } from "./data.js";
 
 type Notifs = NonNullable<SettingsPatch["notifications"]>;
@@ -35,24 +35,31 @@ function Line({ icon: Icon, label, children }: { icon?: LucideIcon; label: React
  * A time, typed as HH:MM: saved once, when you leave the box or press Enter, and only if it changed. While you're
  * in the box, what you type stays; the saved time comes back only when you're not.
  */
-function Time({ label, value, onPick }: { label: string; value: string; onPick: (at: string) => void }) {
-  const [draft, setDraft] = useState(value);
+function Time(p: { label: string; value: string; onPick: (at: string) => Promise<boolean> }) {
+  const [draft, setDraft] = useState(p.value);
   const inBox = useRef(false);
-  const sent = useRef(value);
+  const sent = useRef(p.value);
+  const saved = useRef(p.value);
+  saved.current = p.value;
   useEffect(() => {
-    sent.current = value;
-    if (!inBox.current) setDraft(value);
-  }, [value]);
+    sent.current = p.value;
+    if (!inBox.current) setDraft(p.value);
+  }, [p.value]);
   const save = () => {
     if (!draft || draft === sent.current) return;
     sent.current = draft;
-    onPick(draft);
+    void p.onPick(draft).then((ok) => {
+      if (ok) return;
+      // Refused: the time you tried can be tried again; out of the box, the saved time shows again.
+      sent.current = saved.current;
+      if (!inBox.current) setDraft(saved.current);
+    });
   };
   return (
     <input
       className="fin time"
       type="time"
-      aria-label={label}
+      aria-label={p.label}
       value={draft}
       onFocus={() => {
         inBox.current = true;
@@ -83,11 +90,22 @@ function Switch({ label, on, onPick }: { label: string; on: boolean; onPick: (on
 type Part = { client: IonClient; data: SettingsData; n: SettingsInfo["notifications"] };
 
 /** Saves a change to notifications: [the daemon's reason when it said no, save]. */
-function useSave({ client, data }: Part): [string | null, (p: Notifs) => void] {
-  const [error, run] = useCallError();
+function useSave({ client, data }: Part): [string | null, (p: Notifs) => Promise<boolean>] {
+  const [error, setError] = useState<string | null>(null);
   return [
     error,
-    (notifications) => run(client.call("settings.set", { patch: { notifications } }), data.reload),
+    (notifications) =>
+      client.call("settings.set", { patch: { notifications } }).then(
+        () => {
+          setError(null);
+          data.reload();
+          return true;
+        },
+        (e: unknown) => {
+          setError(why(e));
+          return false;
+        },
+      ),
   ];
 }
 

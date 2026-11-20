@@ -99,6 +99,30 @@ describe("system notifications", () => {
     await waitFor(() => expect(plugin.sendNotification).toHaveBeenCalledTimes(1));
   });
 
+  // Task review, 2026-11-20 (round 2): a second notification while you were being asked was dropped.
+  it("keeps every notification that comes while ion asks, and asks once", async () => {
+    let answer: (a: string) => void = () => {};
+    plugin.requestPermission.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          answer = (a) => {
+            plugin.granted = a === "granted";
+            r(a);
+          };
+        }),
+    );
+    const d = daemon();
+    render(<Host client={d.client} open={() => {}} />);
+    await waitFor(() => expect(d.subscribe).toHaveBeenCalled());
+    d.send({ title: "Shop", body: "One", chatId: "c1", kind: "needs" });
+    await waitFor(() => expect(plugin.requestPermission).toHaveBeenCalledTimes(1));
+    d.send({ title: "Shop", body: "Two", chatId: "c2", kind: "needs" });
+    await waitFor(() => expect(plugin.isPermissionGranted).toHaveBeenCalledTimes(2));
+    answer("granted");
+    await waitFor(() => expect(plugin.sendNotification).toHaveBeenCalledTimes(2));
+    expect(plugin.requestPermission).toHaveBeenCalledTimes(1);
+  });
+
   it("shows nothing when you said no", async () => {
     plugin.requestPermission.mockResolvedValueOnce("denied");
     const d = daemon();

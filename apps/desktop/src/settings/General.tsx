@@ -57,21 +57,26 @@ function ChatsAtOnce({
 
 /**
  * Chats at once as you step it: your last pick shows until the daemon reads it back (quick clicks keep every
- * step), or until it says no.
+ * step), or until it says no to that pick.
  */
-function useHeldRuns(saved: MaxRuns | undefined, error: string | null) {
+function useHeldRuns(saved: MaxRuns | undefined) {
   const [held, setHeld] = useState<MaxRuns | null>(null);
   useEffect(() => {
-    if (held !== null && (saved === held || error)) setHeld(null);
-  }, [saved, held, error]);
-  return [held ?? saved, setHeld] as const;
+    if (held !== null && saved === held) setHeld(null);
+  }, [saved, held]);
+  /** Shows `n` while `call` goes; a refusal lets go of it (unless a newer pick came since). */
+  const hold = (n: MaxRuns, call: Promise<unknown>) => {
+    setHeld(n);
+    call.catch(() => setHeld((h) => (h === n ? null : h)));
+  };
+  return [held ?? saved, hold] as const;
 }
 
 /** Settings → General: the access a new chat starts with, and how many chats work at once. */
 export function General({ client, data }: { client: IonClient; data: SettingsData }) {
   const [error, run] = useCallError();
   const s = data.settings;
-  const [maxRuns, hold] = useHeldRuns(s?.maxRuns, error);
+  const [maxRuns, hold] = useHeldRuns(s?.maxRuns);
   if (!s || maxRuns === undefined) return null;
   const save = (patch: SettingsPatch) => run(client.call("settings.set", { patch }), data.reload);
   return (
@@ -97,8 +102,9 @@ export function General({ client, data }: { client: IonClient; data: SettingsDat
             value={maxRuns}
             auto={s.autoRuns}
             onPick={(n) => {
-              hold(n);
-              save({ maxRuns: n });
+              const call = client.call("settings.set", { patch: { maxRuns: n } });
+              hold(n, call);
+              run(call, data.reload);
             }}
           />
         </Row>

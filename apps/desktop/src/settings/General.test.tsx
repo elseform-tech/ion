@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { ApiCallError } from "@ion/client/browser";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "./Settings.js";
 import { settings, settingsClient } from "./testing.js";
 
@@ -27,9 +28,11 @@ describe("Settings → General", () => {
     for (const gone of [/folder/i, /debug/i, /runs/i, /max/i]) expect(screen.queryByText(gone)).toBeNull();
   });
 
+  let lastClient: ReturnType<typeof settingsClient> | null = null;
   const general = async (maxRuns: number | "auto") => {
     cleanup();
     const c = settingsClient({ now: { ...settings, maxRuns, autoRuns: 4 } });
+    lastClient = c;
     render(<Settings client={c} onOpenIon={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
     await screen.findByLabelText("Chats at once");
@@ -59,6 +62,20 @@ describe("Settings → General", () => {
     expect(g.button("Less").disabled).toBe(true);
     g = await general(32);
     expect(g.button("More").disabled).toBe(true);
+  });
+
+  // Task review, 2026-11-20 (round 2): an error left from an earlier refusal dropped the next pick at once.
+  it("holds a new pick even while an earlier refusal still shows", async () => {
+    const g = await general("auto");
+    const c = vi.mocked(lastClient!.call);
+    c.mockRejectedValueOnce(new ApiCallError("invalid", "Between 1 and 32 chats"));
+    g.step("More");
+    expect(await screen.findByText("Between 1 and 32 chats")).toBeTruthy();
+    expect(screen.getByLabelText("Chats at once").textContent).toBe("Auto");
+    c.mockImplementationOnce(() => new Promise(() => {})); // the daemon hasn't answered yet
+    g.step("More");
+    await act(async () => {});
+    expect(screen.getByLabelText("Chats at once").textContent).toBe("5");
   });
 
   it("shows the daemon's reason when it refuses", async () => {

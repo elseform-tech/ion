@@ -16,18 +16,29 @@ type Notice = { title: string; body: string; chatId?: string };
 
 /** ion asked you once already (asked again only if asking failed). */
 let asked = false;
+/** The ask on screen now: every notification that comes meanwhile waits for your answer. */
+let asking: Promise<boolean> | null = null;
+
+/** Asks you, once: a failed ask can be asked again. */
+function ask(): Promise<boolean> {
+  asking ??= requestPermission().then(
+    (answer) => {
+      asked = true;
+      asking = null;
+      return answer === "granted";
+    },
+    (e: unknown) => {
+      asking = null;
+      throw e;
+    },
+  );
+  return asking;
+}
 
 /** Whether ion may notify: checked each time (you may turn it on in the system's settings), asking you once. */
 async function allowed(): Promise<boolean> {
   if (await isPermissionGranted()) return true;
-  if (asked) return false;
-  asked = true;
-  try {
-    return (await requestPermission()) === "granted";
-  } catch (e) {
-    asked = false;
-    throw e;
-  }
+  return asked ? false : ask();
 }
 
 async function show(n: Notice): Promise<void> {
@@ -54,6 +65,7 @@ export function useSystemNotifications(client: IonClient | null, open: (chatId: 
   useEffect(() => {
     if (!client || !("__TAURI_INTERNALS__" in window)) return;
     asked = false;
+    asking = null;
     let gone = false;
     const stops: (() => void)[] = [];
     const keep = (stop: () => void) => (gone ? stop() : stops.push(stop));

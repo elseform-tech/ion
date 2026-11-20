@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { settingsClient } from "./testing.js";
 import { Settings } from "./Settings.js";
@@ -73,6 +73,20 @@ describe("Settings → Notifications", () => {
     expect(c.call).toHaveBeenLastCalledWith("settings.set", {
       patch: { notifications: { quiet: { to: "06:30" } } },
     });
+  });
+
+  // Task review, 2026-11-20 (round 2): after a refusal the box kept a time that was never saved, and saving the
+  // same time again did nothing.
+  it("after a refused time, shows the saved one again and lets you try again", async () => {
+    const c = settingsClient({ refuse: "Use a time like 08:30" });
+    await open(c);
+    const box = screen.getByLabelText("Briefing time") as HTMLInputElement;
+    type("Briefing time", "07:15");
+    expect(await screen.findByText("Use a time like 08:30")).toBeTruthy();
+    await waitFor(() => expect(box.value).toBe("08:30"));
+    type("Briefing time", "07:15");
+    await waitFor(() => expect(c.call.mock.calls.filter(([cmd]) => cmd === "settings.set")).toHaveLength(2));
+    expect(screen.getByText("Use a time like 08:30")).toBeTruthy();
   });
 
   it("shows the daemon's reason for a time it refuses", async () => {
