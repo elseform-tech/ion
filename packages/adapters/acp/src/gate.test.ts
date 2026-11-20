@@ -76,6 +76,8 @@ describe("Grok's gate hook", () => {
     });
     expect(call("search_replace", { file_path: "a.ts" })).toMatchObject({ kind: "edit" });
     expect(call("grep", { pattern: "x" })).toMatchObject({ kind: "search" });
+    // Real run, 2026-11-19: Grok's lookup of its own tools went to the judge as "other" and was stopped.
+    expect(call("search_tool", { query: "ion decisions ask" })).toMatchObject({ kind: "search" });
     expect(call("web_fetch", { url: "https://x" })).toMatchObject({ kind: "web" });
     expect(call("github__search", {})).toMatchObject({ kind: "mcp", mcpServer: "github" });
     // A cut-off input can hide the end of a command: ion can't read it, so it's denied.

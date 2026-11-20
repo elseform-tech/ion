@@ -188,8 +188,15 @@ function ChatTabs(p: ChatTabsProps & { version?: number }) {
 }
 
 /** The changes, as a diff or as a tree whose files open in the preview. */
-function ChangeTabs(p: { tab: Tab; files: FileDiff[]; onPick: ((path: string) => void) | undefined }) {
-  if (!p.files.length) return null;
+function ChangeTabs(p: {
+  tab: Tab;
+  files: FileDiff[];
+  /** The changes have been read (an empty list then means none). */
+  read: boolean;
+  onPick: ((path: string) => void) | undefined;
+}) {
+  const quiet = p.read && (p.tab === "diff" || p.tab === "files");
+  if (!p.files.length) return quiet ? <div className="changes-empty">No changes</div> : null;
   if (p.tab === "diff")
     return (
       <div className="code">
@@ -219,7 +226,7 @@ export function ToolsPanel({ diff, error, focus, client, chatId, version }: Pane
       <Tabs tab={tab} onTab={setTab} live={chat !== null} />
       <div className="panel">
         {error && <div className="changes-empty">{error}</div>}
-        <ChangeTabs tab={tab} files={files} onPick={chat ? open : undefined} />
+        <ChangeTabs tab={tab} files={files} read={diff !== null && !error} onPick={chat ? open : undefined} />
         {chat && <ChatTabs tab={tab} {...chat} files={files} pick={pick} version={version} />}
         {omitted > 0 && <div className="changes-empty">{omitted} more files not shown</div>}
       </div>

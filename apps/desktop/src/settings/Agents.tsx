@@ -1,8 +1,9 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar, Zap } from "@ion/design-system";
-import type { HarnessInfo } from "@ion/schema";
+import { Avatar, Brain, Zap } from "@ion/design-system";
+import type { EffortLevel, HarnessInfo } from "@ion/schema";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
+import { EFFORTS } from "./IonPage.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 
 /** An agent's state, in plain words. */
@@ -35,6 +36,8 @@ function QuickModel(p: {
   quick: string;
   onPick: (spec: string) => void;
   error: string | null;
+  /** More rows of ion's model (its effort). */
+  children?: React.ReactNode;
 }) {
   const [agent, model = ""] = p.quick.split(/:(.*)/);
   const ok = p.data.harnesses.filter(ready);
@@ -57,13 +60,46 @@ function QuickModel(p: {
             onChange={(m) => p.onPick(m ? `${agent}:${m}` : String(agent))}
           />
         </div>
+        {p.children}
         {p.error && <div className="perr">{p.error}</div>}
       </div>
     </div>
   );
 }
 
-/** Settings → Agents: each coding agent and whether it's ready; the model ion thinks with. */
+/** How hard ion's own model thinks (Default: its agent's own). */
+function QuickEffort({
+  value,
+  onPick,
+}: {
+  value: EffortLevel | null;
+  onPick: (e: EffortLevel | null) => void;
+}) {
+  return (
+    <div className="srow">
+      <div className="g">
+        <span className="slot">
+          <Brain />
+          Effort
+        </span>
+      </div>
+      <span className="seg sm" role="group" aria-label="ion's effort">
+        {EFFORTS.map(([id, label]) => (
+          <button
+            key={label}
+            type="button"
+            className={(value ?? "") === id ? "on" : ""}
+            onClick={() => onPick(id || null)}
+          >
+            {label}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+/** Settings → Agents: each coding agent and whether it's ready; the model ion thinks with, and how hard. */
 export function Agents({ client, data }: { client: IonClient; data: SettingsData }) {
   const quick = data.settings?.quick ?? "";
   const [error, run] = useCallError();
@@ -78,7 +114,12 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
           ))}
         </div>
       </div>
-      <QuickModel data={data} quick={quick} onPick={pick} error={error} />
+      <QuickModel data={data} quick={quick} onPick={pick} error={error}>
+        <QuickEffort
+          value={data.settings?.effort ?? null}
+          onPick={(effort) => run(client.call("settings.update", { effort }), data.reload)}
+        />
+      </QuickModel>
     </>
   );
 }

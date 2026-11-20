@@ -21,7 +21,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { type Run, useCallError } from "../callError.js";
 import { effortLabel } from "../chats/BrainPopover.js";
-import { IonAvatar } from "./IonChat.js";
+import { IonAvatar } from "./IonAvatar.js";
 
 /** What changes Activity: a routine running, a thread starting or ending. */
 const ACTIVITY_CHANGE = new Set<string>([EV.routineRan, EV.chatCreated, EV.runStarted, EV.runFinished]);

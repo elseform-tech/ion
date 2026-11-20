@@ -1,4 +1,4 @@
-import { getHarness, harnessIds } from "../adapters/registry.js";
+import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
@@ -73,7 +73,11 @@ export const handlers: Handlers = {
   ...routineHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
-  "harnesses.list": () => harnessInfos.list(),
+  // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
+  "harnesses.list": async () => {
+    const listed = listedHarnessIds();
+    return (await harnessInfos.list()).filter((h) => listed.includes(h.id));
+  },
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
   "memory.forget": (a, ctx) => {
     forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
@@ -106,9 +110,15 @@ export const handlers: Handlers = {
     ctx.decisions.forget(String(a.decisionId ?? ""));
     return { ok: true as const };
   },
-  ask: (a, ctx) => {
+  ask: async (a, ctx) => {
     if (typeof a.text !== "string" || !a.text.trim()) throw new UserError("Say what to do");
-    return ctx.runs.ask(a);
+    if (a.harness) return ctx.runs.ask(a);
+    // None named: the chat's own while it's ready, else the first ready one (never one that isn't signed in).
+    const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
+    const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
+    const harness = defaultAgent(ready, own);
+    if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
+    return ctx.runs.ask({ ...a, harness });
   },
   "run.interrupt": async (a, ctx) => {
     await ctx.runs.interrupt(String(a.runId ?? ""));

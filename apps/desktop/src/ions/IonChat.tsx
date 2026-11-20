@@ -1,37 +1,14 @@
 import type { IonClient } from "@ion/client/browser";
-import {
-  ArrowUp,
-  Avatar,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  CircleAlert,
-  MessageSquare,
-  Pin,
-  Split,
-} from "@ion/design-system";
+import { ArrowUp, Check, ChevronDown, ChevronUp, CircleAlert, MessageSquare, Pin } from "@ion/design-system";
 import type { ChatInfo, IonCard, IonEvent, IonInfo, NeedInfo } from "@ion/schema";
 import { type KeyboardEvent, useEffect, useState } from "react";
+import { IonAvatar } from "./IonAvatar.js";
 import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
+import { Markdown } from "../chats/Message.js";
 import { SuggestionCard } from "./SuggestionCard.js";
-
-/** An ion's avatar: ion chief's orbit bot, or its project's colour on its agent's shape. */
-export const IonAvatar = ({ ion }: { ion: IonInfo }) => (
-  <Avatar ion={ion.ionId === "chief" ? "chief" : { harness: ion.harness, color: ion.color }} />
-);
-
-/** ion chief's name is the wordmark. */
-export const IonName = ({ ion, className }: { ion: IonInfo; className: string }) =>
-  ion.ionId === "chief" ? (
-    <span className={`brand ${className}`} aria-label="ion">
-      i<i>o</i>n
-    </span>
-  ) : (
-    <span className={className}>{ion.name}</span>
-  );
+import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
 
 /** An ion's chat, live: its backlog, then each new line. */
 function useIonChat(client: IonClient, ionId: string): IonItem[] {
@@ -68,6 +45,9 @@ type CardProps = {
   ions: IonInfo[];
   client: IonClient;
   onOpenChat: (chatId: string) => void;
+  /** The thread open beside the chat, if any; `onPeek` opens one there. */
+  peek: string | null;
+  onPeek: (chatId: string) => void;
   /** A suggestion card's recorded answer, when you've given it. */
   answered?: boolean;
   muted?: true;
@@ -119,60 +99,6 @@ function Pins({ needs, onOpenChat }: { needs: NeedInfo[]; onOpenChat: (chatId: s
   );
 }
 
-const running = (c?: ChatInfo) => ["queued", "running"].includes(c?.lastRunStatus ?? "");
-
-/** One thread the ion started: its title (shimmering while it runs) and project; opens the chat. */
-function ThreadLink({ c, projectId, onOpen }: { c?: ChatInfo; projectId: string; onOpen: () => void }) {
-  return (
-    <button className="tlink" type="button" onClick={onOpen}>
-      <MessageSquare />
-      <span className="g">
-        <span className={running(c) ? "now" : undefined}>{c?.title ?? "A thread"}</span>
-        <small>{projectId}</small>
-      </span>
-      <ChevronRight />
-    </button>
-  );
-}
-
-/**
- * The threads an ion started: one is a link; several (ion chief asking projects) are the lab's fan-out card, a row
- * per project's ion with its thread.
- */
-function Threads({
-  card,
-  chats,
-  ions,
-  onOpenChat,
-}: CardProps & { card: Extract<IonCard, { kind: "threads" }> }) {
-  const chat = (id: string) => chats.find((x) => x.chatId === id);
-  const [only] = card.threads;
-  if (only && card.threads.length === 1)
-    return (
-      <ThreadLink c={chat(only.chatId)} projectId={only.projectId} onOpen={() => onOpenChat(only.chatId)} />
-    );
-  return (
-    <div className="fan">
-      <div className="fanh">
-        <Split />
-        {`Asked ${card.threads.length} projects`}
-      </div>
-      {card.threads.map((t) => {
-        const ion = ions.find((x) => x.ionId === t.projectId);
-        const c = chat(t.chatId);
-        return (
-          <button className="fanr" type="button" key={t.chatId} onClick={() => onOpenChat(t.chatId)}>
-            {ion ? <IonAvatar ion={ion} /> : <span />}
-            <b>{t.projectId}</b>
-            <span className={`ft2${running(c) ? " now" : ""}`}>{c?.title ?? "A thread"}</span>
-            <ChevronRight />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /** ion's "always?" suggestion: No or Keep; once answered, it says so. */
 function Suggest({
   card,
@@ -216,7 +142,17 @@ function Suggest({
 }
 
 function Card(p: CardProps) {
-  if (p.card.kind === "threads") return <Threads {...p} card={p.card} />;
+  if (p.card.kind === "threads")
+    return (
+      <ThreadLines
+        client={p.client}
+        threads={p.card.threads}
+        chats={p.chats}
+        ions={p.ions}
+        peek={p.peek}
+        onPeek={p.onPeek}
+      />
+    );
   if (p.card.kind === "suggest") return <Suggest {...p} card={p.card} />;
   if (p.card.kind === "routine" || p.card.kind === "stalled") return <SuggestionCard {...p} card={p.card} />;
   return (
@@ -248,7 +184,11 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
               {last ? <IonAvatar ion={p.ion} /> : <span />}
               <div>
                 {/* ion chief's suggestion cards carry their own words. */}
-                {m.text && !ownWords(m.card) && <div className="bi">{m.text}</div>}
+                {m.text && !ownWords(m.card) && (
+                  <div className="bi">
+                    <Markdown text={m.text} htmlAsText />
+                  </div>
+                )}
                 {m.card && (
                   <Card
                     {...p}
@@ -310,14 +250,48 @@ function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
   );
 }
 
-/** An ion's chat, as the lab's `.ichat`: its header, the bubbles, the message box. */
-export function IonChat(p: Omit<CardProps, "card">) {
+/**
+ * An ion's chat, as the lab's `.ichat`: its header, the bubbles, the message box; a thread it started opens beside
+ * it, like a chat's side panel.
+ */
+export function IonChat(p: Omit<CardProps, "card" | "peek" | "onPeek">) {
   const items = useIonChat(p.client, p.ion.ionId);
+  const [peek, setPeek] = useState<string | null>(null);
+  // The thread its panel shows when you open it from the header: the one you last looked at, else the latest.
+  const [last, setLast] = useState<string | null>(null);
+  const latest = latestThread(items);
+  const open = peek ? p.chats.find((c) => c.chatId === peek) : undefined;
+  const show = (chatId: string | null) => {
+    setPeek(chatId);
+    if (chatId) setLast(chatId);
+  };
+  const toggle = (chatId: string) => show(peek === chatId ? null : chatId);
+  const again = last ?? latest;
+  const panel = again ? { open: Boolean(open), toggle: () => show(open ? null : again) } : undefined;
   return (
-    <section className="ichat">
-      <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} />
-      <Bubbles items={items} {...p} />
+    <section className={`ichat${open ? " peek" : ""}`}>
+      <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} {...(panel ? { panel } : {})} />
+      <Bubbles items={items} {...p} peek={open ? peek : null} onPeek={toggle} />
       <IonBox client={p.client} ion={p.ion} />
+      {open && (
+        <ThreadPeek
+          key={open.chatId}
+          client={p.client}
+          chat={open}
+          onClose={() => setPeek(null)}
+          onOpenChat={p.onOpenChat}
+        />
+      )}
     </section>
   );
+}
+
+/** The last thread an ion's chat shows. */
+function latestThread(items: IonItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    const c = it?.kind === "ion" ? it.card : undefined;
+    if (c?.kind === "threads") return c.threads.at(-1)?.chatId ?? null;
+  }
+  return null;
 }

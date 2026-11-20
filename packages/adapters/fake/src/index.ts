@@ -42,6 +42,7 @@ function scenarioOf(text: string, own: string): string {
   if (text.startsWith("Judge this action")) return "judge";
   if (text.startsWith("Route this message for ion")) return "route";
   if (text.startsWith("Decide for this project's ion")) return "decide";
+  if (text.startsWith("Tell the user what came of a thread")) return "report";
   return own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
 }
 

@@ -17,7 +17,7 @@ export type PathSink = {
   closePath(): void;
 };
 
-export type Shape = "circle" | "spark" | "hexflower" | "gem" | "cube" | "block";
+export type Shape = "circle" | "spark" | "hexflower" | "gem" | "cube" | "block" | "frame";
 
 /** Colours the bot reads from the page's tokens. */
 export type Tokens = { win: string; ink: string; muted: string; accent: string };
@@ -49,8 +49,16 @@ const LIB: Record<string, Bot> = {
   "grok-build": { shape: "circle", ...ink, eo: [-0.13, -0.13], es: 0.86, decor: "grok" },
   gemini: { shape: "gem", color: { gradient: ["#4285F4", "#9B72CB", "#D96570"] }, es: 0.7 },
   cursor: { shape: "cube", ...ink, eo: [0, 0.12], es: 0.78, decor: "cursor" },
-  // Not in the lab: from opencode's logo, a square block with a square inside (the user, 2026-11-18).
-  opencode: { shape: "block", ...ink, es: 0.8, decor: "opencode" },
+  // Not in the lab: from opencode's logo (opencode.ai's mark), a tall frame; its eyes look out of the top of the
+  // hollow, above the block that fills the rest (the user, 2026-11-19).
+  opencode: {
+    shape: "frame",
+    color: (t) => t.ink,
+    eye: (t) => t.ink,
+    eo: [0, -0.4],
+    es: 0.55,
+    decor: "opencode",
+  },
 };
 const ORB: Bot = { shape: "circle", color: (t) => t.muted, eye: (t) => t.win };
 
@@ -103,16 +111,17 @@ const ngon = (th: number, n: number, rot = 0) => {
 };
 
 /** A square of half-side `h` with corners of radius `r`, as one closed path. */
-function roundedSquare(p: PathSink, h: number, r: number): void {
-  p.moveTo(-h + r, -h);
-  p.lineTo(h - r, -h);
-  p.quadraticCurveTo(h, -h, h, -h + r);
-  p.lineTo(h, h - r);
-  p.quadraticCurveTo(h, h, h - r, h);
-  p.lineTo(-h + r, h);
-  p.quadraticCurveTo(-h, h, -h, h - r);
-  p.lineTo(-h, -h + r);
-  p.quadraticCurveTo(-h, -h, -h + r, -h);
+/** A rectangle 2w wide and 2h high around the centre, its corners rounded by r. */
+function roundedRect(p: PathSink, w: number, h: number, r: number): void {
+  p.moveTo(-w + r, -h);
+  p.lineTo(w - r, -h);
+  p.quadraticCurveTo(w, -h, w, -h + r);
+  p.lineTo(w, h - r);
+  p.quadraticCurveTo(w, h, w - r, h);
+  p.lineTo(-w + r, h);
+  p.quadraticCurveTo(-w, h, -w, h - r);
+  p.lineTo(-w, -h + r);
+  p.quadraticCurveTo(-w, -h, -w + r, -h);
   p.closePath();
 }
 
@@ -139,7 +148,9 @@ export function tracePath(s: Shape, p: PathSink): void {
     case "cube":
       return polar(p, (th) => 0.82 * ngon(th, 6, -Math.PI / 2) + 0.18);
     case "block":
-      return roundedSquare(p, 0.86, 0.22);
+      return roundedRect(p, 0.86, 0.86, 0.22);
+    case "frame":
+      return roundedRect(p, 0.8, 1, 0.08);
   }
 }
 

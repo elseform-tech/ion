@@ -26,7 +26,7 @@
 .dotb{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--wait);box-shadow:0 0 0 2px var(--rail)}
 
 /* rail (frame) */
-.rail{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
+.rail{background:var(--rail);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
 .lights{display:flex;gap:6px;margin-bottom:14px}
 .lights i{width:11px;height:11px;border-radius:50%;background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
 .rb{width:40px;height:40px;border-radius:11px;border:0;background:transparent;display:grid;place-items:center;color:var(--muted);cursor:pointer;position:relative}
@@ -37,12 +37,12 @@
 .rail .grow{flex:1}
 .me{width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--win);display:grid;place-items:center;font-size:11px;font-weight:600;margin-top:4px}
 
-.body{display:grid;min-height:0;min-width:0}
-.mode{display:grid;min-height:0;min-width:0}
+.body{display:grid;grid-template-rows:40px minmax(0,1fr);min-height:0;min-width:0;background:var(--rail)}
+.mode{display:grid;min-height:0;min-width:0;margin:0 8px 8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--win)}
 .mode[hidden],.chat[hidden],.tools[hidden],.panel[hidden]{display:none!important}
 
 /* chats sidebar */
-.chats{grid-template-columns:256px minmax(0,1fr)}
+.chats{grid-template-columns:var(--side-w,256px) minmax(0,1fr)}
 .side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .shead{display:flex;align-items:center;gap:4px;padding:12px 10px 8px 14px}
 .proj{display:flex;align-items:center;gap:6px;font-weight:600;margin-right:auto;border:0;background:transparent;padding:4px 6px;border-radius:7px;cursor:pointer}
@@ -138,7 +138,7 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 
 /* lab lines 165-202: ions: panel, ion chat, bubbles, thread links, quick replies */
 /* ions (agent layer) */
-.ions{grid-template-columns:300px minmax(0,1fr)}
+.ions{grid-template-columns:var(--ions-w,300px) minmax(0,1fr)}
 .ipanel{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .ihead{display:flex;align-items:center;gap:4px;padding:12px 10px 4px 18px}
 .ihead b{margin-right:auto;font-weight:600}
@@ -165,12 +165,12 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .bm canvas{width:28px;height:28px}
 .bi{background:var(--hover);border-radius:18px 18px 18px 6px;padding:9px 14px;justify-self:start;max-width:86%}
 .bu{justify-self:end;background:var(--ink);color:var(--win);border-radius:18px 18px 6px 18px;padding:9px 14px;max-width:78%}
-.tlink{display:flex;align-items:center;gap:10px;margin-top:8px;padding:8px 10px;border-radius:12px;background:var(--win);border:0;width:100%;text-align:left;cursor:pointer;box-shadow:0 0 0 1px var(--line)}
-.tlink:hover{box-shadow:0 0 0 1px var(--faint)}
-.tlink .g{flex:1;min-width:0}
-.tlink .g small{display:block;color:var(--muted);font-size:12px}
-.tlink .lucide{color:var(--faint)}
-.tlink .wd{width:7px;height:7px;border-radius:50%;background:var(--wait)}
+.tls{display:grid;grid-template-columns:minmax(0,1fr);justify-items:start;margin-top:6px}
+.tl{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:3px 6px 3px 0;border:0;background:transparent;color:var(--muted);font-size:13px;text-align:left;cursor:pointer}
+.tl:hover,.tl.on{color:var(--ink)} .tl b{font-weight:500;color:var(--ink);white-space:nowrap}
+.tl canvas{width:16px;height:16px;flex-shrink:0} .tl .lucide{width:14px;height:14px;flex-shrink:0;color:var(--faint)} .tl .lucide-circle-alert{color:var(--wait)}
+.tl .tt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .tl .wn{color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+.tl .wd{width:7px;height:7px;border-radius:50%;background:var(--wait);flex-shrink:0} .tl>.lucide:last-child{opacity:0} .tl:hover>.lucide:last-child,.tl.on>.lucide:last-child{opacity:1}
 .quick{display:flex;gap:6px;flex-wrap:wrap;margin-left:38px}
 .quick button{border:1px solid var(--line);background:var(--win);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
 .quick button:hover{background:var(--hover)}
@@ -591,25 +591,25 @@ button.arow:hover{background:var(--hover)}
 .wsrc{font-size:11px;color:var(--faint);margin-left:6px}
 
 /* lab lines 832-851: ions: suggestion cards */
-/* suggestions: optional, never counted as needs */
-.sugg{display:grid;gap:8px;padding:12px 14px;border-radius:16px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:460px}
-.sugg .sk{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint)}
+/* suggestions: optional, never counted as needs; two slim lines (what it asks and your answer; its evidence) */
+.sugg{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;padding:6px 8px 8px 12px;border-radius:12px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:560px}
+.sugg .sk{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);padding-left:22px}
 .sugg .sk .lucide{width:13px;height:13px;color:var(--accent)}
-.sugg b{font-weight:600;line-height:1.4;display:flex;gap:8px;align-items:flex-start}
-.sugg b .si{width:15px;height:15px;color:var(--accent);margin-top:2px;flex-shrink:0}
-.sugg .ev{display:flex;flex-wrap:wrap;gap:4px}
-.sugg .ev button{display:inline-flex;align-items:center;gap:4px;border:0;background:var(--hover);color:var(--muted);font-size:12px;padding:2px 8px;border-radius:999px;cursor:pointer}
-.sugg .ev button:hover{color:var(--ink)}
-.sugg .ev .lucide{width:12px;height:12px}
-.sugg .sm2{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
-.sugg .sm2 span{display:inline-flex;align-items:center;gap:4px}
+.sugg .sh{display:flex;align-items:center;gap:8px;min-height:30px}
+.sugg b{flex:1;min-width:0;font-weight:500;display:flex;gap:8px;align-items:center}
+.sugg b .si{width:14px;height:14px;color:var(--accent);flex-shrink:0} .sugg b .st{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sugg .sm2{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;font-size:12px;color:var(--muted);padding-left:22px}
+.sugg .sm2 span,.sugg .sm2 button{display:inline-flex;align-items:center;gap:4px}
+.sugg .sm2 button{border:0;background:transparent;color:var(--muted);font:inherit;padding:0;cursor:pointer}
+.sugg .sm2 button:hover{color:var(--ink)}
 .sugg .sm2 .lucide{width:12px;height:12px}
 .sugg .sm2 canvas{width:14px;height:14px}
-.sugg .acts{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:10px}
-.sugg .acts .sp{flex:1}
-.sugg .mute{border:0;background:transparent;color:var(--faint);font-size:12px;cursor:pointer;padding:0}
+.sugg .acts{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.sugg .acts .btn{height:24px;padding:0 9px;font-size:12px;border-radius:7px}
+.sugg .acts .ib{width:26px;height:26px}
+.sugg .mute{border:0;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;padding:0 6px}
 .sugg .mute:hover{color:var(--ink)}
-.sugg .done{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.sugg .done{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);flex-shrink:0}
 .sugg .done .lucide{width:14px;height:14px;color:var(--good)}
 
 /* lab lines 861-861: settings: effort bars in a value */
@@ -645,25 +645,33 @@ button.arow:hover{background:var(--hover)}
 /* lab lines 988-988: activity: rows */
 .arow,.drow{box-sizing:border-box}
 
-/* lab lines 1051-1068: ions: project ion rows, fan-out card; routines' instructions */
+/* lab lines 1051-1068: ions: project ion rows, a thread open beside its ion's chat; routines' instructions */
 /* project ions */
 .prow .pmain canvas{width:30px;height:30px;flex-shrink:0}
 .pmain small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .addp{display:flex;align-items:center;gap:8px;width:100%;margin-top:6px;padding:9px 10px;border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);cursor:pointer;font-size:13px}
 .addp:hover{color:var(--ink);border-color:var(--faint)}
 .addp .lucide{width:15px;height:15px}
-.fan{display:grid;gap:2px;padding:8px;border-radius:14px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:460px}
-.fanh{display:flex;align-items:center;gap:6px;padding:2px 6px 6px;font-size:12px;color:var(--muted)}
-.fanh .lucide{width:13px;height:13px}
-.fanr{display:grid;grid-template-columns:22px 110px minmax(0,1fr) 14px;gap:8px;align-items:center;padding:7px 6px;border:0;border-radius:9px;background:transparent;text-align:left;cursor:pointer;color:var(--ink);font-size:13px}
-.fanr:hover{background:var(--hover)}
-.fanr canvas{width:22px;height:22px}
-.fanr b{font-weight:500}
-.ft2{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;min-width:0}
-.ft2 .lucide{width:13px;height:13px;flex-shrink:0}
-.fanr>.lucide{width:14px;height:14px;color:var(--faint)}
+/* a thread an ion started, open beside its chat (like a chat's side panel) */
+.ichat.peek{grid-template-columns:minmax(0,1fr) min(var(--peek-w,420px),calc(100% - 420px))}
+.ichat.peek>:not(.tpeek){grid-column:1}
+.tpeek{grid-column:2;grid-row:1/4;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:56px minmax(0,1fr) auto;min-height:0;min-width:0;border-left:1px solid var(--line);background:var(--win)}
+.tpeek .head{gap:8px;padding:0 10px 0 16px}
+.tpeek .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpeek .head .muted{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.tpeek .msgs{min-height:0;overflow:auto;padding:16px 0 12px}
+.tpeek .msgs .col,.tpeek .foot .fcol{max-width:none;padding:0 18px;grid-template-columns:minmax(0,1fr)} .tpeek .qd .why{overflow-wrap:anywhere}
+.ichat.peek .bcol{max-width:560px}
 .rin{margin-top:3px;font-size:12px;color:var(--faint);font-style:italic}
 .rh2 canvas{width:18px;height:18px;display:block}
+
+/* lab lines 1074-1079: the frame: the top strip, each screen inside it; the sidebar hidden */
+/* the frame: the rail and a strip along the top, one colour; each screen sits inside it, its edge a quiet line */
+.frame{display:flex;align-items:center;gap:6px;padding:0 10px 0 2px}
+.frame .ib .lucide{width:16px;height:16px}
+.side-off .chats,.side-off .ions,.side-off .settings{grid-template-columns:minmax(0,1fr)}
+.side-off .side,.side-off .ipanel,.side-off .snav{display:none}
+.side,.ipanel{position:relative}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

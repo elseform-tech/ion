@@ -58,6 +58,23 @@ describe("NeedsService", () => {
     expect(() => needs.openNeed("old")).toThrow(new UserError("That run stopped"));
   });
 
+  // Real run on Grok, 2026-11-19: "Allow this?" about a call ion stopped stayed open after the thread finished, so
+  // its ion's line read "Waiting for you" on a finished thread. The call is gone with its run: so is the question.
+  it("closes a stopped call's question when its run ends, and keeps the agent's own questions", () => {
+    needs.raiseAsk({ ...question, question: "Allow this? grep", blocked: { requestId: "g1" } });
+    needs.raiseAsk(question);
+    needs.supersedeRun("r1");
+    expect(needs.open().map((n) => n.summary)).toEqual(["Use Postgres?"]);
+  });
+
+  // Same run: questions about stopped calls left open by an older ion close when ion starts (no call still waits).
+  it("closes, at the start, every question about a stopped call", () => {
+    needs.raiseAsk({ ...question, question: "Allow this? grep", blocked: { requestId: "g1" } });
+    needs.raiseAsk(question);
+    needs.supersedeStoppedCalls();
+    expect(needs.open().map((n) => n.summary)).toEqual(["Use Postgres?"]);
+  });
+
   // Plan 06, Global Constraints: an old allow/deny answer still reads.
   it("still reads old allow and deny answers", () => {
     store.append({

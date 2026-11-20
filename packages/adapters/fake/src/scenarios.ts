@@ -97,6 +97,12 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, JSON.stringify(asked ? { answer: `This is ${project}.` } : { thread: message }));
     return "done";
   },
+  /** Tells you what came of a thread like a project's ion: the agent's reply, in a sentence. */
+  async report(s) {
+    const reply = /source="the agent's reply">\n([\s\S]*?)\n<\/ion-data/.exec(s.text())?.[1] ?? "";
+    say(s, reply && reply !== "(no reply)" ? `It's done. ${reply}` : "It's done.");
+    return "done";
+  },
   async hello(s) {
     say(s, "Hi from the fake harness.");
     return "done";
@@ -177,8 +183,15 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     const server = s.mcp() as { url: string; headers: Record<string, string> } | null;
     if (!server) return "failed";
     const choices = [
-      { label: "Merge", consequence: "main gets the change" },
-      { label: "Wait", consequence: "Nothing yet" },
+      {
+        label: "Merge the fix into main now",
+        consequence: "Ships today; the tests pass, and it touches only the cart drawer",
+        recommended: true,
+      },
+      {
+        label: "Wait until you've tried it yourself",
+        consequence: "Safer if you want to see it first; the branch stays open meanwhile",
+      },
     ];
     const res = await fetch(server.url, {
       method: "POST",
@@ -191,10 +204,18 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: "ask", arguments: { question: "Merge it?", choices } },
+        params: {
+          name: "ask",
+          arguments: {
+            question: "Should I merge the cart drawer fix into main now?",
+            why: "The tests pass and the change touches only the cart drawer, so merging is low risk.",
+            choices,
+          },
+        },
       }),
     });
-    say(s, await res.text());
+    // Like an agent: it ends its turn with a word, not ion's raw reply (the tour once showed the JSON).
+    say(s, res.ok ? "I asked you whether to merge." : "I couldn't ask you.");
     return "done";
   },
   async fail(s) {

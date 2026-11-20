@@ -53,7 +53,7 @@ button{font:inherit;color:inherit}
 .dotb{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--wait);box-shadow:0 0 0 2px var(--rail)}
 
 /* rail (frame) */
-.rail{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
+.rail{background:var(--rail);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px}
 .lights{display:flex;gap:6px;margin-bottom:14px}
 .lights i{width:11px;height:11px;border-radius:50%;background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
 .rb{width:40px;height:40px;border-radius:11px;border:0;background:transparent;display:grid;place-items:center;color:var(--muted);cursor:pointer;position:relative}
@@ -64,12 +64,12 @@ button{font:inherit;color:inherit}
 .rail .grow{flex:1}
 .me{width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--win);display:grid;place-items:center;font-size:11px;font-weight:600;margin-top:4px}
 
-.body{display:grid;min-height:0;min-width:0}
-.mode{display:grid;min-height:0;min-width:0}
+.body{display:grid;grid-template-rows:40px minmax(0,1fr);min-height:0;min-width:0;background:var(--rail)}
+.mode{display:grid;min-height:0;min-width:0;margin:0 8px 8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--win)}
 .mode[hidden],.chat[hidden],.tools[hidden],.panel[hidden]{display:none!important}
 
 /* chats sidebar */
-.chats{grid-template-columns:256px minmax(0,1fr)}
+.chats{grid-template-columns:var(--side-w,256px) minmax(0,1fr)}
 .side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .shead{display:flex;align-items:center;gap:4px;padding:12px 10px 8px 14px}
 .proj{display:flex;align-items:center;gap:6px;font-weight:600;margin-right:auto;border:0;background:transparent;padding:4px 6px;border-radius:7px;cursor:pointer}
@@ -163,7 +163,7 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .tree .x{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--wait)}
 
 /* ions (agent layer) */
-.ions{grid-template-columns:300px minmax(0,1fr)}
+.ions{grid-template-columns:var(--ions-w,300px) minmax(0,1fr)}
 .ipanel{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .ihead{display:flex;align-items:center;gap:4px;padding:12px 10px 4px 18px}
 .ihead b{margin-right:auto;font-weight:600}
@@ -190,12 +190,12 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .bm canvas{width:28px;height:28px}
 .bi{background:var(--hover);border-radius:18px 18px 18px 6px;padding:9px 14px;justify-self:start;max-width:86%}
 .bu{justify-self:end;background:var(--ink);color:var(--win);border-radius:18px 18px 6px 18px;padding:9px 14px;max-width:78%}
-.tlink{display:flex;align-items:center;gap:10px;margin-top:8px;padding:8px 10px;border-radius:12px;background:var(--win);border:0;width:100%;text-align:left;cursor:pointer;box-shadow:0 0 0 1px var(--line)}
-.tlink:hover{box-shadow:0 0 0 1px var(--faint)}
-.tlink .g{flex:1;min-width:0}
-.tlink .g small{display:block;color:var(--muted);font-size:12px}
-.tlink .lucide{color:var(--faint)}
-.tlink .wd{width:7px;height:7px;border-radius:50%;background:var(--wait)}
+.tls{display:grid;grid-template-columns:minmax(0,1fr);justify-items:start;margin-top:6px}
+.tl{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:3px 6px 3px 0;border:0;background:transparent;color:var(--muted);font-size:13px;text-align:left;cursor:pointer}
+.tl:hover,.tl.on{color:var(--ink)} .tl b{font-weight:500;color:var(--ink);white-space:nowrap}
+.tl canvas{width:16px;height:16px;flex-shrink:0} .tl .lucide{width:14px;height:14px;flex-shrink:0;color:var(--faint)} .tl .lucide-circle-alert{color:var(--wait)}
+.tl .tt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .tl .wn{color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+.tl .wd{width:7px;height:7px;border-radius:50%;background:var(--wait);flex-shrink:0} .tl>.lucide:last-child{opacity:0} .tl:hover>.lucide:last-child,.tl.on>.lucide:last-child{opacity:1}
 .quick{display:flex;gap:6px;flex-wrap:wrap;margin-left:38px}
 .quick button{border:1px solid var(--line);background:var(--win);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
 .quick button:hover{background:var(--hover)}
@@ -829,25 +829,25 @@ button.arow:hover{background:var(--hover)}
 .wsum .wst{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);margin-bottom:2px}
 .wsum .wst .lucide{width:13px;height:13px}
 .wsrc{font-size:11px;color:var(--faint);margin-left:6px}
-/* suggestions: optional, never counted as needs */
-.sugg{display:grid;gap:8px;padding:12px 14px;border-radius:16px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:460px}
-.sugg .sk{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint)}
+/* suggestions: optional, never counted as needs; two slim lines (what it asks and your answer; its evidence) */
+.sugg{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;padding:6px 8px 8px 12px;border-radius:12px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:560px}
+.sugg .sk{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);padding-left:22px}
 .sugg .sk .lucide{width:13px;height:13px;color:var(--accent)}
-.sugg b{font-weight:600;line-height:1.4;display:flex;gap:8px;align-items:flex-start}
-.sugg b .si{width:15px;height:15px;color:var(--accent);margin-top:2px;flex-shrink:0}
-.sugg .ev{display:flex;flex-wrap:wrap;gap:4px}
-.sugg .ev button{display:inline-flex;align-items:center;gap:4px;border:0;background:var(--hover);color:var(--muted);font-size:12px;padding:2px 8px;border-radius:999px;cursor:pointer}
-.sugg .ev button:hover{color:var(--ink)}
-.sugg .ev .lucide{width:12px;height:12px}
-.sugg .sm2{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
-.sugg .sm2 span{display:inline-flex;align-items:center;gap:4px}
+.sugg .sh{display:flex;align-items:center;gap:8px;min-height:30px}
+.sugg b{flex:1;min-width:0;font-weight:500;display:flex;gap:8px;align-items:center}
+.sugg b .si{width:14px;height:14px;color:var(--accent);flex-shrink:0} .sugg b .st{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sugg .sm2{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;font-size:12px;color:var(--muted);padding-left:22px}
+.sugg .sm2 span,.sugg .sm2 button{display:inline-flex;align-items:center;gap:4px}
+.sugg .sm2 button{border:0;background:transparent;color:var(--muted);font:inherit;padding:0;cursor:pointer}
+.sugg .sm2 button:hover{color:var(--ink)}
 .sugg .sm2 .lucide{width:12px;height:12px}
 .sugg .sm2 canvas{width:14px;height:14px}
-.sugg .acts{display:flex;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:10px}
-.sugg .acts .sp{flex:1}
-.sugg .mute{border:0;background:transparent;color:var(--faint);font-size:12px;cursor:pointer;padding:0}
+.sugg .acts{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.sugg .acts .btn{height:24px;padding:0 9px;font-size:12px;border-radius:7px}
+.sugg .acts .ib{width:26px;height:26px}
+.sugg .mute{border:0;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;padding:0 6px}
 .sugg .mute:hover{color:var(--ink)}
-.sugg .done{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.sugg .done{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);flex-shrink:0}
 .sugg .done .lucide{width:14px;height:14px;color:var(--good)}
 .istate{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);border:0;background:var(--hover);padding:3px 10px;border-radius:999px;cursor:pointer;margin-left:6px}
 .istate:hover{color:var(--ink)}
@@ -1054,16 +1054,16 @@ button.arow:hover{background:var(--hover)}
 .addp{display:flex;align-items:center;gap:8px;width:100%;margin-top:6px;padding:9px 10px;border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);cursor:pointer;font-size:13px}
 .addp:hover{color:var(--ink);border-color:var(--faint)}
 .addp .lucide{width:15px;height:15px}
-.fan{display:grid;gap:2px;padding:8px;border-radius:14px;background:var(--win);box-shadow:0 0 0 1px var(--line);max-width:460px}
-.fanh{display:flex;align-items:center;gap:6px;padding:2px 6px 6px;font-size:12px;color:var(--muted)}
-.fanh .lucide{width:13px;height:13px}
-.fanr{display:grid;grid-template-columns:22px 110px minmax(0,1fr) 14px;gap:8px;align-items:center;padding:7px 6px;border:0;border-radius:9px;background:transparent;text-align:left;cursor:pointer;color:var(--ink);font-size:13px}
-.fanr:hover{background:var(--hover)}
-.fanr canvas{width:22px;height:22px}
-.fanr b{font-weight:500}
-.ft2{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;min-width:0}
-.ft2 .lucide{width:13px;height:13px;flex-shrink:0}
-.fanr>.lucide{width:14px;height:14px;color:var(--faint)}
+/* a thread an ion started, open beside its chat (like a chat's side panel) */
+.ichat.peek{grid-template-columns:minmax(0,1fr) min(var(--peek-w,420px),calc(100% - 420px))}
+.ichat.peek>:not(.tpeek){grid-column:1}
+.tpeek{grid-column:2;grid-row:1/4;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:56px minmax(0,1fr) auto;min-height:0;min-width:0;border-left:1px solid var(--line);background:var(--win)}
+.tpeek .head{gap:8px;padding:0 10px 0 16px}
+.tpeek .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpeek .head .muted{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.tpeek .msgs{min-height:0;overflow:auto;padding:16px 0 12px}
+.tpeek .msgs .col,.tpeek .foot .fcol{max-width:none;padding:0 18px;grid-template-columns:minmax(0,1fr)} .tpeek .qd .why{overflow-wrap:anywhere}
+.ichat.peek .bcol{max-width:560px}
 .rin{margin-top:3px;font-size:12px;color:var(--faint);font-style:italic}
 .rh2 canvas{width:18px;height:18px;display:block}
 .chip.mono,.mono{font-family:var(--mono);font-size:12px}
@@ -1071,6 +1071,12 @@ button.arow:hover{background:var(--hover)}
 .frow .pre{color:var(--faint)}
 .frow .fin{flex:1}
 .pname{font-size:16px;font-weight:600}
+/* the frame: the rail and a strip along the top, one colour; each screen sits inside it, its edge a quiet line */
+.frame{display:flex;align-items:center;gap:6px;padding:0 10px 0 2px}
+.frame .ib .lucide{width:16px;height:16px}
+.side-off .chats,.side-off .ions,.side-off .settings{grid-template-columns:minmax(0,1fr)}
+.side-off .side,.side-off .ipanel,.side-off .snav{display:none}
+.side,.ipanel{position:relative}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1149,6 +1155,13 @@ details a{color:var(--accent)}
 .qbox:not(.shut) .qtog .lucide-chevron-up,.qbox.shut .qtog .lucide-chevron-down{display:none}
 .qd{display:grid;gap:1px;max-height:40vh;overflow:auto;padding-right:6px}
 .qd .why{color:var(--muted);padding:0 0 6px 15px}
+/* open: the question wraps to 2 lines, its hint at most 3 (all of it on a click), each option one line */
+.qbox:has(.qd) .qhead .qq{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.qhead .qq{color:var(--accent)}
+.qd{max-height:34vh} .qd .why{cursor:pointer;font-size:12.5px} .qd .why.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.qopt{display:flex;align-items:center;gap:8px;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.qopt:hover{background:var(--hover)} .qopt b{font-weight:500;flex-shrink:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .qhead>.btn{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .qopt span{min-width:0;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qopt .rec{width:13px;height:13px;color:var(--accent);flex-shrink:0} .qd-f label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .qd .bp-row .rec{width:13px;height:13px;color:var(--accent)}
 .bp-row .g,.bp-row small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qd-f{display:flex;align-items:center;gap:10px;padding:6px 0 2px 7px;color:var(--muted);font-size:12.5px}
@@ -1189,6 +1202,7 @@ details a{color:var(--accent)}
     </nav>
 
     <div class="body">
+      <header class="frame"><button class="ib" type="button" title="Hide sidebar  ⌘B" data-sidebar><i data-lucide="panel-left"></i></button></header>
 
       <!-- ===== CHATS MODE ===== -->
       <div class="mode chats" data-mode="chats">
@@ -1408,20 +1422,18 @@ export function sumLines(lines: Line[]) {
               <div class="foot"><div class="fcol">
                 <div class="qbox" role="group" aria-label="Question" id="askBox">
                   <div class="qhead">
-                    <i class="wd"></i>
-                    <span class="qq" title="Keep the old breakpoints?">Keep the old breakpoints?</span>
-                    <button type="button" class="btn pri" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done" hidden>Keep them</button>
-                    <button type="button" class="btn" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done" hidden>Use the defaults</button>
+                    <span class="qq" title="Should I keep your custom xs breakpoint when moving to Tailwind 4?">Should I keep your custom xs breakpoint when moving to Tailwind 4?</span>
+                    <button type="button" class="btn pri" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done" hidden>Keep xs by moving it into the theme</button>
+                    <button type="button" class="btn" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done" hidden>Drop xs and use Tailwind's defaults</button>
                     <button type="button" class="ib qtog" aria-label="Collapse" aria-expanded="true" data-qtog><i data-lucide="chevron-down"></i><i data-lucide="chevron-up"></i></button>
                   </div>
                   <div class="qd">
-                    <div class="why">Tailwind 4 drops your custom <code>xs</code> screen (420px).</div>
-                    <button type="button" class="bp-row" data-need="tw4" data-a="done"><span class="g">Keep them<small>Moves xs into the theme; nothing changes on screen</small></span><i data-lucide="star" class="rec" aria-label="Recommended"></i></button>
-                    <button type="button" class="bp-row" data-need="tw4" data-a="done"><span class="g">Use the defaults<small>Drops xs; 9 components shift on small phones</small></span></button>
-                    <button type="button" class="bp-row" data-need="tw4" data-a="done"><span class="g">Map xs to sm<small>One fewer breakpoint; small phones get the sm layout</small></span></button>
+                                        <button type="button" class="qopt" title="Moves xs into the theme; nothing changes on screen" data-need="tw4" data-a="done"><b>Keep xs by moving it into the theme</b><span>Moves xs into the theme; nothing changes on screen</span><i data-lucide="star" class="rec" aria-label="Recommended"></i></button>
+                    <button type="button" class="qopt" title="Drops xs; 9 components shift on small phones" data-need="tw4" data-a="done"><b>Drop xs and use Tailwind's defaults</b><span>Drops xs; 9 components shift on small phones</span></button>
+                    <button type="button" class="qopt" title="One fewer breakpoint; small phones get the sm layout" data-need="tw4" data-a="done"><b>Map xs onto the sm breakpoint</b><span>One fewer breakpoint; small phones get the sm layout</span></button>
                     <div class="qd-f">
                       <input class="own" aria-label="Your own answer" placeholder="Something else…">
-                      <label><input type="checkbox"> Always for this project</label>
+                      <label title="Always for this project"><input type="checkbox" aria-label="Always for this project"> Always</label>
                     </div>
                   </div>
                 </div>
@@ -2670,10 +2682,10 @@ const suggState={};
 function suggHTML(id){
   const g=SUGG[id], st=suggState[id];
   const m=([ic,t])=>ic.startsWith('ion')?`<span><canvas class="av" data-ion="${ic==='ion'?'lead':ic.slice(4)}" aria-hidden="true"></canvas>${esc(t)}</span>`:`<span><i data-lucide="${ic}"></i>${esc(t)}</span>`;
-  const foot=!st?`<div class="acts"><button class="btn pri" type="button" data-sg="keep" data-id="${id}">${esc(g.act)}</button><button class="btn" type="button" data-sg="later" data-id="${id}">Not now</button><span class="sp"></span><button class="ib" type="button" title="Fewer like this" data-sg="mute" data-id="${id}"><i data-lucide="bell-off"></i></button></div>`
+  const foot=!st?`<div class="acts"><button class="btn pri" type="button" data-sg="keep" data-id="${id}">${esc(g.act)}</button><button class="mute" type="button" data-sg="later" data-id="${id}">Not now</button><span class="sp"></span><button class="ib" type="button" title="Fewer like this" data-sg="mute" data-id="${id}"><i data-lucide="bell-off"></i></button></div>`
     :`<div class="done"><i data-lucide="${st==='keep'?'check':'bell-off'}"></i>${st==='keep'?esc(g.done):st==='later'?'Later':'Fewer like this'}</div>`;
-  return `<div class="sugg"><b><i data-lucide="${g.icon}" class="si"></i>${esc(g.t)}</b>
-    <div class="ev">${g.ev.map(([ic,t])=>`<button type="button"><i data-lucide="${ic}"></i>${esc(t)}</button>`).join('')}</div>${foot}</div>`;
+  return `<div class="sugg"><div class="sh"><b><i data-lucide="${g.icon}" class="si"></i><span class="st">${esc(g.t)}</span></b>${foot}</div>
+    <div class="sm2">${g.ev.map(([ic,t])=>`<button type="button"><i data-lucide="${ic}"></i>${esc(t)}</button>`).join('')}</div></div>`;
 }
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-sg]'); if(!b) return; suggState[b.dataset.id]=b.dataset.sg;
@@ -2714,7 +2726,7 @@ const IONS={
       {f:'i',t:'Morning. 4 things need you across 3 projects. They’re pinned above, most urgent first.',meta:'deep',work:'brief'},
       {sugg:'friday'},{sugg:'tw4'},
       {f:'u',t:'The checkout rounding bug might be in other services too. Check.'},
-      {work:'fan',fanout:[['payments-api','run','Checking totals rounding'],['billing','ok','Not affected: already sums in cents'],['mobile-app','ok','Not affected: uses payments-api totals']]},
+      {work:'fan',fanout:[['payments-api','run','Read src/money/round.ts','42s'],['billing','ok','Not affected: already sums in cents','1m 12s'],['mobile-app','ok','Not affected: uses payments-api totals','38s']]},
       {f:'u',t:'Every Monday, update storefront’s dependencies and open a PR if the tests pass.'},
       {routineAdded:{k:'storefront',ri:1}},
       {f:'u',t:'Do the same CI triage on payments-api.'},
@@ -2724,7 +2736,7 @@ const IONS={
               RT('Dependency update','Mondays 9:00','Mon 9:00',{h:'codex',effort:'low',isNew:1,instr:'Update minor and patch versions; open a PR if tests pass.'})],
     msgs:[
       {f:'i',t:'Cart drawer e2e failed twice on main (CI triage). I started a chat to reproduce it.'},
-      {f:'i',link:{title:'Cart drawer e2e',sub:'storefront · Grok Build',wait:true}},
+      {f:'i',link:['storefront','wait','Cart drawer e2e']},
       {f:'i',t:'It needs a staging login. Should I use the QA account?'},
       {quick:['Use QA account','I’ll sign in','Skip for now']}]},
   'payments-api':{name:'payments-api',color:PAL.Green,harness:'claude',proj:'payments-api',state:'working',effort:'high',last:'Checking totals rounding',stats:{runs:9,ok:8,prs:6,cost:'$11.40'},
@@ -2732,14 +2744,14 @@ const IONS={
               RT('CI triage','When CI fails on main','Next CI failure',{h:'grok',effort:'medium',isNew:1,instr:'Re-run failing e2e twice; open a chat if it still fails.'})],
     msgs:[
       {f:'i',t:'ion asked me to check whether payments has storefront’s rounding bug.'},
-      {f:'i',link:{title:'Totals rounding check',sub:'payments-api · Claude Code',run:true}},
+      {f:'i',link:['payments-api','run','Bash pnpm test totals','1m 05s']},
       {f:'i',t:'Quick answer while it runs: payments looks safe. It already sums in cents.',proof:'none'},
       {f:'i',t:'Webhook retry backoff is still running too.'},
-      {f:'i',link:{title:'Webhook retry backoff',sub:'payments-api · Claude Code',run:true}},
+      {f:'i',link:['payments-api','run','Edit src/webhooks/retry.ts','3m 20s']},
       {f:'i',workOnly:'payLive'}]},
   docs:{name:'docs',color:PAL.Amber,harness:'pi',proj:'docs',state:'idle',last:'Changelog draft is up',stats:{runs:4,ok:4,prs:3,cost:'$0.90'},
     routines:[RT('Changelog draft','After each release','After v2.4',{effort:'low',instr:'Draft the changelog from merged PRs.'})],
-    msgs:[{f:'i',t:'v2.3 changelog is drafted from the merged PRs.'},{f:'i',link:{title:'v2.3 changelog',sub:'docs · Pi'}}]},
+    msgs:[{f:'i',t:'v2.3 changelog is drafted from the merged PRs.'},{f:'i',link:['docs','ok','v2.3 changelog','2m 41s']}]},
   'mobile-app':{name:'mobile-app',color:PAL.Blue,harness:'grok',proj:'mobile-app',state:'waiting',last:'App Store rejected 2 screenshots',stats:{runs:22,ok:19,prs:5,cost:'$7.30'},
     routines:[RT('Crash watch','Every day 7:00','Tomorrow 7:00',{effort:'low',instr:'Group new crashes; open a chat for anything new and frequent.'}),
               RT('Store review','When a build is rejected','Next rejection',{effort:'medium',instr:'Read the rejection and propose fixes.'}),
@@ -2899,8 +2911,30 @@ function newIonCard(k){
     <div><b>${esc(v.name)}</b>${v.status==='new'?'<span class="tag">New ion</span>':''}<div class="s">${esc(v.role)}</div>
     <div class="meta"><span><i data-lucide="calendar-clock"></i>${esc(v.when)}</span><span><i data-lucide="folder"></i>${esc(pj(v))}</span><span>${hAv(v.harness)}${esc(hName(v.harness))}</span></div></div>${foot}</div>`;
 }
+/* a thread an ion started: one line like a tool call's (what it's doing now, shimmering, and for how long); opens beside the chat */
+/* the frame's sidebar button (and ⌘B): hide or show the screen's left panel */
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-sidebar]'); if(!b) return; const off=document.getElementById('win').classList.toggle('side-off'); b.title=(off?'Show':'Hide')+' sidebar  ⌘B'; });
+document.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='b'){ e.preventDefault(); document.querySelector('[data-sidebar]')?.click(); } });
+function tlHTML(pk,st,txt,time){
+  const say=st==='wait'?'Waiting for you':txt;
+  return `<button class="tl" type="button" data-peek="${esc(pk)}" data-pt="${esc(txt)}" data-ps="${st}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b>${st==='err'?'<i data-lucide="circle-alert"></i>':''}<span class="tt${st==='run'?' now':''}">${esc(say)}</span>${st==='wait'?'<i class="wd"></i>':time?`<span class="wn">· ${esc(time)}</span>`:''}<i data-lucide="chevron-right"></i></button>`;
+}
+function peekHTML(pk,txt,st){
+  const steps=st==='run'?[['file-text','Read','package.json','ok'],['search','Grep','round(','ok'],['file-text','Read',txt.replace(/^\S+ /,''),'run']]:[['file-text','Read','package.json','ok'],['square-terminal','Bash','pnpm test','ok']];
+  return `<aside class="tpeek" aria-label="${esc(txt)}"><header class="head"><span class="title">${esc(st==='run'?'Totals rounding check':txt)}</span><span class="muted">${esc(pk)}</span><span class="sp"></span><button class="ib" type="button" title="Open in Chats" data-go="code"><i data-lucide="maximize-2"></i></button><button class="ib" type="button" title="Close" data-peekx="1"><i data-lucide="x"></i></button></header>
+    <div class="msgs"><div class="col"><div class="u">${esc(st==='run'?'Check whether payments has storefront’s rounding bug.':txt)}</div><div class="work open"><button class="wh" type="button">${st==='run'?`<span class="now">${esc(txt)}</span><span class="wn">· 42s</span>`:'<i data-lucide="wrench"></i><span>Worked for 1m 12s</span>'}</button><div class="wb">${steps.map(([ic,n,a,s2])=>`<div class="ws w-${s2}">${s2==='run'?'<i class="spin"></i>':`<i data-lucide="${ic}"></i>`}<div class="wl"><b>${n}</b> <code>${esc(a)}</code></div><span></span></div>`).join('')}</div></div>${st==='run'?'':`<div class="a">${esc(txt)}.</div>`}</div></div></aside>`;
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-peek]'), x=e.target.closest('[data-peekx]');
+  if(!t&&!x) return;
+  chatEl.querySelector('.tpeek')?.remove(); chatEl.querySelectorAll('.tl.on').forEach(b=>b.classList.remove('on'));
+  const again=t&&chatEl.dataset.peeked===t.dataset.peek+t.dataset.pt;
+  if(x||again){ chatEl.classList.remove('peek'); delete chatEl.dataset.peeked; return; }
+  chatEl.insertAdjacentHTML('beforeend',peekHTML(t.dataset.peek,t.dataset.pt,t.dataset.ps)); t.classList.add('on');
+  chatEl.classList.add('peek'); chatEl.dataset.peeked=t.dataset.peek+t.dataset.pt; icons(chatEl);
+});
 function renderIon(k,ph){
-  curIon=k; const v=IONS[k]; actBtn.classList.remove('on');
+  curIon=k; const v=IONS[k]; actBtn.classList.remove('on'); chatEl.classList.remove('peek'); delete chatEl.dataset.peeked;
   document.querySelectorAll('[data-ionsel]').forEach(b=>b.classList.toggle('on',b.dataset.ionsel===k));
   let h=`<div class="head"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>${k==='lead'?'<span class="title brand hname" aria-label="ion">i<i>o</i>n</span>':`<span class="title">${esc(v.name)}</span>`}<span class="sp"></span>
     <button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${k}"><i data-lucide="sliders-horizontal"></i></button></div>
@@ -2908,21 +2942,21 @@ function renderIon(k,ph){
   v.msgs.forEach((m,i)=>{
     const isI=x=>x&&(x.f==='i'||x.newIon||x.route||x.fanout||x.routineAdded||x.sugg);
     const next=v.msgs[i+1], showAv=isI(m)&&!isI(next);
-    if(m.fanout){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${m.work?workHTML(m.work):''}<div class="fan"><div class="fanh"><i data-lucide="split"></i>Asked ${m.fanout.length} projects</div>${m.fanout.map(([pk,st,txt])=>`<button class="fanr" type="button" data-ionsel="${esc(pk)}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b><span class="ft2">${st==='run'?'<i class="spin"></i>':'<i data-lucide="circle-check" class="ok"></i>'}${esc(txt)}</span><i data-lucide="chevron-right"></i></button>`).join('')}</div></div></div>`; return; }
+    if(m.fanout){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${m.work?workHTML(m.work):''}<div class="tls">${m.fanout.map(r=>tlHTML(...r)).join('')}</div></div></div>`; return; }
     if(m.routineAdded){ const {k:rk,ri}=m.routineAdded, rv=IONS[rk], r=rv&&rv.routines[ri];
       const body=!r?`<div class="note">Removed. ${esc(rk)} keeps its other routines.</div>`
         :`<div class="ncard"><canvas class="av" data-ion="${esc(rk)}" aria-hidden="true"></canvas><div><b>${esc(r.n)}</b>${r.isNew?'<span class="tag">New routine</span>':''}<div class="s">Added to ${esc(rk)}</div>
           <div class="meta"><span><i data-lucide="calendar-clock"></i>${esc(r.w)}</span><span>${hAv(r.h||rv.harness)}${esc(LIB[r.h||rv.harness].name)}</span><span>${effLabel(r.effort||'medium')}</span></div></div>
           ${r.isNew?`<div class="acts"><button class="btn" type="button" data-rtadd="undo" data-k="${esc(rk)}" data-i="${ri}">Undo</button><button class="btn" type="button" data-ionedit="${esc(rk)}">Change</button><span class="sp"></span><button class="btn pri" type="button" data-rtadd="keep" data-k="${esc(rk)}" data-i="${ri}">Keep</button></div>`:`<div class="done"><i data-lucide="check"></i>Kept</div>`}</div>`;
       h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${body}</div></div>`; return; }
-    if(m.route){ const r=IONS[m.route.k]; h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div><button class="route" type="button" data-ionsel="${m.route.k}"><i data-lucide="corner-down-right"></i><span class="g"><span class="l1">Sent to <b>${esc(r.proj)}</b> · <canvas class="av" data-ion="${m.route.k}" aria-hidden="true"></canvas><b>${esc(r.name)}</b></span></span><i data-lucide="chevron-right"></i></button></div></div>`; return; }
+    if(m.route){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div><div class="tls">${tlHTML(m.route.k,'run','Delegating')}</div></div></div>`; return; }
     if(m.newIon){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${newIonCard(m.newIon)}</div></div>`; return; }
     if(m.quick){ h+=`<div class="quick">${m.quick.map(q=>`<button type="button">${esc(q)}</button>`).join('')}</div>`; return; }
     if(m.typing){ h+=`<div class="bm"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas><span class="typing"><i></i><i></i><i></i></span></div>`; return; }
     if(m.f==='u'){ h+=`<div class="bu">${esc(m.t)}</div>`; return; }
     if(m.sugg){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${suggHTML(m.sugg)}</div></div>`; return; }
     if(m.workOnly){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${workHTML(m.workOnly)}</div></div>`; return; }
-    const inner=m.link?`<button class="tlink" type="button" data-go="code"><i data-lucide="message-square"></i><span class="g">${esc(m.link.title)}<small>${esc(m.link.sub)}</small></span>${m.link.wait?'<i class="wd"></i>':m.link.run?'<i class="spin"></i>':''}<i data-lucide="chevron-right"></i></button>`:`<div class="bi">${esc(m.t)}</div>`;
+    const inner=m.link?`<div class="tls">${tlHTML(...m.link)}</div>`:`<div class="bi">${esc(m.t)}</div>`;
     const s2=m.meta==='deep'||m.meta==='reflect';
     const meta=m.meta?`<div class="bmeta">${m.meta==='deep'?'Briefing · Deep':m.meta==='reflect'?'Suggestions · Deep':'Quick'} · ${esc(s2?IONBRAIN.deep[1]:IONBRAIN.fast[1])}${s2?' · '+effLabel(IONBRAIN.eff):''}</div>`:'';
     const proof=m.proof==='none'?`<div class="proof warn"><i data-lucide="triangle-alert"></i>No tests run<span>·</span><button type="button">Ask for proof</button></div>`:'';

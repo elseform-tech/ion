@@ -135,5 +135,44 @@ export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
   const command = typeof req.input.command === "string" ? req.input.command : null;
   if (req.kind === "command" && command && readOnly(command) && paths.every(inWorktree))
     return { decision: "allow", reason: "Only looks inside the project" };
+  // A read or search tool (not a shell) names its paths as they are: inside the worktree, it only looks.
+  if (
+    (req.kind === "read" || req.kind === "search") &&
+    !climbs(req) &&
+    [...paths, ...toolPaths(req, c)].every(inWorktree)
+  )
+    return { decision: "allow", reason: "Only looks inside the project" };
   return null;
 }
+
+/**
+ * Every string in a tool's input, anywhere and whatever its field is called, taken as a path from the worktree
+ * (links followed): a word ("tip") stays inside; a path through a link out of the worktree doesn't.
+ */
+function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
+  return [...strings(req.input)]
+    .filter((v) => !/^[/~$]/.test(v))
+    .map((v) => realish(resolve(c.roots[0] ?? "/", v)));
+}
+
+/**
+ * What a search looks for: text matched in files, not a path. A glob tool's `pattern` is a path, though (as in
+ * runs/policy.ts).
+ */
+const CONTENT = new Set(["pattern", "query", "regex", "search", "text"]);
+const isContent = (req: ApprovalRequest, k: string) =>
+  CONTENT.has(k) && !(k === "pattern" && /glob/i.test(req.toolName));
+
+/** Every string of a tool's input that can name a path: all but what it searches for, however deep. */
+const pathStrings = (req: ApprovalRequest) =>
+  Object.entries(req.input).flatMap(([k, v]) => (isContent(req, k) ? [] : [...strings(v)]));
+
+/**
+ * Input the rule can't fully read, left to the judge: in any string, "..", a glob's braces (they can hide a climb
+ * or an absolute path) or a start at your home ("~", $HOME); in a path, wildcards too (they can match through a
+ * link out of the worktree). What a search looks for keeps its wildcards.
+ */
+const climbs = (req: ApprovalRequest) =>
+  [...strings(req.input)].some(
+    (v) => v.includes("..") || /[{}]/.test(v) || v.startsWith("~") || /\$\{?HOME/.test(v),
+  ) || pathStrings(req).some((v) => /[*?[\]]/.test(v));

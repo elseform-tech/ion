@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { createAccess, createJudge, harnessRunner, judgePrompt, parseVerdict, ruleFor } from "./index.js";
+import { startOf } from "./runner.js";
 
 const home = "/Users/me";
 const wt = "/data/worktrees/c1";
@@ -45,6 +46,64 @@ describe("ruleFor", () => {
     expect(ruleFor(cmd("cat /etc/hosts"), ctx)).toBeNull();
     expect(ruleFor(cmd("pnpm test"), ctx)).toBeNull();
     expect(ruleFor(cmd("ls; rm -rf build"), ctx)).toBeNull();
+  });
+});
+
+// Real run on Grok, 2026-11-19: a grep for "tip" in split.js and Grok's own tool lookup went to the judge, which
+// stopped the lookup as "unrelated"; the question then waited 4 minutes. Auto decides what goes outside the
+// worktree: reading and searching inside it is allowed by rule.
+describe("ruleFor, reading and searching", () => {
+  const tool = (kind: "read" | "search", input: Record<string, unknown>): ApprovalRequest => ({
+    ...cmd("x"),
+    toolName: kind === "read" ? "read_file" : "grep",
+    kind,
+    input,
+  });
+
+  it("allows reads and searches that stay in the worktree", () => {
+    expect(ruleFor(tool("search", { pattern: "tip", path: "src" }), ctx)).toMatchObject({
+      decision: "allow",
+      reason: "Only looks inside the project",
+    });
+    expect(ruleFor(tool("read", { file_path: join(wt, "split.js") }), ctx)?.decision).toBe("allow");
+    expect(ruleFor(tool("search", { query: "ion decisions ask", limit: 10 }), ctx)?.decision).toBe("allow");
+  });
+
+  it("leaves to the judge a read or search that reaches outside, by path or by ..", () => {
+    expect(ruleFor(tool("read", { file_path: "/etc/hosts" }), ctx)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: "../other/a.ts" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", path: "src/../../.." }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", path: "~/code" }), ctx)).toBeNull();
+    // Security review, 2026-11-19: a glob's braces can hide a climb or an absolute path from the check.
+    expect(ruleFor(tool("search", { pattern: "x", glob: "{..,src}/secret" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", glob: "{/etc,src}/*" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", glob: "src..x/a" }), ctx)).toBeNull();
+    // Same review: a wildcard can match through a link out of the worktree (*/passwd via link -> /etc).
+    expect(ruleFor(tool("search", { pattern: "x", glob: "**/split.js" }), ctx)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: "*/passwd" }), ctx)).toBeNull();
+    // What's searched for is text, not a path: its wildcards stay allowed.
+    expect(ruleFor(tool("search", { pattern: "tip.*[0-9]?" }), ctx)?.decision).toBe("allow");
+    // Security review, 2026-11-19: a glob tool's pattern is a path; braces, .. and ~ go to the judge in any field.
+    const glob: ApprovalRequest = { ...tool("search", { pattern: "*/passwd" }), toolName: "Glob" };
+    expect(ruleFor(glob, ctx)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "{/etc,src}" }), ctx)).toBeNull();
+    expect(ruleFor(tool("search", { query: "../x" }), ctx)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: `${home}/.ssh/id_rsa` }), ctx)?.decision).toBe("deny");
+  });
+
+  // Self-review, 2026-11-19: a repo can hold a link that points out of it; a relative path through it isn't inside.
+  it("follows links in a tool's relative paths", () => {
+    const tree = mkdtempSync(join(tmpdir(), "ion-wt-"));
+    const away = mkdtempSync(join(tmpdir(), "ion-away-"));
+    writeFileSync(join(away, "secret"), "x");
+    symlinkSync(away, join(tree, "link"));
+    const c = { roots: [tree], home, ionDirs: [] };
+    expect(ruleFor(tool("read", { file_path: "link/secret" }), c)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", path: "link" }), c)).toBeNull();
+    // Security review, 2026-11-19: whatever a field is called, and however deep, its path is followed.
+    expect(ruleFor(tool("read", { target: "link/secret" }), c)).toBeNull();
+    expect(ruleFor(tool("search", { pattern: "x", include: ["src", "link/secret"] }), c)).toBeNull();
+    expect(ruleFor(tool("read", { file_path: "a.ts" }), c)?.decision).toBe("allow");
   });
 });
 
@@ -254,6 +313,21 @@ describe("createAccess", () => {
     // Security review: a different request in the same chat asks again.
     await access.decide({ ...at, text: "delete everything" }, cmd("pnpm test"));
     expect(judge).toHaveBeenCalledTimes(3);
+  });
+});
+
+// The user, 2026-11-19: ion's own thinking runs at the effort you pick; the judge stays at the agent's default.
+describe("what ion's model runs on", () => {
+  const config = {
+    ...DEFAULT_CONFIG,
+    ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build:grok-4.7", quickEffort: "low" as const },
+  };
+  it("thinks at the effort you picked, on the model you picked", () => {
+    expect(startOf(config, "quick")).toEqual({ id: "grok-build", model: "grok-4.7", effort: "low" });
+    expect(startOf(config, "quick", "opencode")).toEqual({ id: "opencode", model: null, effort: "low" });
+  });
+  it("judges at the agent's own effort", () => {
+    expect(startOf(config, "judge")).toEqual({ id: "claude-code", model: "haiku", effort: null });
   });
 });
 

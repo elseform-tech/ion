@@ -58,6 +58,8 @@ const UserConfigSchema = z.looseObject({
     .looseObject({
       // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list.
       quick: z.string().default("claude-code"),
+      /** How hard ion's quick model thinks; absent: the agent's own default. */
+      quickEffort: Effort.optional(),
       deep: z.string().default("claude-code"),
       deepEffort: Effort.default("high"),
       useDeep: z.enum(["auto", "always", "never"]).default("auto"),

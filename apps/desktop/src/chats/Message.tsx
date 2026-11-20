@@ -19,10 +19,15 @@ function Link({ href, children }: AnchorHTMLAttributes<HTMLAnchorElement>) {
  * An agent's text as Markdown. Raw HTML is never rendered (react-markdown leaves it out without a raw-HTML
  * plugin), and unsafe link targets such as javascript: are emptied by its URL check.
  */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text, htmlAsText }: { text: string; htmlAsText?: boolean }) {
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: Link, pre: CodeBlock }}>
+      {/* htmlAsText: raw HTML is shown as its text (escaped), never rendered and never dropped. */}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        skipHtml={!htmlAsText}
+        components={{ a: Link, pre: CodeBlock }}
+      >
         {text}
       </ReactMarkdown>
     </div>

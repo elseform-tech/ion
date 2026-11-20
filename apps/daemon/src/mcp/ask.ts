@@ -24,28 +24,46 @@ const guard =
   };
 
 const Choice = z.object({
-  label: z.string().min(1).max(200).describe("A few words naming the option"),
+  label: z
+    .string()
+    .min(1)
+    .max(200)
+    .describe('The option as a one-line sentence saying what you\'ll do, e.g. "Merge it into main now"'),
   consequence: z
     .string()
     .max(1000)
     .describe(
-      "What it leads to: why it fits, the tradeoffs (cost, risk, effort, what's hard to undo), and the facts the user needs to choose",
+      "One line on what it leads to, with its pros and cons: cost, risk, effort, what's hard to undo, and the facts the user needs to choose",
     ),
   recommended: z.boolean().optional().describe("Your own pick; at most one"),
 });
+
+/** What ion's ask tool tells an agent about asking well. */
+const ASK_DESCRIPTION =
+  'Ask the user to decide something before you do it. Write the question as one full sentence that stands on its own (what you\'ll do and to what, e.g. "Should I merge the cart drawer fix into main now that its tests pass?", never just "Merge it?") with the context they need in it, and give 2 to 4 real options, each a one-line sentence with its pros and cons, marking your recommended one. The user can also answer in their own words. Then end your turn; the answer comes as the next message. Check `decisions` first: the user may have decided already.';
+
+/** What an agent passes to ask. */
+const ASK_INPUT = {
+  question: z
+    .string()
+    .min(1)
+    .max(500)
+    .describe("One full sentence that stands on its own: what you'd do, and to what"),
+  choices: z.array(Choice).min(2).max(4),
+  why: z
+    .string()
+    .max(1000)
+    .optional()
+    .describe("Not shown to the user: put the context in the question and the options instead"),
+};
 
 /** Asking the user instead of being approved, your past decisions, and what came of them. */
 export function askTools(server: McpServer, scope: Scope, d: { db: Db; decisions: Decisions }): void {
   server.registerTool(
     "ask",
     {
-      description:
-        "Ask the user to decide something before you do it. Give one clear question, the context they need (why), and 2 to 4 real options, each with its reasoning, tradeoffs and the facts that matter, marking your recommended one. The user can also answer in their own words. Then end your turn; the answer comes as the next message. Check `decisions` first: the user may have decided already.",
-      inputSchema: {
-        question: z.string().min(1).max(500),
-        choices: z.array(Choice).min(2).max(4),
-        why: z.string().max(1000).optional().describe("Why you're asking: the situation and what's at stake"),
-      },
+      description: ASK_DESCRIPTION,
+      inputSchema: ASK_INPUT,
     },
     guard((a: { question: string; choices: z.infer<typeof Choice>[]; why?: string }) =>
       d.decisions.ask(scope, a).then(ok),

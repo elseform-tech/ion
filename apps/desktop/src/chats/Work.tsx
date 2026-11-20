@@ -16,7 +16,7 @@ import { memo, useEffect, useState } from "react";
 import { type Step, type ToolStep, type Work, workSeconds } from "./steps.js";
 
 /** "2m 04s", "45s". */
-function duration(seconds: number): string {
+export function duration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
@@ -36,7 +36,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 /** Ticks once a second while `live`, so a live run's time moves. */
-function useNow(live: boolean): number {
+export function useNow(live: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!live) return;
@@ -87,7 +87,7 @@ const ThinkRow = memo(function ThinkRow({ s }: { s: Extract<Step, { kind: "think
 });
 
 /** The step a live run is on, for its header. */
-const current = (w: Work) => {
+export const current = (w: Work) => {
   const last = w.steps.at(-1);
   return last?.kind === "tool" ? `${last.name} ${last.summary}` : "Thinking";
 };

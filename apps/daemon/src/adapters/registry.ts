@@ -31,6 +31,11 @@ export function harnessIds(): string[] {
   return [...Object.keys(ENTRIES), ...(process.env.ION_ALLOW_FAKE === "1" ? ["fake"] : [])];
 }
 
+/** The agents the app lists: real ones only; the fake one too in debug mode (ION_DEBUG=1). */
+export function listedHarnessIds(): string[] {
+  return harnessIds().filter((id) => id !== "fake" || process.env.ION_DEBUG === "1");
+}
+
 /** A harness by id, or null. The fake harness exists only for tests (ION_ALLOW_FAKE=1; ION_FAKE_SIGNED_OUT=1). */
 export function getHarness(id: string): HarnessEntry | null {
   if (id === "fake" && process.env.ION_ALLOW_FAKE === "1")
@@ -40,4 +45,13 @@ export function getHarness(id: string): HarnessEntry | null {
       loginHint: "ion fake login",
     };
   return ENTRIES[id]?.() ?? null;
+}
+
+/** Without one chosen: the first ready of these (quota-friendly first), else any ready one. */
+const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
+
+/** The agent to use when none is named: the chat's own while it's ready, else the first ready one. */
+export function defaultAgent(ready: string[], own: string | null): string | undefined {
+  if (own && ready.includes(own)) return own;
+  return PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
 }

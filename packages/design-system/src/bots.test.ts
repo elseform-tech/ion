@@ -31,13 +31,29 @@ describe("bots", () => {
     expect(botFor("cursor").shape).toBe("cube");
   });
 
-  // The user, 2026-11-18: opencode gets its own avatar from its logo (a square block with a square inside).
-  it("draws opencode as a square block with its inner square", () => {
-    expect(botFor("opencode")).toMatchObject({ shape: "block", decor: "opencode" });
-    const calls: string[] = [];
-    const rec = new Proxy({} as PathSink, { get: (_t, k) => () => calls.push(String(k)) });
-    tracePath("block", rec);
-    expect(calls.filter((c) => c === "closePath")).toHaveLength(1);
+  // The user, 2026-11-19: opencode's avatar follows its logo (opencode.ai's mark): a tall frame, 4 wide to 5 high,
+  // the top of its hollow open (the eyes look out there) and a block filling the rest.
+  it("draws opencode as its logo's tall frame", () => {
+    expect(botFor("opencode")).toMatchObject({ shape: "frame", decor: "opencode" });
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const rec = new Proxy({} as PathSink, {
+      get: (_t, k) => (x?: number, y?: number, x2?: number, y2?: number) => {
+        if (k === "closePath") return;
+        for (const [a, b] of [
+          [x, y],
+          [x2, y2],
+        ])
+          if (typeof a === "number" && typeof b === "number") {
+            xs.push(a);
+            ys.push(b);
+          }
+      },
+    });
+    tracePath("frame", rec);
+    const w = Math.max(...xs) - Math.min(...xs);
+    const h = Math.max(...ys) - Math.min(...ys);
+    expect(w / h).toBeCloseTo(0.8, 2);
   });
 
   it("draws a plain orb for a harness the lab doesn't have", () => {

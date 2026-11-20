@@ -34,12 +34,13 @@ describe("ChangesPanel", () => {
   });
 
   // Final review I5: no "No changes yet"; an empty panel is empty, as the lab's.
-  it("reads the changes again when the chat changes something, and stays empty when there are none", async () => {
+  it("reads the changes again when the chat changes something, and says when there are none", async () => {
     const call = vi.fn(async () => ({ files: [] }));
     const client = { call } as unknown as IonClient;
     const { rerender, container } = render(<ChangesPanel client={client} chatId="c1" version={0} />);
     await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
-    expect(container.querySelector(".panel")?.textContent).toBe("");
+    // The user, 2026-11-19: a quiet "No changes" rather than an empty box (Plan 08 had left it empty).
+    expect(container.querySelector(".panel")?.textContent).toBe("No changes");
     rerender(<ChangesPanel client={client} chatId="c1" version={1} />);
     await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
   });

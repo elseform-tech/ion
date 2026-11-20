@@ -145,7 +145,9 @@ describe("Ions", () => {
     expect(c.call).toHaveBeenCalledWith("ion.message", { ionId: "chief", text: "Anything for me?" });
   });
 
-  it("opens a thread from its card, and answers a suggestion", async () => {
+  // The user, 2026-11-19: a thread an ion started is a line like a tool call's (what it's doing now, shimmering, and
+  // for how long), not a box; it opens beside the ion's chat, like a chat's side panel.
+  it("shows a thread as a line with what it's doing, opens it beside the chat, and answers a suggestion", async () => {
     const onOpenChat = vi.fn();
     const c = client([
       ev("ion:chief", EV.ionSaid, {
@@ -156,13 +158,38 @@ describe("Ions", () => {
         text: "Always?",
         card: { kind: "suggest", suggestionId: "s1", question: "Use QA?", choice: "Yes" },
       }),
+      {
+        ...ev("t1", EV.runStarted, { harness: "fake", model: "m", effort: null, authMethod: null }),
+        runId: "r1",
+      },
+      {
+        ...ev("t1", EV.toolStarted, { toolId: "x", kind: "read", name: "Read", summary: "package.json" }),
+        runId: "r1",
+      },
     ]);
     const { container } = render(<Ions client={c} onOpenChat={onOpenChat} />);
-    fireEvent.click(await screen.findByRole("button", { name: /^Fix the cart/ }));
-    expect(container.querySelector(".tlink")).not.toBeNull();
+    await waitFor(() =>
+      expect(container.querySelector(".tl .tt.now")?.textContent).toBe("Read package.json"),
+    );
+    const line = container.querySelector<HTMLButtonElement>(".tl")!;
+    expect(container.querySelector(".tlink, .fan")).toBeNull();
+    fireEvent.click(line);
+    expect(container.querySelector("aside.tpeek .title")?.textContent).toBe("Fix the cart");
+    expect(onOpenChat).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open in Chats" }));
     expect(onOpenChat).toHaveBeenCalledWith("t1");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(container.querySelector("aside.tpeek")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Keep" }));
     expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "s1", keep: true });
+  });
+
+  // Real run on Grok, 2026-11-19: an ion's report came with Markdown ("**0.15**", `split.js`) shown as is.
+  it("reads an ion's Markdown as formatting, and still shows HTML as text", async () => {
+    const c = client([ev("ion:chief", EV.ionSaid, { text: "The default tip in `split.js` is **0.15**." })]);
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    await waitFor(() => expect(container.querySelector(".bi strong")?.textContent).toBe("0.15"));
+    expect(container.querySelector(".bi code")?.textContent).toBe("split.js");
   });
 
   // Review Focus 5.
@@ -185,8 +212,23 @@ describe("Ions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     expect(onOpenChat).toHaveBeenCalledWith("t1");
   });
-  // The lab: several threads from one message are one fan-out card, a row per project's ion.
-  it("shows several threads as one fan-out card", async () => {
+  // The user, 2026-11-19: an ion's threads' panel opens and closes from its header too, like a chat's side panel.
+  it("shows and hides its latest thread from the header", async () => {
+    const c = client([
+      ev("ion:chief", EV.ionSaid, {
+        text: "Asked 1 project.",
+        card: { kind: "threads", threads: [{ chatId: "t1", projectId: "storefront" }] },
+      }),
+    ]);
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Show thread" }));
+    expect(container.querySelector("aside.tpeek .title")?.textContent).toBe("Fix the cart");
+    fireEvent.click(screen.getByRole("button", { name: "Hide thread" }));
+    expect(container.querySelector("aside.tpeek")).toBeNull();
+  });
+
+  // The user, 2026-11-19: several threads from one message are a line each, no box around them.
+  it("shows several threads as a line each", async () => {
     const two = [
       { chatId: "t1", projectId: "storefront" },
       { chatId: "t2", projectId: "storefront" },
@@ -195,9 +237,8 @@ describe("Ions", () => {
       ev("ion:chief", EV.ionSaid, { text: "Asked 2 projects.", card: { kind: "threads", threads: two } }),
     ]);
     const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
-    await waitFor(() => expect(container.querySelectorAll(".fan .fanr")).toHaveLength(2));
-    expect(container.querySelector(".fan .fanh")?.textContent).toBe("Asked 2 projects");
-    expect(container.querySelector(".tlink")).toBeNull();
+    await waitFor(() => expect(container.querySelectorAll(".tls .tl")).toHaveLength(2));
+    expect(container.querySelector(".fan")).toBeNull();
   });
   // Final review I6: a suggestion you answered stays answered when you come back.
   it("shows a suggestion you already answered as answered", async () => {

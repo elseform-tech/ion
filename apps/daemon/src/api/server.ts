@@ -150,6 +150,15 @@ function startIons(d: Omit<ConstructorParameters<typeof Ions>[0], "agents">): Io
   return ions;
 }
 
+/**
+ * At the start: questions about calls stopped before (none still waits) close, and questions held behind one that
+ * closed while ion was stopped come to you now.
+ */
+function sweepNeeds(needs: NeedsService, ionQuestions: IonQuestions): void {
+  needs.supersedeStoppedCalls();
+  ionQuestions.sweep();
+}
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(opts: { dataDir: string; configFile: string }, base: () => string): Ctx {
   mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
@@ -162,8 +171,7 @@ function openState(opts: { dataDir: string; configFile: string }, base: () => st
   // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
   const ionQuick = harnessRunner(opts.configFile, "quick");
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
-  // Questions held behind one that closed while ion was stopped come to you now.
-  ionQuestions.sweep();
+  sweepNeeds(needs, ionQuestions);
   // Made after the run manager it needs; the judge and the gate reach it through this holder.
   const late: { decisions?: Decisions } = {};
   const access = autoAccess(opts, quick, late);
