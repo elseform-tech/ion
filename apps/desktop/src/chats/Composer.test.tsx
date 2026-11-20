@@ -40,6 +40,13 @@ const compose = (harnesses: HarnessInfo[], call = vi.fn(async () => ({ chatId: "
     />,
   ),
 });
+/** A chat's client: `call` for its commands; its queue is empty. */
+const chatClient = (call: (...a: never[]) => unknown) =>
+  ({
+    call: async (cmd: string, a: unknown) =>
+      cmd === "queue.list" ? [] : (call as (c: string, a: unknown) => unknown)(cmd, a),
+    subscribe: async () => () => {},
+  }) as unknown as IonClient;
 const pill = () => screen.getByRole("button", { name: /Harness, model and effort/ });
 
 describe("Composer", () => {
@@ -207,7 +214,7 @@ describe("Composer", () => {
     const { call } = { call: vi.fn() };
     render(
       <Composer
-        client={{ call } as unknown as IonClient}
+        client={chatClient(call)}
         harnesses={[fake]}
         to={{ chatId: "c1" }}
         running={null}
@@ -239,7 +246,7 @@ describe("Composer", () => {
     const box = (key: string) => (
       <Composer
         key={key}
-        client={{ call } as unknown as IonClient}
+        client={chatClient(call)}
         harnesses={[fake, grok]}
         to={{ chatId: "c9" }}
         running={null}
@@ -274,7 +281,7 @@ describe("Composer", () => {
     const call = vi.fn(async () => ({ chatId: "c9", runId: "r2" }));
     render(
       <Composer
-        client={{ call } as unknown as IonClient}
+        client={chatClient(call)}
         harnesses={[out, grok]}
         to={{ chatId: "c10" }}
         running={null}
@@ -296,7 +303,7 @@ describe("Composer", () => {
     const call = vi.fn(async () => ({ ok: true }));
     render(
       <Composer
-        client={{ call } as unknown as IonClient}
+        client={chatClient(call)}
         harnesses={[grok]}
         to={{ chatId: "c11" }}
         running="r9"

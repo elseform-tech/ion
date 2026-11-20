@@ -43,7 +43,11 @@
     "memory.forgotten",
     "decision.recorded",
     "decision.outcome",
-    "decision.forgotten"
+    "decision.forgotten",
+    "queue.added",
+    "queue.removed",
+    "queue.sent",
+    "queue.failed"
   ],
   "commands": [
     "status",
@@ -76,6 +80,12 @@
     "chat.rename",
     "ions.list",
     "ion.message",
+    "ion.stop",
+    "queue.list",
+    "queue.add",
+    "queue.remove",
+    "queue.take",
+    "queue.sendNow",
     "suggestion.answer",
     "suggestions.list",
     "chat.diff",

@@ -1,12 +1,22 @@
 import type { IonClient } from "@ion/client/browser";
-import { ArrowUp, Check, ChevronDown, ChevronUp, CircleAlert, MessageSquare, Pin } from "@ion/design-system";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  MessageSquare,
+  Pin,
+  Square,
+} from "@ion/design-system";
 import type { ChatInfo, IonCard, IonEvent, IonInfo, NeedInfo } from "@ion/schema";
-import { type KeyboardEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { IonAvatar } from "./IonAvatar.js";
 import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
 import { Markdown } from "../chats/Message.js";
+import { onEnter, QueueLines, submit, useDoubleEsc, useEditInto, useQueue } from "../chats/Queue.js";
 import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
 import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
@@ -223,36 +233,64 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
   );
 }
 
-/** The message box for an ion: Enter sends. */
+/** Send, or Stop while the ion thinks (as a chat's box has). */
+function SendOrStop(p: { thinking: boolean; canSend: boolean; onSend: () => void; onStop: () => void }) {
+  if (p.thinking)
+    return (
+      <button type="button" className="send" aria-label="Stop" onClick={p.onStop}>
+        <Square />
+      </button>
+    );
+  return (
+    <button type="button" className="send" aria-label="Send" disabled={!p.canSend} onClick={p.onSend}>
+      <ArrowUp />
+    </button>
+  );
+}
+
+/**
+ * The message box for an ion: Enter sends; while it thinks (ion's word), Enter queues (⌘Enter: sends now) and Stop
+ * (or Esc twice) stops its turn.
+ */
 function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
   const [text, setText] = useState("");
+  const q = useQueue(client, { ionId: ion.ionId });
+  const { ref, onEdit } = useEditInto(setText);
+  const stop = (ionId: string) => void client.call("ion.stop", { ionId }).catch(() => {});
+  useDoubleEsc(ion.thinking ? ion.ionId : null, stop);
+  const edit = (t: string) => {
+    setText(t);
+    q.clearError();
+  };
   const send = () => {
     if (!text.trim()) return;
     void client.call("ion.message", { ionId: ion.ionId, text: text.trim() }).catch(() => {});
-    setText("");
+    edit("");
   };
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-    e.preventDefault();
-    send();
-  };
+  const b = { q, working: ion.thinking, text, setText, send, brain: () => ({}) };
   return (
     <div className="foot">
       <div className="fcol">
+        <QueueLines q={q} onEdit={onEdit} />
         <div className="cbox">
           <textarea
             aria-label={`Message ${ion.name}`}
+            ref={ref}
             placeholder={`Message ${ion.name}`}
             rows={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={onKey}
+            onChange={(e) => edit(e.target.value)}
+            onKeyDown={onEnter(b)}
           />
+          {q.error && <div className="quiet">{q.error}</div>}
           <div className="bar">
             <span className="sp" />
-            <button type="button" className="send" aria-label="Send" disabled={!text.trim()} onClick={send}>
-              <ArrowUp />
-            </button>
+            <SendOrStop
+              thinking={ion.thinking}
+              canSend={Boolean(text.trim())}
+              onSend={() => submit(b, false)}
+              onStop={() => stop(ion.ionId)}
+            />
           </div>
         </div>
       </div>

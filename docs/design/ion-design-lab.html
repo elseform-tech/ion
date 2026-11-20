@@ -1086,6 +1086,13 @@ button.arow:hover{background:var(--hover)}
 .side-off .chats,.side-off .ions,.side-off .settings{grid-template-columns:minmax(0,1fr)}
 .side-off .side,.side-off .ipanel,.side-off .snav{display:none}
 .side,.ipanel{position:relative}
+/* queued messages: one line each, oldest first, right above the message box; Send now, Edit, Remove named on hover */
+.queue{border:1px solid var(--line);border-radius:14px;background:var(--win);padding:2px 4px 2px 12px;display:grid;font-size:13px}
+.qline{display:flex;align-items:center;gap:2px;min-height:30px;min-width:0}
+.qline .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qline .why{flex-shrink:1;max-width:45%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--faint);margin:0 6px}
+.qline .ib{width:26px;height:26px}
+.qline .ib .lucide{width:14px;height:14px}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1448,6 +1455,7 @@ export function sumLines(lines: Line[]) {
                     </div>
                   </div>
                 </div>
+                <div class="queue" role="list" aria-label="Queued"><div class="qline" role="listitem"><span class="t" title="Update the docs for the new breakpoints too.">Update the docs for the new breakpoints too.</span><span class="why">After your answer</span><button class="ib" type="button" title="Send now"><i data-lucide="arrow-up"></i></button><button class="ib" type="button" title="Edit"><i data-lucide="pencil"></i></button><button class="ib" type="button" title="Remove"><i data-lucide="x"></i></button></div></div>
                 <div class="cbox">
                   <textarea aria-label="Message" placeholder="Reply…" rows="1" disabled id="askMsg"></textarea>
                   <div class="bar">
@@ -1471,6 +1479,7 @@ export function sumLines(lines: Line[]) {
                 <div class="quiet pending now" id="startWord" style="--strength:.2">Thinking</div>
               </div></div>
               <div class="foot"><div class="fcol">
+                <div class="queue" role="list" aria-label="Queued"><div class="qline" role="listitem"><span class="t" title="Then add a test for the cache headers.">Then add a test for the cache headers.</span><button class="ib" type="button" title="Send now"><i data-lucide="arrow-up"></i></button><button class="ib" type="button" title="Edit"><i data-lucide="pencil"></i></button><button class="ib" type="button" title="Remove"><i data-lucide="x"></i></button></div><div class="qline" role="listitem"><span class="t" title="Purge the old images from the CDN once it works.">Purge the old images from the CDN once it works.</span><button class="ib" type="button" title="Send now"><i data-lucide="arrow-up"></i></button><button class="ib" type="button" title="Edit"><i data-lucide="pencil"></i></button><button class="ib" type="button" title="Remove"><i data-lucide="x"></i></button></div></div>
                 <div class="cbox">
                   <textarea aria-label="Message" placeholder="Reply…" rows="1"></textarea>
                   <div class="bar">
@@ -2765,7 +2774,8 @@ const IONS={
       {f:'i',t:'Quick answer while it runs: payments looks safe. It already sums in cents.',proof:'none'},
       {f:'i',t:'Webhook retry backoff is still running too.'},
       {f:'i',link:['payments-api','run','Edit src/webhooks/retry.ts','3m 20s']},
-      {f:'i',workOnly:'payLive'}]},
+      {f:'i',workOnly:'payLive'}],
+    queue:[['Then check the refund path for the same bug.'],['Open a PR if the tests pass.',"Claude Code isn't signed in"]]},
   docs:{name:'docs',color:PAL.Amber,harness:'pi',proj:'docs',state:'idle',last:'Changelog draft is up',stats:{runs:4,ok:4,prs:3,cost:'$0.90'},
     routines:[RT('Changelog draft','After each release','After v2.4',{effort:'low',instr:'Draft the changelog from merged PRs.'})],
     msgs:[{f:'i',t:'v2.3 changelog is drafted from the merged PRs.'},{f:'i',link:['docs','ok','v2.3 changelog','2m 41s']},
@@ -2981,7 +2991,10 @@ function renderIon(k,ph){
     const proof=m.proof==='none'?`<div class="proof warn"><i data-lucide="triangle-alert"></i>No tests run<span>·</span><button type="button">Ask for proof</button></div>`:'';
     h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div title="${m.meta?esc(meta.replace(/<[^>]+>/g,'')):''}">${m.work?workHTML(m.work):''}${inner}${proof}</div></div>`;
   });
-  h+=`</div></div><div class="foot"><div class="fcol"><div class="cbox"><span class="ph">${esc(ph||'Message '+v.name)}</span><div class="bar"><button class="ib" type="button" title="Attach"><i data-lucide="plus"></i></button><span class="sp"></span><button class="ib" type="button" title="Voice"><i data-lucide="mic"></i></button><button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button></div></div></div></div>`;
+  // While the ion thinks (something waits in its queue, or it's typing), its box has Stop, as a chat's does.
+  const thinking=Boolean(v.queue||v.msgs.at(-1)?.typing);
+  const qHTML=v.queue?`<div class="queue" role="list" aria-label="Queued">${v.queue.map(([t,why])=>`<div class="qline" role="listitem"><span class="t" title="${esc(t)}">${esc(t)}</span>${why?`<span class="why">${esc(why)}</span>`:''}<button class="ib" type="button" title="Send now"><i data-lucide="arrow-up"></i></button><button class="ib" type="button" title="Edit"><i data-lucide="pencil"></i></button><button class="ib" type="button" title="Remove"><i data-lucide="x"></i></button></div>`).join('')}</div>`:'';
+  h+=`</div></div><div class="foot"><div class="fcol">${qHTML}<div class="cbox"><span class="ph">${esc(ph||'Message '+v.name)}</span><div class="bar"><button class="ib" type="button" title="Attach"><i data-lucide="plus"></i></button><span class="sp"></span><button class="ib" type="button" title="Voice"><i data-lucide="mic"></i></button>${thinking?'<button class="send" type="button" aria-label="Stop" title="Stop"><i data-lucide="square"></i></button>':'<button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>'}</div></div></div></div>`;
   chatEl.innerHTML=h; hydrate(chatEl); icons(chatEl);
 }
 paintWork(); buildIonNav(); renderIon(curIon);

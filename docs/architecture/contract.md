@@ -36,7 +36,13 @@ Adapter events: `run.started`, `run.finished` (done | failed | interrupted | cap
 Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `approval.resolved`,
 `need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`, `routine.ran`,
 `briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
-`decision.recorded`, `decision.outcome`, `decision.forgotten`.
+`decision.recorded`, `decision.outcome`, `decision.forgotten`, `queue.added`, `queue.removed`, `queue.sent`,
+`queue.failed`.
+
+A queued message (your next message to a chat or an ion while it works) is its events on the chat's stream (an
+ion's: `ion:<ionId>`): `queue.added` (its text and brain), then `queue.sent`, or `queue.removed` (removed, edited,
+its chat archived). `queue.failed` says why it waits (`why`; `"Stopped"` after you stopped the work), and with
+`why: null` that it goes on.
 
 A `routine.ran` (chatId null) is one slot of a routine handled: the thread it started, why it couldn't, or that
 you skipped it; `by: "you"` with `due: null` is a run you started now.

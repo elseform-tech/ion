@@ -49,7 +49,9 @@ export function BrainPill(p: { harnesses: HarnessInfo[]; brain: Brain; open: boo
   const h = p.harnesses.find((x) => x.id === p.brain.harness);
   const model = pillModel(h, p.brain.model);
   const effort = `${effortLabel(p.brain.effort)} effort`;
-  const name = [h?.label ?? "none", model ?? modelLabel(h, p.brain.model), effort].join(" · ");
+  // An agent the app doesn't list (the fake one in the tour) shows by its own name.
+  const label = h?.label ?? (p.brain.harness || null);
+  const name = [label ?? "none", model ?? modelLabel(h, p.brain.model), effort].join(" · ");
   return (
     <button
       type="button"
@@ -61,7 +63,7 @@ export function BrainPill(p: { harnesses: HarnessInfo[]; brain: Brain; open: boo
       onClick={p.onClick}
     >
       {h && <Avatar harness={h.id} />}
-      {p.harnesses.length ? <span>{h?.label ?? "No agent"}</span> : <span className="now">Agents</span>}
+      {p.harnesses.length ? <span>{label ?? "No agent"}</span> : <span className="now">Agents</span>}
       {model && (
         <>
           <span className="bsep">·</span>

@@ -49,6 +49,10 @@ export const DAEMON_EVENT_TYPES = [
   "decision.recorded",
   "decision.outcome",
   "decision.forgotten",
+  "queue.added",
+  "queue.removed",
+  "queue.sent",
+  "queue.failed",
 ] as const;
 
 export const EVENT_TYPES = [...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES] as const;
@@ -96,6 +100,10 @@ export const EV = {
   decisionRecorded: "decision.recorded",
   decisionOutcome: "decision.outcome",
   decisionForgotten: "decision.forgotten",
+  queueAdded: "queue.added",
+  queueRemoved: "queue.removed",
+  queueSent: "queue.sent",
+  queueFailed: "queue.failed",
 } as const satisfies Record<string, EventType>;
 
 export type AdapterEventType = (typeof ADAPTER_EVENT_TYPES)[number];
@@ -284,6 +292,30 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     by: z.enum(["ion", "agent", "you"]),
   }),
   "decision.forgotten": z.object({ decisionId: z.string() }),
+  /**
+   * A message you queued while a chat's agent or an ion works (on that chat's or ion's own events): it goes out when
+   * the work ends, with the brain (agent, model, effort, access) you picked when you queued it.
+   */
+  "queue.added": z.object({
+    queueId: z.string().min(1),
+    to: z.union([z.object({ chatId: z.string().min(1) }), z.object({ ionId: z.string().min(1) })]),
+    text: z.string().min(1),
+    brain: z.object({
+      harness: z.string().optional(),
+      model: z.string().optional(),
+      effort: z.enum(["low", "medium", "high", "max"]).optional(),
+      access: z.enum(["auto", "full"]).optional(),
+    }),
+  }),
+  /** You took it out of the queue (removed, or back in the box to edit), or its chat was archived. */
+  "queue.removed": z.object({ queueId: z.string().min(1) }),
+  /** It went out: as the chat's next message, or to the ion. */
+  "queue.sent": z.object({ queueId: z.string().min(1) }),
+  /**
+   * It couldn't go out (the agent signed out…): it waits, saying why, and holds the queue until things move (Send
+   * now, Edit or Remove in that queue, or a run there that goes well); `why` null: no longer held.
+   */
+  "queue.failed": z.object({ queueId: z.string().min(1), why: z.string().min(1).nullable() }),
   /**
    * A routine's time came (by "schedule", for the slot `due`) or you ran it now (by "you", due null): the thread it
    * started, why it couldn't start, or that you skipped this one. One per slot: missed slots run once, as the last.

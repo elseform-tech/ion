@@ -34,7 +34,8 @@ function noteSession(db: Db, d: SessionData): void {
 type IonSession = { harness: string; nativeId: string; projects: string[] | null };
 
 type IonsView = View & {
-  list(db: Db, projects: ProjectInfo[]): IonInfo[];
+  /** `thinking`: whether an ion's turn is going or waiting (ion's turns know; none here). */
+  list(db: Db, projects: ProjectInfo[], thinking?: (ionId: string) => boolean): IonInfo[];
   /** The agent session the ion last thought in (and the projects it saw), to resume; null before its first. */
   session(db: Db, ionId: string): IonSession | null;
 };
@@ -77,7 +78,7 @@ export const ionsView: IonsView = {
     return { harness: r.harness, nativeId: r.nativeId, projects };
   },
   /** ion chief first, then one ion per project; `default` has none (it pools chats without a project). */
-  list(db, projects) {
+  list(db, projects, thinking = () => false) {
     const last = new Map(
       (
         db.prepare("SELECT ion_id AS ionId, last FROM view_ions").all() as { ionId: string; last: string }[]
@@ -100,6 +101,7 @@ export const ionsView: IonsView = {
         starred: false,
         needs: asks.length,
         working: busy.size > 0,
+        thinking: thinking("chief"),
       },
       ...own.map((p, i) => ({
         ionId: p.id,
@@ -110,6 +112,7 @@ export const ionsView: IonsView = {
         last: last.get(p.id) ?? null,
         needs: asks.filter((n) => project.get(n.chatId) === p.id).length,
         working: busy.has(p.id),
+        thinking: thinking(p.id),
         starred: p.starred,
       })),
     ];

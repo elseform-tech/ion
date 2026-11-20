@@ -6,8 +6,8 @@ export const why = (e: unknown) => (e instanceof ApiCallError ? e.message : "Som
 
 export type Run = <T>(call: Promise<T>, then?: (r: T) => void) => void;
 
-/** A control's last failed call, shown by it until a call works again: [why, run a call]. */
-export function useCallError(): [string | null, Run] {
+/** A control's last failed call, shown by it until a call works again (or it's cleared): [why, run a call, clear]. */
+export function useCallError(): [string | null, Run, () => void] {
   const [error, setError] = useState<string | null>(null);
   const run: Run = useCallback(
     (call, then) =>
@@ -20,5 +20,6 @@ export function useCallError(): [string | null, Run] {
       ),
     [],
   );
-  return [error, run];
+  const clear = useCallback(() => setError(null), []);
+  return [error, run, clear];
 }

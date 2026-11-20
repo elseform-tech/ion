@@ -12,8 +12,12 @@ import { ActivityPage, ActivityRow, useActivity } from "./Activity.js";
 /** The Activity page's place in the panel (no ion has this id). */
 const ACTIVITY = "activity";
 
-/** What changes the ions list: an ion's line, its threads starting, running and ending, their questions. */
+/**
+ * What changes the ions list: your message to an ion (its turn starts), its line, its threads starting, running
+ * and ending, their questions.
+ */
 const IONS_CHANGE = new Set<string>([
+  EV.ionHeard,
   EV.ionSaid,
   EV.chatCreated,
   EV.chatArchived,

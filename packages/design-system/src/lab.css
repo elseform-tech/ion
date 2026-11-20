@@ -687,6 +687,15 @@ button.arow:hover{background:var(--hover)}
 .side-off .side,.side-off .ipanel,.side-off .snav{display:none}
 .side,.ipanel{position:relative}
 
+/* lab lines 1089-1095: queued messages above the message box */
+/* queued messages: one line each, oldest first, right above the message box; Send now, Edit, Remove named on hover */
+.queue{border:1px solid var(--line);border-radius:14px;background:var(--win);padding:2px 4px 2px 12px;display:grid;font-size:13px}
+.qline{display:flex;align-items:center;gap:2px;min-height:30px;min-width:0}
+.qline .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qline .why{flex-shrink:1;max-width:45%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--faint);margin:0 6px}
+.qline .ib{width:26px;height:26px}
+.qline .ib .lucide{width:14px;height:14px}
+
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */
 .win{min-width:0;width:100vw;height:100vh;border-radius:0;border:0;box-shadow:none}

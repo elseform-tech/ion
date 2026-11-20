@@ -22,7 +22,8 @@ import { Ions } from "../ions/service.js";
 import { IonTurns } from "../ions/turn.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
-import { diffOfChat, harnessInfos } from "./commands.js";
+import { diffOfChat, handlers, harnessInfos } from "./commands.js";
+import { PromptQueue } from "../queue/index.js";
 import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
 import { chatsView } from "../views/chats.js";
@@ -73,7 +74,12 @@ export async function startServer(opts: {
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   const stopRoutines = ctx.routines.start();
   const stopSuggestions = ctx.suggestions.start();
-  void ctx.decisions.resume().catch(() => {});
+  // Your answers still waiting go in first; then what you queued while ion was stopped, to each chat or ion that
+  // isn't working.
+  void ctx.decisions
+    .resume()
+    .catch(() => {})
+    .then(() => ctx.queue.resume());
   return {
     port,
     token: auth.token,
@@ -189,6 +195,28 @@ function startIons(
 }
 
 /**
+ * Your queued messages: a chat's goes out as ask does (the chat's own agent when none was picked), an ion's as your
+ * message to it; each when the chat's run or the ion's turn ends.
+ */
+function promptQueue(c: Omit<Ctx, "queue">): PromptQueue {
+  const { runs, ions } = c;
+  const late: { ctx?: Ctx } = {};
+  const queue = new PromptQueue({
+    ...{ store: c.store, db: c.db, ions },
+    chats: {
+      ask: (a) => handlers.ask(a, late.ctx!),
+      busy: (chatId) => runs.busy(chatId),
+      stop: (chatId) => runs.stopChat(chatId),
+      onEnded: (fn) => runs.onEnded(fn),
+      answersWaiting: (chatId) => c.decisions.hasWaiting(chatId),
+      dropQuestions: (chatId) => c.needs.supersedeChat(chatId),
+    },
+  });
+  late.ctx = { ...c, queue };
+  return queue;
+}
+
+/**
  * At the start: questions about calls stopped before (none still waits) close, and questions held behind one that
  * closed while ion was stopped come to you now.
  */
@@ -249,6 +277,7 @@ function openState(
   });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
   const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
-  const ctx = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0 };
+  const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0 };
+  const ctx = { ...shared, queue: promptQueue(shared) };
   return { ctx, turns };
 }

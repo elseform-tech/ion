@@ -570,4 +570,14 @@ describe("a run started by your answer", () => {
     expect(judge).toHaveBeenCalledWith(expect.objectContaining({ text: "Tidy the repo" }));
     expect(runs.requestOf(runId)).toBeNull();
   });
+
+  // Task review, 2026-11-19: archive checked only for a run going, not one starting (its worktree being made), so a
+  // run could start in an archived chat.
+  it("refuses to archive a chat whose run is starting", async () => {
+    const { chatId, runId } = await ask("hello");
+    await finished(runId);
+    const starting = ask("hello", { chatId });
+    await expect(runs.archive(chatId)).rejects.toThrow(new UserError("Stop the chat's run first"));
+    await finished((await starting).runId);
+  });
 });

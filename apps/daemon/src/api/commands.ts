@@ -30,6 +30,8 @@ import type { Ions } from "../ions/service.js";
 import { changeConfig, settingsHandlers } from "./settings.js";
 import { workspaceHandlers } from "./workspace.js";
 import { routineHandlers } from "./routines.js";
+import { queueHandlers } from "./queue.js";
+import type { PromptQueue } from "../queue/index.js";
 import type { Routines } from "../scheduler/index.js";
 import type { Suggestions } from "../ions/suggestions.js";
 
@@ -45,6 +47,16 @@ export async function diffOfChat(ctx: { db: Db; configFile: string }, chatId: st
   return chatDiff(project.path, worktree);
 }
 
+/** ask on the agent named, else the chat's own while it's ready, else the first ready one (never one signed out). */
+async function askOn(a: Commands["ask"]["args"], ctx: Ctx) {
+  if (a.harness) return ctx.runs.ask(a);
+  const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
+  const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
+  const harness = defaultAgent(ready, own);
+  if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
+  return ctx.runs.ask({ ...a, harness });
+}
+
 export type Ctx = {
   store: EventStore;
   db: Db;
@@ -55,6 +67,7 @@ export type Ctx = {
   ions: Ions;
   routines: Routines;
   suggestions: Suggestions;
+  queue: PromptQueue;
   configFile: string;
   startedAt: number;
   version: string;
@@ -71,6 +84,7 @@ export const handlers: Handlers = {
   ...settingsHandlers,
   ...workspaceHandlers,
   ...routineHandlers,
+  ...queueHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
@@ -112,16 +126,17 @@ export const handlers: Handlers = {
   },
   ask: async (a, ctx) => {
     if (typeof a.text !== "string" || !a.text.trim()) throw new UserError("Say what to do");
-    if (a.harness) return ctx.runs.ask(a);
-    // None named: the chat's own while it's ready, else the first ready one (never one that isn't signed in).
-    const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
-    const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
-    const harness = defaultAgent(ready, own);
-    if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
-    return ctx.runs.ask({ ...a, harness });
+    const r = await askOn(a, ctx);
+    // You sent a message: what you queued for the chat (held after a stop) goes on after it.
+    if (a.chatId) ctx.queue.goOn({ chatId: a.chatId });
+    return r;
   },
   "run.interrupt": async (a, ctx) => {
-    await ctx.runs.interrupt(String(a.runId ?? ""));
+    const runId = String(a.runId ?? "");
+    // You stopped it (Stop, Esc twice): what's queued for the chat waits for you.
+    const chatId = ctx.store.read({ runId, limit: 1 })[0]?.chatId;
+    if (chatId) ctx.queue.hold({ chatId });
+    await ctx.runs.interrupt(runId);
     return { ok: true as const };
   },
   status: (_a, ctx) => {
@@ -135,11 +150,15 @@ export const handlers: Handlers = {
     };
   },
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,
-  "ions.list": (_a, ctx) => ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects),
+  "ions.list": (_a, ctx) =>
+    ionsView.list(ctx.db, loadUserConfig(ctx.configFile).config.projects, (ionId) => ctx.ions.busy(ionId)),
   "ion.message": async (a, ctx) => {
     const text = String(a.text ?? "").trim();
     if (!text) throw new UserError("Say something");
-    await ctx.ions.message(String(a.ionId ?? ""), text);
+    const ionId = String(a.ionId ?? "");
+    // You sent a message: what you queued for the ion (held after a stop) goes on after it.
+    ctx.queue.goOn({ ionId });
+    await ctx.ions.message(ionId, text);
     return { ok: true as const };
   },
   // ion chief's own suggestions (a routine, a stalled chat), else a project ion's "always?".
@@ -187,6 +206,8 @@ export const handlers: Handlers = {
     const repo = projectPath(ctx.configFile, id);
     changeConfig(ctx.configFile, (c) => removeProject(c, id));
     for (const c of chats) await ctx.runs.archive(c.chatId, repo);
+    // Its ion is gone: what you queued for it goes too.
+    ctx.queue.clear({ ionId: id });
     // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
     for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
     for (const m of memoryView.list(ctx.db, id))

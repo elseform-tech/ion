@@ -30,6 +30,8 @@ const ION_TURN_MS = 300_000;
 export const PER_TURN = 5;
 export const NO_AGENT = "I couldn't reach my agent; try again.";
 export const TOO_LONG = "I couldn't finish that in time.";
+/** What an ion says when you stopped its turn (Esc twice). */
+export const STOPPED = "Stopped.";
 const READ_ONLY = "An ion only reads; a thread does the work.";
 
 /** What of a turn's session is kept on the ion's chat, so the app can draw its work. */
@@ -86,14 +88,23 @@ type Live = {
   adapter: HarnessAdapter;
   rules: RuleCtx;
   threads: Thread[];
-  halt?: () => void;
+  /** Ends the turn now: past its limit or ion stopping, or `stopped`: you stopped it. */
+  halt?: (stopped?: true) => void;
 };
 
 /**
  * How a turn's session ended: its last message, its native id, whether it ran past its limit, and `stuck`: it
  * didn't close in time (the agent may still hold it open).
  */
-type Ended = { last: string; nativeId: string | null; late: boolean; failed: boolean; stuck?: true };
+type Ended = {
+  last: string;
+  nativeId: string | null;
+  late: boolean;
+  failed: boolean;
+  stuck?: true;
+  /** You stopped it (it ended as `late` does, but says so). */
+  stopped?: true;
+};
 
 /** How long ion waits for a session to close: an agent that never does can't hold the turn, nor the ion's next. */
 const CLOSE_MS = 2000;
@@ -134,6 +145,15 @@ function note(e: AdapterEvent, end: Ended): void {
 export class IonTurns {
   private readonly chains = new Map<string, Promise<unknown>>();
   private readonly live = new Map<string, Live>();
+  /** Turns asked for and not yet over, per ion (its own and those waiting behind it). */
+  private readonly pending = new Map<string, number>();
+  /**
+   * Ions whose current turn is starting (finding its agent, its session not yet up: nothing to halt yet), and
+   * whether that turn answers your message (a report doesn't).
+   */
+  private readonly starting = new Map<string, boolean>();
+  /** You stopped an ion's turn while it was starting: it ends as stopped as soon as it can. */
+  private readonly stopAsked = new Set<string>();
   /** ion is stopping: no turn starts, and nothing more is written. */
   private stopping = false;
 
@@ -145,7 +165,34 @@ export class IonTurns {
       .catch(() => {})
       .then(() => this.run(ionId, text, o.noThreads ? null : (o.request ?? text)));
     this.chains.set(ionId, next);
+    this.pending.set(ionId, (this.pending.get(ionId) ?? 0) + 1);
+    // Counted down before whoever awaits the turn hears it's over.
+    const over = () => {
+      const n = (this.pending.get(ionId) ?? 1) - 1;
+      if (n > 0) this.pending.set(ionId, n);
+      else this.pending.delete(ionId);
+    };
+    next.then(over, over);
     return next;
+  }
+
+  /** Whether the ion is thinking (a turn going, or waiting for one). */
+  busy(ionId: string): boolean {
+    return this.pending.has(ionId);
+  }
+
+  /**
+   * You stopped the ion's turn (Esc twice): it ends now and says so; its next turn goes on. Only a turn answering
+   * your message stops: a report on a thread goes on. False: none was going.
+   */
+  stop(ionId: string): boolean {
+    const going = [...this.live.values()].filter((t) => t.ionId === ionId && t.halt && t.request !== null);
+    for (const t of going) t.halt!(true);
+    if (going.length) return true;
+    // Still starting: only this turn ends, never one waiting behind it.
+    if (!this.starting.get(ionId)) return false;
+    this.stopAsked.add(ionId);
+    return true;
   }
 
   /** start_thread for a live turn (ion's MCP server): the thread joins the turn's reply. */
@@ -184,8 +231,19 @@ export class IonTurns {
 
   private async run(ionId: string, text: string, request: string | null): Promise<TurnResult> {
     if (this.stopping) return { reply: NO_AGENT, threads: [] };
+    this.starting.set(ionId, request !== null);
+    try {
+      return await this.think(ionId, text, request);
+    } finally {
+      this.starting.delete(ionId);
+      this.stopAsked.delete(ionId);
+    }
+  }
+
+  private async think(ionId: string, text: string, request: string | null): Promise<TurnResult> {
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
+    if (this.stopAsked.delete(ionId)) return { reply: STOPPED, threads: [] };
     const h = brain && getHarness(brain.harness);
     if (!brain || !h || this.stopping) return { reply: NO_AGENT, threads: [] };
     const turnId = `turn_${randomUUID()}`;
@@ -213,6 +271,7 @@ export class IonTurns {
   /** A turn's reply from how its session ended; its session kept for the next turn, or forgotten when broken. */
   private settle(ionId: string, kept: Omit<Kept, "nativeId">, end: Ended): string {
     if (this.stopping) return NO_AGENT;
+    if (end.stopped) return this.stoppedReply(ionId, kept, end);
     const reply = end.late ? TOO_LONG : end.last.trim() || NO_AGENT;
     // A session that failed or said nothing is forgotten: resuming it would likely fail again (its context too long).
     // One that didn't close is too: the agent may still hold it, and two sessions would resume one id.
@@ -220,6 +279,13 @@ export class IonTurns {
     if (broken) this.forgetSession(ionId);
     else if (end.nativeId) this.keepSession(ionId, { ...kept, nativeId: end.nativeId });
     return reply;
+  }
+
+  /** A turn you stopped: its session kept if it closed (resuming it is fine), else forgotten. */
+  private stoppedReply(ionId: string, kept: Omit<Kept, "nativeId">, end: Ended): string {
+    if (end.stuck) this.forgetSession(ionId);
+    else if (end.nativeId) this.keepSession(ionId, { ...kept, nativeId: end.nativeId });
+    return STOPPED;
   }
 
   /** ion chief: an empty folder of its own (made now); a project's ion: its project's folder. */
@@ -306,17 +372,22 @@ export class IonTurns {
     let session: Session | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<void>((r) => {
-      const stop = () => {
+      const stop = (stopped?: true) => {
         clearTimeout(timer);
         end.late = true;
+        if (stopped) end.stopped = true;
         abort.abort();
         void session?.interrupt().catch(() => {});
         r();
       };
-      timer = setTimeout(stop, this.d.turnMs ?? ION_TURN_MS);
+      timer = setTimeout(() => stop(), this.d.turnMs ?? ION_TURN_MS);
       // ion stopping ends the turn as its limit would.
       const live = this.live.get(turnId);
-      if (live) live.halt = stop;
+      if (live) {
+        live.halt = stop;
+        this.starting.delete(live.ionId);
+        if (this.stopAsked.delete(live.ionId)) stop(true);
+      }
       if (this.stopping) stop();
     });
     // A session that starts after the limit is closed as soon as it does.

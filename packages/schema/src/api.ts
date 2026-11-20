@@ -233,6 +233,20 @@ export type Commands = {
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
   "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
+  /**
+   * Stops the ion's turn answering your message (Stop, Esc twice; a report goes on): it says it stopped, and what's
+   * queued waits ("Stopped") until you send one now, change the queue or send a message. `stopped`: one was going.
+   */
+  "ion.stop": { args: { ionId: string }; result: { ok: true; stopped: boolean } };
+  /** What waits to go to a chat or an ion, oldest first. */
+  "queue.list": { args: { to: QueueTarget }; result: QueuedInfo[] };
+  /** Queues a message (at most 10 wait per chat or ion); it goes out when the work ends. */
+  "queue.add": { args: { to: QueueTarget; text: string; brain: AskBrain }; result: { queueId: string } };
+  "queue.remove": { args: { queueId: string }; result: { ok: true } };
+  /** Takes it out of the queue to edit: its text, unless it was already sent. */
+  "queue.take": { args: { queueId: string }; result: { text: string } };
+  /** Sends it next: the chat's run (the ion's turn) stops, the others keep their order. */
+  "queue.sendNow": { args: { queueId: string }; result: { ok: true } };
   /** keep: take it (add the routine, resume the chat); mute: not now, and no more like it for that project. */
   "suggestion.answer": {
     args: { suggestionId: string; keep: boolean; mute?: boolean };
@@ -340,9 +354,29 @@ export type IonInfo = {
   needs: number;
   /** One of its threads is running. */
   working: boolean;
+  /** Its own turn is going (or waiting): Enter queues, Esc twice stops it. */
+  thinking: boolean;
   /** Its project is starred (Starred first); ion chief never is. */
   starred: boolean;
 };
+/** Where a queued message goes: a chat, or an ion (ion chief "chief", or a project's ion). */
+export type QueueTarget = { chatId: string } | { ionId: string };
+
+/** What the message box picks for a message: its agent, model, effort and access (each optional, as for ask). */
+export type AskBrain = Pick<Commands["ask"]["args"], "harness" | "model" | "effort" | "access">;
+
+/** A message waiting to go out. */
+export type QueuedInfo = {
+  queueId: string;
+  text: string;
+  brain: AskBrain;
+  addedAt: string;
+  /** Why it couldn't go out, when its last try failed (it holds the queue until you send it now, edit or remove it). */
+  why?: string;
+  /** It waits for your answer to the agent's question (or for your answers to go in first). */
+  held?: "answer";
+};
+
 export type Command = keyof Commands;
 export const COMMANDS = [
   "status",
@@ -375,6 +409,12 @@ export const COMMANDS = [
   "chat.rename",
   "ions.list",
   "ion.message",
+  "ion.stop",
+  "queue.list",
+  "queue.add",
+  "queue.remove",
+  "queue.take",
+  "queue.sendNow",
   "suggestion.answer",
   "suggestions.list",
   "chat.diff",

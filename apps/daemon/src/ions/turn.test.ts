@@ -11,7 +11,7 @@ import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { ionsView } from "../views/ions.js";
 import { ionInstructions } from "./instructions.js";
-import { IonTurns, NO_AGENT, TOO_LONG } from "./turn.js";
+import { IonTurns, NO_AGENT, STOPPED, TOO_LONG } from "./turn.js";
 
 process.env.ION_ALLOW_FAKE = "1";
 
@@ -345,4 +345,92 @@ describe("an ion's turn", () => {
       expect(grants.check(key, "gate")).toBeNull();
     }
   });
+
+  // The user, 2026-11-19: "there is no stop (double esc) for both plain chat and ions". Esc twice stops an ion's turn:
+  // it says it stopped, and its next turn (a queued message) goes on.
+  it("stop ends the ion's turn as stopped, and the next turn goes on", async () => {
+    const t = turns();
+    const going = t.turn("storefront", "take-your-time");
+    const next = t.turn("storefront", "hello");
+    await vi.waitFor(() => expect(onIon("storefront").some((e) => e.type === EV.toolStarted)).toBe(true));
+    expect(t.busy("storefront")).toBe(true);
+    expect(t.busy("chief")).toBe(false);
+    const started = Date.now();
+    expect(t.stop("storefront")).toBe(true);
+    expect((await going).reply).toBe(STOPPED);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect((await next).reply).toBe("This is storefront.");
+    expect(t.busy("storefront")).toBe(false);
+    // Nothing to stop: nothing happens.
+    expect(t.stop("storefront")).toBe(false);
+  }, 10_000);
+
+  // Final review, 2026-11-19: Esc twice (or Send now) while an ion reported on a thread cut the report, and the
+  // thread's line said "Stopped." Stop ends only a turn answering your message; a report goes on.
+  it("stop leaves a report turn alone", async () => {
+    const t = turns();
+    const report = t.turn("storefront", "take-your-time", { noThreads: true });
+    await vi.waitFor(() => expect(onIon("storefront").some((e) => e.type === EV.toolStarted)).toBe(true));
+    expect(t.stop("storefront")).toBe(false);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(t.busy("storefront")).toBe(true);
+    await t.shutdown();
+    expect((await report).reply).not.toBe(STOPPED);
+  }, 10_000);
+
+  // Final review, 2026-11-19: the same while the report is still starting.
+  it("stop leaves a report turn alone while it starts", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    current = new IonTurns({
+      ...{ store, db, configFile: join(home, "config.toml"), dataDir: join(home, "data") },
+      ...{ grants, startThread, home },
+      agents: async () => {
+        await gate;
+        return agents();
+      },
+      mcpUrl: () => `${base}/mcp`,
+      gateUrl: () => `${base}/gate`,
+    });
+    made.push(current);
+    const report = current.turn("storefront", "hello", { noThreads: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(current.stop("storefront")).toBe(false);
+    release();
+    expect((await report).reply).toBe("This is storefront.");
+  }, 10_000);
+
+  // Task review, 2026-11-19: Esc twice while an ion's turn was still finding its agent did nothing (and said ok).
+  it("stop before the session starts ends that turn as stopped, and not the one behind it", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let first = true;
+    const slowAgents = async () => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+      return agents();
+    };
+    current = new IonTurns({
+      ...{ store, db, configFile: join(home, "config.toml"), dataDir: join(home, "data") },
+      ...{ grants, agents: slowAgents, startThread, home },
+      mcpUrl: () => `${base}/mcp`,
+      gateUrl: () => `${base}/gate`,
+    });
+    made.push(current);
+    const t = current;
+    const going = t.turn("storefront", "hello");
+    const next = t.turn("storefront", "hello");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(t.stop("storefront")).toBe(true);
+    release();
+    expect((await going).reply).toBe(STOPPED);
+    expect((await next).reply).toBe("This is storefront.");
+    expect(onIon("storefront").filter((e) => e.type === EV.toolStarted)).toHaveLength(1);
+  }, 10_000);
 });
