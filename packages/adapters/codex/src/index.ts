@@ -75,6 +75,8 @@ export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
   );
   return {
     id: "codex",
+    // Its own sandbox, told to keep ion's folders out (it sandboxes its commands; macOS won't nest ion's around it).
+    sandbox: "own",
     async detect() {
       const l = launch();
       if (!l) return { installed: false };

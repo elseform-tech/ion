@@ -6,6 +6,7 @@
 export const RUN_ENV_VARS = [
   "ION_CHAT",
   "ION_RUN_KEY",
+  "ION_PORT",
   "ION_GATE_URL",
   "GROK_FOLDER_TRUST",
   "OPENCODE_CONFIG_CONTENT",

@@ -22,6 +22,8 @@ export type AskingRun = {
   pluginDir?: string;
   /** The skills you picked with "/" for this message (the judge is told, in ion's words). */
   picked?: string[];
+  /** Its agent runs in the OS sandbox, away from ion's folders: ion's guesses that only guarded its key go. */
+  sandboxed?: boolean;
 };
 
 /** route: a safer way the agent is told with ion's no. wary: ion's own guess, which asks you (the user, 2026-11-21). */
@@ -175,7 +177,7 @@ export class Approvals {
   async gateway(r: AskingRun, call: GateCall, roots: string[]): Promise<GateAnswer> {
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     const req: ApprovalRequest = { requestId: `g${++this.gateCount}`, toolId: "", ...call };
-    const own = this.ownFiles(req, roots, r.pluginDir);
+    const own = this.ownFiles(r, req, roots);
     let v: Verdict;
     if (own && !own.wary) v = own;
     else if (!own && this.handoffs.take(r.runId, gatewayKey(call))) v = { decision: "allow", by: "gate" };
@@ -250,9 +252,15 @@ export class Approvals {
    * ion's own files and keys: refused first, in every access mode; a check that fails refuses too. A guess (wary)
    * asks you instead, in every mode (the user, 2026-11-21).
    */
-  private ownFiles(req: ApprovalRequest, roots: string[], plugin?: string): Verdict | null {
+  private ownFiles(r: AskingRun, req: ApprovalRequest, roots: string[]): Verdict | null {
     try {
-      const v = hardRuleFor(req, { roots, ...this.opts.own, ...(plugin ? { plugin } : {}) });
+      const plugin = r.pluginDir;
+      const v = hardRuleFor(req, {
+        roots,
+        ...this.opts.own,
+        ...(plugin ? { plugin } : {}),
+        ...(r.sandboxed ? { sandboxed: true } : {}),
+      });
       if (!v) return null;
       return {
         decision: "deny",
@@ -289,7 +297,7 @@ export class Approvals {
   }
 
   private async verdict(r: AskingRun, req: ApprovalRequest, roots: string[]): Promise<Verdict> {
-    const own = this.ownFiles(req, roots, r.pluginDir);
+    const own = this.ownFiles(r, req, roots);
     if (own && !own.wary) return own;
     const hooks = await this.hooksOn(r, req);
     if (hooks && "decision" in hooks) return hooks;

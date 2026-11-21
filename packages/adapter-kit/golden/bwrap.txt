@@ -1,0 +1,30 @@
+--die-with-parent
+--unshare-pid
+--bind
+/
+/
+--dev
+/dev
+--proc
+/proc
+--tmpfs
+/ion-test/home/.local/share/ion
+--tmpfs
+/ion-test/home/.config/ion
+--tmpfs
+/ion-test/home/.cache/ion
+--ro-bind-try
+/ion-test/home/.local/share/ion/skills/run-1
+/ion-test/home/.local/share/ion/skills/run-1
+--ro-bind-try
+/ion-test/home/.local/share/ion/bin
+/ion-test/home/.local/share/ion/bin
+--bind-try
+/ion-test/home/.local/share/ion/worktrees/chat-1
+/ion-test/home/.local/share/ion/worktrees/chat-1
+--ro-bind-try
+/ion-test/home/.claude/settings.json
+/ion-test/home/.claude/settings.json
+--ro-bind-try
+/ion-test/home/odd "name"
+/ion-test/home/odd "name"

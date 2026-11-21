@@ -17,6 +17,7 @@ import { Connection } from "./connection.js";
 import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
+import { machineSandbox, serverSandbox } from "../runs/sandbox.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
 import { UnsureLog } from "../access/unsure.js";
@@ -358,10 +359,13 @@ async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
 function startHooks(
   store: EventStore,
   db: ReturnType<typeof openDb>,
-  configFile: string,
+  opts: { dataDir: string; configFile: string },
   tools: Tools,
 ): Hooks {
-  const hooks = new Hooks({ store, db, configFile, sign: tools.sign });
+  // In the OS sandbox: a hook may run a project's code, which never reaches ion's folders (Plan 18 Task 12).
+  const sandbox = serverSandbox(opts);
+  const { configFile } = opts;
+  const hooks = new Hooks({ store, db, configFile, sign: tools.sign, ...(sandbox ? { sandbox } : {}) });
   hooks.start();
   return hooks;
 }
@@ -421,6 +425,8 @@ function runCtxOf(o: {
     beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => o.hooks.beforeTool(r, c),
     mcp: { grants: o.grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
+    // `ion` inside a run reaches ion by this port and its run key (daemon.json is out of the run's reach).
+    port: () => Number(new URL(base()).port),
     // When ion stops a tool call it asks you; made here, answered through the decisions made below.
     askBlocked: {
       ask: (r: AskingRun, b: Blocked) =>
@@ -449,7 +455,7 @@ function openState(
   sweepNeeds(needs, ionQuestions);
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
   const access = autoAccess(opts, quick, late, unsure);
-  const hooks = startHooks(store, db, opts.configFile, tools);
+  const hooks = startHooks(store, db, opts, tools);
   const servers = serversFor({ tools, oauth, configFile: opts.configFile });
   // Your servers for ions' turns: only what reads, as Auto's judge agrees (the user, 2026-11-21).
   const ownNames = (agent: string) => ownServerNames({ tools, skills, configFile: opts.configFile }, agent);
@@ -459,7 +465,9 @@ function openState(
   };
   const ionServers = new IonServers({ ...opts, servers, judge: createJudge(quick), ownNames, onUnsure });
   const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers } });
-  const runs = new RunManager(store, { ...runCtx, access, ionBin, servers, ...forRuns }, needs, db);
+  // Said once in the daemon's log when this computer can't sandbox chats' agents.
+  const sandbox = machineSandbox();
+  const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({
     ...{ store, db, needs },

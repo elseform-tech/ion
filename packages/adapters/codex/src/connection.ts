@@ -8,7 +8,9 @@ import {
   type HttpMcpSpec,
   ResumeFailed,
   type Rpc,
+  realForms,
   RpcError,
+  type RunSandbox,
   type StartOpts,
 } from "@ion/adapter-kit";
 import { type HookTrust, hookArgs, hookCommand } from "./gate.js";
@@ -22,6 +24,7 @@ export type Launch = {
   timeoutMs: number;
   envDrop?: EnvDrop;
   ownTools?: boolean;
+  sandbox?: RunSandbox;
 };
 
 export type Connection = {
@@ -44,7 +47,39 @@ const BASE_ARGS = ["-c", "features.memories=false", "-c", "features.default_mode
  * "Use its own tools" off: ion's tools only, so Codex's plugins (their servers and skills) stay Codex's own. On (the
  * user, 2026-11-21), they load; their hooks are turned off with Codex's others (withGate).
  */
-const baseArgs = (l: Launch) => [...BASE_ARGS, ...(l.ownTools ? [] : ["-c", "features.plugins=false"])];
+const baseArgs = (l: Launch) => [
+  ...BASE_ARGS,
+  ...(l.ownTools ? [] : ["-c", "features.plugins=false"]),
+  ...sandboxArgs(l.sandbox),
+];
+
+const PROFILE = "ion-run";
+
+/**
+ * A chat's run in Codex's own sandbox with ion's folders out of reach (docs/research/sandbox.md): a permission
+ * profile on top of its workspace one (writes only in the worktree), ion's folders "none" (no read, no write), the
+ * run's own paths let through, the agent's config read-only, the network on as for ion's other agents. Paths only:
+ * nothing secret on the command line.
+ */
+function sandboxArgs(sb: RunSandbox | undefined): string[] {
+  if (!sb || sb.kind === "none") return [];
+  const p = sb.paths;
+  const entries = [
+    ...p.deny.flatMap(realForms).map((d) => [d, "none"]),
+    ...[...p.read, ...p.noWrite].flatMap(realForms).map((d) => [d, "read"]),
+    ...p.write.flatMap(realForms).map((d) => [d, "write"]),
+  ];
+  const fs = entries.map(([k, v]) => `${JSON.stringify(k)}=${JSON.stringify(v)}`).join(",");
+  return [
+    ...["-c", `default_permissions="${PROFILE}"`, "-c", `permissions.${PROFILE}.extends=":workspace"`],
+    ...[
+      "-c",
+      `permissions.${PROFILE}.network={enabled=true}`,
+      "-c",
+      `permissions.${PROFILE}.filesystem={${fs}}`,
+    ],
+  ];
+}
 
 export const SIGNED_OUT = "Codex isn't signed in. Run: codex login";
 
@@ -205,14 +240,20 @@ function threadParams(opts: StartOpts, own: string[]): Record<string, unknown> {
     ...(opts.model ? { model: opts.model } : {}),
     approvalPolicy: "untrusted",
     approvalsReviewer: "user",
-    sandbox: opts.bare ? "read-only" : "workspace-write",
+    // In a run's sandbox, the permission profile (sandboxArgs) decides: a thread's own setting would replace it.
+    ...(sandboxedRun(opts) ? {} : { sandbox: opts.bare ? "read-only" : "workspace-write" }),
     // Network on, as for ion's other agents: every command still goes through ion's gate and judge first, and
     // the gate's key is hidden from commands (HIDE_GATE); ion's MCP key is in the thread's config, not the env.
-    config: { ...mcpConfig(opts.mcpServers, own), sandbox_workspace_write: { network_access: true } },
+    config: {
+      ...mcpConfig(opts.mcpServers, own),
+      ...(sandboxedRun(opts) ? {} : { sandbox_workspace_write: { network_access: true } }),
+    },
     ...(opts.instructions ? { developerInstructions: opts.instructions } : {}),
     ...(opts.bare ? { ephemeral: true } : {}),
   };
 }
+
+const sandboxedRun = (opts: StartOpts) => !opts.bare && !!opts.sandbox && opts.sandbox.kind !== "none";
 
 async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string; model: string }> {
   const params = threadParams(opts, await ownServers(rpc, opts));
@@ -238,6 +279,7 @@ export async function connect(l0: Launch, opts: StartOpts): Promise<Connection> 
     ...l0,
     ...(opts.envDrop ? { envDrop: opts.envDrop } : {}),
     ...(opts.ownTools ? { ownTools: true } : {}),
+    ...(opts.sandbox && !opts.bare ? { sandbox: opts.sandbox } : {}),
   };
   const env: Record<string, string> = { ...opts.env, ...(opts.gate ? { ION_GATE_URL: opts.gate.url } : {}) };
   const io = opts.gate ? await withGate(l, opts.cwd, env) : spawnAppServer(l, [], env);

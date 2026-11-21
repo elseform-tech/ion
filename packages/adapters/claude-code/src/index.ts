@@ -29,6 +29,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
   const binary = () => which("claude");
   return {
     id: "claude-code",
+    // ion's sandbox around the claude process (its own covers commands only, not its Read tool).
+    sandbox: "ion",
     async detect() {
       const path = binary();
       if (!path) return { installed: false };

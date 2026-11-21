@@ -1,6 +1,7 @@
 import type { Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
 import type { PickStyle } from "./picks.js";
 import type { EnvDrop } from "./run-env.js";
+import type { RunSandbox } from "./sandbox.js";
 
 /** What an adapter emits. The daemon stamps chatId, runId and origin ("adapter") before storing. */
 export type AdapterEvent = Omit<NewEvent, "chatId" | "runId" | "origin">;
@@ -89,6 +90,11 @@ export type StartOpts = {
   env?: Record<string, string>;
   /** What the agent's process may not inherit from ion's environment (your keys: mcp.json's names and values). */
   envDrop?: EnvDrop;
+  /**
+   * The run's sandbox (a chat's run, on a computer that has one): ion's folders out of reach of the agent and every
+   * process it starts, the run's own paths let through. The adapter applies it its own way (`HarnessAdapter.sandbox`).
+   */
+  sandbox?: RunSandbox;
   signal: AbortSignal;
   /**
    * When ion is holding one of the run's calls for your answer (through any path: its gate too), so an agent's silence
@@ -137,6 +143,11 @@ export interface HarnessAdapter {
   picks?: PickStyle;
   /** It reads an MCP server's resources (so "@" lists them for it). */
   mcpResources?: true;
+  /**
+   * How its runs are sandboxed (docs/research/sandbox.md): "own", its own sandbox told to keep ion's folders out
+   * (Codex); "ion", ion's wrapper around its process (the rest). Absent: never (the fake agent starts no process).
+   */
+  sandbox?: "own" | "ion";
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

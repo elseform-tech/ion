@@ -28,3 +28,13 @@ export {
   RUN_ENV_VARS,
   setStandingDrop,
 } from "./run-env.js";
+export {
+  realForms,
+  type RunSandbox,
+  sandboxed,
+  sandboxKind,
+  type SandboxKind,
+  type SandboxPaths,
+  seatbeltProfile,
+  withPaths,
+} from "./sandbox.js";

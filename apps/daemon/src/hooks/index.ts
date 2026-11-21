@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
+import type { RunSandbox } from "@ion/adapter-kit";
 import { type HookEntry, loadUserConfig, type UserConfig } from "@ion/config";
 import { EV, type HookEvent, type HookLast, type IonEvent, stripControl } from "@ion/schema";
 import type { Sign } from "../secrets/consent-key.js";
@@ -70,6 +71,8 @@ export class Hooks {
       now?: () => Date;
       /** Masks your keys in what's kept of a hook's output. */
       mask?: (text: string) => Promise<string>;
+      /** The OS sandbox hooks run in: ion's folders out of reach (Plan 18 Task 12). */
+      sandbox?: RunSandbox;
     },
   ) {
     this.limits = o.limits ?? LIMITS;
@@ -224,6 +227,7 @@ export class Hooks {
       }),
       cwd: this.cwdOf(w.projectId),
       limitMs: w.limitMs ?? this.limits.eventMs,
+      ...(this.o.sandbox ? { sandbox: this.o.sandbox } : {}),
     });
     const ok = r.code === 0 || (before && r.code === 2);
     const tail = await this.mask(r.tail);

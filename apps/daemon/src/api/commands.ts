@@ -43,6 +43,7 @@ import type { Skills } from "../skills/index.js";
 import { toolsHandlers } from "./tools.js";
 import { toolsCliHandlers } from "./tools-cli.js";
 import { toolsImportHandlers } from "./tools-import.js";
+import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
 
 export { UserError } from "./errors.js";
 
@@ -306,5 +307,6 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     ...(h.adapter.ownHooks ? { ownHooks: true as const } : {}),
     ...(h.adapter.ownOff ? { ownOff: h.adapter.ownOff } : {}),
     ...(h.adapter.ownTrust ? { ownTrust: true as const } : {}),
+    ...(notSandboxed(h.adapter.sandbox, machineSandbox()) ? { notSandboxed: true as const } : {}),
   };
 }

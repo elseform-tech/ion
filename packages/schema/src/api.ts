@@ -325,6 +325,8 @@ export type HarnessInfo = {
   ownOff?: { servers: boolean; skills: boolean; plugins: boolean };
   /** It trusts a project's own tools by its own list. */
   ownTrust?: true;
+  /** Its chats run without the OS sandbox here (no sandbox on this computer): ion's folders are only word-guarded. */
+  notSandboxed?: true;
 };
 
 export type MemoryInfo = {

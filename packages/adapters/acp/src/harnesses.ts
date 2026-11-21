@@ -1,8 +1,11 @@
-import type { GateCall } from "@ion/adapter-kit";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { GateCall, SandboxPaths } from "@ion/adapter-kit";
 import { type GateEnv, grokGateEnv, grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
 import {
   carriedConfig,
   ownSkillPaths,
+  ionConfigHome,
   settingUp,
   userConfigHome,
   writeIonConfig,
@@ -49,7 +52,12 @@ export type AcpHarness = {
   logFailure?: (line: string) => string | null;
   /** What a start that timed out says instead of "didn't respond" (an agent still setting up); none: the usual. */
   notResponding?: (own?: boolean) => string | undefined;
+  /** Its own paths in a run's sandbox: what of ion's it reads, and its config, which a run can't write. */
+  sandboxPaths?: (own?: boolean) => Partial<SandboxPaths>;
 };
+
+/** Grok's folder: `$GROK_HOME`, else `~/.grok`. */
+const grokHome = () => process.env.GROK_HOME ?? join(homedir(), ".grok");
 
 export const GROK_BUILD: AcpHarness = {
   id: "grok-build",
@@ -73,6 +81,8 @@ export const GROK_BUILD: AcpHarness = {
   ownOff: { servers: false, skills: false, plugins: false },
   // A project's own .grok config loads by its folder trust.
   ownTrust: true,
+  // Its hooks (ion's gate among them), config and skills: nothing a run does lasts into the next.
+  sandboxPaths: () => ({ noWrite: ["hooks", "config.toml", "skills"].map((f) => join(grokHome(), f)) }),
 };
 
 /**
@@ -148,6 +158,12 @@ export const OPENCODE: AcpHarness = {
   // opencode runs a prompt that starts with `/command` as that command (its ACP agent lists them).
   picks: "slash",
   notResponding: (own) => (settingUp(own) ? "Not responding — opencode is setting up, try again" : undefined),
+  // ion's folder for it (its config) is read, never written, by a run; your own config folders aren't written either.
+  // The sandbox can't tell opencode from the commands it runs: they can read that config too (docs/research/sandbox.md).
+  sandboxPaths: (own) => ({
+    read: [ionConfigHome(own)],
+    noWrite: [join(userConfigHome(), "opencode"), join(homedir(), ".opencode")],
+  }),
   logFailure: opencodeFailure,
 };
 

@@ -1,8 +1,14 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ApprovalRequest, type HttpMcpSpec, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
+import {
+  type ApprovalRequest,
+  type HttpMcpSpec,
+  ResumeFailed,
+  sandboxKind,
+  type StartOpts,
+} from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { promptOf } from "./session.js";
@@ -492,5 +498,35 @@ describe("acp adapter", () => {
     } finally {
       delete process.env.FAKE_ACP_HANG;
     }
+  });
+});
+
+// The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files. The agent's process is started
+// inside it, so a command it runs can't read ion's full key in daemon.json; its worktree it can.
+describe.skipIf(sandboxKind() !== "seatbelt")("acp adapter in the run's sandbox", () => {
+  it("starts the agent in the sandbox: what it runs can't read ion's folder, its worktree it can", async () => {
+    const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-acp-data-")));
+    const wt = join(data, "worktrees", "c1");
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(data, "daemon.json"), "full-token\n");
+    writeFileSync(join(wt, "a.txt"), "worktree text\n");
+    const said = async (text: string) => {
+      const s = await make().start({
+        cwd: wt,
+        model: null,
+        effort: null,
+        sandbox: { kind: "seatbelt", paths: { deny: [data], read: [], write: [wt], noWrite: [] } },
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+      await s.send({ text });
+      let out = "";
+      for await (const e of s.events())
+        if (e.type === "message.completed") out += (e.data as { text: string }).text;
+      return out;
+    };
+    expect(await said(`cat ${join(data, "daemon.json")}`)).toMatch(/^failed: .*Operation not permitted/);
+    expect(await said(`cat ${join(wt, "a.txt")}`)).toBe("worktree text\n");
+    rmSync(data, { recursive: true, force: true });
   });
 });

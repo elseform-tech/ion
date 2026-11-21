@@ -28,6 +28,7 @@ const claude: HarnessInfo = {
   signedIn: false,
   models: [],
   defaultModel: "grok-code",
+  notSandboxed: true,
 };
 const ions: IonInfo[] = [
   {
@@ -166,6 +167,16 @@ describe("Settings", () => {
     expect(screen.getByText("Uses its own trust for project tools").closest(".hrow")?.textContent).toContain(
       "Grok Build",
     );
+  });
+
+  // The user, 2026-11-21 (Plan 18 Task 12): on a computer without a sandbox, an agent's chats run without one, and
+  // Settings → Agents says so; a sandboxed one says nothing.
+  it("says Not sandboxed for an agent whose chats run without the sandbox", async () => {
+    render(<Settings client={client()} onOpenIon={() => {}} />);
+    await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
+    const lines = screen.getAllByText("Not sandboxed");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.closest(".hrow")?.textContent).toContain("Claude Code");
   });
 
   // The user, 2026-11-19: you choose how hard ion thinks.

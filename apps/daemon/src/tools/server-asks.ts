@@ -4,6 +4,7 @@ import { stripControl } from "@ion/schema";
 import { askServer } from "../gateway/client.js";
 import { type LocalUpstream, type Upstream, upstreamOf } from "../gateway/index.js";
 import { MCP_RUN } from "../runs/servers.js";
+import { serverSandbox } from "../runs/sandbox.js";
 import { bridgesFor, type StdioSpec } from "../workspace/mcp-bridge.js";
 import { MCP_GROUPS } from "../workspace/server-groups.js";
 import type { ListedTool } from "./ion-use.js";
@@ -35,6 +36,12 @@ const resourceList = (r: unknown): ListedResource[] =>
     })
     .slice(0, MAX_RESOURCES);
 
+/** A local server asked by ion runs in the OS sandbox too (when ion knows its config's folder). */
+const sandboxFor = (d: { dataDir: string; configFile?: string }) => {
+  const sandbox = d.configFile ? serverSandbox({ dataDir: d.dataDir, configFile: d.configFile }) : undefined;
+  return sandbox ? { sandbox } : {};
+};
+
 /**
  * Ion's own questions to one of your servers that's on (its tools for "Ions can use", its resources for "@"): started
  * just to ask (a local one in its own empty folder, stopped after), kept for a minute.
@@ -45,6 +52,7 @@ export class ServerAsks {
   constructor(
     private readonly d: {
       dataDir: string;
+      configFile?: string;
       servers?: (agent: RunAgent) => Promise<RunServers>;
       local?: (spec: StdioSpec) => LocalUpstream;
     },
@@ -91,6 +99,7 @@ export class ServerAsks {
       folder: join(this.d.dataDir, MCP_RUN, `list-${randomUUID()}`),
       stopped: () => {},
       groups: join(this.d.dataDir, MCP_GROUPS),
+      ...sandboxFor(this.d),
     });
     return { up: bridges.get(spec.name) as Served, bridges };
   }

@@ -1,8 +1,8 @@
 import { statSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { realish } from "../runs/policy.js";
+import { ionFolders } from "../runs/sandbox.js";
 import { printsEnvironment } from "./env-dump.js";
 import { inPlugin, readsOrRuns } from "./plugin.js";
 import { touchesKeychain } from "./keychain.js";
@@ -144,8 +144,10 @@ const CLEARS = wary(
   "run it without clearing the environment",
 );
 const DECODED = wary("it runs text it decodes", "decode to a file, read it, then run it");
+// One reason for every script ion can't read (made by this command, unreadable, not there yet), so an agent learns
+// nothing about a file from ion's answer (Task 9 review, 2026-11-21: no probing).
 const UNREAD = wary(
-  "it runs a file this command creates",
+  "it runs a script ion can't read",
   "read the file first, then run it (create it in an earlier step)",
 );
 const SCRIPT = wary(
@@ -280,12 +282,16 @@ function refusal(req0: ApprovalRequest, c: RuleCtx): Hard | null {
  * knows is unsafe (ion's own files, the keys in the keychain, an environment dump, dropping the run's key); wary, what
  * it only guesses (a script it can't read or that may escape, decoded text that runs, a launcher that clears the
  * environment, a command it can't follow), which asks you. Null: nothing here.
+ *
+ * In the OS sandbox (Plan 18 Task 12) the guesses go: each only guarded ion's key in daemon.json (a script or decoded
+ * text naming ion's files, a cleared environment sending `ion` to daemon.json), which no process in the run can read
+ * now. The refusals stay, as defence in depth: the keychain isn't in the sandbox's reach, nor an environment.
  */
 export function hardRuleFor(req: ApprovalRequest, c: RuleCtx): Hard | null {
   const no = refusal(req, c);
   if (no) return no;
   const command = commandText(req);
-  if (!command) return null;
+  if (!command || c.sandboxed) return null;
   if (runKeyChange(command) === "clears") return CLEARS;
   if (runsDecoded(command)) return DECODED;
   return scriptsVerdict(command, c);
@@ -296,8 +302,6 @@ export function hardRuleFor(req: ApprovalRequest, c: RuleCtx): Hard | null {
  * config opencode runs with in ion's chats) and a custom Grok folder.
  */
 export const ionDirsOf = (o: { dataDir: string; configFile: string }): string[] => [
-  o.dataDir,
-  dirname(o.configFile),
-  join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "ion"),
+  ...ionFolders(o),
   ...(process.env.GROK_HOME ? [process.env.GROK_HOME] : []),
 ];

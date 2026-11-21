@@ -532,7 +532,7 @@ describe("refused, judged or asked: what ion knows, and what it guesses", () => 
     const { a, judged } = setup(true);
     await a.gate(run("auto"), cmd("gcc main.c -o main && ./main"), [tree()]);
     expect(judged[0]?.wary).toEqual({
-      reason: "it runs a file this command creates",
+      reason: "it runs a script ion can't read",
       scripts: [],
       decoded: [],
     });
@@ -560,6 +560,36 @@ describe("refused, judged or asked: what ion knows, and what it guesses", () => 
     expect(asked).toHaveLength(3);
     expect(asked.every((x) => x.wary)).toBe(true);
     expect(judged).toEqual([]);
+  });
+
+  // The user, 2026-11-21 (Plan 18 Task 12): once a run is in the OS sandbox, ion's files are out of its reach
+  // whatever a script, decoded text or a cleared environment does, so the guesses that only guarded ion's key no
+  // longer ask (or reach the judge as ion's guess); what ion knows (its files, your keys, env dumps, dropping the run's
+  // key) still holds as defence in depth.
+  it("in a sandboxed run, the guesses that only guarded ion's key don't ask; what ion knows still holds", async () => {
+    const t = tree();
+    const { a, asked, judged } = setup(true);
+    const boxed = { ...run("full"), sandboxed: true };
+    for (const c of [
+      "gcc main.c -o main && ./main",
+      "echo ZWNobyBoaQ== | base64 -d | sh",
+      "bash drop.sh",
+      "exec -c ion mcp ls",
+      "python3 -c 'import os; os.system(\"ls\")'",
+    ])
+      expect((await a.gate(boxed, cmd(c), [t])).decision, c).toBe("allow");
+    expect(asked).toEqual([]);
+    for (const c of [
+      "cat ~/.config/ion/mcp.json",
+      "unset ION_RUN_KEY",
+      "env",
+      "security find-generic-password -s ion -w",
+    ])
+      expect((await a.gate(boxed, cmd(c), [t])).decision, c).toBe("deny");
+    expect(judged).toEqual([]);
+    await a.gate({ ...run("auto"), sandboxed: true }, cmd("bash drop.sh"), [t]);
+    expect(judged).toHaveLength(1);
+    expect(judged[0]?.wary).toBeUndefined();
   });
 
   it("without anyone to ask, a guess is refused with the safer route", async () => {

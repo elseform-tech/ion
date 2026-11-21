@@ -1,7 +1,8 @@
-import { mkdtempSync } from "node:fs";
+import type { ChildProcess } from "node:child_process";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ResumeFailed } from "@ion/adapter-kit";
+import { ResumeFailed, sandboxKind } from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { type FakeQueryCall, fakeQuery } from "../test/fake-query.js";
@@ -453,6 +454,50 @@ describe("claude-code session", () => {
     const o = calls[0]!.options as { env: NodeJS.ProcessEnv };
     expect(o.env.ION_CHAT).toBe("chat_1");
     expect(o.env.PATH).toBeDefined();
+  });
+
+  // The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files. Claude Code's own sandbox covers
+  // only its shell commands (not its Read tool) and moves the network behind its proxy, so ion starts the whole
+  // claude process in ion's sandbox instead (its own stays off: macOS won't nest them).
+  it.skipIf(sandboxKind() !== "seatbelt")("starts Claude Code inside the run's sandbox", async () => {
+    const calls: FakeQueryCall[] = [];
+    const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-cc-data-")));
+    writeFileSync(join(data, "daemon.json"), "full-token\n");
+    const session = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      sandbox: { kind: "seatbelt", paths: { deny: [data], read: [], write: [], noWrite: [] } },
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await session.send({ text: "hello" });
+    await drain(session);
+    const o = calls[0]!.options as { spawnClaudeCodeProcess?: (s: object) => ChildProcess };
+    expect(o.spawnClaudeCodeProcess).toBeTypeOf("function");
+    // What the SDK would start (here `cat` stands in for claude): it reads in the sandbox.
+    const read = async (file: string) => {
+      const child = o.spawnClaudeCodeProcess!({
+        command: "cat",
+        args: [file],
+        cwd,
+        env: { PATH: "/bin:/usr/bin" },
+      });
+      let out = "";
+      child.stdout!.on("data", (d: Buffer) => (out += d));
+      await new Promise((r) => child.on("exit", r));
+      return out;
+    };
+    expect(await read(join(data, "daemon.json"))).toBe("");
+    writeFileSync(join(cwd, "mine.txt"), "mine\n");
+    expect(await read(join(cwd, "mine.txt"))).toBe("mine\n");
+    rmSync(data, { recursive: true, force: true });
+  });
+
+  it("leaves Claude Code's own start alone without a sandbox", async () => {
+    const calls: FakeQueryCall[] = [];
+    await run("hello", { calls });
+    expect(calls[0]!.options.spawnClaudeCodeProcess).toBeUndefined();
   });
 
   it("records the native session id for resume", async () => {

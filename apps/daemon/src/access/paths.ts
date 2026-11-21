@@ -2,8 +2,17 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { realish } from "../runs/policy.js";
 
-/** `plugin`: the run's own skills plugin folder (in ion's data folder), which it may read and run, never write. */
-export type RuleCtx = { roots: string[]; home: string; ionDirs: string[]; plugin?: string };
+/**
+ * `plugin`: the run's own skills plugin folder (in ion's data folder), which it may read and run, never write.
+ * `sandboxed`: the run is in the OS sandbox, which keeps ion's folders out of its reach (Plan 18 Task 12).
+ */
+export type RuleCtx = {
+  roots: string[];
+  home: string;
+  ionDirs: string[];
+  plugin?: string;
+  sandboxed?: boolean;
+};
 
 /** A path in any text: absolute, ~ or $HOME, at the start of a word (not "/a.ts" inside "src/a.ts"). */
 export const PATH = /(?<=^|[\s'"=:(])(?:~|\$\{?HOME\}?)?\/[^\s'"`|;&<>()]+/g;

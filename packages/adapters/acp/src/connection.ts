@@ -11,7 +11,9 @@ import {
   ResumeFailed,
   type Rpc,
   RpcError,
+  sandboxed,
   type StartOpts,
+  withPaths,
 } from "@ion/adapter-kit";
 import type { AcpHarness } from "./harnesses.js";
 
@@ -36,6 +38,7 @@ export type ConnectOpts = {
   env?: StartOpts["env"];
   envDrop?: StartOpts["envDrop"];
   ownTools?: StartOpts["ownTools"];
+  sandbox?: StartOpts["sandbox"];
 };
 
 /** Starts of an agent that's setting up, by agent: they take turns (two at once slowed each other past the limit). */
@@ -54,7 +57,10 @@ export function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Con
 
 async function open(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
   const timeoutMs = o.timeoutMs ?? 30_000;
-  const child = spawn(bin, h.args, { stdio: ["pipe", "pipe", "pipe"], env: envOf(h, o) });
+  // In a run's sandbox (with the agent's own paths), so every process it starts is too.
+  const sb = withPaths(o.sandbox, h.sandboxPaths?.(o.ownTools) ?? {});
+  const run = sandboxed(sb, bin, h.args);
+  const child = spawn(run.command, run.args, { stdio: ["pipe", "pipe", "pipe"], env: envOf(h, o) });
   const rpc = createRpc({ stdin: child.stdin, stdout: child.stdout });
   // Gone (or never started): its output ends, so nothing waits on it.
   for (const gone of ["error", "exit"] as const) child.on(gone, () => child.stdout.destroy());

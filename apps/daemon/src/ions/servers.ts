@@ -1,11 +1,12 @@
 import { join } from "node:path";
-import type { EnvDrop, GateCall, HttpMcpSpec, McpTransports } from "@ion/adapter-kit";
+import type { EnvDrop, GateCall, HttpMcpSpec, McpTransports, RunSandbox } from "@ion/adapter-kit";
 import { loadUserConfig, saveUserConfig } from "@ion/config";
 import type { Judge } from "../access/index.js";
 import { askServer } from "../gateway/client.js";
 import type { LocalUpstream, Upstream } from "../gateway/index.js";
 import type { GateAnswer } from "../gate/index.js";
 import { MCP_RUN, throughIon } from "../runs/servers.js";
+import { serverSandbox } from "../runs/sandbox.js";
 import { ionMayUse, ionUseOf, type ListedTool } from "../tools/ion-use.js";
 import { type ListedResource, ServerAsks, toolList } from "../tools/server-asks.js";
 import type { RunAgent, RunServers } from "../tools/run-servers.js";
@@ -93,9 +94,12 @@ export class IonServers {
   private readonly turns = new Map<string, Turn>();
   /** Ion's own questions to your servers (their tools, their resources). */
   private readonly asks: ServerAsks;
+  /** The OS sandbox ion's local servers run in, away from ion's folders. */
+  private readonly sandbox: RunSandbox | undefined;
 
   constructor(private readonly d: IonServersDeps) {
     this.asks = new ServerAsks(d);
+    this.sandbox = serverSandbox(d);
   }
 
   /** What a turn's agent gets for your servers, and what its process may not inherit. */
@@ -117,6 +121,7 @@ export class IonServers {
           folder: join(this.d.dataDir, MCP_RUN, turnId),
           stopped: () => {},
           groups: join(this.d.dataDir, MCP_GROUPS),
+          ...(this.sandbox ? { sandbox: this.sandbox } : {}),
         });
     for (const s of given.local)
       given.upstreams.set(s.name, this.d.local ? this.d.local(s) : (bridges!.get(s.name) as LocalUpstream));

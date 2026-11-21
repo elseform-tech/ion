@@ -370,3 +370,21 @@ describe("opencode's log", () => {
     expect(OPENCODE.args).toEqual(["acp", "--print-logs", "--log-level", "WARN"]);
   });
 });
+
+// The user, 2026-11-21 (Plan 18 Task 12): in a run's sandbox, opencode reads ion's folder for it (its config) but no
+// one in the run writes it, nor your own opencode config; Grok's hooks (ion's gate among them) can't be changed.
+describe("agents' own paths in a run's sandbox", () => {
+  it("opencode reads ion's config for it; its own config folders aren't written", () => {
+    const p = OPENCODE.sandboxPaths?.(false);
+    expect(p?.read?.[0]).toMatch(/\/ion\/opencode\/[^/]+$/);
+    expect(p?.noWrite).toEqual(
+      expect.arrayContaining([expect.stringMatching(/\/opencode$/), expect.stringMatching(/\/\.opencode$/)]),
+    );
+    expect(p?.write).toBeUndefined();
+  });
+
+  it("Grok's hooks, config and skills aren't written", () => {
+    const p = GROK_BUILD.sandboxPaths?.();
+    expect(p?.noWrite?.map((x) => x.split("/").pop())).toEqual(["hooks", "config.toml", "skills"]);
+  });
+});

@@ -129,6 +129,35 @@ describe("codex adapter", () => {
     );
   });
 
+  // The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files. Codex sandboxes its own commands
+  // (macOS won't nest ion's around it), and its permission profiles can deny reading a folder (checked on Codex
+  // 0.153.2: docs/research/sandbox.md), so ion turns that on with ion's folders "none" and the run's own let through.
+  it("runs Codex's commands in its own sandbox with ion's folders denied", async () => {
+    const sandbox = {
+      kind: "seatbelt" as const,
+      paths: {
+        deny: ["/ion-x/data"],
+        read: ["/ion-x/data/skills/r1"],
+        write: ["/ion-x/data/worktrees/c1"],
+        noWrite: [],
+      },
+    };
+    const { thread, overrides } = await whoami({ sandbox });
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        'default_permissions="ion-run"',
+        'permissions.ion-run.extends=":workspace"',
+        "permissions.ion-run.network={enabled=true}",
+        'permissions.ion-run.filesystem={"/ion-x/data"="none","/ion-x/data/skills/r1"="read","/ion-x/data/worktrees/c1"="write"}',
+      ]),
+    );
+    // The thread's own sandbox setting would replace the profile (seen on 0.153.2: no active profile then).
+    expect(thread.sandbox).toBeUndefined();
+    const plain = await whoami();
+    expect(plain.thread.sandbox).toBe("workspace-write");
+    expect(plain.overrides.some((o: string) => o.startsWith("default_permissions"))).toBe(false);
+  });
+
   // The bearer key goes over stdin in the thread's config, never on the command line (other users' `ps`).
   // The user, 2026-11-20: "adding new mcp required us to follow industry standard…": your servers go the same way.
   it("gives Codex ion's server and yours, keys off the command line", async () => {

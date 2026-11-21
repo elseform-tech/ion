@@ -170,7 +170,7 @@ const ionCache = (): string => join(process.env.XDG_CACHE_HOME || join(homedir()
  * install it again. Final review, 2026-11-21: one per computer let the tour, a dev daemon and the app rewrite it
  * under each other. It's inside one of ion's own folders: no run can write there.
  */
-const ionConfigHome = (own = false): string => {
+export const ionConfigHome = (own = false): string => {
   const home = process.env.ION_HOME;
   const key = home ? createHash("sha256").update(resolve(home)).digest("hex").slice(0, 12) : "default";
   // With your own tools, a folder of its own: chats and ion's judge (ion's tools only) start opencode at the same

@@ -8,8 +8,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { execFile, spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type RunSandbox, sandboxed, sandboxKind } from "@ion/adapter-kit";
 import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
 import { afterEach, describe, expect, it } from "vitest";
@@ -118,6 +120,55 @@ const mcpJson = () =>
 afterEach(async () => {
   for (const c of clients.splice(0)) c.close();
   await srv.close();
+});
+
+// The user, 2026-11-21 (Plan 18 Task 12): in the OS sandbox a run can't read daemon.json, so `ion` inside a chat
+// reaches ion with only ION_PORT and its run key, never ion's full token; whatever a process in the run tries, the
+// full token isn't there to take.
+describe("ion inside a chat's run", () => {
+  const CLI = fileURLToPath(new URL("../../../cli/dist/index.js", import.meta.url));
+  // Not spawnSync: the daemon answers from this same process.
+  const runIon = (args: string[], env: Record<string, string>, sb?: RunSandbox) => {
+    const w = sandboxed(sb, process.execPath, [CLI, ...args]);
+    return new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+      const opts = { env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env } };
+      execFile(w.command, w.args, opts, (e, stdout, stderr) =>
+        resolve({ status: e ? Number(e.code ?? 1) : 0, stdout, stderr }),
+      );
+    });
+  };
+  const runEnvOf = (dataDir: string) => ({
+    ION_CHAT: "c1",
+    ION_RUN_KEY: srv.grants.create({ kind: "run", projectId: "p", chatId: "c1", runId: "r1" }, "cli"),
+    ION_PORT: String(srv.port),
+    ION_HOME: dirname(dataDir),
+  });
+
+  it("works with the run's key and ION_PORT, never reading daemon.json", async () => {
+    await start({ notes: { command: "notes-mcp" } });
+    const elsewhere = mkdtempSync(join(tmpdir(), "ion-nodaemon-"));
+    const r = await runIon(["mcp", "ls"], runEnvOf(join(elsewhere, "data")));
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("notes");
+    expect(r.status).toBe(0);
+  });
+
+  it.skipIf(sandboxKind() !== "seatbelt")(
+    "works in the run's sandbox, where daemon.json can't be read",
+    async () => {
+      await start({ notes: { command: "notes-mcp" } });
+      const data = join(home, "data");
+      writeFileSync(join(data, "daemon.json"), JSON.stringify({ port: srv.port, token: srv.token }));
+      const sb: RunSandbox = { kind: "seatbelt", paths: { deny: [home], read: [], write: [], noWrite: [] } };
+      const r = await runIon(["mcp", "ls"], runEnvOf(data), sb);
+      expect(r.stdout).toContain("notes");
+      expect(r.status).toBe(0);
+      const peek = sandboxed(sb, "/bin/cat", [join(data, "daemon.json")]);
+      const cat = spawnSync(peek.command, peek.args, { encoding: "utf8" });
+      expect(cat.stdout).toBe("");
+      expect(cat.status).not.toBe(0);
+    },
+  );
 });
 
 describe("ion's commands for tools", () => {

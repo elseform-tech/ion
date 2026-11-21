@@ -3633,8 +3633,9 @@ function renderHarnesses(){
       ? `<div class="meter${c.use>=80?' hi':''}">${c.use!=null?`<span>${c.use}% this week</span><div class="tr"><i style="width:${c.use}%"></i></div>`:`<span>${c.spend} this week</span><div class="tr"><i style="width:21%"></i></div>`}</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`
       : c.st==='busy' ? `<span class="cbusy"><i class="spin"></i>${esc(c.msg)}</span><span></span>`
       : `<span></span><button class="btn${c.st==='off'?' pri':''}" type="button" data-hconnect="${h}">${c.st==='missing'?'Install and connect':'Connect'}</button>`;
-    /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so */
-    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}</div>${right}</div>`; }).join('');
+    /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.
+       c.nosb: on a computer without an OS sandbox (Plan 18 Task 12), each agent's chats run without one: "Not sandboxed". */
+    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}</div>${right}</div>`; }).join('');
   hydrate(el); icons(el); renderIonModels();
 }
 function renderIonModels(){

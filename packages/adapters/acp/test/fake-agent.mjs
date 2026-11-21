@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // A tiny ACP agent for tests. Prompt's first word: hello | approve | slow. FAKE_ACP_SIGNED_OUT=1 → -32000.
+import { execFileSync } from "node:child_process";
 import { createInterface } from "node:readline";
 
 const send = (m) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);
@@ -89,6 +90,18 @@ function whoami(id, sessionId, told) {
   return send({ id, result: { stopReason: "end_turn", usage: { inputTokens: 7, outputTokens: 3 } } });
 }
 
+/** Reads a file with a command it starts (as an agent's shell tool would) and says what came back. */
+function catFile(id, sessionId, file) {
+  let said;
+  try {
+    said = execFileSync("cat", [file], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) {
+    said = `failed: ${String(e.stderr ?? e.message).trim()}`;
+  }
+  update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: said } });
+  return send({ id, result: { stopReason: "end_turn" } });
+}
+
 /** Updates that aren't progress, forever; its log says why first when it's out of quota. */
 function noProgress(sessionId, text) {
   if (NO_PROGRESS[text])
@@ -108,9 +121,17 @@ const TIMED = {
   quietheld: quietThenSay,
 };
 
+/** A prompt that's timed on purpose, or `cat <file>`: handled here (true). */
+function special(id, sessionId, text) {
+  if (text in TIMED) TIMED[text](id, sessionId);
+  else if (text.startsWith("cat ")) catFile(id, sessionId, text.slice(4));
+  else return false;
+  return true;
+}
+
 async function prompt(id, { sessionId, prompt: blocks }) {
   const { told, text } = split(blocks);
-  if (text in TIMED) return TIMED[text](id, sessionId);
+  if (special(id, sessionId, text)) return;
   const cwd = sessions.get(sessionId);
   if (text.startsWith("approve")) {
     update(sessionId, {

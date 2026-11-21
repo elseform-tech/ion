@@ -28,6 +28,7 @@ import { defaultProject, projectPath } from "./projects.js";
 import type { RunAgent, RunServers } from "../tools/run-servers.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
 import { type RunKeys, runEnv, runKeys } from "./run-env.js";
+import { type LaunchSandbox, launchSandbox, type SandboxCtx } from "./sandbox.js";
 import type { RunSkills } from "../skills/run.js";
 import { agentText, type PickSource, picksOfRun, type RunPicks, shownPicks } from "../skills/picks.js";
 import { type OwnForRun, ownOpts, type RunOwn, skillsAndOwn, withOwnServers } from "../tools/own-run.js";
@@ -59,7 +60,8 @@ type Launch = {
   // process may not inherit from ion's environment (your keys' names and values); its agent's own tools ("Use its own
   // tools"), read at its start. & its keys (from launch to its end).
 } & Partial<Given & { own: OwnForRun }> &
-  RunKeys;
+  RunKeys &
+  LaunchSandbox;
 type Between = {
   chatId: string;
   interrupt: boolean;
@@ -115,7 +117,7 @@ export class RunManager {
       own?: RunOwn;
       /** What "/" and "@" can pick for a chat on this agent in this project (a message's picks resolve here). */
       picks?: (agent: string, projectId: string) => Promise<PickSource>;
-    },
+    } & SandboxCtx,
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
@@ -219,11 +221,13 @@ export class RunManager {
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
     try {
       Object.assign(l, await skillsAndOwn(this.ctx, l));
+      Object.assign(l, launchSandbox(l.h.adapter.sandbox, this.ctx, l));
       const yours = withOwnServers(await yourServers(this.store, this.ctx.servers, l), l.own);
       // Every key of the run (its agent's own too): redacted from every event of the run, wherever it's stored from.
       const redact = redactor([...yours.secrets, l.mcpKey, l.gateKey, l.cliKey]);
       this.store.redactRun(l.runId, redact);
-      const o = { ion: this.ionServer(l), redact, dataDir: this.ctx.dataDir };
+      const { dataDir, configFile } = this.ctx;
+      const o = { ion: this.ionServer(l), redact, dataDir, configFile };
       Object.assign(l, givenToRun(this.store, l, yours, o));
       for (;;) {
         if (this.stopping) return;
@@ -277,13 +281,8 @@ export class RunManager {
     if (!retry) return null;
     if (retry.effort !== state.effort) state.effortRetried = true;
     state.effort = retry.effort;
-    this.store.append({
-      chatId: l.chatId,
-      runId: l.runId,
-      origin: "daemon",
-      type: EV.runRetrying,
-      data: retry,
-    });
+    const { chatId, runId } = l;
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.runRetrying, data: retry });
     return retry;
   }
 
@@ -302,14 +301,8 @@ export class RunManager {
   }
 
   private finish(l: Launch, status: string): void {
-    if (!this.stopping)
-      this.store.append({
-        chatId: l.chatId,
-        runId: l.runId,
-        origin: "daemon",
-        type: EV.runFinished,
-        data: { status },
-      });
+    const [{ chatId, runId }, data] = [l, { status }];
+    if (!this.stopping) this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data });
   }
 
   /** Waits a retry's delay; false if interrupted (or ion stopped) meanwhile. */
@@ -448,7 +441,8 @@ export class RunManager {
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
       ...(l.resume ? { resume: l.resume } : {}),
-      env: runEnv(l, this.ctx.ionBin),
+      env: runEnv(l, this.ctx.ionBin, this.ctx.port?.()),
+      ...(l.sandbox ? { sandbox: l.sandbox } : {}),
       ...(this.ctx.gate && l.gateKey ? { gate: { url: `${this.ctx.gate.url()}/${l.gateKey}` } } : {}),
       ...runMcp(this.ionServer(l), l.servers, l.envDrop),
       ...(l.pluginDir ? { pluginDir: l.pluginDir } : {}),

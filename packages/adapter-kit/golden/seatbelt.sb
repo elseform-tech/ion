@@ -1,0 +1,8 @@
+(version 1)
+(allow default)
+(deny file-read* file-write* (subpath "/ion-test/home/.local/share/ion") (subpath "/ion-test/home/.config/ion") (subpath "/ion-test/home/.cache/ion"))
+(deny file-write* (literal "/ion-test/home/.local/share") (literal "/ion-test/home/.local") (literal "/ion-test/home") (literal "/ion-test") (literal "/") (literal "/ion-test/home/.config") (literal "/ion-test/home/.cache"))
+(allow file-read-metadata (literal "/ion-test/home/.local/share/ion/skills") (literal "/ion-test/home/.local/share/ion") (literal "/ion-test/home/.local/share/ion/worktrees"))
+(allow file-read* (subpath "/ion-test/home/.local/share/ion/skills/run-1") (subpath "/ion-test/home/.local/share/ion/bin"))
+(allow file-read* file-write* (subpath "/ion-test/home/.local/share/ion/worktrees/chat-1"))
+(deny file-write* (subpath "/ion-test/home/.claude/settings.json") (subpath "/ion-test/home/odd \"name\""))

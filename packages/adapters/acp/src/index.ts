@@ -53,6 +53,8 @@ export function createAcpAdapter(
   const binary = () => which(h.bin);
   return {
     id: h.id,
+    // ion's sandbox around the agent's process: neither opencode nor Grok has one of its own that keeps a folder away.
+    sandbox: "ion",
     async detect() {
       const path = binary();
       if (!path) return { installed: false };

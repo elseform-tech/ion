@@ -1,0 +1,151 @@
+import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { whichOnPath } from "./system.js";
+
+/**
+ * What a run's sandbox keeps away and lets through (the user, 2026-11-21: agents run in the OS sandbox, away from
+ * ion's own files). A path in `read` or `write` lies inside a denied folder (the run's own there); `noWrite` holds
+ * anywhere.
+ */
+export type SandboxPaths = {
+  /** No reads or writes under these: ion's data, config and cache folders (daemon.json, mcp.json, the vault…). */
+  deny: string[];
+  /** Read (and run) only, inside a denied folder: the run's skills plugin, ion's `ion` launcher. */
+  read: string[];
+  /** Read and write, inside a denied folder: the run's worktree, a server's own folder. */
+  write: string[];
+  /** No writes under these, wherever they are: the agent's own config (nothing persists from a run). */
+  noWrite: string[];
+};
+
+/** How this computer sandboxes: macOS's Seatbelt (`sandbox-exec`), Linux's bubblewrap, or not at all. */
+export type SandboxKind = "seatbelt" | "bwrap" | "none";
+
+/** A run's sandbox: how, and its paths. Absent from a start: the run isn't sandboxed. */
+export type RunSandbox = { kind: SandboxKind; paths: SandboxPaths };
+
+const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+
+/** The path and, when different, its real path (links followed as far as the path exists: /tmp is /private/tmp). */
+export function realForms(p: string): string[] {
+  const abs = resolve(p);
+  const rest: string[] = [];
+  for (let head = abs; ; head = dirname(head)) {
+    try {
+      const real = join(realpathSync(head), ...rest);
+      return real === abs ? [abs] : [abs, real];
+    } catch {
+      if (dirname(head) === head) return [abs];
+      rest.unshift(basename(head));
+    }
+  }
+}
+
+const allForms = (ps: string[]) => [...new Set(ps.flatMap(realForms))];
+
+/** Every folder above `p`, nearest first, up to the root. */
+function ancestors(p: string): string[] {
+  const out: string[] = [];
+  for (let d = dirname(p); ; d = dirname(d)) {
+    out.push(d);
+    if (dirname(d) === d) return out;
+  }
+}
+
+const inside = (p: string, dir: string) => p === dir || p.startsWith(dir.endsWith("/") ? dir : `${dir}/`);
+
+/** A path as a Seatbelt string. */
+const sbString = (p: string) => `"${p.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+const subpaths = (ps: string[]) => ps.map((p) => `(subpath ${sbString(p)})`).join(" ");
+const literals = (ps: string[]) => ps.map((p) => `(literal ${sbString(p)})`).join(" ");
+
+/**
+ * The Seatbelt profile for a run: everything as it is (`allow default`: network, the agent's login, the project),
+ * except ion's folders, which can't be read or written; the folders above them can't be renamed or removed (moving
+ * one would carry ion's files out from under the rule); the folders that hold the run's own paths can be looked at,
+ * not listed; then the run's own paths; then the agent's config, which can't be written. Later rules win.
+ */
+export function seatbeltProfile(p: SandboxPaths): string {
+  const deny = allForms(p.deny);
+  const read = allForms(p.read);
+  const write = allForms(p.write);
+  const noWrite = allForms(p.noWrite);
+  const above = [...new Set(deny.flatMap(ancestors))].filter((a) => !deny.some((d) => inside(a, d)));
+  const between = [...new Set([...read, ...write].flatMap(ancestors))].filter((a) =>
+    deny.some((d) => inside(a, d)),
+  );
+  const lines = ["(version 1)", "(allow default)"];
+  if (deny.length) lines.push(`(deny file-read* file-write* ${subpaths(deny)})`);
+  if (above.length) lines.push(`(deny file-write* ${literals(above)})`);
+  if (between.length) lines.push(`(allow file-read-metadata ${literals(between)})`);
+  if (read.length) lines.push(`(allow file-read* ${subpaths(read)})`);
+  if (write.length) lines.push(`(allow file-read* file-write* ${subpaths(write)})`);
+  if (noWrite.length) lines.push(`(deny file-write* ${subpaths(noWrite)})`);
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * bubblewrap's arguments for a run (before the command): the whole filesystem as it is, an empty folder over each
+ * of ion's, the run's own paths bound back (read-only or writable), the agent's config read-only. Not `--ro-bind /
+ * /`: a read-only root would stop agents writing their own sessions, caches and temp files, which stay as they are.
+ * Its own process list (`--unshare-pid`, a fresh /proc): `/proc/<ion's pid>/root` would reach the real folders.
+ */
+export function bwrapArgs(p: SandboxPaths): string[] {
+  const args = ["--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
+  for (const d of allForms(p.deny)) args.push("--tmpfs", d);
+  for (const r of allForms(p.read)) args.push("--ro-bind-try", r, r);
+  for (const w of allForms(p.write)) args.push("--bind-try", w, w);
+  for (const n of allForms(p.noWrite)) args.push("--ro-bind-try", n, n);
+  return args;
+}
+
+/** A command as the sandbox runs it (unchanged with no sandbox): every process it starts stays inside. */
+export function sandboxed(
+  sb: RunSandbox | undefined,
+  command: string,
+  args: string[],
+): { command: string; args: string[] } {
+  if (!sb || sb.kind === "none") return { command, args };
+  if (sb.kind === "seatbelt")
+    return { command: SANDBOX_EXEC, args: ["-p", seatbeltProfile(sb.paths), command, ...args] };
+  return { command: "bwrap", args: [...bwrapArgs(sb.paths), "--", command, ...args] };
+}
+
+/** Adds paths to a run's sandbox (an agent's own: its config folder, ion's folder for it). */
+export function withPaths(sb: RunSandbox | undefined, more: Partial<SandboxPaths>): RunSandbox | undefined {
+  if (!sb) return sb;
+  const add = (k: keyof SandboxPaths) => [...sb.paths[k], ...(more[k] ?? [])];
+  return {
+    kind: sb.kind,
+    paths: { deny: add("deny"), read: add("read"), write: add("write"), noWrite: add("noWrite") },
+  };
+}
+
+/** Whether a trial command runs: the sandbox works here (it doesn't inside another sandbox, as macOS refuses). */
+function works(file: string, args: string[]): boolean {
+  try {
+    execFileSync(file, args, { stdio: "ignore", timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let known: SandboxKind | undefined;
+
+/**
+ * How this computer sandboxes runs, tried once: Seatbelt on macOS; bubblewrap on Linux (Landlock grants access by
+ * folder and can't take one back under the home it allows, so it can't keep ion's folders away: docs/research/
+ * sandbox.md). "none" where neither runs (missing, or ion itself already in a sandbox).
+ */
+export function sandboxKind(): SandboxKind {
+  if (known) return known;
+  if (process.platform === "darwin")
+    known = works(SANDBOX_EXEC, ["-p", "(version 1)(allow default)", "/usr/bin/true"]) ? "seatbelt" : "none";
+  else if (process.platform === "linux") {
+    const bwrap = whichOnPath("bwrap");
+    known = bwrap && works(bwrap, ["--bind", "/", "/", "--dev", "/dev", "true"]) ? "bwrap" : "none";
+  } else known = "none";
+  return known;
+}

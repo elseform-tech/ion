@@ -1,7 +1,8 @@
-import { existsSync, mkdtempSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sandboxKind } from "@ion/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { hookEnv, runHook, stopHooks, TAIL } from "./hooks.js";
 
@@ -113,5 +114,21 @@ describe("a hook's env", () => {
       PATH: "/bin",
       ION_EVENT: "briefing.posted",
     });
+  });
+});
+
+// The user, 2026-11-21 (Plan 18 Task 12): your hooks are your commands, but they can run a project's code, so they run
+// in the OS sandbox too: they may read the project, never ion's folders (daemon.json, mcp.json, the vault).
+describe.skipIf(sandboxKind() !== "seatbelt")("a hook in the sandbox", () => {
+  it("reads the project, not ion's folders", async () => {
+    const ion = dir();
+    const project = dir();
+    writeFileSync(join(ion, "daemon.json"), "full-token\n");
+    writeFileSync(join(project, "README.md"), "project\n");
+    const sandbox = { kind: "seatbelt" as const, paths: { deny: [ion], read: [], write: [], noWrite: [] } };
+    const r = await runHook({ ...base, cwd: project, sandbox, run: `cat README.md; cat ${ion}/daemon.json` });
+    expect(r.tail).toContain("project\n");
+    expect(r.tail).not.toContain("full-token");
+    expect(r.code).not.toBe(0);
   });
 });

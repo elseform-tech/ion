@@ -1,8 +1,10 @@
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { AdapterEvent, Decision, Session, StartOpts } from "@ion/adapter-kit";
-import { agentEnv, createEventQueue, ION_SERVER } from "@ion/adapter-kit";
+import { agentEnv, createEventQueue, ION_SERVER, sandboxed, withPaths } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 import { loginOnlyEnv } from "./cli.js";
 import { createDeltaCoalescer } from "@ion/adapter-kit";
@@ -116,6 +118,7 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     ...(hasIon(opts) ? { disallowedTools: ["AskUserQuestion"] } : {}),
     ...(opts.gate ? { hooks: gateHooks(opts.gate.url) } : {}),
     ...pluginsOf(opts),
+    ...sandboxOf(opts),
     thinking: { type: "adaptive", display: "summarized" },
     includePartialMessages: true,
     abortController: abort,
@@ -148,6 +151,50 @@ function pluginsOf(opts: StartOpts) {
   return {
     plugins: paths.map((path) => ({ type: "local", path, skipMcpDiscovery: true })),
     settings: { disableSkillShellExecution: true },
+  };
+}
+
+/** Claude Code's own config, which nothing in a run may change (its sessions and state it still writes). */
+const OWN_CONFIG = [
+  "settings.json",
+  "settings.local.json",
+  "CLAUDE.md",
+  "agents",
+  "commands",
+  "skills",
+  "hooks",
+  "plugins",
+];
+
+/**
+ * The run's sandbox around the whole claude process (docs/research/sandbox.md): its Read tool, its commands and
+ * everything they start stay away from ion's folders. Claude Code's own sandbox stays off (settingSources is []):
+ * it covers only commands, and macOS refuses a sandbox inside a sandbox.
+ */
+function sandboxOf(opts: StartOpts) {
+  const home = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+  const sb = withPaths(opts.sandbox, { noWrite: OWN_CONFIG.map((f) => join(home, f)) });
+  if (!sb) return {};
+  return {
+    spawnClaudeCodeProcess: (o: {
+      command: string;
+      args: string[];
+      cwd?: string;
+      env: NodeJS.ProcessEnv;
+      signal?: AbortSignal;
+    }) => {
+      const run = sandboxed(sb, o.command, o.args);
+      const child = spawn(run.command, run.args, {
+        ...(o.cwd ? { cwd: o.cwd } : {}),
+        env: o.env,
+        ...(o.signal ? { signal: o.signal } : {}),
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      // Its log is drained unread, so it never fills up and stalls claude.
+      child.stderr.resume();
+      child.on("error", () => {});
+      return child;
+    },
   };
 }
 
