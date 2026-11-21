@@ -5,8 +5,12 @@ import { blockedAnswer, blockedQuestion } from "./blocked.js";
 // question says ion is wary, not that it stopped the call.
 describe("blockedQuestion", () => {
   const b = { requestId: "q", summary: "./main", reason: "it runs a file this command creates", key: "k" };
-  it("says ion stopped it when the judge said no", () => {
-    expect(blockedQuestion(b).why).toBe("ion stopped it: it runs a file this command creates");
+  // The user, 2026-11-21: the question says why in plain words: risky, or not sure.
+  it("says ion thinks it's risky when the judge said no, and that it isn't sure when the judge was unsure", () => {
+    expect(blockedQuestion(b).why).toBe("ion thinks this is risky: it runs a file this command creates");
+    expect(blockedQuestion({ ...b, unsure: true }).why).toBe(
+      "ion isn't sure: it runs a file this command creates",
+    );
   });
   it("says ion is wary of it for a guess", () => {
     expect(blockedQuestion({ ...b, wary: true }).why).toBe(
@@ -21,7 +25,9 @@ describe("blockedQuestion", () => {
     expect(blockedQuestion({ ...b, wary: true, input }).why).toBe(
       "ion is wary of this: it runs a file this command creates",
     );
-    expect(blockedQuestion({ ...b, input }).why).toBe("ion stopped it: it runs a file this command creates");
+    expect(blockedQuestion({ ...b, input }).why).toBe(
+      "ion thinks this is risky: it runs a file this command creates",
+    );
   });
   it("still shows an input that says more than the title (an edit's text, a cut one)", () => {
     const input = JSON.stringify({ file_path: "a.ts", content: "x" }, null, 2);

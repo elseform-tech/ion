@@ -444,6 +444,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     reason: z.string().optional(),
     /** What was asked, for a decision made at the gate (no approval.requested comes before it). */
     summary: z.string().optional(),
+    /** What Auto's judge said when it didn't allow the call: no, or that it wasn't sure (missing information). */
+    judge: z.enum(["deny", "unsure"]).optional(),
   }),
   "usage.reported": z.object({
     model: z.string(),

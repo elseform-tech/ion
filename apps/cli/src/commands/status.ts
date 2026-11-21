@@ -15,6 +15,7 @@ export function statusCommand(program: Command, out: () => Out) {
       const n = `${s.projects} project${s.projects === 1 ? "" : "s"}`;
       const lines = [`ion is running · ${n}`];
       if (s.configError) lines.push(s.configError);
+      for (const n of s.notes ?? []) lines.push(n);
       print(out(), lines.join("\n"), s);
     });
 }

@@ -29,6 +29,8 @@ type Verdict = {
   reason?: string;
   route?: string;
   wary?: true;
+  /** What the judge said before you were asked (the user, 2026-11-21): no, or that it wasn't sure. */
+  judge?: "deny" | "unsure";
 };
 
 /**
@@ -214,6 +216,7 @@ export class Approvals {
       by: v.by,
       ...(v.reason ? { reason: v.reason } : {}),
       ...(v.summary ? { summary: v.summary } : {}),
+      ...(v.judge ? { judge: v.judge } : {}),
     };
     this.store.append({
       chatId: r.chatId,
@@ -321,9 +324,15 @@ export class Approvals {
     // The judge's no (or unsure) on ion's guess: you're asked, as ion is wary.
     if (wary && v.decision === "deny" && v.source === "judge") return this.wary(r, req, wary);
     // A rule's no (your secrets, ion's files) stands. The judge's no is a question for you.
-    if (v.decision === "deny" && v.source === "judge" && this.opts.askBlocked)
-      return this.askYou(this.opts.askBlocked, r, req, { reason: v.reason });
-    return { decision: v.decision, by: "ion", reason: v.reason };
+    const judge = v.source === "judge" && v.decision === "deny" ? (v.unsure ? "unsure" : "deny") : null;
+    if (judge && this.opts.askBlocked) {
+      const asked = await this.askYou(this.opts.askBlocked, r, req, {
+        reason: v.reason,
+        ...(v.unsure ? { unsure: true as const } : {}),
+      });
+      return { ...asked, judge };
+    }
+    return { decision: v.decision, by: "ion", reason: v.reason, ...(judge ? { judge } : {}) };
   }
 
   /** ion's guess, asked of you (in Full, or after the judge's no); with no one to ask, refused with its route. */
@@ -337,7 +346,7 @@ export class Approvals {
     a: AskBlocked,
     r: AskingRun,
     req: ApprovalRequest,
-    { reason, wary }: { reason: string; wary?: true },
+    { reason, wary, unsure }: { reason: string; wary?: true; unsure?: true },
   ): Promise<Verdict> {
     const key = actionKey(req);
     if (a.allowed(r, key)) return { decision: "allow", by: "you", reason: "You always allow this" };
@@ -348,6 +357,7 @@ export class Approvals {
       ...{ requestId: req.requestId, summary: req.summary, reason, input, key },
       ...(cut ? { cut } : {}),
       ...(wary ? { wary } : {}),
+      ...(unsure ? { unsure } : {}),
     };
     return HELD[await a.ask(r, b)];
   }

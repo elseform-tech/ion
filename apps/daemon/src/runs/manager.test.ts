@@ -87,8 +87,8 @@ beforeEach(() => {
   needs = new NeedsService(store, db);
   judge = vi.fn(async ({ req }: { req: { input: unknown } }) =>
     JSON.stringify(req.input).includes("/etc/")
-      ? { allow: false, reason: "Outside the project" }
-      : { allow: true, reason: "Fine for the task" },
+      ? { verdict: "deny" as const, reason: "Outside the project" }
+      : { verdict: "allow" as const, reason: "Fine for the task" },
   );
   access = createAccess({ judge, home: "/nonexistent-home", ionDirs: [dataDir] });
   runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
@@ -1084,8 +1084,8 @@ describe("every event of a run is redacted where it's stored", () => {
       judge: async ({ req }: { req: { input: unknown } }) => {
         const said = JSON.stringify(req.input);
         return said.includes("deny-me")
-          ? { allow: false, reason: `No: ${said}` }
-          : { allow: true, reason: `Fine: ${said}` };
+          ? { verdict: "deny" as const, reason: `No: ${said}` }
+          : { verdict: "allow" as const, reason: `Fine: ${said}` };
       },
       home: "/nonexistent-home",
       ionDirs: [dataDir],

@@ -18,6 +18,7 @@ import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
+import { UnsureLog } from "../access/unsure.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
@@ -186,9 +187,15 @@ function autoAccess(
   opts: { dataDir: string; configFile: string },
   quick: ReturnType<typeof harnessRunner>,
   late: { decisions?: Decisions },
+  unsure: UnsureLog,
 ) {
   return createAccess({
     judge: createJudge(quick),
+    // Unsure often on one kind of action: said once in the log (and `ion status`), so a rule can be added.
+    onUnsure: (req) => {
+      const note = unsure.add(req);
+      if (note) console.warn(note);
+    },
     home: homedir(),
     ionDirs: ionDirsOf(opts),
     decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
@@ -394,7 +401,8 @@ function openState(
   const ionQuick = harnessRunner(opts.configFile, "quick");
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
   sweepNeeds(needs, ionQuestions);
-  const access = autoAccess(opts, quick, late);
+  const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
+  const access = autoAccess(opts, quick, late, unsure);
   const hooks = startHooks(store, db, opts.configFile, tools);
   const runCtx = {
     ...{ configFile: opts.configFile, dataDir: opts.dataDir, access, ionBin },
@@ -429,7 +437,7 @@ function openState(
     start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
-  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION, tools, oauth };
+  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION, tools, oauth, unsure };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };
   return { ctx, turns };

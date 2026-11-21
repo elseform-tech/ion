@@ -462,7 +462,7 @@ describe("asking when ion blocks a tool call", () => {
     expect(need).toMatchObject({
       kind: "ask",
       summary: "Allow this? npm publish",
-      detail: "ion stopped it: Publishes the package",
+      detail: "ion thinks this is risky: Publishes the package",
     });
     expect(need!.choices!.map((c) => c.label)).toEqual([
       "Allow once",
@@ -546,7 +546,7 @@ describe("always allow, exactly", () => {
     const waiting = d.askBlocked(scope(), block);
     const [need] = needs.open("c1");
     expect(need!.detail).toBe(
-      'ion stopped it: Publishes the package\n\n{\n  "command": "npm publish",\n  "run_in_background": true\n}',
+      'ion thinks this is risky: Publishes the package\n\n{\n  "command": "npm publish",\n  "run_in_background": true\n}',
     );
     await d.answer(need!.needId, 2);
     await waiting;

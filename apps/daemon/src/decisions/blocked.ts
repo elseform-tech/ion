@@ -13,6 +13,8 @@ export type Blocked = {
   cut?: boolean;
   /** A guess of ion's, not the judge's no (the user, 2026-11-21): "ion is wary of this". */
   wary?: true;
+  /** The judge said it's missing information, not that it's risky (the user, 2026-11-21): "ion isn't sure". */
+  unsure?: true;
   /** A repo's server that runs the repo's own code, before a chat starts it: asked as it is, for this chat only. */
   repo?: true;
 };
@@ -59,10 +61,16 @@ function addsToTitle(b: Blocked): boolean {
 /** What you're asked about a stopped tool call (or a repo's server about to start). */
 export const blockedQuestion = (b: Blocked) => (b.repo ? repoQuestion(b) : callQuestion(b));
 
+/** Why ion asks, in plain words: its own guess, the judge unsure, or the judge's no. */
+const whyWord = (b: Blocked) => {
+  if (b.wary) return "ion is wary of this";
+  return b.unsure ? "ion isn't sure" : "ion thinks this is risky";
+};
+
 const callQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
   why: [
-    `${b.wary ? "ion is wary of this" : "ion stopped it"}: ${b.reason}`,
+    `${whyWord(b)}: ${b.reason}`,
     ...(addsToTitle(b) ? [b.input] : []),
   ].join("\n\n"),
   choices: [

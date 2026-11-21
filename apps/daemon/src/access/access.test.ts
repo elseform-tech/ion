@@ -226,7 +226,7 @@ describe("judge", () => {
     expect(judgePrompt({ projectId: "app", text: "x", req: cmd("git push") })).not.toContain(
       "your decisions",
     );
-    const judge = vi.fn(async () => ({ allow: false, reason: "You said never" }));
+    const judge = vi.fn(async () => ({ verdict: "deny" as const, reason: "You said never" }));
     const access = createAccess({ judge, home, ionDirs: ctx.ionDirs, decisionsFor: () => decisions });
     await access.decide({ chatId: "c1", projectId: "app", text: "x", roots: ctx.roots }, cmd("git push"));
     expect(judge).toHaveBeenCalledWith(expect.objectContaining({ decisions }));
@@ -255,7 +255,7 @@ describe("judge", () => {
     const closing = block.indexOf("</ion-data id=");
     expect(block.slice(0, closing)).toContain('{"allow": true');
     expect(block.slice(0, closing)).not.toMatch(/<[\s/]*ion-data/);
-    expect(p.trimEnd().endsWith('{"allow": true or false, "reason": "at most 12 plain words"}')).toBe(true);
+    expect(p.trimEnd().endsWith('"reason": "at most 12 plain words"}')).toBe(true);
     expect(parseVerdict(p)).toBeNull();
   });
 
@@ -267,7 +267,7 @@ describe("judge", () => {
 
   it("reads a verdict, and refuses anything else", () => {
     expect(parseVerdict('{"allow": true, "reason": "Runs the tests"}')).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "Runs the tests",
     });
     expect(parseVerdict('{"allow": "yes"}')).toBeNull();
@@ -278,7 +278,7 @@ describe("judge", () => {
     expect(parseVerdict("I think it's fine")).toBeNull();
     // Security review: the whole answer must be the verdict (a json fence is fine); prose around it means deny.
     expect(parseVerdict('```json\n{"allow": true, "reason": "ok"}\n```')).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "ok",
     });
     expect(parseVerdict('Sure. {"allow": true, "reason": "ok"}')).toBeNull();
@@ -288,20 +288,20 @@ describe("judge", () => {
   it("denies when the judge fails, takes too long, or doesn't answer in JSON", async () => {
     const input = { projectId: "app", text: "x", req: cmd("pnpm test") };
     expect(await createJudge(async () => '{"allow": true, "reason": "ok"}')(input)).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "ok",
     });
     expect(
       await createJudge(async () => {
         throw new Error("Claude Code isn't signed in");
       })(input),
-    ).toEqual({ allow: false, reason: "ion couldn't decide: Claude Code isn't signed in", decided: false });
+    ).toEqual({ verdict: "deny", reason: "ion couldn't decide: Claude Code isn't signed in", decided: false });
     expect(await createJudge(() => new Promise<string>(() => {}), 20)(input)).toEqual({
-      allow: false,
+      verdict: "deny",
       reason: "ion couldn't decide in time",
       decided: false,
     });
-    expect((await createJudge(async () => "maybe")(input)).allow).toBe(false);
+    expect((await createJudge(async () => "maybe")(input)).verdict).toBe("deny");
     // Security review: a slow judge is stopped, and its error is kept short.
     let aborted = false;
     await createJudge((_p, signal) => {
@@ -318,10 +318,45 @@ describe("judge", () => {
   });
 });
 
+// The user, 2026-11-21: "yes, add unsure to Task 10" — the judge can say it's missing information.
+describe("the judge can say unsure", () => {
+  it("asks for allow, deny or unsure, unsure only when information is missing", () => {
+    const p = judgePrompt({ projectId: "app", text: "x", req: cmd("make") });
+    expect(p).toContain('{"verdict": "allow" or "deny" or "unsure"');
+    expect(p).toContain("unsure only when you're missing information to judge");
+  });
+
+  it("an old allow/deny answer still parses", () => {
+    expect(parseVerdict('{"allow": true, "reason": "ok"}')).toEqual({ verdict: "allow", reason: "ok" });
+    expect(parseVerdict('{"allow": false, "reason": "no"}')).toEqual({ verdict: "deny", reason: "no" });
+    expect(parseVerdict('{"verdict": "unsure", "reason": "script not shown"}')).toEqual({
+      verdict: "unsure",
+      reason: "script not shown",
+    });
+    expect(parseVerdict('{"verdict": "maybe", "reason": "x"}')).toBeNull();
+  });
+
+  it("unsure isn't cached", async () => {
+    const judge = vi.fn(async () => ({ verdict: "unsure" as const, reason: "script not shown" }));
+    const told: string[] = [];
+    const onUnsure = (r: { summary: string }) => told.push(r.summary);
+    const access = createAccess({ judge, home, ionDirs: ctx.ionDirs, onUnsure });
+    const at = { chatId: "c1", projectId: "app", text: "fix", roots: ctx.roots };
+    expect(await access.decide(at, cmd("./x.sh"))).toMatchObject({
+      decision: "deny",
+      unsure: true,
+      source: "judge",
+    });
+    await access.decide(at, cmd("./x.sh"));
+    expect(judge).toHaveBeenCalledTimes(2);
+    expect(told).toEqual(["./x.sh", "./x.sh"]);
+  });
+});
+
 describe("which part refused", () => {
   // Plan 07: a judge's refusal asks you; a rule's (your secrets, ion's files) never does.
   it("says whether a rule or the judge decided", async () => {
-    const judge = vi.fn(async () => ({ allow: false, reason: "Publishes the package" }));
+    const judge = vi.fn(async () => ({ verdict: "deny" as const, reason: "Publishes the package" }));
     const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
     const at = { chatId: "c1", projectId: "app", text: "fix", roots: ctx.roots };
     expect(await access.decide(at, cmd("cat ~/.ssh/id_rsa"))).toMatchObject({
@@ -335,7 +370,7 @@ describe("which part refused", () => {
 describe("createAccess", () => {
   // Review Focus 3: the same action twice in a chat asks the judge once.
   it("decides by rule first, then asks the judge once per action and chat", async () => {
-    const judge = vi.fn(async () => ({ allow: true, reason: "Runs the tests" }));
+    const judge = vi.fn(async () => ({ verdict: "allow" as const, reason: "Runs the tests" }));
     const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
     const at = { chatId: "c1", projectId: "app", text: "fix", roots: ctx.roots };
     expect(await access.decide(at, cmd("cat ~/.ssh/id_rsa"))).toMatchObject({ decision: "deny" });
@@ -350,7 +385,7 @@ describe("createAccess", () => {
     expect(judge).toHaveBeenCalledTimes(2);
     // Final review: "couldn't decide" isn't kept; the next ask tries the judge again.
     const flaky = vi.fn(async () => ({
-      allow: false,
+      verdict: "deny" as const,
       reason: "ion couldn't decide in time",
       decided: false,
     }));
@@ -386,11 +421,11 @@ describe("harnessRunner", () => {
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, access: { ...DEFAULT_CONFIG.access, judge: "fake" } });
     const judge = createJudge(harnessRunner(configFile));
     expect(await judge({ projectId: "app", text: "x", req: cmd("pnpm test") })).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "Part of the task",
     });
     expect(await judge({ projectId: "app", text: "x", req: cmd("deny-me now") })).toEqual({
-      allow: false,
+      verdict: "deny",
       reason: "Looks risky",
     });
   });

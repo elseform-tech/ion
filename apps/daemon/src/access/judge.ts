@@ -29,8 +29,10 @@ function waryBlocks(w: NonNullable<JudgeInput["wary"]>): string[] {
   ];
 }
 
+/** allow, deny, or unsure: the judge is missing information to decide (the user, 2026-11-21). */
+export type JudgeVerdict = "allow" | "deny" | "unsure";
 /** decided: false when ion couldn't get a verdict (failure, timeout, no JSON): that answer isn't kept. */
-export type Judge = (i: JudgeInput) => Promise<{ allow: boolean; reason: string; decided?: false }>;
+export type Judge = (i: JudgeInput) => Promise<{ verdict: JudgeVerdict; reason: string; decided?: false }>;
 
 const TIMEOUT_MS = 30_000;
 
@@ -51,18 +53,31 @@ export function judgePrompt(i: JudgeInput): string {
       : []),
     ...(i.checksFailed ? [CHECKS_FAILED] : []),
     ...(i.wary ? waryBlocks(i.wary) : []),
-    'Answer with only JSON: {"allow": true or false, "reason": "at most 12 plain words"}',
+    "Say unsure only when you're missing information to judge (what a script does, where data goes), not just to be careful.",
+    'Answer with only JSON: {"verdict": "allow" or "deny" or "unsure", "reason": "at most 12 plain words"}',
   ].join("\n\n");
 }
 
-/** The verdict, when the whole answer is one JSON object (a json code fence is fine); anything else is null. */
-export function parseVerdict(text: string): { allow: boolean; reason: string } | null {
+const VERDICTS: readonly unknown[] = ["allow", "deny", "unsure"];
+
+/** The verdict word: `verdict`, else the older `allow` boolean; null when neither is there. */
+function verdictOf(v: { allow?: unknown; verdict?: unknown }): JudgeVerdict | null {
+  if (VERDICTS.includes(v.verdict)) return v.verdict as JudgeVerdict;
+  if (typeof v.allow === "boolean") return v.allow ? "allow" : "deny";
+  return null;
+}
+
+/**
+ * The verdict, when the whole answer is one JSON object (a json code fence is fine); anything else is null.
+ * `{"verdict": …}`, or the older `{"allow": true | false}`.
+ */
+export function parseVerdict(text: string): { verdict: JudgeVerdict; reason: string } | null {
   let body = text.trim();
   if (body.startsWith("```") && body.endsWith("```")) body = body.slice(body.indexOf("\n") + 1, -3).trim();
   try {
-    const v = JSON.parse(body) as { allow?: unknown; reason?: unknown };
-    if (typeof v.allow === "boolean" && typeof v.reason === "string")
-      return { allow: v.allow, reason: v.reason.slice(0, 200) };
+    const v = JSON.parse(body) as { allow?: unknown; verdict?: unknown; reason?: unknown };
+    const verdict = v && typeof v.reason === "string" ? verdictOf(v) : null;
+    if (verdict) return { verdict, reason: (v.reason as string).slice(0, 200) };
   } catch {
     // not a verdict
   }
@@ -86,11 +101,11 @@ export function createJudge(
     });
     try {
       const out = await Promise.race([run(judgePrompt(i), abort.signal), slow]);
-      if (out === "slow") return { allow: false, reason: "ion couldn't decide in time", decided: false };
-      return parseVerdict(out) ?? { allow: false, reason: "ion couldn't decide", decided: false };
+      if (out === "slow") return { verdict: "deny", reason: "ion couldn't decide in time", decided: false };
+      return parseVerdict(out) ?? { verdict: "deny", reason: "ion couldn't decide", decided: false };
     } catch (e) {
       const message = (e as Error).message.split("\n")[0]!.slice(0, 100);
-      return { allow: false, reason: `ion couldn't decide: ${message}`, decided: false };
+      return { verdict: "deny", reason: `ion couldn't decide: ${message}`, decided: false };
     } finally {
       clearTimeout(timer);
     }

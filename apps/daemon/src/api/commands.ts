@@ -95,6 +95,8 @@ export type Ctx = {
   configFile: string;
   startedAt: number;
   version: string;
+  /** What Auto is often unsure about (said in `ion status`). */
+  unsure?: { notes(): string[] };
 };
 
 export type Handlers = {
@@ -174,6 +176,7 @@ export const handlers: Handlers = {
       uptimeS: Math.round((Date.now() - ctx.startedAt) / 1000),
       projects: config.projects.length,
       configError: error,
+      notes: ctx.unsure?.notes() ?? [],
     };
   },
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,

@@ -390,7 +390,7 @@ describe("timeline", () => {
         requestId: "g4",
         kind: "ask",
         summary: "Allow this? npm publish",
-        detail: "ion stopped it: x",
+        detail: "ion thinks this is risky: x",
         dedupeKey: "k",
         choices,
         blocked: true,

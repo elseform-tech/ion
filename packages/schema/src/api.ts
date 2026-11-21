@@ -205,6 +205,8 @@ export type StatusResult = {
   uptimeS: number;
   projects: number;
   configError: string | null;
+  /** Things worth a look, one line each (e.g. "Auto often isn't sure about: npm publish"). */
+  notes?: string[];
 };
 
 /** Every command the daemon accepts: its arguments and its result. */

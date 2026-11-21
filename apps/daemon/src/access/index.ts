@@ -4,7 +4,7 @@ import type { WaryData } from "./hard.js";
 import type { Judge } from "./judge.js";
 import { ruleFor, type Verdict } from "./rules.js";
 
-export { createJudge, type Judge, judgePrompt, parseVerdict } from "./judge.js";
+export { createJudge, type Judge, type JudgeVerdict, judgePrompt, parseVerdict } from "./judge.js";
 export { hardRuleFor, ionDirsOf, waryData } from "./hard.js";
 export { onlyPlugin } from "./plugin.js";
 export { ruleFor } from "./rules.js";
@@ -23,7 +23,8 @@ type At = {
   wary?: WaryData;
 };
 /** source: a rule (your secrets, ion's files: never asks you) or the judge (its "no" asks you). */
-type AccessVerdict = Verdict & { source: "rule" | "judge" };
+/** unsure: the judge's no is that it's missing information (the user, 2026-11-21); asked like a no, never kept. */
+export type AccessVerdict = Verdict & { source: "rule" | "judge"; unsure?: true };
 export type Access = { decide(at: At, req: ApprovalRequest): Promise<AccessVerdict> };
 
 /** Auto: rules first, then the judge, at most once per action in a chat. */
@@ -33,6 +34,8 @@ export function createAccess(o: {
   ionDirs: string[];
   /** Your decisions that apply in a chat, for the judge (Plan 06). */
   decisionsFor?: (projectId: string, chatId: string) => string[];
+  /** Told each time the judge is unsure (the user, 2026-11-21: often unsure on one kind is noted). */
+  onUnsure?: (req: ApprovalRequest) => void;
 }): Access {
   const cache = new Map<string, AccessVerdict>();
   return {
@@ -68,12 +71,14 @@ export function createAccess(o: {
         ...(at.wary ? { wary: at.wary } : {}),
       });
       const verdict: AccessVerdict = {
-        decision: v.allow ? "allow" : "deny",
+        decision: v.verdict === "allow" ? "allow" : "deny",
         reason: v.reason,
         source: "judge",
+        ...(v.verdict === "unsure" ? { unsure: true as const } : {}),
       };
-      // A judge that couldn't decide (slow, signed out) is asked again next time.
-      if (v.decided !== false) cache.set(key, verdict);
+      // A judge that couldn't decide (slow, signed out) or wasn't sure is asked again next time.
+      if (v.verdict === "unsure") o.onUnsure?.(req);
+      else if (v.decided !== false) cache.set(key, verdict);
       return verdict;
     },
   };
