@@ -393,8 +393,7 @@ describe("acp adapter", () => {
     const h = {
       ...fake,
       silenceMs: 300,
-      logFailure: (line: string) =>
-        /error\.error="([^"]*)"/.exec(line)?.[1]?.replace(/^AI_\w+: /, "") ?? null,
+      logFailure: (line: string) => (line.includes("Free usage") ? "Fake ACP is out of quota" : null),
     };
     const quota = await turn(h, "quota");
     expect(quota.at(-2)).toMatchObject({
@@ -402,7 +401,7 @@ describe("acp adapter", () => {
       data: {
         code: "agent",
         retryable: false,
-        message: "Fake ACP: Free usage limit reached. Try again later.",
+        message: "Fake ACP is out of quota",
       },
     });
     expect(quota.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });

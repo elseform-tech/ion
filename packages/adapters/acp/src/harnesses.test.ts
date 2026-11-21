@@ -353,7 +353,19 @@ describe("opencode's log", () => {
   it("gives a failed model call's reason, without the SDK's error name", () => {
     const line =
       'timestamp=x level=ERROR message="stream error" providerID=opencode error.error="AI_APICallError: Free usage limit reached. Try again later." x=1';
-    expect(opencodeFailure(line)).toBe("Free usage limit reached. Try again later.");
+    // Automated review, 2026-11-21: a known case in ion's own words; anything else without URLs or key-like words.
+    expect(opencodeFailure(line)).toBe(
+      "opencode's free usage is used up — try again later or pick another model",
+    );
+    const other =
+      'level=ERROR message="stream error" error.error="AI_APICallError: Unauthorized for https://api.example/v1?key=sk-abc123 token=xyz Bearer abc.def secret_thing"';
+    const said = opencodeFailure(other)!;
+    expect(said).toMatch(/^opencode: Unauthorized for/);
+    for (const bad of ["https://", "sk-abc123", "xyz", "abc.def", "secret_thing", "?key"])
+      expect(said).not.toContain(bad);
+    expect(
+      opencodeFailure(`level=ERROR message="stream error" error.error="${"x ".repeat(300)}"`)!.length,
+    ).toBeLessThanOrEqual(200);
     expect(opencodeFailure('level=INFO message="init"')).toBeNull();
     expect(OPENCODE.args).toEqual(["acp", "--print-logs", "--log-level", "WARN"]);
   });

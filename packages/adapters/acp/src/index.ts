@@ -16,7 +16,6 @@ import { startAcpSession } from "./session.js";
 const SILENCE_MS = 120_000;
 
 const silenceOf = (h: AcpHarness) => ({
-  label: h.label,
   ms: h.silenceMs ?? SILENCE_MS,
   why: `${h.label} didn't answer. Check that it's signed in: ${h.loginHint}`,
 });

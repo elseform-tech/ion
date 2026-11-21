@@ -363,3 +363,45 @@ describe("a plugin with no version", () => {
     expect(a?.hash).not.toBe(b?.hash);
   });
 });
+
+// Automated review, 2026-11-21: hooks in a skill's front matter were found by a pattern (a quoted `"hooks":` slipped
+// by). The front matter's top-level keys are read strictly; any key named hooks goes, and a file whose front matter
+// can't be read is left out of ion's copy.
+describe("hooks in a plugin's skills, read strictly", () => {
+  it("strips a quoted or differently cased hooks key, and leaves out a file it can't read", async () => {
+    const home = mkdtempSync(join(tmpdir(), "ion-plug-"));
+    const root = join(home, "kit");
+    const put = (p: string, t: string) => {
+      mkdirSync(join(p, ".."), { recursive: true });
+      writeFileSync(p, t);
+    };
+    put(
+      join(home, ".claude", "plugins", "installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: { "kit@m": [{ scope: "user", installPath: root, version: "1" }] },
+      }),
+    );
+    put(join(home, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "kit@m": true } }));
+    put(join(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "kit", version: "1" }));
+    put(join(root, "skills", "q", "SKILL.md"), '---\nname: q\n"hooks":\n  PreToolUse: []\n---\nQ.');
+    put(join(root, "skills", "c", "SKILL.md"), "---\nname: c\nHooks : {}\n---\nC.");
+    put(join(root, "skills", "bad", "SKILL.md"), "---\n{hooks: [], name: bad}\n---\nBad.");
+    put(join(root, "skills", "plain", "SKILL.md"), "---\nname: plain\n---\nPlain.");
+    const dir = join(home, "data", "own");
+    const own = await claudeOwnForRun({
+      home,
+      env: {},
+      project: join(home, "app"),
+      dir,
+      repoOn: async () => false,
+    });
+    const copy = own.plugins[0]!;
+    expect(copy.startsWith(dir)).toBe(true);
+    expect(readFileSync(join(copy, "skills", "q", "SKILL.md"), "utf8")).toBe("---\nname: q\n---\nQ.");
+    expect(readFileSync(join(copy, "skills", "c", "SKILL.md"), "utf8")).toBe("---\nname: c\n---\nC.");
+    expect(existsSync(join(copy, "skills", "bad", "SKILL.md"))).toBe(false);
+    expect(readFileSync(join(copy, "skills", "plain", "SKILL.md"), "utf8")).toContain("Plain.");
+    expect(own.lines).toEqual(["kit: skills/bad/SKILL.md left out (its front matter can't be read)"]);
+  });
+});

@@ -93,11 +93,34 @@ function grokAskEnv(): Record<string, string> {
   return { GROK_ASK_LOCAL_READS: "false", GROK_ASK_USER_QUESTION: "false" };
 }
 
-/** opencode's log line for a failed model call: its reason, without the SDK's error name (live, 2026-11-21). */
+/** Known failures, said in ion's own words (automated review, 2026-11-21). */
+const KNOWN: [RegExp, string][] = [
+  [/free usage|usage limit/i, "opencode's free usage is used up — try again later or pick another model"],
+];
+
+/** A logged reason as text that's safe to show: no URL or query, nothing that looks like a key, at most 200 chars. */
+function cleanReason(why: string): string {
+  return why
+    .replace(/\bhttps?:\/\/\S+/gi, "")
+    .replace(/\?\S*/g, "")
+    .replace(/\bBearer\s+\S+/gi, "")
+    .replace(/\b[\w-]*(key|token|secret|password|auth)[\w-]*\s*[=:]\s*\S+/gi, "")
+    .replace(/\b\S*(key|token|secret|password|sk-|ghp_)\S*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200 - "opencode: ".length);
+}
+
+/**
+ * opencode's log line for a failed model call (live, 2026-11-21: out of its free quota it said so only there): a
+ * known case in ion's words, else "opencode: <its reason>", cleaned; null for any other line.
+ */
 export function opencodeFailure(line: string): string | null {
   if (!line.includes("stream error")) return null;
-  const why = /error\.error="((?:[^"\\]|\\.)*)"/.exec(line)?.[1];
-  return why ? why.replace(/^AI_\w+: /, "").slice(0, 300) : null;
+  const why = /error\.error="((?:[^"\\]|\\.)*)"/.exec(line)?.[1]?.replace(/^AI_\w+: /, "");
+  if (!why) return null;
+  const known = KNOWN.find(([re]) => re.test(why));
+  return known ? known[1] : `opencode: ${cleanReason(why)}`;
 }
 
 export const OPENCODE: AcpHarness = {

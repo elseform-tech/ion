@@ -112,6 +112,8 @@ export function runOwnOf(o: {
         repoOn,
         pluginData,
       });
+      // A plugin file left out (front matter ion can't read): one plain line in the daemon's log.
+      for (const line of own.lines) console.warn(`own tools: ${line}`);
       return { ownTools, ownServers: own.servers, ownPlugins: own.plugins, pluginDir, secrets: own.secrets };
     },
   };

@@ -119,7 +119,7 @@ const PROGRESS = new Set([
  * permission; past its time the turn fails with the agent's own logged reason when it gave one, else `why`.
  */
 function silence(
-  silent: { ms: number; why: string; label?: string } | undefined,
+  silent: { ms: number; why: string } | undefined,
   c: Connection,
   fail: (why: string) => void,
 ) {
@@ -130,8 +130,8 @@ function silence(
       stop();
       if (!silent) return;
       timer = setTimeout(() => {
-        const logged = c.failure?.();
-        fail(logged ? `${silent.label ?? "The agent"}: ${logged}` : silent.why);
+        // The agent's own reason, as its harness words it (opencode's: "opencode's free usage is used up …").
+        fail(c.failure?.() ?? silent.why);
       }, silent.ms);
       timer.unref();
     },
@@ -152,7 +152,7 @@ async function held<T>(quiet: { hold(): void; heard(): void }, answer: Promise<T
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
-  run: { harness: string; model: string; silent?: { ms: number; why: string; label?: string } },
+  run: { harness: string; model: string; silent?: { ms: number; why: string } },
 ): Session {
   const events = createEventQueue<AdapterEvent>();
   const state = createAcpState(projectRoots(opts.cwd));
