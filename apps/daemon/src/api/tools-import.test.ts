@@ -1,10 +1,20 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { memorySecrets } from "../secrets/index.js";
 import { agentHome, GH } from "../tools/import-testing.js";
 import { startServer } from "./server.js";
+
+/** A file's change time and text, read through one open file (no check-then-read). */
+function statAndText(f: string): [number, string] {
+  const fd = openSync(f, "r");
+  try {
+    return [fstatSync(fd).mtimeMs, readFileSync(fd, "utf8")];
+  } finally {
+    closeSync(fd);
+  }
+}
 
 // The user, 2026-11-21: "Only ion's, plus Import": servers come in from each agent's own config, off, with keys left
 // out; "yes, add both prompts to Task 9": the first time, how many servers each agent has; later, what's new in one.
@@ -42,7 +52,7 @@ function agentFiles(): string {
     ".grok/config.toml",
     "shop/.mcp.json",
   ].map((f) => join(home, f));
-  return JSON.stringify(files.map((f) => [f, statSync(f).mtimeMs, readFileSync(f, "utf8")]));
+  return JSON.stringify(files.map((f) => [f, ...statAndText(f)]));
 }
 
 afterEach(async () => {

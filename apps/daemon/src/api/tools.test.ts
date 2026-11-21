@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
@@ -19,9 +19,8 @@ import { startServer } from "./server.js";
 
 /** Every file under `dir`, as text. */
 const allText = (dir: string): string =>
-  readdirSync(dir)
-    .map((f) => join(dir, f))
-    .map((p) => (statSync(p).isDirectory() ? allText(p) : readFileSync(p, "latin1")))
+  readdirSync(dir, { withFileTypes: true })
+    .map((d) => (d.isDirectory() ? allText(join(dir, d.name)) : readFileSync(join(dir, d.name), "latin1")))
     .join("\n");
 
 const noNetwork = {

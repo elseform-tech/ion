@@ -140,7 +140,7 @@ export async function packageFound(net: Net, kind: "npm" | "pypi", name: string)
   if (!PACKAGE.test(name)) return false;
   const url =
     kind === "npm"
-      ? new URL(`https://registry.npmjs.org/${name.replace("/", "%2F")}`)
+      ? new URL(`https://registry.npmjs.org/${name.replaceAll("/", "%2F")}`)
       : new URL(`https://pypi.org/pypi/${encodeURIComponent(name)}/json`);
   const r = await getPublic(net, url).catch(() => null);
   if (!r) return null;

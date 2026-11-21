@@ -1,4 +1,13 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fchmodSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import { replaceFile } from "./added.js";
 import { argKey, namedKey, urlHoldsKey } from "./secretish.js";
@@ -140,13 +149,19 @@ export class McpFile {
   }
 
   private create(): void {
-    if (existsSync(this.path)) return;
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+    let fd: number;
     try {
-      writeFileSync(this.path, EMPTY, { mode: 0o600, flag: "wx" });
-      chmodSync(this.path, 0o600);
+      // Created only if it isn't there (one step, no check-then-write); set to 0600 through the open file.
+      fd = openSync(this.path, "wx", 0o600);
     } catch {
-      // Made by someone else just now (or ion can't write there): reading it says which.
+      return; // There already (or ion can't write there): reading it says which.
+    }
+    try {
+      fchmodSync(fd, 0o600);
+      writeSync(fd, EMPTY);
+    } finally {
+      closeSync(fd);
     }
   }
 

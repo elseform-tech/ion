@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -542,9 +542,8 @@ describe("the callback's own port", () => {
 
 /** Every file under `dir`, as text. */
 const allText = (dir: string): string =>
-  readdirSync(dir)
-    .map((f) => join(dir, f))
-    .map((p) => (statSync(p).isDirectory() ? allText(p) : readFileSync(p, "latin1")))
+  readdirSync(dir, { withFileTypes: true })
+    .map((d) => (d.isDirectory() ? allText(join(dir, d.name)) : readFileSync(join(dir, d.name), "latin1")))
     .join("\n");
 
 describe("signing in through the daemon", () => {

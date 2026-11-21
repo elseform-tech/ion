@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { parseJsonc } from "@ion/adapter-kit";
 import { parse as parseToml } from "smol-toml";
@@ -159,14 +159,22 @@ function sourcesOf(o: ReadOpts): Agent[] {
 
 /** A file's contents, parsed: undefined when it isn't there, null when it can't be read (too big, broken). */
 function readFile(path: string): unknown {
-  if (!existsSync(path)) return undefined;
+  let fd: number;
   try {
-    if (statSync(path).size > MAX) return null;
-    const t = readFileSync(path, "utf8");
+    fd = openSync(path, "r");
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "ENOENT" ? undefined : null;
+  }
+  try {
+    // Sized and read through the same open file, so what's checked is what's read.
+    if (fstatSync(fd).size > MAX) return null;
+    const t = readFileSync(fd, "utf8");
     if (path.endsWith(".toml")) return parseToml(t);
     return path.endsWith(".jsonc") || path.includes("opencode") ? parseJsonc(t) : JSON.parse(t);
   } catch {
     return null;
+  } finally {
+    closeSync(fd);
   }
 }
 

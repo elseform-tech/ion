@@ -1,8 +1,27 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  fstatSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { McpFile, parseMcp } from "./mcp-file.js";
+
+/** A file's permission bits, read through an open file (no check-then-write on the path). */
+function modeOf(f: string): number {
+  const fd = openSync(f, "r");
+  try {
+    return fstatSync(fd).mode & 0o777;
+  } finally {
+    closeSync(fd);
+  }
+}
 
 const tmp = () => join(mkdtempSync(join(tmpdir(), "ion-mcp-")), "mcp.json");
 const write = (f: string, servers: unknown) =>
@@ -17,7 +36,7 @@ describe("mcp.json", () => {
     const file = new McpFile(f);
     expect(file.read()).toEqual({ servers: [], leftOut: [] });
     expect(JSON.parse(readFileSync(f, "utf8"))).toEqual({ mcpServers: {} });
-    expect(statSync(f).mode & 0o777).toBe(0o600);
+    expect(modeOf(f)).toBe(0o600);
 
     write(f, {
       github: { command: "npx", args: ["-y", "gh-mcp"], env: { GITHUB_TOKEN: "${GITHUB_TOKEN}" } },
