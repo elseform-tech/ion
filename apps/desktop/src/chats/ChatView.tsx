@@ -1,3 +1,4 @@
+import { PickChips } from "./Picks.js";
 import type { IonClient } from "@ion/client/browser";
 import { CircleAlert, Info, RotateCw, ShieldX, Square } from "@ion/design-system";
 import type { IonEvent } from "@ion/schema";
@@ -74,7 +75,13 @@ function stopLine(item: Extract<Item, { kind: "end" }>): ReactNode {
 /** Your message; your answer to a question is your reply where you sent it, and one shown elsewhere is nothing. */
 function yours(item: Extract<Item, { kind: "you" }>): ReactNode {
   if (item.answers) return <Reply text={item.text} always={item.always} />;
-  return item.gone ? null : <div className="u">{item.text}</div>;
+  if (item.gone) return null;
+  return (
+    <div className="u">
+      {item.picked && <PickChips picked={item.picked} />}
+      {item.text}
+    </div>
+  );
 }
 
 function show(item: Item, onFile?: (path: string) => void): ReactNode {

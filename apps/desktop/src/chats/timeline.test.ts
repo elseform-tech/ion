@@ -26,6 +26,12 @@ describe("timeline", () => {
     ]);
   });
 
+  // The user, 2026-11-21: "/" and "@" picks show as chips on your message, not as text.
+  it("keeps your message's picks for its chips", () => {
+    const t = play(ev("message.sent", { text: "Fill it", skills: ["pdf"], mentions: ["github"] }));
+    expect(t.items).toEqual([{ kind: "you", text: "Fill it", picked: { skills: ["pdf"], mentions: ["github"] } }]);
+  });
+
   // The user, 2026-11-20 (Plan 18): a run that goes without one of your MCP servers says why in a plain line.
   it("says plainly when a run goes without one of your servers", () => {
     const text = "github isn't signed in, so this chat runs without it.";

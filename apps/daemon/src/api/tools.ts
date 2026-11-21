@@ -1,5 +1,5 @@
 import { loadUserConfig, type UserConfig } from "@ion/config";
-import type { Commands, ToolsInfo } from "@ion/schema";
+import type { Commands, SkillInfo, ToolsInfo } from "@ion/schema";
 import { toolSupport } from "../adapters/registry.js";
 import { CANT_READ_KEYCHAIN, keyAccount } from "../secrets/index.js";
 import { EXPOSED, refsOf, type Tools } from "../tools/index.js";
@@ -63,7 +63,7 @@ export function yourToolsOf(ctx: { tools: Tools; skills: Skills; configFile: str
       })),
     );
     const skills = await ctx.skills.list(config.tools.skills.on, projectDirs, ownSwitches(config));
-    const body = (name: string) => ctx.skills.bodyOf(projectDirs, name);
+    const body = (s: SkillInfo) => ctx.skills.bodyOf(projectDirs, s);
     return { servers, skills, support: toolSupport(), body };
   };
 }

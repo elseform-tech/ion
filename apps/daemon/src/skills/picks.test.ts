@@ -15,7 +15,7 @@ const SKILLS = [
 ];
 const at = {
   skills: SKILLS,
-  bodyOf: (n: string) => (n === "pdf" ? "Fill with fill.py." : null),
+  bodyOf: (s: SkillInfo) => (s.id === "~/x/pdf" ? "Fill with fill.py." : null),
   commands: [{ name: "review", description: "Review the diff", body: "Review it." }],
   servers: [
     { name: "everything", on: true },
@@ -61,5 +61,17 @@ describe("/ lists the chat's skills and filters", () => {
     expect(resolvePicks("grok-build", { ...at, commands: [] }, names).skills).toEqual([
       { name: "pdf", kind: "skill", body: "Fill with fill.py." },
     ]);
+  });
+
+  // Security review, 2026-11-21: a name two different skills share (a repo's named like yours) picks neither.
+  it("refuses a name more than one different skill has", () => {
+    const twin = skill("pdf", { id: "repo/pdf", whose: "shared", on: true, project: "app", hash: "other" });
+    const names = { skills: ["pdf"] };
+    expect(resolvePicks("grok-build", { ...at, skills: [...SKILLS, twin] }, names).skills).toEqual([]);
+    const listed = chatPicks("grok-build", { ...at, commands: [], skills: [...SKILLS, twin] }).skills;
+    expect(listed.map((x) => x.name)).toEqual([]);
+    // The same skill in two agents' folders (the same contents) is one skill.
+    const same = skill("pdf", { id: "~/y/pdf", whose: "shared", on: true });
+    expect(resolvePicks("grok-build", { ...at, skills: [...SKILLS, same] }, names).skills).toHaveLength(1);
   });
 });

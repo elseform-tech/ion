@@ -210,7 +210,12 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     by: z.literal("ion").optional(),
   }),
   /** Your message to an ion, on its chat ("ion:<ionId>"). */
-  "ion.heard": z.object({ text: z.string() }),
+  /** Your message to an ion, with what you picked with "/" and "@" (shown as chips). */
+  "ion.heard": z.object({
+    text: z.string(),
+    skills: z.array(z.string()).optional(),
+    mentions: z.array(z.string()).optional(),
+  }),
   /** What an ion says in its chat, with a card when it has one. */
   "ion.said": z.object({ text: z.string(), card: IonCardSchema.optional() }),
   /**

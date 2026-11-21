@@ -7,8 +7,11 @@ import type { Tools } from "../tools/index.js";
 import { consentOf, turnedOn } from "../tools/on.js";
 import { agentsHomeOf, ownSwitches, repoState } from "../tools/own-run.js";
 import { ownToolsOf } from "../tools/own.js";
+import type { Db } from "../store/index.js";
+import { chatsView } from "../views/chats.js";
 
 type PickCtx = { tools: Tools; skills: Skills; configFile: string };
+type BoxCtx = PickCtx & { db: Db };
 
 /** Your mcp.json servers, each with whether it's on (still what you turned on). */
 async function yourServers(ctx: PickCtx, c: UserConfig): Promise<{ name: string; on: boolean }[]> {
@@ -38,7 +41,7 @@ export async function pickSource(ctx: PickCtx, agent: string, projects: string[]
   const own = ownToolsOn(config, agent);
   return {
     skills: await ctx.skills.list(config.tools.skills.on, projects, ownSwitches(config)),
-    bodyOf: (name) => ctx.skills.bodyOf(projects, name),
+    bodyOf: (s) => ctx.skills.bodyOf(projects, s),
     commands: own ? ownCommands(agent, { ...agentsHomeOf(ctx.skills), projects }) : [],
     servers: await yourServers(ctx, config),
     own: await ownServers(ctx, config, agent, projects),
@@ -46,16 +49,17 @@ export async function pickSource(ctx: PickCtx, agent: string, projects: string[]
 }
 
 /** The projects' folders a message box is in: a chat's project, a project ion's own, or ion chief's shared ones. */
-function foldersOf(c: UserConfig, a: Commands["tools.picks"]["args"]): string[] {
-  const id = a.ionId && a.ionId !== "chief" ? a.ionId : a.projectId;
+function foldersOf(ctx: BoxCtx, c: UserConfig, a: Commands["tools.picks"]["args"]): string[] {
+  const chat = a.chatId ? chatsView.list(ctx.db).find((x) => x.chatId === a.chatId)?.projectId : undefined;
+  const id = a.ionId && a.ionId !== "chief" ? a.ionId : (chat ?? a.projectId);
   if (id) return c.projects.filter((p) => p.id === id).map((p) => p.path);
   return a.ionId === "chief" ? c.projects.filter((p) => p.shareWithIon !== false).map((p) => p.path) : [];
 }
 
 /** "/" and "@" for a message box: a chat's (its agent's own, then ion's), or an ion's (what its threads can use). */
-export async function picksFor(ctx: PickCtx, a: Commands["tools.picks"]["args"]): Promise<Picks> {
+export async function picksFor(ctx: BoxCtx, a: Commands["tools.picks"]["args"]): Promise<Picks> {
   const { config } = loadUserConfig(ctx.configFile);
-  const folders = foldersOf(config, a);
+  const folders = foldersOf(ctx, config, a);
   if (a.ionId) {
     const skills = await ctx.skills.list(config.tools.skills.on, folders, ownSwitches(config));
     return ionPicks({ skills, servers: await yourServers(ctx, config) });

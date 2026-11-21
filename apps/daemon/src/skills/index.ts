@@ -88,14 +88,18 @@ function readersOf(s: FoundSkill, readers: SkillReaders, own: OwnSwitches): stri
   return out;
 }
 
+/** What's in a skill (SKILL.md and its files), short. */
+const hashOf = (s: FoundSkill) =>
+  createHash("sha256")
+    .update(JSON.stringify([sha(s.md), ...s.files.map((f) => [f.rel, sha(f.bytes)])]))
+    .digest("hex")
+    .slice(0, 12);
+
 /** A skill as the Tools page shows it: whose own it is (read-only there), and what's in it (to match it elsewhere). */
 function infoOf(s: FoundSkill, state: State, readers: SkillReaders, own: OwnSwitches): SkillInfo {
   const { id, name, description, whose, where, project } = s;
   const owner = ownerOf(s, own);
-  const hash = createHash("sha256")
-    .update(JSON.stringify([sha(s.md), ...s.files.map((f) => [f.rel, sha(f.bytes)])]))
-    .digest("hex")
-    .slice(0, 12);
+  const hash = hashOf(s);
   return {
     ...{ id, name, description, whose, where, ...state, hash },
     support: supportOf(s, readers, own),
@@ -183,9 +187,15 @@ export function createSkills(o: {
       await writePlugin(dir, given);
       return dir;
     },
-    /** A skill's SKILL.md after its front matter, by name, from your folders and these projects'; null: none. */
-    bodyOf: (projects: string[], name: string): string | null =>
-      find(projects).find((s) => s.name === name)?.body ?? null,
+    /**
+     * A listed skill's SKILL.md after its front matter: only the exact skill listed (its folder and what's in it, as
+     * checked), only while it's on or an agent's own (security review, 2026-11-21); else null.
+     */
+    bodyOf: (projects: string[], s: Pick<SkillInfo, "id" | "hash" | "on" | "own">): string | null => {
+      if (!s.on && !s.own) return null;
+      const f = find(projects).find((x) => x.id === s.id);
+      return f && hashOf(f) === s.hash ? f.body : null;
+    },
     /** A run's plugin, gone when the run ends. */
     remove: (runId: string) => rm(pluginDirOf(o.dataDir, runId), { recursive: true, force: true }),
     /** Plugins left by runs that never ended (ion stopped hard): gone when ion starts. */

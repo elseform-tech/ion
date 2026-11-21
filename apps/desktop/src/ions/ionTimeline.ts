@@ -1,10 +1,12 @@
 import { EV, type IonCard, type IonEvent } from "@ion/schema";
 import { thinking, toolFinished, toolStarted, type Work, workEnded } from "../chats/steps.js";
+import type { Picked } from "../chats/Picks.js";
 import { empty, type Timeline } from "../chats/timeline.js";
 
 /** One thing an ion's chat shows: your message, a turn's work while it runs, or the ion's line with its card. */
 export type IonItem =
-  | { kind: "you"; text: string }
+  /** `picked`: what you picked with "/" and "@" (shown as chips). */
+  | { kind: "you"; text: string; picked?: Picked }
   /** A turn's thinking and tool calls (Plan 14) while it runs; once it replies, they go above its reply. */
   | { kind: "work"; work: Work }
   /**
@@ -14,6 +16,14 @@ export type IonItem =
   | { kind: "ion"; text: string; card?: IonCard; answered?: boolean; muted?: true; work?: Work };
 
 type Answer = { keep: boolean; mute?: true };
+
+/** Your message to an ion, with its picks when it had any. */
+function heardOf(d: Record<string, unknown>): Extract<Raw, { kind: "you" }> {
+  const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const picked = { skills: names(d.skills), mentions: names(d.mentions) };
+  const any = picked.skills.length + picked.mentions.length > 0;
+  return { kind: "you", text: String(d.text ?? ""), ...(any ? { picked } : {}) };
+}
 type D = Record<string, unknown>;
 const suggestionIdOf = (c: IonCard | undefined) => (c && "suggestionId" in c ? c.suggestionId : undefined);
 
@@ -25,7 +35,10 @@ const STEPS: Record<string, (t: Timeline, d: D, e: IonEvent) => Timeline> = {
 };
 
 /** In order: your messages, a turn's work (by its id, where it started), the ion's lines (a reply: its turn's id). */
-type Raw = { kind: "you"; text: string } | { kind: "work"; runId: string } | { kind: "said"; e: IonEvent };
+type Raw =
+  | { kind: "you"; text: string; picked?: Picked }
+  | { kind: "work"; runId: string }
+  | { kind: "said"; e: IonEvent };
 
 /** What the reducer remembers: the lines so far, the turns' work, and when you last spoke (a turn's start). */
 type Acc = { raw: Raw[]; t: Timeline; heard: string | null };
@@ -105,7 +118,7 @@ export function ionTimeline(events: IonEvent[]): IonItem[] {
     const reduce = e.runId ? STEPS[e.type] : undefined;
     if (e.type === EV.ionHeard)
       acc = {
-        raw: [...acc.raw, { kind: "you", text: String((e.data as D).text ?? "") }],
+        raw: [...acc.raw, heardOf(e.data as D)],
         t: endOpen(acc.t, e),
         heard: e.ts,
       };

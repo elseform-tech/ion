@@ -278,7 +278,11 @@ export type Commands = {
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
-  "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
+  /** `skills`, `mentions`: what you picked with "/" and "@" (the ion reads them, or passes them to a thread). */
+  "ion.message": {
+    args: { ionId: string; text: string; skills?: string[]; mentions?: string[] };
+    result: { ok: true };
+  };
   /**
    * Stops the ion's turn answering your message (Stop, Esc twice; a report goes on): it says it stopped, and what's
    * queued waits ("Stopped") until you send one now, change the queue or send a message. `stopped`: one was going.
@@ -361,7 +365,10 @@ export type Commands = {
    * What "/" and "@" list in a message box (the user, 2026-11-21): a chat's agent's own skills and commands and ion's
    * that reach it, and its servers; for an ion's chat (`ionId`), the skills and servers that ion's threads can use.
    */
-  "tools.picks": { args: { harness?: string; projectId?: string | null; ionId?: string }; result: Picks };
+  "tools.picks": {
+    args: { harness?: string; chatId?: string; projectId?: string | null; ionId?: string };
+    result: Picks;
+  };
   /** A server's tools (from its tools/list; only one that's on), each with whether ions can use it. */
   "tools.serverTools": { args: { id: string }; result: ServerTools };
   /** "Ions can use" for one of a server's tools: your switch, kept with what the tool is now. */
@@ -468,7 +475,10 @@ export type IonInfo = {
 export type QueueTarget = { chatId: string } | { ionId: string };
 
 /** What the message box picks for a message: its agent, model, effort and access (each optional, as for ask). */
-export type AskBrain = Pick<Commands["ask"]["args"], "harness" | "model" | "effort" | "access">;
+export type AskBrain = Pick<
+  Commands["ask"]["args"],
+  "harness" | "model" | "effort" | "access" | "skills" | "mentions"
+>;
 
 /** A message waiting to go out. */
 export type QueuedInfo = {

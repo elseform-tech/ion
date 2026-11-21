@@ -9,7 +9,16 @@ export type Item =
    * gone: your answer to a question, not shown as a message of its own. answers: the question it answers (here),
    * shown as your reply where you sent it, after what the agent said ("Always" when it reaches past the chat).
    */
-  | { kind: "you"; text: string; gone?: true; legacy?: true; answers?: string; always?: true }
+  | {
+      kind: "you";
+      text: string;
+      gone?: true;
+      legacy?: true;
+      answers?: string;
+      always?: true;
+      /** What you picked with "/" and "@" (chips). */
+      picked?: { skills: string[]; mentions: string[] };
+    }
   | { kind: "agent"; text: string; done: boolean }
   | { kind: "work"; runId: string; started: string; ended?: string; steps: Step[] }
   | { kind: "retry"; until: string; done: boolean }
@@ -221,12 +230,19 @@ const fromYourDecision = (choice: string) => `Answered by ion from your decision
  * Your message. One that answers a question (it names the question) is shown under that question instead, whenever it
  * arrives; a message that merely reads the same is yours like any other.
  */
+/** A message's picks, when it had any. */
+function pickedOf(d: D) {
+  const names = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const picked = { skills: names(d.skills), mentions: names(d.mentions) };
+  return picked.skills.length + picked.mentions.length ? { picked } : {};
+}
+
 function sent(t: Timeline, d: D): Timeline {
   const shown = str(d.shown);
   const text = shown || str(d.text);
   const answers = str(d.answers);
   if (answers) return answerSent(t, answers, text);
-  if (!shown) return push(t, { kind: "you", text });
+  if (!shown) return push(t, { kind: "you", text, ...pickedOf(d) });
   const at = t.legacy.indexOf(shown);
   if (at < 0) return push(t, { kind: "you", text, legacy: true });
   const pushed = push(t, { kind: "you", text, gone: true });

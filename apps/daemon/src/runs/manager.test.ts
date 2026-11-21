@@ -124,7 +124,7 @@ describe("a picked skill reaches the run (Claude Code by name; others as context
           ...{ on: true, support: {}, hash: "h", readers: [] },
         },
       ],
-      bodyOf: (n: string) => (n === "pdf" ? "Fill forms with fill.py." : null),
+      bodyOf: (s: { name: string }) => (s.name === "pdf" ? "Fill forms with fill.py." : null),
       commands: [],
       servers: [{ name: "everything", on: true }],
       own: [],

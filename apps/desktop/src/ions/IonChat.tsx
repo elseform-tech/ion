@@ -16,6 +16,7 @@ import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
 import { Markdown } from "../chats/Message.js";
+import { PickChips, PickMenu, pickArgs, usePicker } from "../chats/Picks.js";
 import { onEnter, QueueLines, submit, useDoubleEsc, useEditInto, useQueue } from "../chats/Queue.js";
 import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
@@ -216,6 +217,7 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
           if (m.kind === "you")
             return (
               <div className="bu" key={i}>
+                {m.picked && <PickChips picked={m.picked} />}
                 {m.text}
               </div>
             );
@@ -262,25 +264,40 @@ function IonBox({ client, ion }: { client: IonClient; ion: IonInfo }) {
     setText(t);
     q.clearError();
   };
+  const pk = usePicker({ client, args: { ionId: ion.ionId }, text, setText: edit });
   const send = () => {
     if (!text.trim()) return;
-    void client.call("ion.message", { ionId: ion.ionId, text: text.trim() }).catch(() => {});
+    const args = { ionId: ion.ionId, text: text.trim(), ...pickArgs(pk.picked) };
+    void client.call("ion.message", args).catch(() => {});
+    pk.clear();
     edit("");
   };
-  const b = { q, working: ion.thinking, text, setText, send, brain: () => ({}) };
+  // A queued message keeps its picks too.
+  const brain = () => {
+    const picks = pickArgs(pk.picked);
+    pk.clear();
+    return picks;
+  };
+  const b = { q, working: ion.thinking, text, setText, send, brain };
   return (
     <div className="foot">
       <div className="fcol">
         <QueueLines q={q} onEdit={onEdit} />
         <div className="cbox">
+          {pk.menu && <PickMenu menu={pk.menu} />}
+          <PickChips picked={pk.picked} onDrop={pk.drop} />
           <textarea
             aria-label={`Message ${ion.name}`}
             ref={ref}
             placeholder={`Message ${ion.name}`}
             rows={1}
             value={text}
-            onChange={(e) => edit(e.target.value)}
-            onKeyDown={onEnter(b)}
+            onChange={(e) => {
+              edit(e.target.value);
+              pk.track(e.target);
+            }}
+            onSelect={(e) => pk.track(e.currentTarget)}
+            onKeyDown={(e) => pk.onKey(e) || onEnter(b)(e)}
           />
           {q.error && <div className="quiet">{q.error}</div>}
           <div className="bar">

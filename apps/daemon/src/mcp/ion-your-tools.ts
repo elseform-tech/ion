@@ -15,8 +15,8 @@ export type YourTools = (projectDirs: string[]) => Promise<{
   servers: { server: McpServer; on: boolean }[];
   skills: SkillInfo[];
   support: Record<string, ToolSupport>;
-  /** A listed skill's SKILL.md after its front matter, by name; null when none is listed by that name. */
-  body?: (name: string) => string | null;
+  /** A listed skill's SKILL.md after its front matter (that exact skill, while it's on); null otherwise. */
+  body?: (s: SkillInfo) => string | null;
 }>;
 
 /** The most of a skill's instructions an ion reads at once. */
@@ -83,9 +83,13 @@ export function registerYourTools(
 }
 
 /** A skill's instructions for an ion, as data: read and followed in its own answer, its scripts never run. */
-function skillText(name: string, reached: SkillInfo[], body?: (name: string) => string | null) {
-  const md = reached.some((s) => s.name === name) ? body?.(name) : null;
-  if (!md) throw new UserError(`No skill named ${stripControl(name).slice(0, 60)}`);
+function skillText(name: string, reached: SkillInfo[], body?: (s: SkillInfo) => string | null) {
+  const shown = stripControl(name).slice(0, 60);
+  // Only a skill that's on (or an agent's own); a name two different skills share is refused (security review).
+  const named = reached.filter((s) => s.name === name && (s.on || s.own));
+  if (new Set(named.map((s) => s.hash)).size > 1) throw new UserError(`More than one skill is named ${shown}`);
+  const md = named[0] ? body?.(named[0]) : null;
+  if (!md) throw new UserError(`No skill named ${shown}`);
   const text = stripControl(md).slice(0, BODY_MAX);
   return ok(
     [

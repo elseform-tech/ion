@@ -4,6 +4,7 @@ import type { HarnessInfo } from "@ion/schema";
 import { useCallback, useRef, useState } from "react";
 import { type Brain, BrainPill, BrainPopover, useEffortKey } from "./BrainPopover.js";
 import { useDismiss } from "./dismiss.js";
+import { PickChips, PickMenu, pickArgs, usePicker } from "./Picks.js";
 import { onEnter, type Queue, QueueLines, useDoubleEsc, useEditInto, useQueue } from "./Queue.js";
 
 type Access = "" | "auto" | "full";
@@ -282,16 +283,29 @@ export function Composer(p: Props) {
   const { brain, setBrain, access, setAccess, b, sent, queued, agentReady } = useSendBrain(p);
   const { text, setText, edit, put } = useBoxText(q, p.onSending);
   const { error, pending, send } = useSend(client, onSent);
+  const pk = usePicker({ client, args: { harness: b.harness, ...where(to) }, text, setText: edit });
   const canSend = !locked && Boolean(text.trim()) && agentReady;
   const { ref, onEdit } = useEditInto(setText);
-  const go = () => canSend && void send(askArgs(text, sent, to), put);
-  const brainNow = () => (canSend ? brainArgs(queued) : null);
-  const onKey = onEnter({ q, working: Boolean(running), text, setText, send: go, brain: brainNow });
+  const withPicks = <T extends object>(a: T) => ({ ...a, ...pickArgs(pk.picked) });
+  const go = () => {
+    if (!canSend) return;
+    void send(withPicks(askArgs(text, sent, to)), put);
+    pk.clear();
+  };
+  const brainNow = () => {
+    if (!canSend) return null;
+    const queuedBrain = withPicks(brainArgs(queued));
+    pk.clear();
+    return queuedBrain;
+  };
+  const onEnterKey = onEnter({ q, working: Boolean(running), text, setText, send: go, brain: brainNow });
   const shown = error ?? q.error;
   return (
     <>
       <QueueLines q={q} onEdit={onEdit} />
       <div className={`cbox${project ? " big" : ""}`}>
+        {pk.menu && <PickMenu menu={pk.menu} />}
+        <PickChips picked={pk.picked} onDrop={pk.drop} />
         <textarea
           aria-label="Message"
           ref={ref}
@@ -299,8 +313,12 @@ export function Composer(p: Props) {
           rows={project ? 3 : 1}
           disabled={locked}
           value={text}
-          onChange={(e) => edit(e.target.value)}
-          onKeyDown={onKey}
+          onChange={(e) => {
+            edit(e.target.value);
+            pk.track(e.target);
+          }}
+          onSelect={(e) => pk.track(e.currentTarget)}
+          onKeyDown={(e) => pk.onKey(e) || onEnterKey(e)}
         />
         {shown && <div className="quiet">{shown}</div>}
         <div className="bar">

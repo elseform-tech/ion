@@ -10,7 +10,8 @@ import type { OwnCommand } from "./commands.js";
  */
 export type PickSource = {
   skills: SkillInfo[];
-  bodyOf: (name: string) => string | null;
+  /** A listed skill's text: only that exact skill, while it's on or an agent's own. */
+  bodyOf: (s: SkillInfo) => string | null;
   commands: OwnCommand[];
   servers: { name: string; on: boolean }[];
   own: { name: string }[];
@@ -30,10 +31,21 @@ const row = (name: string, description: string, kind: PickInfo["kind"], from: Pi
   from,
 });
 
+/**
+ * A name more than one different skill has (a repo's named like yours; security review, 2026-11-21): picked by name, it
+ * could hand over the wrong one, so it's neither listed nor picked. The same skill in two folders is one.
+ */
+export function ambiguous(skills: SkillInfo[], name: string): boolean {
+  return new Set(skills.filter((s) => s.name === name).map((s) => s.hash)).size > 1;
+}
+
 /** A chat's "/" and "@": its agent's own commands and skills, then ion's skills that are on; its servers. */
 export function chatPicks(agent: string, at: Omit<PickSource, "bodyOf">): Picks {
+  const seen = new Set<string>();
   const skills = at.skills.flatMap((s) => {
+    if (ambiguous(at.skills, s.name) || seen.has(s.name)) return [];
     const r = reach(s, agent);
+    if (r) seen.add(s.name);
     return r ? [{ s, from: r === "own" ? ("own" as const) : ("ion" as const) }] : [];
   });
   const ordered = [...skills.filter((x) => x.from === "own"), ...skills.filter((x) => x.from === "ion")];
@@ -51,8 +63,11 @@ export function chatPicks(agent: string, at: Omit<PickSource, "bodyOf">): Picks 
 
 /** An ion's chat: every skill that's on (it reads them, or names them for a thread), and the servers that are on. */
 export function ionPicks(at: Pick<PickSource, "skills" | "servers">): Picks {
+  const on = at.skills.filter((s) => s.on && !ambiguous(at.skills, s.name));
   return {
-    skills: at.skills.filter((s) => s.on).map((s) => row(s.name, s.description, "skill", s.own ? "own" : "ion")),
+    skills: on
+      .filter((s, i) => on.findIndex((x) => x.name === s.name) === i)
+      .map((s) => row(s.name, s.description, "skill", s.own ? "own" : "ion")),
     servers: at.servers.filter((s) => s.on).map((s) => row(s.name, "", "server", "ion")),
   };
 }
@@ -70,9 +85,9 @@ export function resolvePicks(
   const skills = (names.skills ?? []).flatMap((n): PickedSkill[] => {
     const c = at.commands.find((x) => x.name === n);
     if (c) return [slash ? { name: n, kind: "command" } : { name: n, kind: "command", body: c.body }];
-    const s = at.skills.find((x) => x.name === n && reach(x, agent));
+    const s = ambiguous(at.skills, n) ? undefined : at.skills.find((x) => x.name === n && reach(x, agent));
     if (!s) return [];
-    const body = reach(s, agent) === "text" ? at.bodyOf(n) : null;
+    const body = reach(s, agent) === "text" ? at.bodyOf(s) : null;
     return [body ? { name: n, kind: "skill", body } : { name: n, kind: "skill" }];
   });
   const servers = chatPicks(agent, { ...at, commands: [] }).servers.map((s) => s.name);

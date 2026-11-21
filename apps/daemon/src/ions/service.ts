@@ -143,13 +143,13 @@ export class Ions {
     });
   }
 
-  private heard(ionId: string, text: string): void {
+  private heard(ionId: string, text: string, picks: ThreadPicks = {}): void {
     this.d.store.append({
       chatId: `ion:${ionId}`,
       runId: null,
       origin: "daemon",
       type: EV.ionHeard,
-      data: { text },
+      data: { text, ...picksOf(picks) },
     });
   }
 
@@ -157,17 +157,21 @@ export class Ions {
    * Your message: a turn of the ion's agent; its reply and the threads it started are one message. Whatever goes
    * wrong, the ion answers (else "Thinking" would stay): your mistake in its words, else NO_AGENT.
    */
-  async message(ionId: string, text: string): Promise<void> {
+  async message(ionId: string, text: string, picks: ThreadPicks = {}): Promise<void> {
     if (!this.knows(ionId)) throw new UserError(`Unknown ion: ${ionId}`);
-    this.heard(ionId, text);
-    const answering = this.answer(ionId, text);
+    this.heard(ionId, text, picks);
+    const answering = this.answer(ionId, text, picks);
     if (ionId === "chief") this.chiefAnswering = answering;
     await answering;
   }
 
-  private async answer(ionId: string, text: string): Promise<void> {
+  private async answer(ionId: string, text: string, picks: ThreadPicks = {}): Promise<void> {
     try {
-      const { reply, threads, turnId } = await this.d.turns.turn(ionId, text);
+      // What you picked is said to the ion in ion's words; the judge reads only yours.
+      const told = pickLines(picks);
+      const { reply, threads, turnId } = told
+        ? await this.d.turns.turn(ionId, `${text}\n\n${told}`, { request: text })
+        : await this.d.turns.turn(ionId, text);
       this.say(ionId, reply, threadsCard(threads), turnId);
     } catch (e) {
       this.say(ionId, e instanceof UserError ? e.message : NO_AGENT);
@@ -350,4 +354,27 @@ export class Ions {
 /** The threads a reply carries, as its card (none when it started none). */
 function threadsCard(threads: Thread[]): IonCard | undefined {
   return threads.length ? { kind: "threads", threads } : undefined;
+}
+
+/** The skills and servers picked, only the ones there are (at most 10 each, short names). */
+function picksOf(p: ThreadPicks): ThreadPicks {
+  const names = (xs?: string[]) => (xs ?? []).filter((x) => typeof x === "string" && x).slice(0, 10).map((x) => x.slice(0, 100));
+  const skills = names(p.skills);
+  const mentions = names(p.mentions);
+  return { ...(skills.length ? { skills } : {}), ...(mentions.length ? { mentions } : {}) };
+}
+
+/** What you picked with "/" and "@", told to the ion: read a skill and follow it, or pass it on to a thread. */
+function pickLines(p: ThreadPicks): string {
+  const { skills = [], mentions = [] } = picksOf(p);
+  return [
+    ...skills.map(
+      (s) =>
+        `The user picked the skill ${JSON.stringify(s)}: read its instructions with tools and follow them yourself, or name it in start_thread's skills so the thread uses it.`,
+    ),
+    ...mentions.map(
+      (m) =>
+        `The user picked the connection ${JSON.stringify(m)}: use its tools that only look things up, or name it in start_thread's mentions.`,
+    ),
+  ].join("\n");
 }

@@ -316,3 +316,50 @@ describe("Composer", () => {
     expect(call).toHaveBeenCalledWith("run.interrupt", { runId: "r9" });
   });
 });
+
+// The user, 2026-11-21: "/" lists the chat's agent's own skills and commands plus ion's, "@" its servers; a pick is a
+// chip, and the message goes with its names.
+describe("/ and @ in the message box", () => {
+  const picks = {
+    skills: [
+      { name: "review", description: "Review the diff", kind: "command", from: "own" },
+      { name: "pdf", description: "Read and fill PDFs", kind: "skill", from: "ion" },
+      { name: "plan", description: "Make a plan", kind: "skill", from: "own" },
+    ],
+    servers: [{ name: "everything", description: "", kind: "server", from: "ion" }],
+  };
+  it("/ lists the chat's skills and filters", async () => {
+    const call = vi.fn(async (cmd: string) =>
+      cmd === "tools.picks" ? picks : cmd === "queue.list" ? [] : { chatId: "c1", runId: "r1" },
+    );
+    render(
+      <Composer
+        client={chatClient(call as never)}
+        harnesses={[fake]}
+        to={{ chatId: "c1" }}
+        harness="fake"
+        running={null}
+        onSent={() => {}}
+      />,
+    );
+    const box = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "/p", selectionStart: 2 } });
+    const list = await screen.findByRole("listbox", { name: "Skills" });
+    expect([...list.querySelectorAll(".nm")].map((n) => n.textContent)).toEqual(["pdf", "plan"]);
+    expect(call).toHaveBeenCalledWith("tools.picks", { harness: "fake", chatId: "c1" });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(screen.getByText("pdf").closest(".chip")).not.toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.change(box, { target: { value: "fill it @ev", selectionStart: 11 } });
+    await screen.findByRole("listbox", { name: "Connections" });
+    fireEvent.keyDown(box, { key: "Tab" });
+    expect(box.value).toBe("fill it ");
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith(
+        "ask",
+        expect.objectContaining({ text: "fill it ", skills: ["pdf"], mentions: ["everything"] }),
+      ),
+    );
+  });
+});
