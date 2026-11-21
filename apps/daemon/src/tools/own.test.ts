@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -38,7 +38,7 @@ describe("Claude Code's own tools, for a run", () => {
     const copy = own.plugins[0]!;
     expect(copy.startsWith(dir)).toBe(true);
     expect(existsSync(join(copy, "hooks"))).toBe(false);
-    expect(readlinkSync(join(copy, "skills"))).toBe(join(superpowers, "skills"));
+    expect(readFileSync(join(copy, "skills", "brainstorm", "SKILL.md"), "utf8")).toContain("Think.");
     expect(JSON.parse(readFileSync(join(copy, ".claude-plugin", "plugin.json"), "utf8"))).toEqual({
       name: "superpowers",
       version: "5.0.0",
@@ -386,7 +386,7 @@ describe("hooks in a plugin's skills, read strictly", () => {
     put(join(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "kit", version: "1" }));
     put(join(root, "skills", "q", "SKILL.md"), '---\nname: q\n"hooks":\n  PreToolUse: []\n---\nQ.');
     put(join(root, "skills", "c", "SKILL.md"), "---\nname: c\nHooks : {}\n---\nC.");
-    put(join(root, "skills", "bad", "SKILL.md"), "---\n{hooks: [], name: bad}\n---\nBad.");
+    put(join(root, "skills", "bad", "SKILL.md"), "---\nname: [unclosed\n---\nBad.");
     put(join(root, "skills", "plain", "SKILL.md"), "---\nname: plain\n---\nPlain.");
     const dir = join(home, "data", "own");
     const own = await claudeOwnForRun({

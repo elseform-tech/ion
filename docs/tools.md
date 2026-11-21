@@ -39,8 +39,11 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
     with its folder and `${CLAUDE_PLUGIN_DATA}` with a folder of its own in ion's data). **Its servers run through ion**
     (task review, 2026-11-21), as yours do: a local one is started by ion in the run's own folder with only its own
     values, a remote one is forwarded to, each gated with its real name, and Claude Code gets only ion's URL for each
-    (nothing of a server in its environment). A plugin that bundles hooks (its own, or a skill's, subagent's or
-    command's `hooks:`) comes as ion's copy without them, inside the run's skills plugin folder. Its own skills in your
+    (nothing of a server in its environment). A plugin with hooks of its own, or with skills, subagents or
+    commands, comes as ion's copy inside the run's skills plugin folder: no `hooks/`, no manifest `hooks`, and each
+    markdown file's front matter parsed as YAML with any top-level `hooks` key dropped (a file it can't parse is left
+    out, with one line in the daemon's log). ion walks those folders itself: a link must stay inside the plugin and
+    anything deeper than three folders is left out. Its own skills in your
     home come on, as they are. A server's env and header values, and anything filled from `${VAR}`, are masked in the
     run's events; its command, args or URL only when they look like a key.
   - What a repo wrote isn't yours (security review, 2026-11-21): a project's `.mcp.json` servers and its

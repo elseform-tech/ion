@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
-import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { basename, join, relative } from "node:path";
+import { mkdir, rm } from "node:fs/promises";
+import { basename, join } from "node:path";
 import type { McpSpec } from "@ion/adapter-kit";
 import type { OwnServerInfo } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
 import { type Launch, readAgentServers, readFile, standardLaunch } from "./import.js";
+import { copyWithoutHooks, needsCopy } from "./plugin-copy.js";
 import { type FoundPlugin, readPlugins } from "./plugins.js";
 import { argKey, urlHoldsKey } from "./secretish.js";
 
@@ -266,126 +266,15 @@ const pluginServers = (p: FoundPlugin, dataRoot: string): Entry[] => {
   return Object.entries(p.servers ?? {}).map(([n, v]) => [n, fillStrings(v, fills)]);
 };
 
-/** A front matter line's top-level key (bare, or in double or single quotes), or null when it isn't one. */
-function topKey(line: string): string | null {
-  const q = line[0];
-  let key: string;
-  let rest: string;
-  if (q === '"' || q === "'") {
-    const end = line.indexOf(q, 1);
-    if (end < 0) return null;
-    [key, rest] = [line.slice(1, end), line.slice(end + 1)];
-  } else {
-    const colon = line.indexOf(":");
-    if (colon < 1 || !/^[A-Za-z0-9_-]/.test(line)) return null;
-    [key, rest] = [line.slice(0, colon), line.slice(colon)];
-    if (!/^[\w .-]+$/.test(key)) return null;
-  }
-  const after = rest.trimStart();
-  return after.startsWith(":") && (after.length === 1 || /\s/.test(after[1]!)) ? key : null;
-}
-
 /**
- * A markdown file's front matter read strictly, top-level keys only (automated review, 2026-11-21): each top-level
- * line is `key:` (the key bare or quoted), the lines under it indented or list items. `ok: false` when it can't be read
- * that way (a flow mapping, a tab, a stray line): such a file is left out. `text` is the file without any top-level key
- * named hooks (any case, quoted or not).
- */
-function frontMatterHooks(md: string): { ok: boolean; hooks: boolean; text: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(md);
-  if (!m) return { ok: true, hooks: false, text: md };
-  const kept: string[] = [];
-  let skipping = false;
-  let hooks = false;
-  for (const line of m[1]!.split(/\r?\n/)) {
-    if (line.includes("\t")) return { ok: false, hooks: false, text: md };
-    const top = topKey(line);
-    if (top !== null) {
-      skipping = top.trim().toLowerCase() === "hooks";
-      hooks ||= skipping;
-    } else if (
-      !(line === "" || /^\s/.test(line) || line.startsWith("#") || (line.startsWith("- ") && kept.length))
-    )
-      return { ok: false, hooks: false, text: md };
-    if (!skipping) kept.push(line);
-  }
-  return { ok: true, hooks, text: `---\n${kept.join("\n")}\n---${m[2]}${md.slice(m[0].length)}` };
-}
-
-/** Markdown files under a plugin's skills, agents and commands. */
-function mdFiles(dir: string, depth = 0): string[] {
-  let out: string[] = [];
-  let entries: import("node:fs").Dirent[] = [];
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  for (const e of entries) {
-    if (e.isDirectory() && depth < 3) out = out.concat(mdFiles(join(dir, e.name), depth + 1));
-    else if (e.isFile() && e.name.endsWith(".md")) out.push(join(dir, e.name));
-  }
-  return out;
-}
-const readText = (f: string) => {
-  try {
-    return readFileSync(f, "utf8");
-  } catch {
-    return "";
-  }
-};
-
-/** A plugin's markdown that sets its own hooks (written without them), and what can't be read (left out). */
-function hookedMd(root: string): { strip: Map<string, string>; leave: string[] } {
-  const strip = new Map<string, string>();
-  const leave: string[] = [];
-  for (const f of ["skills", "agents", "commands"].flatMap((d) => mdFiles(join(root, d)))) {
-    const r = frontMatterHooks(readText(f));
-    if (!r.ok) leave.push(f);
-    else if (r.hooks) strip.set(f, r.text);
-  }
-  return { strip, leave };
-}
-
-type Changes = { strip: Map<string, string>; leave: string[] };
-const touches = (c: Changes, dir: string) =>
-  [...c.strip.keys(), ...c.leave].some((f) => f.startsWith(`${dir}/`));
-
-/** A copy of `from` at `to`: links to each file, folders made, `strip`'s files written without hooks, `leave`'s out. */
-async function mirror(from: string, to: string, c: Changes): Promise<void> {
-  await mkdir(to, { recursive: true, mode: 0o700 });
-  for (const e of await readdir(from, { withFileTypes: true })) {
-    const src = join(from, e.name);
-    const dst = join(to, e.name);
-    if (e.isDirectory() && touches(c, src)) await mirror(src, dst, c);
-    else if (c.strip.has(src)) await writeFile(dst, c.strip.get(src)!, { mode: 0o600 });
-    else if (!c.leave.includes(src)) await symlink(src, dst);
-  }
-}
-
-/**
- * A plugin as the run takes it: as it is, or (one that bundles hooks: its own, or in a skill's, subagent's or
- * command's front matter) ion's copy in the run's folder without them: links to everything else, its manifest without
- * `hooks`, and those files without theirs. Hooks stay ion's (the user, 2026-11-21).
+ * A plugin as the run takes it: as it is, or ion's copy in the run's folder without hooks (its own, and any in a
+ * skill's, subagent's or command's front matter; plugin-copy.ts). Hooks stay ion's (the user, 2026-11-21).
  */
 async function withoutHooks(p: FoundPlugin, dir: string, n: number, lines: string[]): Promise<string> {
   const from = p.path ?? "";
-  const c = hookedMd(from);
-  for (const f of c.leave)
-    lines.push(`${p.name}: ${relative(from, f)} left out (its front matter can't be read)`);
-  if (!p.hooks && !c.strip.size && !c.leave.length) return from;
+  if (!needsCopy(from, !!p.hooks)) return from;
   const to = join(dir, `${n}-${p.name.replace(SAFE, "-")}`);
-  await mkdir(join(to, ".claude-plugin"), { recursive: true, mode: 0o700 });
-  for (const e of await readdir(from, { withFileTypes: true })) {
-    if (e.name === "hooks" || e.name === ".claude-plugin") continue;
-    const src = join(from, e.name);
-    if (e.isDirectory() && touches(c, src)) await mirror(src, join(to, e.name), c);
-    else await symlink(src, join(to, e.name));
-  }
-  const manifest = obj(readFile(join(from, ".claude-plugin", "plugin.json")));
-  delete manifest.hooks;
-  delete manifest.mcpServers;
-  await writeFile(join(to, ".claude-plugin", "plugin.json"), JSON.stringify(manifest), { mode: 0o600 });
+  await copyWithoutHooks(from, to, p.name, lines);
   return to;
 }
 
