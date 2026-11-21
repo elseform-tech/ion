@@ -272,12 +272,7 @@ const pluginServers = (p: FoundPlugin, dataRoot: string): Entry[] => {
  * A plugin as the run takes it: always ion's copy in the run's folder, built from a whitelist without hooks
  * (plugin-copy.ts). Hooks stay ion's (the user, 2026-11-21).
  */
-async function withoutHooks(
-  p: FoundPlugin,
-  dir: string,
-  n: number,
-  lines: string[],
-): Promise<string | null> {
+async function withoutHooks(p: FoundPlugin, dir: string, n: number, lines: string[]): Promise<string | null> {
   const from = p.path ?? "";
   const to = join(dir, `${n}-${p.name.replace(SAFE, "-")}`);
   // One plugin that can't be copied is left out with a line; the run still starts (task review, 2026-11-21).

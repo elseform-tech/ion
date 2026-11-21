@@ -36,7 +36,15 @@ function setup(verdict: "allow" | "deny" | "unsure" = "allow", ionUse: string[] 
     dataDir: join(home, "data"),
     judge,
     servers: async () => ({
-      specs: [{ name: "notes", transport: "stdio", command: "notes-mcp", args: [], env: { NOTES_KEY: "sekrit-123456" } }],
+      specs: [
+        {
+          name: "notes",
+          transport: "stdio",
+          command: "notes-mcp",
+          args: [],
+          env: { NOTES_KEY: "sekrit-123456" },
+        },
+      ],
       skipped: [],
       secrets: ["sekrit-123456"],
       fresh: {},
@@ -59,12 +67,16 @@ const call = (toolName: string, input: Record<string, unknown> = { q: "kiwi" }) 
 describe("ions and your servers", () => {
   it("an ion's turn gets ion's URLs and its turn key, never a key of yours", async () => {
     const { s } = setup();
-    const given = await s.open("turn_1", { url: "http://127.0.0.1:1/mcp", key: "k".repeat(64) }, { http: true });
+    const given = await s.open(
+      "turn_1",
+      { url: "https://ion.test/mcp", key: "k".repeat(64) },
+      { http: true },
+    );
     expect(given.servers).toEqual([
       {
         name: "notes",
         transport: "http",
-        url: "http://127.0.0.1:1/mcp/s/notes",
+        url: "https://ion.test/mcp/s/notes",
         headers: { Authorization: `Bearer ${"k".repeat(64)}` },
       },
     ]);
@@ -77,38 +89,42 @@ describe("ions and your servers", () => {
 
   it("an ion can call a read-only MCP tool", async () => {
     const { s, judge } = setup("allow");
-    await s.open("turn_1", { url: "http://x/mcp", key: "k" }, { http: true });
+    await s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect(await s.gate("turn_1", call("search"), "what's in my notes?")).toEqual({ decision: "allow" });
-    expect(judge).toHaveBeenCalledWith(expect.objectContaining({ text: "what's in my notes?", onlyReads: true }));
+    expect(judge).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "what's in my notes?", onlyReads: true }),
+    );
   });
 
   it("an ion can't call a tool that isn't read-only — it starts a thread", async () => {
     const off = setup("allow");
-    await off.s.open("turn_1", { url: "http://x/mcp", key: "k" }, { http: true });
+    await off.s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     const r = await off.s.gate("turn_1", call("remove"), "tidy my notes");
     expect(r).toEqual({ decision: "deny", reason: "That tool isn't on for ions, so I'll start a thread" });
     expect(off.judge).not.toHaveBeenCalled();
     const no = setup("deny");
-    await no.s.open("turn_1", { url: "http://x/mcp", key: "k" }, { http: true });
+    await no.s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect(await no.s.gate("turn_1", call("search"), "x")).toEqual({
       decision: "deny",
       reason: "That changes something, so I'll start a thread",
     });
     const unsure = setup("unsure");
-    await unsure.s.open("turn_1", { url: "http://x/mcp", key: "k" }, { http: true });
+    await unsure.s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect((await unsure.s.gate("turn_1", call("search"), "x")).reason).toBe(
       "ion isn't sure it only reads (it deletes), so I'll start a thread",
     );
     // Your switch turns an unlabelled tool on for ions.
     const yours = setIonUse([], "notes", TOOLS[1]!, true);
     const on = setup("allow", yours);
-    await on.s.open("turn_1", { url: "http://x/mcp", key: "k" }, { http: true });
+    await on.s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect(await on.s.gate("turn_1", call("remove"), "x")).toEqual({ decision: "allow" });
   });
 
   it("an ion's call with a long text or an encoded blob is refused", async () => {
     expect(callLimit({ q: "kiwi" })).toBeNull();
-    expect(callLimit({ q: "a".repeat(201) })).toBe("That's too long for an ion's call, so I'll start a thread");
+    expect(callLimit({ q: "a".repeat(201) })).toBe(
+      "That's too long for an ion's call, so I'll start a thread",
+    );
     expect(callLimit({ q: `x ${"QUJD".repeat(10)}` })).toBe(
       "That looks like encoded data, so I'll start a thread",
     );
@@ -119,7 +135,7 @@ describe("ions and your servers", () => {
       "That's too long for an ion's call, so I'll start a thread",
     );
     const { s, judge } = setup("allow");
-    await s.open("turn_1", { url: "http://x/mcp", key: "k" }, { http: true });
+    await s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect((await s.gate("turn_1", call("search", { q: "z".repeat(300) }), "x")).decision).toBe("deny");
     expect(judge).not.toHaveBeenCalled();
   });

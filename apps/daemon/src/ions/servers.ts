@@ -40,7 +40,16 @@ export function callLimit(input: Record<string, unknown>): string | null {
   return all.some((t) => BLOB.test(t)) ? ENCODED : null;
 }
 
+/** Why an ion's call is refused before its tool is looked at: not a tool, or past the limits; null: go on. */
+function refusalOf(call: GateCall): string | null {
+  // Reading a resource, getting a prompt or a completion: not a tool (the gateway names them by method).
+  if (/^(resources|prompts|completion)\//.test(call.toolName)) return ONLY_TOOLS;
+  return callLimit(call.input);
+}
+
 type Served = Upstream | LocalUpstream;
+/** A call an ion's agent makes on one of your servers, as ion's gateway reads it. */
+export type IonGateCall = GateCall;
 
 const LIST_KEPT_MS = 60_000;
 
@@ -49,7 +58,11 @@ const toolList = (r: unknown): ListedTool[] =>
   ((r as { tools?: unknown[] } | null)?.tools ?? []).filter(
     (x): x is ListedTool => typeof (x as ListedTool | null)?.name === "string",
   );
-type Turn = { upstreams: Map<string, Served>; close(): Promise<void>; tools: Map<string, Promise<ListedTool[]>> };
+type Turn = {
+  upstreams: Map<string, Served>;
+  close(): Promise<void>;
+  tools: Map<string, Promise<ListedTool[]>>;
+};
 
 export type IonServersDeps = {
   configFile: string;
@@ -81,10 +94,9 @@ export class IonServers {
     ion: { url: string; key: string },
     takes: McpTransports,
   ): Promise<{ servers: HttpMcpSpec[]; envDrop: EnvDrop }> {
-    const yours = this.d.servers
-      ? await this.d.servers({ label: "ion", takes }).catch(() => null)
-      : null;
-    if (!yours || !yours.specs.length) return { servers: [], envDrop: { names: yours?.refs ?? [], values: [] } };
+    const yours = this.d.servers ? await this.d.servers({ label: "ion", takes }).catch(() => null) : null;
+    if (!yours || !yours.specs.length)
+      return { servers: [], envDrop: { names: yours?.refs ?? [], values: [] } };
     const given = throughIon(yours, ion);
     const bridges = this.d.local
       ? null
@@ -105,6 +117,20 @@ export class IonServers {
     return { servers: given.servers, envDrop: given.envDrop };
   }
 
+  /**
+   * Your servers for a turn's agent (ion's URL for each, the turn's key); none for a report's turn (no words of yours
+   * to judge by) or when ion can't give them.
+   */
+  async forTurn(
+    turnId: string,
+    ion: { url: string; key: string },
+    adapter: { mcpTransports: McpTransports },
+    report: boolean,
+  ): Promise<HttpMcpSpec[]> {
+    if (report) return [];
+    return (await this.open(turnId, ion, adapter.mcpTransports).catch(() => null))?.servers ?? [];
+  }
+
   /** The names of a turn's servers (its agent's own hook lets their calls through: the gateway decides them). */
   names(turnId: string): string[] {
     return [...(this.turns.get(turnId)?.upstreams.keys() ?? [])];
@@ -121,14 +147,14 @@ export class IonServers {
   }
 
   /** ion's gate for an ion's call on one of your servers: `request`, your words in this turn. */
-  async gate(turnId: string, call: GateCall, request: string): Promise<GateAnswer> {
+  async gate(turnId: string, call: GateCall, request: string | null | undefined): Promise<GateAnswer> {
+    if (request === undefined) return { decision: "deny", reason: "That turn is over" };
+    // A report's turn has no words of yours to judge by: it reads nothing of your servers.
+    if (request === null) return { decision: "deny", reason: "Not in a report" };
     const server = call.mcpServer ?? "";
     const up = this.upstream(turnId, server);
-    if (!up) return { decision: "deny", reason: ONLY_TOOLS };
-    const limit = callLimit(call.input);
-    if (limit) return { decision: "deny", reason: limit };
-    // Reading a resource, getting a prompt or a completion: not a tool (the gateway names them by method).
-    if (/^(resources|prompts|completion)\//.test(call.toolName)) return { decision: "deny", reason: ONLY_TOOLS };
+    const refused = up ? refusalOf(call) : ONLY_TOOLS;
+    if (refused || !up) return { decision: "deny", reason: refused ?? ONLY_TOOLS };
     const tool = (await this.toolsOf(turnId, server, up)).find((t) => t.name === call.toolName);
     const entries = loadUserConfig(this.d.configFile).config.tools.ionUse;
     if (!tool || !ionMayUse(entries, server, tool)) return { decision: "deny", reason: NOT_ON };
@@ -146,7 +172,10 @@ export class IonServers {
     });
     if (v.verdict === "allow" && v.decided !== false) return { decision: "allow" };
     if (v.verdict === "unsure")
-      return { decision: "deny", reason: `ion isn't sure it only reads (${v.reason}), so I'll start a thread` };
+      return {
+        decision: "deny",
+        reason: `ion isn't sure it only reads (${v.reason}), so I'll start a thread`,
+      };
     return { decision: "deny", reason: WRITES };
   }
 
@@ -157,23 +186,12 @@ export class IonServers {
   async listTools(name: string): Promise<ListedTool[] | string> {
     const kept = this.listed.get(name);
     if (kept && kept.at > Date.now() - LIST_KEPT_MS) return kept.tools;
-    const yours = this.d.servers ? await this.d.servers({ label: "ion", takes: { http: true } }).catch(() => null) : null;
+    const yours = this.d.servers
+      ? await this.d.servers({ label: "ion", takes: { http: true } }).catch(() => null)
+      : null;
     const spec = yours?.specs.find((s) => s.name === name);
     if (!yours || !spec) return "Turn it on to see its tools";
-    const bridges =
-      spec.transport === "stdio" && !this.d.local
-        ? bridgesFor([spec], {
-            folder: join(this.d.dataDir, MCP_RUN, `list-${randomUUID()}`),
-            stopped: () => {},
-            groups: join(this.d.dataDir, MCP_GROUPS),
-          })
-        : null;
-    const up: Served =
-      spec.transport === "http"
-        ? upstreamOf(spec, yours.fresh[name])
-        : this.d.local
-          ? this.d.local(spec)
-          : (bridges!.get(name) as LocalUpstream);
+    const { up, bridges } = this.reach(spec, yours.fresh[name]);
     try {
       const tools = toolList(await askServer(up, "tools/list"));
       this.listed.set(name, { at: Date.now(), tools });
@@ -183,6 +201,18 @@ export class IonServers {
     } finally {
       await bridges?.close();
     }
+  }
+
+  /** One server, reached just to ask it (a local one in its own folder, closed by the caller). */
+  private reach(spec: RunServers["specs"][number], fresh?: () => Promise<string | null>) {
+    if (spec.transport === "http") return { up: upstreamOf(spec, fresh) as Served, bridges: null };
+    if (this.d.local) return { up: this.d.local(spec) as Served, bridges: null };
+    const bridges = bridgesFor([spec], {
+      folder: join(this.d.dataDir, MCP_RUN, `list-${randomUUID()}`),
+      stopped: () => {},
+      groups: join(this.d.dataDir, MCP_GROUPS),
+    });
+    return { up: bridges.get(spec.name) as Served, bridges };
   }
 
   /** A server's tools as it lists them now (once per turn). */

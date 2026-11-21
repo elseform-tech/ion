@@ -309,6 +309,40 @@ describe("Settings → Tools → Connections", () => {
 
 // The user, 2026-11-20: "it should be hooks, showing all available events regardless if we have hooks, and of course,
 // auto-approval hook should be listed as built-in, so it cannot be removed"; "hooks do not need a test button".
+// The user, 2026-11-21: "yes, add both to Task 10" — each server's row opens its tools, each with "Ions can use".
+describe("Settings → Tools → Connections: Ions can use", () => {
+  it("a server that's on opens its tools, each with an Ions can use switch", async () => {
+    let tools = {
+      tools: [
+        { name: "search", description: "Search files", readOnly: true, ions: true },
+        { name: "write", description: "Write a file", readOnly: false, ions: false, changed: true },
+      ],
+    };
+    const c = toolsClient(
+      () => info(),
+      (cmd) => {
+        if (cmd === "tools.serverTools") return Promise.resolve(tools);
+        return cmd === "tools.setIonUse" ? Promise.resolve({ ok: true }) : undefined;
+      },
+    );
+    await open(c);
+    fireEvent.click(within(await findRow("files")).getByRole("button", { name: "Tools of files" }));
+    expect(c.call).toHaveBeenCalledWith("tools.serverTools", { id: "files" });
+    const search = await findRow("search");
+    expect(within(search).getByText("Search files")).toBeTruthy();
+    expect(
+      within(search).getByRole("switch", { name: "Ions can use search" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(within(row("write")).getByText("Changed")).toBeTruthy();
+    tools = {
+      tools: [{ ...tools.tools[0]! }, { ...tools.tools[1]!, ions: true, changed: undefined as never }],
+    };
+    fireEvent.click(within(row("write")).getByRole("switch", { name: "Ions can use write" }));
+    expect(c.call).toHaveBeenCalledWith("tools.setIonUse", { id: "files", tool: "write", on: true });
+    await waitFor(() => expect(within(row("write")).queryByText("Changed")).toBeNull());
+  });
+});
+
 describe("Settings → Tools → Hooks", () => {
   it("lists every event, and Auto-approval has no switch or remove", async () => {
     await open(

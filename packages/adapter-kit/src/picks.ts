@@ -16,7 +16,7 @@ export type Picks = { skills?: PickedSkill[]; mentions?: string[] };
 
 /** The most of one skill's text an agent is given. */
 const BODY_MAX = 16_000;
-const MARKER = /<\s*\/?\s*ion-data/gi;
+const MARKER = /<(?=[\s/]*ion[\s_‐-―-]*data)/gi;
 
 /** Text labelled as data the agent reads, its markers neutralised so it can't close its block. */
 function asData(source: string, body: string): string {
@@ -27,16 +27,21 @@ function asData(source: string, body: string): string {
 
 /** One picked skill or command, as a line (and its text, when given). */
 function line(p: PickedSkill): string {
-  if (p.kind === "command") return `Do what the ${p.name} command says:\n${asData(`the ${p.name} command`, p.body ?? "")}`;
+  if (p.kind === "command") {
+    const data = asData(`the ${p.name} command`, p.body ?? "");
+    return `Do what the ${p.name} command says:\n${data}`;
+  }
   if (p.body === undefined) return `Use the ${p.name} skill.`;
-  return `Use the ${p.name} skill. Its instructions:\n${asData(`the ${p.name} skill`, p.body)}`;
+  const data = asData(`the ${p.name} skill`, p.body);
+  return `Use the ${p.name} skill. Its instructions:\n${data}`;
 }
 
 /** Your message with what you picked, the way this agent takes it. */
 export function withPicks(text: string, style: PickStyle, picks: Picks): string {
   const skills = picks.skills ?? [];
   // An agent that runs commands gets the first one it can run as `/name` (only one can lead a prompt).
-  const lead = style === "slash" ? skills.find((p) => p.kind === "command" && p.body === undefined) : undefined;
+  const lead =
+    style === "slash" ? skills.find((p) => p.kind === "command" && p.body === undefined) : undefined;
   const rest = skills.filter((p) => p !== lead && (p.kind === "skill" || p.body !== undefined));
   const lines = [...rest.map(line), ...(picks.mentions ?? []).map((m) => `Use the ${m} connection's tools.`)];
   const head = lead ? `/${lead.name} ${text}` : text;

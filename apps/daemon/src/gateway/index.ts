@@ -107,7 +107,7 @@ function relay(up: { req: ClientRequest; res: IncomingMessage }, res: ServerResp
 type Open = { key: string; req?: ClientRequest; res: ServerResponse };
 
 type Who =
-  | { key: string; runId: string; name: string; up: Upstream | LocalUpstream; ion?: true }
+  | { key: string; runId: string; name: string; up: Upstream | LocalUpstream; gate: GatewayDeps["gate"] }
   | { status: number; message: string };
 
 const isLocal = (up: Upstream | LocalUpstream): up is LocalUpstream => "send" in up;
@@ -145,15 +145,21 @@ function whoFor(d: GatewayDeps, req: IncomingMessage): Who {
   if (req.headers.origin !== undefined) return { status: 403, message: "Forbidden" };
   const name = PATH.exec((req.url ?? "").split("?")[0]!)?.[1];
   const key = KEY.exec(req.headers.authorization ?? "")?.[1];
-  const scope = key ? d.grants.check(key) : null;
-  if (!key || !scope || (scope.kind === "ion" && !d.ion)) return { status: 401, message: "Unknown key" };
-  const id = scope.kind === "run" ? scope.runId : scope.turnId;
-  const find = scope.kind === "run" ? d.upstream : d.ion!.upstream;
-  const up = name ? find(id, name) : null;
+  const holder = key ? holderOf(d, key) : null;
+  if (!key || !holder) return { status: 401, message: "Unknown key" };
+  const up = name ? holder.find(holder.id, name) : null;
   if (!name || !up) return { status: 404, message: "Not found" };
   if (!["POST", "GET", "DELETE"].includes(req.method ?? ""))
     return { status: 405, message: "Use POST, GET or DELETE" };
-  return { key, runId: id, name, up, ...(scope.kind === "ion" ? { ion: true as const } : {}) };
+  return { key, runId: holder.id, name, up, gate: holder.gate };
+}
+
+/** Whose live key it is: a run's, or an ion's turn's (when ion serves turns); its id and where its servers are. */
+function holderOf(d: GatewayDeps, key: string) {
+  const scope = d.grants.check(key);
+  if (scope?.kind === "run") return { id: scope.runId, find: d.upstream, gate: d.gate };
+  if (scope?.kind === "ion" && d.ion) return { id: scope.turnId, find: d.ion.upstream, gate: d.ion.gate };
+  return null;
 }
 
 /** Sends one request on to your server with your key or a fresh token, and relays its answer. */
@@ -238,8 +244,7 @@ export function createGateway(d: GatewayDeps): Gateway {
           id: null,
           error: { code: -32600, message: "ion takes one message at a time" },
         });
-      const gate = who.ion && d.ion ? d.ion.gate : d.gate;
-      const refused = await decided((call) => gate(runId, call), name, parsed);
+      const refused = await decided((call) => who.gate(runId, call), name, parsed);
       if (refused) return json(res, refused);
       if (isLocal(up)) return answerLocal(req, res, { up, name }, parsed);
       // Exactly what was decided goes on: the message as ion read it, written out again.

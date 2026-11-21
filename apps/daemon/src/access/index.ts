@@ -4,7 +4,7 @@ import type { WaryData } from "./hard.js";
 import type { Judge } from "./judge.js";
 import { ruleFor, type Verdict } from "./rules.js";
 
-export { createJudge, type Judge, type JudgeVerdict, judgePrompt, parseVerdict } from "./judge.js";
+export { createJudge, type Judge, judgePrompt, parseVerdict } from "./judge.js";
 export { hardRuleFor, ionDirsOf, waryData } from "./hard.js";
 export { onlyPlugin } from "./plugin.js";
 export { ruleFor } from "./rules.js";
@@ -27,6 +27,32 @@ type At = {
 export type AccessVerdict = Verdict & { source: "rule" | "judge"; unsure?: true };
 export type Access = { decide(at: At, req: ApprovalRequest): Promise<AccessVerdict> };
 
+/** The same action for the same request (and decisions, checks and scripts) in a chat. */
+function cacheKey(at: At, req: ApprovalRequest, decisions?: string[]): string {
+  const hash = createHash("sha256")
+    .update(
+      JSON.stringify([
+        at.text,
+        req.toolName,
+        req.input,
+        decisions,
+        !!at.checksFailed,
+        // Keyed on the scripts' contents: a changed script is judged again.
+        at.wary ?? null,
+      ]),
+    )
+    .digest("hex");
+  return `${at.chatId}:${hash}`;
+}
+
+/** The judge's answer as Auto's verdict: allow, or deny (marked when it was unsure). */
+const fromJudge = (v: Awaited<ReturnType<Judge>>): AccessVerdict => ({
+  decision: v.verdict === "allow" ? "allow" : "deny",
+  reason: v.reason,
+  source: "judge",
+  ...(v.verdict === "unsure" ? { unsure: true as const } : {}),
+});
+
 /** Auto: rules first, then the judge, at most once per action in a chat. */
 export function createAccess(o: {
   judge: Judge;
@@ -45,20 +71,7 @@ export function createAccess(o: {
       const rule = ruleFor(req, at.plugin ? { ...ctx, plugin: at.plugin } : ctx);
       if (rule && !(at.wary && rule.decision === "allow")) return { ...rule, source: "rule" };
       // The same action for the same request in a chat: one judge call.
-      const hash = createHash("sha256")
-        .update(
-          JSON.stringify([
-            at.text,
-            req.toolName,
-            req.input,
-            o.decisionsFor?.(at.projectId, at.chatId),
-            !!at.checksFailed,
-            // Keyed on the scripts' contents: a changed script is judged again.
-            at.wary ?? null,
-          ]),
-        )
-        .digest("hex");
-      const key = `${at.chatId}:${hash}`;
+      const key = cacheKey(at, req, o.decisionsFor?.(at.projectId, at.chatId));
       const known = cache.get(key);
       if (known) return known;
       const decisions = o.decisionsFor?.(at.projectId, at.chatId) ?? [];
@@ -70,12 +83,7 @@ export function createAccess(o: {
         ...(at.checksFailed ? { checksFailed: true as const } : {}),
         ...(at.wary ? { wary: at.wary } : {}),
       });
-      const verdict: AccessVerdict = {
-        decision: v.verdict === "allow" ? "allow" : "deny",
-        reason: v.reason,
-        source: "judge",
-        ...(v.verdict === "unsure" ? { unsure: true as const } : {}),
-      };
+      const verdict = fromJudge(v);
       // A judge that couldn't decide (slow, signed out) or wasn't sure is asked again next time.
       if (v.verdict === "unsure") o.onUnsure?.(req);
       else if (v.decided !== false) cache.set(key, verdict);

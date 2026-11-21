@@ -15,14 +15,14 @@ type State = "on" | "off" | "label";
 type Entry = { server: string; tool: string; mark: string; state: State };
 
 /** What the tool is now: its name, description and labels, hashed. */
-export const toolMark = (server: string, t: ListedTool): string =>
+const toolMark = (server: string, t: ListedTool): string =>
   createHash("sha256")
     .update(JSON.stringify([server, t.name, t.description ?? "", t.annotations ?? {}]))
     .digest("hex")
     .slice(0, 16);
 
 /** The server's label: read-only and not destructive. */
-export const labelledReadOnly = (t: ListedTool): boolean =>
+const labelledReadOnly = (t: ListedTool): boolean =>
   t.annotations?.readOnlyHint === true && t.annotations?.destructiveHint !== true;
 
 function parse(e: string): Entry | null {
@@ -32,10 +32,16 @@ function parse(e: string): Entry | null {
   const slash = key.indexOf("/");
   const state = e.slice(eq + 1);
   if (eq < 0 || at < 0 || slash < 0 || !["on", "off", "label"].includes(state)) return null;
-  return { server: key.slice(0, slash), tool: key.slice(slash + 1, at), mark: key.slice(at + 1), state: state as State };
+  return {
+    server: key.slice(0, slash),
+    tool: key.slice(slash + 1, at),
+    mark: key.slice(at + 1),
+    state: state as State,
+  };
 }
 
-const entryOf = (server: string, t: ListedTool, state: State) => `${server}/${t.name}@${toolMark(server, t)}=${state}`;
+const entryOf = (server: string, t: ListedTool, state: State) =>
+  `${server}/${t.name}@${toolMark(server, t)}=${state}`;
 const find = (entries: string[], server: string, tool: string) =>
   entries.map(parse).find((x) => x?.server === server && x.tool === tool) ?? null;
 
@@ -64,7 +70,10 @@ export function ionUseOf(
     if (!s.seen) fresh.push(entryOf(server, t, "label"));
     return {
       name: stripControl(t.name).slice(0, 100),
-      description: stripControl(t.description ?? "").replace(/\s+/g, " ").trim().slice(0, 300),
+      description: stripControl(t.description ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300),
       readOnly: labelledReadOnly(t),
       ions: s.ions,
       ...("yours" in s && s.yours !== undefined ? { yours: s.yours } : {}),

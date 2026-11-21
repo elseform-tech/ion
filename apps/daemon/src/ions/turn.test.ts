@@ -137,11 +137,13 @@ describe("an ion's turn", () => {
       turnId: expect.stringMatching(/^turn_/),
     });
     // The judge reads your own words as the request, never the brief the ion's agent wrote.
-    expect(startThread).toHaveBeenCalledWith("storefront", text, {
-      ionId: "chief",
-      request: text,
-      turnId: expect.stringMatching(/^turn_/),
-    });
+    // No skills or mentions were named (the user, 2026-11-21: start_thread takes them).
+    expect(startThread).toHaveBeenCalledWith(
+      "storefront",
+      text,
+      { ionId: "chief", request: text, turnId: expect.stringMatching(/^turn_/) },
+      undefined,
+    );
     // Its work is kept on its chat under the turn's id, for the app to draw.
     const work = onIon("chief").filter((e: IonEvent) => e.type === EV.toolStarted);
     expect(work.map((e) => (e.data as { name: string }).name)).toEqual([

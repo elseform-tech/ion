@@ -358,7 +358,11 @@ function threadsCard(threads: Thread[]): IonCard | undefined {
 
 /** The skills and servers picked, only the ones there are (at most 10 each, short names). */
 function picksOf(p: ThreadPicks): ThreadPicks {
-  const names = (xs?: string[]) => (xs ?? []).filter((x) => typeof x === "string" && x).slice(0, 10).map((x) => x.slice(0, 100));
+  const names = (xs?: string[]) =>
+    (xs ?? [])
+      .filter((x) => typeof x === "string" && x)
+      .slice(0, 10)
+      .map((x) => x.slice(0, 100));
   const skills = names(p.skills);
   const mentions = names(p.mentions);
   return { ...(skills.length ? { skills } : {}), ...(mentions.length ? { mentions } : {}) };

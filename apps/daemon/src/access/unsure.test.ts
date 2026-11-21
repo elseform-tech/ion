@@ -20,12 +20,10 @@ describe("unsure too often", () => {
     const file = join(mkdtempSync(join(tmpdir(), "ion-unsure-")), "unsure.json");
     let now = 1_000 * DAY;
     const log = new UnsureLog(file, () => now);
-    const said: string[] = [];
     for (let i = 0; i < 4; i++) expect(log.add(bash(`npm publish ${i}`))).toBeNull();
     expect(log.notes()).toEqual([]);
     const fifth = log.add(bash("npm publish x"));
     expect(fifth).toBe("Auto often isn't sure about: npm publish");
-    said.push(fifth!);
     expect(log.add(bash("npm publish y"))).toBeNull();
     expect(log.notes()).toEqual(["Auto often isn't sure about: npm publish"]);
     // Kept across restarts.

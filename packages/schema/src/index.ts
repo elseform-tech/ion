@@ -5,3 +5,4 @@ export * from "./text.js";
 export * from "./when.js";
 export * from "./ion-tools.js";
 export * from "./tools.js";
+export * from "./tools-api.js";

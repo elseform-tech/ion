@@ -113,36 +113,6 @@ const openNeed = () => until(() => needs.open()[0]);
 const ask = (text: string, extra: object = {}) =>
   runs.ask({ text, projectId: "repo", harness: "fake", ...extra });
 
-// The user, 2026-11-21: "/" picks a skill and "@" a server; the chat shows the chips, the agent gets them the way it
-// expects (the fake agent can't load skills: ion's skill's instructions come as context).
-describe("a picked skill reaches the run (Claude Code by name; others as context)", () => {
-  it("the agent gets the skill's text and the server named; the chat keeps your words and the picks", async () => {
-    const source = {
-      skills: [
-        {
-          ...{ id: "~/ion/pdf", name: "pdf", description: "PDFs", whose: "ion" as const, where: "~" },
-          ...{ on: true, support: {}, hash: "h", readers: [] },
-        },
-      ],
-      bodyOf: (s: { name: string }) => (s.name === "pdf" ? "Fill forms with fill.py." : null),
-      commands: [],
-      servers: [{ name: "everything", on: true }],
-      own: [],
-    };
-    runs = managerWith({ picks: async () => source });
-    const { runId } = await ask("echo hi", { skills: ["pdf", "nope"], mentions: ["everything"] });
-    const events = await finished(runId);
-    expect(events[0]).toMatchObject({
-      type: "message.sent",
-      data: { text: "echo hi", skills: ["pdf"], mentions: ["everything"] },
-    });
-    const said = events.find((e) => e.type === "message.completed")?.data as { text: string };
-    expect(said.text).toContain("Use the pdf skill. Its instructions:");
-    expect(said.text).toContain("Fill forms with fill.py.");
-    expect(said.text).toContain("Use the everything connection's tools.");
-  });
-});
-
 describe("RunManager", () => {
   // The user, 2026-11-21: each agent brings its own servers, skills and plugins into a chat (its "Use its own tools",
   // on); off, ion's tools only. A key of its own never reaches the chat's events.

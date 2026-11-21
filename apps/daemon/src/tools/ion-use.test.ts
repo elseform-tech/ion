@@ -3,7 +3,11 @@ import { ionMayUse, ionUseOf, setIonUse } from "./ion-use.js";
 
 const RO = { readOnlyHint: true };
 const search = { name: "search", description: "Search notes", annotations: RO };
-const write = { name: "write", description: "Write a note", annotations: { readOnlyHint: true, destructiveHint: true } };
+const write = {
+  name: "write",
+  description: "Write a note",
+  annotations: { readOnlyHint: true, destructiveHint: true },
+};
 const plain = { name: "echo", description: "Echo it" };
 
 // The user, 2026-11-21: "yes, add both to Task 10" — each server's tools get an "Ions can use" switch.

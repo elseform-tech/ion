@@ -87,7 +87,8 @@ function skillText(name: string, reached: SkillInfo[], body?: (s: SkillInfo) => 
   const shown = stripControl(name).slice(0, 60);
   // Only a skill that's on (or an agent's own); a name two different skills share is refused (security review).
   const named = reached.filter((s) => s.name === name && (s.on || s.own));
-  if (new Set(named.map((s) => s.hash)).size > 1) throw new UserError(`More than one skill is named ${shown}`);
+  if (new Set(named.map((s) => s.hash)).size > 1)
+    throw new UserError(`More than one skill is named ${shown}`);
   const md = named[0] ? body?.(named[0]) : null;
   if (!md) throw new UserError(`No skill named ${shown}`);
   const text = stripControl(md).slice(0, BODY_MAX);

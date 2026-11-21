@@ -4,7 +4,7 @@ import type { HarnessInfo } from "@ion/schema";
 import { useCallback, useRef, useState } from "react";
 import { type Brain, BrainPill, BrainPopover, useEffortKey } from "./BrainPopover.js";
 import { useDismiss } from "./dismiss.js";
-import { PickChips, PickMenu, pickArgs, usePicker } from "./Picks.js";
+import { PickedBox, usePicker } from "./Picks.js";
 import { onEnter, type Queue, QueueLines, useDoubleEsc, useEditInto, useQueue } from "./Queue.js";
 
 type Access = "" | "auto" | "full";
@@ -272,6 +272,12 @@ function useSendBrain(p: Props) {
   };
 }
 
+/** A new chat's big box, or a reply's one line. */
+const boxLook = (project?: ProjectPick) =>
+  project
+    ? { placeholder: "Ask anything, or describe a change…", rows: 3 }
+    : { placeholder: "Reply…", rows: 1 };
+
 /**
  * The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running.
  * While the run goes, what you send waits in the queue above it (⌘Enter: sends it now).
@@ -286,39 +292,20 @@ export function Composer(p: Props) {
   const pk = usePicker({ client, args: { harness: b.harness, ...where(to) }, text, setText: edit });
   const canSend = !locked && Boolean(text.trim()) && agentReady;
   const { ref, onEdit } = useEditInto(setText);
-  const withPicks = <T extends object>(a: T) => ({ ...a, ...pickArgs(pk.picked) });
-  const go = () => {
-    if (!canSend) return;
-    void send(withPicks(askArgs(text, sent, to)), put);
-    pk.clear();
-  };
-  const brainNow = () => {
-    if (!canSend) return null;
-    const queuedBrain = withPicks(brainArgs(queued));
-    pk.clear();
-    return queuedBrain;
-  };
+  // What you picked goes with the message, sent or queued.
+  const go = () => canSend && void send(pk.take(askArgs(text, sent, to)), put);
+  const brainNow = () => (canSend ? pk.take(brainArgs(queued)) : null);
   const onEnterKey = onEnter({ q, working: Boolean(running), text, setText, send: go, brain: brainNow });
   const shown = error ?? q.error;
   return (
     <>
       <QueueLines q={q} onEdit={onEdit} />
       <div className={`cbox${project ? " big" : ""}`}>
-        {pk.menu && <PickMenu menu={pk.menu} />}
-        <PickChips picked={pk.picked} onDrop={pk.drop} />
-        <textarea
-          aria-label="Message"
-          ref={ref}
-          placeholder={project ? "Ask anything, or describe a change…" : "Reply…"}
-          rows={project ? 3 : 1}
-          disabled={locked}
-          value={text}
-          onChange={(e) => {
-            edit(e.target.value);
-            pk.track(e.target);
-          }}
-          onSelect={(e) => pk.track(e.currentTarget)}
-          onKeyDown={(e) => pk.onKey(e) || onEnterKey(e)}
+        <PickedBox
+          pk={pk}
+          box={{ "aria-label": "Message", ref, ...boxLook(project), disabled: locked, value: text }}
+          onEdit={edit}
+          onKey={onEnterKey}
         />
         {shown && <div className="quiet">{shown}</div>}
         <div className="bar">

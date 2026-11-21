@@ -1,4 +1,6 @@
-import type { PickedSkill } from "@ion/adapter-kit";
+import { type PickedSkill, type Picks as RunPicks, type PickStyle, withPicks } from "@ion/adapter-kit";
+
+export type { RunPicks };
 import type { PickInfo, Picks, SkillInfo } from "@ion/schema";
 import { pickStyle } from "../adapters/registry.js";
 import type { OwnCommand } from "./commands.js";
@@ -24,7 +26,12 @@ function reach(s: SkillInfo, agent: string): "own" | "ion" | "text" | null {
   return s.support[agent] === "ion" ? "ion" : "text";
 }
 
-const row = (name: string, description: string, kind: PickInfo["kind"], from: PickInfo["from"]): PickInfo => ({
+const row = (
+  name: string,
+  description: string,
+  kind: PickInfo["kind"],
+  from: PickInfo["from"],
+): PickInfo => ({
   name,
   description,
   kind,
@@ -35,7 +42,7 @@ const row = (name: string, description: string, kind: PickInfo["kind"], from: Pi
  * A name more than one different skill has (a repo's named like yours; security review, 2026-11-21): picked by name, it
  * could hand over the wrong one, so it's neither listed nor picked. The same skill in two folders is one.
  */
-export function ambiguous(skills: SkillInfo[], name: string): boolean {
+function ambiguous(skills: SkillInfo[], name: string): boolean {
   return new Set(skills.filter((s) => s.name === name).map((s) => s.hash)).size > 1;
 }
 
@@ -93,3 +100,28 @@ export function resolvePicks(
   const servers = chatPicks(agent, { ...at, commands: [] }).servers.map((s) => s.name);
   return { skills, mentions: (names.mentions ?? []).filter((m) => servers.includes(m)) };
 }
+
+/**
+ * What a message picked with "/" and "@", as this agent takes them (only what it can use); none when nothing was
+ * picked or ion can't read them.
+ */
+export async function picksOfRun(
+  source: ((agent: string, projectId: string) => Promise<PickSource>) | undefined,
+  agent: string,
+  names: { skills?: string[]; mentions?: string[] },
+  projectId?: string | null,
+): Promise<RunPicks | undefined> {
+  if (!names.skills?.length && !names.mentions?.length) return undefined;
+  const at = await source?.(agent, projectId ?? "").catch(() => undefined);
+  return at ? resolvePicks(agent, at, names) : undefined;
+}
+
+/** What the chat shows as picked: the names that reached the agent. */
+export const shownPicks = (p?: RunPicks) => ({
+  ...(p?.skills?.length ? { skills: p.skills.map((x) => x.name) } : {}),
+  ...(p?.mentions?.length ? { mentions: p.mentions } : {}),
+});
+
+/** Your words with what you picked, the way this agent takes them. */
+export const agentText = (text: string, style: PickStyle | undefined, p?: RunPicks): string =>
+  p ? withPicks(text, style ?? "tell", p) : text;

@@ -1,7 +1,14 @@
 import type { IonClient } from "@ion/client/browser";
 import { FileText, type LucideIcon, Plug, Sparkles, SquareTerminal, X } from "@ion/design-system";
 import type { Commands, PickInfo, Picks } from "@ion/schema";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type Ref,
+  type TextareaHTMLAttributes,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 /**
  * "/" and "@" in a message box (the user, 2026-11-21): "/" lists the agent's own skills and commands and ion's, "@" its
@@ -26,14 +33,14 @@ const KIND: Record<PickInfo["kind"], string> = {
 };
 
 /** The "/" or "@" word being typed at the caret, and where it starts; null when there's none. */
-export function wordAt(text: string, caret: number): { mark: "/" | "@"; query: string; start: number } | null {
+function wordAt(text: string, caret: number): { mark: "/" | "@"; query: string; start: number } | null {
   const m = /(^|\s)([/@])([^\s/@]*)$/.exec(text.slice(0, caret));
   if (!m) return null;
   return { mark: m[2] as "/" | "@", query: m[3] ?? "", start: caret - (m[3]?.length ?? 0) - 1 };
 }
 
 /** What a word matches: names that start with it first, then names or lines that hold it. */
-export function matching(items: PickInfo[], query: string): PickInfo[] {
+function matching(items: PickInfo[], query: string): PickInfo[] {
   const q = query.toLowerCase();
   const starts = items.filter((i) => i.name.toLowerCase().startsWith(q));
   const holds = items.filter(
@@ -43,7 +50,11 @@ export function matching(items: PickInfo[], query: string): PickInfo[] {
 }
 
 /** Picks for a box, read once per box (and again when its agent changes); none when ion can't say. */
-function usePickList(client: IonClient, args: Commands["tools.picks"]["args"], wanted: boolean): Picks | null {
+function usePickList(
+  client: IonClient,
+  args: Commands["tools.picks"]["args"],
+  wanted: boolean,
+): Picks | null {
   const key = JSON.stringify(args);
   const [got, setGot] = useState<{ key: string; picks: Picks } | null>(null);
   const have = got?.key;
@@ -59,6 +70,15 @@ function usePickList(client: IonClient, args: Commands["tools.picks"]["args"], w
     };
   }, [client, key, wanted, have]);
   return got?.key === key ? got.picks : null;
+}
+
+/** What a key does while the menu is open: close it, move by n, pick, or nothing (null: the box takes it). */
+function menuKey(key: string, shift: boolean, n: number): "close" | "pick" | number | null {
+  if (key === "Escape") return "close";
+  if (!n) return null;
+  if (key === "ArrowDown") return 1;
+  if (key === "ArrowUp") return n - 1;
+  return (key === "Enter" && !shift) || key === "Tab" ? "pick" : null;
 }
 
 /**
@@ -78,7 +98,7 @@ export function usePicker(o: {
   const word = wordAt(o.text, caret);
   const open = word && closed !== `${word.start}${word.mark}` ? word : null;
   const list = usePickList(o.client, o.args, Boolean(open));
-  const pool = open && list ? (open.mark === "/" ? list.skills : list.servers) : [];
+  const pool = (open?.mark === "/" ? list?.skills : list?.servers) ?? [];
   const shown = open ? matching(pool, open.query) : [];
   const ref = useRef(shown);
   ref.current = shown;
@@ -93,29 +113,23 @@ export function usePicker(o: {
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
     if (!open) return false;
-    if (e.key === "Escape") {
-      setClosed(`${open.start}${open.mark}`);
-      e.preventDefault();
-      return true;
-    }
-    const n = ref.current.length;
-    if (!n) return false;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
-      e.preventDefault();
-      return true;
-    }
-    if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-      pick(ref.current[Math.min(active, n - 1)]!);
-      e.preventDefault();
-      return true;
-    }
-    return false;
+    const did = menuKey(e.key, e.shiftKey, ref.current.length);
+    if (did === "close") setClosed(`${open.start}${open.mark}`);
+    else if (typeof did === "number") setActive((a) => (a + did) % ref.current.length);
+    else if (did === "pick") pick(ref.current[Math.min(active, ref.current.length - 1)]!);
+    if (did !== null) e.preventDefault();
+    return did !== null;
   };
-  const drop = (k: keyof Picked, name: string) => setPicked({ ...picked, [k]: picked[k].filter((x) => x !== name) });
+  const drop = (k: keyof Picked, name: string) =>
+    setPicked({ ...picked, [k]: picked[k].filter((x) => x !== name) });
   return {
     picked,
     clear: () => setPicked(NONE),
+    /** Arguments with what you picked (the picks leave the box). */
+    take: <T extends object>(a: T) => {
+      setPicked(NONE);
+      return { ...a, ...pickArgs(picked) };
+    },
     /** The caret moved (typing, a click): the word at it may have changed. */
     track: (el: HTMLTextAreaElement) => setCaret(el.selectionStart ?? el.value.length),
     onKey,
@@ -125,7 +139,7 @@ export function usePicker(o: {
 }
 
 /** What a message sends of its picks: only the ones there are. */
-export const pickArgs = (p: Picked) => ({
+const pickArgs = (p: Picked) => ({
   ...(p.skills.length ? { skills: p.skills } : {}),
   ...(p.mentions.length ? { mentions: p.mentions } : {}),
 });
@@ -185,5 +199,35 @@ export function PickChips(p: { picked: Picked; onDrop?: (k: keyof Picked, name: 
         </span>
       ))}
     </div>
+  );
+}
+
+/**
+ * A message box's text area with "/" and "@": the menu above it, the picks as chips, and its keys (the menu's first,
+ * then the box's own).
+ */
+export function PickedBox(p: {
+  pk: ReturnType<typeof usePicker>;
+  box: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange" | "onKeyDown"> & {
+    ref: Ref<HTMLTextAreaElement>;
+  };
+  onEdit: (text: string) => void;
+  onKey: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
+}) {
+  const { pk } = p;
+  return (
+    <>
+      {pk.menu && <PickMenu menu={pk.menu} />}
+      <PickChips picked={pk.picked} onDrop={pk.drop} />
+      <textarea
+        {...p.box}
+        onChange={(e) => {
+          p.onEdit(e.target.value);
+          pk.track(e.target);
+        }}
+        onSelect={(e) => pk.track(e.currentTarget)}
+        onKeyDown={(e) => pk.onKey(e) || p.onKey(e)}
+      />
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import type { ApprovalRequest, Decision, GateCall } from "@ion/adapter-kit";
 import { EV, type IonEvent } from "@ion/schema";
-import { type Access, hardRuleFor, onlyPlugin, waryData } from "../access/index.js";
+import { type Access, type AccessVerdict, hardRuleFor, onlyPlugin, waryData } from "../access/index.js";
 import type { Blocked, Held } from "../decisions/blocked.js";
 import { type GateAnswer, GateAllows } from "../gate/index.js";
 import type { EventStore } from "../store/index.js";
@@ -100,6 +100,12 @@ const callKey = (c: { kind: string; input: Record<string, unknown> }) => {
 
 /** Allows decided for exactly this call (never the gate's loose allows, nor the policy's), which may hand off. */
 const HANDED = new Set<Verdict["by"]>(["ion", "you", "full"]);
+
+/** What the judge said when it didn't allow: no, or unsure; null when it allowed or a rule decided. */
+function judgeSaid(v: AccessVerdict): "deny" | "unsure" | null {
+  if (v.source !== "judge" || v.decision !== "deny") return null;
+  return v.unsure ? "unsure" : "deny";
+}
 
 /** Added to every Auto deny an agent reads: the way through is asking you. */
 const ASK_HINT = " — if it's needed, ask the user with ion's ask tool";
@@ -323,13 +329,15 @@ export class Approvals {
     );
     // The judge's no (or unsure) on ion's guess: you're asked, as ion is wary.
     if (wary && v.decision === "deny" && v.source === "judge") return this.wary(r, req, wary);
-    // A rule's no (your secrets, ion's files) stands. The judge's no is a question for you.
-    const judge = v.source === "judge" && v.decision === "deny" ? (v.unsure ? "unsure" : "deny") : null;
+    return this.afterJudge(r, req, v);
+  }
+
+  /** A rule's no (your secrets, ion's files) stands. The judge's no or unsure is a question for you. */
+  private async afterJudge(r: AskingRun, req: ApprovalRequest, v: AccessVerdict): Promise<Verdict> {
+    const judge = judgeSaid(v);
     if (judge && this.opts.askBlocked) {
-      const asked = await this.askYou(this.opts.askBlocked, r, req, {
-        reason: v.reason,
-        ...(v.unsure ? { unsure: true as const } : {}),
-      });
+      const unsure = judge === "unsure" ? { unsure: true as const } : {};
+      const asked = await this.askYou(this.opts.askBlocked, r, req, { reason: v.reason, ...unsure });
       return { ...asked, judge };
     }
     return { decision: v.decision, by: "ion", reason: v.reason, ...(judge ? { judge } : {}) };

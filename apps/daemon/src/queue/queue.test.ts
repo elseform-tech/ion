@@ -190,7 +190,8 @@ describe("the prompt queue", () => {
   // Review Focus 2: ion stops and starts again with messages waiting → they're still listed and go out.
   it("survives a restart", async () => {
     const { chatId } = await working();
-    queue.add({ chatId }, "hello one", { harness: "fake", effort: "high", access: "full" });
+    // The user, 2026-11-21: a queued message keeps what you picked with "/" and "@".
+    queue.add({ chatId }, "hello one", { harness: "fake", effort: "high", access: "full", skills: ["pdf"] });
     queue.add({ chatId }, "hello two", fake);
     await runs.shutdown();
     // A new daemon on the same events: the views rebuild from the log, the run ion stopped is closed.
@@ -200,7 +201,7 @@ describe("the prompt queue", () => {
     runs = manager();
     makeQueue();
     expect(queue.list({ chatId })).toMatchObject([
-      { text: "hello one", brain: { harness: "fake", effort: "high", access: "full" } },
+      { text: "hello one", brain: { harness: "fake", effort: "high", access: "full", skills: ["pdf"] } },
       { text: "hello two", brain: fake },
     ]);
     queue.resume();

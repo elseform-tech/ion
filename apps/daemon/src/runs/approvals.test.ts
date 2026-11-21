@@ -262,7 +262,9 @@ describe("the handoff to ion's gateway", () => {
     const access0 = createAccess({
       judge: async () => {
         n.judged++;
-        return n.allow ? { verdict: "allow" as const, reason: "fine" } : { verdict: "deny" as const, reason: "no" };
+        return n.allow
+          ? { verdict: "allow" as const, reason: "fine" }
+          : { verdict: "deny" as const, reason: "no" };
       },
       ...own,
     });
@@ -645,7 +647,9 @@ describe("the judge can say unsure", () => {
   it("the judge can say unsure, and you're asked with \"ion isn't sure\"", async () => {
     const asked: { reason: string; unsure?: true }[] = [];
     const recorded: Record<string, unknown>[] = [];
-    const rec = { append: (e: { data: Record<string, unknown> }) => recorded.push(e.data) } as unknown as EventStore;
+    const rec = {
+      append: (e: { data: Record<string, unknown> }) => recorded.push(e.data),
+    } as unknown as EventStore;
     const askBlocked = {
       ask: async (_r: AskingRun, b: { reason: string; unsure?: true }) => {
         asked.push({ reason: b.reason, ...(b.unsure ? { unsure: b.unsure } : {}) });

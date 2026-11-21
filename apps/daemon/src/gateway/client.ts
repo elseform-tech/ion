@@ -59,10 +59,17 @@ async function post(up: Upstream, message: object, session?: string) {
  * Asks one of your servers one thing (ion's own question, e.g. tools/list), the way ion's gateway reaches it: a local
  * one through ion's bridge (which does the handshake), a remote one with its own handshake first.
  */
-export async function askServer(up: Upstream | LocalUpstream, method: string, params: object = {}): Promise<unknown> {
+export async function askServer(
+  up: Upstream | LocalUpstream,
+  method: string,
+  params: object = {},
+): Promise<unknown> {
   const id = ++ids;
   if ("send" in up) {
-    const a = (await up.send({ jsonrpc: "2.0", id, method, params })) as { result?: unknown; error?: unknown } | null;
+    const a = (await up.send({ jsonrpc: "2.0", id, method, params })) as {
+      result?: unknown;
+      error?: unknown;
+    } | null;
     if (!a || a.error !== undefined) throw new Error("no answer");
     return a.result;
   }
@@ -70,7 +77,11 @@ export async function askServer(up: Upstream | LocalUpstream, method: string, pa
     jsonrpc: "2.0",
     id: ++ids,
     method: "initialize",
-    params: { protocolVersion: LATEST_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "ion", version: "1" } },
+    params: {
+      protocolVersion: LATEST_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: "ion", version: "1" },
+    },
   });
   if (init.status >= 400) throw new Error(`answered ${init.status}`);
   await post(up, { jsonrpc: "2.0", method: "notifications/initialized" }, init.session);

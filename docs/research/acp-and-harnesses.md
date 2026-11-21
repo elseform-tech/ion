@@ -266,3 +266,36 @@ each goes to the judge.
 - opencode once passed ion's `ask` choices as plain strings (rejected by the tool's schema); it retried with objects.
 - Grok finds an MCP tool first (`Find tool`, kind `other`), then calls `<server>__<tool>`; its web search runs on
   xAI's side, so pages it found aren't "found" for ion's fetch rule and a later `web_fetch` of them is refused.
+
+## "/" and "@": how each agent takes a picked skill, command or server (2026-11-21, Plan 18 Task 10)
+
+What "/" lists for a chat (`tools.picks`): the agent's own commands (Claude Code: `~/.claude/commands/*.md` and its
+enabled plugins' `commands/` as `plugin:name`; opencode: `~/.config/opencode/command(s)/*.md` and its config's
+`command` table; Codex: custom prompts in `~/.codex/prompts` as `prompts:name`; Grok: none found that ion can read),
+then the skills that agent loads itself (Settings' `readers`), then ion's skills that are on. "@" lists the agent's own
+servers (its switch on; a repo's once it's on or asks in the chat) and your mcp.json servers that are on. Resources:
+not listed yet (servers by name only); a server's resources would need it started just to list them.
+
+How a pick reaches the agent (`withPicks`, adapter-kit; each adapter says its `picks` style):
+
+| Agent | Command | Skill it loads | Skill it can't load |
+|---|---|---|---|
+| Claude Code (`slash`) | `/name …` leads the prompt (the SDK runs its own and plugin commands) | "Use the <name> skill." (its Skill tool; ion's are in its plugin folder) | — (ion passes on skills in its plugin) |
+| opencode (`slash`) | `/name …` leads the prompt (its ACP agent runs listed commands) | "Use the <name> skill." (its skill tool) | SKILL.md body as labelled data |
+| Codex, Grok (`tell`) | the command's text as labelled data ("Do what the <name> command says") | "Use the <name> skill." | SKILL.md body as labelled data |
+
+Only one command can lead a prompt; others go as text. A server pick is "Use the <name> connection's tools." The chat
+shows your words with the picks as chips (`message.sent.skills/mentions`); the judge reads only your words. Not yet
+checked live on each agent: whether opencode's ACP runs `/name` from a prompt (its TUI does), and whether Codex's
+app-server expands `/prompts:` (it doesn't in our reading, so ion sends the text).
+
+Ions: "/" lists every skill that's on (ion chief) or its project's (a project's ion); the turn is told to read a skill
+(`tools {skill}`, the body as data, never run) or pass it on (`start_thread`'s `skills`/`mentions`). A skill's body
+comes only from the exact skill that passed the check (folder + contents hash), only while it's on; a name two
+different skills share is refused.
+
+Ions and your servers: an ion's turn gets ion's URL for each server that's on (only its turn key); ion's gateway
+gates each call for ions: the tool must be on for ions (Settings → Tools, "Ions can use", pre-filled from
+`readOnlyHint && !destructiveHint`, your switch kept with a hash of name, description and labels), the input within
+the limits (each text ≤ 200 chars, no 40+ base64/hex run, ≤ 2 KB), and the judge (`onlyReads`) must say allow; no or
+unsure: refused with a plain line, and the ion starts a thread.

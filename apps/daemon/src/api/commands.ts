@@ -191,7 +191,10 @@ export const handlers: Handlers = {
     const ionId = String(a.ionId ?? "");
     // You sent a message: what you queued for the ion (held after a stop) goes on after it.
     ctx.queue.goOn({ ionId });
-    await ctx.ions.message(ionId, text, { ...(a.skills ? { skills: a.skills } : {}), ...(a.mentions ? { mentions: a.mentions } : {}) });
+    await ctx.ions.message(ionId, text, {
+      ...(a.skills ? { skills: a.skills } : {}),
+      ...(a.mentions ? { mentions: a.mentions } : {}),
+    });
     return { ok: true as const };
   },
   // ion chief's own suggestions (a routine, a stalled chat), else a project ion's "always?".

@@ -329,9 +329,8 @@ describe("/ and @ in the message box", () => {
     servers: [{ name: "everything", description: "", kind: "server", from: "ion" }],
   };
   it("/ lists the chat's skills and filters", async () => {
-    const call = vi.fn(async (cmd: string) =>
-      cmd === "tools.picks" ? picks : cmd === "queue.list" ? [] : { chatId: "c1", runId: "r1" },
-    );
+    const answers: Record<string, unknown> = { "tools.picks": picks, "queue.list": [] };
+    const call = vi.fn(async (cmd: string) => answers[cmd] ?? { chatId: "c1", runId: "r1" });
     render(
       <Composer
         client={chatClient(call as never)}

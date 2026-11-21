@@ -1,10 +1,11 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import { Copy, PlugZap } from "@ion/design-system";
+import { Copy, PlugZap, Wrench } from "@ion/design-system";
 import type { HarnessInfo, McpToolInfo, OwnServerInfo, ToolsInfo } from "@ion/schema";
 import { useState } from "react";
 import { useCallError } from "../callError.js";
 import { CANT_OPEN, openLink } from "../opener.js";
 import { Switch } from "./Switch.js";
+import { ServerToolsList } from "./ToolsServerTools.js";
 import { short, stateOf, ToolRow } from "./tools-parts.js";
 import { Faces, fromOf, type Merged, merge, OwnRow, offIn, type Whose, whoseRows } from "./tools-own.js";
 
@@ -176,8 +177,26 @@ function useServer(s: McpToolInfo, part: Part) {
   return { error, run, open, setOpen, signIn, saveKeys };
 }
 
+/** Opens a server's tools under its row (only one that's on). */
+function ToolsButton(p: { s: McpToolInfo; open: boolean; onClick: () => void }) {
+  if (!p.s.on) return null;
+  return (
+    <button
+      className={`ib${p.open ? " on" : ""}`}
+      type="button"
+      title="Tools"
+      aria-label={`Tools of ${p.s.name}`}
+      aria-expanded={p.open}
+      onClick={p.onClick}
+    >
+      <Wrench />
+    </button>
+  );
+}
+
 function ServerRow({ s, part, r }: { s: McpToolInfo; part: Part; r: Merged<McpToolInfo> }) {
   const { error, run, open, setOpen, signIn, saveKeys } = useServer(s, part);
+  const [tools, setTools] = useState(false);
   const state = s.needs === "can't reach" ? "Can't reach" : stateOf(s, part.locked);
   const chip = state ?? (r.differs ? "Differs" : null);
   const missing = s.missing ?? [];
@@ -199,6 +218,7 @@ function ServerRow({ s, part, r }: { s: McpToolInfo; part: Part; r: Merged<McpTo
               onSignIn={() => void signIn()}
               onKey={() => setOpen(open === "key" ? null : "key")}
             />
+            <ToolsButton s={s} open={tools} onClick={() => setTools(!tools)} />
             <Switch
               label={s.name}
               on={s.on}
@@ -211,6 +231,7 @@ function ServerRow({ s, part, r }: { s: McpToolInfo; part: Part; r: Merged<McpTo
         <Fields names={missing.map((name) => ({ name, masked: true }))} onSave={saveKeys} />
       )}
       {open === "client" && <ClientFields onSave={signIn} />}
+      {tools && <ServerToolsList client={part.client} id={s.id} />}
       {typeof open === "object" && open && <LocalPage url={open.local} />}
       {error && <div className="perr">{error}</div>}
     </>

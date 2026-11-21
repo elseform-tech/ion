@@ -295,7 +295,11 @@ describe("judge", () => {
       await createJudge(async () => {
         throw new Error("Claude Code isn't signed in");
       })(input),
-    ).toEqual({ verdict: "deny", reason: "ion couldn't decide: Claude Code isn't signed in", decided: false });
+    ).toEqual({
+      verdict: "deny",
+      reason: "ion couldn't decide: Claude Code isn't signed in",
+      decided: false,
+    });
     expect(await createJudge(() => new Promise<string>(() => {}), 20)(input)).toEqual({
       verdict: "deny",
       reason: "ion couldn't decide in time",

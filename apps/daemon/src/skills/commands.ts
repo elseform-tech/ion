@@ -19,7 +19,8 @@ const MAX_COMMANDS = 200;
 const NAME = /^[\w.:-]{1,80}$/;
 
 const clean = (s: string, max: number) => stripControl(s.replace(/\s+/g, " ")).trim().slice(0, max);
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** A markdown command's description (front matter) and text after it. */
 function parse(md: string): { description: string; body: string } {
@@ -28,15 +29,26 @@ function parse(md: string): { description: string; body: string } {
   const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
   if (end < 0) return { description: "", body: md.trim() };
   const d = lines.slice(1, end).find((l) => /^description:/.test(l)) ?? "";
-  const description = d.slice("description:".length).trim().replace(/^["']|["']$/g, "");
-  return { description: clean(description, 200), body: lines.slice(end + 1).join("\n").trim() };
+  const description = d
+    .slice("description:".length)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  return {
+    description: clean(description, 200),
+    body: lines
+      .slice(end + 1)
+      .join("\n")
+      .trim(),
+  };
 }
 
 /** The `.md` files in a folder, as commands named by their file (with a prefix). */
 function folder(dir: string, prefix = ""): OwnCommand[] {
   let names: string[] = [];
   try {
-    names = readdirSync(dir).filter((n) => n.endsWith(".md")).sort();
+    names = readdirSync(dir)
+      .filter((n) => n.endsWith(".md"))
+      .sort();
   } catch {
     return [];
   }
@@ -71,7 +83,13 @@ function opencode(o: ReadOpts): OwnCommand[] {
   const listed = isObj(table)
     ? Object.entries(table).flatMap(([name, v]) =>
         NAME.test(name) && isObj(v) && typeof v.template === "string"
-          ? [{ name, description: clean(String(v.description ?? ""), 200), body: v.template.slice(0, MAX_FILE) }]
+          ? [
+              {
+                name,
+                description: clean(String(v.description ?? ""), 200),
+                body: v.template.slice(0, MAX_FILE),
+              },
+            ]
           : [],
       )
     : [];
@@ -79,7 +97,8 @@ function opencode(o: ReadOpts): OwnCommand[] {
 }
 
 /** Codex's custom prompts (`/prompts:name` in Codex). */
-const codex = (o: ReadOpts) => folder(join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts"), "prompts:");
+const codex = (o: ReadOpts) =>
+  folder(join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts"), "prompts:");
 
 const BY_AGENT: Record<string, (o: ReadOpts) => OwnCommand[]> = { "claude-code": claude, opencode, codex };
 

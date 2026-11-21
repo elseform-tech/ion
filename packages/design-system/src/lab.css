@@ -716,6 +716,15 @@ button.arow:hover{background:var(--hover)}
 .acts2{align-items:center}.acts2 .dash{color:var(--faint)}
 .keys{display:flex;gap:4px}
 
+/* lab lines 1110-1116: the message box's / and @ menu, picks as chips; a server's tools */
+/* the message box's "/" and "@": the menu above the box (skills and commands; connections), picks as chips; a server's tools, each with Ions can use */
+.smenu{top:auto;bottom:calc(100% + 6px);left:8px;right:8px;max-height:280px;overflow:auto}
+.smenu button.act{background:var(--hover);color:var(--ink)}
+.smenu .nm{color:var(--ink);white-space:nowrap}
+.smenu .ds{min-width:0;color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.u .catt,.bu .catt{margin:0 0 6px;justify-content:flex-end}.u .catt .chip{margin-left:0}.bu .chip.pick{background:rgba(255,255,255,.16);color:inherit}
+.stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}
+
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */
 .win{min-width:0;width:100vw;height:100vh;border-radius:0;border:0;box-shadow:none}

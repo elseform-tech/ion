@@ -15,7 +15,10 @@ export async function serverTools(ctx: UseCtx, id: string): Promise<ServerTools>
   const was = loadUserConfig(ctx.configFile).config.tools.ionUse;
   const { tools, seen } = ionUseOf(was, id, listed);
   if (seen.length !== was.length)
-    changeConfig(ctx.configFile, (c) => ({ ...c, tools: { ...c.tools, ionUse: ionUseOf(c.tools.ionUse, id, listed).seen } }));
+    changeConfig(ctx.configFile, (c) => ({
+      ...c,
+      tools: { ...c.tools, ionUse: ionUseOf(c.tools.ionUse, id, listed).seen },
+    }));
   return { tools };
 }
 

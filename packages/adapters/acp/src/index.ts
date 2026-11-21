@@ -35,6 +35,15 @@ const CAPABILITIES: Omit<Capabilities, "models" | "defaultModel" | "modelsLive">
   usage: "cost",
 };
 
+/** What the agent brings of its own (its tools, hooks, trust) and how it takes "/" picks, as its harness says. */
+const ownOf = (h: AcpHarness) => ({
+  ...(h.ownTools ? { ownTools: true as const } : {}),
+  ...(h.picks ? { picks: h.picks } : {}),
+  ...(h.ownHooks ? { ownHooks: true as const } : {}),
+  ...(h.ownOff ? { ownOff: h.ownOff } : {}),
+  ...(h.ownTrust ? { ownTrust: true as const } : {}),
+});
+
 /** One adapter for any agent that speaks ACP over stdio (Grok Build, opencode, …). */
 export function createAcpAdapter(
   h: AcpHarness,
@@ -71,11 +80,7 @@ export function createAcpAdapter(
     ...(h.toCall ? { gateCall: h.toCall } : {}),
     capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps.startTimeoutMs)),
     mcpTransports: { http: h.mcpHttp ?? true },
-    ...(h.ownTools ? { ownTools: true as const } : {}),
-    ...(h.picks ? { picks: h.picks } : {}),
-    ...(h.ownHooks ? { ownHooks: true as const } : {}),
-    ...(h.ownOff ? { ownOff: h.ownOff } : {}),
-    ...(h.ownTrust ? { ownTrust: true as const } : {}),
+    ...ownOf(h),
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);

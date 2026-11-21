@@ -69,10 +69,7 @@ const whyWord = (b: Blocked) => {
 
 const callQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
-  why: [
-    `${whyWord(b)}: ${b.reason}`,
-    ...(addsToTitle(b) ? [b.input] : []),
-  ].join("\n\n"),
+  why: [`${whyWord(b)}: ${b.reason}`, ...(addsToTitle(b) ? [b.input] : [])].join("\n\n"),
   choices: [
     { label: ONCE, consequence: "It runs this time. ion asks again next time." },
     ...(b.cut

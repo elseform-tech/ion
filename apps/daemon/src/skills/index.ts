@@ -111,6 +111,15 @@ function infoOf(s: FoundSkill, state: State, readers: SkillReaders, own: OwnSwit
 
 export type Skills = ReturnType<typeof createSkills>;
 
+type Listed = Pick<SkillInfo, "id" | "hash" | "on" | "own">;
+
+/** A listed skill's text, from the skills found: that exact one (folder and contents), while it's on or own. */
+function bodyFrom(found: FoundSkill[], s: Listed): string | null {
+  if (!s.on && !s.own) return null;
+  const f = found.find((x) => x.id === s.id);
+  return f && hashOf(f) === s.hash ? f.body : null;
+}
+
 /** ion's own skills folder: beside its config file and mcp.json (out of every run's reach, as they are). */
 export const ionSkillsDir = (configFile: string): string => join(dirname(configFile), "skills");
 
@@ -191,11 +200,7 @@ export function createSkills(o: {
      * A listed skill's SKILL.md after its front matter: only the exact skill listed (its folder and what's in it, as
      * checked), only while it's on or an agent's own (security review, 2026-11-21); else null.
      */
-    bodyOf: (projects: string[], s: Pick<SkillInfo, "id" | "hash" | "on" | "own">): string | null => {
-      if (!s.on && !s.own) return null;
-      const f = find(projects).find((x) => x.id === s.id);
-      return f && hashOf(f) === s.hash ? f.body : null;
-    },
+    bodyOf: (projects: string[], s: Listed) => bodyFrom(find(projects), s),
     /** A run's plugin, gone when the run ends. */
     remove: (runId: string) => rm(pluginDirOf(o.dataDir, runId), { recursive: true, force: true }),
     /** Plugins left by runs that never ended (ion stopped hard): gone when ion starts. */

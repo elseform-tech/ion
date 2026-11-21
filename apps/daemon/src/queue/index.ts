@@ -250,7 +250,10 @@ export class PromptQueue {
       return;
     }
     this.sent(q, key);
-    const picks = { ...(q.brain.skills ? { skills: q.brain.skills } : {}), ...(q.brain.mentions ? { mentions: q.brain.mentions } : {}) };
+    const picks = {
+      ...(q.brain.skills ? { skills: q.brain.skills } : {}),
+      ...(q.brain.mentions ? { mentions: q.brain.mentions } : {}),
+    };
     void this.d.ions.message(q.to.ionId, q.text, picks).catch(() => {});
   }
 
@@ -316,7 +319,9 @@ function brainOf(x: unknown): AskBrain {
   const effort = EFFORTS.includes(String(b.effort)) ? (b.effort as AskBrain["effort"]) : undefined;
   const access = b.access === "auto" || b.access === "full" ? b.access : undefined;
   const names = (v: unknown) => {
-    const xs = Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x).slice(0, 10) : [];
+    const xs = Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === "string" && !!x).slice(0, 10)
+      : [];
     return xs.length ? xs.map((x) => x.slice(0, 100)) : undefined;
   };
   const all = {

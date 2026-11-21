@@ -1107,6 +1107,13 @@ button.arow:hover{background:var(--hover)}
 .fin.time{width:auto;padding:4px 8px;font-variant-numeric:tabular-nums}
 .acts2{align-items:center}.acts2 .dash{color:var(--faint)}
 .keys{display:flex;gap:4px}
+/* the message box's "/" and "@": the menu above the box (skills and commands; connections), picks as chips; a server's tools, each with Ions can use */
+.smenu{top:auto;bottom:calc(100% + 6px);left:8px;right:8px;max-height:280px;overflow:auto}
+.smenu button.act{background:var(--hover);color:var(--ink)}
+.smenu .nm{color:var(--ink);white-space:nowrap}
+.smenu .ds{min-width:0;color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.u .catt,.bu .catt{margin:0 0 6px;justify-content:flex-end}.u .catt .chip{margin-left:0}.bu .chip.pick{background:rgba(255,255,255,.16);color:inherit}
+.stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1351,7 +1358,8 @@ export function sumLines(lines: Line[]) {
               <div class="foot"><div class="fcol">
                 <div class="await"><span class="g"><i class="wd"></i>Open pull request #482?</span><button class="btn" type="button">Review</button><button class="btn pri" type="button">Open PR</button></div>
                 <div class="cbox">
-                  <div class="catt"><span class="chip file"><i data-lucide="file-text"></i>ci-log.txt<small>4 KB</small><button type="button" aria-label="Remove ci-log.txt"><i data-lucide="x"></i></button></span></div>
+                  <div class="pmenu smenu" role="listbox" aria-label="Skills" hidden><button type="button" class="act"><span title="Skill" style="display:flex"><i data-lucide="sparkles"></i></span><span class="nm">pdf</span><span class="ds">Read and fill PDFs</span></button><button type="button"><span title="Command" style="display:flex"><i data-lucide="square-terminal"></i></span><span class="nm">review</span><span class="ds">Review the diff</span></button></div>
+                  <div class="catt"><span class="chip file"><i data-lucide="file-text"></i>ci-log.txt<small>4 KB</small><button type="button" aria-label="Remove ci-log.txt"><i data-lucide="x"></i></button></span><span class="chip pick"><i data-lucide="sparkles"></i>pdf<button type="button" aria-label="Remove pdf"><i data-lucide="x"></i></button></span></div>
                   <span class="ph">Reply…</span>
                   <div class="bar">
                     <button class="ib" type="button" title="Attach files, images or recordings"><i data-lucide="paperclip"></i></button>

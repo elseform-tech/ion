@@ -401,6 +401,36 @@ const repoAsker =
     return HELD_ANSWER[h ?? "timeout"];
   };
 
+/** What a run needs besides its access and servers: picks, hooks, ion's server and gate, and asking you. */
+function runCtxOf(o: {
+  opts: { dataDir: string; configFile: string };
+  base: () => string;
+  late: { decisions?: Decisions };
+  grants: Grants;
+  hooks: Hooks;
+  picks: { tools: Tools; skills: Skills };
+}) {
+  const { opts, base, late } = o;
+  return {
+    ...{ configFile: opts.configFile, dataDir: opts.dataDir },
+    // A message's "/" and "@" picks, as its agent takes them.
+    picks: (agent: string, projectId: string) => {
+      const dir = loadUserConfig(opts.configFile).config.projects.find((p) => p.id === projectId)?.path;
+      return pickSource({ ...o.picks, configFile: opts.configFile }, agent, dir ? [dir] : []);
+    },
+    beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => o.hooks.beforeTool(r, c),
+    mcp: { grants: o.grants, url: () => `${base()}/mcp` },
+    gate: { url: () => `${base()}/gate` },
+    // When ion stops a tool call it asks you; made here, answered through the decisions made below.
+    askBlocked: {
+      ask: (r: AskingRun, b: Blocked) =>
+        late.decisions?.askBlocked(runScopeOf(r), b) ?? Promise.resolve("timeout" as const),
+      allowed: (r: AskingRun, key: string) =>
+        late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
+    },
+  };
+}
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(
   opts: { dataDir: string; configFile: string; secrets?: Secrets; net?: Net; home?: string },
@@ -423,26 +453,8 @@ function openState(
   const servers = serversFor({ tools, oauth, configFile: opts.configFile });
   // Your servers for ions' turns: only what reads, as Auto's judge agrees (the user, 2026-11-21).
   const ionServers = new IonServers({ ...opts, servers, judge: createJudge(quick) });
-  const runCtx = {
-    ...{ configFile: opts.configFile, dataDir: opts.dataDir, access, ionBin },
-    ...{ servers, ...forRuns },
-    // A message's "/" and "@" picks, as its agent takes them.
-    picks: (agent: string, projectId: string) => {
-      const dir = loadUserConfig(opts.configFile).config.projects.find((p) => p.id === projectId)?.path;
-      return pickSource({ tools, skills, configFile: opts.configFile }, agent, dir ? [dir] : []);
-    },
-    beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => hooks.beforeTool(r, c),
-    mcp: { grants, url: () => `${base()}/mcp` },
-    gate: { url: () => `${base()}/gate` },
-    // When ion stops a tool call it asks you; made here, answered through the decisions made below.
-    askBlocked: {
-      ask: (r: AskingRun, b: Blocked) =>
-        late.decisions?.askBlocked(runScopeOf(r), b) ?? Promise.resolve("timeout" as const),
-      allowed: (r: AskingRun, key: string) =>
-        late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
-    },
-  };
-  const runs = new RunManager(store, runCtx, needs, db);
+  const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills } });
+  const runs = new RunManager(store, { ...runCtx, access, ionBin, servers, ...forRuns }, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({
     ...{ store, db, needs },

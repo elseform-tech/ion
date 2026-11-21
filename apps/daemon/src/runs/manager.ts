@@ -3,11 +3,9 @@ import { availableParallelism, homedir } from "node:os";
 import {
   type ApprovalRequest,
   type GateCall,
-  type Picks,
   projectRoots,
   ResumeFailed,
   type Session,
-  withPicks,
 } from "@ion/adapter-kit";
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
@@ -31,7 +29,7 @@ import type { RunAgent, RunServers } from "../tools/run-servers.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
 import { type RunKeys, runEnv, runKeys } from "./run-env.js";
 import type { RunSkills } from "../skills/run.js";
-import { type PickSource, resolvePicks } from "../skills/picks.js";
+import { agentText, type PickSource, picksOfRun, type RunPicks, shownPicks } from "../skills/picks.js";
 import { type OwnForRun, ownOpts, type RunOwn, skillsAndOwn, withOwnServers } from "../tools/own-run.js";
 
 type AskArgs = Commands["ask"]["args"];
@@ -67,12 +65,6 @@ type Between = {
   /** The chat's session resumed but then failed for real: later tries start a new session with the history. */
   noResume?: boolean;
 };
-
-/** What the chat shows as picked: the names that reached the agent. */
-const pickedOf = (p?: Picks) => ({
-  ...(p?.skills?.length ? { skills: p.skills.map((x) => x.name) } : {}),
-  ...(p?.mentions?.length ? { mentions: p.mentions } : {}),
-});
 
 const limitIn = (file: string) =>
   maxRuns(loadUserConfig(file).config.resources.max_runs, availableParallelism());
@@ -148,7 +140,8 @@ export class RunManager {
       args = { ...args, projectId: await defaultProject(this.ctx.configFile) };
     const chat = chatFor(this.db, args, opts.title);
     // An existing chat stays in its own project: its worktree belongs to that repo.
-    const repo = projectPath(this.ctx.configFile, chat.chatId ? chat.projectId : args.projectId);
+    const projectId = chat.chatId ? chat.projectId : args.projectId;
+    const repo = projectPath(this.ctx.configFile, projectId);
     if (this.stopping) throw new UserError("ion is stopping");
     const key = chat.chatId;
     if (key && this.busy(key)) throw new UserError("This chat is already running");
@@ -156,7 +149,7 @@ export class RunManager {
     let launch: Launch;
     try {
       await this.ready.check(h, args.model);
-      const picks = await this.picksOf(h, args, chat.chatId ? chat.projectId : args.projectId);
+      const picks = await picksOfRun(this.ctx.picks, h.adapter.id, args, projectId);
       launch = await this.prepare(
         h,
         { ...args, shown: opts.shown, answers: opts.answers, by: opts.by, picks },
@@ -172,16 +165,6 @@ export class RunManager {
     return { chatId: launch.chatId, runId: launch.runId };
   }
 
-  /**
-   * What you picked with "/" and "@", as this agent takes them (only what it can use); none when nothing was picked
-   * or ion can't read them.
-   */
-  private async picksOf(h: HarnessEntry, args: AskArgs, projectId?: string | null): Promise<Picks | undefined> {
-    if (!args.skills?.length && !args.mentions?.length) return undefined;
-    const source = await this.ctx.picks?.(h.adapter.id, projectId ?? "").catch(() => undefined);
-    return source ? resolvePicks(h.adapter.id, source, args) : undefined;
-  }
-
   /** resources.max_runs changed: start the waiting runs that now fit. */
   limitChanged(): void {
     this.queue.setLimit(limitIn(this.ctx.configFile));
@@ -191,11 +174,11 @@ export class RunManager {
   /** `ask.shown`: what the chat shows as yours, when the text is ion's wording (your answer to a question). */
   private async prepare(
     h: HarnessEntry,
-    ask: AskArgs & { shown?: string; answers?: string; by?: "ion"; picks?: Picks },
+    ask: AskArgs & { shown?: string; answers?: string; by?: "ion"; picks?: RunPicks },
     chat: Chat,
     repo: string,
   ): Promise<Launch> {
-    const { shown, answers, by, picks, skills: _s, mentions: _m, ...args } = ask;
+    const { shown, answers, by, picks, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
@@ -209,17 +192,13 @@ export class RunManager {
       by === "ion" || chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
     const access = ionThread ? "auto" : (args.access ?? "auto");
     const runId = `run_${randomUUID()}`;
-    this.store.append({
-      chatId,
-      runId,
-      origin: "daemon",
-      type: EV.messageSent,
-      data: { text: args.text, ...(shown ? { shown } : {}), ...(answers ? { answers } : {}), ...pickedOf(picks) },
-    });
+    const data = { text: args.text, ...(shown ? { shown } : {}), ...(answers ? { answers } : {}) };
+    const sent = { ...data, ...shownPicks(picks) };
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: sent });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
     // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
-    const text = picks ? withPicks(args.text, h.adapter.picks ?? "tell", picks) : args.text;
-    return { h, args: { ...args, text }, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
+    const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };
+    return { h, args: a, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
   }
 
   /**
@@ -452,13 +431,8 @@ export class RunManager {
   }
 
   private endFailed(chatId: string | null, runId: string, code: string, message: string): void {
-    this.store.append({
-      chatId,
-      runId,
-      origin: "daemon",
-      type: EV.error,
-      data: { code, retryable: false, message },
-    });
+    const data = { code, retryable: false, message };
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.error, data });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
   }
 

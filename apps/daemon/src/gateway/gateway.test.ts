@@ -372,7 +372,11 @@ describe("an ion's turn through the gateway", () => {
     const send = (k: string, body: object) =>
       fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/mcp/s/docs`, {
         method: "POST",
-        headers: { authorization: `Bearer ${k}`, "content-type": "application/json", accept: "application/json" },
+        headers: {
+          authorization: `Bearer ${k}`,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
         body: JSON.stringify(body),
       });
     const r = await send(turnKey, callTool("echo", { q: "hi" }));
@@ -380,7 +384,9 @@ describe("an ion's turn through the gateway", () => {
     // Your key is added by ion; the ion's agent held only its turn key.
     expect(JSON.parse(text)).toMatchObject({ args: { q: "hi" } });
     expect(up.seen.at(-1)?.headers["x-api-key"]).toBe("key-secret-1");
-    expect(ionGated).toEqual([{ turnId: "turn_1", call: expect.objectContaining({ toolName: "echo", mcpServer: "docs" }) }]);
+    expect(ionGated).toEqual([
+      { turnId: "turn_1", call: expect.objectContaining({ toolName: "echo", mcpServer: "docs" }) },
+    ]);
     ionSays = { decision: "deny", reason: "That changes something, so I'll start a thread" };
     const no = (await (await send(turnKey, callTool("echo", {}))).json()) as { result: { isError: boolean } };
     expect(no.result.isError).toBe(true);
