@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type IonClient } from "@ion/client";
@@ -28,6 +28,7 @@ async function start(config: string, withProject = false) {
     ...{ secrets: memorySecrets(), home },
   });
   client = await connect({ port: srv.port, token: srv.token });
+  return project;
 }
 
 afterEach(async () => {
@@ -59,23 +60,32 @@ describe("each agent's own tools", () => {
   // Security review, 2026-11-21: a project's own .mcp.json is the repo's, not yours: listed with a switch, off until
   // you turn it on (consent to exactly what it runs).
   it("a repo's .mcp.json server is off until consented (its switch in Settings)", async () => {
-    await start("", true);
-    const repo = async () =>
-      (await client.call("tools.list", {})).own.servers.find((s) => s.name === "repotool")?.repo;
-    expect(await repo()).toEqual({
+    const project = await start("", true);
+    const file = join(project, ".mcp.json");
+    const c = JSON.parse(readFileSync(file, "utf8"));
+    c.mcpServers.pkgtool = { command: "npx", args: ["-y", "@acme/repo-mcp"] };
+    writeFileSync(file, JSON.stringify(c));
+    const repo = async (name: string) =>
+      (await client.call("tools.list", {})).own.servers.find((s) => s.name === name)?.repo;
+    expect(await repo("pkgtool")).toEqual({
       project: "shop",
       file: ".mcp.json",
-      id: "shop:repotool",
+      id: "shop:pkgtool",
       on: false,
       new: true,
     });
-    await client.call("tools.setOn", { kind: "repo", id: "shop:repotool", on: true });
-    expect(await repo()).toMatchObject({ on: true });
+    await client.call("tools.setOn", { kind: "repo", id: "shop:pkgtool", on: true });
+    expect(await repo("pkgtool")).toMatchObject({ on: true });
     expect(loadUserConfig(join(root, "config.toml")).config.tools.repoOn).toEqual([
-      expect.stringMatching(/^shop:repotool@/),
+      expect.stringMatching(/^shop:pkgtool@/),
     ]);
-    await client.call("tools.setOn", { kind: "repo", id: "shop:repotool", on: false });
-    expect(await repo()).toMatchObject({ on: false, new: true });
+    await client.call("tools.setOn", { kind: "repo", id: "shop:pkgtool", on: false });
+    expect(await repo("pkgtool")).toMatchObject({ on: false, new: true });
+    // Ruling, 2026-11-21: one that runs code from the repo has no lasting switch; ion asks in each chat.
+    expect(await repo("repotool")).toMatchObject({ asks: true, on: false });
+    await expect(client.call("tools.setOn", { kind: "repo", id: "shop:repotool", on: true })).rejects.toThrow(
+      "It runs code from the repo: ion asks in each chat",
+    );
   });
 
   it("Use its own tools off brings back ion's tools only (the switch, in your config)", async () => {

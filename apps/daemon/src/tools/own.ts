@@ -1,7 +1,6 @@
 import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, openSync, readSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import type { McpSpec } from "@ion/adapter-kit";
 import type { OwnServerInfo } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
@@ -40,7 +39,7 @@ export type RepoState = (
   project: string,
   name: string,
   v: unknown,
-) => Promise<{ on: boolean; new?: true; changed?: true }>;
+) => Promise<{ on: boolean; new?: true; changed?: true; asks?: true }>;
 
 /** Claude Code's servers in each project's own `.mcp.json` (the repo's): each with your switch in ion. */
 async function repoRows(projects: string[], state: RepoState): Promise<OwnServerInfo[]> {
@@ -49,14 +48,7 @@ async function repoRows(projects: string[], state: RepoState): Promise<OwnServer
       const l = isObj(v) ? standardLaunch(v) : null;
       if (!l || l.kind === "sse" || name.toLowerCase() === "ion") return null;
       const project = basename(p);
-      const code = runsRepoCode(p, v) ? { runsCode: true as const } : {};
-      const repo = {
-        project,
-        file: ".mcp.json",
-        id: `${project}:${name}`,
-        ...code,
-        ...(await state(p, name, v)),
-      };
+      const repo = { project, file: ".mcp.json", id: `${project}:${name}`, ...(await state(p, name, v)) };
       const launch = l.kind === "stdio" ? launchOf(l) : launchOf({ url: l.url });
       return { agent: "claude-code", name, transport: l.kind, launch, repo };
     }),
@@ -128,54 +120,70 @@ function specOf(name: string, l: Launch | null, env: Env): McpSpec | null {
 export const repoServers = (project: string): Obj =>
   obj(obj(readFile(join(project, ".mcp.json"))).mcpServers);
 
-const MAX_CODE = 1024 * 1024;
+/** Commands that fetch and run a published package or image, by the word that says so (`pnpm dlx`, `pipx run`). */
+const RUNNERS: Record<string, string | null> = {
+  npx: null,
+  bunx: null,
+  uvx: null,
+  pnpm: "dlx",
+  pipx: "run",
+  docker: "run",
+};
+const SHELLS = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh", "cmd", "cmd.exe", "pwsh", "powershell"]);
+/** Runner flags that run a command of their own (a shell line), not a package. */
+const RUNS_LINE = new Set(["-c", "--call", "--shell", "--entrypoint"]);
+const PACKAGE = /^(@[\w.-]+\/)?[\w.-]+(@[\w.^~<>=*-]+)?$/;
+/** An image name: an optional registry host, path segments, a tag or digest (no spaces, nothing path-like). */
+const IMAGE_PART = /^[\w.-]+$/;
+const isImage = (w: string): boolean => {
+  const [name = "", digest] = w.split("@");
+  if (digest !== undefined && !/^sha256:[0-9a-f]+$/.test(digest)) return false;
+  const tagAt = name.lastIndexOf(":");
+  const bare = tagAt > name.lastIndexOf("/") ? name.slice(0, tagAt) : name;
+  return bare.split("/").every((p, i) => (i === 0 ? /^[\w.-]+(:\d+)?$/.test(p) : IMAGE_PART.test(p)));
+};
 
-/** The words of a server's command and args that name a file inside the project (its own code), each once. */
-function repoFiles(project: string, v: unknown): string[] {
-  const l = isObj(v) ? standardLaunch(v) : null;
-  if (!l || l.kind !== "stdio") return [];
-  // A path written as one (./x, ../x, /x), or a word that is a file in the project (scripts/server.py); never a
-  // package name (@scope/pkg) that only looks like a path.
-  const pathish = (w: string) => /^(\.{1,2}[/\\]|\/)/.test(w) || existsSync(resolve(project, w));
-  const words = [l.command, ...l.args].filter((w) => !w.startsWith("-") && pathish(w));
-  const inside = words
-    .map((w) => resolve(project, w))
-    .filter((f) => {
-      const rel = relative(project, f);
-      return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-    });
-  return [...new Set(inside)];
+/** A word that could name a file: a path written as one, or anything that is a file or folder in the project. */
+function pathish(project: string, w: string): boolean {
+  if (/^(\.{1,2}([/\\]|$)|[/\\~])/.test(w) || w.includes("\\")) return true;
+  return existsSync(resolve(project, w));
 }
 
-/** A file's bytes as a hash (at most 1 MB read); "missing" when it isn't a file there. */
-function codeHash(file: string): string {
-  try {
-    const st = lstatSync(file);
-    if (!st.isFile()) return "missing";
-    const fd = openSync(file, "r");
-    try {
-      const buf = Buffer.alloc(Math.min(st.size, MAX_CODE));
-      const n = readSync(fd, buf, 0, buf.length, 0);
-      return createHash("sha256").update(buf.subarray(0, n)).digest("hex");
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    return "missing";
-  }
-}
-
-/** A repo server runs code of the repo's own (its command or args name a file in the project). */
-export const runsRepoCode = (project: string, v: unknown): boolean => repoFiles(project, v).length > 0;
+/** Every word a launch says: command, args, the value after each `=`, and each env value's words. */
+const wordsOf = (l: { command: string; args: string[]; env: Record<string, string> }) =>
+  [l.command, ...l.args, ...Object.values(l.env)]
+    .flatMap((w) => w.split(/\s+/))
+    .flatMap((w) => [w, ...(w.includes("=") ? [w.slice(w.indexOf("=") + 1)] : [])])
+    .filter(Boolean);
 
 /**
- * What you consent to when you turn on a repo's server: which project, which server, exactly as written, and the bytes
- * of every file of the repo it runs (automated review, 2026-11-21: an edit to that code turns it off again).
+ * Whether a repo's local server runs code from the repo (ruling, 2026-11-21): anything but a package runner (npx, bunx,
+ * uvx, pnpm dlx, pipx run, docker run) given a published package or image name, with no word anywhere (args, flag
+ * values, env values) that could name a file, and no shell line. Such a server has no lasting consent: ion asks in each
+ * chat. A remote one runs nothing local.
  */
-export const repoMaterial = (project: string, name: string, v: unknown): string => {
-  const code = repoFiles(project, v).map((f) => [relative(project, f), codeHash(f)]);
-  return `repo-mcp:${JSON.stringify([project, name, v, ...(code.length ? [code] : [])])}`;
-};
+export function runsRepoCode(project: string, v: unknown): boolean {
+  const l = isObj(v) ? standardLaunch(v) : null;
+  if (!l || l.kind !== "stdio") return false;
+  const cmd = basename(l.command);
+  if (SHELLS.has(cmd) || !(cmd in RUNNERS) || l.command !== cmd) return true;
+  const sub = RUNNERS[cmd];
+  if (sub && l.args[0] !== sub) return true;
+  const rest = sub ? l.args.slice(1) : l.args;
+  if (rest.some((a) => RUNS_LINE.has(a.split("=")[0]!))) return true;
+  if (
+    wordsOf(l)
+      .slice(1)
+      .some((w) => pathish(project, w))
+  )
+    return true;
+  const target = rest.find((a) => !a.startsWith("-"));
+  return !target || !(cmd === "docker" ? isImage(target) : PACKAGE.test(target));
+}
+
+/** What you consent to when you turn on a repo's server: which project, which server, exactly as written. */
+export const repoMaterial = (project: string, name: string, v: unknown): string =>
+  `repo-mcp:${JSON.stringify([project, name, v])}`;
 
 /** Whether you turned on this repo server, as it is now. */
 export type RepoOn = (name: string, v: unknown) => Promise<boolean>;

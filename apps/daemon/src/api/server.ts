@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { loadUserConfig } from "@ion/config";
 import { agentsHome, dropInheritedMarkers } from "../env.js";
 import { chmodSync, mkdirSync } from "node:fs";
@@ -44,7 +45,7 @@ import { createVault } from "../secrets/vault.js";
 import { Hooks } from "../hooks/index.js";
 import { createSkills, ionSkillsDir, type Skills } from "../skills/index.js";
 import { runSkillsOf } from "../skills/run.js";
-import { runOwnOf } from "../tools/own-run.js";
+import { type AskInChat, runOwnOf } from "../tools/own-run.js";
 import { skillReaders } from "../adapters/registry.js";
 
 /** The scope of a run that ion asks you about. */
@@ -296,6 +297,7 @@ const oauthOf = (tools: Tools, store: EventStore, net?: Net): OAuth =>
 function connectionsOf(
   opts: { configFile: string; dataDir: string; secrets?: Secrets; net?: Net; home?: string },
   store: EventStore,
+  late: { decisions?: Decisions },
 ) {
   const tools = toolsOf(opts);
   // Your keys, as filling reads them (keychain, then ion's environment), for what no agent may inherit.
@@ -309,6 +311,7 @@ function connectionsOf(
       dataDir: opts.dataDir,
       configFile: opts.configFile,
       sign: tools.sign,
+      ask: repoAsker(late),
     }),
   };
   const ionBin = ionLauncher(opts.dataDir);
@@ -353,13 +356,32 @@ function skillsOf(opts: { dataDir: string; configFile: string; home?: string }, 
   return skills;
 }
 
+/**
+ * Asks in a run's chat about a repo's server that runs the repo's own code (ruling, 2026-11-21): "Allow for this chat"
+ * lets it start in that chat; no answer in 4 minutes is a no.
+ */
+const repoAsker =
+  (late: { decisions?: Decisions }): AskInChat =>
+  async (r, text, command) => {
+    const b: Blocked = {
+      requestId: `repo-${randomUUID()}`,
+      summary: text,
+      reason: command,
+      key: `repo ${text}`,
+      repo: true,
+    };
+    return (await late.decisions?.askBlocked({ kind: "run", ...r }, b)) === "allow";
+  };
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(
   opts: { dataDir: string; configFile: string; secrets?: Secrets; net?: Net; home?: string },
   base: () => string,
 ): { ctx: Ctx; turns: IonTurns } {
   const { db, store } = openStore(opts.dataDir);
-  const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store);
+  // Made after the run manager it needs; the judge, the gate and runs' questions reach it through this holder.
+  const late: { decisions?: Decisions } = {};
+  const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store, late);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   const quick = harnessRunner(opts.configFile);
@@ -367,8 +389,6 @@ function openState(
   const ionQuick = harnessRunner(opts.configFile, "quick");
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
   sweepNeeds(needs, ionQuestions);
-  // Made after the run manager it needs; the judge and the gate reach it through this holder.
-  const late: { decisions?: Decisions } = {};
   const access = autoAccess(opts, quick, late);
   const hooks = startHooks(store, db, opts.configFile, tools);
   const runCtx = {

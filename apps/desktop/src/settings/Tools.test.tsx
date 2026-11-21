@@ -723,8 +723,6 @@ describe("Settings → Tools: a repo's own", () => {
   it("a repo's .mcp.json server has a switch, off, and says its file", async () => {
     const repo = {
       ...{ project: "shop", file: ".mcp.json", id: "shop:repotool", on: false, new: true as const },
-      // Automated review, 2026-11-21: one that runs the repo's own code says so.
-      runsCode: true as const,
     };
     const c = toolsClient(() =>
       info({
@@ -737,9 +735,32 @@ describe("Settings → Tools: a repo's own", () => {
     await open(c);
     const r = await findRow("repotool");
     expect(within(r).getByText("From shop's .mcp.json")).toBeTruthy();
-    expect(within(r).getByText("Runs code from the repo")).toBeTruthy();
     fireEvent.click(within(r).getByRole("switch", { name: "repotool" }));
     expect(c.call).toHaveBeenCalledWith("tools.setOn", { kind: "repo", id: "shop:repotool", on: true });
+  });
+
+  // Ruling, 2026-11-21: one that runs code from the repo has no lasting switch: ion asks in each chat.
+  it("a repo server that runs the repo's own code says it asks in each chat, with no switch", async () => {
+    const repo = {
+      project: "shop",
+      file: ".mcp.json",
+      id: "shop:local",
+      on: false,
+      new: true as const,
+      asks: true as const,
+    };
+    const server = {
+      agent: "claude-code",
+      name: "local",
+      transport: "stdio" as const,
+      launch: "node ./tools/mcp.js",
+      repo,
+    };
+    await open(toolsClient(() => info({ own: { ...info().own, servers: [server] } })));
+    const r = await findRow("local");
+    expect(within(r).getByText("Asks in each chat")).toBeTruthy();
+    expect(within(r).queryByRole("switch")).toBeNull();
+    expect(within(r).queryByText("New")).toBeNull();
   });
 
   it("a project's skill says it's the project's, with a switch", async () => {

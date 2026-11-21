@@ -228,7 +228,7 @@ function rowsOf(info: ToolsInfo): Merged<McpToolInfo>[] {
 
 /**
  * A server in a project's own file (security review, 2026-11-21: the repo wrote it, not you): its switch, off until you
- * turn it on, which is consent to exactly what it runs.
+ * turn it on, which is consent to exactly what it runs; one that runs code from the repo has none: ion asks in each chat.
  */
 function RepoRow({ s, part }: { s: OwnServerInfo; part: Part }) {
   const [error, run] = useCallError();
@@ -238,21 +238,22 @@ function RepoRow({ s, part }: { s: OwnServerInfo; part: Part }) {
       <ToolRow
         icon={PlugZap}
         name={s.name}
-        chip={stateOf(repo, part.locked)}
+        chip={repo.asks ? null : stateOf(repo, part.locked)}
         origin={fromOf(`From ${repo.project}'s ${repo.file}`)}
-        line={
-          <>
-            {ownLine(s.launch)}
-            {repo.runsCode && <span className="part">Runs code from the repo</span>}
-          </>
-        }
+        line={ownLine(s.launch)}
         mid={<Faces who={[s.agent]} agents={part.agents} />}
         end={
-          <Switch
-            label={s.name}
-            on={repo.on}
-            onPick={(on) => run(part.client.call("tools.setOn", { kind: "repo", id: repo.id, on }), part.set)}
-          />
+          repo.asks ? (
+            <span className="s">Asks in each chat</span>
+          ) : (
+            <Switch
+              label={s.name}
+              on={repo.on}
+              onPick={(on) =>
+                run(part.client.call("tools.setOn", { kind: "repo", id: repo.id, on }), part.set)
+              }
+            />
+          )
         }
       />
       {error && <div className="perr">{error}</div>}

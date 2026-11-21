@@ -12,6 +12,8 @@ export type Blocked = {
   cut?: boolean;
   /** A guess of ion's, not the judge's no (the user, 2026-11-21): "ion is wary of this". */
   wary?: true;
+  /** A repo's server that runs the repo's own code, before a chat starts it: asked as it is, for this chat only. */
+  repo?: true;
 };
 export type Held = "allow" | "deny" | "timeout";
 
@@ -22,6 +24,18 @@ const PREFIX = "Allow this? ";
 const ONCE = "Allow once";
 const ALWAYS = "Always allow in this project";
 const NO = "Don't allow";
+const FOR_CHAT = "Allow for this chat";
+const REPO_NO = "No";
+
+/** A repo's server that runs the repo's own code: the summary says what, its command is the why. */
+const repoQuestion = (b: Blocked) => ({
+  question: b.summary,
+  why: b.reason,
+  choices: [
+    { label: FOR_CHAT, consequence: "It runs in this chat. ion asks again in another chat." },
+    { label: REPO_NO, consequence: "This chat goes on without it." },
+  ],
+});
 
 /**
  * Whether the input says more than the question's title: not when it's only the command the title already shows,
@@ -39,8 +53,10 @@ function addsToTitle(b: Blocked): boolean {
   }
 }
 
-/** What you're asked about a stopped tool call. */
-export const blockedQuestion = (b: Blocked) => ({
+/** What you're asked about a stopped tool call (or a repo's server about to start). */
+export const blockedQuestion = (b: Blocked) => (b.repo ? repoQuestion(b) : callQuestion(b));
+
+const callQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
   why: [
     `${b.wary ? "ion is wary of this" : "ion stopped it"}: ${b.reason}`,
@@ -73,7 +89,7 @@ export function blockedAnswer(
   custom: boolean,
 ): { allow: boolean; scope: "chat" | "project" | null } {
   if (custom) return { allow: false, scope: "chat" };
-  if (label === ONCE) return { allow: true, scope: null }; // once means once
+  if (label === ONCE || label === FOR_CHAT) return { allow: true, scope: null }; // once means once
   if (label === ALWAYS) return { allow: true, scope: "project" };
   return { allow: false, scope: "chat" };
 }

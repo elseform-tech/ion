@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockedQuestion } from "./blocked.js";
+import { blockedAnswer, blockedQuestion } from "./blocked.js";
 
 // The user, 2026-11-21: a guess (a script ion can't read, decoded text that runs) asks you instead of refusing; the
 // question says ion is wary, not that it stopped the call.
@@ -30,5 +30,22 @@ describe("blockedQuestion", () => {
     expect(blockedQuestion({ ...b, input: bg }).why).toContain("run_in_background");
     const cut = '{\n  "command": "./main …\n… (cut)';
     expect(blockedQuestion({ ...b, input: cut, cut: true }).why).toContain("(cut)");
+  });
+});
+
+// Ruling, 2026-11-21: a repo's server that runs the repo's own code is asked about in each chat.
+describe("a repo's server, asked in the chat", () => {
+  it("says what wants to run, and offers Allow for this chat or No", () => {
+    const q = blockedQuestion({
+      requestId: "repo1",
+      summary: "shop's .mcp.json wants to run local from the repo",
+      reason: "node ./tools/mcp.js",
+      key: "repo shop local",
+      repo: true,
+    });
+    expect(q.question).toBe("shop's .mcp.json wants to run local from the repo");
+    expect(q.choices.map((c) => c.label)).toEqual(["Allow for this chat", "No"]);
+    expect(blockedAnswer("Allow for this chat", false)).toEqual({ allow: true, scope: null });
+    expect(blockedAnswer("No", false)).toEqual({ allow: false, scope: "chat" });
   });
 });

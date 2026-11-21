@@ -145,8 +145,8 @@ export type OwnServerInfo = {
     on: boolean;
     new?: true;
     changed?: true;
-    /** It runs a file of the repo's own (an edit to it turns the server off until you turn it on again). */
-    runsCode?: true;
+    /** It runs code from the repo (anything but a published package): no switch; ion asks in each chat. */
+    asks?: true;
   };
 };
 

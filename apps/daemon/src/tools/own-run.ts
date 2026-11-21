@@ -5,7 +5,8 @@ import { loadUserConfig, ownToolsOn, type UserConfig } from "@ion/config";
 import { harnessIds } from "../adapters/registry.js";
 import { pluginDirOf, writePlugin } from "../skills/plugin.js";
 import { type RunSkills, skillsFor } from "../skills/run.js";
-import { claudeOwnForRun, type RepoOn, type RepoState, repoMaterial } from "./own.js";
+import { standardLaunch } from "./import.js";
+import { claudeOwnForRun, type RepoOn, type RepoState, repoMaterial, runsRepoCode } from "./own.js";
 import { envDropOf } from "./env-drop.js";
 import { turnedOn } from "./on.js";
 import { type Sign, sameMark } from "../secrets/consent-key.js";
@@ -31,14 +32,14 @@ export type OwnForRun = {
 };
 
 export type RunOwn = {
-  forRun(r: {
-    runId: string;
-    harness: string;
-    projectId: string;
-    cwd: string;
-    pluginDir?: string;
-  }): Promise<OwnForRun>;
+  forRun(r: Asking & { harness: string; cwd: string; pluginDir?: string }): Promise<OwnForRun>;
 };
+
+/** The run a question is asked in. */
+type Asking = { runId: string; chatId: string; projectId: string };
+
+/** Asks you in the run's chat; true for "Allow for this chat". */
+export type AskInChat = (r: Asking, text: string, command: string) => Promise<boolean>;
 
 /**
  * A chat run's agent's own tools (the user, 2026-11-21: on by default, "Use its own tools" per agent). Codex, opencode
@@ -53,7 +54,11 @@ export function runOwnOf(o: {
   sign: Sign;
   /** ion's environment (a stand-in in tests); only what an agent may have of it fills `${VAR}`. */
   env?: NodeJS.ProcessEnv;
+  /** Asks you in a chat about a repo's server that runs the repo's own code; none: it doesn't come. */
+  ask?: AskInChat;
 }): RunOwn {
+  /** Repo servers you allowed for a chat ("<chat> <project> <name> <as written>"): for that chat only. */
+  const allowed = new Set<string>();
   return {
     async forRun(r) {
       const { config } = loadUserConfig(o.configFile);
@@ -63,7 +68,9 @@ export function runOwnOf(o: {
       const pluginDir = r.pluginDir ?? pluginDirOf(o.dataDir, r.runId);
       if (!r.pluginDir) await writePlugin(pluginDir, []);
       const env = agentOnly(o.env ?? agentsHomeOf(o).env, await envDropOf(o.configFile));
-      const repoOn = repoConsent(o.sign, project, config.tools.repoOn);
+      const lasting = repoConsent(o.sign, project, config.tools.repoOn);
+      const repoOn: RepoOn = (name, v) =>
+        runsRepoCode(project, v) ? askedFor(o.ask, allowed, { ...r, project, name, v }) : lasting(name, v);
       const own = await claudeOwnForRun({ home: o.home, env, project, dir: join(pluginDir, "own"), repoOn });
       return { ownTools, ownServers: own.servers, ownPlugins: own.plugins, pluginDir, secrets: own.secrets };
     },
@@ -84,12 +91,38 @@ export const repoKey = (project: string, name: string) => `${basename(project)}:
 export const repoState =
   (sign: Sign, repoOn: string[]): RepoState =>
   async (project, name, v) => {
+    // Code from the repo has no lasting consent: it's asked about in each chat.
+    if (runsRepoCode(project, v)) return { on: false, new: true, asks: true };
     const was = turnedOn(repoOn).get(repoKey(project, name));
     if (was === undefined) return { on: false, new: true };
     const now = await sign(repoMaterial(project, name, v)).catch(() => null);
     if (now === null) return { on: false };
     return sameMark(was, now) ? { on: true } : { on: false, changed: true };
   };
+
+/**
+ * A repo server that runs the repo's own code, for one chat (ruling, 2026-11-21): allowed already in this chat, else
+ * asked there now ("<project>'s .mcp.json wants to run <server> from the repo"); no one to ask: it doesn't come.
+ */
+async function askedFor(
+  ask: AskInChat | undefined,
+  allowed: Set<string>,
+  a: Asking & { project: string; name: string; v: unknown },
+): Promise<boolean> {
+  const key = `${a.chatId} ${a.project} ${a.name} ${JSON.stringify(a.v)}`;
+  if (allowed.has(key)) return true;
+  const l = isLaunch(a.v);
+  const command = l ? [l.command, ...l.args].join(" ") : "";
+  const text = `${basename(a.project)}'s .mcp.json wants to run ${a.name} from the repo`;
+  const yes = (await ask?.(a, text, command).catch(() => false)) ?? false;
+  if (yes) allowed.add(key);
+  return yes;
+}
+
+const isLaunch = (v: unknown) => {
+  const l = typeof v === "object" && v !== null ? standardLaunch(v as Record<string, unknown>) : null;
+  return l?.kind === "stdio" ? l : null;
+};
 
 /** For a run in this project: a repo server comes only while it's on. */
 const repoConsent =
@@ -117,7 +150,7 @@ export const ownOpts = (own?: OwnForRun) =>
 /** A chat run's skills plugin (null: none) and its agent's own tools (which may need that folder, and make it). */
 export async function skillsAndOwn(
   ctx: { skills?: RunSkills; own?: RunOwn },
-  l: { runId: string; projectId: string; cwd: string; h: { adapter: { id: string } } },
+  l: { runId: string; chatId: string; projectId: string; cwd: string; h: { adapter: { id: string } } },
 ): Promise<{ pluginDir?: string; own: OwnForRun }> {
   const skills = (await skillsFor(ctx.skills, l)) ?? undefined;
   const own = await ownFor(ctx.own, {

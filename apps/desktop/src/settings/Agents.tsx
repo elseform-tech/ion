@@ -33,7 +33,7 @@ function AgentRow({ h, own, onOwn }: { h: HarnessInfo; own: boolean; onOwn: (on:
       </div>
       {/* The lab's third column (its usage meter) stays empty here; the switch sits where the lab's does. */}
       <span />
-      <Switch label={`${h.label}: use its own tools`} on={own} onPick={onOwn} />
+      <Switch label={`${h.label}: use its own tools`} title="Use its own tools" on={own} onPick={onOwn} />
     </div>
   );
 }

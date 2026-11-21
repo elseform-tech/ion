@@ -14,7 +14,7 @@ import type { Skills } from "../skills/index.js";
 import type { YourTools } from "../mcp/ion-your-tools.js";
 import { consentOf, turnedOn } from "../tools/on.js";
 import { agentsHomeOf, ownSwitches, repoKey, repoState } from "../tools/own-run.js";
-import { ownToolsOf, repoMaterial, repoServers } from "../tools/own.js";
+import { ownToolsOf, repoMaterial, repoServers, runsRepoCode } from "../tools/own.js";
 
 const KEY_NAME = /^[A-Za-z_]\w{0,63}$/;
 const MAX_KEY = 16_384;
@@ -94,6 +94,8 @@ async function repoTurned(tools: Tools, c: UserConfig, id: string, on: boolean):
   const dir = projectDirs(c).find((p) => repoKey(p, name) === id);
   const v = dir ? repoServers(dir)[name] : undefined;
   if (!dir || v === undefined || !project) throw new UserError(`Unknown connection: ${id}`);
+  // Code from the repo has no lasting consent (ruling, 2026-11-21): ion asks in each chat.
+  if (runsRepoCode(dir, v)) throw new UserError("It runs code from the repo: ion asks in each chat");
   const mark = await tools.sign(repoMaterial(dir, name, v)).catch(() => {
     throw new UserError(CANT_READ_KEYCHAIN);
   });
