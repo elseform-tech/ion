@@ -3,7 +3,16 @@ import type { Readable, Writable } from "node:stream";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Catalog, createRpc, ResumeFailed, type Rpc, RpcError, type StartOpts } from "@ion/adapter-kit";
+import {
+  agentEnv,
+  type Catalog,
+  createRpc,
+  type HttpMcpSpec,
+  ResumeFailed,
+  type Rpc,
+  RpcError,
+  type StartOpts,
+} from "@ion/adapter-kit";
 import type { AcpHarness } from "./harnesses.js";
 
 type Choice = { value?: unknown; name?: unknown; options?: Choice[] };
@@ -20,17 +29,32 @@ export type ConnectOpts = {
   cwd: string;
   timeoutMs?: number;
   resume?: string | null;
-  mcp?: StartOpts["mcp"];
+  mcpServers?: StartOpts["mcpServers"];
   gate?: StartOpts["gate"];
   env?: StartOpts["env"];
+  envDrop?: StartOpts["envDrop"];
 };
 
-export async function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
+/** Starts of an agent that's setting up, by agent: they take turns (two at once slowed each other past the limit). */
+const settingUp = new Map<string, Promise<unknown>>();
+
+export function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
+  if (!h.notResponding?.()) return open(h, bin, o);
+  const before = settingUp.get(h.id) ?? Promise.resolve();
+  const mine = before.then(() => open(h, bin, o));
+  settingUp.set(
+    h.id,
+    mine.catch(() => {}),
+  );
+  return mine;
+}
+
+async function open(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
   const timeoutMs = o.timeoutMs ?? 30_000;
   const child = spawn(bin, h.args, {
     stdio: ["pipe", "pipe", "ignore"],
     env: {
-      ...process.env,
+      ...agentEnv(process.env, o.envDrop),
       ...o.env,
       ...(h.env?.(o.gate ? { url: o.gate.url, cwd: o.cwd } : undefined) ?? {}),
     },
@@ -40,7 +64,8 @@ export async function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promi
   child.on("exit", () => child.stdout.destroy());
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new NotResponding(`${h.label} didn't respond`)), timeoutMs);
+    const why = h.notResponding?.() ?? `${h.label} didn't respond`;
+    timer = setTimeout(() => reject(new NotResponding(why)), timeoutMs);
   });
   try {
     return await Promise.race([handshake(h, { rpc, child }, o), timeout]);
@@ -59,7 +84,25 @@ export async function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promi
 /** The agent didn't answer in time (first-run download, an interactive prompt, a hang). */
 class NotResponding extends Error {}
 
-type AgentCaps = { loadSession?: boolean; sessionCapabilities?: { resume?: object } };
+type AgentCaps = {
+  loadSession?: boolean;
+  sessionCapabilities?: { resume?: object };
+  mcpCapabilities?: { http?: boolean };
+};
+
+const pairs = (o: Record<string, string>) => Object.entries(o).map(([name, value]) => ({ name, value }));
+
+/**
+ * The run's MCP servers in ACP's shape, inside the session request (over stdin, never the agent's command line).
+ * Every server is remote (ion's URL for it), passed only when the agent's `initialize` says it takes them.
+ */
+function acpServers(servers: HttpMcpSpec[] = [], caps: AgentCaps): unknown[] {
+  return servers.flatMap((s): unknown[] => {
+    return caps.mcpCapabilities?.http
+      ? [{ type: "http", name: s.name, url: s.url, headers: pairs(s.headers) }]
+      : [];
+  });
+}
 
 async function handshake(
   h: AcpHarness,
@@ -71,16 +114,7 @@ async function handshake(
     clientCapabilities: {},
     clientInfo: { name: "ion", version: "0.0.0" },
   })) as { agentCapabilities?: AgentCaps };
-  const mcpServers = o.mcp
-    ? [
-        {
-          type: "http",
-          name: o.mcp.name,
-          url: o.mcp.url,
-          headers: Object.entries(o.mcp.headers).map(([name, value]) => ({ name, value })),
-        },
-      ]
-    : [];
+  const mcpServers = acpServers(o.mcpServers, init.agentCapabilities ?? {});
   const base = { cwd: o.cwd, mcpServers, ...(h.sessionMeta ? { _meta: h.sessionMeta } : {}) };
   if (o.resume) {
     const method = continueMethod(init.agentCapabilities ?? {});

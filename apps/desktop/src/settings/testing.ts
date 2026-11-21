@@ -6,7 +6,6 @@ import { vi } from "vitest";
 export const settings: SettingsInfo = {
   quick: "grok-build",
   effort: null,
-  access: "auto",
   maxRuns: "auto",
   autoRuns: 4,
   notifications: {

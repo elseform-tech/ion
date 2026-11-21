@@ -1,24 +1,28 @@
 import { loadUserConfig } from "@ion/config";
-import { dropInheritedMarkers } from "../env.js";
+import { agentsHome, dropInheritedMarkers } from "../env.js";
 import { chmodSync, mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { runsView } from "../views/runs.js";
 import { createAuth } from "./auth.js";
+import { cliOf, wsAccess } from "./run-calls.js";
 import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
+import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
-import { createAccess, createJudge, harnessRunner } from "../access/index.js";
+import { ionLauncher } from "../runs/ion-bin.js";
+import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler, type Grants, type RunScope } from "../mcp/index.js";
+import { createGateway } from "../gateway/index.js";
 import { Ions } from "../ions/service.js";
 import { IonTurns } from "../ions/turn.js";
 import { IonQuestions } from "../ions/questions.js";
@@ -30,6 +34,17 @@ import { Suggestions } from "../ions/suggestions.js";
 import { chatsView } from "../views/chats.js";
 import { addRoutineTo } from "./routines.js";
 import { Notifier } from "../notify/index.js";
+import { type Secrets, systemSecrets } from "../secrets/index.js";
+import { createTools, type Tools } from "../tools/index.js";
+import { createOAuth, type OAuth } from "../secrets/oauth.js";
+import { serversFor } from "../tools/run-servers.js";
+import { setDropLookup } from "../tools/env-drop.js";
+import type { Net } from "../secrets/oauth-net.js";
+import { createVault } from "../secrets/vault.js";
+import { Hooks } from "../hooks/index.js";
+import { createSkills, ionSkillsDir, type Skills } from "../skills/index.js";
+import { runSkillsOf } from "../skills/run.js";
+import { skillReaders } from "../adapters/registry.js";
 
 /** The scope of a run that ion asks you about. */
 const runScopeOf = (r: AskingRun): RunScope => ({
@@ -44,28 +59,50 @@ const MAX_MESSAGE_BYTES = 1024 * 1024;
 /** What a stalled chat is sent when you resume it from ion chief's suggestion. */
 const RESUME = "Pick up where you left off.";
 
-export async function startServer(opts: {
+type ServerOpts = {
   dataDir: string;
   configFile: string;
   port?: number;
-}): Promise<{ port: number; token: string; close(): Promise<void> }> {
+  /** Where keys and tokens are kept: the OS keychain unless given (tests keep them in memory). */
+  secrets?: Secrets;
+  /** How ion reaches remote servers to sign in (tests: nothing leaves the computer). */
+  net?: Net;
+  /** Where your agents' skills are looked for: your home folder unless given (tests). */
+  home?: string;
+};
+
+/** Your connections (mcp.json beside the config file) and the keychain. */
+const toolsOf = (o: Pick<ServerOpts, "configFile" | "secrets" | "dataDir">) => {
+  const secrets = o.secrets ?? systemSecrets();
+  // Tokens are too big for the keychain: they're in the vault, whose key is in the keychain.
+  return createTools({
+    configFile: o.configFile,
+    secrets,
+    tokens: createVault({ dir: join(o.dataDir, "vault"), keychain: secrets }),
+  });
+};
+
+export async function startServer(
+  opts: ServerOpts,
+): Promise<{ port: number; token: string; oauth: OAuth; grants: Grants; close(): Promise<void> }> {
   dropInheritedMarkers(); // idempotent: embedders and tests start the server without main()
   let port = 0;
   const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
   const { db } = ctx;
   const auth = createAuth();
+  const who = wsAccess(auth, ctx.grants);
   const http = httpServer(ctx, turns);
   const wss = new WebSocketServer({
     server: http,
     maxPayload: MAX_MESSAGE_BYTES,
-    // Refuse at the handshake, so unauthenticated peers never reach frame parsing.
-    verifyClient: ({ req }: { req: IncomingMessage }) => auth.isAuthorized(req),
+    // Refuse at the handshake, so unauthenticated peers never reach frame parsing. A run's key: ion's tool commands.
+    verifyClient: ({ req }: { req: IncomingMessage }) => who.verify(req),
     handleProtocols: (protocols) => (protocols.has("ion") ? "ion" : false),
   });
   wss.on("error", () => {});
   http.on("error", () => {});
   await new Promise<void>((r) => http.listen(opts.port ?? 0, "127.0.0.1", r));
-  wss.on("connection", (ws) => new Connection(ws, ctx));
+  wss.on("connection", (ws, req) => new Connection(ws, ctx, who.callerOf(req)));
   // A hand-edited setting that fell back to its default: say so once, in the daemon's log.
   const { warning } = loadUserConfig(opts.configFile);
   if (warning) console.warn(warning);
@@ -90,12 +127,11 @@ export async function startServer(opts: {
   return {
     port,
     token: auth.token,
+    oauth: ctx.oauth,
+    grants: ctx.grants,
     close: async () => {
       for (const stop of stops) stop();
-      // ion's turns stop first; nothing an ion says after is written.
-      ctx.ions.stop();
-      await turns.shutdown();
-      await ctx.runs.shutdown();
+      await stopWork(ctx, turns);
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
       http.closeAllConnections();
@@ -107,21 +143,34 @@ export async function startServer(opts: {
 
 /**
  * One port: the WebSocket API (upgrades), ion's MCP server at /mcp and the gate at /gate/<key>, both for runs and
- * ions' turns (with their own keys).
+ * ions' turns (with their own keys), and ion's gateway to your remote MCP servers at /mcp/s/<name> (runs only).
  */
 function httpServer(ctx: Ctx, turns: IonTurns) {
   const { store, db, grants, decisions, configFile } = ctx;
   // An ion's turn starts threads with its start_thread tool.
-  const mcp = createMcpHandler({ store, db, grants, decisions, configFile, startThread: turns.startThread });
+  const mcp = createMcpHandler({
+    ...{ store, db, grants, decisions, configFile },
+    startThread: turns.startThread,
+    // ion's own tools tell an ion your connections and skills by name; it never gets them itself.
+    yourTools: yourToolsOf(ctx),
+  });
   const gate = createGateHandler({
     grants,
     decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
     // An ion's turn reports its tool calls here too: it may only read.
     ion: (scope, payload) => turns.gate(scope, payload),
   });
+  // Your remote MCP servers, through ion: each run's agent reaches only the ones given to it, with its own key.
+  const gateway = createGateway({
+    grants,
+    upstream: (runId, name) => ctx.runs.upstream(runId, name),
+    gate: (runId, call) => ctx.runs.gateMcp(runId, call),
+  });
+  ctx.runs.onEnded(() => gateway.closeEnded());
   return createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0]!;
-    if (path === "/mcp") void mcp(req, res).catch(() => res.destroy());
+    if (path.startsWith("/mcp/s/")) void gateway.handle(req, res).catch(() => res.destroy());
+    else if (path === "/mcp") void mcp(req, res).catch(() => res.destroy());
     else if (path.startsWith("/gate/")) void gate(req, res).catch(() => res.destroy());
     else res.writeHead(404).end();
   });
@@ -139,11 +188,7 @@ function autoAccess(
   return createAccess({
     judge: createJudge(quick),
     home: homedir(),
-    ionDirs: [
-      opts.dataDir,
-      dirname(opts.configFile),
-      ...(process.env.GROK_HOME ? [process.env.GROK_HOME] : []),
-    ],
+    ionDirs: ionDirsOf(opts),
     decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
   });
 }
@@ -231,15 +276,80 @@ function sweepNeeds(needs: NeedsService, ionQuestions: IonQuestions): void {
   ionQuestions.sweep();
 }
 
+/** The data folder (only you can read it) and the event store in it. */
+function openStore(dataDir: string): { db: ReturnType<typeof openDb>; store: EventStore } {
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
+  const db = openDb(join(dataDir, "ion.db"));
+  return { db, store: new EventStore(db, allViews) };
+}
+
+/** Signing in to your remote servers: your browser comes back to ion's callback port, tokens go to the vault. */
+const oauthOf = (tools: Tools, store: EventStore, net?: Net): OAuth =>
+  createOAuth({
+    ...{ secrets: tools.tokens, store, resolve: (id: string) => tools.remote(id) },
+    ...(net ? { net } : {}),
+  });
+
+/** Your connections (mcp.json, keys) and signing in to them. */
+function connectionsOf(
+  opts: { configFile: string; dataDir: string; secrets?: Secrets; net?: Net; home?: string },
+  store: EventStore,
+) {
+  const tools = toolsOf(opts);
+  // Your keys, as filling reads them (keychain, then ion's environment), for what no agent may inherit.
+  setDropLookup(tools.lookup);
+  const skills = skillsOf(opts, tools);
+  const runSkills = runSkillsOf(skills, opts.configFile);
+  const ionBin = ionLauncher(opts.dataDir);
+  return { tools, oauth: oauthOf(tools, store, opts.net), skills, runSkills, cli: cliOf(opts), ionBin };
+}
+
+/**
+ * ion's turns stop first (nothing an ion says after is written), then runs; your hooks stop only once no run is left
+ * to ask them (each running one with all it started).
+ */
+async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
+  ctx.ions.stop();
+  await ctx.oauth.close();
+  await turns.shutdown();
+  await ctx.runs.shutdown();
+  ctx.hooks.stop();
+}
+
+/** Your hooks, hearing every event stored from now on (until the store closes with the daemon). */
+function startHooks(
+  store: EventStore,
+  db: ReturnType<typeof openDb>,
+  configFile: string,
+  tools: Tools,
+): Hooks {
+  const hooks = new Hooks({ store, db, configFile, sign: tools.sign });
+  hooks.start();
+  return hooks;
+}
+
+/** Your agents' skills; plugins left by runs ion didn't see end are removed first. */
+function skillsOf(opts: { dataDir: string; configFile: string; home?: string }, tools: Tools): Skills {
+  const skills = createSkills({
+    ...{ home: opts.home ?? agentsHome(), dataDir: opts.dataDir, ionDir: ionSkillsDir(opts.configFile) },
+    ...{ sign: tools.sign, readers: skillReaders() },
+  });
+  try {
+    skills.sweep();
+  } catch {
+    // A folder ion can't remove now is made afresh per run anyway.
+  }
+  return skills;
+}
+
 /** The data folder, the event store and the services every connection shares. */
 function openState(
-  opts: { dataDir: string; configFile: string },
+  opts: { dataDir: string; configFile: string; secrets?: Secrets; net?: Net; home?: string },
   base: () => string,
 ): { ctx: Ctx; turns: IonTurns } {
-  mkdirSync(opts.dataDir, { recursive: true, mode: 0o700 });
-  chmodSync(opts.dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
-  const db = openDb(join(opts.dataDir, "ion.db"));
-  const store = new EventStore(db, allViews);
+  const { db, store } = openStore(opts.dataDir);
+  const { tools, oauth, skills, runSkills, cli, ionBin } = connectionsOf(opts, store);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   const quick = harnessRunner(opts.configFile);
@@ -250,10 +360,11 @@ function openState(
   // Made after the run manager it needs; the judge and the gate reach it through this holder.
   const late: { decisions?: Decisions } = {};
   const access = autoAccess(opts, quick, late);
+  const hooks = startHooks(store, db, opts.configFile, tools);
   const runCtx = {
-    configFile: opts.configFile,
-    dataDir: opts.dataDir,
-    access,
+    ...{ configFile: opts.configFile, dataDir: opts.dataDir, access, ionBin },
+    ...{ servers: serversFor({ tools, oauth, configFile: opts.configFile }), skills: runSkills },
+    beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => hooks.beforeTool(r, c),
     mcp: { grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
     // When ion stops a tool call it asks you; made here, answered through the decisions made below.
@@ -271,7 +382,8 @@ function openState(
     match: createMatcher(ionQuick),
     ion: ionQuestions,
     followUp: async (chatId, m) =>
-      (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown })).runId,
+      (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown, answers: m.answers }))
+        .runId,
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
@@ -282,8 +394,8 @@ function openState(
     start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
-  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION };
-  const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0 };
-  const ctx = { ...shared, queue: promptQueue(shared) };
+  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION, tools, oauth };
+  const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
+  const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };
   return { ctx, turns };
 }

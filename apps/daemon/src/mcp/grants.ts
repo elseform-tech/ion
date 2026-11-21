@@ -9,8 +9,11 @@ export type IonScope = { kind: "ion"; ionId: string; projects: string[]; turnId:
 
 export type Scope = RunScope | IonScope;
 
-/** What a key opens: ion's MCP server, or the gate (where a harness's hook reports tool calls). */
-type KeyKind = "mcp" | "gate";
+/**
+ * What a key opens: ion's MCP server, the gate (where a harness's hook reports tool calls), or ion's commands for
+ * tools from inside a chat (`ION_RUN_KEY`, the `ion` CLI's way in).
+ */
+type KeyKind = "mcp" | "gate" | "cli";
 
 /** What a run or a turn may only do a few times: write memory, start threads. */
 type Counted = "write" | "thread";

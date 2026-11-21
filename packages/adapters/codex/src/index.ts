@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import {
+  agentEnv,
   type AuthStatus,
   cachedCatalog,
   capabilitiesWith,
@@ -47,7 +48,7 @@ const LOGINS: [RegExp, string][] = [
  */
 function loginStatus(l: Launch): Promise<AuthStatus> {
   return new Promise((resolve) =>
-    execFile(l.bin, [...l.prefix, "login", "status"], { timeout: 10_000 }, (e, out, err) => {
+    execFile(l.bin, [...l.prefix, "login", "status"], { timeout: 10_000, env: agentEnv() }, (e, out, err) => {
       if (e) return resolve({ signedIn: false, method: "Not signed in" });
       // It prints to stderr; read both, keep only the kind of login.
       const text = `${out}${err}`;
@@ -89,13 +90,15 @@ export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
         new Promise<void>((resolve, reject) => {
           const l = launch();
           if (!l) return reject(new Error("Codex isn't installed"));
-          spawn(l.bin, [...l.prefix, "login"], { stdio: "inherit" }).on("exit", (code) =>
+          spawn(l.bin, [...l.prefix, "login"], { stdio: "inherit", env: agentEnv() }).on("exit", (code) =>
             code === 0 ? resolve() : reject(new Error("Sign-in didn't finish")),
           );
         }),
     },
     gateCall: codexGateCall,
     capabilities: capabilitiesWith(CAPABILITIES, catalog),
+    // Codex's mcp_servers takes a url (Streamable HTTP).
+    mcpTransports: { http: true },
     async start(opts) {
       const l = launch();
       if (!l) throw new Error("Codex isn't installed");

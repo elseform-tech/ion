@@ -63,7 +63,7 @@ describe("ion chief's suggestions", () => {
     mkdirSync(join(home, "data"), { recursive: true });
     saveUserConfig(configFile, {
       ...DEFAULT_CONFIG,
-      projects: [{ id: "app", path: repo("app"), starred: false, harness: "fake", access: "full" }],
+      projects: [{ id: "app", path: repo("app"), starred: false, harness: "fake" }],
     });
   });
   afterEach(stop);

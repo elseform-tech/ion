@@ -9,13 +9,14 @@ import {
   removeProject,
   renameProject,
   saveUserConfig,
-  setProjectAccess,
   setProjectStarred,
 } from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
 import { decisionsView } from "../views/decisions.js";
-import type { Grants } from "../mcp/index.js";
+import type { Grants, RunScope } from "../mcp/index.js";
+import type { Net } from "../secrets/oauth-net.js";
+import type { Added, Seen } from "../tools/added.js";
 import type { NeedsService } from "../needs/index.js";
 import type { RunManager } from "../runs/manager.js";
 import type { Db, EventStore } from "../store/index.js";
@@ -34,6 +35,13 @@ import { queueHandlers } from "./queue.js";
 import type { PromptQueue } from "../queue/index.js";
 import type { Routines } from "../scheduler/index.js";
 import type { Suggestions } from "../ions/suggestions.js";
+import type { Tools } from "../tools/index.js";
+import type { OAuth } from "../secrets/oauth.js";
+import type { Hooks } from "../hooks/index.js";
+import type { Skills } from "../skills/index.js";
+import { toolsHandlers } from "./tools.js";
+import { toolsCliHandlers } from "./tools-cli.js";
+import { toolsImportHandlers } from "./tools-import.js";
 
 export { UserError } from "./errors.js";
 
@@ -68,6 +76,22 @@ export type Ctx = {
   routines: Routines;
   suggestions: Suggestions;
   queue: PromptQueue;
+  /** Your connections (mcp.json) and the keychain their keys and tokens are in. */
+  tools: Tools;
+  /** Signing in to remote servers (OAuth); their tokens are in the keychain. */
+  oauth: OAuth;
+  /** Your hooks on ion's events, and each one's last result. */
+  hooks: Hooks;
+  /** The skills your agents already have, Claude Code's on or off. */
+  skills: Skills;
+  /** How ion reaches the MCP Registry and package registries (public addresses only). */
+  net: Net;
+  /** Where what was added with ion's commands came from, and who added it. */
+  added: Added;
+  /** What Settings has shown as New. */
+  seen: Seen;
+  /** A chat's agent making this call (with its run's key); none: you. */
+  caller?: RunScope;
   configFile: string;
   startedAt: number;
   version: string;
@@ -85,6 +109,9 @@ export const handlers: Handlers = {
   ...workspaceHandlers,
   ...routineHandlers,
   ...queueHandlers,
+  ...toolsHandlers,
+  ...toolsCliHandlers,
+  ...toolsImportHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
@@ -227,18 +254,6 @@ export const handlers: Handlers = {
     }
     return { ok: true as const };
   },
-  "project.setAccess": (a, ctx) => {
-    const access = a.access;
-    if (access !== "auto" && access !== "full") throw new UserError("Pick auto or full");
-    const { config, error } = loadUserConfig(ctx.configFile);
-    if (error) throw new UserError(`Fix your config first. ${error}`);
-    try {
-      saveUserConfig(ctx.configFile, setProjectAccess(config, String(a.projectId ?? ""), access));
-    } catch (e) {
-      throw new UserError((e as Error).message);
-    }
-    return { ok: true as const };
-  },
   "chat.create": (a, ctx): IonEvent =>
     ctx.store.append({
       chatId: `chat_${crypto.randomUUID()}`,
@@ -278,5 +293,6 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     signedIn,
     models: caps?.models ?? [],
     defaultModel: caps?.defaultModel ?? null,
+    ...(h.adapter.ownTools ? { ownTools: true as const } : {}),
   };
 }

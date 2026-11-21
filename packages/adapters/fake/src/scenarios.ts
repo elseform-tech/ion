@@ -1,4 +1,4 @@
-import type { AdapterEvent, Decision } from "@ion/adapter-kit";
+import { type AdapterEvent, type Decision, ION_SERVER, type HttpMcpSpec } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 
 type Asked = { kind: string; toolName: string; input: Record<string, unknown> };
@@ -14,14 +14,23 @@ export type Script = {
   tries(): number;
   /** The text this session was sent. */
   text(): string;
-  mcp(): unknown;
+  /** Every MCP server the run was given, ion's first. */
+  servers(): HttpMcpSpec[];
   /** What ion added to the agent process's environment. */
   env(): Record<string, string>;
+  /** The environment the agent's process would start with (ion's, less what it may not inherit). */
+  inherited(): NodeJS.ProcessEnv;
   /** ion's standing instructions for the run, if any. */
   instructions(): string;
   /** Reports a call to ion's gate like a real hook (allow when the run has no gate). */
   gate(req: Asked & { summary: string }): Promise<{ decision: string; reason?: string }>;
   wait(ms: number): Promise<"ok" | "interrupted">;
+};
+
+/** ion's own MCP server for the run, if it has one. */
+const ionServer = (s: Script): IonServer | null => {
+  const m = s.servers().find((x) => x.name === ION_SERVER);
+  return m?.transport === "http" ? m : null;
 };
 
 const say = (s: Script, text: string) => {
@@ -32,7 +41,7 @@ const say = (s: Script, text: string) => {
 type ToolStart = {
   toolId: string;
   name: string;
-  kind: "read" | "edit" | "command";
+  kind: "read" | "edit" | "command" | "web";
   summary: string;
   input?: string;
 };
@@ -94,7 +103,7 @@ function namedIn(message: string): string[] {
 
 /** An ion's turn on your message (see SCENARIOS.ion). */
 async function ionTurn(s: Script): Promise<"done" | "failed" | "interrupted"> {
-  const server = s.mcp() as IonServer | null;
+  const server = ionServer(s);
   if (!server) return "failed";
   const message = s.text();
   const listed = await ionTool(s, server, "projects", {});
@@ -119,6 +128,29 @@ async function tryEdit(s: Script): Promise<boolean> {
   return g.decision === "allow";
 }
 
+/** A search result the fake's web search finds. */
+const FAKE_FOUND = "https://nodejs.org/en/about/previous-releases";
+
+/**
+ * "try-web": an ion's agent searches the web, then reads the page it found, the address in your message, and one it
+ * made up, each through ion's gate first; it says what it read and what was refused.
+ */
+async function tryWeb(s: Script, message: string): Promise<string> {
+  tool(s, { toolId: "ws", name: "WebSearch", kind: "web", summary: "node", input: '{"query":"node"}' });
+  s.emit({ type: EV.toolOutput, data: { toolId: "ws", text: `Links: [{"url":"${FAKE_FOUND}"}]` } });
+  done(s, "ws", true);
+  const given = /https:\/\/\S+/.exec(message)?.[0];
+  const said: string[] = [];
+  for (const url of [FAKE_FOUND, ...(given ? [given] : []), "https://made.up/x"]) {
+    const input = { url, prompt: "the version" };
+    tool(s, { toolId: url, name: "WebFetch", kind: "web", summary: url });
+    const g = await s.gate({ kind: "web", toolName: "WebFetch", input, summary: url });
+    done(s, url, g.decision === "allow");
+    said.push(g.decision === "allow" ? `Read ${url}.` : `Refused ${url}: ${g.reason ?? "denied"}.`);
+  }
+  return said.join(" ");
+}
+
 const transient = async (s: Script) => {
   s.emit({ type: EV.error, data: { code: "rate_limit", retryable: true, message: "Rate limited" } });
   return "failed" as const;
@@ -135,8 +167,64 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, s.instructions());
     return "done";
   },
+  /**
+   * Lists the run's MCP servers (names and kinds; every one is ion's URL for it). "retry-once": the first try then
+   * fails.
+   */
+  async mcplist(s) {
+    const list = s.servers().map((m) => ({ name: m.name, transport: m.transport }));
+    say(s, JSON.stringify(list));
+    if (!s.text().includes("retry-once") || s.tries() > 1) return "done";
+    await s.wait(300);
+    return transient(s);
+  },
+  /**
+   * An agent that prints what it was given, as a careless one could (`env`, `ps eww`): every MCP server's header
+   * values, in its thinking, a tool's input and output, and its message.
+   */
+  async leak(s) {
+    const values = s.servers().flatMap((m) => Object.values(m.headers));
+    s.emit({ type: EV.thinkingDelta, data: { text: `I have ${values.join(" and ")}` } });
+    tool(s, {
+      toolId: "ps",
+      name: "Bash",
+      kind: "command",
+      summary: "ps eww",
+      input: `ps eww | grep ${values[1]}`,
+    });
+    s.emit({
+      type: EV.toolOutput,
+      data: {
+        toolId: "ps",
+        text: `  PID COMMAND
+ 4242 node srv.js ${values.join(" ")}`,
+      },
+    });
+    done(s, "ps", true);
+    say(s, `ION_MCP_H1=${values[1]} ${JSON.stringify(s.servers())}`);
+    return "done";
+  },
+  /** Fails its first try with an error that quotes its ion key, as a careless agent could; then works like slow. */
+  async leakretry(s) {
+    if (s.tries() > 1) return SCENARIOS.slow!(s);
+    const key = Object.values(ionServer(s)?.headers ?? {})[0] ?? "";
+    s.emit({ type: EV.error, data: { code: "rate_limit", retryable: true, message: `Refused ${key}` } });
+    return "failed";
+  },
   async mcpinfo(s) {
-    say(s, JSON.stringify(s.mcp()));
+    say(s, JSON.stringify(ionServer(s)));
+    return "done";
+  },
+  /** Says which of ion's test variables (`*_TEST_*`) its process would inherit. */
+  async inherits(s) {
+    say(
+      s,
+      JSON.stringify(
+        Object.keys(s.inherited())
+          .filter((k) => k.includes("_TEST_"))
+          .sort(),
+      ),
+    );
     return "done";
   },
   async envinfo(s) {
@@ -232,14 +320,18 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   /**
    * An ion's turn (ion chief or a project's): looks its projects up, starts a thread in each project the message
    * names ("please check <a> and <b> for …": a project is the first word of each), tries a write when it says
-   * "try-edit", waits on "take-your-time", and replies "Asked <n> projects." or "This is <its first project>.". A
+   * "try-edit", searches and reads pages on "try-web", waits on "take-your-time", and replies "Asked <n> projects." or "This is <its first project>.". A
    * thread's end is answered "It's done." (or "It didn't finish.").
    */
   async ion(s) {
+    if (s.text().includes("try-web")) {
+      say(s, await tryWeb(s, s.text()));
+      return "done";
+    }
     const ended = endOf(s.text());
     if (!ended) return ionTurn(s);
     // A thread's end: it looks with ion's tools first (as an agent would), then says it in a word, starting nothing.
-    const server = s.mcp() as IonServer | null;
+    const server = ionServer(s);
     const listed = server ? await ionTool(s, server, "projects", {}).catch(() => "") : "";
     if (!listed) return "failed";
     say(s, ended);
@@ -247,7 +339,7 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   },
   /** Asks the user through ion's MCP server (tool "ask"), then ends its turn, as told. */
   async asks(s) {
-    const server = s.mcp() as IonServer | null;
+    const server = ionServer(s);
     if (!server) return "failed";
     const choices = [
       {

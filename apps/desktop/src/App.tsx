@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Chats } from "./chats/Chats.js";
 import { Down } from "./Down.js";
 import { Frame, useSidebar } from "./Frame.js";
+import { useToolsAt } from "./goto.js";
 import { Ions } from "./ions/Ions.js";
 import { useIon } from "./ion.js";
 import { useSystemNotifications } from "./notify.js";
@@ -49,9 +50,11 @@ export function App() {
   // The ion the Ions screen opens on (Settings' "Open chat" picks one).
   const [ionId, setIonId] = useState("chief");
   const [sidebar, toggleSidebar] = useSidebar();
+  const toolsAt = useToolsAt(mode, setMode);
   // The chat on screen: no system notification for it while the window has focus.
   const watching = watched(mode, openId, ionId);
-  useSystemNotifications(client, (chatId) => openChat(chatId, { setIonId, setOpenId, setMode }), watching);
+  const go = { setIonId, setOpenId, setMode };
+  useSystemNotifications(client, (chatId) => openChat(chatId, go), watching);
   if (state === "connecting") return <div className="app--empty" />;
   if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
   return (
@@ -66,25 +69,16 @@ export function App() {
         )}
         {mode === "ions" && (
           <div className="mode ions">
-            <Ions
-              key={ionId}
-              client={client}
-              start={ionId}
-              onOpenChat={(chatId) => {
-                setOpenId(chatId);
-                setMode("chats");
-              }}
-            />
+            <Ions key={ionId} client={client} start={ionId} onOpenChat={(chatId) => openChat(chatId, go)} />
           </div>
         )}
         {mode === "settings" && (
           <div className="mode settings">
             <Settings
+              key={toolsAt ? `${toolsAt.kind}:${toolsAt.name}` : "settings"}
               client={client}
-              onOpenIon={(id) => {
-                setIonId(id);
-                setMode("ions");
-              }}
+              toolsAt={toolsAt}
+              onOpenIon={(id) => openChat(`ion:${id}`, go)}
             />
           </div>
         )}

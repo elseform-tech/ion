@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { availableParallelism } from "node:os";
+import { availableParallelism, homedir } from "node:os";
 import {
-  type AdapterEvent,
   type ApprovalRequest,
+  type GateCall,
   projectRoots,
   ResumeFailed,
   type Session,
@@ -10,9 +10,9 @@ import {
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
-import { type Chat, chatFor, Readiness } from "./ready.js";
+import { type Chat, chatCreated, chatFor, Readiness } from "./ready.js";
 import { UserError } from "../api/errors.js";
-import type { Access } from "../access/index.js";
+import { type Access, ionDirsOf } from "../access/index.js";
 import type { Grants } from "../mcp/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
@@ -22,12 +22,16 @@ import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import type { GateAnswer } from "../gate/index.js";
-import { type AskBlocked, Approvals } from "./approvals.js";
-import { type Retry, type RetryState, type RunError, retryPlan } from "./retry.js";
-import { accessFor, defaultProject, projectPath } from "./projects.js";
-import { ION_INSTRUCTIONS } from "./instructions.js";
+import { type AskBlocked, Approvals, type BeforeTool } from "./approvals.js";
+import { keep, type Retry, type RetryState, type RunError, retryPlan, type TryEnd } from "./retry.js";
+import { defaultProject, projectPath } from "./projects.js";
+import type { RunAgent, RunServers } from "../tools/run-servers.js";
+import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
+import { type RunKeys, runEnv, runKeys } from "./run-env.js";
+import { type RunSkills, skillsFor } from "../skills/run.js";
 
 type AskArgs = Commands["ask"]["args"];
+
 type Active = { chatId: string; session: Session };
 type Launch = {
   h: HarnessEntry;
@@ -44,11 +48,13 @@ type Launch = {
   access: "auto" | "full";
   /** What you asked in this run, as you wrote it (the judge sees this, never the replayed history). */
   request: string;
-  /** This run's MCP key (from launch until the run ends). */
-  mcpKey?: string;
-  /** This run's gate key, when its harness reports tool calls through a hook. */
-  gateKey?: string;
-};
+  /** This run's skills plugin (ion's data folder), when its agent takes skills from ion and some are on. */
+  pluginDir?: string;
+  // & your MCP servers for this run, read at its start (its retries keep them, whatever changes meanwhile): what
+  // its agent is given, what ion's gateway serves (local ones ion runs, stopped when it ends), and what the agent's
+  // process may not inherit from ion's environment (your keys' names and values). & its keys (from launch to its end).
+} & Partial<Given> &
+  RunKeys;
 type Between = {
   chatId: string;
   interrupt: boolean;
@@ -56,7 +62,6 @@ type Between = {
   /** The chat's session resumed but then failed for real: later tries start a new session with the history. */
   noResume?: boolean;
 };
-type TryEnd = { status: string; error: RunError | null };
 
 const limitIn = (file: string) =>
   maxRuns(loadUserConfig(file).config.resources.max_runs, availableParallelism());
@@ -89,22 +94,28 @@ export class RunManager {
       access?: Access;
       /** ion's MCP server: each run gets a key for its own project, revoked when the run ends. */
       mcp?: { grants: Grants; url: () => string };
+      ionBin?: string; // ion's own `ion` launcher's folder, first on every run's PATH
+
       /** ion's gate (`<base>/<key>`): harnesses with a hook report every tool call there before it runs. */
       gate?: { url: () => string };
       /** Asks you about a tool call ion stopped (the call waits for the answer). */
       askBlocked?: AskBlocked;
+      /** Your "Before a tool runs" hooks (Settings → Tools → Hooks). */
+      beforeTool?: BeforeTool;
+      /** Your MCP servers for a chat's run on this agent, and the ones it goes without (Settings → Tools). */
+      servers?: (agent: RunAgent) => Promise<RunServers>;
+      /** Your skills for a chat's run: a plugin folder made for it (null: none, or its agent doesn't take them). */
+      skills?: RunSkills;
     },
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
     // Read now and when Settings changes it (limitChanged), not at every start.
     this.queue = createRunQueue(limitIn(ctx.configFile));
-    this.approvals = new Approvals(
-      store,
-      ctx.access,
-      (runId) => !this.stopping && this.active.has(runId),
-      ctx.askBlocked,
-    );
+    this.approvals = new Approvals(store, ctx.access, (runId) => !this.stopping && this.active.has(runId), {
+      own: { home: homedir(), ionDirs: ionDirsOf(ctx) },
+      ...{ askBlocked: ctx.askBlocked, beforeTool: ctx.beforeTool },
+    });
   }
 
   /**
@@ -113,7 +124,7 @@ export class RunManager {
    */
   async ask(
     args: AskArgs,
-    opts: { request?: string; shown?: string; by?: "ion"; title?: string } = {},
+    opts: { request?: string; shown?: string; answers?: string; by?: "ion"; title?: string } = {},
   ): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
@@ -130,7 +141,12 @@ export class RunManager {
     let launch: Launch;
     try {
       await this.ready.check(h, args.model);
-      launch = await this.prepare(h, { ...args, shown: opts.shown, by: opts.by }, chat, repo);
+      launch = await this.prepare(
+        h,
+        { ...args, shown: opts.shown, answers: opts.answers, by: opts.by },
+        chat,
+        repo,
+      );
       if (opts.request !== undefined) launch.request = opts.request;
       const l = launch;
       this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
@@ -149,30 +165,30 @@ export class RunManager {
   /** `ask.shown`: what the chat shows as yours, when the text is ion's wording (your answer to a question). */
   private async prepare(
     h: HarnessEntry,
-    ask: AskArgs & { shown?: string; by?: "ion" },
+    ask: AskArgs & { shown?: string; answers?: string; by?: "ion" },
     chat: Chat,
     repo: string,
   ): Promise<Launch> {
-    const { shown, by, ...args } = ask;
+    const { shown, answers, by, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
     });
-    if (!chat.chatId) this.createChat(chatId, chat, wt, by);
+    if (!chat.chatId) chatCreated(this.store, { chatId, chat, wt, by });
     // History is read before your message is stored: it's what came before.
     const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
     const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
     // A thread ion started runs in Auto every time: every action there still goes through ion's checks.
     const ionThread =
       by === "ion" || chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
-    const access = ionThread ? "auto" : (args.access ?? accessFor(this.ctx.configFile, projectId));
+    const access = ionThread ? "auto" : (args.access ?? "auto");
     const runId = `run_${randomUUID()}`;
     this.store.append({
       chatId,
       runId,
       origin: "daemon",
       type: EV.messageSent,
-      data: { text: args.text, ...(shown ? { shown } : {}) },
+      data: { text: args.text, ...(shown ? { shown } : {}), ...(answers ? { answers } : {}) },
     });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
     return { h, args, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
@@ -184,14 +200,19 @@ export class RunManager {
    */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
-    const scope = { kind: "run" as const, projectId: l.projectId, chatId: l.chatId, runId: l.runId };
-    l.mcpKey = this.ctx.mcp?.grants.create(scope);
-    if (this.ctx.gate && l.h.adapter.gateCall) l.gateKey = this.ctx.mcp?.grants.create(scope, "gate");
+    Object.assign(l, runKeys(this.ctx.mcp?.grants, l, !!(this.ctx.gate && l.h.adapter.gateCall)));
     this.launches.set(l.runId, l);
     const b: Between = { chatId: l.chatId, interrupt: false };
     this.between.set(l.runId, b);
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
     try {
+      const yours = await yourServers(this.store, this.ctx.servers, l);
+      // Every key of the run: redacted from every event of the run, wherever in ion it's stored from.
+      const redact = redactor([...yours.secrets, l.mcpKey, l.gateKey, l.cliKey]);
+      this.store.redactRun(l.runId, redact);
+      const o = { ion: this.ionServer(l), redact, dataDir: this.ctx.dataDir };
+      Object.assign(l, givenToRun(this.store, l, yours, o));
+      l.pluginDir = (await skillsFor(this.ctx.skills, l)) ?? undefined;
       for (;;) {
         if (this.stopping) return;
         state.tries++;
@@ -204,6 +225,11 @@ export class RunManager {
         if (!(await this.pause(b, retry.delayS))) return this.finish(l, "interrupted");
       }
     } finally {
+      // A run's local servers never outlive it.
+      await l.bridges?.close();
+      // Its skills plugin goes too, without holding up the chat (its next run has its own).
+      void this.ctx.skills?.remove(l.runId).catch(() => {});
+      this.store.endRedaction(l.runId);
       this.between.delete(l.runId);
       this.ctx.mcp?.grants.revoke(l.runId);
       this.launches.delete(l.runId);
@@ -251,6 +277,11 @@ export class RunManager {
 
   private get random(): () => number {
     return this.ctx.random ?? Math.random;
+  }
+
+  /** ion's own MCP server for a run: its URL and the run's key (also the key for ion's gateway). */
+  private ionServer(l: Launch): { url: string; key: string } | null {
+    return this.ctx.mcp && l.mcpKey ? { url: this.ctx.mcp.url(), key: l.mcpKey } : null;
   }
 
   /** A daemon-side error for a run; nothing is stored once ion is stopping (the run's end is already written). */
@@ -375,6 +406,7 @@ export class RunManager {
     }
     for (const { session } of this.active.values()) await session.close().catch(() => {});
     this.active.clear();
+    await Promise.all([...this.launches.values()].map((l) => l.bridges?.close()));
   }
 
   /** Runs a crash left without an end (still queued or running) are closed as failed. */
@@ -402,23 +434,6 @@ export class RunManager {
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
   }
 
-  /** `by`: "ion" for a thread ion started (Plan 09); your own chats have none. */
-  private createChat(chatId: string, chat: Chat, wt: { path: string; branch: string }, by?: "ion"): void {
-    this.store.append({
-      chatId,
-      runId: null,
-      origin: "daemon",
-      type: EV.chatCreated,
-      data: {
-        title: chat.title,
-        projectId: chat.projectId,
-        worktree: wt.path,
-        branch: wt.branch,
-        ...(by ? { by } : {}),
-      },
-    });
-  }
-
   private async start(l: Launch): Promise<Session> {
     const roots = projectRoots(l.cwd);
     const decide = (req: ApprovalRequest) => this.approvals.decide(l, req, roots);
@@ -427,19 +442,10 @@ export class RunManager {
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
       ...(l.resume ? { resume: l.resume } : {}),
-      // Every process the agent starts inherits it: the chat's Tasks find them wherever they run.
-      env: { ION_CHAT: l.chatId },
+      env: runEnv(l, this.ctx.ionBin),
       ...(this.ctx.gate && l.gateKey ? { gate: { url: `${this.ctx.gate.url()}/${l.gateKey}` } } : {}),
-      ...(this.ctx.mcp && l.mcpKey
-        ? {
-            mcp: {
-              name: "ion" as const,
-              url: this.ctx.mcp.url(),
-              headers: { Authorization: `Bearer ${l.mcpKey}` },
-            },
-            instructions: ION_INSTRUCTIONS,
-          }
-        : {}),
+      ...runMcp(this.ionServer(l), l.servers, l.envDrop),
+      ...(l.pluginDir ? { pluginDir: l.pluginDir } : {}),
       signal: new AbortController().signal,
       decide,
     });
@@ -456,6 +462,19 @@ export class RunManager {
     const call = l?.h.adapter.gateCall?.(payload);
     if (!l || !call) return null;
     return this.approvals.gate(l, call, projectRoots(l.cwd));
+  }
+
+  /** One of your servers given to a running run, for ion's gateway; null once the run ended. */
+  upstream(runId: string, name: string): Served | null {
+    return this.launches.get(runId)?.upstreams?.get(name) ?? null;
+  }
+
+  /** A tools/call at ion's gateway for a run: decided like the run's other calls. */
+  async gateMcp(runId: string, call: GateCall): Promise<GateAnswer> {
+    const l = this.launches.get(runId);
+    return l
+      ? this.approvals.gateway(l, call, projectRoots(l.cwd))
+      : { decision: "deny", reason: "This run has ended" };
   }
 
   /** Stores what a session emits, except its run.finished: whether the run ends or retries is decided above. */
@@ -478,18 +497,4 @@ export class RunManager {
     }
     return end;
   }
-}
-
-/**
- * Notes how a try ends; false for the events the daemon keeps back: the harness's run.finished (whether the run
- * ends or retries is decided above) and a refused resume (ion retries with the history instead).
- */
-function keep(e: AdapterEvent, end: TryEnd): boolean {
-  if (e.type === EV.runFinished) {
-    end.status = String((e.data as { status: string }).status);
-    return false;
-  }
-  if (e.type !== EV.error) return true;
-  end.error = e.data as RunError;
-  return end.error.code !== "resume_failed";
 }

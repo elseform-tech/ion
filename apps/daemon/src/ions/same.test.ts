@@ -20,4 +20,9 @@ describe("same", () => {
     expect(run.mock.calls[0]![0]).toContain("<ion-data");
     expect(await createSame(async () => Promise.reject(new Error("down")))(q, waiting)).toBeNull();
   });
+
+  // Tour, 2026-11-21: a quick model that never answered held the question forever.
+  it("says no when the quick model never answers", async () => {
+    expect(await createSame(() => new Promise<string>(() => {}), 20)(q, waiting)).toBeNull();
+  });
 });

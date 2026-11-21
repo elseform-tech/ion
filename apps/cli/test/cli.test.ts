@@ -31,6 +31,18 @@ function ion(...args: string[]): Promise<{ code: number; out: string; err: strin
   });
 }
 
+/** `ion` with more environment (a made-up home for your agents' configs). */
+function ionWith(
+  env: Record<string, string>,
+  ...args: string[]
+): Promise<{ code: number; out: string; err: string }> {
+  return new Promise((resolve) => {
+    execFile("node", [BIN, ...args], { env: { ...process.env, ION_HOME: home, ...env } }, (e, out, err) =>
+      resolve({ code: e ? ((e as { code?: number }).code ?? 1) : 0, out: out.trim(), err: err.trim() }),
+    );
+  });
+}
+
 const repo = (name: string) => {
   const p = join(mkdtempSync(join(tmpdir(), "ion-repo-")), name);
   mkdirSync(p, { recursive: true });
@@ -221,9 +233,104 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["routines"],
         ["routines", "add"],
         ["suggestions"],
+        ["mcp"],
+        ["mcp", "add"],
+        ["mcp", "import"],
+        ["skills"],
+        ["skills", "add"],
+        ["hooks"],
+        ["hooks", "add"],
       ].map((a) => ion(...a, "--help")),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
+  });
+
+  // The user, 2026-11-21: "use the ion commands to add, verify, doctor mcp, skills, hooks" — everything added starts
+  // off, and a key typed into a command is refused.
+  it("adds, verifies, doctors, lists and removes an MCP server, a skill and a hook, all off", async () => {
+    await ion("daemon", "start");
+    const add = await ion(
+      "mcp",
+      "add",
+      "tiny",
+      "--command",
+      process.execPath,
+      "--arg",
+      "-v",
+      "--from",
+      "x.example/tiny",
+    );
+    expect(add, add.err).toMatchObject({ code: 0, out: "tiny added, off" });
+    expect((await ion("mcp", "ls")).out).toMatch(/^tiny\s+off\s+x\.example\/tiny$/);
+    expect((await ion("mcp", "verify", "tiny")).out).toMatch(/^tiny\s+off\s+x\.example\/tiny$/);
+    expect((await ion("mcp", "doctor", "tiny")).out).toMatch(/^tiny\s+off/);
+    const secret = await ion(
+      "mcp",
+      "add",
+      "gh",
+      "--command",
+      "gh-mcp",
+      "--env",
+      "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+    );
+    expect(secret).toMatchObject({ code: 1, err: "Put keys in Settings" });
+    const hook = await ion("hooks", "add", "--on", "run.finished", "--run", "say done", "--name", "Say done");
+    expect(hook.out).toBe("Say done added, off");
+    expect((await ion("hooks", "ls")).out).toMatch(/^Say done\s+off\s+Unknown source$/);
+    const folder = mkdtempSync(join(tmpdir(), "ion-skill-"));
+    writeFileSync(join(folder, "SKILL.md"), "---\nname: notes\ndescription: Takes notes\n---\nTake notes.");
+    expect((await ion("skills", "add", "notes", "--from", folder)).out).toBe("notes added, off");
+    expect((await ion("skills", "ls")).out).toMatch(/notes\s+off/);
+    expect((await ion("mcp", "remove", "tiny")).out).toBe("Removed tiny");
+    expect((await ion("mcp", "ls")).out).toBe("No connections");
+  });
+
+  // The user, 2026-11-21: "Only ion's, plus Import": `ion mcp import --list` reads your agents' own configs (here a
+  // made-up home's), and import brings them in off, keys left out.
+  it("lists your agents' servers and imports them, off", async () => {
+    const agentHome = mkdtempSync(join(tmpdir(), "ion-cli-agents-"));
+    const key = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    const servers = {
+      github: { command: "gh-mcp", env: { GITHUB_TOKEN: key } },
+      old: { type: "sse", url: "https://o.example/sse" },
+    };
+    writeFileSync(join(agentHome, ".claude.json"), JSON.stringify({ mcpServers: servers }));
+    const env = { HOME: agentHome, CODEX_HOME: "", GROK_HOME: "", XDG_CONFIG_HOME: "" };
+    await ionWith(env, "daemon", "start");
+    const list = await ionWith(env, "mcp", "import", "--list");
+    expect(list.out).toMatch(/^github\s+Claude Code\s+gh-mcp\s+GITHUB_TOKEN$/m);
+    expect(list.out).toContain("old (Claude Code): ion connects over HTTP, not SSE");
+    expect(list.out).not.toContain(key);
+    // Security review, 2026-11-21: nothing comes in unseen. With no names it shows what would, and how to bring it in.
+    const bare = await ionWith(env, "mcp", "import");
+    expect(bare.out).toMatch(/^github\s+Claude Code\s+gh-mcp\s+GITHUB_TOKEN$/m);
+    expect(bare.out).toContain("Name them, or use --all");
+    expect((await ion("mcp", "ls")).out).toBe("No connections");
+    // Task review, 2026-11-21: --from is honoured when listing too.
+    expect((await ionWith(env, "mcp", "import", "--list", "--from", "codex")).out).toMatch(
+      /^Nothing to import/,
+    );
+    expect((await ionWith(env, "mcp", "import", "--from", "claude-code")).out).toMatch(
+      /^github\s+Claude Code/m,
+    );
+    expect((await ionWith(env, "mcp", "import", "github")).out).toBe("Imported, off: github");
+    expect((await ion("mcp", "ls")).out).toMatch(/^github\s+off\s+Imported from Claude Code$/);
+    expect((await ionWith(env, "mcp", "import", "--list")).out).toMatch(/^Nothing to import/);
+  });
+
+  // Task review, 2026-11-21: inside a chat with its key dropped (python popping 'ION_'+'RUN_KEY', say), the CLI fell
+  // back to ion's own token. With the chat's marker there and no key, it refuses.
+  it("refuses ion's own token inside a chat whose key was dropped", async () => {
+    await ion("daemon", "start");
+    const r = await new Promise<{ code: number; err: string }>((resolve) =>
+      execFile(
+        "node",
+        [BIN, "mcp", "ls"],
+        { env: { ...process.env, ION_HOME: home, ION_CHAT: "chat_1", ION_RUN_KEY: "" } },
+        (e, _out, err) => resolve({ code: e ? ((e as { code?: number }).code ?? 1) : 0, err: err.trim() }),
+      ),
+    );
+    expect(r).toEqual({ code: 1, err: "Run this from ion's own app" });
   });
 
   // Plan 10: routines, from the command line.
@@ -292,14 +399,11 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(full.out).toContain("Tests pass.");
     });
 
-    it("sets a project's access", async () => {
+    // Task review, 2026-11-21: `ion projects access` switched Auto-approval per project; only the composer's access
+    // icon (and `ion ask --access`, per message) does now.
+    it("has no projects access; access is per message", async () => {
       await setup();
-      expect((await ion("projects", "access", "app", "full")).out).toBe("Access for app: Full access");
-      expect((await ion("projects", "access", "app", "auto")).out).toBe("Access for app: Auto");
-      expect(await ion("projects", "access", "app", "maybe")).toMatchObject({
-        code: 1,
-        err: "Pick auto or full",
-      });
+      expect((await ion("projects", "access", "app", "full")).code).not.toBe(0);
       expect(await ion("ask", "hello", "-p", "app", "--harness", "fake", "--access", "maybe")).toMatchObject({
         code: 1,
         err: "Pick auto or full",

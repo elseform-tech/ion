@@ -49,6 +49,17 @@ const ION_TOOLS: Record<string, string> = {
   start_thread: "Start thread",
   ask: "Ask",
   report_outcome: "Report outcome",
+  tools: "Your tools",
+};
+
+/** Each agent's web tools (Claude Code, Grok and Codex, opencode), in words. */
+const WEB_TOOLS: Record<string, string> = {
+  WebSearch: "Search the web",
+  web_search: "Search the web",
+  websearch: "Search the web",
+  WebFetch: "Read a page",
+  web_fetch: "Read a page",
+  webfetch: "Read a page",
 };
 
 /**
@@ -59,6 +70,7 @@ export function stepName(raw: string): string {
   const name = stripControl(raw);
   const ion = /^(?:mcp__ion__|ion__)(.+)$/.exec(name)?.[1];
   if (ion) return ION_TOOLS[ion] ?? ion;
+  if (Object.hasOwn(WEB_TOOLS, name)) return WEB_TOOLS[name]!;
   return name.replace(/^mcp__.+?__(?=[^_])/, "").trim() || "Tool";
 }
 

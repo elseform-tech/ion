@@ -80,6 +80,14 @@ export {
   Moon,
   Inbox,
   Minus,
+  Blocks,
+  PlugZap,
+  Webhook,
+  BookOpen,
+  FileCog,
+  Import,
+  MessageCircleQuestion,
+  Link,
 } from "lucide-react";
 export { Avatar, type BotState } from "./Avatar.js";
 export { botFor } from "./bots.js";

@@ -1,3 +1,5 @@
+import type { AdapterEvent } from "@ion/adapter-kit";
+import { EV } from "@ion/schema";
 export type Effort = "low" | "medium" | "high" | "max";
 export type RunError = { code: string; retryable: boolean; message: string; retryAfterS?: number };
 export type RetryState = { tries: number; effortRetried: boolean; effort: Effort | null };
@@ -54,4 +56,21 @@ export function retryPlan(s: RetryState, err: RunError | null, random: () => num
   const effort = nextEffort(s.effort);
   if (s.effortRetried || !effort || NOT_EFFORT.has(err.code)) return null;
   return { attempt: s.tries, delayS: 0, reason: err.message, effort };
+}
+
+/** How a try ended: the harness's status, and its error if any. */
+export type TryEnd = { status: string; error: RunError | null };
+
+/**
+ * Notes how a try ends; false for the events the daemon keeps back: the harness's run.finished (whether the run
+ * ends or retries is decided above) and a refused resume (ion retries with the history instead).
+ */
+export function keep(e: AdapterEvent, end: TryEnd): boolean {
+  if (e.type === EV.runFinished) {
+    end.status = String((e.data as { status: string }).status);
+    return false;
+  }
+  if (e.type !== EV.error) return true;
+  end.error = e.data as RunError;
+  return end.error.code !== "resume_failed";
 }

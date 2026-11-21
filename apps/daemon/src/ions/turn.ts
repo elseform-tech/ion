@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   type AdapterEvent,
   type ApprovalRequest,
   type HarnessAdapter,
+  ION_SERVER,
   projectRoots,
   ResumeFailed,
   type Session,
@@ -13,6 +14,7 @@ import {
 } from "@ion/adapter-kit";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { EV, type HarnessInfo } from "@ion/schema";
+import { ionDirsOf } from "../access/index.js";
 import type { RuleCtx } from "../access/rules.js";
 import { getHarness } from "../adapters/registry.js";
 import { UserError } from "../api/errors.js";
@@ -21,8 +23,11 @@ import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { ionsView } from "../views/ions.js";
 import { type IonBrain, ionBrain } from "./brain.js";
-import { decideForIon } from "./gate.js";
+import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
+import { envDropOf } from "../tools/env-drop.js";
+import { type Net, systemNet } from "../secrets/oauth-net.js";
+import { type TurnWeb, WebFound } from "./web.js";
 
 /** A turn's hard limit: past it the agent is stopped and the ion says it couldn't finish. */
 const ION_TURN_MS = 300_000;
@@ -32,7 +37,6 @@ export const NO_AGENT = "I couldn't reach my agent; try again.";
 export const TOO_LONG = "I couldn't finish that in time.";
 /** What an ion says when you stopped its turn (Esc twice). */
 export const STOPPED = "Stopped.";
-const READ_ONLY = "An ion only reads; a thread does the work.";
 
 /** What of a turn's session is kept on the ion's chat, so the app can draw its work. */
 const KEPT: ReadonlySet<string> = new Set([EV.toolStarted, EV.toolFinished, EV.thinkingDelta]);
@@ -78,6 +82,8 @@ export type IonTurnsDeps = {
   /** The turn's hard limit (tests make it short). */
   turnMs?: number;
   home?: string;
+  /** How a page's host is looked up before an ion reads it (tests give their own). */
+  dns?: Net["dns"];
 };
 
 /** A turn while it runs: what its tools and its gate need, and how to stop it (set once its session starts). */
@@ -87,6 +93,8 @@ type Live = {
   request: string | null;
   adapter: HarnessAdapter;
   rules: RuleCtx;
+  /** The addresses this turn found (your message's, its searches' results): the only pages it may read. */
+  web: WebFound;
   threads: Thread[];
   /** Ends the turn now: past its limit or ion stopping, or `stopped`: you stopped it. */
   halt?: (stopped?: true) => void;
@@ -210,10 +218,12 @@ export class IonTurns {
     const t = this.live.get(scope.turnId);
     const call = t?.adapter.gateCall?.(payload);
     if (!t || !call) return null;
-    const req = { requestId: "gate", toolId: "gate", ...call };
-    return decideForIon(req, t.rules) === "allow"
-      ? { decision: "allow" }
-      : { decision: "deny", reason: READ_ONLY };
+    return ionVerdict({ requestId: "gate", toolId: "gate", ...call }, t.rules, this.webOf(t));
+  }
+
+  /** What a live turn may read on the web. */
+  private webOf(t: Live): TurnWeb {
+    return { found: t.web.found, dns: this.d.dns ?? systemNet.dns };
   }
 
   /** Stops every live turn (its agent told to stop, its session closed) and waits for them; none starts after. */
@@ -248,7 +258,8 @@ export class IonTurns {
     if (!brain || !h || this.stopping) return { reply: NO_AGENT, threads: [] };
     const turnId = `turn_${randomUUID()}`;
     const rules = this.rulesFor(cwd);
-    const live: Live = { ionId, request, adapter: h.adapter, rules, threads: [] };
+    // Only your own words seed what it may read: a report's prompt is an agent's.
+    const live: Live = { ionId, request, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
     this.live.set(turnId, live);
     try {
       const t = { ionId, turnId, text, cwd, rules, report: request === null };
@@ -300,17 +311,8 @@ export class IonTurns {
     return dir;
   }
 
-  /** What an ion may read: its folder (a project's repo), never your secrets or ion's own files. */
   private rulesFor(cwd: string): RuleCtx {
-    return {
-      roots: projectRoots(cwd),
-      home: this.d.home ?? homedir(),
-      ionDirs: [
-        this.d.dataDir,
-        dirname(this.d.configFile),
-        ...(process.env.GROK_HOME ? [process.env.GROK_HOME] : []),
-      ],
-    };
+    return ionRules(this.d, cwd);
   }
 
   /**
@@ -347,10 +349,23 @@ export class IonTurns {
       model: brain.model,
       effort: brain.effort,
       instructions: ionInstructions(t.ionId),
-      mcp: { name: "ion", url: this.d.mcpUrl(), headers: { Authorization: `Bearer ${mcpKey}` } },
+      // ion's server only: your servers reach chats' agents, never an ion's own turn.
+      mcpServers: [
+        {
+          name: ION_SERVER,
+          transport: "http",
+          url: this.d.mcpUrl(),
+          headers: { Authorization: `Bearer ${mcpKey}` },
+        },
+      ],
       ...(gateKey ? { gate: { url: `${this.d.gateUrl()}/${gateKey}` } } : {}),
+      // ion's own agents don't inherit your keys either.
+      envDrop: await envDropOf(this.d.configFile),
       signal: abort.signal,
-      decide: async (req: ApprovalRequest) => decideForIon(req, t.rules),
+      decide: async (req: ApprovalRequest) => {
+        const live = this.live.get(t.turnId);
+        return live ? (await ionVerdict(req, t.rules, this.webOf(live))).decision : "deny";
+      },
     };
     const resume = this.resumeOf(t.ionId, brain.harness, scope.projects);
     const end = await this.within(abort, t.turnId, (e, hold) =>
@@ -451,6 +466,7 @@ export class IonTurns {
       if (end.late) return;
       if (KEPT.has(e.type))
         this.d.store.append({ ...e, chatId: `ion:${t.ionId}`, runId: t.turnId, origin: "adapter" });
+      this.live.get(t.turnId)?.web.note(e);
       note(e, end);
     }
   }
@@ -480,4 +496,13 @@ export class IonTurns {
       data: { ionId, ...k },
     });
   }
+}
+
+/** What an ion may read: its folder (a project's repo), never your secrets or ion's own files. */
+export function ionRules(d: { dataDir: string; configFile: string; home?: string }, cwd: string): RuleCtx {
+  return {
+    roots: projectRoots(cwd),
+    home: d.home ?? homedir(),
+    ionDirs: ionDirsOf(d),
+  };
 }

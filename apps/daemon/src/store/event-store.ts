@@ -41,6 +41,8 @@ function streamKey(runId: string | null, chatId: string | null): string {
 /** The only writer of events. Append-only; views update in the same transaction. */
 export class EventStore {
   private listeners = new Set<(e: IonEvent) => void>();
+  /** Each running run's redaction of its keys and tokens: every event of the run passes it before it's stored. */
+  private readonly redactions = new Map<string, <T>(data: T) => T>();
 
   constructor(
     private readonly db: Db,
@@ -53,7 +55,20 @@ export class EventStore {
     }).immediate();
   }
 
-  append(input: NewEvent & { id?: string; ts?: string }): IonEvent {
+  /** From now on, every event of this run is stored through `redact` (until `endRedaction`). */
+  redactRun(runId: string, redact: <T>(data: T) => T): void {
+    this.redactions.set(runId, redact);
+  }
+
+  endRedaction(runId: string): void {
+    this.redactions.delete(runId);
+  }
+
+  append(input0: NewEvent & { id?: string; ts?: string }): IonEvent {
+    const redact = input0.runId ? this.redactions.get(input0.runId) : undefined;
+    const input = redact
+      ? { ...input0, data: redact(input0.data), ...(input0.native ? { native: redact(input0.native) } : {}) }
+      : input0;
     const id = input.id ?? ulid();
     const stream = streamKey(input.runId, input.chatId);
     const tx = this.db.transaction((): { event: IonEvent; fresh: boolean } => {
@@ -107,7 +122,7 @@ export class EventStore {
     return event;
   }
 
-  /** Events in order; `since`: at or after this time (ISO), `types`: only these. */
+  /** Events in order; `since`: at or after this time (ISO), `types`: only these; `newest`: the last `limit` of them. */
   read(
     q: {
       chatId?: string;
@@ -116,9 +131,24 @@ export class EventStore {
       limit?: number;
       since?: string;
       types?: readonly EventType[];
+      newest?: boolean;
     } = {},
   ): IonEvent[] {
     if (q.types?.length === 0) return [];
+    const { filter, params } = this.whereOf(q);
+    const sql = `SELECT * FROM events ${filter} ORDER BY rowid ${q.newest ? "DESC" : ""} LIMIT ?`;
+    params.push(q.limit ?? 10_000);
+    const rows = this.db.prepare(sql).all(...params) as Row[];
+    return (q.newest ? rows.reverse() : rows).map(toEvent);
+  }
+
+  private whereOf(q: {
+    chatId?: string;
+    runId?: string;
+    afterId?: string;
+    since?: string;
+    types?: readonly EventType[];
+  }): { filter: string; params: unknown[] } {
     const where: string[] = [];
     const params: unknown[] = [];
     const add = (clause: string, value: unknown) => {
@@ -139,10 +169,7 @@ export class EventStore {
       if (!at) throw new Error(`Unknown event id: ${q.afterId}`);
       add("rowid > ?", at.r);
     }
-    const filter = where.length ? "WHERE " + where.join(" AND ") : "";
-    const sql = `SELECT * FROM events ${filter} ORDER BY rowid LIMIT ?`;
-    params.push(q.limit ?? 10_000);
-    return (this.db.prepare(sql).all(...params) as Row[]).map(toEvent);
+    return { filter: where.length ? "WHERE " + where.join(" AND ") : "", params };
   }
 
   onAppend(fn: (e: IonEvent) => void): () => void {

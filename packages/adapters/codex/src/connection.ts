@@ -1,10 +1,21 @@
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
-import { type Catalog, createRpc, ResumeFailed, type Rpc, RpcError, type StartOpts } from "@ion/adapter-kit";
+import {
+  agentEnv,
+  type Catalog,
+  createRpc,
+  type EnvDrop,
+  type HttpMcpSpec,
+  ResumeFailed,
+  type Rpc,
+  RpcError,
+  type StartOpts,
+} from "@ion/adapter-kit";
 import { type HookTrust, hookArgs, hookCommand } from "./gate.js";
 
 /** How to start Codex: its binary, and anything before ion's own arguments (tests run a script with Node). */
-export type Launch = { bin: string; prefix: string[]; timeoutMs: number };
+/** `envDrop`: what a chat's Codex may not inherit from ion's environment (your keys). */
+export type Launch = { bin: string; prefix: string[]; timeoutMs: number; envDrop?: EnvDrop };
 
 export type Connection = {
   child: ChildProcessByStdio<Writable, Readable, null>;
@@ -21,7 +32,12 @@ type Io = Pick<Connection, "child" | "rpc">;
  * Always, under ion: no background memory agent (it runs tools of its own, outside the chat) and no question card
  * (nobody can answer it headless; agents ask through ion's ask tool).
  */
-const BASE_ARGS = ["-c", "features.memories=false", "-c", "features.default_mode_request_user_input=false"];
+const BASE_ARGS = [
+  ...["-c", "features.memories=false", "-c", "features.default_mode_request_user_input=false"],
+  // The user, 2026-11-21: only ion's tools in ion's chats. Codex's plugins (their servers, hooks and skills) stay
+  // Codex's own.
+  ...["-c", "features.plugins=false"],
+];
 
 export const SIGNED_OUT = "Codex isn't signed in. Run: codex login";
 
@@ -31,7 +47,7 @@ class NotResponding extends Error {}
 function spawnAppServer(l: Launch, args: string[], env: Record<string, string>): Io {
   const child = spawn(l.bin, [...l.prefix, ...BASE_ARGS, ...args, "app-server"], {
     stdio: ["pipe", "pipe", "ignore"],
-    env: { ...process.env, ...env },
+    env: { ...agentEnv(process.env, l.envDrop), ...env },
   });
   const rpc = createRpc({ stdin: child.stdin, stdout: child.stdout });
   child.on("error", () => child.stdout.destroy());
@@ -86,15 +102,23 @@ type HookEntry = {
   command: string;
   source: string;
   enabled: boolean;
+  isManaged?: boolean;
   currentHash: string;
   trustStatus: string;
 };
 const trusted = new Map<string, HookTrust>();
+/** Your own hooks ion turned off last time, by Codex and hook: the next start tries those first. */
+const turnedOff = new Map<string, string[]>();
 
-async function ionHook(rpc: Rpc, cwd: string): Promise<HookEntry | null> {
+/** ion's hook, and your own hooks that are on (your organization's managed ones are left as they are). */
+async function listHooks(rpc: Rpc, cwd: string): Promise<{ ion: HookEntry | null; yours: string[] }> {
   const r = (await rpc.request("hooks/list", { cwds: [cwd] })) as { data?: { hooks?: HookEntry[] }[] };
   const hooks = (r.data ?? []).flatMap((d) => d.hooks ?? []);
-  return hooks.find((h) => h.source === "sessionFlags" && h.command === hookCommand()) ?? null;
+  const ion = hooks.find((h) => h.source === "sessionFlags" && h.command === hookCommand()) ?? null;
+  const yours = hooks
+    .filter((h) => h.enabled && !h.isManaged && h.source !== "sessionFlags")
+    .map((h) => h.key);
+  return { ion, yours };
 }
 
 /**
@@ -105,22 +129,26 @@ async function ionHook(rpc: Rpc, cwd: string): Promise<HookEntry | null> {
 const HIDE_GATE = ["-c", 'shell_environment_policy.set.ION_GATE_URL=""'];
 
 /**
- * Codex with ion's PreToolUse hook running. A hook runs only once its exact content is trusted, so the first start
- * asks Codex for the hook's hash and starts again trusting it; later starts reuse it. Never runs without it.
+ * Codex with ion's PreToolUse hook running and your own hooks off. A hook runs only once its exact content is
+ * trusted, so the first start asks Codex for the hook's hash (and which of your hooks are on) and starts again
+ * trusting it, with yours off; later starts reuse both. Never runs without ion's hook.
  */
 async function withGate(l: Launch, cwd: string, env: Record<string, string>): Promise<Io> {
   const cacheKey = `${l.bin} ${l.prefix.join(" ")} ${hookCommand()}`;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const args = [...hookArgs(trusted.get(cacheKey) ?? null), ...HIDE_GATE];
+  let off = turnedOff.get(cacheKey) ?? [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const args = [...hookArgs(trusted.get(cacheKey) ?? null, off), ...HIDE_GATE];
     const io = spawnAppServer(l, args, env);
-    const hook = await within(l, io, async () => {
+    const { ion, yours } = await within(l, io, async () => {
       await initialize(io.rpc);
-      return ionHook(io.rpc, cwd);
+      return listHooks(io.rpc, cwd);
     });
-    if (hook?.trustStatus === "trusted" && hook.enabled) return io;
+    if (ion?.trustStatus === "trusted" && ion.enabled && !yours.length) return io;
     io.child.kill();
-    if (!hook) break;
-    trusted.set(cacheKey, { key: hook.key, hash: hook.currentHash });
+    if (!ion) break;
+    trusted.set(cacheKey, { key: ion.key, hash: ion.currentHash });
+    off = [...new Set([...off, ...yours])];
+    turnedOff.set(cacheKey, off);
   }
   throw new Error("Codex didn't accept ion's gate, so ion won't run it");
 }
@@ -130,9 +158,30 @@ async function withGate(l: Launch, cwd: string, env: Record<string, string>): Pr
 const EFFORT: Record<string, string> = { low: "low", medium: "medium", high: "high", max: "xhigh" };
 export const effortOf = (e: StartOpts["effort"]) => (e ? EFFORT[e] : undefined);
 
-/** ion's MCP server for the run, with its bearer header: sent over stdin in the thread's config, never in argv. */
-function mcpConfig(mcp: StartOpts["mcp"]): Record<string, unknown> {
-  return mcp ? { mcp_servers: { [mcp.name]: { url: mcp.url, http_headers: mcp.headers } } } : {};
+/**
+ * The run's MCP servers with their keys: sent over stdin in the thread's config, never in argv. Codex's own servers
+ * (`own`) are each turned off: the thread's config merges into Codex's, so leaving them out wouldn't.
+ */
+function mcpConfig(servers: StartOpts["mcpServers"] = [], own: string[] = []): Record<string, unknown> {
+  const of = (s: HttpMcpSpec) => ({ url: s.url, http_headers: s.headers });
+  const ion = new Set(servers.map((s) => s.name));
+  const off = own.filter((n) => !ion.has(n)).map((n) => [n, { enabled: false }]);
+  if (!servers.length && !off.length) return {};
+  return { mcp_servers: Object.fromEntries([...servers.map((s) => [s.name, of(s)]), ...off]) };
+}
+
+/**
+ * The servers Codex would load itself for this folder (its config.toml, a project's). Codex has no switch that turns
+ * them all off, so when it can't say (config/read fails), a chat doesn't start (task review, 2026-11-21: it quietly
+ * ran with your own servers); ion's judge (bare, read-only) goes on with none named.
+ */
+async function ownServers(rpc: Rpc, cwd: string, bare: boolean): Promise<string[]> {
+  const r = (await rpc.request("config/read", { cwd }).catch(() => null)) as {
+    config?: { mcp_servers?: unknown };
+  } | null;
+  if (!r && !bare) throw new Error("ion couldn't turn off Codex's own servers");
+  const servers = r?.config?.mcp_servers;
+  return servers && typeof servers === "object" ? Object.keys(servers) : [];
 }
 
 /**
@@ -140,7 +189,7 @@ function mcpConfig(mcp: StartOpts["mcp"]): Record<string, unknown> {
  * go through the gate), its approvals come to ion ("user", not Codex's auto-reviewer), and writes stay in the
  * worktree. ion's judge (bare) gets a throwaway, read-only thread.
  */
-function threadParams(opts: StartOpts): Record<string, unknown> {
+function threadParams(opts: StartOpts, own: string[]): Record<string, unknown> {
   return {
     cwd: opts.cwd,
     ...(opts.model ? { model: opts.model } : {}),
@@ -149,14 +198,14 @@ function threadParams(opts: StartOpts): Record<string, unknown> {
     sandbox: opts.bare ? "read-only" : "workspace-write",
     // Network on, as for ion's other agents: every command still goes through ion's gate and judge first, and
     // the gate's key is hidden from commands (HIDE_GATE); ion's MCP key is in the thread's config, not the env.
-    config: { ...mcpConfig(opts.mcp), sandbox_workspace_write: { network_access: true } },
+    config: { ...mcpConfig(opts.mcpServers, own), sandbox_workspace_write: { network_access: true } },
     ...(opts.instructions ? { developerInstructions: opts.instructions } : {}),
     ...(opts.bare ? { ephemeral: true } : {}),
   };
 }
 
 async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string; model: string }> {
-  const params = threadParams(opts);
+  const params = threadParams(opts, await ownServers(rpc, opts.cwd, !!opts.bare));
   let r: { thread?: { id?: unknown }; model?: unknown };
   try {
     r = (await (opts.resume
@@ -174,7 +223,8 @@ async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string
 }
 
 /** Starts Codex's app-server in the chat's folder (with ion's gate when the run has one) and opens a thread. */
-export async function connect(l: Launch, opts: StartOpts): Promise<Connection> {
+export async function connect(l0: Launch, opts: StartOpts): Promise<Connection> {
+  const l: Launch = { ...l0, ...(opts.envDrop ? { envDrop: opts.envDrop } : {}) };
   const env: Record<string, string> = { ...opts.env, ...(opts.gate ? { ION_GATE_URL: opts.gate.url } : {}) };
   const io = opts.gate ? await withGate(l, opts.cwd, env) : spawnAppServer(l, [], env);
   return within(l, io, async () => {

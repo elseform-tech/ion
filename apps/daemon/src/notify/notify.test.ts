@@ -326,14 +326,11 @@ describe("a computer that slept", () => {
   });
 });
 
-// Final review, 2026-11-20: a config that failed to load as a whole (a bad access.default) left the notifier on
+// Final review, 2026-11-20: a config that failed to load as a whole (a bad access.judge) left the notifier on
 // defaults, every project "needs". It keeps the last settings it read, or, with none, notifies only Urgent.
 describe("a config that fails to load", () => {
   const breakIt = () =>
-    writeFileSync(
-      configFile,
-      readFileSync(configFile, "utf8").replace('default = "auto"', 'default = "nope"'),
-    );
+    writeFileSync(configFile, readFileSync(configFile, "utf8").replace(/judge = "[^"]*"/, "judge = 5"));
 
   it("keeps the last good settings", () => {
     save({ level: "muted" });

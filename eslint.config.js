@@ -96,6 +96,11 @@ export default tseslint.config(
     rules: { "sonarjs/no-os-command-from-path": "off" },
   },
   {
+    // The address ranges sign-in requests may never reach (private, link-local, …) are written out on purpose.
+    files: ["apps/daemon/src/secrets/oauth-net.ts"],
+    rules: { "sonarjs/no-hardcoded-ip": "off" },
+  },
+  {
     // RuleTester registers its cases itself; SonarJS can't see them.
     files: ["tools/lint-rules/**/*.test.js"],
     rules: { "sonarjs/no-empty-test-file": "off" },

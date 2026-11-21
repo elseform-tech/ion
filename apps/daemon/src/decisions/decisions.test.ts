@@ -119,6 +119,9 @@ describe("answer", () => {
       request: "Tidy the repo",
       // The user, 2026-11-18: the chat shows your answer, not ion's wording for the agent.
       shown: "Delete it",
+      // Security review, 2026-11-21: the message says which question it answers, so the chat hides exactly it
+      // (shown under the question), never a message that merely reads the same.
+      answers: need!.needId,
     });
     // RF3: a second answer is refused.
     await expect(d.answer(need!.needId, 2)).rejects.toThrow("That's already answered");
@@ -285,6 +288,13 @@ describe("matcher", () => {
     expect(parseMatch('Sure: {"decisionId": "d1", "label": "Delete it"}', past)).toBeNull();
   });
 
+  // Tour, 2026-11-21: an agent's question waited forever when ion's quick model never answered (its start ignored
+  // the abort): the matcher stops waiting after its time, and you're asked.
+  it("treats a model that never answers as no match", async () => {
+    const m = createMatcher(() => new Promise<string>(() => {}), 20);
+    expect(await m(q, past)).toBeNull();
+  });
+
   it("treats a failing model as no match", async () => {
     const m = createMatcher(async () => {
       throw new Error("down");
@@ -342,6 +352,7 @@ describe("answers that can't go straight back", () => {
       harness: "fake",
       text: 'You asked: "Delete the build folder?". The user chose: "Keep it".',
       request: "",
+      answers: expect.any(String),
       shown: "Keep it",
     });
     followUp.mockClear();
@@ -389,6 +400,7 @@ describe("answering in your own words", () => {
       harness: "fake",
       text: 'You asked: "Delete the build folder?". The user answered: "Only the old builds".',
       request: "Tidy the repo",
+      answers: expect.any(String),
       shown: "Only the old builds",
     });
   });
@@ -410,6 +422,7 @@ describe("answering in your own words", () => {
       harness: "fake",
       text: 'You asked: "Delete the build folder?". The user answered: "Later".',
       request: "",
+      answers: expect.any(String),
       shown: "Later",
     });
   });
@@ -488,6 +501,7 @@ describe("asking when ion blocks a tool call", () => {
       harness: "fake",
       text: 'Earlier ion stopped this: "npm publish". The user now allows it.',
       request: "Ship it",
+      answers: expect.any(String),
       shown: "Always allow in this project",
     });
   });
@@ -499,8 +513,9 @@ describe("always allow, exactly", () => {
     requestId: "g9",
     summary: "npm publish",
     reason: "Publishes the package",
-    input: '{\n  "command": "npm publish"\n}',
-    key: 'Bash {"command":"npm publish"}',
+    // An input that says more than the title shows whole (one that's only the title's command doesn't: tour, 2026-11-21).
+    input: '{\n  "command": "npm publish",\n  "run_in_background": true\n}',
+    key: 'Bash {"command":"npm publish","run_in_background":true}',
   };
   const makeQuick = () => new Decisions({ store, db, needs, followUp, blockedWaitMs: 2000 });
 
@@ -508,7 +523,9 @@ describe("always allow, exactly", () => {
     const d = makeQuick();
     const waiting = d.askBlocked(scope(), block);
     const [need] = needs.open("c1");
-    expect(need!.detail).toBe('ion stopped it: Publishes the package\n\n{\n  "command": "npm publish"\n}');
+    expect(need!.detail).toBe(
+      'ion stopped it: Publishes the package\n\n{\n  "command": "npm publish",\n  "run_in_background": true\n}',
+    );
     await d.answer(need!.needId, 2);
     await waiting;
     expect(d.alwaysAllowed("app", "c2", block.key)).toBe(true);

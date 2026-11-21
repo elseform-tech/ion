@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import {
+  agentEnv,
   cachedCatalog,
   capabilitiesWith,
   type HarnessAdapter,
@@ -54,20 +55,23 @@ export function createAcpAdapter(
         const path = binary();
         if (!path) return { signedIn: false, method: "Not installed" };
         const probe = await probeSignedIn(h, path, deps.startTimeoutMs);
-        const method = { yes: "Signed in", no: "Not signed in", "not-responding": "Not responding" }[probe];
+        const slow = h.notResponding?.() ?? "Not responding";
+        const method = { yes: "Signed in", no: "Not signed in", "not-responding": slow }[probe];
         return { signedIn: probe === "yes", method };
       },
       login: () =>
         new Promise<void>((resolve, reject) => {
           const path = binary();
           if (!path) return reject(new Error(`${h.label} isn't installed`));
-          spawn(path, h.loginArgs, { stdio: "inherit" }).on("exit", (code) =>
+          spawn(path, h.loginArgs, { stdio: "inherit", env: agentEnv() }).on("exit", (code) =>
             code === 0 ? resolve() : reject(new Error("Sign-in didn't finish")),
           );
         }),
     },
     ...(h.toCall ? { gateCall: h.toCall } : {}),
     capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps.startTimeoutMs)),
+    mcpTransports: { http: h.mcpHttp ?? true },
+    ...(h.ownTools ? { ownTools: true as const } : {}),
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);

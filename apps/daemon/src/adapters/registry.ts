@@ -4,6 +4,7 @@ import { createClaudeCodeAdapter } from "@ion/adapter-claude-code";
 import { createCodexAdapter } from "@ion/adapter-codex";
 import { createFakeAdapter } from "@ion/adapter-fake";
 import type { HarnessAdapter } from "@ion/adapter-kit";
+import type { SkillWhose } from "@ion/schema";
 
 export type HarnessEntry = { adapter: HarnessAdapter; label: string; loginHint: string };
 
@@ -54,4 +55,39 @@ const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
 export function defaultAgent(ready: string[], own: string | null): string | undefined {
   if (own && ready.includes(own)) return own;
   return PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
+}
+
+/** Which agents ion can pass skills to (Plan 18, Task 5): Claude Code, through the Agent SDK's plugins. */
+const SKILLS = new Set(["claude-code"]);
+
+/**
+ * Whose skill folders each agent reads itself (ion passes them nothing): Codex reads `~/.codex/skills` and
+ * `.agents/skills`; opencode its own, Claude's and `.agents/skills`.
+ */
+const OWN_SKILLS: Record<string, SkillWhose[]> = {
+  codex: ["codex", "shared"],
+  opencode: ["opencode", "claude", "shared"],
+};
+
+/** By agent id, for the agents the app lists: whether it takes skills from ion, and whose folders it reads itself. */
+export function skillReaders(): Record<string, { fromIon: boolean; own: SkillWhose[] }> {
+  return Object.fromEntries(
+    listedHarnessIds().map((id) => [id, { fromIon: SKILLS.has(id), own: OWN_SKILLS[id] ?? [] }]),
+  );
+}
+
+/** Whether ion passes skills to this agent (a plugin folder per run). */
+export const takesSkills = (id: string): boolean => SKILLS.has(id);
+
+/**
+ * What each agent can take from ion, by agent id, for the agents the app lists: MCP servers (every one reaches the
+ * agent at ion's URL for it, a local one run by ion, so an agent that takes http takes both), and skills.
+ */
+export function toolSupport(): Record<string, { http: boolean; stdio: boolean; skills: boolean }> {
+  return Object.fromEntries(
+    listedHarnessIds().map((id) => {
+      const http = getHarness(id)?.adapter.mcpTransports.http ?? false;
+      return [id, { http, stdio: http, skills: SKILLS.has(id) }];
+    }),
+  );
 }

@@ -13,11 +13,19 @@ type Entry = CallKey & { at: number };
 export class GateAllows {
   private readonly byRun = new Map<string, Entry[]>();
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly ttlMs = TTL_MS,
+  ) {}
 
   add(runId: string, key: CallKey): void {
     if (key.id === undefined) return;
     this.byRun.set(runId, [...this.fresh(runId), { ...key, at: this.now() }]);
+  }
+
+  /** Whether a matching allow is pending in this run (none is used up). */
+  has(runId: string, key: CallKey): boolean {
+    return key.id !== undefined && this.fresh(runId).some((e) => e.kind === key.kind && e.id === key.id);
   }
 
   /** True (and used up) when the gate allowed a matching call in this run within the last 2 s. */
@@ -34,7 +42,7 @@ export class GateAllows {
   }
 
   private fresh(runId: string): Entry[] {
-    const since = this.now() - TTL_MS;
+    const since = this.now() - this.ttlMs;
     return (this.byRun.get(runId) ?? []).filter((e) => e.at > since);
   }
 }

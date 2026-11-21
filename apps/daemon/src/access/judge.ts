@@ -2,7 +2,33 @@ import type { ApprovalRequest } from "@ion/adapter-kit";
 import { wrapData } from "../context/index.js";
 
 /** decisions: your past answers that apply here, one line each (the judge weighs them). */
-export type JudgeInput = { projectId: string; text: string; req: ApprovalRequest; decisions?: string[] };
+/** checksFailed: one of the user's checks before tools run didn't finish or failed (said in ion's fixed words). */
+export type JudgeInput = {
+  projectId: string;
+  text: string;
+  req: ApprovalRequest;
+  decisions?: string[];
+  checksFailed?: true;
+  /** ion's guess (the user, 2026-11-21): why it's wary, the scripts that will run, and text the command decodes. */
+  wary?: { reason: string; scripts: { file: string; text?: string }[]; decoded: string[] };
+};
+
+/** What the judge is told when a check didn't finish: fixed words, never a hook's name or output (config text). */
+const CHECKS_FAILED =
+  "From ion: one of the checks before tools run didn't finish or failed. Judge this action more carefully.";
+/** A guess of ion's: its reason (ion's fixed words), then what will run, as data. */
+function waryBlocks(w: NonNullable<JudgeInput["wary"]>): string[] {
+  return [
+    `From ion: ion is wary of this action: ${w.reason}. The scripts below are what will run; judge the action by them too.`,
+    ...w.scripts.map((s) =>
+      s.text === undefined
+        ? wrapData("a script outside the project, not shown", s.file)
+        : wrapData("a script this command will run", `${s.file}\n${s.text}`),
+    ),
+    ...w.decoded.map((d) => wrapData("text this command decodes and runs", d)),
+  ];
+}
+
 /** decided: false when ion couldn't get a verdict (failure, timeout, no JSON): that answer isn't kept. */
 export type Judge = (i: JudgeInput) => Promise<{ allow: boolean; reason: string; decided?: false }>;
 
@@ -23,6 +49,8 @@ export function judgePrompt(i: JudgeInput): string {
           wrapData("your decisions", i.decisions.join("\n")),
         ]
       : []),
+    ...(i.checksFailed ? [CHECKS_FAILED] : []),
+    ...(i.wary ? waryBlocks(i.wary) : []),
     'Answer with only JSON: {"allow": true or false, "reason": "at most 12 plain words"}',
   ].join("\n\n");
 }

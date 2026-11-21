@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import WebSocket from "ws";
-import { createClient, type IonClient, protocols } from "./core.js";
+import { createClient, type IonClient, protocols, runProtocols } from "./core.js";
 
 export { ApiCallError, type IonClient } from "./core.js";
 
@@ -25,9 +25,15 @@ export function readDaemonInfo(dataDir: string): DaemonInfo | null {
   }
 }
 
-/** Opens an authenticated connection to the daemon (Node: the CLI and tests). */
-export async function connect(opts: { port: number; token: string; host?: string }): Promise<IonClient> {
-  const ws = new WebSocket(`ws://${opts.host ?? "127.0.0.1"}:${opts.port}/`, protocols(opts.token));
+/**
+ * Opens an authenticated connection to the daemon (Node: the CLI and tests): with ion's token, or with a chat's run
+ * key (inside a chat: only ion's commands for tools).
+ */
+export async function connect(
+  opts: { port: number; host?: string } & ({ token: string } | { runKey: string }),
+): Promise<IonClient> {
+  const auth = "runKey" in opts ? runProtocols(opts.runKey) : protocols(opts.token);
+  const ws = new WebSocket(`ws://${opts.host ?? "127.0.0.1"}:${opts.port}/`, auth);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", resolve);
     ws.once("error", reject);

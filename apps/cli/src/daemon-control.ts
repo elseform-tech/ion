@@ -19,15 +19,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * A connected client when ion is up: daemon.json's pid is alive, the token works, and the daemon reports
- * that same pid. A reused pid or an unrelated process never passes.
+ * that same pid. A reused pid or an unrelated process never passes. `runKey`: inside a chat (`ION_RUN_KEY`), ion is
+ * reached with the chat's run key instead of ion's token, for ion's commands for tools only.
  */
-export async function reach(dataDir: string): Promise<{ client: IonClient; info: DaemonInfo } | null> {
+export async function reach(
+  dataDir: string,
+  runKey?: string,
+): Promise<{ client: IonClient; info: DaemonInfo } | null> {
   const info = readDaemonInfo(dataDir);
   if (!info || !isAlive(info.pid)) return null;
   const timeout = () => sleep(1000).then(() => Promise.reject(new Error("timeout")));
   let client: IonClient | undefined;
   try {
-    client = await Promise.race([connect(info), timeout()]);
+    const auth = runKey ? { port: info.port, runKey } : info;
+    client = await Promise.race([connect(auth), timeout()]);
     const s = await Promise.race([client.call("status", {}), timeout()]);
     if (s.pid !== info.pid) throw new Error("pid mismatch");
     return { client, info };

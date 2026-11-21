@@ -3,6 +3,8 @@
 // protocol (JSON-RPC lines, no "jsonrpc" field, as codex-cli 0.153.2). The prompt's first word picks the script:
 // hello | approve | command | mcp | ask | slow | fail | crash | whoami.
 // FAKE_CODEX_SIGNED_OUT=1: signed out. FAKE_CODEX_UNTRUSTED=1: never trusts a hook. FAKE_CODEX_LOG: argv log.
+// FAKE_CODEX_OWN_MCP: your own servers (JSON, as config/read shows them). FAKE_CODEX_OWN_HOOK=1: a hook of your own,
+// on unless a hooks.state override turns its key off.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -44,6 +46,7 @@ function hooks() {
     overrides.some((o) => o.startsWith("hooks.state=") && o.includes(hash));
   const key = "/<session-flags>/config.toml:pre_tool_use:0:0";
   return [
+    ...ownHooks(),
     {
       key,
       eventName: "preToolUse",
@@ -55,6 +58,21 @@ function hooks() {
       trustStatus: trusted ? "trusted" : "untrusted",
     },
   ];
+}
+
+/** Your own hook (FAKE_CODEX_OWN_HOOK), off when a hooks.state override says `"<key>"={enabled=false}`. */
+function ownHooks() {
+  if (process.env.FAKE_CODEX_OWN_HOOK !== "1") return [];
+  const key = "/home/.codex/config.toml:post_tool_use:0:0";
+  const off = overrides.some((o) => o.startsWith("hooks.state=") && o.includes(`"${key}"={enabled=false}`));
+  const base = {
+    key,
+    eventName: "postToolUse",
+    handlerType: "command",
+    command: "echo mine",
+    source: "user",
+  };
+  return [{ ...base, enabled: !off, isManaged: false, currentHash: "sha256:own", trustStatus: "trusted" }];
 }
 
 let thread = null;
@@ -293,6 +311,11 @@ const METHODS = {
           account: { type: "chatgpt", email: "someone@example.com", planType: "plus" },
           requiresOpenaiAuth: true,
         },
+  "config/read": () => {
+    if (process.env.FAKE_CODEX_NO_CONFIG_READ === "1")
+      throw { code: -32601, message: "unknown method config/read" };
+    return { config: { mcp_servers: JSON.parse(process.env.FAKE_CODEX_OWN_MCP ?? "{}") } };
+  },
   "hooks/list": (p) => ({ data: [{ cwd: p.cwds?.[0] ?? "", hooks: hooks(), warnings: [], errors: [] }] }),
   "model/list": () => ({ data: MODELS, nextCursor: null }),
   "thread/start": (p) => {

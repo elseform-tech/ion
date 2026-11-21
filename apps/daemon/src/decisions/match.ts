@@ -1,3 +1,4 @@
+import { answerWithin } from "../access/runner.js";
 import type { DecisionInfo } from "@ion/schema";
 import { wrapData } from "../context/index.js";
 
@@ -51,17 +52,20 @@ export function parseMatch(text: string, past: DecisionInfo[]): { decisionId: st
   return null;
 }
 
-/** A matcher on a quick model; a failure or a slow answer means no match (the user is asked). */
-export function createMatcher(run: (prompt: string, signal: AbortSignal) => Promise<string>): Matcher {
+/**
+ * A matcher on a quick model; a failure or a slow answer means no match (the user is asked). It stops waiting at the
+ * time even when the model ignores the abort (tour, 2026-11-21: a question waited forever).
+ */
+export function createMatcher(
+  run: (prompt: string, signal: AbortSignal) => Promise<string>,
+  timeoutMs = TIMEOUT_MS,
+): Matcher {
   return async (q, past) => {
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
     try {
-      return parseMatch(await run(matchPrompt(q, past), abort.signal), past);
+      const out = await answerWithin(run, matchPrompt(q, past), timeoutMs);
+      return out === null ? null : parseMatch(out, past);
     } catch {
       return null;
-    } finally {
-      clearTimeout(timer);
     }
   };
 }

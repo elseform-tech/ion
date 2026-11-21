@@ -32,7 +32,6 @@ function checked(p: ProjectPatch): Omit<ProjectPatch, "projectId"> {
   if (p.harness) checkAgent(p.harness);
   if (p.color && !/^#[0-9a-fA-F]{6}$/.test(p.color)) throw new UserError("Pick a colour");
   if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
-  if (p.access && p.access !== "auto" && p.access !== "full") throw new UserError("Pick auto or full");
   if (p.model !== undefined && p.model !== null && !p.model.trim()) throw new UserError("Pick a model");
   return onlyPatchable({ ...p, ...profileOf(p) });
 }
@@ -56,7 +55,6 @@ const PATCHABLE = [
   "color",
   "model",
   "effort",
-  "access",
   "shareWithIon",
   "profile",
   "profileSuggestion",

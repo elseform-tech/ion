@@ -9,7 +9,14 @@ const RETRIES = 20;
 
 /** Your answer on its way back into a chat: the message, what the judge treats as your request, and the agent. */
 /** `shown`: what the chat shows as yours (your choice), when `text` is ion's wording for the agent. */
-export type Message = { harness: string | null; text: string; request: string; shown?: string };
+export type Message = {
+  harness: string | null;
+  text: string;
+  request: string;
+  shown?: string;
+  /** The question this answers (its needId): the chat shows the answer under it. */
+  answers?: string;
+};
 /** decisionId: the decision whose outcome the run is, if any (a one-off answer has none). */
 type Pending = Message & { decisionId?: string };
 export type Start = (chatId: string, m: Message) => Promise<string | null>;
@@ -74,6 +81,7 @@ export class FollowUps {
           text: m.text,
           request: m.request,
           ...(m.shown ? { shown: m.shown } : {}),
+          ...(m.answers ? { answers: m.answers } : {}),
         })) ?? ""
       );
     } catch (e) {

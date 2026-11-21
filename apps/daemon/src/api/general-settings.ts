@@ -7,7 +7,6 @@ import { UserError } from "./errors.js";
 /** General and Notifications as the app shows them, from your config (what's not set is its default). */
 export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort"> {
   return {
-    access: c.access.default,
     maxRuns: c.resources.max_runs,
     autoRuns: maxRuns("auto", availableParallelism()),
     notifications: {
@@ -68,10 +67,8 @@ function projectLevels(
 /** The config with the patch applied; the first bad value refuses the whole patch, in plain words. */
 export function applyGeneral(c: UserConfig, patch: SettingsPatch): UserConfig {
   const n = patch.notifications;
-  const access = patch.access === undefined ? c.access : { ...c.access, default: accessOf(patch.access) };
   return {
     ...c,
-    access,
     resources: patch.maxRuns === undefined ? c.resources : { ...c.resources, max_runs: runs(patch.maxRuns) },
     notifications: {
       ...c.notifications,
@@ -80,9 +77,4 @@ export function applyGeneral(c: UserConfig, patch: SettingsPatch): UserConfig {
     },
     projects: projectLevels(c, n?.projects),
   };
-}
-
-function accessOf(v: unknown): "auto" | "full" {
-  if (v !== "auto" && v !== "full") throw new UserError("Pick auto or full");
-  return v;
 }

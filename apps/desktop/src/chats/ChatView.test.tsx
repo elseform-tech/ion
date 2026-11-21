@@ -243,3 +243,71 @@ describe("ChatView", () => {
     expect(onFile).toHaveBeenCalledWith("src/a.ts");
   });
 });
+
+// The user, 2026-11-21: "after answering, it should appear inline as part of the conversation with the question and
+// answer"; and after an agent adds a tool, one quiet line with a link to it in Settings → Tools.
+describe("answered questions and added tools in the chat", () => {
+  const q = (o: Partial<Extract<Item, { kind: "question" }>>): Item => ({
+    kind: "question",
+    needId: "n1",
+    question: "Should I keep your custom xs breakpoint when moving to Tailwind 4?",
+    why: null,
+    choices: [],
+    resolved: true,
+    ...o,
+  });
+
+  it("an answered question shows in the chat with your answer", () => {
+    const { container, getByText } = view([q({ outcome: { by: "you", choice: "Keep xs", always: true } })]);
+    const asked = container.querySelector(".qa .qq") as HTMLButtonElement;
+    expect(asked.textContent).toBe("Should I keep your custom xs breakpoint when moving to Tailwind 4?");
+    expect(asked.className).toBe("qq");
+    fireEvent.click(asked);
+    expect(asked.className).toBe("qq open");
+    expect(container.querySelector(".u")?.textContent).toBe("Keep xsAlways");
+    expect(getByText("Always").className).toBe("chip");
+  });
+
+  // Tour, 2026-11-21: the agent's "Asked." showed after your answer; the answer now shows where you sent it.
+  it("your answer shows where you sent it, not under the question", () => {
+    const { container } = view([
+      q({ replied: true, outcome: { by: "you", choice: "Keep xs", always: true } }),
+      { kind: "agent", text: "Asked.", done: true },
+      { kind: "you", text: "Keep xs", gone: true, answers: "n1", always: true },
+    ]);
+    expect([...container.children[0]!.querySelectorAll(".qa, .a, .u")].map((e) => e.className)).toEqual([
+      "qa",
+      "a",
+      "u",
+    ]);
+    expect(container.querySelector(".u")?.textContent).toBe("Keep xsAlways");
+  });
+
+  it("a question that ended without you shows what happened", () => {
+    const { container } = view([
+      q({ outcome: { by: "stopped" } }),
+      q({ needId: "n4", outcome: { by: "stopped", why: "archived" } }),
+      q({ needId: "n5", outcome: { by: "stopped", why: "restarted" } }),
+      q({ needId: "", outcome: { by: "ion", text: "Answered by ion from your decision: Keep xs" } }),
+      q({ needId: "n3", outcome: undefined }),
+    ]);
+    expect([...container.querySelectorAll(".qa .quiet")].map((e) => e.textContent)).toEqual([
+      "The chat stopped before you answered",
+      "The chat was archived before you answered",
+      "ion restarted before you answered",
+      "Answered by ion from your decision: Keep xs",
+    ]);
+    // Closed but not settled yet (held behind the same question elsewhere): nothing shows.
+    expect(container.querySelectorAll(".qa")).toHaveLength(4);
+    expect(container.querySelector(".u")).toBeNull();
+  });
+
+  it("the chat shows a line after an agent adds, with a link to it in Settings → Tools", () => {
+    const opened = vi.fn();
+    window.addEventListener("ion:open-tools", (e) => opened((e as CustomEvent).detail));
+    const { container } = view([{ kind: "added", tool: "mcp", name: "github" }]);
+    expect(container.querySelector(".quiet")?.textContent).toBe("github added, offTools");
+    fireEvent.click(container.querySelector(".quiet .lnk") as HTMLButtonElement);
+    expect(opened).toHaveBeenCalledWith({ kind: "mcp", name: "github" });
+  });
+});

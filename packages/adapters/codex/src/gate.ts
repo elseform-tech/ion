@@ -22,16 +22,18 @@ export type HookTrust = { key: string; hash: string };
 
 /**
  * `-c` overrides that give Codex ion's PreToolUse hook for every tool (session flags: nothing is written to your
- * Codex folder), and trust exactly that hook once its hash is known. TOML strings are JSON strings here.
+ * Codex folder), and trust exactly that hook once its hash is known. `off`: your own hooks, by key, turned off for
+ * this session (one `hooks.state` table: a second `-c hooks.state=` would replace the first). TOML strings are JSON
+ * strings here.
  */
-export function hookArgs(trust: HookTrust | null): string[] {
+export function hookArgs(trust: HookTrust | null, off: string[] = []): string[] {
   const hook = `{type="command",command=${JSON.stringify(hookCommand())},timeout=300}`;
   const args = ["-c", `hooks.PreToolUse=[{matcher="*",hooks=[${hook}]}]`];
-  if (trust)
-    args.push(
-      "-c",
-      `hooks.state={${JSON.stringify(trust.key)}={trusted_hash=${JSON.stringify(trust.hash)}}}`,
-    );
+  const state = [
+    ...(trust ? [`${JSON.stringify(trust.key)}={trusted_hash=${JSON.stringify(trust.hash)}}`] : []),
+    ...off.map((key) => `${JSON.stringify(key)}={enabled=false}`),
+  ];
+  if (state.length) args.push("-c", `hooks.state={${state.join(",")}}`);
   return args;
 }
 

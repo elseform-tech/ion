@@ -460,7 +460,8 @@ describe("daemon api", () => {
     await expect(client.call("ion.stats", { ionId: "nope" })).rejects.toThrow("Unknown ion: nope");
   });
 
-  it("sets a project ion's agent, colour, model, effort and access, and checks them", async () => {
+  // Task review, 2026-11-21: access is no longer a project setting (only the composer's access icon switches it).
+  it("sets a project ion's agent, colour, model and effort, and checks them; access isn't one", async () => {
     await client.call("projects.add", { path: repo("app") });
     await client.call("project.update", {
       projectId: "app",
@@ -470,15 +471,15 @@ describe("daemon api", () => {
       effort: "high",
       access: "full",
       shareWithIon: false,
-    });
+    } as never);
     expect((await client.call("projects.list", {}))[0]).toMatchObject({
       harness: "grok-build",
       color: "#ED712E",
       model: "grok-code",
       effort: "high",
-      access: "full",
       shareWithIon: false,
     });
+    expect((await client.call("projects.list", {}))[0]).not.toHaveProperty("access");
     expect((await client.call("ions.list", {}))[1]).toMatchObject({
       harness: "grok-build",
       color: "#ED712E",

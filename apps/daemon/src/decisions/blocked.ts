@@ -10,6 +10,8 @@ export type Blocked = {
   key: string;
   /** The input shown was cut: "Always allow" would cover text you can't see, so it isn't offered. */
   cut?: boolean;
+  /** A guess of ion's, not the judge's no (the user, 2026-11-21): "ion is wary of this". */
+  wary?: true;
 };
 export type Held = "allow" | "deny" | "timeout";
 
@@ -21,10 +23,29 @@ const ONCE = "Allow once";
 const ALWAYS = "Always allow in this project";
 const NO = "Don't allow";
 
+/**
+ * Whether the input says more than the question's title: not when it's only the command the title already shows,
+ * with at most the agent's description of it (tour, final review, 2026-11-21: raw JSON followed the reason). Any other
+ * field (a timeout, running in the background) and a cut input always show: "Always allow" covers them.
+ */
+function addsToTitle(b: Blocked): boolean {
+  if (!b.input) return false;
+  try {
+    const o = JSON.parse(b.input) as Record<string, unknown>;
+    const extra = Object.keys(o ?? {}).filter((k) => k !== "command" && k !== "description");
+    return o?.command !== b.summary || extra.length > 0;
+  } catch {
+    return true;
+  }
+}
+
 /** What you're asked about a stopped tool call. */
 export const blockedQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
-  why: [`ion stopped it: ${b.reason}`, ...(b.input ? [b.input] : [])].join("\n\n"),
+  why: [
+    `${b.wary ? "ion is wary of this" : "ion stopped it"}: ${b.reason}`,
+    ...(addsToTitle(b) ? [b.input] : []),
+  ].join("\n\n"),
   choices: [
     { label: ONCE, consequence: "It runs this time. ion asks again next time." },
     ...(b.cut

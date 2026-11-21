@@ -68,3 +68,20 @@ async function ask(h: HarnessEntry, model?: string): Promise<void> {
   if (caps.modelsLive && !caps.models.some((x) => x.id === model))
     throw new UserError(`Unknown model for ${h.label}: ${model}`);
 }
+
+/** A new chat: its title, project and worktree; `by`: "ion" for a thread ion started (Plan 09). */
+export function chatCreated(
+  store: EventStore,
+  c: { chatId: string; chat: Chat; wt: { path: string; branch: string }; by?: "ion" },
+): void {
+  store.append({
+    chatId: c.chatId,
+    runId: null,
+    origin: "daemon",
+    type: EV.chatCreated,
+    data: {
+      ...{ title: c.chat.title, projectId: c.chat.projectId, worktree: c.wt.path, branch: c.wt.branch },
+      ...(c.by ? { by: c.by } : {}),
+    },
+  });
+}

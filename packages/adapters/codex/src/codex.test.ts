@@ -2,7 +2,13 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type AdapterEvent, type ApprovalRequest, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
+import {
+  type AdapterEvent,
+  type ApprovalRequest,
+  type HttpMcpSpec,
+  ResumeFailed,
+  type StartOpts,
+} from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { hookCommand } from "./gate.js";
@@ -40,6 +46,9 @@ afterEach(() => {
   delete process.env.FAKE_CODEX_SIGNED_OUT;
   delete process.env.FAKE_CODEX_UNTRUSTED;
   delete process.env.FAKE_CODEX_LOG;
+  delete process.env.FAKE_CODEX_OWN_MCP;
+  delete process.env.FAKE_CODEX_OWN_HOOK;
+  delete process.env.FAKE_CODEX_NO_CONFIG_READ;
 });
 
 describe("codex adapter", () => {
@@ -120,18 +129,60 @@ describe("codex adapter", () => {
   });
 
   // The bearer key goes over stdin in the thread's config, never on the command line (other users' `ps`).
-  it("gives Codex ion's MCP server with its header, off the command line", async () => {
+  // The user, 2026-11-20: "adding new mcp required us to follow industry standard…": your servers go the same way.
+  it("gives Codex ion's server and yours, keys off the command line", async () => {
     process.env.FAKE_CODEX_LOG = join(mkdtempSync(join(tmpdir(), "ion-codex-log-")), "argv");
-    const mcp = {
-      name: "ion" as const,
-      url: "http://127.0.0.1:9/mcp/k",
-      headers: { Authorization: "Bearer s3cret" },
-    };
-    const { thread } = await whoami({ mcp });
+    const mcpServers: HttpMcpSpec[] = [
+      {
+        name: "ion",
+        transport: "http",
+        url: "http://127.0.0.1:9/mcp/k",
+        headers: { Authorization: "Bearer s3cret" },
+      },
+      {
+        name: "linear",
+        transport: "http",
+        url: "https://mcp.linear.app/mcp",
+        headers: { Authorization: "Bearer oauth-tok" },
+      },
+    ];
+    const { thread } = await whoami({ mcpServers });
     expect(thread.config.mcp_servers).toEqual({
-      ion: { url: mcp.url, http_headers: { Authorization: "Bearer s3cret" } },
+      ion: { url: "http://127.0.0.1:9/mcp/k", http_headers: { Authorization: "Bearer s3cret" } },
+      linear: { url: "https://mcp.linear.app/mcp", http_headers: { Authorization: "Bearer oauth-tok" } },
     });
-    expect(readFileSync(process.env.FAKE_CODEX_LOG, "utf8")).not.toContain("s3cret");
+    const argv = readFileSync(process.env.FAKE_CODEX_LOG, "utf8");
+    for (const secret of ["s3cret", "oauth-tok"]) expect(argv).not.toContain(secret);
+  });
+
+  // The user, 2026-11-21: "Only ion's, plus Import": in ion's chats every agent uses only the servers, hooks and
+  // skills set up in ion. Codex's own servers (its config.toml, a project's .codex) are each turned off in the
+  // thread's config (a `-c mcp_servers={}` merges and changes nothing, checked on codex-cli 0.153.2), and its plugins.
+  it("a Codex chat in ion doesn't load Codex's own servers", async () => {
+    process.env.FAKE_CODEX_OWN_MCP = JSON.stringify({ mine: { command: "echo" }, ion: { command: "old" } });
+    const ion: HttpMcpSpec = { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp/k", headers: {} };
+    const { thread, overrides } = await whoami({ mcpServers: [ion] });
+    expect(thread.config.mcp_servers).toEqual({
+      ion: { url: "http://127.0.0.1:9/mcp/k", http_headers: {} },
+      mine: { enabled: false },
+    });
+    expect(overrides).toContain("features.plugins=false");
+    expect((await whoami()).thread.config.mcp_servers).toEqual({
+      mine: { enabled: false },
+      ion: { enabled: false },
+    });
+  });
+
+  // Task review, 2026-11-21: when Codex can't say which servers it would load (config/read fails), ion can't turn them
+  // off, and a chat would quietly run with your own servers. Codex has no off switch for all of them, so it refuses.
+  it("refuses a chat when it can't turn off Codex's own servers", async () => {
+    process.env.FAKE_CODEX_NO_CONFIG_READ = "1";
+    await expect(turn("hello")).rejects.toThrow("ion couldn't turn off Codex's own servers");
+  });
+
+  // Final review, 2026-11-21: every server reaches an agent as ion's URL (ion runs local ones), so adapters take http.
+  it("takes remote servers (your local ones come as ion's URLs)", () => {
+    expect(make().mcpTransports).toEqual({ http: true });
   });
 
   it("continues a thread, and says so when Codex can't", async () => {
@@ -302,6 +353,18 @@ describe("codex adapter with ion's gate", () => {
     // Later runs reuse what ion learned: one start each.
     const starts = readFileSync(process.env.FAKE_CODEX_LOG, "utf8").trim().split("\n");
     expect(starts.length).toBeLessThanOrEqual(3);
+  });
+
+  // The user, 2026-11-21: only ion's hooks in ion's chats. Your own Codex hooks are turned off for the session
+  // (`hooks.state.<key>.enabled=false`), beside the trust for ion's own; ion's gate stays.
+  it("a Codex chat in ion doesn't run Codex's own hooks, and ion's gate stays", async () => {
+    process.env.FAKE_CODEX_OWN_HOOK = "1";
+    const { overrides, gate: url } = await whoami({ gate });
+    expect(url).toBe(gate.url);
+    const state = overrides.filter((o: string) => o.startsWith("hooks.state="));
+    expect(state).toHaveLength(1);
+    expect(state[0]).toContain('"/home/.codex/config.toml:post_tool_use:0:0"={enabled=false}');
+    expect(state[0]).toContain("trusted_hash=");
   });
 
   // Security review, 2026-11-19 (MEDIUM): Codex's commands inherited ION_GATE_URL (gate key included; seen live

@@ -45,7 +45,6 @@ describe("General and notification settings", () => {
   it("saves each General setting and reads it back", async () => {
     const first = await client.call("settings.get", {});
     expect(first).toMatchObject({
-      access: "auto",
       maxRuns: "auto",
       notifications: {
         briefing: { on: true, at: "08:30" },
@@ -54,14 +53,12 @@ describe("General and notification settings", () => {
     });
     await client.call("settings.set", {
       patch: {
-        access: "full",
         maxRuns: 3,
         notifications: { briefing: { on: false, at: "07:15" }, quiet: { to: "06:00" } },
       },
     });
     const got = await client.call("settings.get", {});
     expect(got).toMatchObject({
-      access: "full",
       maxRuns: 3,
       notifications: {
         briefing: { on: false, at: "07:15" },
@@ -70,6 +67,15 @@ describe("General and notification settings", () => {
     });
     const toml = readFileSync(file, "utf8");
     expect(toml).toContain("max_runs = 3");
+  });
+
+  // The user, 2026-11-20/21: Auto-approval is never turned off in Settings, only per chat with the composer's access
+  // icon. General has no Default access: Settings doesn't show it, and a patch can't set it.
+  it("has no Default access: new chats start on Auto", async () => {
+    expect("access" in (await client.call("settings.get", {}))).toBe(false);
+    await client.call("settings.set", { patch: { access: "full", maxRuns: 2 } as never });
+    expect(readFileSync(file, "utf8")).not.toContain("full");
+    expect("access" in (await client.call("settings.get", {}))).toBe(false);
   });
 
   it("refuses a bad time or count and leaves the file alone", async () => {
@@ -85,9 +91,10 @@ describe("General and notification settings", () => {
     await expect(set({ maxRuns: 0 })).rejects.toThrow("Between 1 and 32 chats");
     await expect(set({ maxRuns: 33 })).rejects.toThrow("Between 1 and 32 chats");
     await expect(set({ maxRuns: 2.5 })).rejects.toThrow("Between 1 and 32 chats");
-    await expect(set({ access: "none" })).rejects.toThrow("Pick auto or full");
     // A good field in the same patch is not saved when another is bad.
-    await expect(set({ access: "full", maxRuns: 0 })).rejects.toThrow("Between 1 and 32 chats");
+    await expect(set({ maxRuns: 3, notifications: { briefing: { at: "x" } } })).rejects.toThrow(
+      "Use a time like 08:30",
+    );
     expect(readFileSync(file, "utf8")).toBe(before);
   });
 
@@ -120,10 +127,10 @@ describe("General and notification settings", () => {
   // Final review, 2026-11-20: a config that failed to load as a whole left Settings on silent defaults; it says why.
   it("says when the config doesn't load", async () => {
     expect((await client.call("settings.get", {})).problem).toBeUndefined();
-    writeFileSync(file, '[access]\ndefault = "nope"\n');
+    writeFileSync(file, "[access]\njudge = 5\n");
     const got = await client.call("settings.get", {});
     expect(got.problem).toContain("config.toml");
-    expect(got.problem).toContain("access.default");
+    expect(got.problem).toContain("access.judge");
   });
 
   it("a removed project's level goes with it", async () => {

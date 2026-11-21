@@ -68,13 +68,4 @@ function projectEdits(p: Command, out: () => Out) {
         print(out(), `Removed ${id}`, { ok: true });
       }),
     );
-  p.command("access <id> <mode>")
-    .description("Auto (ion decides) or full")
-    .action((id: string, mode: string) => {
-      if (mode !== "auto" && mode !== "full") fail("Pick auto or full");
-      return call(async (c) => {
-        await c.call("project.setAccess", { projectId: id, access: mode });
-        print(out(), `Access for ${id}: ${mode === "full" ? "Full access" : "Auto"}`, { ok: true });
-      });
-    });
 }

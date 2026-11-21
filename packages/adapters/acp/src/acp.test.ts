@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ApprovalRequest, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
+import { type ApprovalRequest, type HttpMcpSpec, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { promptOf } from "./session.js";
@@ -104,6 +104,36 @@ describe("acp adapter", () => {
       ["mcp", "ion", "ion__search_chats"],
       ["mcp", "github", "github__create_issue"],
       ["other", null, "other"],
+    ]);
+  });
+
+  // Security review, 2026-11-21: ion decides what's a search by a tool's name, never by a call's input; Grok's own
+  // web tools are named here, by the adapter, from Grok's structured call.
+  it("names Grok's web tools in a permission request", async () => {
+    const { answerPermission } = await import("./session.js");
+    const seen: ApprovalRequest[] = [];
+    const ask = (kind: string, rawInput: object, title: string) =>
+      answerPermission(
+        { toolCall: { toolCallId: "t", title, kind, rawInput }, options: [] },
+        async (r) => {
+          seen.push(r);
+          return "deny" as const;
+        },
+        () => {},
+      );
+    await ask("search", { variant: "WebSearch", backend: true }, "Web search:");
+    await ask("fetch", { url: "https://x.example/" }, "webfetch");
+    await ask("fetch", { url: "https://x.example/" }, "x");
+    // Task review, 2026-11-21: only Grok's search step (its kind and title) is named from its variant.
+    await ask("execute", { variant: "WebSearch", command: "ls" }, "x");
+    // Security review, 2026-11-21: titled "webfetch" but an execute call: gated as a command.
+    await ask("execute", { command: "curl https://x.example/" }, "webfetch");
+    expect(seen.map((r) => [r.kind, r.toolName])).toEqual([
+      ["web", "web_search"],
+      ["web", "webfetch"],
+      ["web", "fetch"],
+      ["command", "execute"],
+      ["command", "execute"],
     ]);
   });
 
@@ -236,25 +266,59 @@ describe("acp adapter", () => {
     });
   });
 
-  it("gives the agent ion's MCP server", async () => {
-    const mcp = {
-      name: "ion" as const,
-      url: "http://127.0.0.1:9/mcp",
-      headers: { Authorization: "Bearer k" },
-    };
-    const events = await turn(fake, "whoami", { mcp });
+  // The user, 2026-11-20: "adding new mcp required us to follow industry standard…": your servers reach the agent
+  // beside ion's own, in the session request (over stdin), never on its command line.
+  const servers: HttpMcpSpec[] = [
+    { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer k" } },
+    {
+      name: "linear",
+      transport: "http",
+      url: "https://mcp.linear.app/mcp",
+      headers: { Authorization: "Bearer tok" },
+    },
+  ];
+  const whoamiWith = async (mcpServers: HttpMcpSpec[]) => {
+    const events = await turn(fake, "whoami", { mcpServers });
     const said = events
       .filter((e) => e.type === "message.delta")
       .map((e) => (e.data as { text: string }).text)
       .join("");
-    expect(JSON.parse(said).mcpServers).toEqual([
+    return JSON.parse(said) as { mcpServers: unknown[]; argv: string[] };
+  };
+
+  it("gives the agent ion's server and yours in the session request, keys off its command line", async () => {
+    const got = await whoamiWith(servers);
+    expect(got.mcpServers).toEqual([
       {
         type: "http",
         name: "ion",
         url: "http://127.0.0.1:9/mcp",
         headers: [{ name: "Authorization", value: "Bearer k" }],
       },
+      {
+        type: "http",
+        name: "linear",
+        url: "https://mcp.linear.app/mcp",
+        headers: [{ name: "Authorization", value: "Bearer tok" }],
+      },
     ]);
+    for (const secret of ["Bearer", "tok"]) expect(got.argv.join(" ")).not.toContain(secret);
+  });
+
+  // ACP: remote servers only when the agent says so (mcpCapabilities.http); every server is ion's URL for it.
+  it("leaves out remote servers when the agent doesn't take them", async () => {
+    process.env.FAKE_ACP_NO_HTTP = "1";
+    try {
+      expect((await whoamiWith(servers)).mcpServers).toEqual([]);
+    } finally {
+      delete process.env.FAKE_ACP_NO_HTTP;
+    }
+  });
+
+  // Checked live 2026-11-20: opencode 1.18.8 and grok 1.0.89 both answer initialize with mcpCapabilities.http.
+  // Final review, 2026-11-21: every server reaches an agent as ion's URL (ion runs local ones), so adapters take http.
+  it("takes remote servers (your local ones come as ion's URLs)", () => {
+    expect(make().mcpTransports).toEqual({ http: true });
   });
 
   // ACP has no system prompt: ion's instructions go with each turn, as their own block, marked.
@@ -349,6 +413,40 @@ describe("acp adapter", () => {
         }),
       ).rejects.toThrow("Fake ACP didn't respond");
       expect(await a.auth.status()).toEqual({ signedIn: false, method: "Not responding" });
+    } finally {
+      delete process.env.FAKE_ACP_HANG;
+    }
+  });
+
+  // Live, 2026-11-21: opencode's first start (installing its plugin package in ion's folder) timed out and read as
+  // "didn't respond" / not signed in; two starts at once slowed each other. While it's setting up, starts take turns
+  // and a timeout says so.
+  it("while an agent is setting up, starts take turns and a timeout says it's setting up", async () => {
+    const setting = {
+      ...fake,
+      id: "fake-setup",
+      notResponding: () => "Not responding — Fake is setting up, try again",
+    };
+    process.env.FAKE_ACP_HANG = "1";
+    try {
+      const a = createAcpAdapter(setting, { which: () => process.execPath, startTimeoutMs: 300 });
+      const opts = {
+        cwd,
+        model: null,
+        effort: null,
+        signal: new AbortController().signal,
+        decide: async () => "allow" as const,
+      };
+      const t0 = Date.now();
+      const both = await Promise.allSettled([a.start(opts), a.start(opts)]);
+      expect(both.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+      expect(String((both[0] as PromiseRejectedResult).reason)).toContain("Fake is setting up, try again");
+      // One after the other: two timeouts' worth, not one.
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(580);
+      expect(await a.auth.status()).toEqual({
+        signedIn: false,
+        method: "Not responding — Fake is setting up, try again",
+      });
     } finally {
       delete process.env.FAKE_ACP_HANG;
     }

@@ -5,6 +5,9 @@ import { chatsCommands } from "./commands/chats.js";
 import { ionsCommands } from "./commands/ions.js";
 import { daemonCommands } from "./commands/daemon.js";
 import { harnessesCommand } from "./commands/harnesses.js";
+import { hooksCommands } from "./commands/hooks.js";
+import { mcpCommands } from "./commands/mcp.js";
+import { skillsCommands } from "./commands/skills.js";
 import { decisionsCommands } from "./commands/decisions.js";
 import { memoryCommands } from "./commands/memory.js";
 import { needsCommands } from "./commands/needs.js";
@@ -28,5 +31,8 @@ suggestionsCommands(program, out);
 memoryCommands(program, out);
 decisionsCommands(program, out);
 harnessesCommand(program, out);
+mcpCommands(program, out);
+skillsCommands(program, out);
+hooksCommands(program, out);
 
 await program.parseAsync();

@@ -35,6 +35,12 @@ describe("a work step's name", () => {
     expect(stepName("Read")).toBe("Read");
   });
 
+  // Task 7, 2026-11-20: an ion's (and a chat's) web steps read in plain words, whichever agent ran them.
+  it("names web steps plainly", () => {
+    for (const n of ["WebSearch", "web_search", "websearch"]) expect(stepName(n)).toBe("Search the web");
+    for (const n of ["WebFetch", "web_fetch", "webfetch"]) expect(stepName(n)).toBe("Read a page");
+  });
+
   // Security review, 2026-11-19: a routed tool name is checked before it names a step.
   it("shows Tool for a step with no name", () => {
     expect(stepName("")).toBe("Tool");

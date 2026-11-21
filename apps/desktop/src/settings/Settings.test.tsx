@@ -17,8 +17,16 @@ const grok: HarnessInfo = {
     { id: "grok-code-fast", label: "grok-code-fast" },
   ],
   defaultModel: "grok-code",
+  ownTools: true,
 };
-const claude: HarnessInfo = { ...grok, id: "claude-code", label: "Claude Code", signedIn: false, models: [] };
+const claude: HarnessInfo = {
+  id: "claude-code",
+  label: "Claude Code",
+  installed: true,
+  signedIn: false,
+  models: [],
+  defaultModel: "grok-code",
+};
 const ions: IonInfo[] = [
   {
     ionId: "chief",
@@ -93,7 +101,7 @@ function client(o: { projects?: ProjectInfo[]; fail?: string[]; problem?: string
 describe("Settings", () => {
   // Final review, 2026-11-20: a config that didn't load left Settings on defaults without a word.
   it("says at the top when your config doesn't load", async () => {
-    const problem = "config.toml: access.default must be one of auto, full";
+    const problem = "config.toml: resources.max_runs must be a number";
     render(<Settings client={client({ problem })} onOpenIon={() => {}} />);
     const line = await screen.findByText(problem);
     expect(line.className).toContain("perr");
@@ -117,6 +125,17 @@ describe("Settings", () => {
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { quick: "grok-build:grok-code-fast" } });
   });
 
+  // The user, 2026-11-21: "Only ion's, plus Import". Grok has no switch for its own servers, hooks and plugins, so
+  // Settings says it also loads its own; the others load only ion's.
+  it("says which agent also loads its own servers and hooks", async () => {
+    render(<Settings client={client()} onOpenIon={() => {}} />);
+    const rows = await screen.findAllByText(/^(Claude Code|Grok Build)$/);
+    expect(rows).toHaveLength(2);
+    expect(screen.getAllByText("Also loads its own")).toHaveLength(1);
+    const own = screen.getByText("Also loads its own");
+    expect(own.closest(".hrow")?.textContent).toContain("Grok Build");
+  });
+
   // The user, 2026-11-19: you choose how hard ion thinks.
   it("picks the effort ion thinks at", async () => {
     const c = client();
@@ -137,7 +156,7 @@ describe("Settings", () => {
     expect(document.querySelector(".statcard")?.textContent).toContain("$0.75");
   });
 
-  it("changes a project ion's agent, colour, model, effort, access and sharing", async () => {
+  it("changes a project ion's agent, colour, model, effort and sharing", async () => {
     const c = client();
     const onOpenIon = vi.fn();
     render(<Settings client={c} onOpenIon={onOpenIon} />);
@@ -152,12 +171,21 @@ describe("Settings", () => {
     patch({ model: "grok-code-fast" });
     fireEvent.click(screen.getByRole("button", { name: "High" }));
     patch({ effort: "high" });
-    fireEvent.click(screen.getByRole("button", { name: "Full access" }));
-    patch({ access: "full" });
     fireEvent.click(screen.getByRole("switch", { name: "Share with ion" }));
     patch({ shareWithIon: false });
     fireEvent.click(screen.getByRole("button", { name: "Open chat" }));
     expect(onOpenIon).toHaveBeenCalledWith("shop");
+  });
+
+  // Task review, 2026-11-21: a project's Full access was still a switch on its ion's page, though the user ruled
+  // (2026-11-20) that Auto-approval is switched only with the composer's access icon, never in Settings.
+  it("the ion page has no Access row", async () => {
+    render(<Settings client={client()} onOpenIon={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
+    await screen.findByText("Share with ion");
+    expect(screen.queryByText("Access")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Full access" })).toBeNull();
   });
 
   // Plan 10: an ion's routines, on its Settings page.

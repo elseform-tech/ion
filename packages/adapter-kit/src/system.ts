@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { agentEnv } from "./run-env.js";
 import { accessSync, constants, realpathSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
@@ -22,7 +23,9 @@ export const parseVersion = (text: string): string | null =>
 /** Runs `path args` without a shell and returns the version it prints. */
 export function readVersion(path: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string | null> {
   return new Promise((resolve) =>
-    execFile(path, args, { timeout: 10_000, env }, (_e, out) => resolve(parseVersion(String(out)))),
+    execFile(path, args, { timeout: 10_000, env: agentEnv(env) }, (_e, out) =>
+      resolve(parseVersion(String(out))),
+    ),
   );
 }
 

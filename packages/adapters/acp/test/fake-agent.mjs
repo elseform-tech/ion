@@ -50,6 +50,7 @@ function whoami(id, sessionId, told) {
         env: process.env.FAKE_ACP_ENV ?? null,
         chat: process.env.ION_CHAT ?? null,
         mcpServers: mcps.get(sessionId),
+        argv: process.argv.slice(2),
         ...(told ? { instructions: told } : {}),
       }),
     },
@@ -133,10 +134,12 @@ async function prompt(id, { sessionId, prompt: blocks }) {
 }
 
 // FAKE_ACP_CAPS: "resume" (default: resume and load), "load" (load only) or "none".
+// FAKE_ACP_NO_HTTP=1: takes no remote MCP servers (stdio only, ACP's baseline).
 function initialize(m) {
   const caps = process.env.FAKE_ACP_CAPS ?? "resume";
   const agentCapabilities = {
     loadSession: caps !== "none",
+    mcpCapabilities: { http: !process.env.FAKE_ACP_NO_HTTP },
     ...(caps === "resume" ? { sessionCapabilities: { resume: {} } } : {}),
   };
   send({

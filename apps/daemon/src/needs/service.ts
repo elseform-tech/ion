@@ -75,7 +75,7 @@ export class NeedsService {
         runId,
         origin: "daemon",
         type: EV.needResolved,
-        data: { needId, decision: "superseded", by: "daemon" },
+        data: { needId, decision: "superseded", by: "daemon", why: "stopped" },
       });
   }
 
@@ -87,7 +87,7 @@ export class NeedsService {
         runId: n.runId,
         origin: "daemon",
         type: EV.needResolved,
-        data: { needId: n.needId, decision: "superseded", by: "daemon" },
+        data: { needId: n.needId, decision: "superseded", by: "daemon", why: "restarted" },
       });
   }
 
@@ -111,7 +111,7 @@ export class NeedsService {
         runId: n.runId,
         origin: "daemon",
         type: EV.needResolved,
-        data: { needId: n.needId, decision: "superseded", by: "daemon" },
+        data: { needId: n.needId, decision: "superseded", by: "daemon", why: "archived" },
       });
   }
 
@@ -122,7 +122,7 @@ export class NeedsService {
       runId: n.runId,
       origin: "daemon",
       type: EV.needResolved,
-      data: { needId: n.needId, decision: "superseded", by: "daemon" },
+      data: { needId: n.needId, decision: "superseded", by: "daemon", why: "asked again" },
     });
     this.raiseAsk({
       chatId: n.chatId,

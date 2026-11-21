@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 /** Where ion keeps its config file and data. ION_HOME overrides everything (tests use it). */
 export function ionPaths(env: NodeJS.ProcessEnv = process.env): { configFile: string; dataDir: string } {
@@ -11,3 +11,6 @@ export function ionPaths(env: NodeJS.ProcessEnv = process.env): { configFile: st
     dataDir: join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "ion"),
   };
 }
+
+/** Your MCP servers, in the standard mcpServers shape: beside the config file ($ION_HOME/mcp.json). */
+export const mcpFileOf = (configFile: string): string => join(dirname(configFile), "mcp.json");

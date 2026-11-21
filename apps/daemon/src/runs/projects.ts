@@ -2,12 +2,6 @@ import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig } from "@ion/config";
 import { UserError } from "../api/errors.js";
 import { ensureDefaultProject } from "../workspace/index.js";
 
-/** The project's own access mode, else the default from config.toml. */
-export function accessFor(configFile: string, projectId: string): "auto" | "full" {
-  const { config } = loadUserConfig(configFile);
-  return config.projects.find((p) => p.id === projectId)?.access ?? config.access.default;
-}
-
 /** ion's `default` project, made the first time it's needed. */
 export async function defaultProject(configFile: string): Promise<string> {
   const { config, error } = loadUserConfig(configFile);

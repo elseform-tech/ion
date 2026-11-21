@@ -3,6 +3,8 @@ import { isTest, onImports, repoPath, startsWithAny } from "./paths.js";
 const SPAWN = /^(node:)?child_process$|^execa$/;
 const ALLOWED = [
   "apps/daemon/src/workspace/",
+  // The keychain CLIs (security, secret-tool): keys and tokens never in ion's config.
+  "apps/daemon/src/secrets/",
   "packages/adapters/",
   "packages/adapter-kit/",
   "apps/cli/src/daemon-control.ts",
@@ -12,7 +14,9 @@ const ALLOWED = [
 export default {
   meta: {
     type: "problem",
-    messages: { noSpawn: "Only workspace, adapters and the CLI's daemon control may start processes." },
+    messages: {
+      noSpawn: "Only workspace, secrets, adapters and the CLI's daemon control may start processes.",
+    },
     schema: [],
   },
   create(ctx) {
