@@ -560,3 +560,60 @@ describe("ruleFor, ion's config and keys", () => {
     expect(ruleFor(cmd("grep -r audit src"), ctx)?.decision).not.toBe("deny");
   });
 });
+
+// The user, 2026-11-21: "i still want the agent to have more freedom outside its space not just for scratchpad" →
+// Auto mirrors what agents already do: reads anywhere, except your secrets, ion's files and other agents' settings.
+describe("Auto's reads, anywhere", () => {
+  const judged: string[] = [];
+  const judge = async (i: { req: ApprovalRequest }) => {
+    judged.push(i.req.summary);
+    return { verdict: "deny" as const, reason: "no" };
+  };
+  const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: ctx.roots };
+  const read = (file_path: string): ApprovalRequest => ({
+    ...cmd(file_path),
+    kind: "read",
+    input: { file_path },
+  });
+  const search = (path: string): ApprovalRequest => ({
+    ...cmd(path),
+    kind: "search",
+    input: { pattern: "x", path },
+  });
+
+  it("a read outside the project (not secret) is allowed in Auto", async () => {
+    judged.length = 0;
+    for (const r of [read("/etc/hosts"), read(`${home}/code/other/README.md`), cmd("cat /etc/hosts")])
+      expect(await access.decide(at, r), r.summary).toMatchObject({ decision: "allow", source: "rule" });
+    expect(await access.decide(at, search(`${home}/code/other`))).toMatchObject({ decision: "allow" });
+    expect(judged).toEqual([]);
+  });
+
+  it("a secret read is refused", async () => {
+    for (const r of [
+      read(`${home}/.ssh/id_ed25519`),
+      read(`${home}/.aws/credentials`),
+      cmd(`cat ${home}/.netrc`),
+    ])
+      expect(await access.decide(at, r), r.summary).toMatchObject({
+        decision: "deny",
+        reason: "Touches your secrets",
+      });
+  });
+
+  // (A folder holding ion's own is refused by the hard rules; here ion's folders are elsewhere.)
+  it("a search that would sweep your secrets, or a recursive look from above, goes to the judge", async () => {
+    judged.length = 0;
+    const away = createAccess({ judge, home, ionDirs: ["/data"] });
+    for (const r of [search(home), search("/Users"), cmd(`grep -r token ${home}`), cmd("ls -R /Users")])
+      expect((await away.decide(at, r)).source, r.summary).toBe("judge");
+    expect(judged).toHaveLength(4);
+  });
+
+  it("another agent's settings aren't read freely; an agent's own are", async () => {
+    const claude = read(`${home}/.claude/settings.json`);
+    expect((await access.decide({ ...at, agent: "grok-build" }, claude)).source).toBe("judge");
+    expect(await access.decide({ ...at, agent: "claude-code" }, claude)).toMatchObject({ decision: "allow" });
+  });
+});

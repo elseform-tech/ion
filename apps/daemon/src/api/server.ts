@@ -21,6 +21,7 @@ import { startSandbox } from "../runs/sandbox.js";
 import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
+import { readAgentRules } from "../access/agent-rules.js";
 import { UnsureLog } from "../access/unsure.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
@@ -391,6 +392,13 @@ const repoAsker =
     return HELD_ANSWER[h ?? "timeout"];
   };
 
+/** Each agent's own allow and deny rules, from your settings for it (Codex's trust: for the run's project folder). */
+const theirRulesOf = (configFile: string) => (r: AskingRun) => {
+  if (!r.harness) return null;
+  const project = loadUserConfig(configFile).config.projects.find((p) => p.id === r.projectId)?.path;
+  return readAgentRules(r.harness, { home: homedir(), ...(project ? { project } : {}) });
+};
+
 /** What a run needs besides its access and servers: picks, hooks, ion's server and gate, and asking you. */
 function runCtxOf(o: {
   opts: { dataDir: string; configFile: string };
@@ -409,6 +417,7 @@ function runCtxOf(o: {
       return pickSource({ ...o.picks, configFile: opts.configFile }, agent, dir ? [dir] : []);
     },
     beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => o.hooks.beforeTool(r, c),
+    theirs: theirRulesOf(opts.configFile),
     mcp: { grants: o.grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
     // `ion` inside a run reaches ion by this port and its run key (daemon.json is out of the run's reach).

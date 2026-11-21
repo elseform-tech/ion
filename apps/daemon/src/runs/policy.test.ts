@@ -1,13 +1,17 @@
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { decideByPolicy } from "./policy.js";
 
 const project = realpathSync(mkdtempSync(join(tmpdir(), "ion-policy-")));
 mkdirSync(join(project, "src"));
-const outside = realpathSync(mkdtempSync(join(tmpdir(), "ion-outside-")));
+// Outside the project and every temp folder (writes to temp folders are allowed): under the package's node_modules.
+const cache = fileURLToPath(new URL("../../node_modules/.cache", import.meta.url));
+mkdirSync(cache, { recursive: true });
+const outside = realpathSync(mkdtempSync(join(cache, "ion-outside-")));
 symlinkSync(outside, join(project, "escape"));
 const roots = [project];
 
@@ -31,6 +35,31 @@ describe("decideByPolicy", () => {
   it("allows edits inside the project and asks about the rest", () => {
     expect(decide("edit", { file_path: join(project, "new.ts") })).toBe("allow");
     expect(decide("edit", { file_path: join(outside, "x.ts") })).toBe("ask");
+  });
+
+  // The user, 2026-11-21: agents get the freedom they already have: writes in the project and the system temp folders
+  // (Codex's workspace-write, Claude Code's sandbox defaults).
+  it("a write to /tmp is allowed", () => {
+    const tmp = join("/", "tmp");
+    for (const p of [join(tmp, "ion-x.txt"), join("/private", tmp, "ion-x.txt"), join(tmpdir(), "ion-x.txt")])
+      expect(decide("edit", { file_path: p }), p).toBe("allow");
+    expect(decide("edit", { file_path: "/var/folders/ab/cd1234/T/ion-x.txt" })).toBe("allow");
+    expect(decide("edit", { file_path: "/private/var/folders/ab/cd1234/T/x/y.txt" })).toBe("allow");
+    // Not the folders around them.
+    expect(decide("edit", { file_path: "/var/folders/ab/cd1234/C/x" })).toBe("ask");
+    expect(decide("edit", { file_path: "/private/var/db/x" })).toBe("ask");
+    expect(decide("edit", { file_path: join("/private", `${tmp}x`, "y") })).toBe("ask");
+  });
+
+  it("a write to ~/Documents goes to the judge", () => {
+    expect(decide("edit", { file_path: join(homedir(), "Documents/notes.md") })).toBe("ask");
+    expect(decide("edit", { file_path: "~/Documents/notes.md" })).toBe("ask");
+  });
+
+  it("a link in a temp folder that points elsewhere isn't a temp write", () => {
+    const link = join(tmpdir(), `ion-policy-link-${process.pid}`);
+    symlinkSync(outside, link);
+    expect(decide("edit", { file_path: join(link, "x.ts") })).toBe("ask");
   });
 
   it("asks about an edit that names no path (fail closed)", () => {
@@ -61,7 +90,8 @@ describe("decideByPolicy", () => {
   it("fails closed for searches without a path, and checks ~ paths", () => {
     expect(decide("search", { pattern: "foo" })).toBe("ask");
     expect(decide("read", { file_path: "~/.ssh/id_rsa" })).toBe("ask");
-    expect(decide("edit", { file_path: join(project, "a/../../x.ts") })).toBe("ask");
+    // (The project is in a temp folder, where writes are free: the climb is shown from a folder that isn't.)
+    expect(decide("edit", { file_path: `${outside}/a/../../x.ts` })).toBe("ask");
   });
 
   // Regression (final review I1): file content and patterns aren't paths.

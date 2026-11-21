@@ -22,7 +22,8 @@ import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import type { GateAnswer } from "../gate/index.js";
-import { type AskBlocked, Approvals, type BeforeTool } from "./approvals.js";
+import { type AskBlocked, type AskingRun, Approvals, type BeforeTool } from "./approvals.js";
+import type { TheirRules } from "../access/agent-rules.js";
 import { keep, type Retry, type RetryState, type RunError, retryPlan, type TryEnd } from "./retry.js";
 import { defaultProject, projectPath } from "./projects.js";
 import type { RunAgent, RunServers } from "../tools/run-servers.js";
@@ -38,6 +39,8 @@ type AskArgs = Commands["ask"]["args"];
 type Active = { chatId: string; session: Session };
 type Launch = {
   h: HarnessEntry;
+  /** Its agent's id (its own allow and deny rules apply). */
+  harness?: string;
   args: AskArgs;
   chatId: string;
   runId: string;
@@ -109,6 +112,8 @@ export class RunManager {
       askBlocked?: AskBlocked;
       /** Your "Before a tool runs" hooks (Settings → Tools → Hooks). */
       beforeTool?: BeforeTool;
+      /** A run's agent's own allow and deny rules, from your settings for it (they count as your decisions). */
+      theirs?: (r: AskingRun) => TheirRules | null;
       /** Your MCP servers for a chat's run on this agent, and the ones it goes without (Settings → Tools). */
       servers?: (agent: RunAgent) => Promise<RunServers>;
       /** Your skills for a chat's run: a plugin folder made for it (null: none, or its agent doesn't take them). */
@@ -125,7 +130,7 @@ export class RunManager {
     this.queue = createRunQueue(limitIn(ctx.configFile));
     this.approvals = new Approvals(store, ctx.access, (runId) => !this.stopping && this.active.has(runId), {
       own: { home: homedir(), ionDirs: ionDirsOf(ctx) },
-      ...{ askBlocked: ctx.askBlocked, beforeTool: ctx.beforeTool },
+      ...{ askBlocked: ctx.askBlocked, beforeTool: ctx.beforeTool, theirs: ctx.theirs },
     });
   }
 
@@ -202,7 +207,10 @@ export class RunManager {
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
     // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
     const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };
-    const l = { h, args: a, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
+    const l = {
+      ...{ h, harness: h.adapter.id, args: a, chatId, runId, cwd: wt.path, history, projectId, access },
+      request: args.text,
+    };
     // The judge is told what you picked, in ion's words.
     const picked = shownPicks(picks).skills;
     return picked ? { ...l, picked } : l;

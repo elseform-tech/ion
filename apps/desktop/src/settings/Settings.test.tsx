@@ -29,6 +29,7 @@ const claude: HarnessInfo = {
   models: [],
   defaultModel: "grok-code",
   notSandboxed: true,
+  ownRules: 3,
 };
 const ions: IonInfo[] = [
   {
@@ -175,6 +176,16 @@ describe("Settings", () => {
     render(<Settings client={client()} onOpenIon={() => {}} />);
     await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
     const lines = screen.getAllByText("Not sandboxed");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.closest(".hrow")?.textContent).toContain("Claude Code");
+  });
+
+  // The user, 2026-11-21 (Plan 18 Task 14): an agent's own allow and deny rules count as your decisions; Settings →
+  // Agents says it uses them, with how many.
+  it("says an agent uses its own allow/deny rules, with a count", async () => {
+    render(<Settings client={client()} onOpenIon={() => {}} />);
+    await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
+    const lines = screen.getAllByText("Uses its own allow/deny rules (3)");
     expect(lines).toHaveLength(1);
     expect(lines[0]!.closest(".hrow")?.textContent).toContain("Claude Code");
   });

@@ -34,6 +34,8 @@ function AgentRow({ h, own, onOwn }: { h: HarnessInfo; own: boolean; onOwn: (on:
         {h.ownTrust && <div className="s">Uses its own trust for project tools</div>}
         {/* Plan 18 Task 12: its chats run without the OS sandbox on this computer. */}
         {h.notSandboxed && <div className="s">Not sandboxed</div>}
+        {/* Plan 18 Task 14: its own allow and deny rules count as your decisions in its chats. */}
+        {h.ownRules ? <div className="s">Uses its own allow/deny rules ({h.ownRules})</div> : null}
       </div>
       {/* The lab's third column (its usage meter) stays empty here; the switch sits where the lab's does. */}
       <span />

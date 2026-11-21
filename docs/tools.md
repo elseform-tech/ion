@@ -136,7 +136,36 @@ things on, sign in or add keys.
 - **The floor, in every mode:** what's refused above (ion's files and key, your keychain secrets, environment dumps,
   dropping the run's key), the OS sandbox, and the run key's limits (ion's commands for tools only; what an agent adds
   is off until you turn it on).
-- **Auto:** ion's rules, then the judge; its no (or "not sure") asks you.
+- **Auto** gives agents the freedom they already have (the user, 2026-11-21: Codex's workspace-write, Claude Code's
+  sandbox), then the judge; its no (or "not sure") asks you:
+  - **Reads anywhere:** read and search tools, and read-only commands (`ls`, `cat`, `grep`, `git log`, …), whatever
+    folder they name, except your secrets (`~/.ssh`, `~/.aws`, `.netrc`, …), ion's files, and another agent's settings
+    (`~/.claude`, `~/.codex`, opencode's and Grok's folders; an agent reading its own is fine). A search of a folder
+    that holds your secrets (`~`, `/`), a recursive `ls -R` or `grep -r` outside the project, and a path with `~`, `..`
+    or a wildcard go to the judge.
+  - **Writes in the project and the system temp folders:** the chat's worktree, `/tmp` (and `/private/tmp`), `$TMPDIR`
+    and macOS's `/var/folders/…/T`, links followed. Files in the worktree that make git, an agent or a package manager
+    run code (`.git`, `.npmrc`, `.mcp.json`, `.envrc`, any dot-folder, …) still go to the judge.
+  - **Everything else goes to the judge:** writes elsewhere (`~/Documents`), other commands, the web, MCP tools,
+    pushes and publishing. It allows normal work.
+- **Each agent's own allow and deny rules** count as your decisions in that agent's chats, deny winning. ion reads
+  them from your own settings, never a project's (a repo writes those), and never changes them. Settings → Agents says
+  "Uses its own allow/deny rules (N)".
+  - **Claude Code:** `permissions.allow` / `permissions.deny` in `~/.claude/settings.json` and
+    `~/.claude/settings.local.json` (`$CLAUDE_CONFIG_DIR` when set).
+  - **opencode:** `permission` in its global config (`$XDG_CONFIG_HOME/opencode/opencode.json(c)`, `config.json`).
+  - **Codex:** a trusted project (`[projects."<path>"] trust_level = "trusted"` in `~/.codex/config.toml`) is a line
+    for the judge ("Codex trusts this project"), not an allow.
+  - **How a rule is matched** (only what ion can match safely; anything else is left out, never widened):
+    `Bash(npm test)` is that exact command; `Bash(npm test:*)` and `Bash(npm test *)` (opencode: `"npm test *"`) are
+    commands that start with those words. An allow covers the command alone: anything chained, piped, redirected or
+    substituted after it (`;`, `&&`, `|`, `>`, `$(…)`) goes to the judge. A deny looks at every part of a chain. A plain
+    tool name (`WebFetch`, `mcp__github__create_issue`, opencode's `"webfetch": "deny"`) is that tool; `mcp__github` is
+    every tool of that server. Left out: path patterns (`Read(./src/**)`), wildcards inside a command, `ask`, and an
+    allow of every command or every edit (`Bash`, `Edit`, `Write`, opencode's `"bash": "allow"` or `"*"`): that's what
+    Full access is for.
+  - An allow is Auto's: it never lets through what the floor refuses, and ion's own guesses still go to the judge. A
+    deny refuses in every mode, Full too: "Your Claude Code settings deny this".
 - **Full:** no judging, no asking. Everything else runs: pushes, publishes, deploys, payments, sending messages. Two
   things still stop a call: a guess in a run that isn't sandboxed asks you (Codex, or a computer without a sandbox),
   and what you said never to: "Don't allow" with **Remember** ticked is kept for that exact action in that project, and

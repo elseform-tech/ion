@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
@@ -44,6 +45,7 @@ import { toolsHandlers } from "./tools.js";
 import { toolsCliHandlers } from "./tools-cli.js";
 import { toolsImportHandlers } from "./tools-import.js";
 import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
+import { readAgentRules, ruleCount } from "../access/agent-rules.js";
 
 export { UserError } from "./errors.js";
 
@@ -292,6 +294,12 @@ async function harnessInfo(id: string): Promise<HarnessInfo> {
   }));
 }
 
+/** How many of its own allow and deny rules (your settings for it) ion goes by in its chats. */
+function ownRulesOf(id: string): { ownRules?: number } {
+  const n = ruleCount(readAgentRules(id, { home: homedir() }));
+  return n ? { ownRules: n } : {};
+}
+
 async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness>>): Promise<HarnessInfo> {
   const installed = (await h.adapter.detect()).installed;
   const signedIn = installed && (await h.adapter.auth.status()).signedIn;
@@ -308,5 +316,6 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     ...(h.adapter.ownOff ? { ownOff: h.adapter.ownOff } : {}),
     ...(h.adapter.ownTrust ? { ownTrust: true as const } : {}),
     ...(notSandboxed(h.adapter.sandbox, machineSandbox()) ? { notSandboxed: true as const } : {}),
+    ...ownRulesOf(id),
   };
 }

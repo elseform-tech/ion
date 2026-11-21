@@ -12,6 +12,10 @@ export type RuleCtx = {
   ionDirs: string[];
   plugin?: string;
   sandboxed?: boolean;
+  /** Auto (the user, 2026-11-21): reads anywhere but your secrets, ion's files and other agents' settings. */
+  freeReads?: true;
+  /** The run's agent (harness id): its own settings it may read; another agent's aren't free. */
+  agent?: string;
 };
 
 /** A path in any text: absolute, ~ or $HOME, at the start of a word (not "/a.ts" inside "src/a.ts"). */

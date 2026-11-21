@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { ION_RUN_TOOLS } from "@ion/schema";
@@ -71,10 +71,28 @@ function inside(p: string, roots: string[]): boolean {
 
 const allInside = (paths: string[], roots: string[]) => paths.every((p) => inside(p, roots));
 
+/** The system temp folders: /tmp (and /private/tmp), and macOS's per-user `/var/folders/<a>/<b>/T`. */
+const SYSTEM_TEMP = /^(\/private)?(\/tmp|\/var\/folders\/[^/]+\/[^/]+\/T)(\/|$)/;
+
+/** `$TMPDIR` (real path), unless it's `/` or holds your home: a TMPDIR set that wide isn't a temp folder. */
+function namedTemp(): string | null {
+  const d = realish(tmpdir()); // $TMPDIR when set
+  const home = realish(homedir());
+  return d === "/" || !relative(d, home).startsWith("..") ? null : d;
+}
+
+/** Inside a system temp folder (links followed): agents write their scratch files there freely (the user, 2026-11-21). */
+function inTemp(p: string, roots: string[]): boolean {
+  const real = realish(resolve(roots[0] ?? "/", expandHome(p)));
+  const named = namedTemp();
+  return SYSTEM_TEMP.test(real) || (!!named && inside(real, [named]));
+}
+
 /**
- * Reads, searches and edits whose every named path is inside the chat's worktree (symlinks resolved) are
- * allowed: the worktree is the sandbox. Anything else (commands, web, MCP, paths outside, or an edit that
- * names no path) is "ask": it becomes a need you answer. Edits to git internals and agent config always ask.
+ * Reads and searches whose every named path is inside the chat's worktree (symlinks resolved) are allowed; edits too,
+ * and in the system temp folders (the user, 2026-11-21: the freedom agents already have, as Codex's workspace-write
+ * and Claude Code's sandbox). Anything else (commands, web, MCP, paths elsewhere, or an edit that names no path) is
+ * "ask": Auto's rules and judge decide it. Edits to git internals and agent config always ask.
  */
 export function decideByPolicy(
   req: ApprovalRequest,
@@ -86,10 +104,14 @@ export function decideByPolicy(
     return opts.ionMcp && req.mcpServer === "ion" && ION_TOOL.test(req.toolName) ? "allow" : "ask";
   const paths = pathsOf(req);
   // A URL (https:, file:, …) in a path field is never "inside the worktree".
-  const inWorktree = paths.length > 0 && !paths.some((p) => URL_LIKE.test(p)) && allInside(paths, opts.roots);
-  if (req.kind === "edit" && paths.some((p) => runsCode(p, opts.roots))) return "ask";
-  return ["read", "search", "edit"].includes(req.kind) && inWorktree ? "allow" : "ask";
+  if (paths.length === 0 || paths.some((p) => URL_LIKE.test(p))) return "ask";
+  if (req.kind === "edit") return editsFreely(paths, opts.roots) ? "allow" : "ask";
+  return ["read", "search"].includes(req.kind) && allInside(paths, opts.roots) ? "allow" : "ask";
 }
+
+/** An edit whose every path is in the worktree or a temp folder, none of them a file that makes something run code. */
+const editsFreely = (paths: string[], roots: string[]) =>
+  !paths.some((p) => runsCode(p, roots)) && paths.every((p) => inside(p, roots) || inTemp(p, roots));
 
 /**
  * Git internals, agent config and tool config can make git, a coding agent or a package manager run code:

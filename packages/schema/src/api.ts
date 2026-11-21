@@ -327,6 +327,8 @@ export type HarnessInfo = {
   ownTrust?: true;
   /** Its chats run without the OS sandbox here (no sandbox on this computer): ion's folders are only word-guarded. */
   notSandboxed?: true;
+  /** How many of its own allow and deny rules (your settings for it) its chats go by: deny wins, in every mode. */
+  ownRules?: number;
 };
 
 export type MemoryInfo = {

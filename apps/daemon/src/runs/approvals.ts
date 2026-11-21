@@ -1,6 +1,7 @@
 import type { ApprovalRequest, Decision, GateCall } from "@ion/adapter-kit";
 import { EV, type IonEvent } from "@ion/schema";
 import { type Access, type AccessVerdict, hardRuleFor, onlyPlugin, waryData } from "../access/index.js";
+import { type TheirRules, theirSay } from "../access/agent-rules.js";
 import type { Blocked, Held } from "../decisions/blocked.js";
 import { type GateAnswer, GateAllows } from "../gate/index.js";
 import type { EventStore } from "../store/index.js";
@@ -24,7 +25,12 @@ export type AskingRun = {
   picked?: string[];
   /** Its agent runs in the OS sandbox, away from ion's folders: ion's guesses that only guarded its key go. */
   sandboxed?: boolean;
+  /** Its agent (harness id): its own allow and deny rules apply to its chats only. */
+  harness?: string;
 };
+
+/** What Auto is told besides the call: a check that didn't finish, ion's guess, your agent's own rules. */
+type AutoHow = { checksFailed: boolean; wary?: Verdict; notes?: string[]; allowedBy?: string };
 
 /** route: a safer way the agent is told with ion's no. wary: ion's own guess, which asks you (the user, 2026-11-21). */
 type Verdict = {
@@ -141,6 +147,8 @@ export class Approvals {
       askBlocked?: AskBlocked;
       /** Your "Before a tool runs" hooks: after ion's own files, before everything else. */
       beforeTool?: BeforeTool;
+      /** The run's agent's own allow and deny rules (your settings for it), as your decisions; deny wins. */
+      theirs?: (r: AskingRun) => TheirRules | null;
     },
   ) {}
 
@@ -301,38 +309,67 @@ export class Approvals {
   private async verdict(r: AskingRun, req: ApprovalRequest, roots: string[]): Promise<Verdict> {
     const own = this.ownFiles(r, req, roots);
     if (own && !own.wary) return own;
-    // Your saved never holds in every mode, Full too (the user, 2026-11-21).
-    const never = this.opts.askBlocked?.never?.(r, actionKey(req));
-    if (never)
-      return { decision: "deny", by: "you", reason: `You said never: ${never}`, route: "do something else" };
+    const yours = this.yours(r, req);
+    if ("decision" in yours) return yours;
     const hooks = await this.hooksOn(r, req);
     if (hooks && "decision" in hooks) return hooks;
+    const how = { ...yours, checksFailed: !!hooks };
     // A guess: in Full (no judge) it asks you; in Auto the judge decides, shown what will run.
     if (own && r.access === "full") return this.wary(r, req, own);
-    if (own) return this.auto(r, req, roots, { checksFailed: !!hooks, wary: own });
+    if (own) return this.auto(r, req, roots, { ...how, wary: own });
     if (
       decideByPolicy(req, { roots, ionMcp: Boolean(r.mcpKey) }) === "allow" ||
       this.readsPlugin(r, req, roots)
     )
       return { decision: "allow", by: "policy" };
     if (r.access === "full") return { decision: "allow", by: "full" };
-    return this.auto(r, req, roots, { checksFailed: !!hooks });
+    return this.auto(r, req, roots, how);
   }
 
-  /** Auto: ion's rules, then the judge (told when one of your checks before tools run didn't finish). */
-  private async auto(
-    r: AskingRun,
-    req: ApprovalRequest,
-    roots: string[],
-    { checksFailed, wary }: { checksFailed: boolean; wary?: Verdict },
-  ): Promise<Verdict> {
-    if (!this.access)
-      return { decision: "deny", by: "ion", reason: "ion couldn't decide: Auto isn't set up" };
-    const at = {
+  /**
+   * What you decided: your saved never, and your agent's own rules (the user, 2026-11-21), both holding in every mode,
+   * Full too, as a no; else what Auto is told of the agent's rules (its allow, lines for the judge).
+   */
+  private yours(r: AskingRun, req: ApprovalRequest): Verdict | Omit<AutoHow, "checksFailed"> {
+    const never = this.opts.askBlocked?.never?.(r, actionKey(req));
+    if (never)
+      return { decision: "deny", by: "you", reason: `You said never: ${never}`, route: "do something else" };
+    const theirs = this.theirRules(r);
+    const said = theirs && theirSay(req, theirs);
+    if (said?.decision === "deny") return { ...said, by: "you", route: "do something else" };
+    return {
+      ...(theirs?.notes.length ? { notes: theirs.notes } : {}),
+      ...(said ? { allowedBy: said.reason } : {}),
+    };
+  }
+
+  /** The run's agent's own rules; ones that can't be read are none. */
+  private theirRules(r: AskingRun): TheirRules | null {
+    try {
+      return this.opts.theirs?.(r) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** What Auto is told about the run: its chat, request and roots, its agent, picks and plugin, and `how`. */
+  private atOf(r: AskingRun, roots: string[], how: AutoHow) {
+    return {
       ...{ chatId: r.chatId, projectId: r.projectId, text: r.request, roots },
       ...(r.pluginDir ? { plugin: r.pluginDir } : {}),
       ...(r.picked?.length ? { picked: r.picked } : {}),
+      ...(r.harness ? { agent: r.harness } : {}),
+      ...(how.notes?.length ? { notes: how.notes } : {}),
+      ...(how.allowedBy ? { allowedBy: how.allowedBy } : {}),
+      ...(how.checksFailed ? { checksFailed: true } : {}),
     };
+  }
+
+  /** Auto: ion's rules, then the judge (told when one of your checks before tools run didn't finish). */
+  private async auto(r: AskingRun, req: ApprovalRequest, roots: string[], how: AutoHow): Promise<Verdict> {
+    if (!this.access)
+      return { decision: "deny", by: "ion", reason: "ion couldn't decide: Auto isn't set up" };
+    const { wary } = how;
     const data =
       wary &&
       waryData(
@@ -340,10 +377,7 @@ export class Approvals {
         { roots, ...this.opts.own, ...(r.pluginDir ? { plugin: r.pluginDir } : {}) },
         wary.reason ?? "",
       );
-    const v = await this.access.decide(
-      { ...at, ...(checksFailed ? { checksFailed } : {}), ...(data ? { wary: data } : {}) },
-      req,
-    );
+    const v = await this.access.decide({ ...this.atOf(r, roots, how), ...(data ? { wary: data } : {}) }, req);
     // The judge's no (or unsure) on ion's guess: you're asked, as ion is wary.
     if (wary && v.decision === "deny" && v.source === "judge") return this.waryJudged(r, req, wary, v);
     return this.afterJudge(r, req, v);
