@@ -283,3 +283,24 @@ describe("skills", () => {
     warn.mockRestore();
   });
 });
+
+// Security review, 2026-11-21: Claude Code's own skills in your home come on as they are, but a project's
+// .claude/skills is written by the repo, not you: it isn't given until you turn it on, and it's marked as the repo's.
+describe("a project's skills", () => {
+  it("a project skill isn't given until consented", async () => {
+    const { home, project, skills } = setup();
+    skill(join(home, ".claude/skills/pdf"), md("pdf", "Reads PDFs"));
+    skill(join(project, ".claude/skills/style"), md("style", "House style"));
+    const own = { "claude-code": true };
+    const list = await skills.list([], [project], own);
+    expect(list.find((s) => s.name === "pdf")).toMatchObject({ on: true, own: "claude-code" });
+    const style = list.find((s) => s.name === "style");
+    expect(style).toMatchObject({ on: false, new: true, project: "app" });
+    expect(style?.own).toBeUndefined();
+    const dir = await skills.forRun({ runId: "r1", on: [], projectDir: project, own: true });
+    expect(readdirSync(join(dir!, "skills"))).toEqual(["pdf"]);
+    const on = await skills.turn([], style!.id, true, { projects: [project], own });
+    const after = await skills.forRun({ runId: "r2", on, projectDir: project, own: true });
+    expect(readdirSync(join(after!, "skills")).sort()).toEqual(["pdf", "style"]);
+  });
+});

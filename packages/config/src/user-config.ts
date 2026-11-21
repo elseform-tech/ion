@@ -103,6 +103,11 @@ const Tools = z.looseObject({
    * whose files changed, is off until you turn it on.
    */
   skills: z.looseObject({ on: z.array(z.string()).default([]) }).prefault({}),
+  /**
+   * A repo's own servers (a project's .mcp.json, which Claude Code would load) you turned on in the app, as
+   * "<project>:<name>@<what it runs>" (signed with ion's key): one the repo adds or changes is off until you turn it on.
+   */
+  repoOn: z.array(z.string()).default([]),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
@@ -194,6 +199,7 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["tools", "mcpOn"], z.array(z.string())],
   [["tools", "hooks"], z.array(z.unknown())],
   [["tools", "hooksOn"], z.array(z.string())],
+  [["tools", "repoOn"], z.array(z.string())],
   [["tools", "skills"], z.looseObject({ on: z.array(z.string()).optional() })],
   [["agents"], z.looseObject({})],
 ];

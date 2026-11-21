@@ -219,7 +219,13 @@ describe("a bad hand-edited setting", () => {
 // The user, 2026-11-20: a new server starts off until you turn it on — ion keeps the ones you turned on.
 describe("tools in your config", () => {
   it("has empty tools by default, keeps what you turned off and your hooks, and never a key", () => {
-    expect(DEFAULT_CONFIG.tools).toEqual({ mcpOn: [], hooks: [], hooksOn: [], skills: { on: [] } });
+    expect(DEFAULT_CONFIG.tools).toEqual({
+      mcpOn: [],
+      hooks: [],
+      hooksOn: [],
+      skills: { on: [] },
+      repoOn: [],
+    });
     const f = join(tmp(), "config.toml");
     const hook = { id: "h1", name: "Tell me", on: true, event: "run.finished" as const, run: "say done" };
     saveUserConfig(f, {
@@ -229,6 +235,7 @@ describe("tools in your config", () => {
         hooks: [hook],
         hooksOn: ["h1@0123456789ab"],
         skills: { on: ["~/.claude/skills/pdf@0123456789ab"] },
+        repoOn: [],
       },
     });
     expect(loadUserConfig(f).config.tools).toEqual({
@@ -236,6 +243,7 @@ describe("tools in your config", () => {
       hooks: [hook],
       hooksOn: ["h1@0123456789ab"],
       skills: { on: ["~/.claude/skills/pdf@0123456789ab"] },
+      repoOn: [],
     });
   });
 

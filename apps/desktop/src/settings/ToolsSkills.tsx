@@ -4,7 +4,7 @@ import { useCallError } from "../callError.js";
 import type { SettingsData } from "./data.js";
 import { Switch } from "./Switch.js";
 import { type Part, partOf, stateOf, type TabProps, ToolRow } from "./tools-parts.js";
-import { Faces, type Merged, merge, OwnRow, offIn, type Whose, whoseRows } from "./tools-own.js";
+import { Faces, fromOf, type Merged, merge, OwnRow, offIn, type Whose, whoseRows } from "./tools-own.js";
 
 const about = (s: SkillInfo) => (
   <span className="clamp" title={s.description}>
@@ -27,6 +27,7 @@ function SkillRow(p: { s: SkillInfo; r: Merged<SkillInfo>; part: Part; agents: H
         chip={chip}
         {...(chip === "Differs" && p.r.differs ? { chipTitle: p.r.differs } : {})}
         {...(s.origin ? { origin: s.origin } : {})}
+        {...(s.project ? { origin: fromOf(`${s.project}'s skills`) } : {})}
         at={part.at === s.name}
         mid={<Faces who={p.r.agents} agents={p.agents} />}
         line={about(s)}

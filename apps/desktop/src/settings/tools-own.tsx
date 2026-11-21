@@ -8,6 +8,9 @@ import { ToolRow } from "./tools-parts.js";
  * a row each, marked Differs. A row is read-only unless it's ion's.
  */
 
+/** Where a row came from, beside its name (a repo's file, a project's skills): not yours. */
+export const fromOf = (source: string) => ({ by: "you" as const, source, at: "" });
+
 /** Whose rows are shown: everyone's, ion's, or one agent's. */
 export type Whose = "all" | string;
 

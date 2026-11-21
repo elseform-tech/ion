@@ -13,8 +13,8 @@ import { hookChange, hookGroups } from "./tools-hooks.js";
 import type { Skills } from "../skills/index.js";
 import type { YourTools } from "../mcp/ion-your-tools.js";
 import { consentOf, turnedOn } from "../tools/on.js";
-import { agentsHomeOf, ownSwitches } from "../tools/own-run.js";
-import { ownToolsOf } from "../tools/own.js";
+import { agentsHomeOf, ownSwitches, repoKey, repoState } from "../tools/own-run.js";
+import { ownToolsOf, repoMaterial, repoServers } from "../tools/own.js";
 
 const KEY_NAME = /^[A-Za-z_]\w{0,63}$/;
 const MAX_KEY = 16_384;
@@ -35,10 +35,10 @@ async function toolsInfo(
     hooks: await hookGroups(config, ctx.hooks, ctx.tools.sign),
     skills: await ctx.skills.list(config.tools.skills.on, projectDirs(config), ownSwitches(config)),
     support: toolSupport(),
-    own: ownToolsOf({
+    own: await ownToolsOf({
       ...agentsHomeOf(ctx.skills),
-      projects: projectDirs(config),
-      agents: ownSwitches(config),
+      ...{ projects: projectDirs(config), agents: ownSwitches(config) },
+      repo: repoState(ctx.tools.sign, config.tools.repoOn),
     }),
   };
   return withOrigins(ctx, info, r.servers);
@@ -83,6 +83,23 @@ async function mcpTurned(tools: Tools, c: UserConfig, id: string, on: boolean): 
   return [...kept, `${id}@${mark}`];
 }
 
+/**
+ * Turning a repo's own server on (a project's .mcp.json, "<project>:<name>") is consent to exactly what it runs now
+ * (security review, 2026-11-21); off takes that back.
+ */
+async function repoTurned(tools: Tools, c: UserConfig, id: string, on: boolean): Promise<string[]> {
+  const kept = c.tools.repoOn.filter((e) => e.slice(0, e.lastIndexOf("@")) !== id);
+  if (!on) return kept;
+  const [project, name] = [id.slice(0, id.indexOf(":")), id.slice(id.indexOf(":") + 1)];
+  const dir = projectDirs(c).find((p) => repoKey(p, name) === id);
+  const v = dir ? repoServers(dir)[name] : undefined;
+  if (!dir || v === undefined || !project) throw new UserError(`Unknown connection: ${id}`);
+  const mark = await tools.sign(repoMaterial(dir, name, v)).catch(() => {
+    throw new UserError(CANT_READ_KEYCHAIN);
+  });
+  return [...kept, `${id}@${mark}`];
+}
+
 /** Turning a skill on is consent to exactly what's in it now; off takes that back. */
 async function skillTurned(skills: Skills, c: UserConfig, id: string, on: boolean): Promise<string[]> {
   if (!id || id.length > 1000) throw new UserError("Unknown skill");
@@ -98,6 +115,10 @@ async function setOn(
   if (a.kind === "mcp") {
     const mcpOn = await mcpTurned(ctx.tools, now, id, a.on);
     return changeConfig(ctx.configFile, (c) => ({ ...c, tools: { ...c.tools, mcpOn } }));
+  }
+  if (a.kind === "repo") {
+    const repoOn = await repoTurned(ctx.tools, now, id, a.on);
+    return changeConfig(ctx.configFile, (c) => ({ ...c, tools: { ...c.tools, repoOn } }));
   }
   if (a.kind !== "skill") throw new UserError("Pick a connection, a hook or a skill");
   const on = await skillTurned(ctx.skills, now, id, a.on);

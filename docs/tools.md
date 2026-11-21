@@ -32,12 +32,18 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
   Settings → Agents says **Its own hooks run too**. ion's gate judges every call, an agent's own tools' too, hard rules
   first. How each agent does it: `research/acp-and-harnesses.md`, "Agents bring their own tools".
   - Claude Code still loads no settings files (its permission rules and hooks stay out) and MCP stays strict: ion reads
-    its servers (`~/.claude.json`, this project's entry there, and the project's `.mcp.json` servers you approved in
-    Claude Code; `${VAR}` and `${VAR:-default}` filled as Claude fills them; SSE left out) and its enabled plugins
+    its servers (`~/.claude.json` and this project's entry there; `${VAR}` and `${VAR:-default}` filled as Claude fills
+    them, but only from the environment an agent may have: ion's `ION_*`, run keys and your ion keys never fill one; a
+    server whose variable isn't there is left out; SSE left out) and its enabled plugins
     (`~/.claude/plugins/installed_plugins.json` and `enabledPlugins`; their servers too), and passes them. A plugin that
-    bundles hooks comes as ion's copy without them, inside the run's skills plugin folder. Its own skills come on, as
-    they are. Every value of its servers that could hold a key is in the run's redaction list, and passed in the
-    environment, never on the command line.
+    bundles hooks comes as ion's copy without them, inside the run's skills plugin folder. Its own skills in your home
+    come on, as they are. Every filled value of its servers (command, args, env, url, headers) is in the run's redaction
+    list, and passed in the environment, never on the command line.
+  - What a repo wrote isn't yours (security review, 2026-11-21): a project's `.mcp.json` servers and its
+    `.claude/skills` show in Settings with a switch ("From shop's .mcp.json", "app's skills"), off until you turn each on
+    (consent to exactly what it runs or says, signed with ion's key; `tools.repoOn` / `tools.skills.on`). Claude Code's
+    own approvals of a `.mcp.json` don't count. Codex and Grok load a trusted project's own config themselves; ion can't
+    hold those.
   - Codex keeps its own servers and plugins (`features.plugins` stays on); its hooks are still turned off.
   - opencode: your `mcp`, `plugin`, `agent`, `command` and `instructions` (and your config folder's plugin files) are
     carried into ion's config file, ion's gate plugin first; a folder of its own (`<hash>-own`), so a chat and ion's

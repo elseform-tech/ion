@@ -304,7 +304,12 @@ function connectionsOf(
   // What a chat's run gets besides your servers: your skills, and its agent's own tools.
   const forRuns = {
     skills: runSkillsOf(skills, opts.configFile),
-    own: runOwnOf({ home: skills.home, dataDir: opts.dataDir, configFile: opts.configFile }),
+    own: runOwnOf({
+      home: skills.home,
+      dataDir: opts.dataDir,
+      configFile: opts.configFile,
+      sign: tools.sign,
+    }),
   };
   const ionBin = ionLauncher(opts.dataDir);
   return { tools, oauth: oauthOf(tools, store, opts.net), skills, forRuns, cli: cliOf(opts), ionBin };

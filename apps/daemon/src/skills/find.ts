@@ -36,6 +36,8 @@ export type FoundSkill = {
   where: string;
   /** SKILL.md after its front matter. */
   body: string;
+  /** In a project's own folder (written by the repo, not you): the project's folder name. */
+  project?: string;
   md: Buffer;
   files: SkillFile[];
 };
@@ -210,11 +212,17 @@ const realOr = (path: string) => {
 };
 
 /** Each agent's skill folders in your home and in these projects (and ion's own), each once. */
-const rootsOf = (home: string, projects: string[], ionDir?: string) =>
+/** A skill in a project's own folder, marked as the repo's. */
+const withProject = (s: FoundSkill, r: Root): FoundSkill => (r.project ? { ...s, project: r.project } : s);
+
+type Root = { whose: SkillWhose; base: string; dir: string; project?: string };
+const rootsOf = (home: string, projects: string[], ionDir?: string): Root[] =>
   [
     ...(ionDir ? [{ whose: "ion" as const, base: dirname(ionDir), dir: ionDir }] : []),
     ...IN_HOME.map(([whose, rel]) => ({ whose, base: home, dir: join(home, rel) })),
-    ...projects.flatMap((p) => IN_PROJECT.map(([whose, rel]) => ({ whose, base: p, dir: join(p, rel) }))),
+    ...projects.flatMap((p) =>
+      IN_PROJECT.map(([whose, rel]) => ({ whose, base: p, dir: join(p, rel), project: basename(p) })),
+    ),
   ].filter((r, i, all) => all.findIndex((x) => x.dir === r.dir) === i);
 
 /** A skill folder on its own (one being added): read as ion reads any skill, or null when it isn't one. */
@@ -237,7 +245,7 @@ export function findSkills(home: string, projects: string[], ionDir?: string): F
       if (--budget.left < 0) break;
       if (e.name.startsWith(".") || !(e.isDirectory() || e.isSymbolicLink())) continue;
       const s = readSkill({ dir: join(r.dir, e.name), base: r.base, whose: r.whose, home, homeReal, budget });
-      if (s) out.push(s);
+      if (s) out.push(withProject(s, r));
     }
     return out;
   });

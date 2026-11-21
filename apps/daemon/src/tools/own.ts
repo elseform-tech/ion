@@ -1,11 +1,10 @@
 import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { McpSpec } from "@ion/adapter-kit";
 import type { OwnServerInfo } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
 import { type Launch, readAgentServers, readFile, standardLaunch } from "./import.js";
 import { type FoundPlugin, readPlugins } from "./plugins.js";
-import { argKey, urlHoldsKey } from "./secretish.js";
 
 /**
  * Each agent's own tools (the user, 2026-11-21: agents bring their own servers, skills and plugins into ion's chats by
@@ -30,22 +29,56 @@ function launchOf(l: { command: string; args: string[] } | { url: string }): str
   }
 }
 
-/** Every agent's own servers (yours: a repo's own files are the repo's), and each agent's switch. */
-export function ownToolsOf(o: {
+type Launched = { command: string; args?: string[] } | { url: string };
+const launchLine = (e: Launched) =>
+  "url" in e ? launchOf({ url: e.url }) : launchOf({ command: e.command, args: e.args ?? [] });
+
+/** Whether you turned on a repo's server, as it is now: on, never turned on (new), or changed since. */
+export type RepoState = (
+  project: string,
+  name: string,
+  v: unknown,
+) => Promise<{ on: boolean; new?: true; changed?: true }>;
+
+/** Claude Code's servers in each project's own `.mcp.json` (the repo's): each with your switch in ion. */
+async function repoRows(projects: string[], state: RepoState): Promise<OwnServerInfo[]> {
+  const rows = projects.flatMap((p) =>
+    Object.entries(repoServers(p)).map(async ([name, v]): Promise<OwnServerInfo | null> => {
+      const l = isObj(v) ? standardLaunch(v) : null;
+      if (!l || l.kind === "sse" || name.toLowerCase() === "ion") return null;
+      const project = basename(p);
+      const repo = { project, file: ".mcp.json", id: `${project}:${name}`, ...(await state(p, name, v)) };
+      const launch = l.kind === "stdio" ? launchOf(l) : launchOf({ url: l.url });
+      return { agent: "claude-code", name, transport: l.kind, launch, repo };
+    }),
+  );
+  return (await Promise.all(rows)).filter((r): r is OwnServerInfo => r !== null);
+}
+
+/**
+ * Every agent's own servers (yours; a repo's own `.mcp.json` for Claude Code with your switch, off until you turn it
+ * on: security review, 2026-11-21), its plugins, and each agent's switch.
+ */
+export async function ownToolsOf(o: {
   home: string;
   env: Env;
   projects: string[];
   agents: Record<string, boolean>;
+  repo: RepoState;
 }) {
   const agents = Object.fromEntries(harnessIds().map((id) => [id, o.agents[id] !== false]));
-  const servers: OwnServerInfo[] = readAgentServers(o)
+  const yours: OwnServerInfo[] = readAgentServers(o)
     .found.filter((f) => !f.repo)
     .map((f) => {
       const e = f.entry;
-      const launch =
-        "url" in e ? launchOf({ url: e.url }) : launchOf({ command: e.command, args: e.args ?? [] });
-      return { agent: f.agent, name: f.name, transport: "url" in e ? "http" : "stdio", launch };
+      return {
+        agent: f.agent,
+        name: f.name,
+        transport: "url" in e ? "http" : "stdio",
+        launch: launchLine(e),
+      };
     });
+  const servers = [...yours, ...(await repoRows(o.projects, o.repo))];
   return { agents, servers, plugins: readPlugins(o).map(({ path: _p, servers: _s, ...p }) => p) };
 }
 
@@ -82,29 +115,37 @@ function specOf(name: string, l: Launch | null, env: Env): McpSpec | null {
   return missing.length ? null : spec;
 }
 
-/** Whether Claude Code would load a project's `.mcp.json` server: you approved it there (Claude asks first). */
-function approved(project: Obj, name: string): boolean {
-  const off = Array.isArray(project.disabledMcpjsonServers) && project.disabledMcpjsonServers.includes(name);
-  const on = Array.isArray(project.enabledMcpjsonServers) && project.enabledMcpjsonServers.includes(name);
-  return !off && (on || project.enableAllProjectMcpServers === true);
-}
+/** A project's own `.mcp.json` servers (written by the repo, not you), as written. */
+export const repoServers = (project: string): Obj =>
+  obj(obj(readFile(join(project, ".mcp.json"))).mcpServers);
 
-/** Claude Code's own servers for a chat in this project: yours, this project's, its approved `.mcp.json` ones. */
-function claudeServers(home: string, project: string): [string, unknown][] {
+/** What you consent to when you turn on a repo's server: which project, which server, exactly as written. */
+export const repoMaterial = (project: string, name: string, v: unknown): string =>
+  `repo-mcp:${JSON.stringify([project, name, v])}`;
+
+/** Whether you turned on this repo server, as it is now. */
+export type RepoOn = (name: string, v: unknown) => Promise<boolean>;
+
+type Entry = [name: string, v: unknown, repo?: true];
+
+/**
+ * Claude Code's own servers for a chat in this project: yours, this project's entry in ~/.claude.json (both yours),
+ * then the project's `.mcp.json` (the repo's: only with `repo` marked, for your consent in ion).
+ */
+function claudeServers(home: string, project: string): Entry[] {
   const user = obj(readFile(join(home, ".claude.json")));
   const inProject = obj(obj(user.projects)[project]);
-  const repo = obj(obj(readFile(join(project, ".mcp.json"))).mcpServers);
   const disabled = new Set(Array.isArray(inProject.disabledMcpServers) ? inProject.disabledMcpServers : []);
-  const all: [string, unknown][] = [
+  const all: Entry[] = [
     ...Object.entries(obj(user.mcpServers)),
     ...Object.entries(obj(inProject.mcpServers)),
-    ...Object.entries(repo).filter(([n]) => approved(inProject, n)),
+    ...Object.entries(repoServers(project)).map(([n, v]): Entry => [n, v, true]),
   ];
   return all.filter(([n]) => !disabled.has(n) && n.toLowerCase() !== "ion");
 }
 
 /** A plugin's servers, `${CLAUDE_PLUGIN_ROOT}` its folder. */
-const pluginServers = (p: FoundPlugin): [string, unknown][] =>
+const pluginServers = (p: FoundPlugin): Entry[] =>
   Object.entries(p.servers ?? {}).map(([n, v]) => [
     n,
     JSON.parse(JSON.stringify(v).replaceAll("${CLAUDE_PLUGIN_ROOT}", p.path ?? "")),
@@ -130,40 +171,41 @@ async function withoutHooks(p: FoundPlugin, dir: string, n: number): Promise<str
   return to;
 }
 
-/**
- * Every value of a server that could hold a key, for the run's redaction: header and env values, and an argument or
- * URL that was filled from a variable or looks like a key.
- */
-function valuesOf(s: McpSpec, raw: Launch): string[] {
-  if (s.transport === "http") {
-    const url = raw.kind !== "stdio" && (raw.url !== s.url || urlHoldsKey(s.url)) ? [s.url] : [];
-    return [...url, ...Object.values(s.headers)];
-  }
-  const args = raw.kind === "stdio" ? raw.args : [];
-  const keyish = s.args.filter((a, i) => a !== args[i] || argKey(a, s.args[i - 1]));
-  return [...keyish, ...Object.values(s.env)];
-}
+/** Every value of a server as filled, for the run's redaction (security review, 2026-11-21: all of them). */
+const valuesOf = (s: McpSpec): string[] =>
+  s.transport === "http"
+    ? [s.url, ...Object.values(s.headers)]
+    : [s.command, ...s.args, ...Object.values(s.env)];
 
 /**
  * What a Claude Code chat brings of its own: its servers (filled, each name once, the first found wins) and its
  * enabled plugins (in `dir`, ion's folder for this run, those with hooks copied without them). `secrets`: the values to
  * keep out of the run's events.
  */
-export async function claudeOwnForRun(o: { home: string; env: Env; project: string; dir: string }) {
+export async function claudeOwnForRun(o: {
+  home: string;
+  /** What `${VAR}` is filled from: only what an agent may have (never ion's whole environment). */
+  env: Env;
+  project: string;
+  dir: string;
+  /** A repo's own server comes only once you turned it on in ion. */
+  repoOn: RepoOn;
+}) {
   const plugins = readPlugins({ home: o.home, env: o.env, projects: [o.project] }).filter(
     (p) => p.agent === "claude-code",
   );
   const seen = new Set<string>();
   const servers: McpSpec[] = [];
   const secrets: string[] = [];
-  for (const [name, v] of [...claudeServers(o.home, o.project), ...plugins.flatMap(pluginServers)]) {
+  for (const [name, v, repo] of [...claudeServers(o.home, o.project), ...plugins.flatMap(pluginServers)]) {
     if (seen.has(name)) continue;
     seen.add(name);
-    const raw = isObj(v) ? standardLaunch(v) : null;
-    const spec = specOf(name, raw, o.env);
-    if (!spec || !raw) continue;
+    // A repo's server isn't even filled until you turned it on.
+    if (repo && !(await o.repoOn(name, v))) continue;
+    const spec = specOf(name, isObj(v) ? standardLaunch(v) : null, o.env);
+    if (!spec) continue;
     servers.push(spec);
-    secrets.push(...valuesOf(spec, raw));
+    secrets.push(...valuesOf(spec));
   }
   await rm(o.dir, { recursive: true, force: true });
   await mkdir(o.dir, { recursive: true, mode: 0o700 });

@@ -123,6 +123,8 @@ export type SkillInfo = {
    * ion's to turn on or off.
    */
   own?: string;
+  /** In a project's own folder (the repo wrote it, not you): the project. Off until you turn it on. */
+  project?: string;
 };
 
 /** One MCP server in an agent's own config: read-only in Settings (it's the agent's). */
@@ -132,6 +134,11 @@ export type OwnServerInfo = {
   transport: "stdio" | "http";
   /** What it runs, or where it connects (no query): the same setup in two agents reads the same. */
   launch: string;
+  /**
+   * A project's own file (the repo wrote it, not you; Claude Code's `.mcp.json`): `id` turns it on (`tools.setOn` kind
+   * "repo"), off until you do; `new`: never turned on, `changed`: it runs something else since.
+   */
+  repo?: { project: string; file: string; id: string; on: boolean; new?: true; changed?: true };
 };
 
 /** What a plugin brings. */

@@ -310,7 +310,10 @@ export type Commands = {
   /** Connections from mcp.json, your hooks, and what each agent can take. */
   "tools.list": { args: Record<string, never>; result: ToolsInfo };
   /** Turns a connection, a hook or a skill on or off (kept in ion's config, never in mcp.json). */
-  "tools.setOn": { args: { kind: "mcp" | "hook" | "skill"; id: string; on: boolean }; result: ToolsInfo };
+  "tools.setOn": {
+    args: { kind: "mcp" | "hook" | "skill" | "repo"; id: string; on: boolean };
+    result: ToolsInfo;
+  };
   /** Keeps a key for `${name}` in a server of mcp.json (`id`), in the keychain (never in config or the log). */
   "tools.setKey": { args: { id: string; name: string; key: string }; result: ToolsInfo };
   "tools.addHook": { args: NewHook; result: ToolsInfo };

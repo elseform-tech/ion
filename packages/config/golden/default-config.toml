@@ -28,6 +28,7 @@ to = "08:00"
 mcpOn = []
 hooks = []
 hooksOn = []
+repoOn = []
 
 [tools.skills]
 on = []

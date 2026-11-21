@@ -43,29 +43,30 @@ export type OwnSwitches = Record<string, boolean>;
 /** Only what you turned on in ion counts (a run's own skills are added on their own). */
 const BY_CONSENT: OwnSwitches = { "claude-code": false };
 
-/** The agent whose own a skill is: Codex's and opencode's always; Claude Code's while it brings its own. */
-function ownerOf(whose: SkillWhose, own: OwnSwitches): string | undefined {
-  if (whose === "claude") return own["claude-code"] !== false ? "claude-code" : undefined;
-  return whose === "codex" || whose === "opencode" ? whose : undefined;
+/**
+ * The agent whose own a skill is: Codex's and opencode's always (they read them themselves); Claude Code's in your home
+ * while it brings its own. A project's .claude/skills is the repo's (security review, 2026-11-21): ion passes it only
+ * once you turn it on.
+ */
+function ownerOf(s: Pick<FoundSkill, "whose" | "project">, own: OwnSwitches): string | undefined {
+  if (s.whose === "claude") return own["claude-code"] !== false && !s.project ? "claude-code" : undefined;
+  return s.whose === "codex" || s.whose === "opencode" ? s.whose : undefined;
 }
 
 /** On only while it's exactly what you turned on (its record verifies with ion's key); changed since: off. */
 function stateOf(s: FoundSkill, was: string | undefined, now: string | undefined, own: OwnSwitches): State {
   // Claude Code's own, while it brings its own: on, as it is (the user, 2026-11-21).
-  if (s.whose === "claude" && ownerOf(s.whose, own)) return { on: true };
+  if (s.whose === "claude" && ownerOf(s, own)) return { on: true };
   if (!FOR_CLAUDE.includes(s.whose)) return { on: false };
   if (was === undefined) return { on: false, new: true };
   if (!now || !sameMark(was, now)) return { on: false, changed: true };
   return { on: true };
 }
 
-function supportOf(
-  whose: SkillWhose,
-  readers: SkillReaders,
-  own: OwnSwitches,
-): Record<string, "ion" | "own"> {
+function supportOf(s: FoundSkill, readers: SkillReaders, own: OwnSwitches): Record<string, "ion" | "own"> {
+  const { whose } = s;
   const out: Record<string, "ion" | "own"> = {};
-  if (whose === "claude" && ownerOf(whose, own)) return { "claude-code": "own" };
+  if (ownerOf(s, own) === "claude-code") return { "claude-code": "own" };
   for (const [id, r] of Object.entries(readers)) {
     if (r.fromIon && FOR_CLAUDE.includes(whose)) out[id] = "ion";
     else if (r.own.includes(whose)) out[id] = "own";
@@ -75,16 +76,17 @@ function supportOf(
 
 /** A skill as the Tools page shows it: whose own it is (read-only there), and what's in it (to match it elsewhere). */
 function infoOf(s: FoundSkill, state: State, readers: SkillReaders, own: OwnSwitches): SkillInfo {
-  const { id, name, description, whose, where } = s;
-  const owner = ownerOf(whose, own);
+  const { id, name, description, whose, where, project } = s;
+  const owner = ownerOf(s, own);
   const hash = createHash("sha256")
     .update(JSON.stringify([sha(s.md), ...s.files.map((f) => [f.rel, sha(f.bytes)])]))
     .digest("hex")
     .slice(0, 12);
   return {
     ...{ id, name, description, whose, where, ...state, hash },
-    support: supportOf(whose, readers, own),
+    support: supportOf(s, readers, own),
     ...(owner ? { own: owner } : {}),
+    ...(project ? { project } : {}),
   };
 }
 
@@ -104,7 +106,7 @@ async function turnSkill(
 ): Promise<string[]> {
   const kept = t.on.filter((e) => e.slice(0, e.lastIndexOf("@")) !== t.id);
   const s = found.find((x) => x.id === t.id);
-  if (s && ownerOf(s.whose, t.own)) throw new UserError(`${OWNER[s.whose]} uses its own`);
+  if (s && ownerOf(s, t.own)) throw new UserError(`${OWNER[s.whose]} uses its own`);
   if (!t.turnOn) return kept;
   if (!s) throw new UserError("Unknown skill");
   if (!FOR_CLAUDE.includes(s.whose)) throw new UserError(`${OWNER[s.whose]} uses its own`);
@@ -153,7 +155,7 @@ export function createSkills(o: {
       const dir = pluginDirOf(o.dataDir, r.runId);
       const found = find(r.projectDir ? [r.projectDir] : []);
       // Claude Code's own skills come as they are while it brings its own (its settings files never load).
-      const own = r.own ? found.filter((s) => s.whose === "claude") : [];
+      const own = r.own ? found.filter((s) => ownerOf(s, { "claude-code": true }) === "claude-code") : [];
       const yours = await turnedOn(
         found.filter((s) => !own.includes(s)),
         r.on,

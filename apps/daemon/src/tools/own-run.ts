@@ -1,11 +1,14 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
-import type { McpSpec } from "@ion/adapter-kit";
+import { basename, join } from "node:path";
+import { agentEnv, type EnvDrop, type McpSpec } from "@ion/adapter-kit";
 import { loadUserConfig, ownToolsOn, type UserConfig } from "@ion/config";
 import { harnessIds } from "../adapters/registry.js";
 import { pluginDirOf, writePlugin } from "../skills/plugin.js";
 import { type RunSkills, skillsFor } from "../skills/run.js";
-import { claudeOwnForRun } from "./own.js";
+import { claudeOwnForRun, type RepoOn, type RepoState, repoMaterial } from "./own.js";
+import { envDropOf } from "./env-drop.js";
+import { turnedOn } from "./on.js";
+import { type Sign, sameMark } from "../secrets/consent-key.js";
 
 /** By agent id: its "Use its own tools" switch. */
 export const ownSwitches = (c: Pick<UserConfig, "agents">): Record<string, boolean> =>
@@ -43,7 +46,14 @@ export type RunOwn = {
  * plugin with hooks comes as ion's copy without them, inside the run's skills plugin folder (in ion's data folder,
  * readable by the run like its skills, gone when it ends).
  */
-export function runOwnOf(o: { home: string; dataDir: string; configFile: string }): RunOwn {
+export function runOwnOf(o: {
+  home: string;
+  dataDir: string;
+  configFile: string;
+  sign: Sign;
+  /** ion's environment (a stand-in in tests); only what an agent may have of it fills `${VAR}`. */
+  env?: NodeJS.ProcessEnv;
+}): RunOwn {
   return {
     async forRun(r) {
       const { config } = loadUserConfig(o.configFile);
@@ -52,11 +62,40 @@ export function runOwnOf(o: { home: string; dataDir: string; configFile: string 
       const project = config.projects.find((p) => p.id === r.projectId)?.path ?? r.cwd;
       const pluginDir = r.pluginDir ?? pluginDirOf(o.dataDir, r.runId);
       if (!r.pluginDir) await writePlugin(pluginDir, []);
-      const own = await claudeOwnForRun({ ...agentsHomeOf(o), project, dir: join(pluginDir, "own") });
+      const env = agentOnly(o.env ?? agentsHomeOf(o).env, await envDropOf(o.configFile));
+      const repoOn = repoConsent(o.sign, project, config.tools.repoOn);
+      const own = await claudeOwnForRun({ home: o.home, env, project, dir: join(pluginDir, "own"), repoOn });
       return { ownTools, ownServers: own.servers, ownPlugins: own.plugins, pluginDir, secrets: own.secrets };
     },
   };
 }
+
+/**
+ * What fills `${VAR}` in an agent's own server (security review, 2026-11-21): the environment an agent may have, less
+ * every variable of ion's own (`ION_*`: run keys, ion's settings), never ion's whole environment.
+ */
+const agentOnly = (env: NodeJS.ProcessEnv, drop: EnvDrop): NodeJS.ProcessEnv =>
+  Object.fromEntries(Object.entries(agentEnv(env, drop)).filter(([k]) => !k.startsWith("ION_")));
+
+/** A repo's server's record ("<project>:<name>"). */
+export const repoKey = (project: string, name: string) => `${basename(project)}:${name}`;
+
+/** Whether you turned on a repo's server, exactly as it is now (its record verifies with ion's key). */
+export const repoState =
+  (sign: Sign, repoOn: string[]): RepoState =>
+  async (project, name, v) => {
+    const was = turnedOn(repoOn).get(repoKey(project, name));
+    if (was === undefined) return { on: false, new: true };
+    const now = await sign(repoMaterial(project, name, v)).catch(() => null);
+    if (now === null) return { on: false };
+    return sameMark(was, now) ? { on: true } : { on: false, changed: true };
+  };
+
+/** For a run in this project: a repo server comes only while it's on. */
+const repoConsent =
+  (sign: Sign, project: string, repoOn: string[]): RepoOn =>
+  async (name, v) =>
+    (await repoState(sign, repoOn)(project, name, v)).on;
 
 /** A run's own tools; one ion can't read is said in the daemon's log and the run goes on with its agent's own off. */
 const ownFor = (own: RunOwn | undefined, l: Parameters<RunOwn["forRun"]>[0]): Promise<OwnForRun> =>

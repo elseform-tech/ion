@@ -227,12 +227,12 @@ function appendFor(opts: StartOpts): { append?: string } {
 /**
  * The run's MCP servers as the SDK takes them: ion's (each an http URL), then Claude Code's own when it brings them. The
  * SDK puts MCP servers on Claude Code's command line, which any local user can read with `ps`, so every value that
- * could hold a key (url, header values, args, env values) travels in the environment as `ION_MCP_<U|H|A|E><n>` and the
+ * could hold a key (url, header values, args, env values) travels in the environment as `ION_MCP_<U|H|C|A|E><n>` (command too: security review, 2026-11-21) and the
  * config only names it: Claude Code expands `${VAR}` in an MCP server's command, args, env, url and headers.
  */
 function mcpPlan(opts: StartOpts): { servers: Record<string, unknown>; env: Record<string, string> } {
   const env: Record<string, string> = {};
-  const n = { U: 0, H: 0, A: 0, E: 0 };
+  const n = { U: 0, H: 0, C: 0, A: 0, E: 0 };
   const ref = (kind: keyof typeof n, value: string) => {
     const v = `ION_MCP_${kind}${n[kind]++}`;
     env[v] = value;
@@ -243,7 +243,12 @@ function mcpPlan(opts: StartOpts): { servers: Record<string, unknown>; env: Reco
   const of = (s: McpSpec) =>
     s.transport === "http"
       ? { type: "http", url: ref("U", s.url), headers: refs("H", s.headers) }
-      : { type: "stdio", command: s.command, args: s.args.map((a) => ref("A", a)), env: refs("E", s.env) };
+      : {
+          type: "stdio",
+          command: ref("C", s.command),
+          args: s.args.map((a) => ref("A", a)),
+          env: refs("E", s.env),
+        };
   const ion = opts.mcpServers ?? [];
   const taken = new Set(ion.map((s) => s.name));
   const own = (opts.ownTools ? (opts.ownServers ?? []) : []).filter((s) => !taken.has(s.name));

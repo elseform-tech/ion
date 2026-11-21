@@ -261,9 +261,10 @@ describe("claude-code session", () => {
       plugins: unknown[];
     };
     expect(o).toMatchObject({ strictMcpConfig: true, settingSources: [], permissionMode: "default" });
+    // Security review, 2026-11-21: the command too travels in the environment (a path can say too much).
     expect(o.mcpServers.github).toEqual({
       type: "stdio",
-      command: "npx",
+      command: "${ION_MCP_C0}",
       args: ["${ION_MCP_A0}", "${ION_MCP_A1}", "${ION_MCP_A2}"],
       env: { GITHUB_TOKEN: "${ION_MCP_E0}" },
     });
@@ -275,6 +276,7 @@ describe("claude-code session", () => {
     for (const secret of ["argkey", "ghp_secret", "hdrkey"])
       expect(JSON.stringify(o.mcpServers)).not.toContain(secret);
     expect(o.env).toMatchObject({
+      ION_MCP_C0: "npx",
       ION_MCP_A2: "--token=argkey",
       ION_MCP_E0: "ghp_secret",
       ION_MCP_H0: "hdrkey",

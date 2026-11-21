@@ -15,10 +15,11 @@ let srv: Awaited<ReturnType<typeof startServer>>;
 let client: IonClient;
 let root: string;
 
-async function start(config: string) {
+async function start(config: string, withProject = false) {
   root = mkdtempSync(join(tmpdir(), "ion-own-api-"));
-  const { home } = agentHome();
+  const { home, project } = agentHome();
   pluginHome(home);
+  if (withProject) config += `[[projects]]\nid = "shop"\npath = "${project}"\nstarred = false\n`;
   writeFileSync(join(root, "mcp.json"), JSON.stringify({ mcpServers: {} }), { mode: 0o600 });
   writeFileSync(join(root, "config.toml"), config);
   mkdirSync(join(root, "data"));
@@ -53,6 +54,28 @@ describe("each agent's own tools", () => {
     expect(t.own.plugins.map((p) => `${p.agent}:${p.name}`)).toContain("claude-code:superpowers");
     // No switch: it's the agent's.
     await expect(client.call("tools.setOn", { kind: "mcp", id: "github", on: true })).rejects.toThrow();
+  });
+
+  // Security review, 2026-11-21: a project's own .mcp.json is the repo's, not yours: listed with a switch, off until
+  // you turn it on (consent to exactly what it runs).
+  it("a repo's .mcp.json server is off until consented (its switch in Settings)", async () => {
+    await start("", true);
+    const repo = async () =>
+      (await client.call("tools.list", {})).own.servers.find((s) => s.name === "repotool")?.repo;
+    expect(await repo()).toEqual({
+      project: "shop",
+      file: ".mcp.json",
+      id: "shop:repotool",
+      on: false,
+      new: true,
+    });
+    await client.call("tools.setOn", { kind: "repo", id: "shop:repotool", on: true });
+    expect(await repo()).toMatchObject({ on: true });
+    expect(loadUserConfig(join(root, "config.toml")).config.tools.repoOn).toEqual([
+      expect.stringMatching(/^shop:repotool@/),
+    ]);
+    await client.call("tools.setOn", { kind: "repo", id: "shop:repotool", on: false });
+    expect(await repo()).toMatchObject({ on: false, new: true });
   });
 
   it("Use its own tools off brings back ion's tools only (the switch, in your config)", async () => {

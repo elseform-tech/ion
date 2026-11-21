@@ -716,3 +716,44 @@ describe("Settings → Tools: each agent's own", () => {
     expect(within(row("review")).queryByRole("switch")).toBeNull();
   });
 });
+
+// Security review, 2026-11-21: what a repo wrote (a project's .mcp.json, its .claude/skills) isn't yours: it shows
+// with a switch, off until you turn it on, and says whose it is.
+describe("Settings → Tools: a repo's own", () => {
+  it("a repo's .mcp.json server has a switch, off, and says its file", async () => {
+    const repo = { project: "shop", file: ".mcp.json", id: "shop:repotool", on: false, new: true as const };
+    const c = toolsClient(() =>
+      info({
+        own: {
+          ...info().own,
+          servers: [{ agent: "claude-code", name: "repotool", transport: "stdio", launch: "repo-mcp", repo }],
+        },
+      }),
+    );
+    await open(c);
+    const r = await findRow("repotool");
+    expect(within(r).getByText("From shop's .mcp.json")).toBeTruthy();
+    fireEvent.click(within(r).getByRole("switch", { name: "repotool" }));
+    expect(c.call).toHaveBeenCalledWith("tools.setOn", { kind: "repo", id: "shop:repotool", on: true });
+  });
+
+  it("a project's skill says it's the project's, with a switch", async () => {
+    const style = {
+      ...{
+        id: "~/code/app/.claude/skills/style",
+        name: "style",
+        description: "House style",
+        whose: "claude" as const,
+      },
+      ...{ where: "~/code/app/.claude/skills/style", on: false, new: true as const, hash: "dddddddddddd" },
+      ...{ support: { "claude-code": "ion" as const }, project: "app" },
+    };
+    await open(
+      toolsClient(() => info({ skills: [style] })),
+      "Skills",
+    );
+    const r = await findRow("style");
+    expect(within(r).getByText("app's skills")).toBeTruthy();
+    expect(within(r).getByRole("switch", { name: "style" })).toBeTruthy();
+  });
+});
