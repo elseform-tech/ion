@@ -177,3 +177,24 @@ describe("Settings → Tools: each agent's own", () => {
     ]);
   });
 });
+
+// Ruling, 2026-11-21: a repo's server name is shown in a question in the chat: one that breaks the name rule (1-40
+// letters, digits, - and _) is left out with one plain line, never shown or run.
+describe("a repo's server with a bad name", () => {
+  it("is left out with one plain line, control characters stripped", async () => {
+    const { home, project } = agentHome();
+    writeFileSync(
+      join(project, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "bad name\u0007!": { command: "x" }, ok: { command: "y" } } }),
+    );
+    const repo = async () => ({ on: false, new: true as const, asks: true as const });
+    const own = await ownToolsOf({ home, env: {}, projects: [project], agents: {}, repo });
+    expect(own.servers.filter((s) => s.repo).map((s) => s.name)).toEqual(["ok"]);
+    expect(own.leftOut).toEqual([
+      { name: "bad name!", why: "shop's .mcp.json: use up to 40 letters, digits, - or _" },
+    ]);
+    const dir = mkdtempSync(join(tmpdir(), "ion-own-"));
+    const run = await claudeOwnForRun({ home, env: {}, project, dir, repoOn: async () => true });
+    expect(run.servers.map((s) => s.name)).not.toContain("bad name\u0007!");
+  });
+});

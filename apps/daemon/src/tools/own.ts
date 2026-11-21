@@ -1,6 +1,6 @@
 import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
+import { stripControl } from "@ion/schema";
 import type { McpSpec } from "@ion/adapter-kit";
 import type { OwnServerInfo } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
@@ -41,19 +41,34 @@ export type RepoState = (
   v: unknown,
 ) => Promise<{ on: boolean; new?: true; changed?: true; asks?: true }>;
 
-/** Claude Code's servers in each project's own `.mcp.json` (the repo's): each with your switch in ion. */
-async function repoRows(projects: string[], state: RepoState): Promise<OwnServerInfo[]> {
+/** A project's own `.mcp.json` line, for a server left out. */
+const leftOutOf = (p: string, name: string) => ({
+  name: stripControl(name).slice(0, 40),
+  why: `${basename(p)}'s .mcp.json: ${NAME_RULE}`,
+});
+
+/**
+ * Claude Code's servers in each project's own `.mcp.json` (the repo's): each with your switch (remote) or asked in each
+ * chat (local); one whose name breaks the rule is left out with one plain line.
+ */
+async function repoRows(projects: string[], state: RepoState) {
+  const leftOut: { name: string; why: string }[] = [];
   const rows = projects.flatMap((p) =>
     Object.entries(repoServers(p)).map(async ([name, v]): Promise<OwnServerInfo | null> => {
       const l = isObj(v) ? standardLaunch(v) : null;
       if (!l || l.kind === "sse" || name.toLowerCase() === "ion") return null;
+      if (!NAME.test(name)) {
+        leftOut.push(leftOutOf(p, name));
+        return null;
+      }
       const project = basename(p);
       const repo = { project, file: ".mcp.json", id: `${project}:${name}`, ...(await state(p, name, v)) };
       const launch = l.kind === "stdio" ? launchOf(l) : launchOf({ url: l.url });
       return { agent: "claude-code", name, transport: l.kind, launch, repo };
     }),
   );
-  return (await Promise.all(rows)).filter((r): r is OwnServerInfo => r !== null);
+  const servers = (await Promise.all(rows)).filter((r): r is OwnServerInfo => r !== null);
+  return { servers, leftOut };
 }
 
 /**
@@ -79,8 +94,9 @@ export async function ownToolsOf(o: {
         launch: launchLine(e),
       };
     });
-  const servers = [...yours, ...(await repoRows(o.projects, o.repo))];
-  return { agents, servers, plugins: readPlugins(o).map(({ path: _p, servers: _s, ...p }) => p) };
+  const repo = await repoRows(o.projects, o.repo);
+  const plugins = readPlugins(o).map(({ path: _p, servers: _s, ...p }) => p);
+  return { agents, servers: [...yours, ...repo.servers], plugins, leftOut: repo.leftOut };
 }
 
 // ---- Claude Code, for a run ------------------------------------------------------------------------------------
@@ -120,66 +136,18 @@ function specOf(name: string, l: Launch | null, env: Env): McpSpec | null {
 export const repoServers = (project: string): Obj =>
   obj(obj(readFile(join(project, ".mcp.json"))).mcpServers);
 
-/** Commands that fetch and run a published package or image, by the word that says so (`pnpm dlx`, `pipx run`). */
-const RUNNERS: Record<string, string | null> = {
-  npx: null,
-  bunx: null,
-  uvx: null,
-  pnpm: "dlx",
-  pipx: "run",
-  docker: "run",
-};
-const SHELLS = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh", "cmd", "cmd.exe", "pwsh", "powershell"]);
-/** Runner flags that run a command of their own (a shell line), not a package. */
-const RUNS_LINE = new Set(["-c", "--call", "--shell", "--entrypoint"]);
-const PACKAGE = /^(@[\w.-]+\/)?[\w.-]+(@[\w.^~<>=*-]+)?$/;
-/** An image name: an optional registry host, path segments, a tag or digest (no spaces, nothing path-like). */
-const IMAGE_PART = /^[\w.-]+$/;
-const isImage = (w: string): boolean => {
-  const [name = "", digest] = w.split("@");
-  if (digest !== undefined && !/^sha256:[0-9a-f]+$/.test(digest)) return false;
-  const tagAt = name.lastIndexOf(":");
-  const bare = tagAt > name.lastIndexOf("/") ? name.slice(0, tagAt) : name;
-  return bare.split("/").every((p, i) => (i === 0 ? /^[\w.-]+(:\d+)?$/.test(p) : IMAGE_PART.test(p)));
-};
-
-/** A word that could name a file: a path written as one, or anything that is a file or folder in the project. */
-function pathish(project: string, w: string): boolean {
-  if (/^(\.{1,2}([/\\]|$)|[/\\~])/.test(w) || w.includes("\\")) return true;
-  return existsSync(resolve(project, w));
-}
-
-/** Every word a launch says: command, args, the value after each `=`, and each env value's words. */
-const wordsOf = (l: { command: string; args: string[]; env: Record<string, string> }) =>
-  [l.command, ...l.args, ...Object.values(l.env)]
-    .flatMap((w) => w.split(/\s+/))
-    .flatMap((w) => [w, ...(w.includes("=") ? [w.slice(w.indexOf("=") + 1)] : [])])
-    .filter(Boolean);
-
 /**
- * Whether a repo's local server runs code from the repo (ruling, 2026-11-21): anything but a package runner (npx, bunx,
- * uvx, pnpm dlx, pipx run, docker run) given a published package or image name, with no word anywhere (args, flag
- * values, env values) that could name a file, and no shell line. Such a server has no lasting consent: ion asks in each
- * chat. A remote one runs nothing local.
+ * Whether a repo's server runs code on this computer (ruling, 2026-11-21): every local (stdio) one does, whatever it
+ * says it runs; it has no lasting consent, ion asks in each chat that would start it. A remote one runs nothing here.
  */
-export function runsRepoCode(project: string, v: unknown): boolean {
+export function runsRepoCode(v: unknown): boolean {
   const l = isObj(v) ? standardLaunch(v) : null;
-  if (!l || l.kind !== "stdio") return false;
-  const cmd = basename(l.command);
-  if (SHELLS.has(cmd) || !(cmd in RUNNERS) || l.command !== cmd) return true;
-  const sub = RUNNERS[cmd];
-  if (sub && l.args[0] !== sub) return true;
-  const rest = sub ? l.args.slice(1) : l.args;
-  if (rest.some((a) => RUNS_LINE.has(a.split("=")[0]!))) return true;
-  if (
-    wordsOf(l)
-      .slice(1)
-      .some((w) => pathish(project, w))
-  )
-    return true;
-  const target = rest.find((a) => !a.startsWith("-"));
-  return !target || !(cmd === "docker" ? isImage(target) : PACKAGE.test(target));
+  return l?.kind === "stdio";
 }
+
+/** A server's name ion shows and runs: 1-40 letters, digits, - or _. */
+const NAME = /^[A-Za-z0-9_-]{1,40}$/;
+const NAME_RULE = "use up to 40 letters, digits, - or _";
 
 /** What you consent to when you turn on a repo's server: which project, which server, exactly as written. */
 export const repoMaterial = (project: string, name: string, v: unknown): string =>
@@ -201,7 +169,9 @@ function claudeServers(home: string, project: string): Entry[] {
   const all: Entry[] = [
     ...Object.entries(obj(user.mcpServers)),
     ...Object.entries(obj(inProject.mcpServers)),
-    ...Object.entries(repoServers(project)).map(([n, v]): Entry => [n, v, true]),
+    ...Object.entries(repoServers(project))
+      .filter(([n]) => NAME.test(n))
+      .map(([n, v]): Entry => [n, v, true]),
   ];
   return all.filter(([n]) => !disabled.has(n) && n.toLowerCase() !== "ion");
 }

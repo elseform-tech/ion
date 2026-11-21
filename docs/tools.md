@@ -42,11 +42,11 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
   - What a repo wrote isn't yours (security review, 2026-11-21): a project's `.mcp.json` servers and its
     `.claude/skills` show in Settings with a switch ("From shop's .mcp.json", "app's skills"), off until you turn each on
     (consent to exactly what it runs or says, signed with ion's key; `tools.repoOn` / `tools.skills.on`). Claude Code's
-    own approvals of a `.mcp.json` don't count. A lasting switch only for a remote server or one that provably runs a
-    published package (npx, bunx, uvx, `pnpm dlx`, `pipx run`, `docker run` with a package or image name, and no word in
-    its args, flag values or env values that could name a file, no shell line). Anything else runs code from the repo:
-    Settings says "Asks in each chat", and the first time a chat would start it ion asks there ("shop's .mcp.json wants
-    to run local from the repo": Allow for this chat, or No; no answer in 4 minutes is a no). Codex and Grok load a trusted project's own config themselves; ion can't
+    own approvals of a `.mcp.json` don't count. Only a repo's remote server gets a lasting switch. Every local one runs
+    code here, whatever its command (`npx` too: node_modules/.bin, .npmrc and the like are the repo's): Settings says
+    "Asks in each chat", and the first time a chat would start it ion asks there (`shop's .mcp.json wants to run "local"
+    from the repo`: Allow for this chat, or No; no answer in 4 minutes is a no). A repo server whose name isn't 1-40
+    letters, digits, - or _ is left out with one line. Codex and Grok load a trusted project's own config themselves; ion can't
     hold those.
   - Codex keeps its own servers and plugins (`features.plugins` stays on); its hooks are still turned off.
   - opencode: your `mcp`, `plugin`, `agent`, `command` and `instructions` (and your config folder's plugin files) are

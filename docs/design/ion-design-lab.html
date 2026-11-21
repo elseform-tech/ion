@@ -2953,8 +2953,8 @@ const TBODY={
     +(s.client?'<div class="srow"><input class="fin mono" placeholder="Client ID" aria-label="Client ID"><input class="fin mono" type="password" placeholder="Client secret" aria-label="Client secret"></div><div class="perr">This server needs a client ID. Register ion with http://127.0.0.1:4100/oauth/callback</div>':'')).join('')
     +TOOLS.ownMcp.filter(twho).map(x=>town('plug-zap',x)).join('')
     /* a repo's own .mcp.json (security review, 2026-11-21: the repo wrote it, not you): a switch, off until you turn it on */
-    +(twho({who:['claude']})?trow('plug-zap','repotool','New','<code>npx -y @acme/repo-mcp</code>',tfaces(['claude']),tsw('repo',TOOLS.repo[0])).replace('<span class="chip">New</span>','<span class="chip">New</span><span class="org"><span>From shop’s .mcp.json</span></span>'):'')
-    /* one that runs code from the repo (ruling, 2026-11-21): no lasting switch, ion asks in each chat that starts it */
+    +(twho({who:['claude']})?trow('plug-zap','repotool','New','mcp.acme.example',tfaces(['claude']),tsw('repo',TOOLS.repo[0])).replace('<span class="chip">New</span>','<span class="chip">New</span><span class="org"><span>From shop’s .mcp.json</span></span>'):'')
+    /* a local one (ruling, 2026-11-21: any command a repo wrote runs code here): no lasting switch, ion asks in each chat */
     +(twho({who:['claude']})?trow('plug-zap','local',null,'<code>node ./tools/mcp.js</code>',tfaces(['claude']),'<span class="s">Asks in each chat</span>').replace('<span class="tname">local</span>','<span class="tname">local</span><span class="org"><span>From shop’s .mcp.json</span></span>'):'')
     +(toolWho==='all'||toolWho==='ion'?TOOLS.leftOut.map(([n,why])=>trow('plug-zap',n,null,why)).join(''):''),
   plugins:()=>TOOLS.plugins.filter(twho).map(x=>town('puzzle',x)).join(''),

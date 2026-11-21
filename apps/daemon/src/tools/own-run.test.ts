@@ -6,7 +6,7 @@ import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { describe, expect, it } from "vitest";
 import { agentHome } from "./import-testing.js";
 import { repoKey, repoState, runOwnOf } from "./own-run.js";
-import { repoMaterial, runsRepoCode } from "./own.js";
+import { repoMaterial } from "./own.js";
 
 // Security review, 2026-11-21: `${VAR}` in an agent's own server is filled only from the environment an agent may
 // have (ion's own variables, run keys and your keys left out), never ion's whole environment.
@@ -38,48 +38,31 @@ describe("a run's Claude Code servers", () => {
   });
 });
 
-// Ruling (automated review, 2026-11-21): hashing a repo's code kept missing ways in (flag values, env, shell wrappers,
-// links). A repo's local server keeps a lasting consent only when it provably runs a published package; anything else
-// runs code from the repo, and ion asks in each chat that would start it ("Allow for this chat").
-describe("a repo server that runs the repo's own code", () => {
+// Ruling, 2026-11-21 (automated review): hashing a repo's code, then exempting "package runners", kept missing ways in
+// (node_modules/.bin, .npmrc, docker mounts, word splitting). Every local server a repo wrote asks in each chat that
+// would start it ("Allow for this chat"); only a repo's remote server keeps a lasting switch.
+describe("a repo's local servers ask in each chat", () => {
   const sign = async (m: string) => createHash("sha256").update(m).digest("hex");
 
-  it("counts only a package runner with a published package and nothing of the repo as not repo code", () => {
-    const project = mkdtempSync(join(tmpdir(), "ion-repo-code-"));
-    writeFileSync(join(project, "server.py"), "print(1)");
-    const npx = { command: "npx", args: ["-y", "@scope/pkg"] };
-    expect(runsRepoCode(project, npx)).toBe(false);
-    expect(runsRepoCode(project, { command: "uvx", args: ["mcp-server-time"] })).toBe(false);
-    expect(
-      runsRepoCode(project, { command: "docker", args: ["run", "-i", "--rm", "ghcr.io/org/img:1"] }),
-    ).toBe(false);
-    for (const v of [
-      { command: "node", args: ["./tools/mcp.js"] },
-      { command: "python", args: ["server.py"] },
-      { command: "npx", args: ["--prefix=./x", "pkg"] },
-      { command: "npx", args: ["-y", "pkg"], env: { NODE_OPTIONS: "--require ./hook.js" } },
-      { command: "npx", args: ["-y", "pkg"], env: { CONFIG: "server.py" } },
-      { command: "sh", args: ["-c", "npx -y pkg"] },
-      { command: "npx", args: ["-c", "node x"] },
-      { command: "npx", args: ["-y", "src/local"] },
-    ])
-      expect(runsRepoCode(project, v), JSON.stringify(v)).toBe(true);
-  });
-
-  it("`node ./tools/mcp.js` asks in each chat; `npx -y @scope/pkg` keeps its mark", async () => {
+  it("`npx -y @scope/pkg` from a repo asks per chat too; a remote one keeps its mark", async () => {
     const { home, project } = agentHome();
     const local = { command: "node", args: ["./tools/mcp.js"] };
     const pkg = { command: "npx", args: ["-y", "@scope/pkg"] };
+    const remote = { type: "http", url: "https://mcp.example.com/mcp" };
     writeFileSync(join(home, ".claude.json"), JSON.stringify({}));
-    writeFileSync(join(project, ".mcp.json"), JSON.stringify({ mcpServers: { local, pkg } }));
+    writeFileSync(join(project, ".mcp.json"), JSON.stringify({ mcpServers: { local, pkg, remote } }));
     const root = mkdtempSync(join(tmpdir(), "ion-own-run-"));
     const configFile = join(root, "config.toml");
-    const record = `${repoKey(project, "pkg")}@${await sign(repoMaterial(project, "pkg", pkg))}`;
+    const marks = await Promise.all(
+      [["pkg", pkg] as const, ["remote", remote] as const].map(
+        async ([n, v]) => `${repoKey(project, n)}@${await sign(repoMaterial(project, n, v))}`,
+      ),
+    );
     const projects = [{ id: "shop", path: project, starred: false }];
     saveUserConfig(configFile, {
       ...DEFAULT_CONFIG,
       projects,
-      tools: { ...DEFAULT_CONFIG.tools, repoOn: [record] },
+      tools: { ...DEFAULT_CONFIG.tools, repoOn: marks },
     });
     const asked: string[] = [];
     let yes = true;
@@ -92,13 +75,17 @@ describe("a repo server that runs the repo's own code", () => {
       own.forRun({ runId, chatId, harness: "claude-code", projectId: "shop", cwd: project });
     const names = async (chatId: string, runId: string) =>
       (await run(chatId, runId)).ownServers?.map((s) => s.name);
-    expect(await names("c1", "r1")).toEqual(["local", "pkg"]);
-    expect(await names("c1", "r2")).toEqual(["local", "pkg"]);
-    expect(asked).toEqual(["c1: shop's .mcp.json wants to run local from the repo"]);
+    expect(await names("c1", "r1")).toEqual(["local", "pkg", "remote"]);
+    expect(await names("c1", "r2")).toEqual(["local", "pkg", "remote"]);
+    expect(asked).toEqual([
+      `c1: shop's .mcp.json wants to run "local" from the repo`,
+      `c1: shop's .mcp.json wants to run "pkg" from the repo`,
+    ]);
     yes = false;
-    expect(await names("c2", "r3")).toEqual(["pkg"]);
-    expect(asked).toHaveLength(2);
-    // With a repo-code server, a switch in Settings means nothing: there's no lasting mark to give it.
-    expect(await repoState(sign, [])(project, "local", local)).toEqual({ on: false, new: true, asks: true });
+    expect(await names("c2", "r3")).toEqual(["remote"]);
+    expect(asked).toHaveLength(4);
+    // A local one has no lasting switch to give it; a remote one does.
+    expect(await repoState(sign, marks)(project, "pkg", pkg)).toEqual({ on: false, new: true, asks: true });
+    expect(await repoState(sign, marks)(project, "remote", remote)).toEqual({ on: true });
   });
 });

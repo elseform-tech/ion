@@ -26,20 +26,22 @@ async function toolsInfo(
   const { config } = loadUserConfig(ctx.configFile);
   const { mcp, keychain } = await mcpInfo(ctx, r.servers, config.tools.mcpOn);
   const problem = r.problem ?? (r.exposed ? EXPOSED : undefined);
+  const { leftOut, ...own } = await ownToolsOf({
+    ...agentsHomeOf(ctx.skills),
+    ...{ projects: projectDirs(config), agents: ownSwitches(config) },
+    repo: repoState(ctx.tools.sign, config.tools.repoOn),
+  });
   const info: ToolsInfo = {
     mcpFile: tools.file.path,
     ...(problem ? { mcpProblem: problem } : {}),
     ...(keychain ? { keychainProblem: keychain } : {}),
     mcp,
-    leftOut: r.leftOut,
+    // mcp.json's, then a repo's own whose name breaks the rule.
+    leftOut: [...r.leftOut, ...leftOut],
     hooks: await hookGroups(config, ctx.hooks, ctx.tools.sign),
     skills: await ctx.skills.list(config.tools.skills.on, projectDirs(config), ownSwitches(config)),
     support: toolSupport(),
-    own: await ownToolsOf({
-      ...agentsHomeOf(ctx.skills),
-      ...{ projects: projectDirs(config), agents: ownSwitches(config) },
-      repo: repoState(ctx.tools.sign, config.tools.repoOn),
-    }),
+    own,
   };
   return withOrigins(ctx, info, r.servers);
 }
@@ -94,8 +96,8 @@ async function repoTurned(tools: Tools, c: UserConfig, id: string, on: boolean):
   const dir = projectDirs(c).find((p) => repoKey(p, name) === id);
   const v = dir ? repoServers(dir)[name] : undefined;
   if (!dir || v === undefined || !project) throw new UserError(`Unknown connection: ${id}`);
-  // Code from the repo has no lasting consent (ruling, 2026-11-21): ion asks in each chat.
-  if (runsRepoCode(dir, v)) throw new UserError("It runs code from the repo: ion asks in each chat");
+  // A repo's local server has no lasting consent (ruling, 2026-11-21): ion asks in each chat.
+  if (runsRepoCode(v)) throw new UserError("It runs code from the repo: ion asks in each chat");
   const mark = await tools.sign(repoMaterial(dir, name, v)).catch(() => {
     throw new UserError(CANT_READ_KEYCHAIN);
   });

@@ -70,7 +70,7 @@ export function runOwnOf(o: {
       const env = agentOnly(o.env ?? agentsHomeOf(o).env, await envDropOf(o.configFile));
       const lasting = repoConsent(o.sign, project, config.tools.repoOn);
       const repoOn: RepoOn = (name, v) =>
-        runsRepoCode(project, v) ? askedFor(o.ask, allowed, { ...r, project, name, v }) : lasting(name, v);
+        runsRepoCode(v) ? askedFor(o.ask, allowed, { ...r, project, name, v }) : lasting(name, v);
       const own = await claudeOwnForRun({ home: o.home, env, project, dir: join(pluginDir, "own"), repoOn });
       return { ownTools, ownServers: own.servers, ownPlugins: own.plugins, pluginDir, secrets: own.secrets };
     },
@@ -92,7 +92,7 @@ export const repoState =
   (sign: Sign, repoOn: string[]): RepoState =>
   async (project, name, v) => {
     // Code from the repo has no lasting consent: it's asked about in each chat.
-    if (runsRepoCode(project, v)) return { on: false, new: true, asks: true };
+    if (runsRepoCode(v)) return { on: false, new: true, asks: true };
     const was = turnedOn(repoOn).get(repoKey(project, name));
     if (was === undefined) return { on: false, new: true };
     const now = await sign(repoMaterial(project, name, v)).catch(() => null);
@@ -113,7 +113,8 @@ async function askedFor(
   if (allowed.has(key)) return true;
   const l = isLaunch(a.v);
   const command = l ? [l.command, ...l.args].join(" ") : "";
-  const text = `${basename(a.project)}'s .mcp.json wants to run ${a.name} from the repo`;
+  // The name passed the name rule (own.ts); quoted, so it reads as a name, not words of the question.
+  const text = `${basename(a.project)}'s .mcp.json wants to run "${a.name}" from the repo`;
   const yes = (await ask?.(a, text, command).catch(() => false)) ?? false;
   if (yes) allowed.add(key);
   return yes;

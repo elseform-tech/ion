@@ -63,7 +63,7 @@ describe("each agent's own tools", () => {
     const project = await start("", true);
     const file = join(project, ".mcp.json");
     const c = JSON.parse(readFileSync(file, "utf8"));
-    c.mcpServers.pkgtool = { command: "npx", args: ["-y", "@acme/repo-mcp"] };
+    c.mcpServers.pkgtool = { type: "http", url: "https://mcp.acme.example/mcp" };
     writeFileSync(file, JSON.stringify(c));
     const repo = async (name: string) =>
       (await client.call("tools.list", {})).own.servers.find((s) => s.name === name)?.repo;
@@ -81,7 +81,7 @@ describe("each agent's own tools", () => {
     ]);
     await client.call("tools.setOn", { kind: "repo", id: "shop:pkgtool", on: false });
     expect(await repo("pkgtool")).toMatchObject({ on: false, new: true });
-    // Ruling, 2026-11-21: one that runs code from the repo has no lasting switch; ion asks in each chat.
+    // Ruling, 2026-11-21: a repo's local one (any command) has no lasting switch; ion asks in each chat.
     expect(await repo("repotool")).toMatchObject({ asks: true, on: false });
     await expect(client.call("tools.setOn", { kind: "repo", id: "shop:repotool", on: true })).rejects.toThrow(
       "It runs code from the repo: ion asks in each chat",
