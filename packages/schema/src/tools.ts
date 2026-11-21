@@ -138,7 +138,16 @@ export type OwnServerInfo = {
    * A project's own file (the repo wrote it, not you; Claude Code's `.mcp.json`): `id` turns it on (`tools.setOn` kind
    * "repo"), off until you do; `new`: never turned on, `changed`: it runs something else since.
    */
-  repo?: { project: string; file: string; id: string; on: boolean; new?: true; changed?: true };
+  repo?: {
+    project: string;
+    file: string;
+    id: string;
+    on: boolean;
+    new?: true;
+    changed?: true;
+    /** It runs a file of the repo's own (an edit to it turns the server off until you turn it on again). */
+    runsCode?: true;
+  };
 };
 
 /** What a plugin brings. */

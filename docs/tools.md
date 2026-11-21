@@ -42,7 +42,9 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
   - What a repo wrote isn't yours (security review, 2026-11-21): a project's `.mcp.json` servers and its
     `.claude/skills` show in Settings with a switch ("From shop's .mcp.json", "app's skills"), off until you turn each on
     (consent to exactly what it runs or says, signed with ion's key; `tools.repoOn` / `tools.skills.on`). Claude Code's
-    own approvals of a `.mcp.json` don't count. Codex and Grok load a trusted project's own config themselves; ion can't
+    own approvals of a `.mcp.json` don't count. A repo server whose command or args name a file in the project
+    (`node ./tools/mcp.js`, `python scripts/server.py`) says "Runs code from the repo", and that file's bytes (up to
+    1 MB each) are part of what you consent to: an edit turns it off until you turn it on again. Codex and Grok load a trusted project's own config themselves; ion can't
     hold those.
   - Codex keeps its own servers and plugins (`features.plugins` stays on); its hooks are still turned off.
   - opencode: your `mcp`, `plugin`, `agent`, `command` and `instructions` (and your config folder's plugin files) are

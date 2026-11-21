@@ -721,7 +721,11 @@ describe("Settings → Tools: each agent's own", () => {
 // with a switch, off until you turn it on, and says whose it is.
 describe("Settings → Tools: a repo's own", () => {
   it("a repo's .mcp.json server has a switch, off, and says its file", async () => {
-    const repo = { project: "shop", file: ".mcp.json", id: "shop:repotool", on: false, new: true as const };
+    const repo = {
+      ...{ project: "shop", file: ".mcp.json", id: "shop:repotool", on: false, new: true as const },
+      // Automated review, 2026-11-21: one that runs the repo's own code says so.
+      runsCode: true as const,
+    };
     const c = toolsClient(() =>
       info({
         own: {
@@ -733,6 +737,7 @@ describe("Settings → Tools: a repo's own", () => {
     await open(c);
     const r = await findRow("repotool");
     expect(within(r).getByText("From shop's .mcp.json")).toBeTruthy();
+    expect(within(r).getByText("Runs code from the repo")).toBeTruthy();
     fireEvent.click(within(r).getByRole("switch", { name: "repotool" }));
     expect(c.call).toHaveBeenCalledWith("tools.setOn", { kind: "repo", id: "shop:repotool", on: true });
   });

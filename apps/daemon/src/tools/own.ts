@@ -1,5 +1,7 @@
 import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { createHash } from "node:crypto";
+import { closeSync, existsSync, lstatSync, openSync, readSync } from "node:fs";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { McpSpec } from "@ion/adapter-kit";
 import type { OwnServerInfo } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
@@ -47,7 +49,14 @@ async function repoRows(projects: string[], state: RepoState): Promise<OwnServer
       const l = isObj(v) ? standardLaunch(v) : null;
       if (!l || l.kind === "sse" || name.toLowerCase() === "ion") return null;
       const project = basename(p);
-      const repo = { project, file: ".mcp.json", id: `${project}:${name}`, ...(await state(p, name, v)) };
+      const code = runsRepoCode(p, v) ? { runsCode: true as const } : {};
+      const repo = {
+        project,
+        file: ".mcp.json",
+        id: `${project}:${name}`,
+        ...code,
+        ...(await state(p, name, v)),
+      };
       const launch = l.kind === "stdio" ? launchOf(l) : launchOf({ url: l.url });
       return { agent: "claude-code", name, transport: l.kind, launch, repo };
     }),
@@ -119,9 +128,54 @@ function specOf(name: string, l: Launch | null, env: Env): McpSpec | null {
 export const repoServers = (project: string): Obj =>
   obj(obj(readFile(join(project, ".mcp.json"))).mcpServers);
 
-/** What you consent to when you turn on a repo's server: which project, which server, exactly as written. */
-export const repoMaterial = (project: string, name: string, v: unknown): string =>
-  `repo-mcp:${JSON.stringify([project, name, v])}`;
+const MAX_CODE = 1024 * 1024;
+
+/** The words of a server's command and args that name a file inside the project (its own code), each once. */
+function repoFiles(project: string, v: unknown): string[] {
+  const l = isObj(v) ? standardLaunch(v) : null;
+  if (!l || l.kind !== "stdio") return [];
+  // A path written as one (./x, ../x, /x), or a word that is a file in the project (scripts/server.py); never a
+  // package name (@scope/pkg) that only looks like a path.
+  const pathish = (w: string) => /^(\.{1,2}[/\\]|\/)/.test(w) || existsSync(resolve(project, w));
+  const words = [l.command, ...l.args].filter((w) => !w.startsWith("-") && pathish(w));
+  const inside = words
+    .map((w) => resolve(project, w))
+    .filter((f) => {
+      const rel = relative(project, f);
+      return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+    });
+  return [...new Set(inside)];
+}
+
+/** A file's bytes as a hash (at most 1 MB read); "missing" when it isn't a file there. */
+function codeHash(file: string): string {
+  try {
+    const st = lstatSync(file);
+    if (!st.isFile()) return "missing";
+    const fd = openSync(file, "r");
+    try {
+      const buf = Buffer.alloc(Math.min(st.size, MAX_CODE));
+      const n = readSync(fd, buf, 0, buf.length, 0);
+      return createHash("sha256").update(buf.subarray(0, n)).digest("hex");
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return "missing";
+  }
+}
+
+/** A repo server runs code of the repo's own (its command or args name a file in the project). */
+export const runsRepoCode = (project: string, v: unknown): boolean => repoFiles(project, v).length > 0;
+
+/**
+ * What you consent to when you turn on a repo's server: which project, which server, exactly as written, and the bytes
+ * of every file of the repo it runs (automated review, 2026-11-21: an edit to that code turns it off again).
+ */
+export const repoMaterial = (project: string, name: string, v: unknown): string => {
+  const code = repoFiles(project, v).map((f) => [relative(project, f), codeHash(f)]);
+  return `repo-mcp:${JSON.stringify([project, name, v, ...(code.length ? [code] : [])])}`;
+};
 
 /** Whether you turned on this repo server, as it is now. */
 export type RepoOn = (name: string, v: unknown) => Promise<boolean>;

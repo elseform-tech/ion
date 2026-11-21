@@ -2953,7 +2953,7 @@ const TBODY={
     +(s.client?'<div class="srow"><input class="fin mono" placeholder="Client ID" aria-label="Client ID"><input class="fin mono" type="password" placeholder="Client secret" aria-label="Client secret"></div><div class="perr">This server needs a client ID. Register ion with http://127.0.0.1:4100/oauth/callback</div>':'')).join('')
     +TOOLS.ownMcp.filter(twho).map(x=>town('plug-zap',x)).join('')
     /* a repo's own .mcp.json (security review, 2026-11-21: the repo wrote it, not you): a switch, off until you turn it on */
-    +(twho({who:['claude']})?trow('plug-zap','repotool','New','<code>repo-mcp --serve</code>',tfaces(['claude']),tsw('repo',TOOLS.repo[0])).replace('<span class="chip">New</span>','<span class="chip">New</span><span class="org"><span>From shop’s .mcp.json</span></span>'):'')
+    +(twho({who:['claude']})?trow('plug-zap','repotool','New','<code>node ./tools/mcp.js</code><span class="part">Runs code from the repo</span>',tfaces(['claude']),tsw('repo',TOOLS.repo[0])).replace('<span class="chip">New</span>','<span class="chip">New</span><span class="org"><span>From shop’s .mcp.json</span></span>'):'')
     +(toolWho==='all'||toolWho==='ion'?TOOLS.leftOut.map(([n,why])=>trow('plug-zap',n,null,why)).join(''):''),
   plugins:()=>TOOLS.plugins.filter(twho).map(x=>town('puzzle',x)).join(''),
   hooks:()=>TOOLS.hooks.map(([ev,n])=>`<div class="srow ev"><div class="g">${n}</div><button class="ib" type="button" title="Add" aria-label="Add to ${n}"><i data-lucide="plus"></i></button></div>`

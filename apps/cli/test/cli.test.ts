@@ -295,7 +295,13 @@ describe("ion cli", { timeout: 20_000 }, () => {
       old: { type: "sse", url: "https://o.example/sse" },
     };
     writeFileSync(join(agentHome, ".claude.json"), JSON.stringify({ mcpServers: servers }));
-    const env = { HOME: agentHome, CODEX_HOME: "", GROK_HOME: "", XDG_CONFIG_HOME: "" };
+    const env = {
+      HOME: agentHome,
+      ION_AGENTS_HOME: agentHome,
+      CODEX_HOME: "",
+      GROK_HOME: "",
+      XDG_CONFIG_HOME: "",
+    };
     await ionWith(env, "daemon", "start");
     const list = await ionWith(env, "mcp", "import", "--list");
     expect(list.out).toMatch(/^github\s+Claude Code\s+gh-mcp\s+GITHUB_TOKEN$/m);

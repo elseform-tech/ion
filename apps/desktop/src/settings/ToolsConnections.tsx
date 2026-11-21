@@ -240,7 +240,12 @@ function RepoRow({ s, part }: { s: OwnServerInfo; part: Part }) {
         name={s.name}
         chip={stateOf(repo, part.locked)}
         origin={fromOf(`From ${repo.project}'s ${repo.file}`)}
-        line={ownLine(s.launch)}
+        line={
+          <>
+            {ownLine(s.launch)}
+            {repo.runsCode && <span className="part">Runs code from the repo</span>}
+          </>
+        }
         mid={<Faces who={[s.agent]} agents={part.agents} />}
         end={
           <Switch
