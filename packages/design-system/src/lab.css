@@ -723,7 +723,7 @@ button.arow:hover{background:var(--hover)}
 .smenu .nm{color:var(--ink);white-space:nowrap}
 .smenu .ds{min-width:0;color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .u .catt,.bu .catt{margin:0 0 6px;justify-content:flex-end}.u .catt .chip{margin-left:0}.bu .chip.pick{background:rgba(255,255,255,.16);color:inherit}
-.stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}
+.stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}.stools .trow .s{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

@@ -35,7 +35,7 @@ export function ServerToolsList({ client, id }: { client: IonClient; id: string 
           icon={Wrench}
           name={t.name}
           chip={t.changed ? "Changed" : null}
-          line={t.description}
+          line={<span title={t.description}>{t.description}</span>}
           end={
             <Switch
               label={`Ions can use ${t.name}`}

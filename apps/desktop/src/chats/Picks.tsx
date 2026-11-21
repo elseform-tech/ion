@@ -147,7 +147,7 @@ const pickArgs = (p: Picked) => ({
 type Menu = NonNullable<ReturnType<typeof usePicker>["menu"]>;
 
 /** The menu above the box: each match with its icon (its kind on hover), name and one line. */
-export function PickMenu({ menu }: { menu: Menu }) {
+function PickMenu({ menu }: { menu: Menu }) {
   if (!menu.items.length) return null;
   return (
     <div className="pmenu smenu" role="listbox" aria-label={menu.mark === "/" ? "Skills" : "Connections"}>
