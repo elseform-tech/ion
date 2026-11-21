@@ -1528,13 +1528,13 @@ export function sumLines(lines: Line[]) {
                     <button type="button" class="ib qtog" aria-label="Collapse" aria-expanded="true" data-qtog><i data-lucide="chevron-down"></i><i data-lucide="chevron-up"></i></button>
                   </div>
                   <div class="qd">
-                    <div class="why clamp" role="button" tabindex="0" aria-expanded="false">ion is wary of this: it runs a file this command creates
+                    <div class="why clamp" role="button" tabindex="0" aria-expanded="false">ion is wary of this: it runs a script ion can't read
 
 { "command": "cargo build --release &amp;&amp; ./target/release/shop" }</div>
-                    <button type="button" class="qopt"><b>Allow once</b><span>It runs this time. ion asks again next time.</span></button>
-                    <button type="button" class="qopt"><b>Always allow in this project</b><span>It runs, and this exact action runs in this project from now on without asking.</span></button>
+                    <button type="button" class="qopt"><b>Allow</b><span>It runs.</span></button>
                     <button type="button" class="qopt"><b>Don't allow</b><span>The agent is told no and works around it.</span></button>
-                    <div class="qd-f"><input class="own" aria-label="Your own answer" placeholder="Something else…"></div>
+                    <!-- The user, 2026-11-21: Remember keeps the answer for this exact action in this project (off by default). -->
+                    <div class="qd-f"><input class="own" aria-label="Your own answer" placeholder="Something else…"><label title="Remember"><input type="checkbox" aria-label="Remember"> Remember</label></div>
                   </div>
                 </div>
                 <div class="cbox">

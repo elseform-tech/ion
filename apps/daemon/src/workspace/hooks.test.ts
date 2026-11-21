@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sandboxKind } from "@ion/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { hookEnv, runHook, stopHooks, TAIL } from "./hooks.js";
 
@@ -116,13 +117,18 @@ describe("a hook's env", () => {
   });
 });
 
-// Task review, 2026-11-21 (the user's ruling): your hooks are your own commands and run outside the agents' sandbox,
-// so `ion` works in a hook again (it reads daemon.json); a run's agent can't add or turn on a hook.
-describe("a hook runs outside the agents' sandbox", () => {
-  it("can read ion's data folder, as `ion` in a hook needs", async () => {
+// Automated review, 2026-11-21 (revised ruling): a hook can run code an agent wrote in the project, so hooks run in
+// the sandbox: the project readable and writable, ion's folders not (ion stays reachable: hooks/reach.ts).
+describe.skipIf(sandboxKind() !== "seatbelt")("a hook in the sandbox", () => {
+  it("reads and writes the project, not ion's folders", async () => {
     const ion = dir();
-    writeFileSync(join(ion, "daemon.json"), '{"port":1}\n');
-    const r = await runHook({ ...base, cwd: dir(), run: `cat ${ion}/daemon.json` });
-    expect([r.code, r.tail]).toEqual([0, '{"port":1}\n']);
+    const project = dir();
+    writeFileSync(join(ion, "daemon.json"), "full-token\n");
+    writeFileSync(join(project, "README.md"), "project\n");
+    const sandbox = { kind: "seatbelt" as const, paths: { deny: [ion], read: [], write: [], noWrite: [] } };
+    const run = `cat README.md && echo built > out.txt && cat out.txt; cat ${ion}/daemon.json`;
+    const r = await runHook({ ...base, cwd: project, sandbox, run });
+    expect(r.tail).toContain("project\nbuilt\n");
+    expect(r.tail).not.toContain("full-token");
   });
 });

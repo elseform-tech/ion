@@ -116,20 +116,25 @@ narrower `"write"` entry inside a `"none"` folder wins; `curl https://example.co
   policy": nothing reached ion, and the file wasn't made. Every command went through ion's gate first.
 - **opencode:** with ion's folder for it missing, ion opened opencode once outside the sandbox, the plugin package
   (1.18.8) was installed there, and the run then started sandboxed; the chat stopped on opencode's used-up free quota.
-- **A hook** on "A chat finishes" read `daemon.json` (its output masked the token): hooks run outside the sandbox.
+- **A hook** on "A chat finishes" read `daemon.json` (its output masked the token): hooks ran outside the sandbox then;
+  they run sandboxed again since (above).
 
 ## ion's local servers, ion's own git and your hooks
 
 - Local MCP servers ion runs (`workspace/mcp-bridge.ts`) start in the sandbox: ion's folders denied (they get their
-  values through their env), their own folder `<data>/mcp-run/<id>` and plugins' data `<data>/plugin-data` writable.
+  values through their env), every agent's config read-only, their own folder `<data>/mcp-run/<id>` and plugins' data `<data>/plugin-data` writable.
 - **ion's own git** (`workspace/git.ts`: making and removing worktrees, diffs) runs in the sandbox too, with ion's
-  folders denied and its worktrees writable, and without your global or system git config (`GIT_CONFIG_GLOBAL=/dev/null`,
+  folders denied, every agent's config read-only (re-review, 2026-11-21: a planted filter wrote `~/.codex/notify.sh`,
+  which Codex runs outside any sandbox) and its worktrees writable, and without your global or system git config (`GIT_CONFIG_GLOBAL=/dev/null`,
   `GIT_CONFIG_NOSYSTEM=1`; a repo ion has just made for you keeps your identity). Security review, 2026-11-21: a run
   wrote a clean filter into the project's `.git/config` and `.git/info/attributes`, and the daemon's `git diff` ran it
   outside the sandbox and read `daemon.json`. Tested with planted clean, smudge and process filters, during
   `worktree add` and the diff.
-- **Hooks run outside the agents' sandbox** (the user's ruling, 2026-11-21): they're your own commands, added and
-  turned on only by you, and `ion` works in them (it reads `daemon.json`). A run's agent can't add or turn one on.
+- **Hooks run in the sandbox** (automated review and revised ruling, 2026-11-21: a hook can run code an agent wrote in
+  the project, `npm test`): ion's folders denied, ion's launcher readable, every agent's config read-only, the project
+  as it is (writable), no global or system git config. `ion` works in a hook through `ION_PORT` and a key made for that
+  one hook run, with a run key's limited rights (ion's commands for tools; nothing turned on, no keys, no settings),
+  revoked when the hook ends. Doctor's test run of a hook is sandboxed the same way.
 
 ## The word rules once a run is sandboxed
 

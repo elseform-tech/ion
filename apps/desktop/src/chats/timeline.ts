@@ -35,6 +35,8 @@ export type Item =
       resolved?: boolean;
       /** ion's question about a tool call it stopped; expired: ion said no after waiting, the agent went on. */
       blocked?: boolean;
+      /** A stopped call whose answer can't be remembered (its input was cut). */
+      noRemember?: boolean;
       expired?: boolean;
       answered?: string;
       /** Your answer's message is in the chat: it shows there, where you sent it, not under the question. */
@@ -155,6 +157,7 @@ function question(t: Timeline, d: D): Timeline {
     why: typeof d.detail === "string" ? d.detail : null,
     choices: d.choices as Choice[],
     ...(d.blocked === true ? { blocked: true } : {}),
+    ...(d.noRemember === true ? { noRemember: true } : {}),
     ...(typeof (d.via as { note?: unknown } | undefined)?.note === "string"
       ? { note: (d.via as { note: string }).note }
       : {}),

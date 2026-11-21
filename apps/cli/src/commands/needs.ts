@@ -18,9 +18,10 @@ export function needsCommands(program: Command, out: () => Out) {
     .command("answer <id> <answer...>")
     .description("Answer a question: a choice's number, or your own words")
     .option("--always <where>", "Keep the answer for this project or everywhere")
-    .action(async (id: string, words: string[], o: { always?: string }) => {
+    .option("--remember", "Remember this answer for this exact action in the project")
+    .action(async (id: string, words: string[], o: { always?: string; remember?: boolean }) => {
       if (o.always && !WHERE.includes(o.always)) fail("Pick project or everywhere");
-      const scope = (o.always ?? "chat") as "chat" | "project" | "everywhere";
+      const scope = (o.remember ? "project" : (o.always ?? "chat")) as "chat" | "project" | "everywhere";
       const answer = words.join(" ");
       const pick = /^\d+$/.test(answer) ? { choice: Number(answer) } : { text: answer };
       await withClient((c) => c.call("need.answer", { needId: id, ...pick, scope }));

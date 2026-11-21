@@ -6,7 +6,6 @@ import { maskKeys } from "../hooks/mask.js";
 import { fillServer, keysNeeded, refsOf } from "../tools/fill.js";
 import type { McpServer } from "../tools/mcp-file.js";
 import { getPublic, packageFound } from "../tools/registry.js";
-import { hookEnv, runHook } from "../workspace/hooks.js";
 import { bridgesFor, type StdioSpec } from "../workspace/mcp-bridge.js";
 import { UserError } from "./errors.js";
 import type { Ctx } from "./commands.js";
@@ -166,10 +165,8 @@ async function hookCheck(ctx: Ctx, e: Entry): Promise<{ problems: string[]; outp
   const h = e.hook;
   // Task review, 2026-11-21: a chat's agent never runs a hook through doctor; it only learns the command is there.
   if (missing.length || !e.on || !h || ctx.caller) return { problems: missing };
-  const r = await runHook({
-    ...{ run: h.run, stdin: JSON.stringify({ type: h.event, test: true }), cwd: homedir() },
-    ...{ env: hookEnv({ event: h.event }), limitMs: HOOK_TEST_MS },
-  });
+  // Sandboxed and with `ion` reachable, as every hook run (automated review, 2026-11-21).
+  const r = await ctx.hooks.testRun(h, homedir(), HOOK_TEST_MS);
   return { problems: ranProblems(r), output: await maskKeys(r.tail, ctx.configFile) };
 }
 

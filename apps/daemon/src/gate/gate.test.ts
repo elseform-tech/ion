@@ -134,7 +134,8 @@ describe("the gate, end to end with the fake harness", () => {
     // The command is the question's title; the detail is only the reason (tour, final review, 2026-11-21).
     expect(need!.summary).toBe("Allow this? deny-me now");
     expect(need!.detail).toBe("ion thinks this is risky: Looks risky");
-    await client.call("need.answer", { needId: need!.needId, choice: 2 });
+    // Allow, with Remember ticked (the user, 2026-11-21: Remember replaced "Always allow in this project").
+    await client.call("need.answer", { needId: need!.needId, choice: 1, scope: "project" });
     await until(() => seen.some((e) => e.runId === first.runId && e.type === "run.finished"));
     const again = await client.call("ask", { text: "gated deny-me now", harness: "fake", projectId: "repo" });
     await until(() => seen.some((e) => e.runId === again.runId && e.type === "run.finished"));

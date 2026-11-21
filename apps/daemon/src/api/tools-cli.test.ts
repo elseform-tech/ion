@@ -580,6 +580,23 @@ describe("ion's commands for tools", () => {
     expect(seen?.output).toBeUndefined();
   });
 
+  // Automated review, 2026-11-21 (revised ruling): a hook can run code an agent wrote in the project (`npm test`), so
+  // hooks run in the sandbox: ion's folders denied, agents' configs read-only. `ion` still works in a hook, through
+  // ION_PORT and a key made for that hook run (the run key's limited rights).
+  it.skipIf(sandboxKind() !== "seatbelt")(
+    "a hook reaches ion with its own key, and can't read daemon.json",
+    async () => {
+      const you = await start();
+      const data = join(home, "data");
+      const run = `"${process.execPath}" "${fileURLToPath(new URL("../../../cli/dist/index.js", import.meta.url))}" status; cat ${data}/daemon.json || echo DENIED`;
+      await you.call("tools.addHook", { name: "Peek", event: "run.finished", run });
+      const [check] = await you.call("tools.doctor", { kind: "hook", name: "Peek" });
+      expect(check?.output).toContain("ion is running");
+      expect(check?.output).toContain("DENIED");
+      expect(check?.output).not.toContain(srv.token);
+    },
+  );
+
   // Task review, 2026-11-21: a run's doctor said which keys you have ("Needs a key: X"); it now only names them.
   it("doctor tells a run a server's key names, never whether you have them", async () => {
     const you = await start({ gh: { command: process.execPath, env: { GH: "${DOCTOR_GH}" } } });

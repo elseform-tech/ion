@@ -26,8 +26,7 @@ export type Held = "allow" | "deny" | "timeout";
 export const BLOCKED_WAIT_MS = 4 * 60_000;
 
 const PREFIX = "Allow this? ";
-const ONCE = "Allow once";
-const ALWAYS = "Always allow in this project";
+const ALLOW = "Allow";
 const NO = "Don't allow";
 const FOR_CHAT = "Allow for this chat";
 const REPO_NO = "No";
@@ -73,16 +72,10 @@ const whyWord = (b: Blocked) => {
 const callQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
   why: [`${whyWord(b)}: ${b.reason}`, ...(addsToTitle(b) ? [b.input] : [])].join("\n\n"),
+  // Remember (the user, 2026-11-21) keeps either answer for this exact action in this project; a cut input can't be
+  // remembered (you don't see all of it).
   choices: [
-    { label: ONCE, consequence: "It runs this time. ion asks again next time." },
-    ...(b.cut
-      ? []
-      : [
-          {
-            label: ALWAYS,
-            consequence: "It runs, and this exact action runs in this project from now on without asking.",
-          },
-        ]),
+    { label: ALLOW, consequence: "It runs." },
     { label: NO, consequence: "The agent is told no and works around it." },
   ],
 });
@@ -92,17 +85,19 @@ export const actionOf = (question: string) =>
   question.startsWith(PREFIX) ? question.slice(PREFIX.length) : question;
 
 /**
- * Your answer to a stopped call, by the label you picked: whether it runs, and how far the answer reaches (null:
- * not kept). Your own words aren't a yes; they're sent to the agent as you said them.
+ * Your answer to a stopped call, by the label you picked and whether you ticked Remember: whether it runs, how far the
+ * answer reaches (null: not kept), and whether it's remembered for this exact action in this project. Your own words
+ * aren't a yes; they're sent to the agent as you said them, and never remembered.
  */
 export function blockedAnswer(
   label: string,
   custom: boolean,
-): { allow: boolean; scope: "chat" | "project" | null } {
-  if (custom) return { allow: false, scope: "chat" };
-  if (label === ONCE || label === FOR_CHAT) return { allow: true, scope: null }; // once means once
-  if (label === ALWAYS) return { allow: true, scope: "project" };
-  return { allow: false, scope: "chat" };
+  remember = false,
+): { allow: boolean; scope: "chat" | "project" | null; remember: boolean } {
+  if (custom) return { allow: false, scope: "chat", remember: false };
+  if (label === ALLOW || label === FOR_CHAT)
+    return remember ? { allow: true, scope: "project", remember } : { allow: true, scope: null, remember };
+  return { allow: false, scope: remember ? "project" : "chat", remember };
 }
 
 /** Tool calls waiting on your answer, each released once: by your answer, or with "timeout" after the wait. */

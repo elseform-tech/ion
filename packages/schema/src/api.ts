@@ -352,6 +352,8 @@ export type NeedInfo = {
   choices?: { label: string; consequence: string; recommended?: boolean }[];
   /** ion's own question about a tool call it stopped. */
   blocked?: boolean;
+  /** Its answer can't be remembered (the action's input was cut): no Remember. */
+  noRemember?: true;
   /** In an ion thread: the project's ion's one line of context. */
   via?: { note: string };
   raisedAt: string;

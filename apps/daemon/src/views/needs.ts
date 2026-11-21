@@ -103,8 +103,15 @@ function rows(db: Db, where: string, args: string[]): NeedInfo[] {
     ...n,
     ...(choices ? { choices: JSON.parse(choices) } : {}),
     ...(blocked ? { blocked: true } : {}),
+    ...(blocked === 2 ? { noRemember: true as const } : {}),
     ...(note ? { via: { note } } : {}),
   }));
+}
+
+/** 1: a stopped call; 2: one whose answer can't be remembered (its input was cut); 0: not a stopped call. */
+function blockedOf(d: D): number {
+  if (d.blocked !== true) return 0;
+  return d.noRemember === true ? 2 : 1;
 }
 
 /** A raised need's row; it carries its chat's project (the chats view is applied first). */
@@ -123,7 +130,7 @@ function insertNeed(db: Db, e: IonEvent, d: D): void {
     String(d.dedupeKey),
     e.ts,
     d.choices ? JSON.stringify(d.choices) : null,
-    d.blocked === true ? 1 : 0,
+    blockedOf(d),
     (d.via as { note?: string } | undefined)?.note ?? null,
     typeof d.heldFor === "string" ? d.heldFor : null,
   );

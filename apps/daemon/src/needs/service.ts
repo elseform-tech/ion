@@ -20,6 +20,8 @@ export class NeedsService {
     why?: string;
     /** For a tool call ion stopped: its request, so the call's record and the question match. */
     blocked?: { requestId: string };
+    /** A stopped call whose answer can't be remembered (its input was cut). */
+    noRemember?: true;
     /** In an ion thread: the ion's note, or the question already waiting that this one is held behind. */
     via?: { note: string };
     heldFor?: string;
@@ -39,6 +41,7 @@ export class NeedsService {
         dedupeKey: `ask:${needId}`,
         choices: r.choices,
         ...(r.blocked ? { blocked: true } : {}),
+        ...(r.noRemember ? { noRemember: true } : {}),
         ...(r.via ? { via: r.via } : {}),
         ...(r.heldFor ? { heldFor: r.heldFor } : {}),
       },

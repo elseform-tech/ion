@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { isStandardEnv } from "@ion/adapter-kit";
+import { isStandardEnv, type RunSandbox, sandboxed } from "@ion/adapter-kit";
 
 /** How much of a hook's output is kept (its last characters): shown as its last result. */
 export const TAIL = 2000;
@@ -14,6 +14,8 @@ export type HookRun = {
   limitMs: number;
   /** Where its process group is kept while it runs (so ion can stop it). */
   live?: Set<number>;
+  /** The OS sandbox it runs in (hooks/reach.ts). */
+  sandbox?: RunSandbox;
 };
 /** `code` null: it was stopped (its time limit) or couldn't start. */
 export type HookResult = { code: number | null; ms: number; tail: string; stderr: string; timedOut: boolean };
@@ -65,7 +67,8 @@ export function runHook(o: HookRun): Promise<HookResult> {
   let tail = "";
   let stderr = "";
   return new Promise((resolve) => {
-    const child = spawn("/bin/sh", ["-c", o.run], {
+    const sh = sandboxed(o.sandbox, "/bin/sh", ["-c", o.run]);
+    const child = spawn(sh.command, sh.args, {
       cwd: o.cwd,
       env: o.env,
       detached: true,

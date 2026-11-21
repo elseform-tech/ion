@@ -57,8 +57,8 @@ describe("a repo's server, asked in the chat", () => {
     });
     expect(q.question).toBe("shop's .mcp.json wants to run local from the repo");
     expect(q.choices.map((c) => c.label)).toEqual(["Allow for this chat", "No"]);
-    expect(blockedAnswer("Allow for this chat", false)).toEqual({ allow: true, scope: null });
-    expect(blockedAnswer("No", false)).toEqual({ allow: false, scope: "chat" });
+    expect(blockedAnswer("Allow for this chat", false)).toMatchObject({ allow: true, scope: null });
+    expect(blockedAnswer("No", false)).toMatchObject({ allow: false, scope: "chat" });
   });
 });
 

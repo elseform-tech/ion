@@ -5,7 +5,8 @@ import { EV, type HookEvent, type HookLast, type IonEvent, stripControl } from "
 import type { Sign } from "../secrets/consent-key.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
-import { hookEnv, type HookResult, runHook, stopHooks } from "../workspace/hooks.js";
+import { hookEnv, type HookResult, stopHooks } from "../workspace/hooks.js";
+import { type HookBox, runBoxed } from "./reach.js";
 import { hookEventOf } from "./catalog.js";
 import { maskKeys } from "./mask.js";
 import { activeHooks, endedByIon, projectOf, Slots } from "./parts.js";
@@ -70,7 +71,7 @@ export class Hooks {
       now?: () => Date;
       /** Masks your keys in what's kept of a hook's output. */
       mask?: (text: string) => Promise<string>;
-    },
+    } & HookBox,
   ) {
     this.limits = o.limits ?? LIMITS;
     this.now = o.now ?? (() => new Date());
@@ -213,7 +214,7 @@ export class Hooks {
     w: Where & { limitMs?: number },
   ): Promise<HookResult> {
     const before = event === "tool.before";
-    const r = await runHook({
+    const run = {
       live: this.live,
       run: h.run,
       stdin: JSON.stringify({ ...payload, project: w.project, chat: w.chat }),
@@ -224,7 +225,8 @@ export class Hooks {
       }),
       cwd: this.cwdOf(w.projectId),
       limitMs: w.limitMs ?? this.limits.eventMs,
-    });
+    };
+    const r = await runBoxed(this.o, run, w);
     const ok = r.code === 0 || (before && r.code === 2);
     const tail = await this.mask(r.tail);
     const at = this.now().toISOString();
@@ -238,6 +240,15 @@ export class Hooks {
     this.lasts.set(h.id, { ok, at, code: r.code, tail });
     if (!ok) this.report(h, r.timedOut);
     return r;
+  }
+
+  /** A test run of a hook (doctor): in your home folder, with a test event, sandboxed like any hook run; not kept. */
+  testRun(h: HookEntry, home: string, limitMs: number): Promise<HookResult> {
+    const run = {
+      ...{ run: h.run, stdin: JSON.stringify({ type: h.event, test: true }), cwd: home },
+      ...{ env: hookEnv({ event: h.event }), limitMs, live: this.live },
+    };
+    return runBoxed(this.o, run, {});
   }
 
   private mask(text: string): Promise<string> {

@@ -22,7 +22,7 @@ The always-on service that owns all state.
   by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (default `claude-code:haiku`, a bare session
   with no tools), which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
   per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
-  says no (or can't decide), ion asks you instead: Allow once, Always allow in this project, Don't allow, or your
+  says no (or can't decide), ion asks you instead: Allow or Don't allow (Remember keeps either for that exact action in the project), or your
   own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes
   on, and the question stays open: a later yes still counts and the agent is told. A rule's no (your secrets,
   ion's files) never asks.

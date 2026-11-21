@@ -104,20 +104,26 @@ export const notSandboxed = (how: "own" | "ion" | undefined, kind: SandboxKind):
  * The sandbox ion's local servers run in (Plan 18 Task 12): ion's folders denied (a server gets its values through its
  * env), plugins' data folders writable (`${CLAUDE_PLUGIN_DATA}`); each server's own folder is added where it starts.
  */
-export const serverSandbox = (o: { dataDir: string; configFile: string }, kind?: SandboxKind) =>
-  deniedWith(o, [join(o.dataDir, "plugin-data")], kind);
+export const serverSandbox = (
+  o: { dataDir: string; configFile: string },
+  kind?: SandboxKind,
+  env?: NodeJS.ProcessEnv,
+) => deniedWith(o, [join(o.dataDir, "plugin-data")], kind, env);
 
-/** ion's folders denied, these writable; none where the computer has no sandbox. */
+/**
+ * ion's folders denied, every agent's config read-only (re-review, 2026-11-21: a planted git filter wrote
+ * ~/.codex/notify.sh, which Codex runs outside any sandbox), these writable; none where the computer has none.
+ */
 function deniedWith(
   o: { dataDir: string; configFile: string },
   write: string[],
   kind: SandboxKind = machineSandbox(),
+  env: NodeJS.ProcessEnv = process.env,
 ): RunSandbox | undefined {
   if (kind === "none") return undefined;
-  return { kind, paths: { deny: ionDenied(o), read: [], write, noWrite: [] } };
+  return { kind, paths: { deny: ionDenied(o), read: [], write, noWrite: agentConfigs("", env) } };
 }
 
-/** What a run manager knows of the sandbox: how this computer sandboxes (default: found once), and ion's port. */
 export type SandboxCtx = {
   /** How this computer sandboxes chats' agents ("none" runs them as they are). */
   sandbox?: SandboxKind;
@@ -147,12 +153,27 @@ export function launchSandbox(
  * The sandbox ion's own git runs in (security review, 2026-11-21: a filter planted in a project's git config ran in
  * the daemon's diff): ion's folders denied, its chats' worktrees writable (it makes and reads them).
  */
-const gitSandbox = (o: { dataDir: string; configFile: string }, kind?: SandboxKind) =>
-  deniedWith(o, [join(o.dataDir, "worktrees")], kind);
+export const gitSandbox = (
+  o: { dataDir: string; configFile: string },
+  kind?: SandboxKind,
+  env?: NodeJS.ProcessEnv,
+) => deniedWith(o, [join(o.dataDir, "worktrees")], kind, env);
 
 /** How this computer sandboxes (said once in the log when it can't), with ion's own git put in the sandbox. */
 export function startSandbox(o: { dataDir: string; configFile: string }): SandboxKind {
   const kind = machineSandbox();
   sandboxGit(gitSandbox(o, kind));
   return kind;
+}
+
+/**
+ * The sandbox your hooks run in (automated review, 2026-11-21: a hook can run code an agent wrote in the project):
+ * ion's folders denied, ion's launcher readable, every agent's config read-only; the project as it is (writable).
+ */
+export function hookSandbox(
+  o: { dataDir: string; configFile: string },
+  ionBin?: string,
+): RunSandbox | undefined {
+  const sb = deniedWith(o, []);
+  return sb && ionBin ? { ...sb, paths: { ...sb.paths, read: [ionBin] } } : sb;
 }

@@ -126,7 +126,7 @@ things on, sign in or add keys.
 - **A guess** (a script ion can't read or that may escape, one the command creates, decoded base64 that runs, a launcher
   that clears the environment before `ion`, a command it can't follow): in Auto the judge decides, shown the start of
   each project script that will run (64 KB each, 128 KB in all) and any decoded text; its no asks you ("ion is wary of
-  this: …", Allow once / Always allow in this project / Don't allow, 4 minutes). In Full it asks you, unless the run is
+  this: …", Allow / Don't allow, with a Remember box, 4 minutes). In Full it asks you, unless the run is
   in ion's OS sandbox (below).
 - In a run in ion's OS sandbox (Claude Code, opencode, Grok on a computer that has one), the guesses that only guarded
   ion's key are gone: no process in the run can read ion's files (`docs/research/sandbox.md`). Codex runs keep them.
@@ -139,5 +139,6 @@ things on, sign in or add keys.
 - **Auto:** ion's rules, then the judge; its no (or "not sure") asks you.
 - **Full:** no judging, no asking. Everything else runs: pushes, publishes, deploys, payments, sending messages. Two
   things still stop a call: a guess in a run that isn't sandboxed asks you (Codex, or a computer without a sandbox),
-  and what you said never to: a "Don't allow" you gave is kept for that exact action in that chat, and refused there
-  from then on ("You said never: …").
+  and what you said never to: "Don't allow" with **Remember** ticked is kept for that exact action in that project, and
+  refused there from then on, in every mode ("You said never: …"). "Allow" with Remember ticked lets that exact action
+  through there without asking. Remember is off by default: an answer without it is for this time only.

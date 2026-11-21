@@ -16,4 +16,5 @@ export const SAME_QUESTION = 0.5;
 
 /** An "allow" answer about a stopped call: kept as an exact rule, never handed to the judge or reused. */
 export const isAllowAnswer = (choice: string) =>
-  choice === "Always allow in this project" || choice === "Allow once";
+  // "Allow once" and "Always allow in this project": answers kept before Remember (the user, 2026-11-21).
+  choice === "Allow" || choice === "Always allow in this project" || choice === "Allow once";

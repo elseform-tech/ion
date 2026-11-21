@@ -18,6 +18,7 @@ import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
 import { startSandbox } from "../runs/sandbox.js";
+import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
 import { UnsureLog } from "../access/unsure.js";
@@ -355,19 +356,6 @@ async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
   ctx.hooks.stop();
 }
 
-/** Your hooks, hearing every event stored from now on (until the store closes with the daemon). */
-function startHooks(
-  store: EventStore,
-  db: ReturnType<typeof openDb>,
-  opts: { dataDir: string; configFile: string },
-  tools: Tools,
-): Hooks {
-  // Outside the agents' sandbox (the user's ruling, 2026-11-21): your hooks are your commands, and `ion` works in them.
-  const hooks = new Hooks({ store, db, configFile: opts.configFile, sign: tools.sign });
-  hooks.start();
-  return hooks;
-}
-
 /** Your agents' skills; plugins left by runs ion didn't see end are removed first. */
 function skillsOf(opts: { dataDir: string; configFile: string; home?: string }, tools: Tools): Skills {
   const skills = createSkills({
@@ -454,7 +442,7 @@ function openState(
   sweepNeeds(needs, ionQuestions);
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
   const access = autoAccess(opts, quick, late, unsure);
-  const hooks = startHooks(store, db, opts, tools);
+  const hooks = startHooks({ store, db, opts, tools }, { grants, base, ...(ionBin ? { bin: ionBin } : {}) });
   const servers = serversFor({ tools, oauth, configFile: opts.configFile });
   // Your servers for ions' turns: only what reads, as Auto's judge agrees (the user, 2026-11-21).
   const ownNames = (agent: string) => ownServerNames({ tools, skills, configFile: opts.configFile }, agent);

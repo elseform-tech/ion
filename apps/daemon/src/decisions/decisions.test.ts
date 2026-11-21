@@ -455,7 +455,7 @@ describe("asking when ion blocks a tool call", () => {
   const makeQuick = (timeoutMs = 2000) =>
     new Decisions({ store, db, needs, followUp, blockedWaitMs: timeoutMs, requestOf: () => "Ship it" });
 
-  it("asks, with why it was stopped and the three options, and lets the call through on Allow once", async () => {
+  it("asks, with why it was stopped and the two options, and lets the call through on Allow", async () => {
     const d = makeQuick();
     const waiting = d.askBlocked(scope(), block);
     const [need] = needs.open("c1");
@@ -464,44 +464,35 @@ describe("asking when ion blocks a tool call", () => {
       summary: "Allow this? npm publish",
       detail: "ion thinks this is risky: Publishes the package",
     });
-    expect(need!.choices!.map((c) => c.label)).toEqual([
-      "Allow once",
-      "Always allow in this project",
-      "Don't allow",
-    ]);
+    expect(need!.choices!.map((c) => c.label)).toEqual(["Allow", "Don't allow"]);
     await d.answer(need!.needId, 1);
     expect(await waiting).toBe("allow");
-    // Once means once: nothing kept for next time, and no message to the agent (its call just runs).
+    // Not remembered: nothing kept for next time, and no message to the agent (its call just runs).
     expect(of(EV.decisionRecorded)).toEqual([]);
     expect(followUp).not.toHaveBeenCalled();
   });
 
-  it("keeps 'Always allow' for the project, and 'Don't allow' for the chat", async () => {
+  // The user, 2026-11-21: "can we just have 'remember this decision' on the question box". Remember off: the answer
+  // is for this time. On: it's kept for this exact action in this project, Allow as always allow, Don't allow as never
+  // (refused in every mode, Full too).
+  it("remembers an answer for this exact action in the project only when you ask it to", async () => {
     const d = makeQuick();
-    const a = d.askBlocked(scope(), block);
-    await d.answer(needs.open("c1")[0]!.needId, 2);
-    expect(await a).toBe("allow");
-    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({
-      scope: "project",
-      choice: "Always allow in this project",
-    });
-    const b = d.askBlocked(scope(), { ...block, requestId: "g8" });
-    await d.answer(needs.open("c1")[0]!.needId, 3);
-    expect(await b).toBe("deny");
-    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ scope: "chat", choice: "Don't allow" });
-  });
-
-  // The user, 2026-11-21: your saved "never" still holds in Full access. "Don't allow" is kept for that exact action
-  // in the chat; ion refuses it there from then on.
-  it("keeps 'Don't allow' as never for that exact action, in that chat", async () => {
-    const d = makeQuick();
-    const b = d.askBlocked(scope(), block);
-    await d.answer(needs.open("c1")[0]!.needId, 3);
-    expect(await b).toBe("deny");
     const s = scope();
-    expect(d.saidNever(s.projectId, s.chatId, block.key)).toBe("npm publish");
-    expect(d.saidNever(s.projectId, "other-chat", block.key)).toBeNull();
+    const once = d.askBlocked(s, block);
+    await d.answer(needs.open("c1")[0]!.needId, 2);
+    expect(await once).toBe("deny");
+    expect(d.saidNever(s.projectId, s.chatId, block.key)).toBeNull();
+    const never = d.askBlocked(s, { ...block, requestId: "g8" });
+    await d.answer(needs.open("c1")[0]!.needId, 2, "project");
+    expect(await never).toBe("deny");
+    expect(d.saidNever(s.projectId, "another-chat", block.key)).toBe("npm publish");
+    expect(d.saidNever("other-project", s.chatId, block.key)).toBeNull();
     expect(d.saidNever(s.projectId, s.chatId, "Bash npm test")).toBeNull();
+    const yes = d.askBlocked(s, { ...block, requestId: "g9", key: "Bash npm pack" });
+    await d.answer(needs.open("c1")[0]!.needId, 1, "project");
+    expect(await yes).toBe("allow");
+    expect(d.alwaysAllowed(s.projectId, "another-chat", "Bash npm pack")).toBe(true);
+    expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ scope: "project", choice: "Allow" });
   });
 
   it("says no after the wait, keeps the question open, and tells the agent if you allow it later", async () => {
@@ -509,13 +500,13 @@ describe("asking when ion blocks a tool call", () => {
     expect(await d.askBlocked(scope(), block)).toBe("timeout");
     const [need] = needs.open("c1");
     expect(need).toBeDefined();
-    await d.answer(need!.needId, 2);
+    await d.answer(need!.needId, 1, "project");
     expect(followUp).toHaveBeenCalledWith("c1", {
       harness: "fake",
       text: 'Earlier ion stopped this: "npm publish". The user now allows it.',
       request: "Ship it",
       answers: expect.any(String),
-      shown: "Always allow in this project",
+      shown: "Allow",
     });
   });
 });
@@ -561,7 +552,7 @@ describe("always allow, exactly", () => {
     expect(need!.detail).toBe(
       'ion thinks this is risky: Publishes the package\n\n{\n  "command": "npm publish",\n  "run_in_background": true\n}',
     );
-    await d.answer(need!.needId, 2);
+    await d.answer(need!.needId, 1, "project");
     await waiting;
     expect(d.alwaysAllowed("app", "c2", block.key)).toBe(true);
     expect(d.alwaysAllowed("app", "c2", 'Bash {"command":"npm publish --tag x"}')).toBe(false);
@@ -572,7 +563,7 @@ describe("always allow, exactly", () => {
 });
 
 describe("always allow, only for what you can see", () => {
-  it("doesn't offer 'Always allow' when the input was cut", async () => {
+  it("doesn't offer Remember when the input was cut", async () => {
     const d = new Decisions({ store, db, needs, followUp, blockedWaitMs: 2000 });
     const waiting = d.askBlocked(scope(), {
       requestId: "g10",
@@ -583,8 +574,10 @@ describe("always allow, only for what you can see", () => {
       cut: true,
     });
     const [need] = needs.open("c1");
-    expect(need!.choices!.map((c) => c.label)).toEqual(["Allow once", "Don't allow"]);
-    await d.answer(need!.needId, 2);
+    expect(need!.choices!.map((c) => c.label)).toEqual(["Allow", "Don't allow"]);
+    expect(need!.noRemember).toBe(true);
+    await d.answer(need!.needId, 2, "project");
     expect(await waiting).toBe("deny");
+    expect(d.saidNever("app", "c1", "Bash big")).toBeNull();
   });
 });

@@ -6,11 +6,13 @@ import { describe, expect, it, vi } from "vitest";
 import { runEnv } from "./run-env.js";
 import {
   agentConfigs,
+  gitSandbox,
   ionDenied,
   launchSandbox,
   machineSandbox,
   notSandboxed,
   runSandbox,
+  serverSandbox,
 } from "./sandbox.js";
 
 // The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files: ion's data, config and cache folders
@@ -84,6 +86,15 @@ describe("a run's sandbox", () => {
       join(home, "skills"),
       "/c/ion",
     ]);
+  });
+
+  // Re-review, 2026-11-21: ion's servers and git kept every agent's config writable (a planted git filter wrote
+  // ~/.codex/notify.sh). Both keep them read-only, as runs do.
+  it("keeps every agent's config read-only for ion's servers and git", () => {
+    const env = { HOME: "/h", GROK_HOME: "/g" };
+    const all = ["/h/.codex", "/h/.claude", "/h/.claude.json", "/h/.config/opencode", "/h/.opencode", "/g"];
+    expect(serverSandbox(o, "seatbelt", env)?.paths.noWrite).toEqual(all);
+    expect(gitSandbox(o, "seatbelt", env)?.paths.noWrite).toEqual(all);
   });
 
   // The user, 2026-11-21: "Neither available: the run still starts", Settings says "Not sandboxed", logged once.

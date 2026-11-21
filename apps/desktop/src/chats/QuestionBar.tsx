@@ -94,19 +94,24 @@ function Details(p: {
       ))}
       <div className="qd-f">
         <OwnAnswer busy={p.busy} onSend={(text) => p.answer({ text })} />
-        {!p.q.blocked && (
-          <label title="Always for this project">
-            <input
-              type="checkbox"
-              aria-label="Always for this project"
-              checked={p.always}
-              onChange={(e) => p.setAlways(e.target.checked)}
-            />
-            Always
-          </label>
-        )}
+        <Keep q={p.q} on={p.always} set={p.setAlways} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Keeping the answer: Always (for this project) on an agent's question; Remember on a call ion stopped (the user,
+ * 2026-11-21: kept for this exact action in this project), none when its input was cut.
+ */
+function Keep({ q, on, set }: { q: Question; on: boolean; set: (v: boolean) => void }) {
+  if (q.blocked && q.noRemember) return null;
+  const [label, word] = q.blocked ? ["Remember", "Remember"] : ["Always for this project", "Always"];
+  return (
+    <label title={label}>
+      <input type="checkbox" aria-label={label} checked={on} onChange={(e) => set(e.target.checked)} />
+      {word}
+    </label>
   );
 }
 
@@ -170,7 +175,7 @@ export function QuestionBar({ client, question: raw }: { client: IonClient; ques
   const [open, setOpen] = useState(true);
   const { error, busy, answer } = useAnswer(client, question.needId);
   if (question.resolved) return null;
-  const send: Answer = (pick) => void answer(pick, always && !question.blocked);
+  const send: Answer = (pick) => void answer(pick, always && !question.noRemember);
   return (
     <div className="qbox" role="group" aria-label="Question">
       <div className="qhead">
