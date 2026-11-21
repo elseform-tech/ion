@@ -118,7 +118,7 @@ const PROGRESS = new Set([
  * The silence check (task review, 2026-11-21): rolling, reset by each bit of progress, paused while ion holds a
  * permission; past its time the turn fails with the agent's own logged reason when it gave one, else `why`.
  */
-function silence(
+export function silence(
   silent: { ms: number; why: string } | undefined,
   c: Connection,
   fail: (why: string) => void,
@@ -126,6 +126,8 @@ function silence(
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** Why the check is paused: a call ion holds, a tool still running (re-review, 2026-11-21). */
   const paused = new Set<string>();
+  /** Pauses that end by themselves (a tool whose update never comes), by why. */
+  const limits = new Map<string, ReturnType<typeof setTimeout>>();
   const start = () => {
     clearTimeout(timer);
     if (!silent || paused.size) return;
@@ -135,11 +137,18 @@ function silence(
   };
   return {
     heard: start,
-    pause(why: string) {
+    /** maxMs: the pause ends by itself after this long (task review, 2026-11-21). */
+    pause(why: string, maxMs?: number) {
       paused.add(why);
       clearTimeout(timer);
+      if (maxMs === undefined || limits.has(why)) return;
+      const limit = setTimeout(() => this.resume(why), maxMs);
+      limit.unref();
+      limits.set(why, limit);
     },
     resume(why: string) {
+      clearTimeout(limits.get(why));
+      limits.delete(why);
       if (paused.delete(why)) start();
     },
   };
@@ -158,12 +167,15 @@ async function held<T>(quiet: Quiet, answer: Promise<T>): Promise<T> {
   }
 }
 
-/** A tool call that's running pauses the check until its update says it's done. */
+/** The longest a running tool pauses the check: past it, a lost update doesn't keep a stuck run waiting. */
+const TOOL_PAUSE_MS = 30 * 60_000;
+
+/** A tool call that's running pauses the check until its update says it's done (at most TOOL_PAUSE_MS). */
 function trackTools(u: Record<string, unknown>, quiet: Quiet): void {
   const id = `tool:${String(u.toolCallId ?? "")}`;
   const status = String(u.status ?? "");
   if (status === "completed" || status === "failed") quiet.resume(id);
-  else if (u.sessionUpdate === "tool_call") quiet.pause(id);
+  else if (u.sessionUpdate === "tool_call") quiet.pause(id, TOOL_PAUSE_MS);
 }
 
 export function startAcpSession(

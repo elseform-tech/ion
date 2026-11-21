@@ -86,13 +86,20 @@ describe("ion's bridge to your local MCP servers", () => {
     expect(existsSync(folder)).toBe(false);
   });
 
-  // Re-review, 2026-11-21: a repo's own server you allowed for this chat is the repo's code: it runs from the chat's
-  // folder (so `node ./srv.js` works); yours still run from ion's own folder.
-  it("a repo's server you allowed for this chat runs from the chat's folder", async () => {
-    const { b, worktree } = bridge({}, { over: { inWorktree: true } });
+  // Security review, 2026-11-21: a repo's server you allowed ran from the chat's worktree, where the agent can
+  // rewrite its code after you said yes and ion would run it outside the agent's gate. It runs from the project's own
+  // folder (the checkout ion read its .mcp.json from, which chats don't write); yours still run from ion's folder.
+  it("a repo's server you allowed for this chat runs from the project folder, never the worktree", async () => {
+    const project = mkdtempSync(join(tmpdir(), "ion-bridge-proj-"));
+    const { b, worktree } = bridge({}, { over: { cwd: project } });
     const who = said(await tool(b, "whoami")) as Who;
-    expect(realpathSync(who.cwd)).toBe(realpathSync(worktree));
-    expect(who.env.PWD).toBe(worktree);
+    expect(realpathSync(who.cwd)).toBe(realpathSync(project));
+    expect(realpathSync(who.cwd)).not.toBe(realpathSync(worktree));
+    expect(who.env.PWD).toBe(project);
+    // ${ION_WORKTREE} is for your own servers only: a repo's names its own folder, never the worktree.
+    const named = bridge({ WHERE: "${ION_WORKTREE}" }, { over: { cwd: project } });
+    const env = (said(await tool(named.b, "whoami")) as Who).env;
+    expect(env.WHERE).toBe(project);
   });
 
   it("a relative script or module planted in the worktree never runs", async () => {

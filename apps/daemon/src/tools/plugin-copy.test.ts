@@ -165,3 +165,17 @@ describe("front matter ion won't guess at", () => {
     expect(lines).toHaveLength(3);
   });
 });
+
+// Task review, 2026-11-21: a manifest naming a component file ("agents": ["./agents/a.md"]) was copied onto
+// `<copy>/agents` itself, clashing with the agents/ folder. A file goes to `<copy>/<kind>/<its name>`.
+describe("a manifest that names a component file", () => {
+  it("writes the file inside the kind's folder, next to an existing agents/ folder", async () => {
+    const { home, root } = plugin({ name: "kit", agents: ["./extra/a.md"] });
+    put(join(root, "agents", "b.md"), "---\nname: b\n---\nB.");
+    put(join(root, "extra", "a.md"), "---\nname: a\n---\nA.");
+    const to = join(home, "copy");
+    await copyWithoutHooks(root, to, "kit", []);
+    expect(readdirSync(join(to, "agents")).sort()).toEqual(["a.md", "b.md"]);
+    expect(readFileSync(join(to, "agents", "a.md"), "utf8")).toContain("A.");
+  });
+});

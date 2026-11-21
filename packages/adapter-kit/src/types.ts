@@ -36,8 +36,11 @@ export type McpSpec =
       command: string;
       args: string[];
       env: Record<string, string>;
-      /** A repo's own server you allowed for this chat: it runs from the chat's folder (it's the repo's code). */
-      inWorktree?: true;
+      /**
+       * A repo's own server you allowed for this chat: it runs from the project's own folder (the checkout ion read
+       * its .mcp.json from, which chats don't write), never the chat's worktree (security review, 2026-11-21).
+       */
+      cwd?: string;
     };
 
 /** A remote (Streamable HTTP) MCP server: the only kind a run's agent is given (a local one is ion's URL for it). */

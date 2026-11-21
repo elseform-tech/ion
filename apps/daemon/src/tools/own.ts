@@ -272,11 +272,23 @@ const pluginServers = (p: FoundPlugin, dataRoot: string): Entry[] => {
  * A plugin as the run takes it: always ion's copy in the run's folder, built from a whitelist without hooks
  * (plugin-copy.ts). Hooks stay ion's (the user, 2026-11-21).
  */
-async function withoutHooks(p: FoundPlugin, dir: string, n: number, lines: string[]): Promise<string> {
+async function withoutHooks(
+  p: FoundPlugin,
+  dir: string,
+  n: number,
+  lines: string[],
+): Promise<string | null> {
   const from = p.path ?? "";
   const to = join(dir, `${n}-${p.name.replace(SAFE, "-")}`);
-  await copyWithoutHooks(from, to, p.name, lines);
-  return to;
+  // One plugin that can't be copied is left out with a line; the run still starts (task review, 2026-11-21).
+  try {
+    await copyWithoutHooks(from, to, p.name, lines);
+    return to;
+  } catch {
+    lines.push(`${p.name}: left out (ion couldn't copy it)`);
+    await rm(to, { recursive: true, force: true }).catch(() => {});
+    return null;
+  }
 }
 
 /**
@@ -306,13 +318,19 @@ function filled(name: string, v: unknown, env: Env): { spec: McpSpec; secrets: s
 
 /**
  * A server as a run takes it: a repo's isn't even filled until you turned it on, and a repo's local one, allowed for
- * this chat, runs from the chat's folder (it's the repo's own code).
+ * this chat, runs from the project's own folder (its code as you allowed it), never the chat's worktree, which the
+ * agent can rewrite (security review, 2026-11-21).
  */
-async function taken(name: string, v: unknown, repo: true | undefined, o: { env: Env; repoOn: RepoOn }) {
+async function taken(
+  name: string,
+  v: unknown,
+  repo: true | undefined,
+  o: { env: Env; repoOn: RepoOn; project: string },
+) {
   if (repo && !(await o.repoOn(name, v))) return null;
   const got = filled(name, v, o.env);
   if (!got || !repo || got.spec.transport !== "stdio") return got;
-  return { ...got, spec: { ...got.spec, inWorktree: true as const } };
+  return { ...got, spec: { ...got.spec, cwd: o.project } };
 }
 
 /**
@@ -361,5 +379,5 @@ export async function claudeOwnForRun(o: {
   for (const p of plugins.filter((x) => Object.keys(x.servers ?? {}).length))
     await mkdir(join(dataRoot, p.name.replace(SAFE, "-")), { recursive: true, mode: 0o700 });
   const paths = await Promise.all(plugins.map((p, i) => withoutHooks(p, o.dir, i, lines)));
-  return { servers, plugins: paths, secrets, lines };
+  return { servers, plugins: paths.filter((x): x is string => x !== null), secrets, lines };
 }

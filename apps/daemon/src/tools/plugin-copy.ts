@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { isMap, isScalar, parseDocument, Scalar, stringify, visit } from "yaml";
 
 /**
@@ -96,6 +96,7 @@ async function walk(w: Walk, src: string, dst: string, depth: number): Promise<v
     return;
   }
   if (!st.isFile()) return;
+  await mkdir(dirname(dst), { recursive: true, mode: 0o700 });
   if (!MARKDOWN.test(src)) return copyFile(real, dst);
   const text = withoutHooksKey(readFileSync(real, "utf8"));
   if (text === null) return say("its front matter can't be read");
@@ -126,6 +127,15 @@ function foldersOf(root: string, manifest: Record<string, unknown>, kind: string
   return [...new Set([...defaults, ...given.map((p) => resolve(root, p))])];
 }
 
+/** Where a component entry goes: a folder becomes the kind's folder; a file goes inside it, by its own name. */
+function targetOf(src: string, kindDir: string): string {
+  try {
+    return statSync(src).isDirectory() ? kindDir : join(kindDir, basename(src));
+  } catch {
+    return kindDir; // walk says why it's left out
+  }
+}
+
 /** Writes ion's copy of the plugin at `from` to `to` (see above). */
 export async function copyWithoutHooks(
   from: string,
@@ -138,7 +148,7 @@ export async function copyWithoutHooks(
   await mkdir(join(to, ".claude-plugin"), { recursive: true, mode: 0o700 });
   for (const kind of KINDS)
     for (const folder of foldersOf(root, manifest, kind))
-      await walk({ root, name, lines }, folder, join(to, kind), 0);
+      await walk({ root, name, lines }, folder, targetOf(folder, join(to, kind)), 0);
   const kept = Object.fromEntries(
     ["name", "version", "description"]
       .filter((k) => typeof manifest[k] === "string")

@@ -72,13 +72,14 @@ describe("a repo's local servers ask in each chat", () => {
     };
     const own = runOwnOf({ home, dataDir: join(root, "data"), configFile, env: {}, sign, ask });
     const run = (chatId: string, runId: string) =>
-      own.forRun({ runId, chatId, harness: "claude-code", projectId: "shop", cwd: project });
+      own.forRun({ runId, chatId, harness: "claude-code", projectId: "shop", cwd: join(root, "wt") });
     const names = async (chatId: string, runId: string) =>
       (await run(chatId, runId)).ownServers?.map((s) => s.name);
     expect(await names("c1", "r1")).toEqual(["local", "pkg", "remote"]);
-    // Re-review, 2026-11-21: a repo's local server runs from the chat's folder (it's the repo's code, allowed here).
+    // Security review, 2026-11-21: a repo's local server runs from the project's own folder, never the chat's
+    // worktree (the agent could rewrite it there after you said yes).
     const specs = (await run("c1", "r1b")).ownServers ?? [];
-    expect(specs.find((s) => s.name === "local")).toMatchObject({ inWorktree: true });
+    expect(specs.find((s) => s.name === "local")).toMatchObject({ cwd: project });
     expect(await names("c1", "r2")).toEqual(["local", "pkg", "remote"]);
     expect(asked).toEqual([
       `c1: shop's .mcp.json wants to run "local" from the repo`,

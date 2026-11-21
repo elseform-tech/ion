@@ -442,3 +442,42 @@ describe("names and ${ION_WORKTREE} in an agent's own servers", () => {
     expect(own.lines).toContain("ION: left out (the name ion is ion's own)");
   });
 });
+
+// Task review, 2026-11-21: one plugin that couldn't be copied failed the whole run. It's left out with one line.
+describe("a plugin ion can't copy", () => {
+  it("is left out with one line, and the others still come", async () => {
+    const home = mkdtempSync(join(tmpdir(), "ion-plugbad-"));
+    const put = (p: string, t: string) => {
+      mkdirSync(join(p, ".."), { recursive: true });
+      writeFileSync(p, t);
+    };
+    const good = join(home, "good");
+    const bad = join(home, "bad");
+    put(join(good, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "good" }));
+    put(join(good, "skills", "s", "SKILL.md"), "---\nname: s\n---\nS.");
+    put(bad, "not a folder");
+    put(
+      join(home, ".claude", "plugins", "installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          "good@m": [{ scope: "user", installPath: good }],
+          "bad@m": [{ scope: "user", installPath: bad }],
+        },
+      }),
+    );
+    put(
+      join(home, ".claude", "settings.json"),
+      JSON.stringify({ enabledPlugins: { "good@m": true, "bad@m": true } }),
+    );
+    const own = await claudeOwnForRun({
+      home,
+      env: {},
+      project: join(home, "app"),
+      dir: join(home, "data", "own"),
+      repoOn: async () => false,
+    });
+    expect(own.plugins).toHaveLength(1);
+    expect(own.lines.filter((l) => l.startsWith("bad"))).toEqual(["bad: left out (ion couldn't copy it)"]);
+  });
+});

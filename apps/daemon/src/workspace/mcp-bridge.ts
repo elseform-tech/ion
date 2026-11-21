@@ -85,9 +85,13 @@ function serverEnv(spec: StdioSpec, cwd: string): Record<string, string> {
 /** `${ION_WORKTREE}` written in mcp.json, as it reaches ion's bridge (left unfilled until the run). */
 const WORKTREE_REF = /\$\{ION_WORKTREE\}/g;
 
-/** The server with `${ION_WORKTREE}` filled with the chat's folder. */
+/**
+ * The server with `${ION_WORKTREE}` filled with the chat's folder; a repo's server (it runs from the project's folder)
+ * gets that folder instead: the agent can rewrite the worktree (security review, 2026-11-21).
+ */
 function withWorktree(spec: StdioSpec, worktree = ""): StdioSpec {
-  const fill = (t: string) => t.replace(WORKTREE_REF, () => worktree);
+  const where = spec.cwd ?? worktree;
+  const fill = (t: string) => t.replace(WORKTREE_REF, () => where);
   const env = Object.fromEntries(Object.entries(spec.env).map(([k, v]) => [k, fill(v)]));
   return { ...spec, command: fill(spec.command), args: spec.args.map(fill), env };
 }
@@ -176,9 +180,9 @@ class Local implements LocalServer {
     this.o.stopped(this.spec.name, why);
   }
 
-  /** Where it runs: ion's own folder for the run; a repo's server you allowed here, the chat's folder. */
+  /** Where it runs: ion's own folder for the run; a repo's server you allowed here, the project's own folder. */
   private cwd(): string {
-    return this.spec.inWorktree && this.o.worktree ? this.o.worktree : this.o.folder;
+    return this.spec.cwd ?? this.o.folder;
   }
 
   private async start(): Promise<Client | null> {
