@@ -1,4 +1,5 @@
-//! ion's desktop shell. It only tells the UI where the daemon is (port and token from `daemon.json`);
+//! ion's desktop shell. It tells the UI where the daemon is (port and token from `daemon.json`) and opens two
+//! things for it: your mcp.json in your editor (that one file, nothing else) and sign-in pages in your browser;
 //! everything else goes through the daemon's WebSocket API.
 
 use std::path::PathBuf;
@@ -20,6 +21,19 @@ pub fn data_dir(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
         return Some(PathBuf::from(xdg).join("ion"));
     }
     set("HOME").map(|h| PathBuf::from(h).join(".local").join("share").join("ion"))
+}
+
+/// Your mcp.json, beside the config file, in the same order as `ionPaths()` / `mcpFileOf()` in @ion/config:
+/// `$ION_HOME/mcp.json`, else `$XDG_CONFIG_HOME/ion/mcp.json`, else `~/.config/ion/mcp.json`.
+pub fn mcp_file(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let set = |k: &str| env(k).filter(|v| !v.is_empty());
+    if let Some(home) = set("ION_HOME") {
+        return Some(PathBuf::from(home).join("mcp.json"));
+    }
+    let config = set("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| set("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+    Some(config.join("ion").join("mcp.json"))
 }
 
 /// The running daemon's port and token, or None when ion isn't running (no file, or one ion can't read).
@@ -49,6 +63,23 @@ fn daemon_info() -> Option<DaemonInfo> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            // The window may open one file: your mcp.json (Settings → Tools → Open config file).
+            if let Some(file) = mcp_file(|k| std::env::var(k).ok()) {
+                use tauri::Manager;
+                app.add_capability(
+                    tauri::ipc::CapabilityBuilder::new("mcp-file")
+                        .window("main")
+                        .permission_scoped(
+                            "opener:allow-open-path",
+                            vec![serde_json::json!({ "path": file })],
+                            vec![],
+                        ),
+                )?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![daemon_info, user_initial])
         .run(tauri::generate_context!())
         .expect("ion couldn't open its window");
@@ -71,6 +102,15 @@ mod tests {
         assert_eq!(data_dir(env(&[("XDG_DATA_HOME", "/x"), ("HOME", "/h")])), Some(PathBuf::from("/x/ion")));
         assert_eq!(data_dir(env(&[("HOME", "/h")])), Some(PathBuf::from("/h/.local/share/ion")));
         assert_eq!(data_dir(env(&[("ION_HOME", ""), ("HOME", "/h")])), Some(PathBuf::from("/h/.local/share/ion")));
+    }
+
+    #[test]
+    fn mcp_file_is_beside_the_config_file() {
+        let all = env(&[("ION_HOME", "/i"), ("XDG_CONFIG_HOME", "/x"), ("HOME", "/h")]);
+        assert_eq!(mcp_file(all), Some(PathBuf::from("/i/mcp.json")));
+        assert_eq!(mcp_file(env(&[("XDG_CONFIG_HOME", "/x"), ("HOME", "/h")])), Some(PathBuf::from("/x/ion/mcp.json")));
+        assert_eq!(mcp_file(env(&[("HOME", "/h")])), Some(PathBuf::from("/h/.config/ion/mcp.json")));
+        assert_eq!(mcp_file(env(&[])), None);
     }
 
     #[test]

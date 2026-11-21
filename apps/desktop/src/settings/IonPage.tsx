@@ -32,11 +32,6 @@ export const EFFORTS = [
   ["max", "Max"],
 ] as const;
 
-export const ACCESS = [
-  ["auto", "Auto"],
-  ["full", "Full access"],
-] as const;
-
 export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="srow">
@@ -236,7 +231,7 @@ function Profile({ project, patch }: Pick<SetupProps, "project" | "patch">) {
   );
 }
 
-/** The project's folder and rules: access, and whether ion chief may read it. */
+/** The project's folder and rules: whether ion chief may read it. */
 function Rules({ project, patch, error }: Pick<SetupProps, "project" | "patch"> & { error: ReactNode }) {
   const share = project.shareWithIon !== false;
   return (
@@ -247,20 +242,6 @@ function Rules({ project, patch, error }: Pick<SetupProps, "project" | "patch"> 
           <span className="chip mono">{project.path}</span>
         </Row>
         <Profile project={project} patch={patch} />
-        <Row label="Access">
-          <span className="seg sm">
-            {ACCESS.map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={(project.access ?? "auto") === id ? "on" : ""}
-                onClick={() => patch({ access: id })}
-              >
-                {label}
-              </button>
-            ))}
-          </span>
-        </Row>
         <Row label="Share with ion">
           <button
             type="button"

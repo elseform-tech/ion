@@ -15,10 +15,10 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/adapters/acp` | Any ACP agent: Grok Build (`grok agent stdio`), opencode (`opencode acp`). |
 | `packages/adapters/codex` | Codex through its app-server (`codex app-server`, JSON-RPC on stdio). |
 | `packages/adapters/fake` | Scripted harness for tests (`ION_ALLOW_FAKE=1`). |
-| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries; `src/access` decides Auto (rules, then a judge model); `src/gate` takes every tool call from each harness's own hook before it runs; `src/decisions` keeps your answers to agents' questions and what came of them; `src/needs` holds questions only you can answer; `src/ions` is ion chief and the project ions (messages, routing, questions in ion threads; turns: agent sessions with ion's tools; the ion gate: reading only); `src/scheduler` queues runs and runs routines when due; `src/queue` holds your next messages per chat and ion (sent when the work ends; Stop holds them); `src/workspace` owns git worktrees; `src/mcp` is ion's MCP server for runs and ions' turns (history, needs, memory, ask, decisions; ions' own tools; a key per run or turn); `src/adapters/registry.ts` is the only place adapters load. |
-| `apps/cli` | The `ion` command. |
-| `scripts/tour.sh` | The UX tour: a fresh ion with every chat state, for the tour every UI PR runs (see Rules). |
-| `apps/desktop` | The desktop app: Tauri 2 shell (`src-tauri`: where the daemon is, and your initial) and a React UI that only displays the daemon's state (Chats screen). |
+| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries (`ion-bin.ts`: ion's own `ion` launcher, first on every run's PATH); `src/access` holds what every mode refuses (ion's files, your secrets, environment dumps, the run's key) and decides Auto (rules, then a judge model); a guess (`scripts.ts` reads what a command runs) goes to the judge with the scripts' text, or asks you in Full; `src/gate` takes every tool call from each harness's own hook before it runs; `src/decisions` keeps your answers to agents' questions and what came of them; `src/needs` holds questions only you can answer; `src/ions` is ion chief and the project ions (messages, routing, questions in ion threads; turns: agent sessions with ion's tools; the ion gate: reading only); `src/scheduler` queues runs and runs routines when due; `src/queue` holds your next messages per chat and ion (sent when the work ends; Stop holds them); `src/workspace` owns git worktrees and runs your local (stdio) MCP servers for each run (`mcp-bridge.ts`); `src/tools` reads your MCP servers from `mcp.json`, adds to it (`ion mcp add`: off, the file kept standard) and looks servers up in the official MCP Registry (public addresses only); `src/api/tools-cli.ts` is ion's commands for tools (`ion mcp|skills|hooks search/add/verify/doctor/remove/ls`), which a chat's agent reaches with its run's key (`ION_RUN_KEY`: those commands only, never turning anything on); `src/secrets` keeps keys in the OS keychain and OAuth tokens in a vault keyed from it (sign-in, consent marks); `src/hooks` runs your hooks on ion's events (Before a tool runs included); `src/api/tools-import.ts` is Import from your agents' own configs (`ION_AGENTS_HOME` moves that reading); `src/skills` finds your agents' skills and makes each Claude Code run's plugin of the ones on (in the data folder, removed at run end); `src/mcp` is ion's MCP server for runs and ions' turns (history, needs, memory, ask, decisions; ions' own tools; a key per run or turn); `src/gateway` is ion's gateway to your MCP servers, remote and local (`/mcp/s/<name>`: a run's key only, your keys or tokens added by ion, every tool call gated); `src/adapters/registry.ts` is the only place adapters load. |
+| `apps/cli` | The `ion` command (inside a chat, with `ION_RUN_KEY`: ion's commands for tools only). |
+| `scripts/tour.sh` | The UX tour: a fresh ion with every chat and Tools state and a fake agents home, for the tour every UI PR runs (see Rules). `ION_TOUR_HOME` for another home, `ION_TOUR_APP` for another app address. |
+| `apps/desktop` | The desktop app: Tauri 2 shell (`src-tauri`: where the daemon is, your initial, and the opener: your mcp.json in your editor, sign-in pages (https) in your browser) and a React UI that only displays the daemon's state (Chats screen). |
 | `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`, `ion/no-model-names`). |
 
 ## Walls
@@ -33,7 +33,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/schema` | nothing | everything |
 
 Also enforced: model names only in adapters (each harness lists its own; `ion/no-model-names`); the daemon imports adapters only in `apps/daemon/src/adapters/registry.ts`; event type strings only in `packages/schema` (use `EV.*`); SQLite only in `apps/daemon/src/store`;
-child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter-kit` and `apps/cli/src/daemon-control.ts`.
+child processes only in `apps/daemon/src/workspace`, `apps/daemon/src/secrets` (the keychain CLIs: `security`, `secret-tool`), adapters, `packages/adapter-kit` and `apps/cli/src/daemon-control.ts`.
 
 ## Rules
 
@@ -41,7 +41,8 @@ child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter
   with a comment saying what broke (who found it and when, or the issue number).
 - No real model calls in tests. Live tests are opt-in: `ION_LIVE=1` (opencode, free model), `ION_LIVE_GROK=1`,
   `ION_LIVE_CLAUDE=1`, `ION_LIVE_CODEX=1`. The live evals (`apps/daemon/src/evals`) check ion's promises on each real agent; see
-  `docs/research/acp-and-harnesses.md`.
+  `docs/research/acp-and-harnesses.md`; the judge evals (`judge.test.ts`) run Auto's judge on labelled cases, see
+  `docs/research/judge-evals.md`.
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints. Prefer an icon (with its name on hover)
   to a word, and fewer boxes.
 - **Run a tour before every PR that changes what people see** (the desktop app, CLI output). `scripts/tour.sh`
@@ -50,7 +51,8 @@ child processes only in `apps/daemon/src/workspace`, adapters, `packages/adapter
   - open every screen and state at 1440×900 and 900×700, and click what a person would: each chat, the work
     blocks and their steps, the brain popover, access, the question panel (open and collapsed), the side panel and
     its tabs, the sidebar's project menu, the drag handles, the rail, the Ions screen (each ion, stars, the
-    project picker, the chats an ion started), a run's changed files;
+    project picker, the chats an ion started), a run's changed files, Settings → Tools (each tab, Import's preview, a
+    hook added and removed, a server turned on: Sign in / Add key), Agents;
   - send a real message from a new chat, and a follow-up, with opencode's free model, and watch it run; message
     ion chief and a project's ion, and answer a question an agent asks;
   - run the CLI's main commands (`ion --help`, `status`, `projects`, `chats`, `needs`);

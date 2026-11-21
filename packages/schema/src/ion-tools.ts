@@ -21,4 +21,5 @@ export const ION_ION_TOOLS = [
   "decisions",
   "set_profile",
   "start_thread",
+  "tools",
 ] as const;

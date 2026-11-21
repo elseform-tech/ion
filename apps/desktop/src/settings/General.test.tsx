@@ -1,24 +1,20 @@
 // @vitest-environment jsdom
 import { ApiCallError } from "@ion/client/browser";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "./Settings.js";
 import { settings, settingsClient } from "./testing.js";
 
 afterEach(cleanup);
 
-// The user, 2026-11-19: "also build the settings as well… general… notifications, shortcuts…". General holds the
-// default access and how many chats run at once ("use chat instead of runs, use easier to understand language");
+// The user, 2026-11-19: "also build the settings as well… general… notifications, shortcuts…". General holds how
+// many chats run at once ("use chat instead of runs, use easier to understand language");
 // the projects folder is fixed and debug mode is for people working on ion: neither is here.
 describe("Settings → General", () => {
-  it("shows and saves access and chats at once", async () => {
+  it("shows and saves chats at once", async () => {
     const c = settingsClient({ now: { ...settings, maxRuns: 2 } });
     render(<Settings client={c} onOpenIon={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
-    const access = await screen.findByRole("group", { name: "Default access" });
-    expect(within(access).getByRole("button", { name: "Auto" }).className).toContain("on");
-    fireEvent.click(within(access).getByRole("button", { name: "Full access" }));
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { access: "full" } });
     expect(await screen.findByText("Chats at once")).toBeTruthy();
     expect(screen.getByLabelText("Chats at once").textContent).toBe("2");
     fireEvent.click(screen.getByRole("button", { name: "More" }));
@@ -26,6 +22,17 @@ describe("Settings → General", () => {
     fireEvent.click(screen.getByRole("button", { name: "Less" }));
     expect(c.call).toHaveBeenLastCalledWith("settings.set", { patch: { maxRuns: 2 } });
     for (const gone of [/folder/i, /debug/i, /runs/i, /max/i]) expect(screen.queryByText(gone)).toBeNull();
+  });
+
+  // The user, 2026-11-20: "auto-approval should not be allowed to be disabled in settings, never settings, only
+  // through switching the access icon in composer". General has no Default access.
+  it("General has no Default access", async () => {
+    render(<Settings client={settingsClient()} onOpenIon={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "General" }));
+    await screen.findByText("Chats at once");
+    expect(screen.queryByText("Default access")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Default access" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Full access" })).toBeNull();
   });
 
   let lastClient: ReturnType<typeof settingsClient> | null = null;

@@ -11,4 +11,10 @@ export const ION_INSTRUCTIONS = [
   "ion's memory_list holds what earlier chats in this project learned: check it when the work depends on the",
   "project's conventions, and save lasting facts the user tells you with memory_write.",
   "When you need several read-only lookups, chain them into one command with && rather than one call each.",
+  "To add an MCP server, skill or hook, use ion's own commands, never an agent's config: `ion mcp search <name>`",
+  "shows the official registry's install command, keys and source (copy them, never guess), then",
+  "`ion mcp add <name> --command <cmd> --arg <arg>… | --url <url>` with `--env 'NAME=${NAME}'` or",
+  "`--header 'Authorization: Bearer ${NAME}'` for keys (single quotes, so your shell leaves ${NAME} alone) and",
+  "`--from <registry id>`; likewise `ion skills add` and `ion hooks add` (see `ion <kind> --help`). Never put a key",
+  "in a command. What you add starts off: the user turns it on, and signs in, in ion's Settings → Tools.",
 ].join(" ");

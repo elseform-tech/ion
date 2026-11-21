@@ -78,6 +78,8 @@ export const toolFinished = (t: Timeline, d: D): Timeline =>
   updateTool(t, str(d.toolId), (x) => ({
     ...x,
     ok: d.ok === true,
+    // What the step did, when the harness only knew it at the end (opencode's command; tour, 2026-11-21).
+    ...(str(d.summary) ? { summary: str(d.summary) } : {}),
     ...(d.input ? { input: str(d.input) } : {}),
   }));
 

@@ -1,3 +1,4 @@
+import { answerWithin } from "../access/runner.js";
 import type { NeedInfo } from "@ion/schema";
 import { wrapData } from "../context/index.js";
 import type { AskInput } from "../decisions/match.js";
@@ -32,16 +33,17 @@ export function parseSame(text: string, waiting: NeedInfo[]): string | null {
 }
 
 /** "Same question?" on a quick model; a failure or a slow answer is "no" (the question comes to you). */
-export function createSame(run: (prompt: string, signal: AbortSignal) => Promise<string>) {
+export function createSame(
+  run: (prompt: string, signal: AbortSignal) => Promise<string>,
+  timeoutMs = TIMEOUT_MS,
+) {
   return async (q: AskInput, waiting: NeedInfo[]): Promise<string | null> => {
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
     try {
-      return parseSame(await run(samePrompt(q, waiting), abort.signal), waiting);
+      // It stops waiting at the time even when the model ignores the abort (tour, 2026-11-21).
+      const out = await answerWithin(run, samePrompt(q, waiting), timeoutMs);
+      return out === null ? null : parseSame(out, waiting);
     } catch {
       return null;
-    } finally {
-      clearTimeout(timer);
     }
   };
 }

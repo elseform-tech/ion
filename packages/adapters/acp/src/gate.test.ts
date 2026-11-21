@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { OPENCODE_PLUGIN } from "./gate.js";
 import { GROK_BUILD, OPENCODE } from "./harnesses.js";
 
 const url = `http://127.0.0.1:1/gate/${"a".repeat(64)}`;
@@ -89,12 +90,17 @@ describe("Grok's gate hook", () => {
 describe("opencode's gate plugin", () => {
   it("loads ion's plugin through ion's own config, with the gate URL", () => {
     const env = OPENCODE.env!({ url, cwd: "/x" });
-    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? "{}");
+    const configOf = (e: Record<string, string>) =>
+      JSON.parse(readFileSync(join(e.XDG_CONFIG_HOME ?? "", "opencode", "opencode.json"), "utf8"));
+    const config = configOf(env);
     const plugin = String(config.plugin.at(-1));
     expect(plugin).toMatch(/^file:\/\/.*\/plugin\/ion-gate\.js$/);
     expect(existsSync(fileURLToPath(plugin))).toBe(true);
     expect(env.ION_GATE_URL).toBe(url);
-    expect(JSON.parse(OPENCODE.env!().OPENCODE_CONFIG_CONTENT ?? "{}").plugin).toBeUndefined();
+    // Without a gate it's still listed (it does nothing with no ION_GATE_URL), and there's no gate address.
+    const bare = OPENCODE.env!();
+    expect(configOf(bare).plugin).toEqual([config.plugin.at(-1)]);
+    expect(bare.ION_GATE_URL).toBeUndefined();
   });
 
   it("reads opencode's plugin payload as a tool call", () => {
@@ -126,5 +132,32 @@ describe("opencode's gate plugin", () => {
         mcpServer: "ion",
       });
     expect(OPENCODE.toCall!({})).toBeNull();
+  });
+});
+
+// The user, 2026-11-21: only ion's tools in ion's chats. opencode runs with ion's own config folder (no servers or
+// plugins of yours); the commands it runs get yours back, and never the gate's address.
+describe("opencode's plugin for the commands it runs", () => {
+  it("gives commands your config folder back, and keeps the gate's address from them", async () => {
+    const mod = (await import(OPENCODE_PLUGIN)) as {
+      IonGate: () => Promise<
+        Record<string, (i: unknown, o: { env: Record<string, string> }) => Promise<void>>
+      >;
+    };
+    const was = { ...process.env };
+    process.env.ION_XDG_CONFIG_HOME = "/home/me/.config";
+    process.env.ION_GATE_URL = url;
+    try {
+      const out = { env: {} as Record<string, string> };
+      await (await mod.IonGate())["shell.env"]!({ cwd: "/" }, out);
+      // Task review, 2026-11-21: the blanking itself is checked, not only that the hook exists.
+      expect(out.env).toEqual({
+        XDG_CONFIG_HOME: "/home/me/.config",
+        ION_GATE_URL: "",
+        OPENCODE_CONFIG_CONTENT: "",
+      });
+    } finally {
+      process.env = was;
+    }
   });
 });

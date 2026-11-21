@@ -9,7 +9,6 @@ import {
   projectNameError,
   removeProject,
   renameProject,
-  setProjectAccess,
 } from "./index.js";
 
 const repo = (name: string) => {
@@ -47,14 +46,9 @@ describe("addProject", () => {
 });
 
 describe("access", () => {
-  it("defaults to Auto, and a project can have its own", () => {
-    expect(DEFAULT_CONFIG.access.default).toBe("auto");
+  it("has the judge only: no default and no per-project access", () => {
     // The judge is a small model by default: it runs for every new action in Auto.
-    expect(DEFAULT_CONFIG.access.judge).toBe("claude-code:haiku");
-    const c = addProject(DEFAULT_CONFIG, repo("app"));
-    expect(c.projects[0]!.access).toBeUndefined();
-    expect(setProjectAccess(c, "app", "full").projects[0]!.access).toBe("full");
-    expect(() => setProjectAccess(c, "nope", "full")).toThrow("Unknown project: nope");
+    expect(DEFAULT_CONFIG.access).toEqual({ judge: "claude-code:haiku" });
   });
 });
 

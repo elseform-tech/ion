@@ -26,6 +26,14 @@ describe("render", () => {
     );
   });
 
+  // Tour, 2026-11-21: opencode's call on an MCP server came with no summary, so the line read "· Used " and nothing.
+  it("names a tool by its name when it has no summary", () => {
+    const r = createRenderer();
+    expect(
+      r(ev("tool.started", { toolId: "t", name: "everything_echo", kind: "other", summary: "" })).text,
+    ).toBe("· Used everything_echo\n");
+  });
+
   // Regression (security review): agent text must not drive the terminal.
   it("strips control characters and escape sequences from what agents send", () => {
     const r = createRenderer();

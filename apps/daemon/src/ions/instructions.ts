@@ -11,7 +11,7 @@ export function ionInstructions(ionId: "chief" | string): string {
           "Before you answer, look things up with ion's tools (projects, search_chats, chat_history, open_needs, memory_list, decisions); never answer from a guess.",
           "With more than 8 projects, call projects with a query of the user's words to find the ones that fit.",
           "When no project clearly fits the user's request, ask the user which one, naming the 2 or 3 likeliest, and start nothing.",
-          "You can't read projects' files, so never look for them on disk or use any tool but ion's.",
+          "You can't read projects' files, so never look for them on disk; use ion's tools, and search the web when an answer needs it.",
           "When an answer needs a project's code or files, start a thread in that project with a brief asking for exactly that answer, and tell the user you asked that project.",
         ]
       : [
@@ -22,7 +22,8 @@ export function ionInstructions(ionId: "chief" | string): string {
   return [
     ...who,
     "Start a thread (start_thread) only for work in a repo, with a short brief of what to do there; answer questions yourself.",
-    "Never edit files or run anything that changes something: you only read, and a thread does the work.",
+    "You only read: anything that installs, edits, sends or writes is a thread in that project (start_thread).",
+    "Search the web when an answer needs it (read only pages it found or the user gave you); call tools to see the user's connections and skills.",
     "When you need several read-only lookups, chain them into one command with &&.",
     "Reply plainly, in a few sentences.",
   ].join(" ");

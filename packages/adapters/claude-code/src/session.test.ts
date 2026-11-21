@@ -90,25 +90,52 @@ describe("claude-code session", () => {
     expect(calls.at(-1)?.options).toMatchObject({ tools: [], maxTurns: 1, systemPrompt: expect.any(String) });
   });
 
-  it("gives Claude Code ion's MCP server", async () => {
+  // The user, 2026-11-20: "adding new mcp required us to follow industry standard…": your servers reach the run beside
+  // ion's own. Security review: the SDK passes MCP servers on Claude Code's command line (any local user's `ps`), so
+  // every value that could hold a key (url, headers, args, env) goes in the environment and the config only names
+  // it; Claude Code expands ${VAR} in an MCP server's url, headers, args and env (checked in its source, 0.3.326).
+  it("gives Claude Code ion's server and yours, with every key in the environment, not the command line", async () => {
     const calls: FakeQueryCall[] = [];
     const s = await make(calls).start({
       cwd,
       model: null,
       effort: null,
-      mcp: { name: "ion", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer k" } },
+      mcpServers: [
+        {
+          name: "ion",
+          transport: "http",
+          url: "http://127.0.0.1:9/mcp",
+          headers: { Authorization: "Bearer k" },
+        },
+        {
+          name: "linear",
+          transport: "http",
+          url: "https://mcp.linear.app/mcp?k=urlkey",
+          headers: { Authorization: "Bearer oauth-tok" },
+        },
+      ],
       signal: new AbortController().signal,
       decide: async () => "allow",
     });
     await s.close();
-    // Security review: the SDK passes MCP servers on the command line, so the key goes in the environment and the
-    // config only names it (Claude Code expands ${VAR} in MCP headers; checked live, Plan 04).
-    const o = calls.at(-1)?.options as { mcpServers: unknown; env: Record<string, string> };
+    const o = calls.at(-1)?.options as { mcpServers: Record<string, unknown>; env: Record<string, string> };
     expect(o.mcpServers).toEqual({
-      ion: { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "${ION_MCP_H0}" } },
+      ion: { type: "http", url: "${ION_MCP_U0}", headers: { Authorization: "${ION_MCP_H0}" } },
+      linear: { type: "http", url: "${ION_MCP_U1}", headers: { Authorization: "${ION_MCP_H1}" } },
     });
-    expect(JSON.stringify(o.mcpServers)).not.toContain("Bearer k");
-    expect(o.env.ION_MCP_H0).toBe("Bearer k");
+    for (const secret of ["Bearer k", "oauth-tok", "urlkey"])
+      expect(JSON.stringify(o.mcpServers)).not.toContain(secret);
+    expect(o.env).toMatchObject({
+      ION_MCP_U0: "http://127.0.0.1:9/mcp",
+      ION_MCP_H0: "Bearer k",
+      ION_MCP_U1: "https://mcp.linear.app/mcp?k=urlkey",
+      ION_MCP_H1: "Bearer oauth-tok",
+    });
+  });
+
+  // Final review, 2026-11-21: every server reaches an agent as ion's URL (ion runs local ones), so adapters take http.
+  it("takes remote servers (your local ones come as ion's URLs)", () => {
+    expect(make().mcpTransports).toEqual({ http: true });
   });
 
   // The user, 2026-11-18: Claude asked with its own AskUserQuestion, which a headless session can't show; the
@@ -119,7 +146,7 @@ describe("claude-code session", () => {
       cwd,
       model: null,
       effort: null,
-      mcp: { name: "ion", url: "http://127.0.0.1:9/mcp", headers: {} },
+      mcpServers: [{ name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} }],
       signal: new AbortController().signal,
       decide: async () => "allow",
     });
@@ -127,6 +154,29 @@ describe("claude-code session", () => {
     expect((calls.at(-1)?.options as { disallowedTools?: string[] }).disallowedTools).toEqual([
       "AskUserQuestion",
     ]);
+  });
+
+  // The user, 2026-11-20: skills are "the skills your agents already have", passed T3 Code's way (the SDK's plugins);
+  // probe 2026-11-21 (docs/research/skills.md). Your own Claude settings stay off, and a skill can't run shell lines.
+  it("a Claude Code run gets the enabled skills as a plugin, with ion's settings still off", async () => {
+    const calls: FakeQueryCall[] = [];
+    const start = (pluginDir?: string) =>
+      make(calls).start({
+        cwd,
+        model: null,
+        effort: null,
+        ...(pluginDir ? { pluginDir } : {}),
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+    await (await start("/data/skills/r1")).close();
+    expect(calls.at(-1)?.options).toMatchObject({
+      plugins: [{ type: "local", path: "/data/skills/r1", skipMcpDiscovery: true }],
+      settings: { disableSkillShellExecution: true },
+      settingSources: [],
+    });
+    await (await start()).close();
+    expect(calls.at(-1)?.options).not.toHaveProperty("plugins");
   });
 
   it("continues a session that exists, and says so when it's gone", async () => {
@@ -162,6 +212,14 @@ describe("claude-code session", () => {
     expect(o.settingSources).toEqual([]);
     expect((o as unknown as { permissionMode: string }).permissionMode).toBe("default");
     expect(o.systemPrompt.append).toContain("Use tabs.");
+  });
+
+  // The user, 2026-11-21: "Only ion's, plus Import": in ion's chats Claude Code uses only ion's servers. No settings
+  // files isn't enough: your own servers in ~/.claude.json and a project's .mcp.json load unless MCP is strict.
+  it("a Claude Code chat in ion doesn't load Claude Code's own servers", async () => {
+    const calls: FakeQueryCall[] = [];
+    await run("hello", { calls });
+    expect(calls[0]!.options).toMatchObject({ strictMcpConfig: true, settingSources: [] });
   });
 
   // Regression (security review): a repo's CLAUDE.md symlinked to a secret must never reach the model.

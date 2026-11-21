@@ -12,12 +12,14 @@ function stateOf(h: HarnessInfo): string {
   return h.installed ? "Not signed in" : "Not installed";
 }
 
+/** One agent: its face, name and state; one that has no switch to leave out its own tools says it loads them too. */
 function AgentRow({ h }: { h: HarnessInfo }) {
   return (
     <div className="hrow">
       <Avatar harness={h.id} />
       <div>
         {h.label}
+        {h.ownTools && <span className="chip">Also loads its own</span>}
         <div className="s">
           {ready(h) && <i className="okd" />}
           {stateOf(h)}

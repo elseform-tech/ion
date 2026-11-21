@@ -156,6 +156,33 @@ describe("a bad hand-edited setting", () => {
     expect(warning).toContain("quiet.from");
   });
 
+  // The user, 2026-11-20/21: Auto-approval is never turned off in Settings, only per chat with the composer's access
+  // icon, so General's Default access is gone: a hand-edited access.default is ignored, with a warning.
+  it("ignores access.default with a warning: new chats start on Auto", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(f, '[access]\ndefault = "full"\njudge = "x:y"\n');
+    const { config, error, warning } = loadUserConfig(f);
+    expect(error).toBeNull();
+    expect(config.access).not.toHaveProperty("default");
+    expect(config.access.judge).toBe("x:y");
+    expect(warning).toContain("access.default");
+    writeFileSync(f, '[access]\ndefault = "nope"\n');
+    expect(loadUserConfig(f).error).toBeNull();
+    writeFileSync(f, '[access]\ndefault = "auto"\n');
+    expect(loadUserConfig(f).warning).toBeNull();
+  });
+
+  // Task review, 2026-11-21: a project's own access still switched Auto-approval off for its chats. It's ignored, with
+  // a warning, like access.default.
+  it("a project's access is ignored: new chats start on Auto", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(f, '[[projects]]\nid = "shop"\npath = "/s"\naccess = "full"\n');
+    const { config, error, warning } = loadUserConfig(f);
+    expect(error).toBeNull();
+    expect(config.projects[0]).not.toHaveProperty("access");
+    expect(warning).toContain("shop.access");
+  });
+
   it("has no warning when everything is fine", () => {
     expect(loadUserConfig(join(tmp(), "none.toml")).warning).toBeNull();
   });
@@ -176,5 +203,58 @@ describe("a bad hand-edited setting", () => {
     expect(config.notifications.briefing).toEqual({ on: true, at: "08:30" });
     expect(warning).toContain("storefront.notify");
     expect(warning).toContain("notifications");
+  });
+});
+
+// Plan 18 (the user, 2026-11-20: "adding new mcp required us to follow industry standard"): servers come from
+// mcp.json; ion's config keeps only what you turned on, your hooks and the skills you turned on. No keys, ever.
+// The user, 2026-11-20: a skill is instructions every Claude chat follows, so it's off until you turn it on.
+// The user, 2026-11-20: a new server starts off until you turn it on — ion keeps the ones you turned on.
+describe("tools in your config", () => {
+  it("has empty tools by default, keeps what you turned off and your hooks, and never a key", () => {
+    expect(DEFAULT_CONFIG.tools).toEqual({ mcpOn: [], hooks: [], hooksOn: [], skills: { on: [] } });
+    const f = join(tmp(), "config.toml");
+    const hook = { id: "h1", name: "Tell me", on: true, event: "run.finished" as const, run: "say done" };
+    saveUserConfig(f, {
+      ...DEFAULT_CONFIG,
+      tools: {
+        mcpOn: ["github@0123456789ab"],
+        hooks: [hook],
+        hooksOn: ["h1@0123456789ab"],
+        skills: { on: ["~/.claude/skills/pdf@0123456789ab"] },
+      },
+    });
+    expect(loadUserConfig(f).config.tools).toEqual({
+      mcpOn: ["github@0123456789ab"],
+      hooks: [hook],
+      hooksOn: ["h1@0123456789ab"],
+      skills: { on: ["~/.claude/skills/pdf@0123456789ab"] },
+    });
+  });
+
+  it("drops a bad hook alone, with a warning, and the rest loads", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(
+      f,
+      [
+        "[tools]",
+        'mcpOn = ["github@0123456789ab"]',
+        "[[tools.hooks]]",
+        'id = "good"',
+        'name = "Tell me"',
+        'event = "run.finished"',
+        'run = "say done"',
+        "[[tools.hooks]]",
+        'id = "bad"',
+        'name = "Nope"',
+        'event = "run.failed"',
+        "",
+      ].join("\n"),
+    );
+    const { config, error, warning } = loadUserConfig(f);
+    expect(error).toBeNull();
+    expect(config.tools.mcpOn).toEqual(["github@0123456789ab"]);
+    expect(config.tools.hooks.map((h) => [h.id, h.on])).toEqual([["good", true]]);
+    expect(warning).toContain("hooks.bad");
   });
 });

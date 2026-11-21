@@ -70,4 +70,16 @@ describe("lab.css", () => {
       /\.win\{min-width:0;width:100vw;height:100vh;border-radius:0;border:0;box-shadow:none\}/,
     );
   });
+
+  // Tour, 2026-11-21: the Agents chip ("Also loads its own") made its row taller than the others.
+  it("keeps an Agents row the same height with a chip in it", () => {
+    expect(lab).toMatch(/\.hrow \.chip\{[^}]*padding:0 8px;line-height:18px/);
+    // And a Tools row's chip ("From Claude Code" in Import's preview).
+    expect(lab).toMatch(/\.trow \.tname\+\.chip\{[^}]*padding:0 8px;line-height:18px/);
+  });
+
+  // Tour, 2026-11-21: each Tools row sized its own actions, so the agents' faces sat at a different place per row.
+  it("lines up the agents' faces on every Tools row", () => {
+    expect(lab).toMatch(/\.trow \.acts2\{[^}]*justify-content:flex-end;min-width:150px/);
+  });
 });

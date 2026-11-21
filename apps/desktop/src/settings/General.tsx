@@ -1,10 +1,10 @@
 import type { IonClient } from "@ion/client/browser";
 import { Minus, Plus } from "@ion/design-system";
-import type { SettingsInfo, SettingsPatch } from "@ion/schema";
+import type { SettingsInfo } from "@ion/schema";
 import { useEffect, useState } from "react";
 import { useCallError } from "../callError.js";
 import type { SettingsData } from "./data.js";
-import { ACCESS, Row } from "./IonPage.js";
+import { Row } from "./IonPage.js";
 
 /** The fewest and most chats at once the daemon takes (resources.max_runs). */
 const FEWEST = 1;
@@ -72,31 +72,16 @@ function useHeldRuns(saved: MaxRuns | undefined) {
   return [held ?? saved, hold] as const;
 }
 
-/** Settings → General: the access a new chat starts with, and how many chats work at once. */
+/** Settings → General: how many chats work at once (new chats start on Auto; the composer's access icon switches it). */
 export function General({ client, data }: { client: IonClient; data: SettingsData }) {
   const [error, run] = useCallError();
   const s = data.settings;
   const [maxRuns, hold] = useHeldRuns(s?.maxRuns);
   if (!s || maxRuns === undefined) return null;
-  const save = (patch: SettingsPatch) => run(client.call("settings.set", { patch }), data.reload);
   return (
     <div>
       <h4>Chats</h4>
       <div className="group">
-        <Row label="Default access">
-          <span className="seg sm" role="group" aria-label="Default access">
-            {ACCESS.map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={s.access === id ? "on" : ""}
-                onClick={() => save({ access: id })}
-              >
-                {label}
-              </button>
-            ))}
-          </span>
-        </Row>
         <Row label="Chats at once">
           <ChatsAtOnce
             value={maxRuns}

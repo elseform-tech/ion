@@ -1,5 +1,16 @@
 import type { EffortLevel } from "./capabilities.js";
 import type { IonEvent } from "./events.js";
+import type {
+  ImportInfo,
+  ImportResult,
+  NewHook,
+  RegistryHit,
+  ToolAdd,
+  ToolCheck,
+  ToolItem,
+  ToolType,
+  ToolsInfo,
+} from "./tools.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -10,7 +21,6 @@ export type ProjectInfo = {
   starred: boolean;
   /** The name ion shows, when you renamed it; else its id. */
   name?: string;
-  access?: "auto" | "full";
   shareWithIon?: boolean;
   /** Its ion's colour and the agent its ion's threads run on (Plan 09). */
   color?: string;
@@ -108,7 +118,6 @@ export type ProjectPatch = {
   color?: string | null;
   model?: string | null;
   effort?: "low" | "medium" | "high" | "max" | null;
-  access?: "auto" | "full" | null;
   shareWithIon?: boolean | null;
   profile?: string | null;
   /** Only cleared (you accepted or dismissed it): only its ion suggests a profile. */
@@ -124,7 +133,6 @@ export type NotifyLevel = "all" | "needs" | "digest" | "muted";
 
 /** Every setting: ion's model, then General and Notifications. */
 export type SettingsInfo = IonSettings & {
-  access: "auto" | "full";
   maxRuns: "auto" | number;
   /** How many chats Auto lets work at once on this computer (half its cores, at least one). */
   autoRuns: number;
@@ -139,7 +147,7 @@ export type SettingsInfo = IonSettings & {
 };
 
 /** What Settings changes: only the given fields; notifications by part. */
-export type SettingsPatch = Partial<Pick<SettingsInfo, "access" | "maxRuns" | "quick" | "effort">> & {
+export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort">> & {
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
@@ -203,7 +211,6 @@ export type Commands = {
   "projects.list": { args: Record<string, never>; result: ProjectInfo[] };
   "projects.add": { args: { path: string }; result: ProjectInfo };
   "project.create": { args: { name: string }; result: ProjectInfo };
-  "project.setAccess": { args: { projectId: string; access: "auto" | "full" }; result: { ok: true } };
   "project.star": { args: { projectId: string; starred: boolean }; result: { ok: true } };
   /** Shows the project under a new name (its id stays). */
   "project.rename": { args: { projectId: string; name: string }; result: { ok: true } };
@@ -298,6 +305,45 @@ export type Commands = {
   /** Pause all: no routine runs until you resume. */
   "routines.pause": { args: { paused: boolean }; result: { ok: true } };
   "activity.list": { args: Record<string, never>; result: ActivityInfo };
+  /** Connections from mcp.json, your hooks, and what each agent can take. */
+  "tools.list": { args: Record<string, never>; result: ToolsInfo };
+  /** Turns a connection, a hook or a skill on or off (kept in ion's config, never in mcp.json). */
+  "tools.setOn": { args: { kind: "mcp" | "hook" | "skill"; id: string; on: boolean }; result: ToolsInfo };
+  /** Keeps a key for `${name}` in a server of mcp.json (`id`), in the keychain (never in config or the log). */
+  "tools.setKey": { args: { id: string; name: string; key: string }; result: ToolsInfo };
+  "tools.addHook": { args: NewHook; result: ToolsInfo };
+  /** null clears the project (every project's events). */
+  "tools.updateHook": {
+    args: { id: string } & Partial<Omit<NewHook, "project">> & { project?: string | null };
+    result: ToolsInfo;
+  };
+  "tools.removeHook": { args: { id: string }; result: ToolsInfo };
+  /**
+   * Starts signing in to a remote server (OAuth): the page the app opens in your browser. A server that can't
+   * register ion needs a client ID (and maybe a secret, kept in the keychain).
+   */
+  "tools.signIn": { args: { id: string; clientId?: string; clientSecret?: string }; result: { url: string } };
+  /** Forgets a remote server's sign-in (its tokens and any client secret). */
+  "tools.signOut": { args: { id: string }; result: ToolsInfo };
+  /** The official MCP Registry's servers for a name: how each runs, the keys it needs, its source. */
+  "tools.search": { args: { query: string }; result: RegistryHit[] };
+  /** Adds a connection, skill or hook, off (you turn it on in Settings → Tools); a literal key is refused. */
+  "tools.add": { args: ToolAdd; result: ToolItem };
+  /** Whether it's valid, where it came from, and whether it's on. */
+  "tools.verify": { args: { kind: ToolType; name: string }; result: ToolCheck };
+  /** Safe checks (never starting anything off); for a local server that's on, its tools. No name: every one. */
+  "tools.doctor": { args: { kind: ToolType; name?: string }; result: ToolCheck[] };
+  /** Removes one (a chat's agent: only what a chat added). */
+  "tools.remove": { args: { kind: ToolType; name: string }; result: { ok: true } };
+  /** Every connection, skill or hook of this kind, on or off, with where it came from. */
+  "tools.items": { args: { kind: ToolType }; result: ToolItem[] };
+  /** The servers in your agents' own configs that aren't in mcp.json (read only now; nothing is run or contacted). */
+  "tools.importable": { args: Record<string, never>; result: ImportInfo };
+  /** Adds them to mcp.json, off, keys left out as `${NAME}`s: one agent's, these names, or every one listed. */
+  /** `repo`: a project's own file (`shop:.mcp.json`): its servers come in only when it's named. */
+  "tools.import": { args: { agent?: string; names?: string[]; repo?: string }; result: ImportResult };
+  /** Hides the Import line (one agent's, or every one) until a server ion hasn't seen appears. */
+  "tools.dismissImport": { args: { agent?: string }; result: ImportInfo };
 };
 
 export type HarnessInfo = {
@@ -308,6 +354,8 @@ export type HarnessInfo = {
   /** From the harness itself when it's signed in; empty otherwise. */
   models: { id: string; label: string }[];
   defaultModel: string | null;
+  /** It also loads MCP servers, hooks or plugins of its own in ion's chats, beside ion's. */
+  ownTools?: true;
 };
 
 export type MemoryInfo = {
@@ -412,7 +460,6 @@ export const COMMANDS = [
   "projects.list",
   "projects.add",
   "project.create",
-  "project.setAccess",
   "project.star",
   "project.rename",
   "project.remove",
@@ -456,6 +503,23 @@ export const COMMANDS = [
   "routine.run",
   "routines.pause",
   "activity.list",
+  "tools.list",
+  "tools.setOn",
+  "tools.setKey",
+  "tools.addHook",
+  "tools.updateHook",
+  "tools.removeHook",
+  "tools.signIn",
+  "tools.signOut",
+  "tools.search",
+  "tools.add",
+  "tools.verify",
+  "tools.doctor",
+  "tools.remove",
+  "tools.items",
+  "tools.importable",
+  "tools.import",
+  "tools.dismissImport",
 ] as const;
 
 export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };

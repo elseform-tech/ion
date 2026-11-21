@@ -4,6 +4,7 @@ import type { NotifyLevel, SettingsInfo, SettingsPatch } from "@ion/schema";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { why } from "../callError.js";
 import type { SettingsData } from "./data.js";
+import { Switch } from "./Switch.js";
 
 type Notifs = NonNullable<SettingsPatch["notifications"]>;
 
@@ -70,19 +71,6 @@ function Time(p: { label: string; value: string; onPick: (at: string) => Promise
       }}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => e.key === "Enter" && save()}
-    />
-  );
-}
-
-function Switch({ label, on, onPick }: { label: string; on: boolean; onPick: (on: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      className={`sw${on ? " on" : ""}`}
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onPick(!on)}
     />
   );
 }

@@ -71,6 +71,8 @@ export type MiniSocket = {
 
 /** The subprotocols that authenticate: the token rides here, never in the URL. */
 export const protocols = (token: string) => ["ion", `ion.token.${token}`];
+/** A chat's run key (`ION_RUN_KEY`): ion's commands for tools only. */
+export const runProtocols = (key: string) => ["ion", `ion.run.${key}`];
 
 /** At most this many early pushes in all (backlog that arrives before its subscribe's reply is read). */
 const EARLY_MAX = 100_000;

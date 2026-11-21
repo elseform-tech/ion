@@ -26,6 +26,13 @@ describe("timeline", () => {
     ]);
   });
 
+  // The user, 2026-11-20 (Plan 18): a run that goes without one of your MCP servers says why in a plain line.
+  it("says plainly when a run goes without one of your servers", () => {
+    const text = "github isn't signed in, so this chat runs without it.";
+    const t = play(ev("message.sent", { text: "Hi" }), ev("tool.skipped", { id: "github", text }));
+    expect(t.items.at(-1)).toEqual({ kind: "ion", tone: "note", text });
+  });
+
   // Review Focus 2: a long chat stays one item per message.
   it("folds 5,000 deltas into one message", () => {
     const events = Array.from({ length: 5000 }, () => ev("message.delta", { text: "x" }));
@@ -43,7 +50,7 @@ describe("timeline", () => {
       ev("tool.started", { toolId: "t1", name: "Read", kind: "read", summary: "a.ts" }),
       ev("tool.finished", { toolId: "t1", ok: true, summary: null }),
       ev("tool.started", { toolId: "t2", name: "Bash", kind: "command", summary: "pnpm test" }),
-      ev("tool.finished", { toolId: "t2", ok: false, summary: "Not allowed" }),
+      ev("tool.finished", { toolId: "t2", ok: false, summary: null }),
       ev("usage.reported", { costUsd: 0.0031 }),
       ev("run.finished", { status: "done" }, "2026-11-18T10:02:04.000Z"),
     );
@@ -130,9 +137,170 @@ describe("timeline", () => {
         choices,
         resolved: true,
         answered: "Keep it",
+        outcome: { by: "you", choice: "Keep it" },
       },
-      { kind: "ion", tone: "answer", text: "Answered by ion from your decision on 18 Nov: Delete it" },
+      {
+        kind: "question",
+        needId: "",
+        question: "Delete build/?",
+        why: null,
+        choices: [],
+        resolved: true,
+        outcome: { by: "ion", text: "Answered by ion from your decision: Delete it" },
+      },
     ]);
+  });
+
+  // The user, 2026-11-21: "for the question box, after answering, it should appear inline as part of the
+  // conversation with the question and answer".
+  it("an answered question shows in the chat with your answer", () => {
+    const choices = [
+      { label: "Keep xs", consequence: "Nothing changes" },
+      { label: "Drop xs", consequence: "9 components shift" },
+    ];
+    const t = play(
+      ev("message.sent", { text: "Move us to Tailwind 4" }),
+      ev("need.raised", { needId: "n1", kind: "ask", summary: "Keep xs?", detail: null, choices }),
+      ev("need.resolved", {
+        needId: "n1",
+        decision: "answered",
+        by: "you",
+        choice: "Keep xs",
+        scope: "project",
+      }),
+      // Your answer goes to the agent as the next message: it's the answer shown under the question, not again.
+      ev("message.sent", { text: 'The user answered "Keep xs?": Keep xs', shown: "Keep xs", answers: "n1" }),
+      ev("message.sent", { text: "Thanks" }),
+    );
+    const shown = t.items.filter((i) => !(i.kind === "you" && i.gone));
+    expect(shown.map((i) => i.kind)).toEqual(["you", "question", "you"]);
+    expect(shown[1]).toMatchObject({
+      resolved: true,
+      outcome: { by: "you", choice: "Keep xs", always: true },
+    });
+    expect(shown[2]).toEqual({ kind: "you", text: "Thanks" });
+  });
+
+  // Found on the tour, 2026-11-21: ion sends your answer to the agent before it marks the question answered, so the
+  // answer showed twice. Security review, 2026-11-21: matched by the question it answers, never by its words, so a
+  // later message that reads the same stays.
+  it("an answer sent before its question is marked answered still shows once", () => {
+    const t = play(
+      ev("need.raised", { needId: "n1", kind: "ask", summary: "Merge?", detail: null, choices: [] }),
+      ev("message.completed", { text: "I asked you whether to merge." }),
+      ev("message.sent", { text: 'The user answered "Merge?": Merge', shown: "Merge", answers: "n1" }),
+      ev("need.resolved", { needId: "n1", decision: "answered", by: "you", choice: "Merge", scope: "chat" }),
+      ev("message.sent", { text: "Merge", shown: "Merge" }),
+    );
+    const shown = t.items.filter((i) => i.kind === "you" && !i.gone);
+    expect(shown.map((i) => (i.kind === "you" ? i.text : ""))).toEqual(["Merge"]);
+    expect(t.items[0]).toMatchObject({ outcome: { by: "you", choice: "Merge" } });
+  });
+
+  // Tour, 2026-11-21: the agent's "Asked." showed after your answer (the answer sat under the question). Your answer
+  // now shows where you sent it, after what the agent said; the question stays where it was asked.
+  it("your answer shows where you sent it, after the agent's last words", () => {
+    for (const answerFirst of [true, false]) {
+      const raised = ev("need.raised", {
+        needId: "n1",
+        kind: "ask",
+        summary: "Merge?",
+        detail: null,
+        choices: [],
+      });
+      const asked = ev("message.completed", { text: "Asked." });
+      const resolved = ev("need.resolved", {
+        needId: "n1",
+        decision: "answered",
+        by: "you",
+        choice: "Merge",
+        scope: "project",
+      });
+      const sentAnswer = ev("message.sent", {
+        text: 'The user answered "Merge?": Merge',
+        shown: "Merge",
+        answers: "n1",
+      });
+      const t = play(raised, asked, ...(answerFirst ? [resolved, sentAnswer] : [sentAnswer, resolved]));
+      expect(t.items.map((i) => i.kind)).toEqual(["question", "agent", "you"]);
+      expect(t.items[0]).toMatchObject({ replied: true, outcome: { by: "you", choice: "Merge" } });
+      expect(t.items[2]).toMatchObject({ kind: "you", text: "Merge", answers: "n1", always: true });
+    }
+  });
+
+  it("a message that reads the same as an answer stays visible", () => {
+    const t = play(
+      ev("need.raised", { needId: "n1", kind: "ask", summary: "Merge?", detail: null, choices: [] }),
+      ev("message.sent", { text: "Merge" }),
+      ev("need.resolved", { needId: "n1", decision: "answered", by: "you", choice: "Merge", scope: "chat" }),
+      ev("message.sent", { text: 'The user answered "Merge?": Merge', shown: "Merge", answers: "n1" }),
+    );
+    // Your own "Merge" stays where you typed it; the answer is the one under the question.
+    expect(t.items[1]).toEqual({ kind: "you", text: "Merge" });
+    expect(t.items.filter((i) => i.kind === "you" && !i.gone)).toHaveLength(1);
+  });
+
+  // Task review, 2026-11-21: a held question asked again shows nothing; one with an unknown question isn't hidden;
+  // answers in chats from before ion named the question show once.
+  it("a released held question shows nothing", () => {
+    const t = play(
+      ev("need.raised", {
+        needId: "h1",
+        kind: "ask",
+        summary: "Q?",
+        detail: null,
+        choices: [],
+        heldFor: "n0",
+      }),
+      ev("need.resolved", { needId: "h1", decision: "superseded", by: "daemon", why: "asked again" }),
+    );
+    expect(t.items[0]).not.toHaveProperty("outcome");
+  });
+
+  it("an answer naming a question that isn't here stays visible", () => {
+    const t = play(ev("message.sent", { text: "x", shown: "Yes", answers: "elsewhere" }));
+    expect(t.items).toEqual([{ kind: "you", text: "Yes" }]);
+  });
+
+  it("answers in older chats (no question named) show once, either order", () => {
+    const raised = ev("need.raised", {
+      needId: "n1",
+      kind: "ask",
+      summary: "Merge?",
+      detail: null,
+      choices: [],
+    });
+    const resolved = ev("need.resolved", { needId: "n1", decision: "answered", by: "you", choice: "Merge" });
+    const sentOld = ev("message.sent", { text: 'The user chose: "Merge".', shown: "Merge" });
+    for (const order of [
+      [raised, sentOld, resolved],
+      [raised, resolved, sentOld],
+    ]) {
+      const t = order.reduce(reduce, empty());
+      expect(t.items.filter((i) => i.kind === "you" && !i.gone)).toEqual([]);
+    }
+  });
+
+  it("says why a question ended without you", () => {
+    const t = play(
+      ev("need.raised", { needId: "n1", kind: "ask", summary: "Q?", detail: null, choices: [] }),
+      ev("need.resolved", { needId: "n1", decision: "superseded", by: "daemon", why: "archived" }),
+    );
+    expect(t.items[0]).toMatchObject({ outcome: { by: "stopped", why: "archived" } });
+  });
+
+  it("a question that ended without you shows what happened", () => {
+    const t = play(
+      ev("need.raised", { needId: "n1", kind: "ask", summary: "Q?", detail: null, choices: [] }),
+      ev("need.resolved", { needId: "n1", decision: "superseded", by: "daemon" }),
+    );
+    expect(t.items[0]).toMatchObject({ kind: "question", resolved: true, outcome: { by: "stopped" } });
+  });
+
+  // The user, 2026-11-21: after an agent adds a tool, ion says so in the chat, with a link to Settings → Tools.
+  it("the chat shows a line after an agent adds", () => {
+    const t = play(ev("tool.added", { kind: "mcp", name: "github" }));
+    expect(t.items).toEqual([{ kind: "added", tool: "mcp", name: "github" }]);
   });
 
   it("knows the run that's going, from queued until it finishes", () => {
@@ -195,6 +363,19 @@ describe("timeline", () => {
         { name: "Bash", input: '{"command":"ls"}', output: "a.ts\nb.ts", ok: true },
         { name: "execute", input: '{"command":"pwd"}', ok: true },
       ],
+    });
+  });
+
+  // Tour, 2026-11-21: opencode's bash steps showed "bash", not their command; the command it only knew later wins.
+  it("takes a summary the harness only knew when the tool finished", () => {
+    const t = play(
+      ev("tool.started", { toolId: "t1", name: "execute", kind: "command", summary: "bash" }),
+      ev("tool.finished", { toolId: "t1", ok: true, summary: "pnpm test", input: '{"command":"pnpm test"}' }),
+      ev("tool.started", { toolId: "t2", name: "Read", kind: "read", summary: "a.ts" }),
+      ev("tool.finished", { toolId: "t2", ok: true, summary: null }),
+    );
+    expect(t.items[0]).toMatchObject({
+      steps: [{ summary: "pnpm test" }, { summary: "a.ts" }],
     });
   });
 
@@ -298,7 +479,8 @@ describe("timeline", () => {
     const t = play(
       ev("message.sent", { text: 'You asked: "Colour?". The user chose: "Green".', shown: "Green" }),
     );
-    expect(t.items).toEqual([{ kind: "you", text: "Green" }]);
+    // (Task review, 2026-11-21: marked as maybe an older chat's answer, matched to its question by label.)
+    expect(t.items).toEqual([{ kind: "you", text: "Green", legacy: true }]);
   });
   // Plan 09: an ion thread's question keeps its ion's note.
   it("keeps the ion's note on a question", () => {

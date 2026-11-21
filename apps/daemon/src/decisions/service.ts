@@ -202,6 +202,7 @@ export class Decisions {
         text: followText(asked.summary, label, custom),
         request: this.requests.get(needId) ?? "",
         shown: label,
+        answers: needId,
       };
       const started = await this.followUps.tryNow(need.chatId, m);
       this.d.needs.answered(needId, label, scope);
@@ -239,7 +240,13 @@ export class Decisions {
     if (text)
       await this.deliver(
         asked.chatId,
-        { harness: this.harnessOf(asked.runId, asked.chatId), text, request, shown: label },
+        {
+          harness: this.harnessOf(asked.runId, asked.chatId),
+          text,
+          request,
+          shown: label,
+          answers: asked.needId,
+        },
         decisionId,
       );
   }
@@ -305,7 +312,7 @@ export class Decisions {
       const text = followText(d.question, d.choice, d.custom === true);
       if (sent(d.needId, text)) return [];
       const harness = this.harnessOf(e.runId, chatId);
-      return [{ harness, text, request: "", shown: d.choice, decisionId: d.decisionId }];
+      return [{ harness, text, request: "", shown: d.choice, answers: d.needId, decisionId: d.decisionId }];
     });
   }
 

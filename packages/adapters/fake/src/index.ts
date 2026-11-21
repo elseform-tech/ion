@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  agentEnv,
   type AdapterEvent,
   createEventQueue,
   type HarnessAdapter,
@@ -61,6 +62,8 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       login: async () => {},
     },
     capabilities: async () => CAPABILITIES,
+    // ION_FAKE_NO_HTTP=1: an agent that takes local servers only.
+    mcpTransports: { http: process.env.ION_FAKE_NO_HTTP !== "1" },
     // The fake hook already sends ion's own shape.
     gateCall: (payload) => {
       const p = payload as
@@ -114,9 +117,8 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
       };
     });
   let n = 0;
-  const tries = nextTry(start.cwd);
-  const nativeId = start.resume ?? `fake-${randomUUID()}`;
   let sent = "";
+  const [tries, nativeId] = [nextTry(start.cwd), start.resume ?? `fake-${randomUUID()}`];
   const script: Script = {
     emit: (e) => queue.push(e),
     ask: (toolId, summary, req) => {
@@ -128,8 +130,9 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     write: (file, content) => writeFileSync(join(start.cwd, file), content),
     tries: () => tries,
     text: () => sent,
-    mcp: () => start.mcp ?? null,
+    servers: () => start.mcpServers ?? [],
     env: () => start.env ?? {},
+    inherited: () => agentEnv(process.env, start.envDrop),
     instructions: () => start.instructions ?? "",
     gate: (req) => postGate(start.gate, req),
     wait: async (ms) => {

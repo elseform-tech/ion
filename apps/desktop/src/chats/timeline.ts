@@ -1,15 +1,19 @@
-import { EV, type IonEvent } from "@ion/schema";
+import { EV, type IonEvent, type ToolType } from "@ion/schema";
 import { type Step, thinking, toolFinished, toolOutput, toolStarted, workEnded } from "./steps.js";
 
 type Choice = { label: string; consequence: string; recommended?: boolean };
 
 /** One thing the chat shows, in order. */
 export type Item =
-  | { kind: "you"; text: string }
+  /**
+   * gone: your answer to a question, not shown as a message of its own. answers: the question it answers (here),
+   * shown as your reply where you sent it, after what the agent said ("Always" when it reaches past the chat).
+   */
+  | { kind: "you"; text: string; gone?: true; legacy?: true; answers?: string; always?: true }
   | { kind: "agent"; text: string; done: boolean }
   | { kind: "work"; runId: string; started: string; ended?: string; steps: Step[] }
   | { kind: "retry"; until: string; done: boolean }
-  | { kind: "ion"; tone: "allow" | "deny" | "answer" | "note"; text: string }
+  | { kind: "ion"; tone: "allow" | "deny" | "note"; text: string }
   | {
       kind: "question";
       needId: string;
@@ -24,7 +28,21 @@ export type Item =
       blocked?: boolean;
       expired?: boolean;
       answered?: string;
+      /** Your answer's message is in the chat: it shows there, where you sent it, not under the question. */
+      replied?: true;
+      /** Held behind the same question waiting in another thread: settled by that answer. */
+      held?: boolean;
+      /**
+       * How it ended, shown where it was asked: your answer (and "Always" when it reaches past the chat), ion's
+       * answer from your decision, or its run stopping first.
+       */
+      outcome?:
+        | { by: "you"; choice: string; always?: true }
+        | { by: "ion"; text: string }
+        | { by: "stopped"; why?: "stopped" | "archived" | "restarted" };
     }
+  /** A chat's agent added a connection, skill or hook with ion's commands: it's off until you turn it on. */
+  | { kind: "added"; tool: ToolType; name: string }
   | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string; files?: FileChange[] }
   /** gone: its run ended (done, or failed with it as the reason), so it's not shown on its own. */
   | { kind: "error"; text: string; runId: string; gone?: boolean };
@@ -50,6 +68,10 @@ export type Timeline = {
   questions: Record<string, number>;
   /** ion's questions about stopped calls, by the call's request id. */
   blockedAsks: Record<string, number>;
+  /** Your answers in older chats (before ion named the question): their message, when it comes, is under the question. */
+  legacy: string[];
+  /** Questions whose answer's message named them (newer chats): never matched by label. */
+  named: string[];
   started: Record<string, string>;
   cost: Record<string, number>;
 };
@@ -68,6 +90,8 @@ export const empty = (): Timeline => ({
   tools: {},
   questions: {},
   blockedAsks: {},
+  legacy: [],
+  named: [],
   started: {},
   cost: {},
 });
@@ -82,8 +106,6 @@ const replace = (t: Timeline, i: number, item: Item): Timeline => {
   items[i] = item;
   return { ...t, items };
 };
-const day = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 
 function delta(t: Timeline, d: D): Timeline {
   const i = t.streaming;
@@ -128,7 +150,7 @@ function question(t: Timeline, d: D): Timeline {
       ? { note: (d.via as { note: string }).note }
       : {}),
     // Held behind the same question waiting in another thread: settled by that answer, or asked again.
-    ...(typeof d.heldFor === "string" ? { resolved: true } : {}),
+    ...(typeof d.heldFor === "string" ? { resolved: true, held: true } : {}),
   };
   const added = push(t, item);
   const at = added.items.length - 1;
@@ -136,13 +158,113 @@ function question(t: Timeline, d: D): Timeline {
   return { ...added, questions: { ...t.questions, [str(d.needId)]: at }, blockedAsks };
 }
 
+type Question = Extract<Item, { kind: "question" }>;
+type Outcome = NonNullable<Extract<Item, { kind: "question" }>["outcome"]>;
+
+/** Your answer as the chat shows it under the question: the choice, and "Always" when it reaches past the chat. */
+function yours(d: D): Outcome {
+  const always = d.scope === "project" || d.scope === "everywhere";
+  return { by: "you", choice: str(d.choice), ...(always ? { always: true as const } : {}) };
+}
+
+const STOPPED_WHY = new Set(["stopped", "archived", "restarted"]);
+
+/** Closed without you: why (a held question asked again in the open shows nothing; it's asked again below). */
+function closed(t: Timeline, i: number, q: Question, d: D): Timeline {
+  if (d.why === "asked again") return { ...replace(t, i, { ...q, resolved: true }), streaming: t.streaming };
+  const why = STOPPED_WHY.has(str(d.why)) ? { why: str(d.why) as "stopped" | "archived" | "restarted" } : {};
+  return {
+    ...replace(t, i, { ...q, resolved: true, outcome: { by: "stopped", ...why } }),
+    streaming: t.streaming,
+  };
+}
+
 function answered(t: Timeline, d: D): Timeline {
   const i = t.questions[str(d.needId)];
   const q = i !== undefined ? t.items[i] : undefined;
   if (q?.kind !== "question") return t;
-  // Any answer closes it: yours (with the choice), or its run stopping ("superseded").
-  const done = d.decision === "answered" ? { resolved: true, answered: str(d.choice) } : { resolved: true };
-  return { ...replace(t, i!, { ...q, ...done }), streaming: t.streaming };
+  // Any answer closes it: yours (with the choice), or its run stopping ("superseded"). A held one is settled by
+  // your answer elsewhere: ion's, from that decision.
+  if (d.decision !== "answered") return closed(t, i!, q, d);
+  const choice = str(d.choice);
+  const outcome: Outcome = q.held ? { by: "ion", text: fromYourDecision(choice) } : yours(d);
+  const done = {
+    ...replace(t, i!, { ...q, resolved: true, answered: choice, outcome }),
+    streaming: t.streaming,
+  };
+  if (!t.named.includes(str(d.needId))) return withLegacy(done, i!, choice);
+  return outcome.by === "you" && outcome.always ? alwaysOnReply(done, str(d.needId)) : done;
+}
+
+/** Your answer's message came first: it says "Always" too, once the answer reaches past the chat. */
+function alwaysOnReply(t: Timeline, needId: string): Timeline {
+  const at = t.items.findLastIndex((x) => x.kind === "you" && x.answers === needId);
+  const reply = t.items[at];
+  return reply?.kind === "you" ? replace(t, at, { ...reply, always: true }) : t;
+}
+
+/**
+ * Older chats: the answer's message didn't name its question (only ion set `shown`). One already here after the
+ * question is hidden; else the next one with that label will be.
+ */
+function withLegacy(t: Timeline, i: number, choice: string): Timeline {
+  const at = t.items.findLastIndex(
+    (x, j) => j > i && x.kind === "you" && x.legacy && !x.gone && x.text === choice,
+  );
+  if (at < 0) return { ...t, legacy: [...t.legacy, choice] };
+  return replace(t, at, { kind: "you", text: choice, gone: true });
+}
+
+const fromYourDecision = (choice: string) => `Answered by ion from your decision: ${choice}`;
+
+/**
+ * Your message. One that answers a question (it names the question) is shown under that question instead, whenever it
+ * arrives; a message that merely reads the same is yours like any other.
+ */
+function sent(t: Timeline, d: D): Timeline {
+  const shown = str(d.shown);
+  const text = shown || str(d.text);
+  const answers = str(d.answers);
+  if (answers) return answerSent(t, answers, text);
+  if (!shown) return push(t, { kind: "you", text });
+  const at = t.legacy.indexOf(shown);
+  if (at < 0) return push(t, { kind: "you", text, legacy: true });
+  const pushed = push(t, { kind: "you", text, gone: true });
+  return { ...pushed, legacy: t.legacy.filter((_x, j) => j !== at) };
+}
+
+/**
+ * An answer's message naming its question (when it's here): your reply where you sent it, after the agent's last
+ * words (tour, 2026-11-21: they showed after it), its question marked replied; never matched by label.
+ */
+function answerSent(t0: Timeline, needId: string, text: string): Timeline {
+  const here = needId in t0.questions;
+  const asked = here ? t0.items[t0.questions[needId]!] : undefined;
+  const t = asked?.kind === "question" ? replace(t0, t0.questions[needId]!, { ...asked, replied: true }) : t0;
+  const always = asked?.kind === "question" && asked.outcome?.by === "you" && asked.outcome.always;
+  const reply = { kind: "you" as const, text, ...(here ? { gone: true as const, answers: needId } : {}) };
+  const pushed = push(t, always ? { ...reply, always: true as const } : reply);
+  const q = here ? t.items[t.questions[needId]!] : undefined;
+  const label = q?.kind === "question" ? q.answered : undefined;
+  const at = label === undefined ? -1 : t.legacy.indexOf(label);
+  const legacy = at < 0 ? t.legacy : t.legacy.filter((_x, j) => j !== at);
+  return { ...pushed, legacy, named: [...t.named, needId] };
+}
+
+/**
+ * ion answered from one of your decisions: a question that never reached you shows with what ion answered; one
+ * held behind yours elsewhere is settled where it was asked.
+ */
+function fromDecision(t: Timeline, d: D): Timeline {
+  if (d.by !== "ion") return t;
+  const text = fromYourDecision(str(d.choice));
+  const i = t.questions[str(d.needId)];
+  const held = i !== undefined ? t.items[i] : undefined;
+  if (held?.kind === "question") return t;
+  return push(t, {
+    ...{ kind: "question", needId: str(d.needId), question: str(d.question), why: null, choices: [] },
+    ...{ resolved: true, outcome: { by: "ion", text } },
+  });
 }
 
 function finished(t: Timeline, d: D, e: IonEvent): Timeline {
@@ -190,7 +312,7 @@ function errorsGone(t: Timeline, runId: string): { t: Timeline; last: string | n
 type Handler = (t: Timeline, d: D, e: IonEvent) => Timeline;
 
 const HANDLERS: Record<string, Handler> = {
-  [EV.messageSent]: (t, d) => push(t, { kind: "you", text: str(d.shown) || str(d.text) }),
+  [EV.messageSent]: sent,
   [EV.messageDelta]: delta,
   [EV.messageCompleted]: completed,
   [EV.runQueued]: (t, _d, e) => ({ ...t, running: e.runId }),
@@ -221,14 +343,7 @@ const HANDLERS: Record<string, Handler> = {
   [EV.approvalResolved]: approval,
   [EV.needRaised]: question,
   [EV.needResolved]: answered,
-  [EV.decisionRecorded]: (t, d) =>
-    d.by === "ion"
-      ? push(t, {
-          kind: "ion",
-          tone: "answer",
-          text: `Answered by ion from your decision on ${day(str(d.fromDecidedAt))}: ${str(d.choice)}`,
-        })
-      : t,
+  [EV.decisionRecorded]: fromDecision,
   [EV.usageReported]: (t, d, e) =>
     typeof d.costUsd === "number" ? { ...t, cost: { ...t.cost, [e.runId ?? ""]: d.costUsd } } : t,
   // A retry counts down to when it starts; it's gone once it has.
@@ -240,6 +355,9 @@ const HANDLERS: Record<string, Handler> = {
     }),
   [EV.runFinished]: finished,
   [EV.error]: error,
+  // A run went without one of your MCP servers: ion says why, once per chat.
+  [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
+  [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
 };
 
 /** Adds one event to the chat's timeline. Pure: the same events always give the same items. */

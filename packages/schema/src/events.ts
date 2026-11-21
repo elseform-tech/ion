@@ -55,6 +55,12 @@ export const DAEMON_EVENT_TYPES = [
   "queue.failed",
   "notify",
   "briefing.posted",
+  "tool.signedIn",
+  "tool.signedOut",
+  "tool.needsSignIn",
+  "tool.skipped",
+  "tool.added",
+  "hook.ran",
 ] as const;
 
 export const EVENT_TYPES = [...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES] as const;
@@ -108,6 +114,12 @@ export const EV = {
   queueFailed: "queue.failed",
   notify: "notify",
   briefingPosted: "briefing.posted",
+  toolSignedIn: "tool.signedIn",
+  toolSignedOut: "tool.signedOut",
+  toolNeedsSignIn: "tool.needsSignIn",
+  toolSkipped: "tool.skipped",
+  toolAdded: "tool.added",
+  hookRan: "hook.ran",
 } as const satisfies Record<string, EventType>;
 
 export type AdapterEventType = (typeof ADAPTER_EVENT_TYPES)[number];
@@ -227,6 +239,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     text: z.string(),
     /** What the chat shows as yours, when `text` is ion's wording for the agent (your answer to its question). */
     shown: z.string().optional(),
+    /** The question (its needId) this message answers: the chat shows it as your reply, where you sent it. */
+    answers: z.string().optional(),
   }),
   /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
   "memory.written": z.object({
@@ -272,6 +286,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     by: z.enum(["you", "ion", "daemon"]),
     choice: z.string().optional(),
     scope: z.enum(DECISION_SCOPES).optional(),
+    /** superseded: why it closed without you (its run stopped, the chat was archived, ion restarted, asked again). */
+    why: z.enum(["stopped", "archived", "restarted", "asked again"]).optional(),
   }),
   /** Your answer kept for later: this chat only, this project, or everywhere. by ion: answered from fromDecision. */
   "decision.recorded": z.object({
@@ -350,6 +366,25 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   }),
   /** ion chief's daily briefing went out for this local day (YYYY-MM-DD): never twice, also across a restart. */
   "briefing.posted": z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+  /** A connection (its name in mcp.json) signed in, signed out, or needs signing in again: never a token. */
+  "tool.signedIn": z.strictObject({ id: z.string().min(1).max(40) }),
+  "tool.signedOut": z.strictObject({ id: z.string().min(1).max(40) }),
+  "tool.needsSignIn": z.strictObject({ id: z.string().min(1).max(40) }),
+  /** A chat's run went without one of your MCP servers, and why, in a plain line (its name only, never a value). */
+  "tool.skipped": z.strictObject({ id: z.string().min(1).max(40), text: z.string().min(1).max(200) }),
+  /** A chat's agent added a connection, skill or hook with ion's commands: it's off until you turn it on. */
+  "tool.added": z.strictObject({ kind: z.enum(["mcp", "skill", "hook"]), name: z.string().min(1).max(80) }),
+  /**
+   * One of your hooks ran (on the "hooks" stream): exit code (null: stopped, at its time limit or because it
+   * couldn't start), how long, and the end of its output (keys masked).
+   */
+  "hook.ran": z.strictObject({
+    hookId: z.string().min(1).max(64),
+    ok: z.boolean(),
+    code: z.number().int().nullable(),
+    ms: z.number().int().min(0),
+    tail: z.string().max(2000),
+  }),
   "run.queued": z.object({}),
   "run.retrying": z.object({
     attempt: z.number().int().min(1),
@@ -380,6 +415,7 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "tool.finished": z.object({
     toolId: z.string(),
     ok: z.boolean(),
+    /** What the step did, when the harness only knew it after the step started (it replaces the start's). */
     summary: z.string().nullable(),
     /** The input, when the harness only gave it after the tool started. */
     input: z.string().max(9000).optional(),
@@ -401,9 +437,10 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     decision: z.enum(DECISIONS),
     /**
      * you (a need you answered), policy (inside the worktree), ion (Auto decided), full (Full access),
-     * gate (the harness's own prompt for a call ion's gate had already allowed).
+     * gate (the harness's own prompt for a call ion's gate had already allowed), hook (one of your "Before a tool
+     * runs" hooks said no).
      */
-    by: z.enum(["you", "policy", "ion", "full", "gate"]),
+    by: z.enum(["you", "policy", "ion", "full", "gate", "hook"]),
     reason: z.string().optional(),
     /** What was asked, for a decision made at the gate (no approval.requested comes before it). */
     summary: z.string().optional(),

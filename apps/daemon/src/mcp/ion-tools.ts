@@ -21,6 +21,7 @@ import { messagesView } from "../views/messages.js";
 import { needsView } from "../views/needs.js";
 import { decisionLine } from "./ask.js";
 import type { IonScope } from "./grants.js";
+import { registerYourTools, type YourTools } from "./ion-your-tools.js";
 import { guard, ok, q } from "./result.js";
 import { type Deps, historyData, memoryData, needsData, SEARCH_MAX, searchData } from "./tools.js";
 
@@ -31,7 +32,7 @@ type StartThread = (
   turnId: string,
 ) => Promise<{ chatId: string } | { why: string }>;
 
-export type IonDeps = Deps & { configFile: string; startThread?: StartThread };
+export type IonDeps = Deps & { configFile: string; startThread?: StartThread; yourTools?: YourTools };
 
 const HISTORY_MAX = 200;
 const TITLES = 5;
@@ -74,6 +75,11 @@ export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps)
   needsTools(server, ion);
   memoryTools(server, ion);
   threadTool(server, ion);
+  registerYourTools(server, {
+    chief: scope.ionId === "chief",
+    dirs: () => ion.projects().map((p) => p.path),
+    ...(d.yourTools ? { yours: d.yourTools } : {}),
+  });
   if (scope.ionId !== "chief") profileTool(server, ion);
 }
 

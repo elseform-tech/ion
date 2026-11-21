@@ -778,3 +778,101 @@ body.resizing {
 .qhead .qq {
   color: var(--accent);
 }
+/*
+  An answered question, where it was asked (the user, 2026-11-21): the agent's question in one line, all of it on a
+  click, then your answer as your reply ("Always" beside it); one that ended without you says what happened.
+*/
+.qa {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-width: 0;
+}
+.qa .qq {
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qa .qq.open {
+  white-space: normal;
+}
+.qa .qq .lucide {
+  width: 14px;
+  height: 14px;
+  margin-right: 7px;
+  vertical-align: -2px;
+  color: var(--accent);
+}
+.u .chip {
+  margin-left: 8px;
+}
+/* A chat's agent added a tool: its quiet line links to the row in Settings → Tools. */
+.quiet .lnk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.quiet .lnk:hover {
+  color: var(--ink);
+}
+/* Settings → Tools: where a row came from (its source, the chat that added it); the row a chat's link opened. */
+.trow .org {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--faint);
+  vertical-align: middle;
+  max-width: 100%;
+  overflow: hidden;
+}
+.trow .org > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* Tour, 2026-11-21: a long source wrapped to two lines at 900 px: it ends in "…" instead. */
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trow .org > span:first-child:not(:last-child) {
+  display: block;
+}
+.trow .org > span:last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+/* A chat's title on a row it added: one line, ending in "…" (tour, 2026-11-21: a long one pushed the row down). */
+.trow .org .ct {
+  display: block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trow .org .lucide {
+  width: 12px;
+  height: 12px;
+}
+.trow .org .ib {
+  width: 20px;
+  height: 20px;
+}
+.trow.at {
+  background: var(--hover);
+}

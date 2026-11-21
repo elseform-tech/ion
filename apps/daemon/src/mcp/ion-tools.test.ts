@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
-import type { NewEvent } from "@ion/schema";
+import type { NewEvent, SkillInfo } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeMemory } from "../memory/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
+import type { McpServer } from "../tools/index.js";
 import { allViews } from "../views/index.js";
 import { memoryView } from "../views/memory.js";
 import { createGrants, createMcpHandler, type Grants } from "./index.js";
@@ -20,6 +21,50 @@ let http: Server;
 let url: string;
 let configFile: string;
 let startThread: ReturnType<typeof vi.fn>;
+let yourTools: ReturnType<typeof vi.fn>;
+let shopDir: string;
+
+const skill = (dir: string, name: string, description: string, on = true): SkillInfo => ({
+  ...{ id: `${dir}/.claude/skills/${name}`, name, description, whose: "claude" },
+  ...{ where: `${dir}/.claude/skills/${name}`, on, support: { "claude-code": "ion" } },
+});
+
+/** Your connections (as written in mcp.json, keys and all) and the skills found in your home and these folders. */
+function yourToolsFixture(dirs: string[]) {
+  const servers: { server: McpServer; on: boolean }[] = [
+    {
+      on: true,
+      server: {
+        ...{ name: "github", transport: "http" },
+        url: "https://user:hunter2@api.githubcopilot.com/mcp?key=abc123",
+        headers: { Authorization: "Bearer ghp_SECRETSECRET" },
+      },
+    },
+    {
+      on: false,
+      server: {
+        ...{ name: "slack", transport: "stdio", command: "/opt/tools/bin/slack-mcp" },
+        ...{ args: ["--token", "xoxb-SECRET"], env: { SLACK_TOKEN: "xoxb-SECRET2" } },
+      },
+    },
+  ];
+  const inProject: Record<string, SkillInfo> = {
+    [shopDir]: skill(shopDir, "shop-deploy", "Deploy the shop"),
+    "/p/app": skill("/p/app", "app-release", "Release the app"),
+    "/p/private": skill("/p/private", "secret-skill", "Hush"),
+  };
+  const skills = [
+    skill("~", "pdf", "Read and fill PDFs"),
+    skill("~", "drafts", "Write drafts", false),
+    ...dirs.flatMap((d) => (inProject[d] ? [inProject[d]] : [])),
+  ];
+  const support = {
+    "claude-code": { http: true, stdio: true, skills: true },
+    grok: { http: true, stdio: true, skills: false },
+    opencode: { http: false, stdio: false, skills: false },
+  };
+  return { servers, skills, support };
+}
 
 const put = (e: Omit<NewEvent, "origin">) => store.append({ origin: "daemon", ...e } as NewEvent);
 const ALL = ["app", "shop", "private", "default"];
@@ -48,7 +93,9 @@ beforeEach(async () => {
   writeMemory(store, db, { scope: { projectId: "private" }, text: "Private note", source: "you" });
   grants = createGrants();
   startThread = vi.fn(async (projectId: string) => ({ chatId: `t-${projectId}` }));
-  const handle = createMcpHandler({ store, db, grants, configFile, startThread });
+  shopDir = root;
+  yourTools = vi.fn(async (dirs: string[]) => yourToolsFixture(dirs));
+  const handle = createMcpHandler({ store, db, grants, configFile, startThread, yourTools });
   http = createServer((req, res) => void handle(req, res));
   await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
   const addr = http.address();
@@ -56,6 +103,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  http.closeAllConnections();
   await new Promise((r) => http.close(r));
 });
 
@@ -229,6 +277,7 @@ describe("ion tools", () => {
       "projects",
       "search_chats",
       "start_thread",
+      "tools",
     ]);
     await c.close();
     const s = await shopIon();
@@ -291,5 +340,45 @@ describe("ion tools", () => {
     expect(grants.check(key)).toMatchObject({ kind: "ion", turnId: "t9" });
     grants.revoke("t9");
     expect(grants.check(key)).toBeNull();
+  });
+
+  // The user, 2026-11-20: "i see ions as read-only… they should spawn downstream threads"; an ion sees your tools by
+  // name to know which project's thread can use them, never what could be a key.
+  it("an ion lists connections and skills by name, never commands, URLs or keys", async () => {
+    const listed = text(await (await chief()).callTool({ name: "tools", arguments: {} }));
+    expect(listed).toMatch(/^<ion-data id="\w+" source="your tools">/);
+    expect(listed).toContain("github (api.githubcopilot.com): on; agents claude-code, grok");
+    expect(listed).toContain("slack (slack-mcp): off");
+    expect(listed).toContain("pdf: Read and fill PDFs (Claude Code; on; agents claude-code)");
+    expect(listed).toContain("drafts: Write drafts (Claude Code; off)");
+    expect(listed).toContain("shop-deploy");
+    expect(listed).toContain("app-release");
+    for (const never of [
+      "hunter2",
+      "abc123",
+      "ghp_",
+      "Bearer",
+      "Authorization",
+      "xoxb",
+      "SLACK_TOKEN",
+      "/opt",
+    ])
+      expect(listed).not.toContain(never);
+    expect(listed).not.toContain("--token");
+    // A project kept from ion chief keeps its skills from it too.
+    expect(listed).not.toContain("secret-skill");
+    expect(yourTools).toHaveBeenCalledWith(expect.not.arrayContaining(["/p/private", "/p/default"]));
+  });
+
+  // Task 7 ruling, 2026-11-20: a project's ion sees what that project's chats would get, nothing more.
+  it("a project ion only sees its project's connections and skills", async () => {
+    const listed = text(await (await shopIon()).callTool({ name: "tools", arguments: {} }));
+    expect(listed).toContain("github (api.githubcopilot.com)");
+    expect(listed).not.toContain("slack");
+    expect(listed).toContain("pdf");
+    expect(listed).toContain("shop-deploy");
+    expect(listed).not.toContain("app-release");
+    expect(listed).not.toContain("drafts");
+    expect(yourTools).toHaveBeenCalledWith([shopDir]);
   });
 });

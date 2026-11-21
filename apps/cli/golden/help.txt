@@ -20,6 +20,9 @@ Commands:
   memory                             What ion remembers
   decisions                          Your answers, and what came of them
   harnesses                          Coding agents and their models
+  mcp                                MCP servers
+  skills                             Skills
+  hooks                              Hooks
   help [command]                     display help for command
 
 ---
@@ -52,7 +55,6 @@ Commands:
   new <name>             Make a new project
   rename <id> <name...>  Show a project under a new name
   remove <id>            Take a project out of ion (its folder stays)
-  access <id> <mode>     Auto (ion decides) or full
   help [command]         display help for command
 
 ---
@@ -159,3 +161,109 @@ Commands:
   dismiss <id>    Not now
   mute <id>       Not now, and fewer like this
   help [command]  display help for command
+
+---
+
+Usage: ion mcp [options] [command]
+
+MCP servers
+
+Options:
+  -h, --help                      display help for command
+
+Commands:
+  search <name>                   Look it up in the official MCP Registry
+  add [options] <name> [args...]  Add one, off
+  import [options] [names...]     Bring yours in from your other agents, off
+  ls                              List them
+  verify <name>                   Check it, and where it came from
+  doctor [name]                   Find problems, never starting one that's off
+  remove <name>                   Remove it
+  help [command]                  display help for command
+
+---
+
+Usage: ion mcp add [options] <name> [args...]
+
+Add one, off
+
+Options:
+  --command <cmd>         What it runs
+  --arg <arg>             One argument (repeat it)
+  --env <NAME=${NAME}>    An env variable (repeat it)
+  --url <url>             Its URL, for a remote one
+  --header <Name: value>  A header (repeat it)
+  --from <id or link>     Its registry id or source link
+  -h, --help              display help for command
+
+---
+
+Usage: ion mcp import [options] [names...]
+
+Bring yours in from your other agents, off
+
+Options:
+  --list                  Only list them
+  --all                   All of yours (not ones in a project's own files)
+  --from <agent or file>  One agent's (claude-code, codex, opencode,
+                          grok-build), or a project's file (shop:.mcp.json)
+  -h, --help              display help for command
+
+---
+
+Usage: ion skills [options] [command]
+
+Skills
+
+Options:
+  -h, --help            display help for command
+
+Commands:
+  add [options] <name>  Add one, off
+  ls                    List them
+  verify <name>         Check it, and where it came from
+  doctor [name]         Find problems, never starting one that's off
+  remove <name>         Remove it
+  help [command]        display help for command
+
+---
+
+Usage: ion skills add [options] <name>
+
+Add one, off
+
+Options:
+  --from <link or folder>  A link to its SKILL.md, or its folder
+  -h, --help               display help for command
+
+---
+
+Usage: ion hooks [options] [command]
+
+Hooks
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  add [options]   Add one, off
+  ls              List them
+  verify <name>   Check it, and where it came from
+  doctor [name]   Find problems, never starting one that's off
+  remove <name>   Remove it
+  help [command]  display help for command
+
+---
+
+Usage: ion hooks add [options]
+
+Add one, off
+
+Options:
+  --on <event>     When it runs: tool.before, run.started, run.finished,
+                   run.failed, need.raised, need.resolved, routine.ran,
+                   chat.archived, briefing.posted
+  --run <command>  What it runs
+  --name <name>    Its name
+  --from <link>    Where it came from
+  -h, --help       display help for command

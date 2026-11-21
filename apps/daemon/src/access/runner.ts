@@ -5,6 +5,7 @@ import type { Session } from "@ion/adapter-kit";
 import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { getHarness } from "../adapters/registry.js";
+import { envDropOf } from "../tools/env-drop.js";
 
 /**
  * The agent, model and effort a prompt runs on: ion's quick model at the effort you picked (`agent` overrides the
@@ -39,6 +40,7 @@ export function harnessRunner(
         model,
         effort,
         bare: true,
+        envDrop: await envDropOf(configFile),
         signal,
         decide: async () => "deny",
       });
@@ -62,5 +64,29 @@ async function lastMessage(session: Session, prompt: string, signal: AbortSignal
     return last;
   } finally {
     await session.close().catch(() => {});
+  }
+}
+
+/**
+ * A quick model's answer to one prompt, or null once `ms` pass, even when the model ignores the abort (tour,
+ * 2026-11-21: an agent's question waited forever on one that never answered). Throws what the model throws.
+ */
+export async function answerWithin(
+  run: (prompt: string, signal: AbortSignal) => Promise<string>,
+  prompt: string,
+  ms: number,
+): Promise<string | null> {
+  const abort = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<null>((r) => {
+    timer = setTimeout(() => {
+      abort.abort();
+      r(null);
+    }, ms);
+  });
+  try {
+    return await Promise.race([run(prompt, abort.signal), late]);
+  } finally {
+    clearTimeout(timer);
   }
 }

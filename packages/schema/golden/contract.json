@@ -49,14 +49,19 @@
     "queue.sent",
     "queue.failed",
     "notify",
-    "briefing.posted"
+    "briefing.posted",
+    "tool.signedIn",
+    "tool.signedOut",
+    "tool.needsSignIn",
+    "tool.skipped",
+    "tool.added",
+    "hook.ran"
   ],
   "commands": [
     "status",
     "projects.list",
     "projects.add",
     "project.create",
-    "project.setAccess",
     "project.star",
     "project.rename",
     "project.remove",
@@ -99,6 +104,23 @@
     "routine.remove",
     "routine.run",
     "routines.pause",
-    "activity.list"
+    "activity.list",
+    "tools.list",
+    "tools.setOn",
+    "tools.setKey",
+    "tools.addHook",
+    "tools.updateHook",
+    "tools.removeHook",
+    "tools.signIn",
+    "tools.signOut",
+    "tools.search",
+    "tools.add",
+    "tools.verify",
+    "tools.doctor",
+    "tools.remove",
+    "tools.items",
+    "tools.importable",
+    "tools.import",
+    "tools.dismissImport"
   ]
 }

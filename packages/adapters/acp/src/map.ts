@@ -4,8 +4,18 @@ import { EV, stripControl, type ToolKind } from "@ion/schema";
 
 type Json = Record<string, unknown>;
 
-/** input: the tool's input once known; inputSent: whether it went out with tool.started. */
-type ToolInfo = { kind: string; locations: string[]; input?: string; inputSent?: boolean };
+/**
+ * input: the tool's input once known; inputSent: whether it went out with tool.started; command: a command step's
+ * command, once known; commandSent: whether its start was already summarized by it.
+ */
+type ToolInfo = {
+  kind: string;
+  locations: string[];
+  input?: string;
+  inputSent?: boolean;
+  command?: string;
+  commandSent?: boolean;
+};
 export type AcpState = { roots: string[]; costUsd: number | null; tools: Map<string, ToolInfo> };
 export const createAcpState = (roots: string[]): AcpState => ({ roots, costUsd: null, tools: new Map() });
 
@@ -23,7 +33,16 @@ function remember(u: Json, s: AcpState, toolId: string): ToolInfo | undefined {
   if (locs.length) t.locations = locs;
   const input = toolText(u.rawInput, TOOL_INPUT_MAX);
   if (input && !t.inputSent) t.input = input;
+  const command = commandOf(u);
+  if (command) t.command = command;
   return t;
+}
+
+/** A command step's command, from its raw input (opencode's bash, Grok's run). */
+function commandOf(u: Json): string {
+  if (acpToolKind(u.kind) !== "command" && u.kind !== undefined) return "";
+  const raw = u.rawInput && typeof u.rawInput === "object" ? (u.rawInput as Json) : {};
+  return typeof raw.command === "string" ? stripControl(raw.command).trim().slice(0, 80) : "";
 }
 
 function diffChanges(u: Json, s: AcpState): AdapterEvent[] {
@@ -70,6 +89,10 @@ const textOf = (content: unknown) => {
   return c?.type === "text" && typeof c.text === "string" ? c.text : null;
 };
 
+/** A command only known after the step started is its summary now (tour, 2026-11-21: opencode showed "bash"). */
+const lateSummary = (t: ToolInfo): string | null =>
+  t.command && !t.commandSent && acpToolKind(t.kind) === "command" ? t.command : null;
+
 function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
   const toolId = String(u.toolCallId);
   const tool = remember(u, s, toolId);
@@ -80,9 +103,10 @@ function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
   const raw = u.rawOutput as { output?: unknown } | undefined;
   const text = toolText(blocksText(u.content) ?? raw?.output ?? u.rawOutput, TOOL_OUTPUT_MAX);
   const late = tool.input && !tool.inputSent ? { input: tool.input } : {};
+  const summary = lateSummary(tool);
   const out: AdapterEvent[] = [
     ...(text ? [{ type: EV.toolOutput, data: { toolId, text } }] : []),
-    { type: EV.toolFinished, data: { toolId, ok, summary: null, ...late } },
+    { type: EV.toolFinished, data: { toolId, ok, summary, ...late } },
   ];
   if (!ok) return out;
   const diffs = diffChanges(u, s);
@@ -99,11 +123,31 @@ function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
 function toolCall(u: Json, s: AcpState): AdapterEvent {
   const toolId = String(u.toolCallId);
   const input = toolText(u.rawInput, TOOL_INPUT_MAX);
+  const command = acpToolKind(u.kind) === "command" ? commandOf(u) : "";
   s.tools.set(toolId, {
     kind: String(u.kind ?? "other"),
     locations: locationsOf(u),
     inputSent: Boolean(input),
+    commandSent: Boolean(command),
   });
+  const found = webStep(u, s) ?? plainStep(u, s);
+  const step = command ? { ...found, summary: command } : found;
+  return {
+    type: EV.toolStarted,
+    data: { toolId, ...step, summary: step.summary.slice(0, 80), ...(input ? { input } : {}) },
+  };
+}
+
+type Step = { name: string; kind: ToolKind; summary: string };
+
+/** Grok's own web search or page read: its tool's name, and what it searched or read (its title only repeats it). */
+function webStep(u: Json, s: AcpState): Step | null {
+  const name = webToolOf(u);
+  return name ? { name, kind: "web", summary: lookedFor(u.rawInput, s.roots) } : null;
+}
+
+/** Any other step: its kind's name, a routed tool's, or a plain title, with what it looked for. */
+function plainStep(u: Json, s: AcpState): Step {
   const title = typeof u.title === "string" ? u.title : "Tool";
   const kind = acpToolKind(u.kind);
   // A tool of no known kind is named by its title ("grep"), with what it looked for.
@@ -113,18 +157,45 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
   // The routed name labels the step only when it is plain; otherwise the step keeps "Use tool".
   const clean = typeof routed === "string" ? stripControl(routed).trim() : "";
   const via = /^[\w.-]{1,40}$/.test(clean) ? clean : undefined;
+  if (via !== undefined) return { name: via, kind, summary: lookedFor(withoutToolName(u.rawInput), s.roots) };
   const plain = known ? String(u.kind) : (TITLES[title] ?? title).slice(0, 40);
-  const said = known ? title : lookedFor(u.rawInput, s.roots);
-  return {
-    type: EV.toolStarted,
-    data: {
-      toolId,
-      name: via ?? plain,
-      kind,
-      summary: (via !== undefined ? lookedFor(withoutToolName(u.rawInput), s.roots) : said).slice(0, 80),
-      ...(input ? { input } : {}),
-    },
-  };
+  return { name: plain, kind, summary: known ? title : lookedFor(u.rawInput, s.roots) };
+}
+
+/**
+ * opencode's web tools, by the title its steps carry (its own tool names; it sets no other identifier), each only
+ * with the ACP kinds opencode gives it: a title alone never makes a command or an edit a web step.
+ */
+const WEB_TITLES: Record<string, { name: string; kinds: string[] }> = {
+  websearch: { name: "websearch", kinds: ["search", "other"] },
+  webfetch: { name: "webfetch", kinds: ["fetch"] },
+};
+
+/** What opencode's websearch takes (its own parameters): a search's input has no other key. */
+const SEARCH_KEYS = new Set(["query", "numResults", "livecrawl", "type", "contextMaxCharacters"]);
+
+/**
+ * Whether a step titled as a web tool is one. opencode sends its websearch as kind "other" (seen live, 2026-11-21),
+ * the catch-all every unknown tool also gets; so a step of that kind counts only with a search's input (no other
+ * key, and no MCP tool name in it). A step of a specific kind ("search", "fetch") already says what it is.
+ */
+function kindAgrees(t: { kind?: unknown; rawInput?: unknown }): boolean {
+  if (t.kind !== "other") return true;
+  const raw = t.rawInput && typeof t.rawInput === "object" ? (t.rawInput as Json) : {};
+  return Object.keys(raw).every((k) => SEARCH_KEYS.has(k));
+}
+
+/**
+ * An agent's own web tool, from what its harness says of the step (never the model's words alone): opencode's by
+ * its title and kind; Grok's search by its kind and title ("search", "Web search:") with its structured variant.
+ * Else none.
+ */
+export function webToolOf(t: { kind?: unknown; title?: unknown; rawInput?: unknown }): string | undefined {
+  const title = typeof t.title === "string" ? t.title : "";
+  const byTitle = Object.hasOwn(WEB_TITLES, title) ? WEB_TITLES[title] : undefined;
+  if (byTitle) return byTitle.kinds.includes(String(t.kind)) && kindAgrees(t) ? byTitle.name : undefined;
+  const variant = t.rawInput && typeof t.rawInput === "object" ? (t.rawInput as Json).variant : undefined;
+  return t.kind === "search" && title === "Web search:" && variant === "WebSearch" ? "web_search" : undefined;
 }
 
 /** Agents' own tools, by a plain name. */

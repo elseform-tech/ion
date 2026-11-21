@@ -1,5 +1,5 @@
 import type { IonClient } from "@ion/client/browser";
-import { CircleAlert, Info, type LucideIcon, RotateCw, ShieldX, Square } from "@ion/design-system";
+import { CircleAlert, Info, RotateCw, ShieldX, Square } from "@ion/design-system";
 import type { IonEvent } from "@ion/schema";
 import {
   type CSSProperties,
@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Added, Answered, Quiet, Reply } from "./Asked.js";
 import { Markdown } from "./Message.js";
 import { empty, type FileChange, type Item, reduce, type Timeline } from "./timeline.js";
 import { WorkBlock } from "./Work.js";
@@ -62,14 +63,6 @@ function Retry({ until, done }: { until: string; done: boolean }) {
   );
 }
 
-/** A quiet line: an icon and one muted line in the conversation, never a banner. */
-const Quiet = ({ text, icon: Icon }: { text: string; icon: LucideIcon }) => (
-  <div className="quiet">
-    <Icon />
-    {text}
-  </div>
-);
-
 /** How a run that didn't finish shows: a failed one says why (its last error) when it knows. */
 function stopLine(item: Extract<Item, { kind: "end" }>): ReactNode {
   if (item.status === "failed") return <Quiet text={item.reason ?? "Failed"} icon={CircleAlert} />;
@@ -78,10 +71,16 @@ function stopLine(item: Extract<Item, { kind: "end" }>): ReactNode {
   return null;
 }
 
+/** Your message; your answer to a question is your reply where you sent it, and one shown elsewhere is nothing. */
+function yours(item: Extract<Item, { kind: "you" }>): ReactNode {
+  if (item.answers) return <Reply text={item.text} always={item.always} />;
+  return item.gone ? null : <div className="u">{item.text}</div>;
+}
+
 function show(item: Item, onFile?: (path: string) => void): ReactNode {
   switch (item.kind) {
     case "you":
-      return <div className="u">{item.text}</div>;
+      return yours(item);
     case "agent":
       return (
         <div className="a">
@@ -93,7 +92,10 @@ function show(item: Item, onFile?: (path: string) => void): ReactNode {
     case "ion":
       return <Quiet text={item.text} icon={item.tone === "deny" ? ShieldX : Info} />;
     case "question":
-      return null; // open ones are in the bar above the message box; answers go into the chat as messages
+      // Open ones are in the box above the message box; once closed, each shows here, where it was asked.
+      return item.resolved ? <Answered q={item} /> : null;
+    case "added":
+      return <Added item={item} />;
     case "end":
       return (
         <>

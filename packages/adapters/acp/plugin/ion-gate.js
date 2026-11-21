@@ -19,4 +19,12 @@ export const IonGate = async () => ({
     }
     if (answer?.decision !== "allow") throw new Error(answer?.reason ?? "Not allowed by ion");
   },
+  // ion runs opencode with its own config folder (none of your servers or plugins); the commands opencode runs get
+  // yours back (git, gh…), and never the gate's address (its key) or ion's inline config.
+  "shell.env": async (_input, output) => {
+    const yours = process.env.ION_XDG_CONFIG_HOME;
+    if (yours) output.env.XDG_CONFIG_HOME = yours;
+    output.env.ION_GATE_URL = "";
+    output.env.OPENCODE_CONFIG_CONTENT = "";
+  },
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropInheritedMarkers } from "./env.js";
+import { agentsHome, dropInheritedMarkers } from "./env.js";
 
 // Final review, 2026-11-19: a daemon started from a chat's tool call inherited that chat's ION_CHAT and passed it on
 // to ion chief, the project ions and the judge (which start agents with the daemon's environment), so they showed in
@@ -28,5 +28,16 @@ describe("dropInheritedMarkers", () => {
     dropInheritedMarkers(env);
     dropInheritedMarkers(env);
     expect(env).toEqual({ PATH: "/bin", HOME: "/home/a" });
+  });
+});
+
+// Tour, 2026-11-21: the tour's daemon read your real agents' configs (Import, skills) because it runs with your HOME.
+// ION_AGENTS_HOME points only that reading at another folder (the tour seeds a fake one).
+describe("agentsHome", () => {
+  it("is your home, or ION_AGENTS_HOME when set", async () => {
+    const { homedir } = await import("node:os");
+    expect(agentsHome({})).toBe(homedir());
+    expect(agentsHome({ ION_AGENTS_HOME: "" })).toBe(homedir());
+    expect(agentsHome({ ION_AGENTS_HOME: "/elsewhere/agents" })).toBe("/elsewhere/agents");
   });
 });

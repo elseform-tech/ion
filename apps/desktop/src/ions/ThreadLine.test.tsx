@@ -74,3 +74,41 @@ describe("a thread's line", () => {
     expect(container.querySelector(".wd")).not.toBeNull();
   });
 });
+
+// The user, 2026-11-21: answered questions stay in the conversation, "the same in ion threads".
+describe("a thread open beside its ion's chat", () => {
+  it("the same in an ion thread: the question and your answer stay where it was asked", async () => {
+    const { ThreadPeek } = await import("./ThreadLine.js");
+    const ask = ev(
+      EV.needRaised,
+      {
+        needId: "n1",
+        kind: "ask",
+        summary: "Use QA?",
+        detail: null,
+        choices: [{ label: "Yes", consequence: "" }],
+      },
+      "2026-11-19T10:00:02Z",
+    );
+    const answer = ev(
+      EV.needResolved,
+      { needId: "n1", decision: "answered", by: "you", choice: "Yes", scope: "chat" },
+      "2026-11-19T10:00:03Z",
+    );
+    const subscribe = vi.fn(async (_q: unknown, fn: (e: IonEvent) => void) => {
+      for (const e of [started, ask, answer]) fn(e);
+      return () => {};
+    });
+    const { container } = render(
+      <ThreadPeek
+        client={{ subscribe, call: vi.fn(async () => []) } as unknown as IonClient}
+        chat={chat("running")}
+        onClose={() => {}}
+        onOpenChat={() => {}}
+      />,
+    );
+    await waitFor(() => expect(container.querySelector(".qa .qq")?.textContent).toBe("Use QA?"));
+    expect(container.querySelector(".u")?.textContent).toBe("Yes");
+    expect(container.querySelector(".qbox")).toBeNull();
+  });
+});

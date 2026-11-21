@@ -1,7 +1,8 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { agentEnv, type StartOpts } from "@ion/adapter-kit";
 import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
 import { EV, type HarnessInfo, type IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,9 +12,27 @@ import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { ionsView } from "../views/ions.js";
 import { ionInstructions } from "./instructions.js";
-import { IonTurns, NO_AGENT, STOPPED, TOO_LONG } from "./turn.js";
+import { IonTurns, ionRules, NO_AGENT, STOPPED, TOO_LONG } from "./turn.js";
 
 process.env.ION_ALLOW_FAKE = "1";
+
+/** What each fake session was started with. */
+const starts = vi.hoisted(() => [] as StartOpts[]);
+vi.mock("@ion/adapter-fake", async (real) => {
+  const m = await real<typeof import("@ion/adapter-fake")>();
+  return {
+    ...m,
+    createFakeAdapter: (...a: Parameters<typeof m.createFakeAdapter>) => {
+      const adapter = m.createFakeAdapter(...a);
+      const start = adapter.start.bind(adapter);
+      adapter.start = (o) => {
+        starts.push(o);
+        return start(o);
+      };
+      return adapter;
+    },
+  };
+});
 
 // The user, 2026-11-19: "ions require tools, reasoning and their harness power… rather than cheap and quick, i would
 // rather it finishes task accurately, securely, with high quality with some cost". An ion's turn is now a real agent
@@ -35,6 +54,9 @@ const agents = async (): Promise<HarnessInfo[]> => [
   { id: "fake", label: "Fake", installed: true, signedIn, models: [], defaultModel: "fake" },
 ];
 
+/** A public address (a CDN's), built rather than written out. */
+const PUBLIC_IP = [104, 20, 22, 46].join(".");
+
 function turns(turnMs?: number): IonTurns {
   current = new IonTurns({
     ...{ store, db, configFile: join(home, "config.toml"), dataDir: join(home, "data") },
@@ -44,6 +66,8 @@ function turns(turnMs?: number): IonTurns {
     agents,
     startThread,
     home,
+    // Every name is a public address here (no real DNS in tests).
+    dns: async () => [{ address: PUBLIC_IP, family: 4 }],
     ...(turnMs ? { turnMs } : {}),
   });
   made.push(current);
@@ -128,6 +152,66 @@ describe("an ion's turn", () => {
     expect(new Set(work.map((e) => e.runId)).size).toBe(1);
     // Task review, 2026-11-19: the turn's id comes with its reply, so the reply can carry it (its work goes above it).
     expect(work[0]!.runId).toBe(r.turnId);
+  });
+
+  // The user, 2026-11-20: your MCP servers reach chats' agents only; an ion's own turn has ion's server alone.
+  it("an ion's turn gets only ion's server, never yours", async () => {
+    writeFileSync(join(home, "mcp.json"), JSON.stringify({ mcpServers: { docs: { command: "docs-mcp" } } }));
+    const c = loadUserConfig(join(home, "config.toml")).config;
+    saveUserConfig(join(home, "config.toml"), { ...c, tools: { ...c.tools, mcpOn: ["docs@any"] } });
+    await turns().turn("payments-api", "what is this");
+    expect(starts.at(-1)?.mcpServers).toEqual([
+      {
+        name: "ion",
+        transport: "http",
+        url: `${base}/mcp`,
+        headers: { Authorization: expect.stringMatching(/^Bearer [0-9a-f]{64}$/) },
+      },
+    ]);
+  });
+
+  // Task review, 2026-11-20: ion's own agents (an ion's turn, the judge, the probes) inherited ion's environment, and
+  // with it a key mcp.json fills from there.
+  it("an ion turn's agent env lacks a ${NAME} filled from ion's env", async () => {
+    writeFileSync(
+      join(home, "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          docs: { type: "http", url: "https://d.example/mcp", headers: { K: "${TURN_TEST_KEY}" } },
+        },
+      }),
+    );
+    Object.assign(process.env, {
+      TURN_TEST_KEY: "turn-secret-123",
+      TURN_TEST_COPY: "turn-secret-123",
+      TURN_TEST_PLAIN: "x",
+    });
+    try {
+      await turns().turn("payments-api", "what is this");
+      const env = agentEnv(process.env, starts.at(-1)?.envDrop);
+      expect(Object.keys(env).filter((k) => k.startsWith("TURN_TEST_"))).toEqual(["TURN_TEST_PLAIN"]);
+    } finally {
+      for (const k of ["KEY", "COPY", "PLAIN"]) delete process.env[`TURN_TEST_${k}`];
+    }
+  });
+
+  // Task review, 2026-11-21: `${HOME}` in mcp.json took HOME from every agent (Claude lost its login).
+  it("`${HOME}/docs` in mcp.json leaves HOME and PATH in the agent's env; ${GH_TOKEN} is still left out", async () => {
+    const servers = {
+      docs: { command: "docs-mcp", args: ["${HOME}/docs"], env: { P: "${PATH}" } },
+      gh: { type: "http", url: "https://gh.example/mcp", headers: { Authorization: "Bearer ${GH_TOKEN}" } },
+    };
+    writeFileSync(join(home, "mcp.json"), JSON.stringify({ mcpServers: servers }));
+    process.env.GH_TOKEN = "gh-secret-12345";
+    try {
+      await turns().turn("payments-api", "what is this");
+      const env = agentEnv(process.env, starts.at(-1)?.envDrop);
+      expect(env.HOME).toBe(process.env.HOME);
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(env.GH_TOKEN).toBeUndefined();
+    } finally {
+      delete process.env.GH_TOKEN;
+    }
   });
 
   // Task review, 2026-11-19: run as the second project, so a scope mix-up (all projects) would answer "storefront".
@@ -257,6 +341,24 @@ describe("an ion's turn", () => {
     } finally {
       delete process.env.ION_FAKE_START_MS;
     }
+  });
+
+  // The user, 2026-11-20: "can ions search the internet through their respective harness too" — "sure". An ion reads
+  // a page its search found or one in your message; never one it made up (Task 7 ruling).
+  it("an ion reads a page its search found or you gave it, and nothing it made up", async () => {
+    const r = await turns().turn("chief", "try-web https://example.org/given");
+    expect(r.reply).toBe(
+      "Read https://nodejs.org/en/about/previous-releases. Read https://example.org/given. " +
+        "Refused https://made.up/x: ion only reads pages it found or you gave it.",
+    );
+  });
+
+  // Task 7 ruling, 2026-11-20: a report turn's prompt is an agent's words, not yours: no address in it may be read.
+  it("a report turn reads no address from its prompt", async () => {
+    const r = await turns().turn("chief", "try-web https://example.org/given", { noThreads: true });
+    expect(r.reply).toContain(
+      "Refused https://example.org/given: ion only reads pages it found or you gave it.",
+    );
   });
 
   // Review Focus 2: the ion's agent tries to write; its gate denies it, and the turn goes on.
@@ -433,4 +535,15 @@ describe("an ion's turn", () => {
     expect((await next).reply).toBe("This is storefront.");
     expect(onIon("storefront").filter((e) => e.type === EV.toolStarted)).toHaveLength(1);
   }, 10_000);
+});
+
+// Final review, 2026-11-21: an ion's gate kept its own copy of ion's folders and missed ~/.cache/ion (where ion keeps
+// each agent's config); it uses the same list as the runs' hard rules.
+describe("what an ion may read", () => {
+  it("never ion's own folders, ~/.cache/ion included", () => {
+    const r = ionRules({ dataDir: "/d/data", configFile: "/c/ion/config.toml", home: "/Users/me" }, "/p");
+    const cache = join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "ion");
+    expect(r.ionDirs).toEqual(expect.arrayContaining(["/d/data", "/c/ion", cache]));
+    expect(r.home).toBe("/Users/me");
+  });
 });

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core, plus dragging the window by its header and bringing it forward; showing system notifications and hearing their clicks. No shell, no file system; the UI reaches the daemon over WebSocket.",
+  "description": "The main window: core, plus dragging the window by its header and bringing it forward; showing system notifications and hearing their clicks; opening sign-in pages (https only) in your browser. Opening your mcp.json in your editor is granted at start, for that one file (lib.rs). No shell, no file system; the UI reaches the daemon over WebSocket.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -12,6 +12,14 @@
     "notification:allow-request-permission",
     "notification:allow-notify",
     "notification:allow-register-listener",
-    "notification:allow-remove-listener"
+    "notification:allow-remove-listener",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://*"
+        }
+      ]
+    }
   ]
 }

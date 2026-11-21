@@ -12,7 +12,7 @@ import {
 } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 import type { Connection } from "./connection.js";
-import { acpToolKind, createAcpState, mapUpdate } from "./map.js";
+import { acpToolKind, createAcpState, mapUpdate, webToolOf } from "./map.js";
 
 type Option = { optionId: string; kind: string };
 /** Acceptable option kinds per decision, best first. Never wider than asked: "allow" is never "always". */
@@ -199,12 +199,16 @@ async function answerPermissionUnsafe(
   const requestId = `${toolId}:${randomUUID().slice(0, 8)}`;
   const summary = String(tool.title ?? "A tool");
   const mcp = mcpToolOf(tool);
-  const kind = mcp ? "mcp" : acpToolKind(tool.kind);
+  // Grok's own web tools, named from its structured call: ion decides what's a search by this name.
+  const web = mcp ? undefined : webToolOf(tool);
+  let kind = acpToolKind(tool.kind);
+  if (web) kind = "web";
+  if (mcp) kind = "mcp";
   emit({ type: EV.approvalRequested, data: { requestId, toolId, kind, summary } });
   const decision = await decide({
     requestId,
     toolId,
-    toolName: mcp?.name ?? String(tool.kind ?? "tool"),
+    toolName: mcp?.name ?? web ?? String(tool.kind ?? "tool"),
     mcpServer: mcp?.server ?? null,
     kind,
     summary,

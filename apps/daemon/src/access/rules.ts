@@ -1,9 +1,12 @@
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { realish } from "../runs/policy.js";
+import { hardRuleFor } from "./hard.js";
+import { touchesKeychain } from "./keychain.js";
+import { fold, isContent, pathsIn, type RuleCtx, strings, toolPaths, under } from "./paths.js";
 
 export type Verdict = { decision: "allow" | "deny"; reason: string };
-export type RuleCtx = { roots: string[]; home: string; ionDirs: string[] };
+export type { RuleCtx } from "./paths.js";
 
 /** Your secrets under your home folder (folders end in "/"): never touched in Auto, whatever the judge says. */
 const SECRETS = [
@@ -45,36 +48,6 @@ const SECRET_NAMES = [
 const PLAIN = /^[\w.\-/@+=:,%]+$/;
 /** A plain flag ("-n5", "--count"): no "=value" or path tucked into it. */
 const FLAG = /^--?[\w-]+$/;
-/** A path in any text: absolute, ~ or $HOME, at the start of a word (not "/a.ts" inside "src/a.ts"). */
-const PATH = /(?<=^|[\s'"=:(])(?:~|\$\{?HOME\}?)?\/[^\s'"`|;&<>()]+/g;
-
-function* strings(v: unknown): Generator<string> {
-  if (typeof v === "string") yield v;
-  else if (Array.isArray(v)) for (const x of v) yield* strings(x);
-  else if (v && typeof v === "object") for (const x of Object.values(v)) yield* strings(x);
-}
-
-const under = (p: string, dir: string) => {
-  const rel = relative(dir, p);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-};
-const expand = (p: string, home: string) => p.replace(/^(~|\$\{?HOME\}?)/, home);
-
-/**
- * Every path the request names, resolved for real (symlinks followed): absolute and ~ paths anywhere in its input,
- * and a command's relative paths (from the worktree, where commands run).
- */
-function pathsIn(req: ApprovalRequest, c: RuleCtx): string[] {
-  const out: string[] = [];
-  for (const s of strings(req.input)) for (const m of s.matchAll(PATH)) out.push(expand(m[0], c.home));
-  // Every argument of a command is a path from the worktree (where commands run): a link named "key" counts too.
-  const command = typeof req.input.command === "string" ? req.input.command : "";
-  for (const t of command.split(/[\s|;&]+/))
-    if (t && !t.startsWith("-") && !t.startsWith("/") && !/^[~$]/.test(t))
-      out.push(resolve(c.roots[0] ?? "/", t));
-  return out.map((p) => realish(resolve(p)));
-}
-
 /** A read-only command the rule can fully read: a plain chain or pipe of read-only commands, nothing else. */
 function readOnly(command: string): boolean {
   // Anything the shell would expand or unquote (globs, quotes, escapes) is left to the judge.
@@ -93,8 +66,6 @@ function readOnly(command: string): boolean {
   });
 }
 
-// macOS folders ignore case by default: ~/.SSH is ~/.ssh.
-const fold = (p: string) => (process.platform === "darwin" ? p.toLowerCase() : p);
 const isSecret = (p: string, home: string) =>
   SECRETS.some((s) => {
     const secret = fold(realish(join(home, s)));
@@ -103,23 +74,15 @@ const isSecret = (p: string, home: string) =>
 const namesSecret = (req: ApprovalRequest) =>
   [...strings(req.input)].some((v) => SECRET_NAMES.some((n) => v.toLowerCase().includes(n)));
 
-/** Grok's folders (yours, where ion's gate hook lives, and a worktree's): `.grok` named, or a path into one. */
-const ION_HOOK = /(^|[\s'"=/])\.grok(\/hooks(\/|$|[\s'";|&)])|\/?(?=$|[\s'";|&)]))/i;
-const touchesHook = (req: ApprovalRequest, paths: string[], c: RuleCtx) =>
-  [...strings(req.input)].some((v) => ION_HOOK.test(v)) ||
-  paths.some((p) => [...c.roots, c.home].some((r) => under(fold(p), fold(join(realish(r), ".grok")))));
-
 /** The rules Auto applies before asking the judge; null means "ask the judge". */
 export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
   const paths = pathsIn(req, c);
-  if (namesSecret(req) || paths.some((p) => isSecret(p, c.home)))
+  if (namesSecret(req) || touchesKeychain(req, c) || paths.some((p) => isSecret(p, c.home)))
     return { decision: "deny", reason: "Touches your secrets" };
+  const hard = hardRuleFor(req, c);
+  // A guess of ion's isn't a rule's no (the user, 2026-11-21): it goes on to the judge.
+  if (hard) return hard.wary ? null : hard;
   const inWorktree = (p: string) => c.roots.some((r) => under(p, realish(r)));
-  if (
-    touchesHook(req, paths, c) ||
-    paths.some((p) => !inWorktree(p) && c.ionDirs.some((d) => under(p, realish(d))))
-  )
-    return { decision: "deny", reason: "Touches ion's own files" };
   const command = typeof req.input.command === "string" ? req.input.command : null;
   if (req.kind === "command" && command && readOnly(command) && paths.every(inWorktree))
     return { decision: "allow", reason: "Only looks inside the project" };
@@ -132,24 +95,6 @@ export function ruleFor(req: ApprovalRequest, c: RuleCtx): Verdict | null {
     return { decision: "allow", reason: "Only looks inside the project" };
   return null;
 }
-
-/**
- * Every string in a tool's input, anywhere and whatever its field is called, taken as a path from the worktree
- * (links followed): a word ("tip") stays inside; a path through a link out of the worktree doesn't.
- */
-function toolPaths(req: ApprovalRequest, c: RuleCtx): string[] {
-  return [...strings(req.input)]
-    .filter((v) => !/^[/~$]/.test(v))
-    .map((v) => realish(resolve(c.roots[0] ?? "/", v)));
-}
-
-/**
- * What a search looks for: text matched in files, not a path. A glob tool's `pattern` is a path, though (as in
- * runs/policy.ts).
- */
-const CONTENT = new Set(["pattern", "query", "regex", "search", "text"]);
-const isContent = (req: ApprovalRequest, k: string) =>
-  CONTENT.has(k) && !(k === "pattern" && /glob/i.test(req.toolName));
 
 /** Every string of a tool's input that can name a path: all but what it searches for, however deep. */
 const pathStrings = (req: ApprovalRequest) =>

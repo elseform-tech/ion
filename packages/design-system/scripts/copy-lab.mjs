@@ -41,12 +41,12 @@ const RANGES = [
   [870, 870, "settings: effort bars in a value"],
   [899, 900, "settings: ion's model slots"],
   [905, 905, "settings: model separator"],
-  [911, 928, "settings: tools rows, agents' status, stacked rows"],
-  [997, 997, "activity: rows"],
-  [1060, 1077, "ions: project ion rows, a thread open beside its ion's chat; routines' instructions"],
-  [1083, 1088, "the frame: the top strip, each screen inside it; the sidebar hidden"],
-  [1089, 1095, "queued messages above the message box"],
-  [1096, 1100, "settings: chats at once, times, a shortcut's keys"],
+  [911, 937, "settings: tools rows, agents' status, stacked rows; Tools tabs, events and their hooks, menus"],
+  [1006, 1006, "activity: rows"],
+  [1069, 1086, "ions: project ion rows, a thread open beside its ion's chat; routines' instructions"],
+  [1092, 1097, "the frame: the top strip, each screen inside it; the sidebar hidden"],
+  [1098, 1104, "queued messages above the message box"],
+  [1105, 1109, "settings: chats at once, times, a shortcut's keys"],
 ];
 
 const out = [

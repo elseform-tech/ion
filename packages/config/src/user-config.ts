@@ -5,8 +5,6 @@ import { z } from "zod";
 
 const Effort = z.enum(["low", "medium", "high", "max"]);
 
-const Access = z.enum(["auto", "full"]);
-
 /** A clock time, local: "08:30". */
 export const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 const Clock = z.string().regex(CLOCK, "Use a time like 08:30");
@@ -50,8 +48,6 @@ const Project = z.looseObject({
   starred: z.boolean().default(false),
   /** The name ion shows, when you renamed it (its id stays: events, decisions and threads refer to it). */
   name: z.string().min(1).max(60).optional(),
-  /** This project's access mode; without it, `[access] default` applies. */
-  access: Access.optional(),
   /** False: ion (the chief) never reads this project's chats. Absent means true. */
   shareWithIon: z.boolean().optional(),
   /** Its ion's colour (identity only); absent: the palette, by the project's place in this list. */
@@ -74,6 +70,41 @@ const Project = z.looseObject({
   profileSuggestion: z.string().max(PROFILE_CHARS).optional(),
 });
 
+/** A command you set to run on an ion event (added only from the app). */
+const HookTool = z.looseObject({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(80),
+  on: z.boolean().default(true),
+  /** The ion event it runs on (the daemon knows which; @ion/schema HOOK_EVENTS). */
+  event: z.string().min(1).max(40),
+  run: z.string().min(1).max(4000),
+  /** Only this project's events; absent: every project's. */
+  project: z.string().min(1).optional(),
+});
+
+/**
+ * Your tools. Servers come only from mcp.json: here are the ones you turned on, your hooks and the
+ * skills you turned on. Keys and tokens live in the keychain, never here.
+ */
+const Tools = z.looseObject({
+  /**
+   * The servers you turned on, as "<name>@<what it runs>" (a hash of its command and arguments, or its URL's
+   * origin): a new server, or one that now runs something else, is off until you turn it on.
+   */
+  mcpOn: z.array(z.string()).default([]),
+  hooks: z.array(HookTool).default([]),
+  /**
+   * The hooks you turned on in the app, as "<id>@<what it runs>" (a hash of its command, event and project): one
+   * added or changed here by hand is off until you turn it on.
+   */
+  hooksOn: z.array(z.string()).default([]),
+  /**
+   * The skills you turned on in the app, as "<folder>@<what's in it>" (signed with ion's key): a new skill, or one
+   * whose files changed, is off until you turn it on.
+   */
+  skills: z.looseObject({ on: z.array(z.string()).default([]) }).prefault({}),
+});
+
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
 const MaxRuns = z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]);
 
@@ -92,10 +123,12 @@ const UserConfigSchema = z.looseObject({
   projects: z.array(Project).default([]),
   /** Where `ion projects new <name>` makes projects. */
   folders: z.looseObject({ projects: z.string().default("~/ion/projects") }).prefault({}),
-  /** "auto": ion decides each action outside the chat's worktree; "full": everything runs. */
+  /**
+   * How Auto decides. Whether a chat runs in Auto or Full access is picked per message with the composer's access
+   * icon (new chats start on Auto); there's no default or per-project setting.
+   */
   access: z
     .looseObject({
-      default: Access.default("auto"),
       /** Who decides in Auto: "<harness>:<model>", a small model (it runs for every new action). */
       judge: z.string().default("claude-code:haiku"),
     })
@@ -121,11 +154,13 @@ const UserConfigSchema = z.looseObject({
         .prefault({}),
     })
     .prefault({}),
+  tools: Tools.prefault({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
 export type ProjectEntry = UserConfig["projects"][number];
 export type RoutineEntry = NonNullable<ProjectEntry["routines"]>[number];
+export type HookEntry = UserConfig["tools"]["hooks"][number];
 
 export const DEFAULT_CONFIG: UserConfig = Object.freeze(UserConfigSchema.parse({})) as UserConfig;
 
@@ -149,6 +184,11 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["notifications", "quiet", "on"], z.boolean()],
   [["notifications", "quiet", "from"], Clock],
   [["notifications", "quiet", "to"], Clock],
+  [["tools"], z.looseObject({})],
+  [["tools", "mcpOn"], z.array(z.string())],
+  [["tools", "hooks"], z.array(z.unknown())],
+  [["tools", "hooksOn"], z.array(z.string())],
+  [["tools", "skills"], z.looseObject({ on: z.array(z.string()).optional() })],
 ];
 
 /** A project's bad `notify` is dropped (its default applies); returns "<id>.notify" for each. */
@@ -159,6 +199,15 @@ function dropBadNotify(raw: unknown): string[] {
   );
   for (const p of bad) delete p.notify;
   return bad.map((p) => `${String(p.id)}.notify`);
+}
+
+/** A hook that isn't valid is dropped alone (the others still run); returns "hooks.<id>" for each. */
+function dropBadHooks(raw: unknown): string[] {
+  const tools = (raw as { tools?: { hooks?: unknown } } | null)?.tools;
+  if (!Array.isArray(tools?.hooks)) return [];
+  const bad = tools.hooks.filter((h) => !HookTool.safeParse(h).success);
+  tools.hooks = tools.hooks.filter((h) => !bad.includes(h));
+  return bad.map((h, i) => `hooks.${String((h as { id?: unknown } | null)?.id ?? i)}`);
 }
 
 const isBadNotify = (p: unknown): boolean =>
@@ -181,10 +230,32 @@ function dropBad(raw: unknown, file: string): string | null {
   const dropped = FALLBACKS.filter(([path, schema]) => dropIfBad(raw, path, schema)).map(([path]) =>
     path.length === 1 ? path[0]! : path.slice(1).join("."),
   );
-  dropped.push(...dropBadNotify(raw));
+  dropped.push(...dropBadNotify(raw), ...dropBadHooks(raw));
   if (!dropped.length) return null;
   const verb = dropped.length > 1 ? "are" : "is";
   return `${basename(file)}: ${dropped.join(", ")} ${verb} not valid; using the default`;
+}
+
+/** Removes `holder[key]`; whether it held something other than "auto" (worth a warning). */
+function dropKey(holder: unknown, key: string): boolean {
+  if (typeof holder !== "object" || holder === null || !(key in holder)) return false;
+  const was = (holder as Record<string, unknown>)[key];
+  delete (holder as Record<string, unknown>)[key];
+  return was !== "auto";
+}
+
+/**
+ * `access.default` and each project's `access` are no longer read (the user, 2026-11-20: Auto-approval is turned
+ * off only per chat, with the composer's access icon): they're removed, so new chats start on Auto, and a value
+ * other than auto is said once.
+ */
+function dropOldAccess(raw: unknown, file: string): string | null {
+  const r = raw as { access?: unknown; projects?: unknown } | null;
+  const said = dropKey(r?.access, "default") ? ["access.default"] : [];
+  for (const p of Array.isArray(r?.projects) ? r.projects : [])
+    if (dropKey(p, "access")) said.push(`${String((p as { id?: unknown }).id)}.access`);
+  if (!said.length) return null;
+  return `${basename(file)}: ${said.join(", ")} no longer used; new chats start on Auto`;
 }
 
 /**
@@ -204,7 +275,7 @@ export function loadUserConfig(file: string): {
     const first = String((e as Error).message).split("\n")[0];
     return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null };
   }
-  const warning = dropBad(raw, file);
+  const warning = [dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
   const r = UserConfigSchema.safeParse(raw);
   if (!r.success)
     return { config: defaults(), error: describeIssue(file, r.error.issues[0]!), warning: null };

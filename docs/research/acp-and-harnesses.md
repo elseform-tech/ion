@@ -181,3 +181,69 @@ project's folder, while the thread's edit lives in its own worktree until you me
 that a thread's changes are on its own branch, not in the project's folder, and gets the files it changed (as data).
 After the fix, another docs thread was reported as "On the thread's branch, README.md now ends with… That stays on its
 own branch until you merge it." No error events; `daemon.log` stayed empty.
+
+## Only ion's tools in ion's chats (probed 2026-11-21, Plan 18 Task 9)
+
+The user, 2026-11-21: "Only ion's, plus Import": in ion's chats every agent uses only the servers, hooks and skills
+set up in ion; an agent's own stay its own, and Import (Settings → Tools, `ion mcp import`) copies servers in, off.
+Each agent's switch, and how it was checked (temp `HOME`s only; nobody's real config was read):
+
+| Agent | Its own servers | Its own hooks and plugins | Source |
+|---|---|---|---|
+| Claude Code | `strictMcpConfig: true` (CLI `--strict-mcp-config`): only the `mcpServers` ion passes; not `~/.claude.json`, `.mcp.json` or plugins | `settingSources: []` (no settings files, so no hooks or enabled plugins from them) | Agent SDK 0.3.326 `sdk.d.ts` (`strictMcpConfig`, `settingSources`) |
+| Codex 0.153.2 | each one `config/read` (with the chat's `cwd`) lists is set `{ enabled: false }` in the thread's `config` (`mcpServerStatus/list` then says `disabled`). `-c mcp_servers={}` does nothing: config layers merge | `-c features.plugins=false`; each of your hooks `hooks/list` shows on is turned off with `-c hooks.state={"<key>"={enabled=false}}`, in the same table as the trust for ion's own hook (a second `-c hooks.state=` replaces the first). Managed hooks are left alone | `codex app-server generate-ts`; probed with a temp `CODEX_HOME` |
+| opencode 1.18.8 | `XDG_CONFIG_HOME` points at an empty folder of ion's (your `~/.config/opencode` isn't read; `OPENCODE_CONFIG`/`OPENCODE_CONFIG_DIR` blanked; project config was already off). What else your config says (providers, model, agents) is carried in ion's `OPENCODE_CONFIG_CONTENT`. `~/.opencode/opencode.json` still loads: its servers are set `{ enabled: false }` by name | same folder swap drops your config's `plugin` list and `plugin/` folder; ion's gate plugin is the only one listed. `--pure` drops every plugin, ion's gate too (seen: a marker plugin didn't run), and an inline config can't take plugins away (lists add up). Gap: plugins in `~/.opencode/plugin/` still load (no switch short of moving `HOME`, which moves sign-in) | `opencode --help` (`--pure`), `opencode debug config`, `opencode debug paths`, marker plugins under a temp `HOME` |
+| Grok 1.0.92 | `GROK_CLAUDE_MCPS_ENABLED=false`, `GROK_CURSOR_MCPS_ENABLED=false` (`grok inspect` then shows `[claude] [disabled]`). **No switch** for its own `~/.grok/config.toml` `[mcp_servers]` or a project's `.mcp.json`/`.grok` (after folder trust): `GROK_CONFIG` overlays only soft settings (its docs: "cannot spawn commands … or add a discovery source"; tried, still loaded), `GROK_HOME` moves its sign-in too | `GROK_CLAUDE_HOOKS_ENABLED=false`, `GROK_CURSOR_HOOKS_ENABLED=false`. **No switch** for `~/.grok/hooks/*.json` (ion's own gate hook lives there) or its enabled plugins | Grok's built-in docs (`[compat.<vendor>]`, `GROK_CONFIG`), `grok inspect` under a temp `HOME` |
+
+So Settings → Agents shows **Also loads its own** on Grok Build and opencode (the adapter's `ownTools`; task review,
+2026-11-21: opencode's `~/.opencode/plugin` and the plugins its config there lists still load, and it has no switch for
+that folder short of moving `HOME`).
+
+Task review, 2026-11-21 (opencode):
+- ion's config for opencode is a **file**, never the environment: `<XDG_CACHE_HOME or ~/.cache>/ion/opencode/<short hash of ION_HOME, or `default`>/opencode/
+  opencode.json` (one per ion home since the final review, 2026-11-21, so the tour, dev and the app don't race) (folder 0700, file 0600, written whole through a fresh temp file and a rename, only when it changes).
+  `OPENCODE_CONFIG_CONTENT` carried your provider keys into every process opencode started (LSP servers, formatters).
+  `{env:}` and `{file:}` references are kept; relative `{file:}` paths and `instructions` are made whole against your
+  config folder. Only `ION_GATE_URL` is in the env.
+- The folder is one of ion's own (`ionDirsOf`, so no run can read or write it). Each start checks it's yours, 0700 and
+  not a link (else refuses plainly), rewrites opencode.json, removes anything else (`plugin/`, `tool/`, other config
+  files, `AGENTS.md`…) and keeps only `@opencode-ai/plugin` in package.json. opencode installs that package there once
+  (the first start can be slow: while it isn't there, starts take turns and a timeout says "opencode is setting up").
+- What moving `XDG_CONFIG_HOME` drops for opencode in ion's chats: your global `~/.config/opencode/AGENTS.md`, its
+  `agent/`, `command/`, `plugin/`, `tool/` (custom tools) and `themes/` folders, and its servers. What your config file
+  says otherwise (providers, model, agents and instructions written in it) is carried.
+
+Skills (task review, 2026-11-21): Codex reads `~/.codex/skills` and a project's `.agents/skills` itself (no switch found
+in its config; Settings → Skills says "Uses its own"). Grok reads its own `~/.grok` skills, and Claude's and Cursor's
+unless told not to: ion sets `GROK_CLAUDE_SKILLS_ENABLED=false` and `GROK_CURSOR_SKILLS_ENABLED=false`.
+
+Codex, when `config/read` fails, ion can't name Codex's own servers to turn them off and has no switch for all of them:
+a chat doesn't start ("ion couldn't turn off Codex's own servers"); ion's judge (read-only) goes on. ion never edits an agent's
+own files for this; only its own folder (opencode's empty config) and per-run flags and environment.
+
+opencode's commands get your config folder back: ion's plugin sets `XDG_CONFIG_HOME` (and blanks `ION_GATE_URL` and
+`OPENCODE_CONFIG_CONTENT`) in its `shell.env` hook, so `git`, `gh` and the like read your own config as before.
+
+**Import** reads, and only reads (1 MB cap a file; a file that can't be read is one line): Claude Code `~/.claude.json`
+(`mcpServers`, and `projects[<path>].mcpServers` for ion's projects) and each project's `.mcp.json`; Codex
+`$CODEX_HOME/config.toml` (default `~/.codex`) and a project's `.codex/config.toml` (`bearer_token_env_var` becomes
+`Authorization: Bearer ${NAME}`); opencode `$XDG_CONFIG_HOME/opencode/{config,opencode}.json(c)` and a project's
+`opencode.json(c)` (`{env:NAME}` becomes `${NAME}`); Grok `$GROK_HOME/config.toml` (default `~/.grok`) and a project's
+`.grok/config.toml`. A key typed into any of them becomes a `${NAME}` you add in Settings; SSE servers are said, not
+brought in. Security review, 2026-11-21: a server in a project's own file (`.mcp.json`, a project's `opencode.json`,
+`.codex/` or `.grok/` config) was written by the repo, not you: it says so ("From shop's .mcp.json"), is never in Import
+all or the prompts, and comes in only by name with its project's file named too (`ion mcp import repotool --from
+shop:.mcp.json`). Your own servers are listed before any in a project's file, and a project's server with one of their
+names is left out (a repo's `github` never hides yours). Nothing comes in before its command (or host) and keys are shown.
+
+## Seen live in PR A's verification (2026-11-21, opencode big-pickle and Grok 4.7)
+
+- opencode's `tool.started` for a bash call carries only `summary: "bash"` and `input: { cwd }`; the command arrives
+  later on the permission request (ion's approval names it). An MCP call through ion's gateway comes as kind
+  `other`, empty summary, `input: {}`, named `<server>_<tool>` (`everything_echo`); ion's approval names it. The CLI
+  now falls back to the tool's name.
+- opencode's `webfetch` reaches ion's gate with its URL (refused when no search found it and you didn't give it, with
+  the reason the ion repeats), though its `tool.started` input is `{}`.
+- opencode once passed ion's `ask` choices as plain strings (rejected by the tool's schema); it retried with objects.
+- Grok finds an MCP tool first (`Find tool`, kind `other`), then calls `<server>__<tool>`; its web search runs on
+  xAI's side, so pages it found aren't "found" for ion's fetch rule and a later `web_fetch` of them is refused.

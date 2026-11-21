@@ -66,7 +66,9 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     return { text: streamed };
   },
   [EV.toolStarted]: (s, d) =>
-    d.kind === "edit" ? quiet : { text: line(s, `· ${VERB[String(d.kind)] ?? "Used"} ${clean(d.summary)}`) },
+    d.kind === "edit"
+      ? quiet
+      : { text: line(s, `· ${VERB[String(d.kind)] ?? "Used"} ${clean(d.summary || d.name)}`) },
   [EV.fileChanged]: (s, d) => {
     const counts = typeof d.added === "number" ? ` (+${d.added} −${d.removed ?? 0})` : "";
     return { text: line(s, `· Edited ${clean(d.path)}${counts}`) };

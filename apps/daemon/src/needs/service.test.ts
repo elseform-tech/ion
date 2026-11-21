@@ -93,4 +93,14 @@ describe("NeedsService", () => {
     });
     expect(needs.open()).toEqual([]);
   });
+
+  // Task review, 2026-11-21: a question that closes without you says why (its run stopped, the chat was archived, ion
+  // restarted), so the chat can say it plainly.
+  it("says why a question closed without you", () => {
+    const why = () =>
+      store.read({ chatId: "c1", types: [EV.needResolved] }).map((e) => (e.data as { why?: string }).why);
+    needs.raiseAsk(question);
+    needs.supersedeChat("c1");
+    expect(why()).toEqual(["archived"]);
+  });
 });
