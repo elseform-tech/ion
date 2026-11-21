@@ -189,6 +189,11 @@ const KEEP = new Set([
   ".gitignore",
 ]);
 const PLUGIN_PACKAGE = "@opencode-ai/plugin";
+/**
+ * What opencode writes as its config folder's .gitignore when it's missing (opencode 1.18.8, byte for byte): written
+ * by ion, so opencode needn't write there in a run's sandbox (live, 2026-11-21: it stopped at its start).
+ */
+const GITIGNORE = "node_modules\npackage.json\npackage-lock.json\nbun.lock\n.gitignore";
 
 /** A folder of ion's: made (only you), else checked: yours, only you, not a link. */
 function ownFolder(p: string): void {
@@ -241,6 +246,7 @@ export function writeIonConfig(config: Record<string, unknown>, own = false): st
     if (!KEEP.has(name)) rmSync(join(dir, name), { recursive: true, force: true });
   onlyPluginPackage(join(dir, "package.json"));
   if (own) takePluginPackage(dir, join(ionConfigHome(false), "opencode"));
+  writeWhole(join(dir, ".gitignore"), GITIGNORE);
   writeWhole(join(dir, "opencode.json"), `${JSON.stringify(config, null, 2)}\n`);
   return home;
 }

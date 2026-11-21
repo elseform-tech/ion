@@ -189,7 +189,7 @@ describe("only ion's tools in ion's chats", () => {
     const deps = { "@opencode-ai/plugin": "1.18.8", "left-pad": "1.0.0" };
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: deps }));
     started(h);
-    expect(readdirSync(dir).sort()).toEqual(["opencode.json", "package.json"]);
+    expect(readdirSync(dir).sort()).toEqual([".gitignore", "opencode.json", "package.json"]);
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
     expect(pkg.dependencies).toEqual({ "@opencode-ai/plugin": "1.18.8" });
   });
@@ -375,12 +375,34 @@ describe("opencode's log", () => {
 // one in the run writes it, nor your own opencode config; Grok's hooks (ion's gate among them) can't be changed.
 describe("agents' own paths in a run's sandbox", () => {
   it("opencode reads ion's config for it; its own config folders aren't written", () => {
-    const p = OPENCODE.sandboxPaths?.(false);
+    const h = opencodeHome();
+    const { env } = started(h);
+    mkdirSync(join(env.XDG_CONFIG_HOME!, "opencode", "node_modules", "@opencode-ai", "plugin"), {
+      recursive: true,
+    });
+    const p = withEnv({ XDG_CACHE_HOME: h.cache }, () => OPENCODE.sandboxPaths?.(false));
     expect(p?.read?.[0]).toMatch(/\/ion\/opencode\/[^/]+$/);
     expect(p?.noWrite).toEqual(
       expect.arrayContaining([expect.stringMatching(/\/opencode$/), expect.stringMatching(/\/\.opencode$/)]),
     );
     expect(p?.write).toBeUndefined();
+  });
+
+  // Live, 2026-11-21: in the sandbox opencode stopped at its start ("FileSystem.writeFile … opencode/.gitignore"): it
+  // writes its .gitignore into its config folder when it's missing. ion writes it first, so a run needn't; until
+  // opencode's plugin package is installed there (a first start), the run may write that folder.
+  it("opencode's folder has its .gitignore already; a run writes it only while opencode sets up", () => {
+    const h = opencodeHome();
+    const { env } = started(h, {}, true);
+    const dir = join(env.XDG_CONFIG_HOME!, "opencode");
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe(
+      "node_modules\npackage.json\npackage-lock.json\nbun.lock\n.gitignore",
+    );
+    const paths = () => withEnv({ XDG_CACHE_HOME: h.cache }, () => OPENCODE.sandboxPaths?.(true));
+    expect(paths()?.write).toEqual([env.XDG_CONFIG_HOME]);
+    mkdirSync(join(dir, "node_modules", "@opencode-ai", "plugin"), { recursive: true });
+    expect(paths()?.write).toBeUndefined();
+    expect(paths()?.read).toEqual([env.XDG_CONFIG_HOME]);
   });
 
   it("Grok's hooks, config and skills aren't written", () => {

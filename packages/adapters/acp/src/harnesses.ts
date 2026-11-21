@@ -158,10 +158,11 @@ export const OPENCODE: AcpHarness = {
   // opencode runs a prompt that starts with `/command` as that command (its ACP agent lists them).
   picks: "slash",
   notResponding: (own) => (settingUp(own) ? "Not responding — opencode is setting up, try again" : undefined),
-  // ion's folder for it (its config) is read, never written, by a run; your own config folders aren't written either.
-  // The sandbox can't tell opencode from the commands it runs: they can read that config too (docs/research/sandbox.md).
+  // ion's folder for it (its config) is read, not written, by a run, except while opencode installs its plugin package
+  // there (a first start); your own config folders aren't written. The sandbox can't tell opencode from the commands
+  // it runs: they can read that config too (docs/research/sandbox.md).
   sandboxPaths: (own) => ({
-    read: [ionConfigHome(own)],
+    ...(settingUp(own) ? { write: [ionConfigHome(own)] } : { read: [ionConfigHome(own)] }),
     noWrite: [join(userConfigHome(), "opencode"), join(homedir(), ".opencode")],
   }),
   logFailure: opencodeFailure,

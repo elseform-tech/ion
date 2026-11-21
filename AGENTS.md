@@ -10,7 +10,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/config` | Config files and paths (`config.toml`, projects). |
 | `packages/client` | Typed WebSocket client: Node entry for the CLI, `/browser` entry for the desktop app. |
 | `packages/design-system` | Tokens (CSS variables from the spec), `Button`, `Spinner`, Lucide icons. |
-| `packages/adapter-kit` | Harness contract, shared contract tests (`/contract`), event queue, delta batching, JSON-RPC over stdio, PATH/version helpers. |
+| `packages/adapter-kit` | Harness contract, shared contract tests (`/contract`), event queue, delta batching, JSON-RPC over stdio, PATH/version helpers, the OS sandbox for runs (Seatbelt / bubblewrap; `docs/research/sandbox.md`). |
 | `packages/adapters/claude-code` | Claude Code via the Agent SDK; Claude login only. |
 | `packages/adapters/acp` | Any ACP agent: Grok Build (`grok agent stdio`), opencode (`opencode acp`). |
 | `packages/adapters/codex` | Codex through its app-server (`codex app-server`, JSON-RPC on stdio). |

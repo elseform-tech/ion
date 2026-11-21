@@ -78,6 +78,25 @@ narrower `"write"` entry inside a `"none"` folder wins; `curl https://example.co
 `thread/start` without `sandbox` reports `activePermissionProfile: { id: "ion-run", extends: ":workspace" }`; with
 `sandbox: "workspace-write"` it reports none (the profile is replaced).
 
+## Live (2026-11-21, a temporary ION_HOME)
+
+- **opencode 1.18.8** first stopped at its start inside the sandbox: `FileSystem.writeFile (…/opencode/.gitignore)`:
+  it writes that file into its config folder when it's missing. ion now writes it (byte for byte) when it prepares the
+  folder, and lets a run write the folder only while opencode's plugin package isn't installed there yet (a first
+  start). After that, opencode started and opened a session in the sandbox; its free model was out of quota, so the
+  chat itself ran on Grok.
+- **Grok Build 1.0.92** (Full access): created a file, `git add && git commit && git log`, `ion mcp ls` (through
+  `ION_PORT` and the run key), the `tiny` local server's `echo` through ion: all worked. Then, asked to read ion's files:
+  a base64-decoded path to `daemon.json` → `Operation not permitted` (the word rule no longer guesses; the OS stopped
+  it); a Python script it wrote, given the folder base64-decoded → `PermissionError: [Errno 1] Operation not
+  permitted`; `os.listdir` of `~/.cache/ion` built from pieces → `Operation not permitted`. Plain `cat daemon.json`,
+  Python naming ion's folder and `ls ~/.cache/ion/opencode` were refused by ion's word rules first (defence in depth).
+  ion's token appeared in no output and no event.
+- **Claude Code** (one haiku run): started inside the sandbox through `spawnClaudeCodeProcess`, signed in with its
+  usual login; a base64-decoded `cat daemon.json` → `Operation not permitted`.
+- **A hook** on "A chat finishes": read the project's README, and `cat daemon.json` → `Operation not permitted`.
+- The daemon's log had no errors.
+
 ## ion's local servers and your hooks
 
 - Local MCP servers ion runs (`workspace/mcp-bridge.ts`) start in the sandbox: ion's folders denied (they get their
