@@ -1,4 +1,5 @@
 --die-with-parent
+--new-session
 --unshare-pid
 --bind
 /
@@ -7,6 +8,8 @@
 /dev
 --proc
 /proc
+--tmpfs
+/dev/shm
 --tmpfs
 /ion-test/home/.local/share/ion
 --tmpfs

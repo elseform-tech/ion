@@ -491,6 +491,19 @@ describe("asking when ion blocks a tool call", () => {
     expect(of(EV.decisionRecorded).at(-1)).toMatchObject({ scope: "chat", choice: "Don't allow" });
   });
 
+  // The user, 2026-11-21: your saved "never" still holds in Full access. "Don't allow" is kept for that exact action
+  // in the chat; ion refuses it there from then on.
+  it("keeps 'Don't allow' as never for that exact action, in that chat", async () => {
+    const d = makeQuick();
+    const b = d.askBlocked(scope(), block);
+    await d.answer(needs.open("c1")[0]!.needId, 3);
+    expect(await b).toBe("deny");
+    const s = scope();
+    expect(d.saidNever(s.projectId, s.chatId, block.key)).toBe("npm publish");
+    expect(d.saidNever(s.projectId, "other-chat", block.key)).toBeNull();
+    expect(d.saidNever(s.projectId, s.chatId, "Bash npm test")).toBeNull();
+  });
+
   it("says no after the wait, keeps the question open, and tells the agent if you allow it later", async () => {
     const d = makeQuick(20);
     expect(await d.askBlocked(scope(), block)).toBe("timeout");

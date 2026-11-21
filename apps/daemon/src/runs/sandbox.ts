@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { loadUserConfig, mcpFileOf } from "@ion/config";
 import { type RunSandbox, type SandboxKind, sandboxKind } from "@ion/adapter-kit";
+import { sandboxGit } from "../workspace/index.js";
 
 let said = false;
 
@@ -25,6 +27,51 @@ export const ionFolders = (o: { dataDir: string; configFile: string; cacheDir?: 
   join(o.cacheDir ?? (process.env.XDG_CACHE_HOME || join(homedir(), ".cache")), "ion"),
 ];
 
+/** Each agent's own config, where it keeps its settings, hooks, servers and skills. */
+const CONFIGS: Record<string, (env: NodeJS.ProcessEnv, home: string) => string[]> = {
+  codex: (env, home) => [env.CODEX_HOME || join(home, ".codex")],
+  "claude-code": (env, home) => [env.CLAUDE_CONFIG_DIR || join(home, ".claude"), join(home, ".claude.json")],
+  opencode: (env, home) => [
+    join(env.XDG_CONFIG_HOME || join(home, ".config"), "opencode"),
+    join(home, ".opencode"),
+  ],
+  "grok-build": (env, home) => [env.GROK_HOME || join(home, ".grok")],
+};
+
+/**
+ * Every other agent's config, read-only to a run (task review, 2026-11-21: a Grok run could add a hook to ~/.claude
+ * for a later chat). The run's own agent keeps writing its sessions and state; the adapter guards its config files.
+ */
+export function agentConfigs(harness: string, env: NodeJS.ProcessEnv = process.env): string[] {
+  const home = env.HOME || homedir();
+  return Object.entries(CONFIGS).flatMap(([id, paths]) => (id === harness ? [] : paths(env, home)));
+}
+
+/** `p` inside `dir` (or `dir` itself). */
+const within = (p: string, dir: string) => {
+  const r = relative(dir, p);
+  return r === "" || (!r.startsWith("..") && !isAbsolute(r));
+};
+const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
+
+/**
+ * What a sandbox denies of ion's: its data folder, its cache folder, and its config folder, whole, unless your projects
+ * live in it (ION_HOME holding them: the tour, tests), then ion's own files there (config.toml, mcp.json, its skills).
+ */
+export function ionDenied(o: { dataDir: string; configFile: string; cacheDir?: string }): string[] {
+  const [data, dir, cache] = ionFolders(o) as [string, string, string];
+  let projects: string[] = [];
+  try {
+    const { config } = loadUserConfig(o.configFile);
+    projects = [expandHome(config.folders.projects), ...config.projects.map((p) => p.path)];
+  } catch {
+    // no config yet: nothing of yours in it
+  }
+  const shared = projects.some((p) => within(resolve(p), resolve(dir)));
+  const config = shared ? [o.configFile, mcpFileOf(o.configFile), join(dir, "skills")] : [dir];
+  return [data, ...config, cache];
+}
+
 /**
  * A chat's run's sandbox (the user, 2026-11-21): ion's folders denied, except the run's worktree (read and write),
  * its skills plugin and ion's `ion` launcher (read and run). None where the computer has no sandbox.
@@ -38,11 +85,15 @@ export function runSandbox(
     cwd: string;
     pluginDir?: string;
     ionBin?: string;
+    /** The run's agent: every other agent's config is read-only to it. */
+    harness?: string;
+    env?: NodeJS.ProcessEnv;
   },
 ): RunSandbox | undefined {
   if (kind === "none") return undefined;
   const read = [o.pluginDir, o.ionBin].filter((p): p is string => !!p);
-  return { kind, paths: { deny: ionFolders(o), read, write: [o.cwd], noWrite: [] } };
+  const noWrite = agentConfigs(o.harness ?? "", o.env);
+  return { kind, paths: { deny: ionDenied(o), read, write: [o.cwd], noWrite } };
 }
 
 /** Whether an agent's chats run without a sandbox here (Settings → Agents: "Not sandboxed"). */
@@ -53,15 +104,17 @@ export const notSandboxed = (how: "own" | "ion" | undefined, kind: SandboxKind):
  * The sandbox ion's local servers run in (Plan 18 Task 12): ion's folders denied (a server gets its values through its
  * env), plugins' data folders writable (`${CLAUDE_PLUGIN_DATA}`); each server's own folder is added where it starts.
  */
-export function serverSandbox(
+export const serverSandbox = (o: { dataDir: string; configFile: string }, kind?: SandboxKind) =>
+  deniedWith(o, [join(o.dataDir, "plugin-data")], kind);
+
+/** ion's folders denied, these writable; none where the computer has no sandbox. */
+function deniedWith(
   o: { dataDir: string; configFile: string },
+  write: string[],
   kind: SandboxKind = machineSandbox(),
 ): RunSandbox | undefined {
   if (kind === "none") return undefined;
-  return {
-    kind,
-    paths: { deny: ionFolders(o), read: [], write: [join(o.dataDir, "plugin-data")], noWrite: [] },
-  };
+  return { kind, paths: { deny: ionDenied(o), read: [], write, noWrite: [] } };
 }
 
 /** What a run manager knows of the sandbox: how this computer sandboxes (default: found once), and ion's port. */
@@ -79,9 +132,27 @@ export type LaunchSandbox = { sandbox?: RunSandbox; sandboxed?: boolean };
 export function launchSandbox(
   how: "own" | "ion" | undefined,
   ctx: SandboxCtx & { dataDir: string; configFile: string; ionBin?: string },
-  l: { cwd: string; pluginDir?: string },
+  l: { cwd: string; pluginDir?: string; harness: string },
 ): LaunchSandbox {
   if (!how) return {};
-  const sandbox = runSandbox(machineSandbox(ctx.sandbox), { ...ctx, cwd: l.cwd, pluginDir: l.pluginDir });
-  return sandbox ? { sandbox, sandboxed: true } : {};
+  const at = { cwd: l.cwd, pluginDir: l.pluginDir, harness: l.harness };
+  const sandbox = runSandbox(machineSandbox(ctx.sandbox), { ...ctx, ...at });
+  if (!sandbox) return {};
+  // Only ion's own sandbox relaxes ion's word rules: Codex's own process, its own stdio servers and notify run outside
+  // any sandbox, and an escalation that drops its sandbox isn't ruled out live yet (task review, 2026-11-21).
+  return how === "ion" ? { sandbox, sandboxed: true } : { sandbox };
+}
+
+/**
+ * The sandbox ion's own git runs in (security review, 2026-11-21: a filter planted in a project's git config ran in
+ * the daemon's diff): ion's folders denied, its chats' worktrees writable (it makes and reads them).
+ */
+const gitSandbox = (o: { dataDir: string; configFile: string }, kind?: SandboxKind) =>
+  deniedWith(o, [join(o.dataDir, "worktrees")], kind);
+
+/** How this computer sandboxes (said once in the log when it can't), with ion's own git put in the sandbox. */
+export function startSandbox(o: { dataDir: string; configFile: string }): SandboxKind {
+  const kind = machineSandbox();
+  sandboxGit(gitSandbox(o, kind));
+  return kind;
 }

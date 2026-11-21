@@ -742,3 +742,51 @@ describe("what the judge said, recorded", () => {
     expect(recorded.at(-1)).toMatchObject({ judge: "unsure" });
   });
 });
+
+// The user, 2026-11-21: Full access is no judging and no asking, inside a fixed floor (ion's files and key, your
+// keychain secrets, environment dumps, dropping the run's key, the sandbox, the run key's limits). A guess runs without
+// asking when the run is really sandboxed, and still asks when it isn't; your saved "never" still holds; everything
+// else runs (pushes, publishes, deploys included).
+describe("Full access", () => {
+  const asked: string[] = [];
+  const askBlocked = {
+    ask: async (_r: AskingRun, b: { reason: string }) => {
+      asked.push(b.reason);
+      return "allow" as const;
+    },
+    allowed: () => false,
+    never: (_r: AskingRun, key: string) => (key === 'Bash {"command":"npm publish"}' ? "npm publish" : null),
+  };
+  const full = new Approvals(store, access, () => true, { own, askBlocked });
+  const t = () => {
+    const d = mkdtempSync(join(tmpdir(), "ion-full-"));
+    writeFileSync(join(d, "drop.sh"), "unset ION_RUN_KEY\n");
+    return d;
+  };
+
+  it("runs a guess without asking in a sandboxed run, and asks when the run isn't sandboxed", async () => {
+    asked.length = 0;
+    const c = cmd("echo ZWNobyBoaQ== | base64 -d | sh");
+    expect((await full.gate({ ...run("full"), sandboxed: true }, c, [t()])).decision).toBe("allow");
+    expect(asked).toEqual([]);
+    expect((await full.gate(run("full"), c, [t()])).decision).toBe("allow");
+    expect(asked).toHaveLength(1);
+  });
+
+  it("refuses what you said never, in Full too", async () => {
+    const v = await full.gate({ ...run("full"), sandboxed: true }, cmd("npm publish"), [wt]);
+    expect(v.decision).toBe("deny");
+    expect(v.reason).toContain("You said never: npm publish");
+  });
+
+  it("runs everything else: a push, a publish you never refused", async () => {
+    asked.length = 0;
+    for (const c of [
+      "git push origin main",
+      "npm publish --tag next",
+      "curl -X POST https://example.com/deploy",
+    ])
+      expect((await full.gate({ ...run("full"), sandboxed: true }, cmd(c), [wt])).decision, c).toBe("allow");
+    expect(asked).toEqual([]);
+  });
+});

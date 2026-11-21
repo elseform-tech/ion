@@ -221,7 +221,7 @@ export class RunManager {
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
     try {
       Object.assign(l, await skillsAndOwn(this.ctx, l));
-      Object.assign(l, launchSandbox(l.h.adapter.sandbox, this.ctx, l));
+      Object.assign(l, launchSandbox(l.h.adapter.sandbox, this.ctx, { ...l, harness: l.h.adapter.id }));
       const yours = withOwnServers(await yourServers(this.store, this.ctx.servers, l), l.own);
       // Every key of the run (its agent's own too): redacted from every event of the run, wherever it's stored from.
       const redact = redactor([...yours.secrets, l.mcpKey, l.gateKey, l.cliKey]);

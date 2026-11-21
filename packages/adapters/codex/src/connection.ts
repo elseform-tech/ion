@@ -56,6 +56,14 @@ const baseArgs = (l: Launch) => [
 const PROFILE = "ion-run";
 
 /**
+ * In a run's sandbox, Codex declines by itself every request to run outside it (task review, 2026-11-21: an escalation
+ * reached ion as a plain command approval). Given as config: as a thread parameter Codex 0.153.2 refused it (live,
+ * "granular requires experimentalApi capability").
+ */
+const GRANULAR =
+  "approval_policy={granular={sandbox_approval=false,rules=true,mcp_elicitations=true,request_permissions=false,skill_approval=false}}";
+
+/**
  * A chat's run in Codex's own sandbox with ion's folders out of reach (docs/research/sandbox.md): a permission
  * profile on top of its workspace one (writes only in the worktree), ion's folders "none" (no read, no write), the
  * run's own paths let through, the agent's config read-only, the network on as for ion's other agents. Paths only:
@@ -71,6 +79,7 @@ function sandboxArgs(sb: RunSandbox | undefined): string[] {
   ];
   const fs = entries.map(([k, v]) => `${JSON.stringify(k)}=${JSON.stringify(v)}`).join(",");
   return [
+    ...["-c", GRANULAR],
     ...["-c", `default_permissions="${PROFILE}"`, "-c", `permissions.${PROFILE}.extends=":workspace"`],
     ...[
       "-c",
@@ -238,7 +247,9 @@ function threadParams(opts: StartOpts, own: string[]): Record<string, unknown> {
   return {
     cwd: opts.cwd,
     ...(opts.model ? { model: opts.model } : {}),
-    approvalPolicy: "untrusted",
+    // In a run's sandbox the approval policy comes from config (sandboxArgs: GRANULAR); ion's gate judges every
+    // command first either way.
+    ...(sandboxedRun(opts) ? {} : { approvalPolicy: "untrusted" }),
     approvalsReviewer: "user",
     // In a run's sandbox, the permission profile (sandboxArgs) decides: a thread's own setting would replace it.
     ...(sandboxedRun(opts) ? {} : { sandbox: opts.bare ? "read-only" : "workspace-write" }),

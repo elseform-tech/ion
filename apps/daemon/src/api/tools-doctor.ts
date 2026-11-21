@@ -11,6 +11,7 @@ import { bridgesFor, type StdioSpec } from "../workspace/mcp-bridge.js";
 import { UserError } from "./errors.js";
 import type { Ctx } from "./commands.js";
 import { type Entry, entries, entry, itemOf } from "./tools-entries.js";
+import { ownServerChecks } from "./tools-own-check.js";
 
 /** A hook's test run, at most this long. */
 const HOOK_TEST_MS = 10_000;
@@ -66,7 +67,7 @@ async function keyProblems(ctx: Ctx, s: McpServer): Promise<string[]> {
 }
 
 /** A local server's safe checks: its command is there, its package is published. Nothing is started. */
-async function localProblems(ctx: Ctx, s: McpServer & { transport: "stdio" }): Promise<string[]> {
+export async function localProblems(ctx: Ctx, s: McpServer & { transport: "stdio" }): Promise<string[]> {
   if (!s.command.includes("${") && !onPath(s.command)) return [`Command not found: ${clip(s.command)}`];
   const pkg = packageOf(s);
   const found = pkg ? await packageFound(ctx.net, pkg.kind, pkg.name) : true;
@@ -78,7 +79,7 @@ async function localProblems(ctx: Ctx, s: McpServer & { transport: "stdio" }): P
  * A remote server that's off: its URL as written (nothing filled, no headers, no token), one GET to a public address.
  * Security review, 2026-11-21: filling it would send your keys wherever an agent's entry points.
  */
-async function offRemoteProblems(ctx: Ctx, s: McpServer & { transport: "http" }): Promise<string[]> {
+export async function offRemoteProblems(ctx: Ctx, s: McpServer & { transport: "http" }): Promise<string[]> {
   if (s.url.includes("${")) return ["ion checks its URL once it's on"];
   const r = await getPublic(ctx.net, new URL(s.url)).catch(() => null);
   if (!r) return ["Can't reach it"];
@@ -177,7 +178,22 @@ async function checkOne(ctx: Ctx, e: Entry): Promise<ToolCheck> {
   if (e.why) return { ...item, problems: [e.why] };
   if (e.kind === "mcp") return { ...item, ...(await mcpCheck(ctx, e)) };
   if (e.kind === "hook") return { ...item, ...(await hookCheck(ctx, e)) };
-  return { ...item, problems: e.skill?.description ? [] : ["No description"] };
+  return skillCheck(ctx, e);
+}
+
+/** The agent whose folder a skill is in (the shared folder and ion's own are no one agent's). */
+const WHOSE: Partial<Record<string, string>> = {
+  claude: "claude-code",
+  codex: "codex",
+  opencode: "opencode",
+};
+
+/** A skill: it has a description; an agent's own says whose (checked read-only, the agent manages it). */
+export function skillCheck(ctx: Ctx, e: Entry): ToolCheck {
+  const agent = e.skill?.own ?? (e.skill ? WHOSE[e.skill.whose] : undefined);
+  const own = agent ? { agent } : {};
+  if (e.why) return { ...itemOf(ctx, e), ...own, problems: [e.why] };
+  return { ...itemOf(ctx, e), ...own, problems: e.skill?.description ? [] : ["No description"] };
 }
 
 /**
@@ -186,9 +202,28 @@ async function checkOne(ctx: Ctx, e: Entry): Promise<ToolCheck> {
  * started through ion's bridge to list its tools.
  */
 export async function doctor(ctx: Ctx, kind: ToolType, name?: string): Promise<ToolCheck[]> {
-  if (name === undefined && ctx.caller) return everyOnce(ctx.caller.runId, () => doctorAll(ctx, kind));
-  const pick = name === undefined ? await entries(ctx, kind) : [await entry(ctx, kind, name)];
-  return Promise.all(pick.map((e) => checkOne(ctx, e)));
+  const own = kind === "mcp" ? () => ownServerChecks(ctx, name) : async () => [];
+  if (name === undefined && ctx.caller)
+    return everyOnce(ctx.caller.runId, async () => [...(await doctorAll(ctx, kind)), ...(await own())]);
+  if (name === undefined) {
+    const all = await Promise.all((await entries(ctx, kind)).map((e) => checkOne(ctx, e)));
+    return [...all, ...(await own())];
+  }
+  return doctorOne(ctx, kind, name, own);
+}
+
+/** One by name: ion's, else (a connection) an agent's own of that name, else the plain "not found". */
+async function doctorOne(
+  ctx: Ctx,
+  kind: ToolType,
+  name: string,
+  own: () => Promise<ToolCheck[]>,
+): Promise<ToolCheck[]> {
+  const e = await entry(ctx, kind, name).catch(async (err: unknown) => {
+    if (kind === "mcp" && (await own()).length) return null;
+    throw err;
+  });
+  return e ? [await checkOne(ctx, e)] : own();
 }
 
 /** Every one, one at a time (each may start a server or run a hook). */

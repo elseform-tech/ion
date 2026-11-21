@@ -169,6 +169,31 @@ function continueMethod(caps: AgentCaps): "session/resume" | "session/load" | nu
   return caps.loadSession ? "session/load" : null;
 }
 
+/**
+ * Opens the agent once outside the sandbox, with no prompt, gate or servers, so it sets itself up in ion's folder for
+ * it (opencode installs its plugin package there) before a run starts it sandboxed, where that folder is read-only.
+ * A failure here is the run's start to report.
+ */
+export async function setUpOutside(
+  h: AcpHarness,
+  bin: string,
+  o: { ownTools?: boolean; timeoutMs?: number },
+) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ion-setup-")));
+  try {
+    const c = await connect(h, bin, {
+      cwd: dir,
+      timeoutMs: o.timeoutMs,
+      ...(o.ownTools ? { ownTools: true } : {}),
+    });
+    c.child.kill();
+  } catch {
+    // the sandboxed start says what's wrong
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** Opens a session without sending a prompt: signed in, signed out, or not responding. Cleans up after itself. */
 export async function probeSignedIn(
   h: AcpHarness,

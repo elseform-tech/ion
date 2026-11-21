@@ -2,7 +2,6 @@ import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sandboxKind } from "@ion/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { hookEnv, runHook, stopHooks, TAIL } from "./hooks.js";
 
@@ -117,18 +116,13 @@ describe("a hook's env", () => {
   });
 });
 
-// The user, 2026-11-21 (Plan 18 Task 12): your hooks are your commands, but they can run a project's code, so they run
-// in the OS sandbox too: they may read the project, never ion's folders (daemon.json, mcp.json, the vault).
-describe.skipIf(sandboxKind() !== "seatbelt")("a hook in the sandbox", () => {
-  it("reads the project, not ion's folders", async () => {
+// Task review, 2026-11-21 (the user's ruling): your hooks are your own commands and run outside the agents' sandbox,
+// so `ion` works in a hook again (it reads daemon.json); a run's agent can't add or turn on a hook.
+describe("a hook runs outside the agents' sandbox", () => {
+  it("can read ion's data folder, as `ion` in a hook needs", async () => {
     const ion = dir();
-    const project = dir();
-    writeFileSync(join(ion, "daemon.json"), "full-token\n");
-    writeFileSync(join(project, "README.md"), "project\n");
-    const sandbox = { kind: "seatbelt" as const, paths: { deny: [ion], read: [], write: [], noWrite: [] } };
-    const r = await runHook({ ...base, cwd: project, sandbox, run: `cat README.md; cat ${ion}/daemon.json` });
-    expect(r.tail).toContain("project\n");
-    expect(r.tail).not.toContain("full-token");
-    expect(r.code).not.toBe(0);
+    writeFileSync(join(ion, "daemon.json"), '{"port":1}\n');
+    const r = await runHook({ ...base, cwd: dir(), run: `cat ${ion}/daemon.json` });
+    expect([r.code, r.tail]).toEqual([0, '{"port":1}\n']);
   });
 });

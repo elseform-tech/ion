@@ -17,7 +17,7 @@ import { Connection } from "./connection.js";
 import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
-import { machineSandbox, serverSandbox } from "../runs/sandbox.js";
+import { startSandbox } from "../runs/sandbox.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
 import { UnsureLog } from "../access/unsure.js";
@@ -362,10 +362,8 @@ function startHooks(
   opts: { dataDir: string; configFile: string },
   tools: Tools,
 ): Hooks {
-  // In the OS sandbox: a hook may run a project's code, which never reaches ion's folders (Plan 18 Task 12).
-  const sandbox = serverSandbox(opts);
-  const { configFile } = opts;
-  const hooks = new Hooks({ store, db, configFile, sign: tools.sign, ...(sandbox ? { sandbox } : {}) });
+  // Outside the agents' sandbox (the user's ruling, 2026-11-21): your hooks are your commands, and `ion` works in them.
+  const hooks = new Hooks({ store, db, configFile: opts.configFile, sign: tools.sign });
   hooks.start();
   return hooks;
 }
@@ -433,6 +431,7 @@ function runCtxOf(o: {
         late.decisions?.askBlocked(runScopeOf(r), b) ?? Promise.resolve("timeout" as const),
       allowed: (r: AskingRun, key: string) =>
         late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
+      never: (r: AskingRun, key: string) => late.decisions?.saidNever(r.projectId, r.chatId, key) ?? null,
     },
   };
 }
@@ -465,8 +464,8 @@ function openState(
   };
   const ionServers = new IonServers({ ...opts, servers, judge: createJudge(quick), ownNames, onUnsure });
   const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers } });
-  // Said once in the daemon's log when this computer can't sandbox chats' agents.
-  const sandbox = machineSandbox();
+  // Said once in the daemon's log when this computer can't sandbox chats' agents; ion's own git runs sandboxed too.
+  const sandbox = startSandbox(opts);
   const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({

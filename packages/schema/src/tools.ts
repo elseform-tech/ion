@@ -296,6 +296,8 @@ export type ToolItem = { kind: ToolType; name: string; id: string; on: boolean; 
 /** What verify or doctor found: each problem in one plain line; doctor on a server that's on lists its tools. */
 export type ToolCheck = ToolItem & {
   problems: string[];
+  /** An agent's own (its config, its folder): checked read-only, managed by that agent, never by ion. */
+  agent?: string;
   tools?: string[];
   /** A hook that's on, run with a test event: the end of what it printed (keys masked; never told to a chat). */
   output?: string;

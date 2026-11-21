@@ -6,7 +6,9 @@ import { addedLine, toolVerbs } from "./tool-verbs.js";
 
 /** `ion skills …`: skills; one added is copied into ion's own folder, and starts off. */
 export function skillsCommands(program: Command, out: () => Out) {
-  const s = program.command("skills").description("Skills");
+  const s = program
+    .command("skills")
+    .description("Skills ion gives every agent (each agent manages its own)");
   s.command("add <name>")
     .description("Add one, off")
     .requiredOption("--from <link or folder>", "A link to its SKILL.md, or its folder")

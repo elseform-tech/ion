@@ -31,7 +31,16 @@ describe("the sandbox's rules", () => {
   });
 
   it("writes bubblewrap's arguments (golden)", async () => {
-    await expect(`${bwrapArgs(FIXED).join("\n")}\n`).toMatchFileSnapshot("../golden/bwrap.txt");
+    await expect(`${bwrapArgs(FIXED, {}).join("\n")}\n`).toMatchFileSnapshot("../golden/bwrap.txt");
+  });
+
+  // Task review, 2026-11-21: bubblewrap's run had the terminal's session (TIOCSTI), the D-Bus session socket and the
+  // host's /dev/shm.
+  it("gives bubblewrap's run its own session, no D-Bus session socket and its own /dev/shm", () => {
+    const a = bwrapArgs(FIXED, { XDG_RUNTIME_DIR: "/run/user/1000" });
+    expect(a).toContain("--new-session");
+    expect(a.join(" ")).toContain("--tmpfs /dev/shm");
+    expect(a.join(" ")).toContain("--tmpfs /run/user/1000/bus");
   });
 
   it("wraps a command in the sandbox, every process it starts inside", () => {
@@ -63,6 +72,12 @@ describe("the sandbox's rules", () => {
 
 const real = sandboxKind() === "seatbelt";
 
+/** osascript asking Finder its name, in the sandbox, as [command, args]. */
+const osascript = (sb: RunSandbox): [string, string[]] => {
+  const w = sandboxed(sb, "osascript", ["-e", 'tell application "Finder" to get name']);
+  return [w.command, w.args];
+};
+
 /** A pretend home with ion's data folder in it: daemon.json, a worktree, the run's skills and the launcher. */
 describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
   let home = "";
@@ -71,7 +86,7 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
   let sb: RunSandbox;
   const run = (script: string, cwd = wt) => {
     const w = sandboxed(sb, "/bin/sh", ["-c", script]);
-    return spawnSync(w.command, w.args, { cwd, encoding: "utf8" });
+    return spawnSync(w.command, w.args, { cwd, encoding: "utf8", timeout: 15_000 });
   };
 
   beforeAll(() => {
@@ -128,6 +143,24 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
     );
     expect(r.stderr).toBe("");
     expect(r.stdout).toBe("in the worktree\na skill\nlauncher ran\n");
+  });
+
+  // Task review, 2026-11-21: `open -g Probe.app` started an app through LaunchServices, outside the sandbox, and it
+  // copied daemon.json. Launching apps and sending Apple Events are refused; ordinary tools still run.
+  it("can't start an app or send Apple Events (they'd run outside the sandbox)", () => {
+    expect(run("open -g -j -a Calculator").status).not.toBe(0);
+    // Refused, osascript waits on LaunchServices: stopped at the time limit, it never got Finder's answer.
+    const osa = spawnSync(...osascript(sb), { encoding: "utf8", timeout: 3000 });
+    expect([osa.status, osa.stdout]).not.toEqual([0, "Finder\n"]);
+    expect(osa.status).not.toBe(0);
+    expect(run("node -e 'console.log(1)' && git --version && python3 -c 'print(2)'").status).toBe(0);
+  }, 30_000);
+
+  // Security review, 2026-11-21: renaming the folder above an agent's config moved it out from under the rule
+  // (`mv ~/.claude ~/.c2`, then write ~/.c2/settings.json).
+  it("can't move the folders that hold the agent's config", () => {
+    expect(run(`mv ${join(home, ".claude")} ${join(home, "c2")}`).status).not.toBe(0);
+    expect(run(`echo x > ${join(home, "c2", "settings.json")}`).status).not.toBe(0);
   });
 
   it("can't write its skills, the launcher or the agent's own config", () => {

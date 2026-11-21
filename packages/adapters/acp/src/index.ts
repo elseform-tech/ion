@@ -8,7 +8,7 @@ import {
   whichOnPath,
 } from "@ion/adapter-kit";
 import type { Capabilities } from "@ion/schema";
-import { connect, probeModels, probeSignedIn, setOption } from "./connection.js";
+import { connect, probeModels, probeSignedIn, setOption, setUpOutside } from "./connection.js";
 import type { AcpHarness } from "./harnesses.js";
 import { startAcpSession } from "./session.js";
 
@@ -86,6 +86,9 @@ export function createAcpAdapter(
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);
+      // Not set up yet: once outside the sandbox first, where it can write ion's folder for it.
+      if (opts.sandbox && h.prepare && !h.prepare(opts.ownTools))
+        await setUpOutside(h, path, { ownTools: !!opts.ownTools, timeoutMs: deps.startTimeoutMs });
       // The chat's folder, session, MCP server, gate and env (ConnectOpts reads only those).
       const c = await connect(h, path, { ...opts, timeoutMs: deps.startTimeoutMs });
       const model =

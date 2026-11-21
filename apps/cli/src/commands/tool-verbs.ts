@@ -18,10 +18,21 @@ export const addedLine = (i: ToolItem) => `${clean(i.name)} added, off`;
 
 const row = (i: ToolItem) => [clean(i.name), i.on ? "on" : "off", ...whence(i)];
 
+const AGENTS: Record<string, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  opencode: "opencode",
+  "grok-build": "Grok Build",
+};
+
+/** An agent's own (checked read-only; that agent manages it), else one of ion's as listed. */
+const checkRow = (c: ToolCheck) =>
+  c.agent ? [clean(c.name), clean(`${AGENTS[c.agent] ?? c.agent}'s own`)] : row(c);
+
 /** A check: its row, then each problem on a line of its own, and the tools of a server that's on. */
-const checkLines = (c: ToolCheck) =>
+export const checkLines = (c: ToolCheck) =>
   [
-    table([row(c)]),
+    table([checkRow(c)]),
     ...c.problems.map((p) => `  ${clean(p)}`),
     ...(c.tools ? [`  tools: ${c.tools.map(clean).join(", ") || "none"}`] : []),
   ].join("\n");

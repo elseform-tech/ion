@@ -95,7 +95,9 @@ const importedLines = (r: ImportResult) =>
 
 /** `ion mcp …`: the MCP servers in your mcp.json. One added starts off; you turn it on in Settings → Tools. */
 export function mcpCommands(program: Command, out: () => Out) {
-  const m = program.command("mcp").description("MCP servers");
+  const m = program
+    .command("mcp")
+    .description("MCP servers ion gives every agent (each agent manages its own)");
   m.command("search <name>")
     .description("Look it up in the official MCP Registry")
     .action(async (name: string) => {

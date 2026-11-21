@@ -7,7 +7,7 @@ import type { Ctx, Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
 import { changeConfig } from "./settings.js";
 import { addTool } from "./tools-add.js";
-import { doctor } from "./tools-doctor.js";
+import { doctor, skillCheck } from "./tools-doctor.js";
 import { type Entry, entries, entry, itemOf, kindOf, originOf } from "./tools-entries.js";
 import { hookChange } from "./tools-hooks.js";
 
@@ -56,6 +56,7 @@ export const toolsCliHandlers: Pick<
   "tools.add": (a, ctx) => addTool(ctx, a),
   "tools.verify": async (a, ctx) => {
     const e = await entry(ctx, kindOf(a.kind), String(a.name ?? ""));
+    if (e.kind === "skill") return skillCheck(ctx, e);
     return { ...itemOf(ctx, e), problems: e.why ? [e.why] : [] } satisfies ToolCheck;
   },
   "tools.doctor": (a, ctx) => doctor(ctx, kindOf(a.kind), a.name === undefined ? undefined : String(a.name)),

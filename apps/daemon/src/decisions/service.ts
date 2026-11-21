@@ -22,6 +22,8 @@ import { isAllowAnswer, overlap, SAME_QUESTION } from "./words.js";
 import type { IonQuestions } from "../ions/questions.js";
 
 const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
+/** A kept "Don't allow" for an exact action: its key's hash with this in front (never an allow's). */
+const NEVER = "never:";
 
 /** The message your answer becomes in the chat: a choice, or your own words. */
 const followText = (question: string, answer: string, custom = false) =>
@@ -179,6 +181,15 @@ export class Decisions {
   }
 
   /**
+   * The action, when you said "Don't allow" to exactly it in this chat (or its project): ion refuses it there in every
+   * access mode, Full too (the user, 2026-11-21). Null otherwise.
+   */
+  saidNever(projectId: string, chatId: string, key: string): string | null {
+    const q = decisionsView.never(this.d.db, { projectId, chatId }, NEVER + keyHash(key));
+    return q === null ? null : actionOf(q);
+  }
+
+  /**
    * Your answer: choice number `n` (1-based) of an open question. The run that carries it starts first: if it
    * can't (the agent signed out, the chat archived…) the question stays open and you can answer again. A busy
    * chat gets it when its run ends.
@@ -241,7 +252,7 @@ export class Decisions {
       return;
     }
     this.d.needs.answered(asked.needId, label, scope ?? "chat");
-    const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom }) : undefined;
+    const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom, allow }) : undefined;
     const waited = this.holds.release(asked.needId, allow ? "allow" : "deny");
     const text = blockedFollowText(asked.summary, { custom, label, late: !waited && allow });
     const request = this.requests.get(asked.needId) ?? "";
@@ -263,9 +274,13 @@ export class Decisions {
   /** Your answer about a stopped call, kept; "Always allow" with the exact action's key, never the question's words. */
   private recordBlocked(
     asked: NeedInfo,
-    a: { label: string; scope: "chat" | "project"; custom: boolean },
+    a: { label: string; scope: "chat" | "project"; custom: boolean; allow: boolean },
   ): string {
-    const allowKey = a.scope === "project" ? this.keys.get(asked.needId) : undefined;
+    const key = this.keys.get(asked.needId);
+    // "Always allow": the action's key for the project; "Don't allow": kept as never for it in the chat.
+    let allowKey: string | undefined;
+    if (key && a.allow && a.scope === "project") allowKey = key;
+    else if (key && !a.allow && !a.custom) allowKey = NEVER + key;
     return this.record({
       ...{ chatId: asked.chatId, runId: asked.runId, needId: asked.needId, projectId: asked.projectId ?? "" },
       ...{ question: asked.summary, choice: a.label, scope: a.scope, by: "you", blocked: true },

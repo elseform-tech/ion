@@ -248,10 +248,33 @@ export function writeIonConfig(config: Record<string, unknown>, own = false): st
   if (own) takePluginPackage(dir, join(ionConfigHome(false), "opencode"));
   writeWhole(join(dir, ".gitignore"), GITIGNORE);
   writeWhole(join(dir, "opencode.json"), `${JSON.stringify(config, null, 2)}\n`);
+  if (installed(dir)) prepared.add(home);
   return home;
 }
 
-const installed = (dir: string) => existsSync(join(dir, "node_modules", PLUGIN_PACKAGE));
+/** ion's folders for opencode found ready by this daemon (its own state, never a file a run could write). */
+const prepared = new Set<string>();
+
+const versionIn = (file: string, read: (j: Record<string, unknown>) => unknown): unknown => {
+  try {
+    return read(JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * opencode's plugin package is installed as opencode asked for it: the folder's package.json names a version, and
+ * node_modules holds that package at that version (task review, 2026-11-21: an empty folder counted).
+ */
+function installed(dir: string): boolean {
+  const want = versionIn(join(dir, "package.json"), (j) =>
+    isObject(j.dependencies) ? j.dependencies[PLUGIN_PACKAGE] : undefined,
+  );
+  const pkg = join(dir, "node_modules", PLUGIN_PACKAGE, "package.json");
+  const got = versionIn(pkg, (j) => (j.name === PLUGIN_PACKAGE ? j.version : undefined));
+  return typeof want === "string" && want === got;
+}
 
 /**
  * opencode's plugin package, copied from ion's other folder when it's installed there and not here yet, so the first
@@ -269,4 +292,4 @@ function takePluginPackage(dir: string, from: string): void {
 }
 
 /** Until opencode has installed its plugin package in ion's folder, a start can take long: said plainly. */
-export const settingUp = (own = false): boolean => !installed(join(ionConfigHome(own), "opencode"));
+export const settingUp = (own = false): boolean => !prepared.has(ionConfigHome(own));

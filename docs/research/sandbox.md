@@ -15,9 +15,17 @@ the key are relaxed in sandboxed runs (below).
 - **Let through:** the run's worktree (read and write), its skills plugin `<data>/skills/<runId>` (read), ion's `ion`
   launcher `<data>/bin` (read and run; it stays in the data folder, let through by path), and for opencode its own
   folder in ion's cache (read).
-- **Not writable:** the agent's own config (Claude Code: `settings.json`, `settings.local.json`, `CLAUDE.md`, `agents`,
-  `commands`, `skills`, `hooks`, `plugins` under `~/.claude`; Grok: `hooks` (ion's gate hook), `config.toml`, `skills`;
-  opencode: `~/.config/opencode`, `~/.opencode`). Its sessions and state it still writes.
+- **Not writable:** every other agent's config folder (`~/.codex`, `~/.claude`, `~/.claude.json`,
+  `~/.config/opencode`, `~/.opencode`, `$GROK_HOME`), and the run's own agent's config files (Claude Code:
+  `settings.json`, `settings.local.json`, `CLAUDE.md`, `agents`, `commands`, `skills`, `hooks`, `plugins` under
+  `~/.claude`; Grok: `hooks` (ion's gate hook), `config.toml`, `skills`; opencode: `~/.config/opencode`, `~/.opencode`).
+  Its own sessions and state it still writes (Claude Code writes `~/.claude.json` all the time, so that file stays
+  writable in a Claude Code run). ion's folder for opencode (in `~/.cache/ion`) is only read.
+- **Not reachable:** LaunchServices and Apple Events (task review, 2026-11-21: `open -g Probe.app` started an app
+  outside the sandbox, which copied `daemon.json`): `(deny mach-lookup (global-name
+  "com.apple.coreservices.launchservicesd") (global-name-prefix "com.apple.lsd.") (global-name
+  "com.apple.coreservices.quarantine-resolver"))` and `(deny appleevent-send)`. `open` fails; `osascript` asking Finder
+  hangs until stopped; node, git, curl, python and the agents run as before.
 - **As it is:** the network (ion's MCP, gateway and gate are on 127.0.0.1), the agent's login (keychain, its auth
   files), the project, temp folders, caches.
 - Every process the agent starts inherits the sandbox; nothing in the run can leave it.
@@ -39,8 +47,9 @@ exceptions; later rules win. Paths are given as written and as their real path (
   "Operation not permitted". A different case (`ION/DAEMON.JSON`) too: Seatbelt checks the real file.
 - A hard link to `daemon.json` can't be made (creating it needs the source).
 - **Moving a folder above ion's** (`mv ~/.local/share ~/x`) would carry ion's files out from under the path rule, so
-  the folders above ion's can't be renamed or removed (`(deny file-write* (literal …))`; creating files inside them is
-  unaffected).
+  the folders above ion's, and above each agent config path that isn't writable, can't be renamed or removed
+  (`(deny file-write* (literal …))`). Creating and changing files inside them is unaffected. Side effect: a run can't
+  rename, remove, `chmod` or `touch` those folders themselves (`~`, `~/.config`, `~/.local/share`, …).
 - The folders that hold the run's own paths (`<data>`, `<data>/worktrees`) can be looked at (`file-read-metadata`, so
   `realpath` and `getcwd` work) but not listed.
 - git in a worktree inside the data folder works (its `.git` points into the project's own repo).
@@ -51,8 +60,8 @@ own commands, and when ion itself runs inside a sandbox, detection (`sandboxKind
 
 ## Linux: bubblewrap
 
-`bwrap --die-with-parent --unshare-pid --bind / / --dev /dev --proc /proc`, an empty `--tmpfs` over each of ion's
-folders, the exceptions bound back (`--ro-bind-try` / `--bind-try`), the agent's config `--ro-bind-try`.
+`bwrap --die-with-parent --new-session --unshare-pid --bind / / --dev /dev --proc /proc --tmpfs /dev/shm`, an empty
+`--tmpfs` over `$XDG_RUNTIME_DIR/bus` (the D-Bus session socket) and over each of ion's folders, the exceptions bound back (`--ro-bind-try` / `--bind-try`), the agent's config `--ro-bind-try`.
 
 - Not `--ro-bind / /` (as the brief first said): a read-only root stops agents writing their own sessions, caches
   and temp files, which stay as they are.
@@ -60,14 +69,14 @@ folders, the exceptions bound back (`--ro-bind-try` / `--bind-try`), the agent's
 - **Landlock** isn't used: it grants access by folder and can't take back a folder under one it allows (no "all of
   home except `~/.local/share/ion`"), and Node can't call it without a helper.
 - Not tried on a Linux machine in this task (the goldens fix the arguments); detection runs `bwrap --bind / / true`
-  first and says "Not sandboxed" where that fails (no user namespaces, no bwrap).
+  first with the same flags a run gets and says "Not sandboxed" where that fails (no user namespaces, no bwrap).
 
 ## Each agent
 
 | Agent | Its own sandbox | What ion does | Covers |
 |---|---|---|---|
 | Claude Code (2.1.330, Agent SDK 0.3.326) | Optional (`sandbox.enabled`); covers Bash only, not its Read/Edit tools or MCP servers it starts; moves the network behind its own proxy (domain prompts) | ion's Seatbelt around the whole `claude` process, through the SDK's `spawnClaudeCodeProcess`. Its own stays off (`settingSources: []`, so your `sandbox.enabled` isn't read), so nothing nests | Read tool, commands, everything it starts |
-| Codex (0.153.2) | On by default (Seatbelt / its Linux helper) for its commands; limits writes, reads almost everything | Its own, with a permission profile: `default_permissions="ion-run"`, `extends=":workspace"`, ion's folders `"none"`, the run's paths `"read"`/`"write"`, network on. The thread's `sandbox` setting is left out (with it the profile isn't active) | Its commands; its own process (apply_patch, MCP) is not sandboxed: ion's gate guards those |
+| Codex (0.153.2) | On by default (Seatbelt / its Linux helper) for its commands; limits writes, reads almost everything | Its own, with a permission profile: `default_permissions="ion-run"`, `extends=":workspace"`, ion's folders `"none"`, the run's paths `"read"`/`"write"`, network on. The thread's `sandbox` setting is left out (with it the profile isn't active). Approval policy `{ granular: { sandbox_approval: false, rules: true, mcp_elicitations: true, request_permissions: false, skill_approval: false } }`, given as config (`-c approval_policy=…`: as a thread parameter Codex refused it, "granular requires experimentalApi capability"): Codex declines by itself any request to run outside its sandbox (task review, 2026-11-21: an escalation reached ion as a plain command approval, with no field saying so). ion's word rules stay on for Codex runs | Its commands. Not its own process (apply_patch, MCP calls), its own stdio servers or `notify`: those run outside any sandbox, guarded by ion's gate and word rules |
 | opencode (1.18.8) | None (permission prompts, i.e. ion's gate) | ion's wrapper around `opencode acp` | Everything |
 | Grok Build (1.0.92) | None (permission prompts, i.e. ion's gate) | ion's wrapper around `grok agent stdio` | Everything |
 | fake | Starts no process | Nothing: "Not sandboxed" (tests only) | — |
@@ -97,16 +106,35 @@ narrower `"write"` entry inside a `"none"` folder wins; `curl https://example.co
 - **A hook** on "A chat finishes": read the project's README, and `cat daemon.json` → `Operation not permitted`.
 - The daemon's log had no errors.
 
-## ion's local servers and your hooks
+## Live, second round (2026-11-21)
+
+- **Grok:** a file, `git commit`, `ion mcp ls` worked; `open -g -a Calculator` → "Unable to find application"
+  (LaunchServices refused); a planted git filter command was refused by ion's word rules.
+- **Codex** (one `gpt-5.6-luna` run, the ChatGPT login): a write in the worktree worked; a base64-decoded `cat
+  daemon.json` was held by ion's word rule (asked; stopped unanswered); `echo x > ~/…` → "operation not permitted"
+  from Codex's sandbox; Codex then asked to run it outside the sandbox and reported it "disallowed by the environment
+  policy": nothing reached ion, and the file wasn't made. Every command went through ion's gate first.
+- **opencode:** with ion's folder for it missing, ion opened opencode once outside the sandbox, the plugin package
+  (1.18.8) was installed there, and the run then started sandboxed; the chat stopped on opencode's used-up free quota.
+- **A hook** on "A chat finishes" read `daemon.json` (its output masked the token): hooks run outside the sandbox.
+
+## ion's local servers, ion's own git and your hooks
 
 - Local MCP servers ion runs (`workspace/mcp-bridge.ts`) start in the sandbox: ion's folders denied (they get their
   values through their env), their own folder `<data>/mcp-run/<id>` and plugins' data `<data>/plugin-data` writable.
-- Hooks (`workspace/hooks.ts`) are your commands, but they can run a project's code: the same denial; the project is
-  readable. `ion` inside a hook can't read `daemon.json` either, so it says ion isn't running.
+- **ion's own git** (`workspace/git.ts`: making and removing worktrees, diffs) runs in the sandbox too, with ion's
+  folders denied and its worktrees writable, and without your global or system git config (`GIT_CONFIG_GLOBAL=/dev/null`,
+  `GIT_CONFIG_NOSYSTEM=1`; a repo ion has just made for you keeps your identity). Security review, 2026-11-21: a run
+  wrote a clean filter into the project's `.git/config` and `.git/info/attributes`, and the daemon's `git diff` ran it
+  outside the sandbox and read `daemon.json`. Tested with planted clean, smudge and process filters, during
+  `worktree add` and the diff.
+- **Hooks run outside the agents' sandbox** (the user's ruling, 2026-11-21): they're your own commands, added and
+  turned on only by you, and `ion` works in them (it reads `daemon.json`). A run's agent can't add or turn one on.
 
 ## The word rules once a run is sandboxed
 
-Kept, in every mode (defence in depth, and what the sandbox doesn't reach): ion's own files named in a call, your
+Only ion's own sandbox counts (Claude Code, opencode, Grok): Codex runs keep every word rule, since its own process
+and servers aren't in a sandbox. Kept, in every mode (defence in depth, and what the sandbox doesn't reach): ion's own files named in a call, your
 keychain items (`security`, `secret-tool`: the keychain isn't a file), an environment dump (the run's MCP key and
 `ION_RUN_KEY` sit in the agent's environment), dropping or overriding the run's key or chat marker (`unset`,
 `ION_RUN_KEY=…`, `env -i`, `env -u`).
@@ -120,6 +148,10 @@ read"), so an answer says nothing about a file.
 
 ## What the sandbox doesn't do
 
+- **opencode's setup:** on a first start opencode installs its plugin package into ion's folder for it. That folder
+  is read-only to every run, so ion opens opencode once outside the sandbox first (no prompt, no gate, no servers) to
+  set itself up, then starts the run sandboxed. "Setting up" is ion's own state (set when ion finds the package
+  opencode asked for, at that version), never read from files a run could have written.
 - **opencode's carried config** (`~/.cache/ion/opencode/<hash>/opencode/opencode.json`): opencode must read it, and the
   sandbox can't tell opencode from the commands it runs, so they can read it too. It holds what your own opencode
   config holds (provider keys only if you wrote them there; opencode's login is in its own `auth.json`), which a run
@@ -130,3 +162,7 @@ read"), so an answer says nothing about a file.
 - **Codex's own process** isn't in a sandbox of ion's (only its commands are): its file edits and MCP calls go through
   ion's gate and hard rules.
 - **ion's own turns and the judge** aren't sandboxed (ions only read, through ion's gate).
+- **Codex wasn't run with a model** in this task: its profile was checked with `codex sandbox` and the app-server's
+  `command/exec`, and `thread/start`'s active profile.
+- **`~/.gitconfig`** and other dotfiles outside agents' config stay writable from a run (ion's own git no longer reads
+  your global config; your own terminal's git does).

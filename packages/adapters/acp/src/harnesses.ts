@@ -52,6 +52,11 @@ export type AcpHarness = {
   logFailure?: (line: string) => string | null;
   /** What a start that timed out says instead of "didn't respond" (an agent still setting up); none: the usual. */
   notResponding?: (own?: boolean) => string | undefined;
+  /**
+   * Whether it's ready to start in a run's sandbox (opencode: its plugin package installed in ion's folder). Not yet:
+   * ion opens it once outside the sandbox first, with no prompt, so it sets itself up there.
+   */
+  prepare?: (own?: boolean) => boolean;
   /** Its own paths in a run's sandbox: what of ion's it reads, and its config, which a run can't write. */
   sandboxPaths?: (own?: boolean) => Partial<SandboxPaths>;
 };
@@ -158,11 +163,12 @@ export const OPENCODE: AcpHarness = {
   // opencode runs a prompt that starts with `/command` as that command (its ACP agent lists them).
   picks: "slash",
   notResponding: (own) => (settingUp(own) ? "Not responding — opencode is setting up, try again" : undefined),
-  // ion's folder for it (its config) is read, not written, by a run, except while opencode installs its plugin package
-  // there (a first start); your own config folders aren't written. The sandbox can't tell opencode from the commands
-  // it runs: they can read that config too (docs/research/sandbox.md).
+  // ion's folder for it (its config, its plugin package, which ion has opencode install outside the sandbox first:
+  // `prepare`) is only read by a run; your own config folders aren't written. The sandbox can't tell opencode from the
+  // commands it runs: they can read that config too (docs/research/sandbox.md).
+  prepare: (own) => !settingUp(own),
   sandboxPaths: (own) => ({
-    ...(settingUp(own) ? { write: [ionConfigHome(own)] } : { read: [ionConfigHome(own)] }),
+    read: [ionConfigHome(own)],
     noWrite: [join(userConfigHome(), "opencode"), join(homedir(), ".opencode")],
   }),
   logFailure: opencodeFailure,

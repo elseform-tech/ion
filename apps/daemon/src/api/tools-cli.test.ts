@@ -1,6 +1,7 @@
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -329,6 +330,49 @@ describe("ion's commands for tools", () => {
     expect(checks.find((c) => c.name === "missing")?.problems).toEqual([
       "Command not found: no-such-command-anywhere",
     ]);
+  });
+
+  // The user, 2026-11-21 ("sure"): ion's commands manage ion's layer, used on every agent; they also check agents' own
+  // servers and skills, read-only: the command or package is there, never started.
+  it("doctor also checks an agent's own servers, read-only, never starting one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ion-doctor-own-"));
+    const marker = join(dir, "started");
+    writeFileSync(join(dir, "server.js"), `require("fs").writeFileSync(${JSON.stringify(marker)}, "")`);
+    await start({});
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          mine: { command: process.execPath, args: [join(dir, "server.js")] },
+          gone: { command: "no-such-own-command" },
+        },
+      }),
+    );
+    const you = await connect({ port: srv.port, token: srv.token });
+    clients.push(you);
+    const checks = await you.call("tools.doctor", { kind: "mcp" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(existsSync(marker)).toBe(false);
+    expect(checks.find((c) => c.name === "mine")).toMatchObject({ agent: "claude-code", problems: [] });
+    expect(checks.find((c) => c.name === "gone")).toMatchObject({
+      agent: "claude-code",
+      problems: ["Command not found: no-such-own-command"],
+    });
+    const one = await you.call("tools.doctor", { kind: "mcp", name: "gone" });
+    expect(one[0]?.agent).toBe("claude-code");
+  });
+
+  it("skills verify checks an agent's own skill, read-only", async () => {
+    await start({});
+    mkdirSync(join(home, ".claude", "skills", "notes"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "skills", "notes", "SKILL.md"),
+      "---\nname: notes\n---\nTake notes.\n",
+    );
+    const you = await connect({ port: srv.port, token: srv.token });
+    clients.push(you);
+    const check = await you.call("tools.verify", { kind: "skill", name: "notes" });
+    expect(check).toMatchObject({ name: "notes", agent: "claude-code", problems: ["No description"] });
   });
 
   // Security review, 2026-11-21: doctor probed an off remote server with its ${NAME}s filled (from the keychain or

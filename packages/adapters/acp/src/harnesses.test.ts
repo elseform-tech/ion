@@ -95,6 +95,17 @@ function withEnv<T>(vars: Record<string, string | undefined>, f: () => T): T {
   }
 }
 
+/** opencode's plugin package as opencode installs it: asked for in package.json, there in node_modules. */
+function installPlugin(dir: string, version: string) {
+  const pkg = join(dir, "node_modules", "@opencode-ai", "plugin");
+  mkdirSync(pkg, { recursive: true });
+  writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@opencode-ai/plugin", version }));
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ dependencies: { "@opencode-ai/plugin": version } }),
+  );
+}
+
 /** The config file read back, any key of it reachable (what the tests check). */
 interface Loose {
   [k: string]: Loose;
@@ -220,14 +231,20 @@ describe("only ion's tools in ion's chats", () => {
 
   // Live, 2026-11-21: opencode installs its plugin package into ion's folder once; a first chat that waits on it timed
   // out as "didn't respond". Until it's there, a start that times out says opencode is setting up.
+  // Task review, 2026-11-21: "setting up" was read from files a run could write (an empty plugin folder counted as
+  // installed). It's ion's own state now: set when ion prepares the folder and finds the package opencode asked for.
   it("says opencode is setting up while its folder isn't ready", () => {
     const h = opencodeHome();
     const { env } = started(h);
+    const dir = join(env.XDG_CONFIG_HOME!, "opencode");
     const hint = () => withEnv({ XDG_CACHE_HOME: h.cache }, () => OPENCODE.notResponding?.());
     expect(hint()).toBe("Not responding — opencode is setting up, try again");
-    mkdirSync(join(env.XDG_CONFIG_HOME!, "opencode", "node_modules", "@opencode-ai", "plugin"), {
-      recursive: true,
-    });
+    mkdirSync(join(dir, "node_modules", "@opencode-ai", "plugin"), { recursive: true });
+    started(h);
+    expect(hint()).toBe("Not responding — opencode is setting up, try again");
+    installPlugin(dir, "1.18.8");
+    expect(hint()).toBe("Not responding — opencode is setting up, try again");
+    started(h);
     expect(hint()).toBeUndefined();
   });
 
@@ -296,10 +313,7 @@ describe("agents bring their own tools", () => {
     const h = opencodeHome();
     const off = started(h).env.XDG_CONFIG_HOME!;
     mkdirSync(join(off, "opencode", "node_modules", "@opencode-ai", "plugin"), { recursive: true });
-    writeFileSync(
-      join(off, "opencode", "package.json"),
-      JSON.stringify({ dependencies: { "@opencode-ai/plugin": "1" } }),
-    );
+    installPlugin(join(off, "opencode"), "1");
     const own = started(h, {}, true).env.XDG_CONFIG_HOME!;
     expect(statSync(join(own, "opencode", "node_modules", "@opencode-ai", "plugin")).isDirectory()).toBe(
       true,
@@ -391,18 +405,19 @@ describe("agents' own paths in a run's sandbox", () => {
   // Live, 2026-11-21: in the sandbox opencode stopped at its start ("FileSystem.writeFile … opencode/.gitignore"): it
   // writes its .gitignore into its config folder when it's missing. ion writes it first, so a run needn't; until
   // opencode's plugin package is installed there (a first start), the run may write that folder.
-  it("opencode's folder has its .gitignore already; a run writes it only while opencode sets up", () => {
+  // Task review, 2026-11-21: a run that may write ion's folder for opencode (while it set up) could plant code there for
+  // later chats. ion installs opencode's plugin package itself, outside the sandbox, before a sandboxed start: every
+  // run only reads that folder.
+  it("opencode's folder has its .gitignore already, and a run never writes it", () => {
     const h = opencodeHome();
     const { env } = started(h, {}, true);
     const dir = join(env.XDG_CONFIG_HOME!, "opencode");
     expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe(
       "node_modules\npackage.json\npackage-lock.json\nbun.lock\n.gitignore",
     );
-    const paths = () => withEnv({ XDG_CACHE_HOME: h.cache }, () => OPENCODE.sandboxPaths?.(true));
-    expect(paths()?.write).toEqual([env.XDG_CONFIG_HOME]);
-    mkdirSync(join(dir, "node_modules", "@opencode-ai", "plugin"), { recursive: true });
-    expect(paths()?.write).toBeUndefined();
-    expect(paths()?.read).toEqual([env.XDG_CONFIG_HOME]);
+    const paths = withEnv({ XDG_CACHE_HOME: h.cache }, () => OPENCODE.sandboxPaths?.(true));
+    expect(paths?.write).toBeUndefined();
+    expect(paths?.read).toEqual([env.XDG_CONFIG_HOME]);
   });
 
   it("Grok's hooks, config and skills aren't written", () => {

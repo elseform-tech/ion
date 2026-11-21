@@ -61,6 +61,16 @@ const subpaths = (ps: string[]) => ps.map((p) => `(subpath ${sbString(p)})`).joi
 const literals = (ps: string[]) => ps.map((p) => `(literal ${sbString(p)})`).join(" ");
 
 /**
+ * What would run a program outside the sandbox (task review, 2026-11-21: `open -g Probe.app` started an app through
+ * LaunchServices, which copied daemon.json): LaunchServices' services, and Apple Events to other apps. node, git,
+ * curl, python and the agents themselves don't need them.
+ */
+const OUTSIDE = [
+  '(deny mach-lookup (global-name "com.apple.coreservices.launchservicesd") (global-name-prefix "com.apple.lsd.") (global-name "com.apple.coreservices.quarantine-resolver"))',
+  "(deny appleevent-send)",
+];
+
+/**
  * The Seatbelt profile for a run: everything as it is (`allow default`: network, the agent's login, the project),
  * except ion's folders, which can't be read or written; the folders above them can't be renamed or removed (moving
  * one would carry ion's files out from under the rule); the folders that hold the run's own paths can be looked at,
@@ -71,11 +81,14 @@ export function seatbeltProfile(p: SandboxPaths): string {
   const read = allForms(p.read);
   const write = allForms(p.write);
   const noWrite = allForms(p.noWrite);
-  const above = [...new Set(deny.flatMap(ancestors))].filter((a) => !deny.some((d) => inside(a, d)));
+  // The folders above ion's and above the agent's config can't be renamed or removed (moving one would carry what's
+  // inside out from under its rule); a side effect: a run can't rename, remove or chmod them either.
+  const kept = [...deny, ...noWrite];
+  const above = [...new Set(kept.flatMap(ancestors))].filter((a) => !deny.some((d) => inside(a, d)));
   const between = [...new Set([...read, ...write].flatMap(ancestors))].filter((a) =>
     deny.some((d) => inside(a, d)),
   );
-  const lines = ["(version 1)", "(allow default)"];
+  const lines = ["(version 1)", "(allow default)", ...OUTSIDE];
   if (deny.length) lines.push(`(deny file-read* file-write* ${subpaths(deny)})`);
   if (above.length) lines.push(`(deny file-write* ${literals(above)})`);
   if (between.length) lines.push(`(allow file-read-metadata ${literals(between)})`);
@@ -90,9 +103,15 @@ export function seatbeltProfile(p: SandboxPaths): string {
  * of ion's, the run's own paths bound back (read-only or writable), the agent's config read-only. Not `--ro-bind /
  * /`: a read-only root would stop agents writing their own sessions, caches and temp files, which stay as they are.
  * Its own process list (`--unshare-pid`, a fresh /proc): `/proc/<ion's pid>/root` would reach the real folders.
+ * Its own session (no TIOCSTI into the terminal), its own /dev/shm, and no D-Bus session socket (task review,
+ * 2026-11-21).
  */
-export function bwrapArgs(p: SandboxPaths): string[] {
-  const args = ["--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
+export function bwrapArgs(p: SandboxPaths, env: NodeJS.ProcessEnv = process.env): string[] {
+  const args = [
+    ...["--die-with-parent", "--new-session", "--unshare-pid", "--bind", "/", "/"],
+    ...["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm"],
+  ];
+  if (env.XDG_RUNTIME_DIR) args.push("--tmpfs", join(env.XDG_RUNTIME_DIR, "bus"));
   for (const d of allForms(p.deny)) args.push("--tmpfs", d);
   for (const r of allForms(p.read)) args.push("--ro-bind-try", r, r);
   for (const w of allForms(p.write)) args.push("--bind-try", w, w);
@@ -145,7 +164,9 @@ export function sandboxKind(): SandboxKind {
     known = works(SANDBOX_EXEC, ["-p", "(version 1)(allow default)", "/usr/bin/true"]) ? "seatbelt" : "none";
   else if (process.platform === "linux") {
     const bwrap = whichOnPath("bwrap");
-    known = bwrap && works(bwrap, ["--bind", "/", "/", "--dev", "/dev", "true"]) ? "bwrap" : "none";
+    // Tried with the flags a run gets (task review, 2026-11-21): a kernel without user namespaces fails here.
+    const empty = { deny: [], read: [], write: [], noWrite: [] };
+    known = bwrap && works(bwrap, [...bwrapArgs(empty), "--", "true"]) ? "bwrap" : "none";
   } else known = "none";
   return known;
 }

@@ -530,3 +530,31 @@ describe.skipIf(sandboxKind() !== "seatbelt")("acp adapter in the run's sandbox"
     rmSync(data, { recursive: true, force: true });
   });
 });
+
+// Task review, 2026-11-21: opencode installs its plugin package into ion's folder on a first start; a run in the
+// sandbox can't write there (and mustn't). ion opens the agent once outside the sandbox first, with no prompt and no
+// sandbox, so it sets itself up; then the run starts sandboxed.
+describe("an agent that sets itself up first", () => {
+  it("is opened once outside the sandbox before a sandboxed start, only while it isn't ready", async () => {
+    let ready = false;
+    const starts: number[] = [];
+    const h: AcpHarness = { ...fake, prepare: () => ready, env: () => (starts.push(1), {}) };
+    const sandbox = { kind: "none" as const, paths: { deny: [], read: [], write: [], noWrite: [] } };
+    const go = async () => {
+      const s = await createAcpAdapter(h, { which: () => process.execPath }).start({
+        cwd,
+        model: null,
+        effort: null,
+        sandbox,
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+      await s.close();
+    };
+    await go();
+    expect(starts).toHaveLength(2);
+    ready = true;
+    await go();
+    expect(starts).toHaveLength(3);
+  });
+});

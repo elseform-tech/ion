@@ -84,6 +84,8 @@ class Holding {
 export type AskBlocked = {
   ask: (r: AskingRun, b: Blocked) => Promise<Held>;
   allowed: (r: AskingRun, key: string) => boolean;
+  /** What you said never to, when it's exactly this action (a kept "Don't allow"): refused in every mode. */
+  never?: (r: AskingRun, key: string) => string | null;
 };
 
 /** The exact action: its tool and its whole input. */
@@ -299,6 +301,10 @@ export class Approvals {
   private async verdict(r: AskingRun, req: ApprovalRequest, roots: string[]): Promise<Verdict> {
     const own = this.ownFiles(r, req, roots);
     if (own && !own.wary) return own;
+    // Your saved never holds in every mode, Full too (the user, 2026-11-21).
+    const never = this.opts.askBlocked?.never?.(r, actionKey(req));
+    if (never)
+      return { decision: "deny", by: "you", reason: `You said never: ${never}`, route: "do something else" };
     const hooks = await this.hooksOn(r, req);
     if (hooks && "decision" in hooks) return hooks;
     // A guess: in Full (no judge) it asks you; in Auto the judge decides, shown what will run.

@@ -126,6 +126,18 @@ things on, sign in or add keys.
 - **A guess** (a script ion can't read or that may escape, one the command creates, decoded base64 that runs, a launcher
   that clears the environment before `ion`, a command it can't follow): in Auto the judge decides, shown the start of
   each project script that will run (64 KB each, 128 KB in all) and any decoded text; its no asks you ("ion is wary of
-  this: …", Allow once / Always allow in this project / Don't allow, 4 minutes). In Full it asks you.
-- Known limits of a text gate (run-time-built commands, interpreter string-building) are listed in the PR; Plan 18
-  Task 12's OS sandbox is the real control.
+  this: …", Allow once / Always allow in this project / Don't allow, 4 minutes). In Full it asks you, unless the run is
+  in ion's OS sandbox (below).
+- In a run in ion's OS sandbox (Claude Code, opencode, Grok on a computer that has one), the guesses that only guarded
+  ion's key are gone: no process in the run can read ion's files (`docs/research/sandbox.md`). Codex runs keep them.
+
+## Auto vs Full access (the user, 2026-11-21)
+
+- **The floor, in every mode:** what's refused above (ion's files and key, your keychain secrets, environment dumps,
+  dropping the run's key), the OS sandbox, and the run key's limits (ion's commands for tools only; what an agent adds
+  is off until you turn it on).
+- **Auto:** ion's rules, then the judge; its no (or "not sure") asks you.
+- **Full:** no judging, no asking. Everything else runs: pushes, publishes, deploys, payments, sending messages. Two
+  things still stop a call: a guess in a run that isn't sandboxed asks you (Codex, or a computer without a sandbox),
+  and what you said never to: a "Don't allow" you gave is kept for that exact action in that chat, and refused there
+  from then on ("You said never: …").

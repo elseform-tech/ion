@@ -153,8 +153,17 @@ describe("codex adapter", () => {
     );
     // The thread's own sandbox setting would replace the profile (seen on 0.153.2: no active profile then).
     expect(thread.sandbox).toBeUndefined();
+    // Task review, 2026-11-21: an approval could drop the sandbox (an escalation reached ion as a plain command
+    // approval). Codex's granular policy declines every request to run outside its sandbox by itself.
+    // Live, 2026-11-21: as a thread parameter Codex refused it ("granular requires experimentalApi capability"); as
+    // config it's taken, and the thread keeps it.
+    expect(overrides).toContain(
+      "approval_policy={granular={sandbox_approval=false,rules=true,mcp_elicitations=true,request_permissions=false,skill_approval=false}}",
+    );
+    expect(thread.approvalPolicy).toBeUndefined();
     const plain = await whoami();
     expect(plain.thread.sandbox).toBe("workspace-write");
+    expect(plain.thread.approvalPolicy).toBe("untrusted");
     expect(plain.overrides.some((o: string) => o.startsWith("default_permissions"))).toBe(false);
   });
 
