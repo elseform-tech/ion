@@ -49,3 +49,15 @@ describe("a repo's server, asked in the chat", () => {
     expect(blockedAnswer("No", false)).toEqual({ allow: false, scope: "chat" });
   });
 });
+
+// Task review, 2026-11-21: the command a repo wrote is shown as text: control characters stripped, and capped.
+describe("a repo's server's command in the question", () => {
+  it("is stripped of control characters and capped", () => {
+    const q = blockedQuestion({
+      ...{ requestId: "repo2", summary: "s", key: "k", repo: true },
+      reason: `node x.js\u001b[2J${"a".repeat(2000)}`,
+    });
+    expect(q.why).not.toContain("\u001b");
+    expect(q.why.length).toBeLessThanOrEqual(600);
+  });
+});

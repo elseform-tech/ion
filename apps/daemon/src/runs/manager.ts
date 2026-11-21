@@ -29,7 +29,7 @@ import type { RunAgent, RunServers } from "../tools/run-servers.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
 import { type RunKeys, runEnv, runKeys } from "./run-env.js";
 import type { RunSkills } from "../skills/run.js";
-import { type OwnForRun, ownOpts, type RunOwn, skillsAndOwn } from "../tools/own-run.js";
+import { type OwnForRun, ownOpts, type RunOwn, skillsAndOwn, withOwnServers } from "../tools/own-run.js";
 
 type AskArgs = Commands["ask"]["args"];
 
@@ -210,10 +210,10 @@ export class RunManager {
     this.between.set(l.runId, b);
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
     try {
-      const yours = await yourServers(this.store, this.ctx.servers, l);
       Object.assign(l, await skillsAndOwn(this.ctx, l));
+      const yours = withOwnServers(await yourServers(this.store, this.ctx.servers, l), l.own);
       // Every key of the run (its agent's own too): redacted from every event of the run, wherever it's stored from.
-      const redact = redactor([...yours.secrets, ...(l.own?.secrets ?? []), l.mcpKey, l.gateKey, l.cliKey]);
+      const redact = redactor([...yours.secrets, l.mcpKey, l.gateKey, l.cliKey]);
       this.store.redactRun(l.runId, redact);
       const o = { ion: this.ionServer(l), redact, dataDir: this.ctx.dataDir };
       Object.assign(l, givenToRun(this.store, l, yours, o));

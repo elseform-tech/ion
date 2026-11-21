@@ -28,6 +28,15 @@ const QUICK = {
   silent: () => {},
 };
 
+/**
+ * Like opencode out of quota (live, 2026-11-21): updates that aren't progress (its commands list) and nothing else,
+ * with its own log on stderr saying why (`quota`), or not (`busy`).
+ */
+const NO_PROGRESS = {
+  quota: true,
+  busy: false,
+};
+
 /** The prompt's text, and ion's standing instructions (their own first block) apart from it. */
 function split(blocks) {
   const all = blocks.map((b) => b.text ?? "");
@@ -58,8 +67,20 @@ function whoami(id, sessionId, told) {
   return send({ id, result: { stopReason: "end_turn", usage: { inputTokens: 7, outputTokens: 3 } } });
 }
 
+/** Updates that aren't progress, forever; its log says why first when it's out of quota. */
+function noProgress(sessionId, text) {
+  if (NO_PROGRESS[text])
+    process.stderr.write(
+      'timestamp=2026-11-21T17:20:48Z level=ERROR message="stream error" providerID=opencode error.error="AI_APICallError: Free usage limit reached. Try again later." more=1\n',
+    );
+  const tick = () => update(sessionId, { sessionUpdate: "available_commands_update", availableCommands: [] });
+  tick();
+  setInterval(tick, 50);
+}
+
 async function prompt(id, { sessionId, prompt: blocks }) {
   const { told, text } = split(blocks);
+  if (text in NO_PROGRESS) return noProgress(sessionId, text);
   const cwd = sessions.get(sessionId);
   if (text.startsWith("approve")) {
     update(sessionId, {

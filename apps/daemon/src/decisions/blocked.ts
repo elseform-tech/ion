@@ -1,3 +1,4 @@
+import { stripControl } from "@ion/schema";
 /**
  * A tool call ion stopped, waiting on you: its request, what it does, why ion stopped it, its full input, and its
  * exact key (tool and input) for "Always allow".
@@ -27,10 +28,12 @@ const NO = "Don't allow";
 const FOR_CHAT = "Allow for this chat";
 const REPO_NO = "No";
 
-/** A repo's server that runs the repo's own code: the summary says what, its command is the why. */
+const REPO_WHY = 600;
+
+/** A repo's server that runs the repo's own code: the summary says what, its command (as text, capped) is the why. */
 const repoQuestion = (b: Blocked) => ({
-  question: b.summary,
-  why: b.reason,
+  question: stripControl(b.summary),
+  why: stripControl(b.reason).slice(0, REPO_WHY),
   choices: [
     { label: FOR_CHAT, consequence: "It runs in this chat. ion asks again in another chat." },
     { label: REPO_NO, consequence: "This chat goes on without it." },

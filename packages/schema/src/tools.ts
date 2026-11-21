@@ -77,6 +77,8 @@ export type McpTool =
 
 /** A connection as the Tools page shows it: whether it's ready, and what it needs if not. */
 export type McpToolInfo = McpTool & {
+  /** As `OwnServerInfo.match`: the same setup an agent has matches. */
+  match?: string;
   /** Every `${NAME}` it uses (names only). */
   keys: string[];
   /** Never turned on: a server new to mcp.json starts off. */
@@ -125,6 +127,8 @@ export type SkillInfo = {
   own?: string;
   /** In a project's own folder (the repo wrote it, not you): the project. Off until you turn it on. */
   project?: string;
+  /** The agents that load it themselves, of their own (with their switch on, or always where it can't be off). */
+  readers?: string[];
 };
 
 /** One MCP server in an agent's own config: read-only in Settings (it's the agent's). */
@@ -132,8 +136,10 @@ export type OwnServerInfo = {
   agent: string;
   name: string;
   transport: "stdio" | "http";
-  /** What it runs, or where it connects (no query): the same setup in two agents reads the same. */
+  /** What it runs, or where it connects (no query; a repo's: as written). */
   launch: string;
+  /** What makes two setups the same (what it runs, URL query names, env or header names), hashed: never a value. */
+  match: string;
   /**
    * A project's own file (the repo wrote it, not you; Claude Code's `.mcp.json`): `id` turns it on (`tools.setOn` kind
    * "repo"), off until you do; `new`: never turned on, `changed`: it runs something else since.
@@ -145,8 +151,11 @@ export type OwnServerInfo = {
     on: boolean;
     new?: true;
     changed?: true;
-    /** It runs code from the repo (anything but a published package): no switch; ion asks in each chat. */
+    /** A local one: it runs code here, so no switch; ion asks in each chat. */
     asks?: true;
+    /** The names of its headers (a remote one) or env (a local one), never their values. */
+    headers?: string[];
+    env?: string[];
   };
 };
 
@@ -163,6 +172,8 @@ export type OwnPluginInfo = {
   version?: string;
   bundles: PluginBundles;
   hooks?: "off" | "run";
+  /** With no version: what's in it, hashed (the same plugin in two agents matches). */
+  hash?: string;
 };
 
 /** Each agent's own tools, read from its folders (nothing run or contacted); `agents`: its "Use its own tools". */

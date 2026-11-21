@@ -295,5 +295,7 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     defaultModel: caps?.defaultModel ?? null,
     ...(h.adapter.ownTools ? { ownTools: true as const } : {}),
     ...(h.adapter.ownHooks ? { ownHooks: true as const } : {}),
+    ...(h.adapter.ownOff ? { ownOff: h.adapter.ownOff } : {}),
+    ...(h.adapter.ownTrust ? { ownTrust: true as const } : {}),
   };
 }

@@ -78,6 +78,8 @@ export type IonTurnsDeps = {
   mcpUrl: () => string;
   gateUrl: () => string;
   agents: () => Promise<HarnessInfo[]>;
+  /** One agent, asked alone (an ion whose agent is chosen checks only that one). */
+  agent?: (id: string) => Promise<HarnessInfo | undefined>;
   startThread: StartIonThread;
   /** The turn's hard limit (tests make it short). */
   turnMs?: number;

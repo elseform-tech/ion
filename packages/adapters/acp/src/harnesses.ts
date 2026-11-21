@@ -1,6 +1,12 @@
 import type { GateCall } from "@ion/adapter-kit";
 import { type GateEnv, grokGateEnv, grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
-import { carriedConfig, settingUp, userConfigHome, writeIonConfig } from "./opencode-config.js";
+import {
+  carriedConfig,
+  ownSkillPaths,
+  settingUp,
+  userConfigHome,
+  writeIonConfig,
+} from "./opencode-config.js";
 
 /** How to launch and sign in to an ACP agent. */
 export type AcpHarness = {
@@ -30,6 +36,15 @@ export type AcpHarness = {
   ownTools?: true;
   /** Its own hooks run in ion's chats too: it has no switch for them. */
   ownHooks?: true;
+  /** What its switch really turns off, by kind. */
+  ownOff?: { servers: boolean; skills: boolean; plugins: boolean };
+  /** It trusts a project's own tools by its own list. */
+  ownTrust?: true;
+  /**
+   * Reads one line of the agent's own log (stderr): the reason a turn failed, when the line says one (opencode's
+   * "stream error … error.error=…"). With it, the agent is started with its log on stderr.
+   */
+  logFailure?: (line: string) => string | null;
   /** What a start that timed out says instead of "didn't respond" (an agent still setting up); none: the usual. */
   notResponding?: (own?: boolean) => string | undefined;
 };
@@ -52,6 +67,10 @@ export const GROK_BUILD: AcpHarness = {
   // moves its sign-in too). Checked on Grok 1.0.92: docs/research/acp-and-harnesses.md.
   ownTools: true,
   ownHooks: true,
+  // Only what it reads from Claude Code and Cursor can be turned off; its own servers, skills and plugins stay.
+  ownOff: { servers: false, skills: false, plugins: false },
+  // A project's own .grok config loads by its folder trust.
+  ownTrust: true,
 };
 
 /**
@@ -74,11 +93,19 @@ function grokAskEnv(): Record<string, string> {
   return { GROK_ASK_LOCAL_READS: "false", GROK_ASK_USER_QUESTION: "false" };
 }
 
+/** opencode's log line for a failed model call: its reason, without the SDK's error name (live, 2026-11-21). */
+export function opencodeFailure(line: string): string | null {
+  if (!line.includes("stream error")) return null;
+  const why = /error\.error="((?:[^"\\]|\\.)*)"/.exec(line)?.[1];
+  return why ? why.replace(/^AI_\w+: /, "").slice(0, 300) : null;
+}
+
 export const OPENCODE: AcpHarness = {
   id: "opencode",
   label: "opencode",
   bin: "opencode",
-  args: ["acp"],
+  // Its log (warnings and errors) on stderr: a turn that fails quietly (out of quota) says why there.
+  args: ["acp", "--print-logs", "--log-level", "WARN"],
   versionArgs: ["--version"],
   loginArgs: ["auth", "login"],
   loginHint: "opencode auth login",
@@ -91,7 +118,10 @@ export const OPENCODE: AcpHarness = {
   ownTools: true,
   // opencode's plugins are hook code: with your own tools, yours run too.
   ownHooks: true,
+  // Off: its servers and skills stay out; ~/.opencode's plugins still load.
+  ownOff: { servers: true, skills: true, plugins: false },
   notResponding: (own) => (settingUp(own) ? "Not responding — opencode is setting up, try again" : undefined),
+  logFailure: opencodeFailure,
 };
 
 /**
@@ -113,15 +143,22 @@ function opencodeAskEnv(gate?: GateEnv, own = false): Record<string, string> {
   // ion's plugin reports every tool call to ion before it runs (with a gate; without one it does nothing). Listed
   // always, so the config is the same for every start and the daemon's first sign-in check installs what opencode needs
   // for it, not a chat's start (live, 2026-11-21: a first chat timed out waiting on that install).
-  // Your own plugins (with your own tools) after ion's, which is always first and always there.
+  // Your own plugins (with your own tools), then ion's, always there and last, so it judges a call as your plugins
+  // left it (task review, 2026-11-21; opencode loads plugins in the order listed: not checked live).
   const yours = (Array.isArray(base.plugin) ? base.plugin : []).filter((p) => p !== OPENCODE_PLUGIN);
-  const home = writeIonConfig({ ...base, permission, agent, plugin: [OPENCODE_PLUGIN, ...yours] }, own);
+  const skills = own ? { skills: { ...(base.skills as object), paths: ownSkillPaths(base) } } : {};
+  const home = writeIonConfig(
+    { ...base, permission, agent, ...skills, plugin: [...yours, OPENCODE_PLUGIN] },
+    own,
+  );
   return {
     ...(gate ? { ION_GATE_URL: gate.url } : {}),
     // An inline config in ion's own environment is carried into the file, never passed on.
     OPENCODE_CONFIG_CONTENT: "",
     // A repo's own opencode.json could set permissions back to "allow" (verified): don't load it.
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+    // Skills only from the folders ion names (with your own tools): none it finds by itself (~/.claude, a project's).
+    OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
     // Your own config folder, file and folder (their servers and plugins) aren't loaded; ion's plugin gives the
     // commands opencode runs your config folder back.
     XDG_CONFIG_HOME: home,

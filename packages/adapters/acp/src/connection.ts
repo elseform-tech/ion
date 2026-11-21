@@ -18,10 +18,12 @@ import type { AcpHarness } from "./harnesses.js";
 type Choice = { value?: unknown; name?: unknown; options?: Choice[] };
 type ConfigOption = { id: string; category?: string; currentValue?: unknown; options?: Choice[] };
 export type Connection = {
-  child: ChildProcessByStdio<Writable, Readable, null>;
+  child: ChildProcessByStdio<Writable, Readable, Readable>;
   rpc: Rpc;
   sessionId: string;
   options: ConfigOption[];
+  /** The last reason the agent's own log gave for a failed turn (harnesses with `logFailure`). */
+  failure?: () => string | undefined;
 };
 
 /** Spawns the agent (never through a shell), initializes ACP and opens a session in `cwd`. */
@@ -52,34 +54,56 @@ export function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Con
 
 async function open(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
   const timeoutMs = o.timeoutMs ?? 30_000;
-  const child = spawn(bin, h.args, {
-    stdio: ["pipe", "pipe", "ignore"],
-    env: {
-      ...agentEnv(process.env, o.envDrop),
-      ...o.env,
-      ...(h.env?.(o.gate ? { url: o.gate.url, cwd: o.cwd } : undefined, !!o.ownTools) ?? {}),
-    },
-  });
+  const child = spawn(bin, h.args, { stdio: ["pipe", "pipe", "pipe"], env: envOf(h, o) });
   const rpc = createRpc({ stdin: child.stdin, stdout: child.stdout });
-  child.on("error", () => child.stdout.destroy());
-  child.on("exit", () => child.stdout.destroy());
+  // Gone (or never started): its output ends, so nothing waits on it.
+  for (const gone of ["error", "exit"] as const) child.on(gone, () => child.stdout.destroy());
+  // Its log is read only where it can say why a turn failed; otherwise it's drained unread.
+  const failure = h.logFailure ? lastFailure(child.stderr, h.logFailure) : void child.stderr.resume();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     const why = h.notResponding?.(o.ownTools) ?? `${h.label} didn't respond`;
     timer = setTimeout(() => reject(new NotResponding(why)), timeoutMs);
   });
   try {
-    return await Promise.race([handshake(h, { rpc, child }, o), timeout]);
+    const c = await Promise.race([handshake(h, { rpc, child }, o), timeout]);
+    return failure ? { ...c, failure } : c;
   } catch (e) {
     child.kill();
-    if (e instanceof RpcError && e.code === -32000)
-      throw new Error(`${h.label} isn't signed in. Run: ${h.loginHint}`);
-    if (o.resume && e instanceof RpcError)
-      throw new ResumeFailed(`${h.label} couldn't continue this chat's session`);
-    throw e;
+    throw startError(h, o, e);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** The agent's environment: ion's (less your keys), the run's, and the harness's own (its gate, its config). */
+const envOf = (h: AcpHarness, o: ConnectOpts) => ({
+  ...agentEnv(process.env, o.envDrop),
+  ...o.env,
+  ...(h.env?.(o.gate ? { url: o.gate.url, cwd: o.cwd } : undefined, !!o.ownTools) ?? {}),
+});
+
+/** What a start that failed says: not signed in, a session it couldn't continue, or the error as it was. */
+function startError(h: AcpHarness, o: ConnectOpts, e: unknown): unknown {
+  if (e instanceof RpcError && e.code === -32000)
+    return new Error(`${h.label} isn't signed in. Run: ${h.loginHint}`);
+  if (o.resume && e instanceof RpcError)
+    return new ResumeFailed(`${h.label} couldn't continue this chat's session`);
+  return e;
+}
+
+/** Reads the agent's log as it comes (never letting it fill up): the last failure reason it gave. */
+function lastFailure(stderr: Readable, read: (line: string) => string | null): () => string | undefined {
+  let last: string | undefined;
+  let rest = "";
+  stderr.setEncoding("utf8");
+  stderr.on("data", (chunk: string) => {
+    const lines = (rest + chunk).split("\n");
+    rest = (lines.pop() ?? "").slice(-8192);
+    for (const line of lines) last = read(line) ?? last;
+  });
+  stderr.on("error", () => {});
+  return () => last;
 }
 
 /** The agent didn't answer in time (first-run download, an interactive prompt, a hang). */

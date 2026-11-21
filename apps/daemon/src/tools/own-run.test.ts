@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { describe, expect, it } from "vitest";
 import { agentHome } from "./import-testing.js";
-import { repoKey, repoState, runOwnOf } from "./own-run.js";
-import { repoMaterial } from "./own.js";
+import { repoState, runOwnOf } from "./own-run.js";
+import { repoKey, repoMaterial } from "./own.js";
 
 // Security review, 2026-11-21: `${VAR}` in an agent's own server is filled only from the environment an agent may
 // have (ion's own variables, run keys and your keys left out), never ion's whole environment.
@@ -83,6 +83,17 @@ describe("a repo's local servers ask in each chat", () => {
     ]);
     yes = false;
     expect(await names("c2", "r3")).toEqual(["remote"]);
+    expect(asked).toHaveLength(4);
+    // Task review, 2026-11-21: a "No" is kept for the chat too (asked once), and both stay after ion restarts.
+    expect(await names("c2", "r4")).toEqual(["remote"]);
+    expect(asked).toHaveLength(4);
+    const again = runOwnOf({ home, dataDir: join(root, "data"), configFile, env: {}, sign, ask });
+    const after = async (chatId: string) =>
+      (
+        await again.forRun({ runId: "r9", chatId, harness: "claude-code", projectId: "shop", cwd: project })
+      ).ownServers?.map((s) => s.name);
+    expect(await after("c1")).toEqual(["local", "pkg", "remote"]);
+    expect(await after("c2")).toEqual(["remote"]);
     expect(asked).toHaveLength(4);
     // A local one has no lasting switch to give it; a remote one does.
     expect(await repoState(sign, marks)(project, "pkg", pkg)).toEqual({ on: false, new: true, asks: true });

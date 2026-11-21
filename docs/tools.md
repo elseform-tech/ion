@@ -31,29 +31,45 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
   off wherever it can turn them off; where it can't (Grok's `~/.grok/hooks`, opencode's plugins, which are hook code),
   Settings → Agents says **Its own hooks run too**. ion's gate judges every call, an agent's own tools' too, hard rules
   first. How each agent does it: `research/acp-and-harnesses.md`, "Agents bring their own tools".
-  - Claude Code still loads no settings files (its permission rules and hooks stay out) and MCP stays strict: ion reads
+  - Claude Code still loads no settings files (its permission rules and hooks stay out) and MCP stays strict. ion reads
     its servers (`~/.claude.json` and this project's entry there; `${VAR}` and `${VAR:-default}` filled as Claude fills
     them, but only from the environment an agent may have: ion's `ION_*`, run keys and your ion keys never fill one; a
     server whose variable isn't there is left out; SSE left out) and its enabled plugins
-    (`~/.claude/plugins/installed_plugins.json` and `enabledPlugins`; their servers too), and passes them. A plugin that
-    bundles hooks comes as ion's copy without them, inside the run's skills plugin folder. Its own skills in your home
-    come on, as they are. Every filled value of its servers (command, args, env, url, headers) is in the run's redaction
-    list, and passed in the environment, never on the command line.
+    (`~/.claude/plugins/installed_plugins.json` and `enabledPlugins`; their servers too, `${CLAUDE_PLUGIN_ROOT}` filled
+    with its folder and `${CLAUDE_PLUGIN_DATA}` with a folder of its own in ion's data). **Its servers run through ion**
+    (task review, 2026-11-21), as yours do: a local one is started by ion in the run's own folder with only its own
+    values, a remote one is forwarded to, each gated with its real name, and Claude Code gets only ion's URL for each
+    (nothing of a server in its environment). A plugin that bundles hooks (its own, or a skill's, subagent's or
+    command's `hooks:`) comes as ion's copy without them, inside the run's skills plugin folder. Its own skills in your
+    home come on, as they are. A server's env and header values, and anything filled from `${VAR}`, are masked in the
+    run's events; its command, args or URL only when they look like a key.
   - What a repo wrote isn't yours (security review, 2026-11-21): a project's `.mcp.json` servers and its
-    `.claude/skills` show in Settings with a switch ("From shop's .mcp.json", "app's skills"), off until you turn each on
-    (consent to exactly what it runs or says, signed with ion's key; `tools.repoOn` / `tools.skills.on`). Claude Code's
-    own approvals of a `.mcp.json` don't count. Only a repo's remote server gets a lasting switch. Every local one runs
-    code here, whatever its command (`npx` too: node_modules/.bin, .npmrc and the like are the repo's): Settings says
-    "Asks in each chat", and the first time a chat would start it ion asks there (`shop's .mcp.json wants to run "local"
-    from the repo`: Allow for this chat, or No; no answer in 4 minutes is a no). A repo server whose name isn't 1-40
-    letters, digits, - or _ is left out with one line. Codex and Grok load a trusted project's own config themselves; ion can't
-    hold those.
-  - Codex keeps its own servers and plugins (`features.plugins` stays on); its hooks are still turned off.
+    `.claude/skills` show in Settings ("From shop's .mcp.json", "app's skills"), off until you turn each on (signed with
+    ion's key; `tools.repoOn` / `tools.skills.on`). Claude Code's own approvals don't count. Only a repo's remote server
+    gets a lasting switch. Every local one runs code here, whatever its command: Settings says "Asks in each chat", and
+    the first time a chat would start it ion asks there (`shop's .mcp.json wants to run "local" from the repo`: Allow for
+    this chat, or No; no answer in 4 minutes isn't kept, so ion asks again). Your answer, yes or no, is kept for that chat
+    (in ion's data, across restarts). A repo's definition is never filled from your environment: one that asks for a
+    `${NAME}` is left out with a line ("asks for NAME from your environment"), and so is one whose name isn't 1-40
+    letters, digits, - or _ ("a server with an unusable name"). The row shows the whole URL as written, and the names of
+    its headers or env. Codex and Grok load a trusted project's own config themselves ("Uses its own trust for project
+    tools" in Settings → Agents); ion can't hold those.
+  - Codex keeps its own servers and plugins (`features.plugins` stays on); its hooks are still turned off. Its own skills
+    load whatever its switch says.
   - opencode: your `mcp`, `plugin`, `agent`, `command` and `instructions` (and your config folder's plugin files) are
-    carried into ion's config file, ion's gate plugin first; a folder of its own (`<hash>-own`), so a chat and ion's
-    judge never rewrite each other's file. Its `agent/` and `command/` folders (markdown) aren't carried.
+    carried into ion's config file, ion's gate plugin last (it judges a call as your plugins left it); a folder of its
+    own (`<hash>-own`), so a chat and ion's judge never rewrite each other's file. External skills are off
+    (`OPENCODE_DISABLE_EXTERNAL_SKILLS`); with the switch on, ion names your home skill folders (opencode's, Claude
+    Code's, `.agents`) in `skills.paths`; a project's never. Its `agent/` and `command/` folders (markdown) aren't
+    carried. It runs with its log on stderr (warnings and errors): a turn with no progress for 2 minutes (updates that
+    aren't progress don't count; paused while ion holds a call) fails with its logged reason ("opencode: Free usage limit
+    reached…"), else "opencode didn't answer".
   - Grok keeps its own servers and skills and Claude's and Cursor's it reads; only the Claude and Cursor hooks are off.
+  - Codex, opencode and Grok start their own servers themselves, with their own environment (Task 12's sandbox).
   - ion's own turns and the judge get ion's tools only.
+  - Each agent says what its switch really turns off, by kind; Settings says "Off in ion" (dimmed) only for those, and
+    "Also loads its own" for what it loads anyway (Codex's skills; Grok's servers, skills and plugins; opencode's
+    `~/.opencode` plugins).
 - **Settings → Tools** has Connections, Skills, Plugins and Hooks. Under the tabs (Hooks stay ion's) chips filter
   whose: All, ion, each agent. One row per thing several have (servers by name and what they run, skills by name and
   files, plugins by name and version), every face on it; the same name set up differently is a row each, **Differs**

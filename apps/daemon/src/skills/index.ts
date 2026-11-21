@@ -74,6 +74,20 @@ function supportOf(s: FoundSkill, readers: SkillReaders, own: OwnSwitches): Reco
   return out;
 }
 
+/** Agents that read a project's skill folders themselves (by their own trust); opencode's external skills are off. */
+const READS_PROJECTS = new Set(["codex"]);
+
+/**
+ * The agents that load a skill themselves (task review, 2026-11-21): Claude Code its home skills while it brings its
+ * own; each other agent the folders it reads (a project's only where it reads them by its own trust).
+ */
+function readersOf(s: FoundSkill, readers: SkillReaders, own: OwnSwitches): string[] {
+  const out = ownerOf(s, own) === "claude-code" ? ["claude-code"] : [];
+  for (const [id, r] of Object.entries(readers))
+    if (r.own.includes(s.whose) && (!s.project || READS_PROJECTS.has(id))) out.push(id);
+  return out;
+}
+
 /** A skill as the Tools page shows it: whose own it is (read-only there), and what's in it (to match it elsewhere). */
 function infoOf(s: FoundSkill, state: State, readers: SkillReaders, own: OwnSwitches): SkillInfo {
   const { id, name, description, whose, where, project } = s;
@@ -87,6 +101,7 @@ function infoOf(s: FoundSkill, state: State, readers: SkillReaders, own: OwnSwit
     support: supportOf(s, readers, own),
     ...(owner ? { own: owner } : {}),
     ...(project ? { project } : {}),
+    readers: readersOf(s, readers, own),
   };
 }
 

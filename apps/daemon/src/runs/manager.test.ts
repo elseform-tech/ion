@@ -36,8 +36,8 @@ vi.mock("@ion/adapter-fake", async (real) => {
       };
       const start = adapter.start.bind(adapter);
       adapter.start = (opts) => {
-        const { mcpServers, env, pluginDir, ownTools, ownServers } = opts;
-        started.push(structuredClone({ mcpServers, env, pluginDir, ownTools, ownServers }));
+        const { mcpServers, env, pluginDir, ownTools } = opts;
+        started.push(structuredClone({ mcpServers, env, pluginDir, ownTools }));
         return start(opts);
       };
       return adapter;
@@ -122,12 +122,18 @@ describe("RunManager", () => {
       { name: "gh", transport: "stdio" as const, command: "gh", args: [], env: { T: key } },
     ];
     const own = { forRun: async () => ({ ownTools: true, ownServers, secrets: [key] }) };
-    runs = managerWith({ own });
-    const said = JSON.stringify(
-      (await finished((await ask(`echo ${key}`)).runId)).filter((e) => e.origin === "adapter"),
-    );
-    expect(started.at(-1)).toMatchObject({ ownTools: true, ownServers: [{ name: "gh" }] });
+    runs = managerWith({ own, mcp: { grants: createGrants(), url: () => "http://127.0.0.1:9/mcp" } });
+    const { runId } = await ask(`echo ${key}`);
+    const said = JSON.stringify((await finished(runId)).filter((e) => e.origin === "adapter"));
     expect([said.includes("•••"), said.includes(key)]).toEqual([true, false]);
+    // Task review, 2026-11-21: its own servers reach it as ion's URLs (ion runs them, in its own folder, with only
+    // their own values), never as a command or env of its own.
+    const s = started.at(-1)!;
+    expect(s.ownTools).toBe(true);
+    expect(s.mcpServers).toContainEqual(
+      expect.objectContaining({ name: "gh", url: "http://127.0.0.1:9/mcp/s/gh" }),
+    );
+    expect(JSON.stringify(s)).not.toContain(key);
   });
 
   // The user, 2026-11-20 (skills, T3 Code's way): the plugin folder is made for each run in ion's data folder and

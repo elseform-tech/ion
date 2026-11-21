@@ -13,8 +13,8 @@ import { hookChange, hookGroups } from "./tools-hooks.js";
 import type { Skills } from "../skills/index.js";
 import type { YourTools } from "../mcp/ion-your-tools.js";
 import { consentOf, turnedOn } from "../tools/on.js";
-import { agentsHomeOf, ownSwitches, repoKey, repoState } from "../tools/own-run.js";
-import { ownToolsOf, repoMaterial, repoServers, runsRepoCode } from "../tools/own.js";
+import { agentsHomeOf, ownSwitches, repoState } from "../tools/own-run.js";
+import { ownToolsOf, refsIn, repoKey, repoMaterial, repoServers, runsRepoCode } from "../tools/own.js";
 
 const KEY_NAME = /^[A-Za-z_]\w{0,63}$/;
 const MAX_KEY = 16_384;
@@ -86,16 +86,16 @@ async function mcpTurned(tools: Tools, c: UserConfig, id: string, on: boolean): 
 }
 
 /**
- * Turning a repo's own server on (a project's .mcp.json, "<project>:<name>") is consent to exactly what it runs now
+ * Turning a repo's own server on (a project's .mcp.json, "<project folder>#<name>") is consent to exactly what it runs now
  * (security review, 2026-11-21); off takes that back.
  */
 async function repoTurned(tools: Tools, c: UserConfig, id: string, on: boolean): Promise<string[]> {
   const kept = c.tools.repoOn.filter((e) => e.slice(0, e.lastIndexOf("@")) !== id);
   if (!on) return kept;
-  const [project, name] = [id.slice(0, id.indexOf(":")), id.slice(id.indexOf(":") + 1)];
+  const name = id.slice(id.lastIndexOf("#") + 1);
   const dir = projectDirs(c).find((p) => repoKey(p, name) === id);
   const v = dir ? repoServers(dir)[name] : undefined;
-  if (!dir || v === undefined || !project) throw new UserError(`Unknown connection: ${id}`);
+  if (!dir || v === undefined || refsIn(v).length) throw new UserError(`Unknown connection: ${id}`);
   // A repo's local server has no lasting consent (ruling, 2026-11-21): ion asks in each chat.
   if (runsRepoCode(v)) throw new UserError("It runs code from the repo: ion asks in each chat");
   const mark = await tools.sign(repoMaterial(dir, name, v)).catch(() => {

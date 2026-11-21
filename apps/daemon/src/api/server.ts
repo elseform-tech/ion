@@ -231,16 +231,17 @@ function startIons(
 ): { ions: Ions; turns: IonTurns } {
   const { dataDir, grants, base, ...deps } = d;
   const agents = () => harnessInfos.list();
+  const agent = (id: string) => harnessInfos.one(id);
   // Turns start threads through the ions, and the ions think through turns: the ions are made just below.
   const late: { ions?: Ions } = {};
   const turns = new IonTurns({
-    ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents },
+    ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents, agent },
     mcpUrl: () => `${base()}/mcp`,
     gateUrl: () => `${base()}/gate`,
     startThread: (projectId, brief, turn) =>
       late.ions ? late.ions.startThread(projectId, brief, turn) : Promise.resolve({ why: "ion is starting" }),
   });
-  const ions = new Ions({ ...deps, turns, agents });
+  const ions = new Ions({ ...deps, turns, agents, agent });
   late.ions = ions;
   // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
   ions.answerUnanswered();
@@ -356,6 +357,9 @@ function skillsOf(opts: { dataDir: string; configFile: string; home?: string }, 
   return skills;
 }
 
+/** Your answer to a repo server's question: yes, no, or none in time (not kept: ion asks again). */
+const HELD_ANSWER = { allow: true, deny: false, timeout: null } as const;
+
 /**
  * Asks in a run's chat about a repo's server that runs the repo's own code (ruling, 2026-11-21): "Allow for this chat"
  * lets it start in that chat; no answer in 4 minutes is a no.
@@ -370,7 +374,8 @@ const repoAsker =
       key: `repo ${text}`,
       repo: true,
     };
-    return (await late.decisions?.askBlocked({ kind: "run", ...r }, b)) === "allow";
+    const h = await late.decisions?.askBlocked({ kind: "run", ...r }, b);
+    return HELD_ANSWER[h ?? "timeout"];
   };
 
 /** The data folder, the event store and the services every connection shares. */

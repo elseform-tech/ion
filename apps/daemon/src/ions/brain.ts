@@ -5,7 +5,22 @@ import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 
 /** Where an ion's agent is picked from: your config, the chats, and the agents ion can use right now. */
-export type BrainDeps = { configFile: string; db: Db; agents?: () => Promise<HarnessInfo[]> };
+export type BrainDeps = {
+  configFile: string;
+  db: Db;
+  agents?: () => Promise<HarnessInfo[]>;
+  /** One agent (its CLI asked alone): checking a chosen agent never waits on every other's. */
+  agent?: (id: string) => Promise<HarnessInfo | undefined>;
+};
+
+/** Whether this one agent is ready: asked alone when ion can, else read from the list. */
+async function isReady(d: BrainDeps, id: string): Promise<boolean> {
+  if (d.agent) {
+    const h = await d.agent(id).catch(() => undefined);
+    return !!h && h.installed && h.signedIn;
+  }
+  return (await readyAgents(d.agents)).includes(id);
+}
 
 /** The agents installed and signed in. */
 async function readyAgents(agents?: () => Promise<HarnessInfo[]>): Promise<string[]> {
@@ -20,10 +35,9 @@ async function readyAgents(agents?: () => Promise<HarnessInfo[]>): Promise<strin
 export async function projectAgent(d: BrainDeps, projectId: string): Promise<string | undefined> {
   const own = loadUserConfig(d.configFile).config.projects.find((p) => p.id === projectId)?.harness;
   if (own) return own;
-  const ok = await readyAgents(d.agents);
   const last = chatsView.lastAgent(d.db, projectId);
-  if (last && (!d.agents || ok.includes(last))) return last;
-  return defaultAgent(ok, null);
+  if (last && (!d.agents || (await isReady(d, last)))) return last;
+  return defaultAgent(await readyAgents(d.agents), null);
 }
 
 /**
@@ -51,16 +65,15 @@ export type IonBrain = { harness: string; model: string | null; effort: Effort |
  */
 export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | null> {
   const ion = loadUserConfig(d.configFile).config.ion;
-  const ok = await readyAgents(d.agents);
   const quickEffort = ion.quickEffort ?? null;
   if (ionId === "chief") {
     const [set, ...rest] = ion.quick.split(":");
-    if (ok.includes(set!)) return { harness: set!, model: rest.join(":") || null, effort: quickEffort };
-    const first = defaultAgent(ok, null);
+    if (await isReady(d, set!)) return { harness: set!, model: rest.join(":") || null, effort: quickEffort };
+    const first = defaultAgent(await readyAgents(d.agents), null);
     return first ? { harness: first, model: null, effort: quickEffort } : null;
   }
   const harness = await projectAgent(d, ionId);
-  if (!harness || !ok.includes(harness)) return null;
+  if (!harness || !(await isReady(d, harness))) return null;
   const b = brainOf(d.configFile, ionId, harness);
   return { harness, model: b.model ?? null, effort: b.effort ?? quickEffort };
 }

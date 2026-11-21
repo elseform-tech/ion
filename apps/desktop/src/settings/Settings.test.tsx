@@ -19,6 +19,7 @@ const grok: HarnessInfo = {
   defaultModel: "grok-code",
   ownTools: true,
   ownHooks: true,
+  ownTrust: true,
 };
 const claude: HarnessInfo = {
   id: "claude-code",
@@ -161,6 +162,10 @@ describe("Settings", () => {
     expect(screen.queryByText("Also loads its own")).toBeNull();
     fireEvent.click(sw);
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { ownTools: { "grok-build": false } } });
+    // Task review, 2026-11-21 (ruled line): an agent that trusts a project's tools by its own list says so.
+    expect(screen.getByText("Uses its own trust for project tools").closest(".hrow")?.textContent).toContain(
+      "Grok Build",
+    );
   });
 
   // The user, 2026-11-19: you choose how hard ion thinks.

@@ -104,10 +104,55 @@ function startedEvent(
   return { type: EV.runStarted, data };
 }
 
+/** Updates that are the agent getting on with the turn (others, like its commands list, aren't). */
+const PROGRESS = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+  "plan",
+  "usage_update",
+]);
+
+/**
+ * The silence check (task review, 2026-11-21): rolling, reset by each bit of progress, paused while ion holds a
+ * permission; past its time the turn fails with the agent's own logged reason when it gave one, else `why`.
+ */
+function silence(
+  silent: { ms: number; why: string; label?: string } | undefined,
+  c: Connection,
+  fail: (why: string) => void,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => clearTimeout(timer);
+  return {
+    heard() {
+      stop();
+      if (!silent) return;
+      timer = setTimeout(() => {
+        const logged = c.failure?.();
+        fail(logged ? `${silent.label ?? "The agent"}: ${logged}` : silent.why);
+      }, silent.ms);
+      timer.unref();
+    },
+    hold: stop,
+  };
+}
+
+/** ion holding a call for your answer isn't the agent being quiet: the silence check waits for the answer. */
+async function held<T>(quiet: { hold(): void; heard(): void }, answer: Promise<T>): Promise<T> {
+  quiet.hold();
+  try {
+    return await answer;
+  } finally {
+    quiet.heard();
+  }
+}
+
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
-  run: { harness: string; model: string; silent?: { ms: number; why: string } },
+  run: { harness: string; model: string; silent?: { ms: number; why: string; label?: string } },
 ): Session {
   const events = createEventQueue<AdapterEvent>();
   const state = createAcpState(projectRoots(opts.cwd));
@@ -137,17 +182,19 @@ export function startAcpSession(
     setTimeout(() => c.child.kill(), 100).unref();
   };
 
-  let heard = false;
+  const quiet = silence(run.silent, c, (why) =>
+    finish("failed", { code: "agent", retryable: false, message: why }),
+  );
   c.rpc.onNotification("session/update", (p) => {
-    heard = true;
-    for (const e of mapUpdate((p.update ?? {}) as Record<string, unknown>, state)) emit(e);
+    const u = (p.update ?? {}) as Record<string, unknown>;
+    if (PROGRESS.has(String(u.sessionUpdate))) quiet.heard();
+    for (const e of mapUpdate(u, state)) emit(e);
   });
-  c.rpc.onRequest("session/request_permission", (p) => {
-    heard = true;
-    return interrupted
+  c.rpc.onRequest("session/request_permission", (p) =>
+    interrupted
       ? Promise.resolve({ outcome: { outcome: "cancelled" } })
-      : answerPermission(p, opts.decide, emit);
-  });
+      : held(quiet, answerPermission(p, opts.decide, emit)),
+  );
   c.child.on("exit", () => finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : CRASH));
   opts.signal.addEventListener("abort", () => c.child.kill());
 
@@ -156,12 +203,9 @@ export function startAcpSession(
     nativeId: c.sessionId,
     async send({ text: t }) {
       emit(startedEvent(run, opts, c.sessionId));
-      // Not a word after the prompt: the agent is stuck (an expired key leaves opencode like this), so say why.
-      const silent = run.silent;
-      if (silent)
-        setTimeout(() => {
-          if (!heard) finish("failed", { code: "agent", retryable: false, message: silent.why });
-        }, silent.ms).unref();
+      // No progress for a while after the prompt: the agent is stuck (an expired key or no quota leaves opencode like
+      // this), so say why.
+      quiet.heard();
       c.rpc
         .request("session/prompt", { sessionId: c.sessionId, prompt: promptOf(t, opts.instructions) })
         .then((r) => {

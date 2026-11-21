@@ -1,5 +1,5 @@
 import { Avatar, Layers, Puzzle } from "@ion/design-system";
-import type { HarnessInfo, PluginBundles, ToolsInfo } from "@ion/schema";
+import type { HarnessInfo, OwnPluginInfo, PluginBundles, ToolsInfo } from "@ion/schema";
 import { ToolRow } from "./tools-parts.js";
 
 /**
@@ -40,9 +40,22 @@ export function merge<T>(items: Item<T>[], differs: string): Merged<T>[] {
 export const whoseRows = <T,>(rows: Merged<T>[], whose: Whose) =>
   whose === "all" ? rows : rows.filter((r) => r.agents.includes(whose));
 
-/** Every agent on it is one whose own tools are off in ion (and ion doesn't have it). */
-export const offIn = (r: { agents: string[] }, own: ToolsInfo["own"]) =>
-  !r.agents.includes("ion") && r.agents.every((a) => own.agents[a] === false);
+/** The kinds a switch turns off. */
+export type Kind = "servers" | "skills" | "plugins";
+
+/**
+ * A row's state in ion when its agents' own tools are off (task review, 2026-11-21): "off" when every agent on it has
+ * its switch off and that switch really turns this kind off; "also" when one of them has it off but loads this kind
+ * anyway; else none. ion's own rows are never either.
+ */
+export function offIn(r: { agents: string[] }, own: ToolsInfo["own"], kind: Kind, agents: HarnessInfo[]) {
+  if (r.agents.includes("ion")) return null;
+  const off = r.agents.filter((a) => own.agents[a] === false);
+  if (!off.length) return null;
+  const turnsOff = (a: string) => agents.find((h) => h.id === a)?.ownOff?.[kind] ?? true;
+  if (off.length === r.agents.length && off.every(turnsOff)) return "off" as const;
+  return off.some((a) => !turnsOff(a)) ? ("also" as const) : null;
+}
 
 /** ion's face, or an agent's. */
 const Face = ({ id }: { id: string }) => (id === "ion" ? <Avatar ion="chief" /> : <Avatar harness={id} />);
@@ -83,13 +96,18 @@ export function WhoseChips(p: { whose: Whose; agents: HarnessInfo[]; onPick: (w:
   );
 }
 
-/** A row that isn't ion's: who has it, why it differs, and "Off in ion" (dimmed) when its agents' own are off. */
+const STATE = { off: "Off in ion", also: "Also loads its own" } as const;
+
+/**
+ * A row that isn't ion's: who has it, why it differs, and "Off in ion" (dimmed) when its agents' switches turn it off,
+ * or "Also loads its own" when one is off but its agent loads it anyway.
+ */
 export function OwnRow(p: {
   icon: Parameters<typeof ToolRow>[0]["icon"];
   r: Merged<unknown>;
   line?: React.ReactNode;
   agents: HarnessInfo[];
-  off: boolean;
+  off: "off" | "also" | null;
 }) {
   return (
     <ToolRow
@@ -98,9 +116,9 @@ export function OwnRow(p: {
       chip={p.r.differs ? "Differs" : null}
       {...(p.r.differs ? { chipTitle: p.r.differs } : {})}
       line={p.line}
-      dim={p.off}
+      dim={p.off === "off"}
       mid={<Faces who={p.r.agents} agents={p.agents} />}
-      end={p.off ? <span className="s">Off in ion</span> : null}
+      end={p.off ? <span className="s">{STATE[p.off]}</span> : null}
     />
   );
 }
@@ -120,13 +138,26 @@ function bundled(b: PluginBundles): string {
 }
 
 const HOOKS = { off: "Its hooks don't run in ion", run: "Its hooks run too" } as const;
+const HOOKS_SHORT = { off: "don't run in ion", run: "run too" } as const;
+
+/** Its hooks, for every agent on the row: one line when they agree, else each agent's (task review, 2026-11-21). */
+function hooksLine(plugins: OwnPluginInfo[], agents: HarnessInfo[]): string {
+  const said = plugins.filter((x) => x.hooks);
+  const kinds = [...new Set(said.map((x) => x.hooks!))];
+  if (kinds.length < 2) return kinds[0] ? HOOKS[kinds[0]] : "";
+  const each = said.map(
+    (x) => `${HOOKS_SHORT[x.hooks!]} (${agents.find((h) => h.id === x.agent)?.label ?? x.agent})`,
+  );
+  return `Its hooks ${each.join(", ")}`;
+}
 
 /** Settings → Tools → Plugins: each agent's installed plugins, read-only, with what each brings. */
 export function Plugins(p: { info: ToolsInfo; agents: HarnessInfo[]; whose: Whose }) {
+  // Matched by name and version; one with no version by what's in it (task review, 2026-11-21).
   const items = p.info.own.plugins.map((x) => ({
     agent: x.agent,
     name: x.name,
-    key: x.version ?? "",
+    key: x.version ?? x.hash ?? "",
     item: x,
   }));
   const rows = whoseRows(merge(items, "Another version"), p.whose);
@@ -134,15 +165,15 @@ export function Plugins(p: { info: ToolsInfo; agents: HarnessInfo[]; whose: Whos
   return (
     <div className="group">
       {rows.map((r, i) => {
-        const one = p.info.own.plugins.find((y) => y.name === r.name && r.agents.includes(y.agent));
-        const what = one ? [bundled(one.bundles), one.hooks ? HOOKS[one.hooks] : ""].filter(Boolean) : [];
+        const all = p.info.own.plugins.filter((y) => y.name === r.name && r.agents.includes(y.agent));
+        const what = all[0] ? [bundled(all[0].bundles), hooksLine(all, p.agents)].filter(Boolean) : [];
         return (
           <OwnRow
             key={`${r.name}:${i}`}
             icon={Puzzle}
             r={r}
             agents={p.agents}
-            off={offIn(r, p.info.own)}
+            off={offIn(r, p.info.own, "plugins", p.agents)}
             line={what.map((w) => (
               <span key={w} className="part">
                 {w}

@@ -16,6 +16,7 @@ import { startAcpSession } from "./session.js";
 const SILENCE_MS = 120_000;
 
 const silenceOf = (h: AcpHarness) => ({
+  label: h.label,
   ms: h.silenceMs ?? SILENCE_MS,
   why: `${h.label} didn't answer. Check that it's signed in: ${h.loginHint}`,
 });
@@ -73,6 +74,8 @@ export function createAcpAdapter(
     mcpTransports: { http: h.mcpHttp ?? true },
     ...(h.ownTools ? { ownTools: true as const } : {}),
     ...(h.ownHooks ? { ownHooks: true as const } : {}),
+    ...(h.ownOff ? { ownOff: h.ownOff } : {}),
+    ...(h.ownTrust ? { ownTrust: true as const } : {}),
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);

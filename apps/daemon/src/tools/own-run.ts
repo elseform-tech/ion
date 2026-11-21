@@ -1,4 +1,6 @@
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { agentEnv, type EnvDrop, type McpSpec } from "@ion/adapter-kit";
 import { loadUserConfig, ownToolsOn, type UserConfig } from "@ion/config";
@@ -6,7 +8,7 @@ import { harnessIds } from "../adapters/registry.js";
 import { pluginDirOf, writePlugin } from "../skills/plugin.js";
 import { type RunSkills, skillsFor } from "../skills/run.js";
 import { standardLaunch } from "./import.js";
-import { claudeOwnForRun, type RepoOn, type RepoState, repoMaterial, runsRepoCode } from "./own.js";
+import { claudeOwnForRun, type RepoOn, type RepoState, repoKey, repoMaterial, runsRepoCode } from "./own.js";
 import { envDropOf } from "./env-drop.js";
 import { turnedOn } from "./on.js";
 import { type Sign, sameMark } from "../secrets/consent-key.js";
@@ -38,8 +40,38 @@ export type RunOwn = {
 /** The run a question is asked in. */
 type Asking = { runId: string; chatId: string; projectId: string };
 
-/** Asks you in the run's chat; true for "Allow for this chat". */
-export type AskInChat = (r: Asking, text: string, command: string) => Promise<boolean>;
+/** Asks you in the run's chat: true for "Allow for this chat", false for No, null when you didn't answer in time. */
+export type AskInChat = (r: Asking, text: string, command: string) => Promise<boolean | null>;
+
+/**
+ * Your answers about repo servers, per chat (task review, 2026-11-21: a No is kept too, and both stay after ion
+ * restarts): in ion's data folder, keyed by a hash of chat, project, server and its definition.
+ */
+function repoAnswers(dataDir: string) {
+  const file = join(dataDir, "repo-answers.json");
+  let all: Record<string, boolean> | null = null;
+  const load = () => {
+    if (all) return all;
+    try {
+      all = JSON.parse(readFileSync(file, "utf8")) as Record<string, boolean>;
+    } catch {
+      all = {};
+    }
+    return all;
+  };
+  const hash = (key: string) => createHash("sha256").update(key).digest("hex");
+  return {
+    get: (key: string): boolean | undefined => load()[hash(key)],
+    set(key: string, yes: boolean) {
+      load()[hash(key)] = yes;
+      mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(all), { mode: 0o600 });
+      renameSync(tmp, file);
+    },
+  };
+}
+type RepoAnswers = ReturnType<typeof repoAnswers>;
 
 /**
  * A chat run's agent's own tools (the user, 2026-11-21: on by default, "Use its own tools" per agent). Codex, opencode
@@ -57,8 +89,8 @@ export function runOwnOf(o: {
   /** Asks you in a chat about a repo's server that runs the repo's own code; none: it doesn't come. */
   ask?: AskInChat;
 }): RunOwn {
-  /** Repo servers you allowed for a chat ("<chat> <project> <name> <as written>"): for that chat only. */
-  const allowed = new Set<string>();
+  /** Your answers about repo servers, each for its chat only. */
+  const allowed = repoAnswers(o.dataDir);
   return {
     async forRun(r) {
       const { config } = loadUserConfig(o.configFile);
@@ -71,7 +103,15 @@ export function runOwnOf(o: {
       const lasting = repoConsent(o.sign, project, config.tools.repoOn);
       const repoOn: RepoOn = (name, v) =>
         runsRepoCode(v) ? askedFor(o.ask, allowed, { ...r, project, name, v }) : lasting(name, v);
-      const own = await claudeOwnForRun({ home: o.home, env, project, dir: join(pluginDir, "own"), repoOn });
+      const pluginData = join(o.dataDir, "plugin-data");
+      const own = await claudeOwnForRun({
+        home: o.home,
+        env,
+        project,
+        dir: join(pluginDir, "own"),
+        repoOn,
+        pluginData,
+      });
       return { ownTools, ownServers: own.servers, ownPlugins: own.plugins, pluginDir, secrets: own.secrets };
     },
   };
@@ -83,9 +123,6 @@ export function runOwnOf(o: {
  */
 const agentOnly = (env: NodeJS.ProcessEnv, drop: EnvDrop): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(agentEnv(env, drop)).filter(([k]) => !k.startsWith("ION_")));
-
-/** A repo's server's record ("<project>:<name>"). */
-export const repoKey = (project: string, name: string) => `${basename(project)}:${name}`;
 
 /** Whether you turned on a repo's server, exactly as it is now (its record verifies with ion's key). */
 export const repoState =
@@ -106,18 +143,25 @@ export const repoState =
  */
 async function askedFor(
   ask: AskInChat | undefined,
-  allowed: Set<string>,
+  answers: RepoAnswers,
   a: Asking & { project: string; name: string; v: unknown },
 ): Promise<boolean> {
-  const key = `${a.chatId} ${a.project} ${a.name} ${JSON.stringify(a.v)}`;
-  if (allowed.has(key)) return true;
-  const l = isLaunch(a.v);
-  const command = l ? [l.command, ...l.args].join(" ") : "";
+  const key = JSON.stringify([a.chatId, a.project, a.name, a.v]);
+  const said = answers.get(key);
+  if (said !== undefined) return said;
   // The name passed the name rule (own.ts); quoted, so it reads as a name, not words of the question.
   const text = `${basename(a.project)}'s .mcp.json wants to run "${a.name}" from the repo`;
-  const yes = (await ask?.(a, text, command).catch(() => false)) ?? false;
-  if (yes) allowed.add(key);
-  return yes;
+  const yes = (await ask?.(a, text, whatItRuns(a.v)).catch(() => null)) ?? null;
+  if (yes !== null) answers.set(key, yes);
+  return yes === true;
+}
+
+/** What a repo's local server runs, as written, and the names of its env (never their values). */
+function whatItRuns(v: unknown): string {
+  const l = isLaunch(v);
+  if (!l) return "";
+  const env = Object.keys(l.env);
+  return [[l.command, ...l.args].join(" "), ...(env.length ? [`Env: ${env.join(", ")}`] : [])].join("\n");
 }
 
 const isLaunch = (v: unknown) => {
@@ -138,15 +182,27 @@ const ownFor = (own: RunOwn | undefined, l: Parameters<RunOwn["forRun"]>[0]): Pr
     return { ownTools: false, secrets: [] };
   });
 
-/** What the agent is told of its own: whether to bring it, and Claude Code's servers and plugins. */
+/** What the agent is told of its own: whether to bring it, and Claude Code's plugins (its servers come as ion's URLs). */
 export const ownOpts = (own?: OwnForRun) =>
-  own?.ownTools
-    ? {
-        ownTools: true,
-        ...(own.ownServers ? { ownServers: own.ownServers } : {}),
-        ...(own.ownPlugins ? { ownPlugins: own.ownPlugins } : {}),
-      }
-    : {};
+  own?.ownTools ? { ownTools: true, ...(own.ownPlugins ? { ownPlugins: own.ownPlugins } : {}) } : {};
+
+/**
+ * Your servers for a run, then its agent's own that ion runs for it (Claude Code's; task review, 2026-11-21): through
+ * ion's gateway like yours, a local one started by ion in the run's own folder with only its own values, never by the
+ * agent in the worktree with the agent's environment. Your names win.
+ */
+export function withOwnServers<T extends { specs: McpSpec[]; secrets: string[] }>(
+  yours: T,
+  own?: OwnForRun,
+): T {
+  const taken = new Set(yours.specs.map((s) => s.name));
+  const theirs = (own?.ownServers ?? []).filter((s) => !taken.has(s.name));
+  return {
+    ...yours,
+    specs: [...yours.specs, ...theirs],
+    secrets: [...yours.secrets, ...(own?.secrets ?? [])],
+  };
+}
 
 /** A chat run's skills plugin (null: none) and its agent's own tools (which may need that folder, and make it). */
 export async function skillsAndOwn(

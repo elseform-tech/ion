@@ -422,3 +422,13 @@ describe("codex adapter with ion's gate", () => {
     });
   });
 });
+
+// Task review, 2026-11-21: Codex's own skills load whatever the switch says, and it trusts a project's tools itself.
+describe("what Codex's switch really turns off", () => {
+  it("its servers and plugins, not its skills; Settings says it also loads its own, and uses its own trust", () => {
+    const a = make();
+    expect(a.ownOff).toEqual({ servers: true, skills: false, plugins: true });
+    expect(a.ownTools).toBe(true);
+    expect(a.ownTrust).toBe(true);
+  });
+});

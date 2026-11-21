@@ -1,11 +1,13 @@
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { stripControl } from "@ion/schema";
 import type { McpSpec } from "@ion/adapter-kit";
 import type { OwnServerInfo } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
 import { type Launch, readAgentServers, readFile, standardLaunch } from "./import.js";
 import { type FoundPlugin, readPlugins } from "./plugins.js";
+import { argKey, urlHoldsKey } from "./secretish.js";
 
 /**
  * Each agent's own tools (the user, 2026-11-21: agents bring their own servers, skills and plugins into ion's chats by
@@ -30,6 +32,29 @@ function launchOf(l: { command: string; args: string[] } | { url: string }): str
   }
 }
 
+/**
+ * What makes two setups of a server the same, as a short hash (no value reaches the app; task review, 2026-11-21):
+ * what it runs or where it connects (no query), the names in its URL query, and its env or header names.
+ */
+export function matchOf(
+  s:
+    | { command: string; args: string[]; env: Record<string, string> }
+    | { url: string; headers: Record<string, string> },
+): string {
+  const names = (o: Record<string, string>) => Object.keys(o).sort();
+  let what: unknown[];
+  if ("url" in s) {
+    let query: string[] = [];
+    try {
+      query = [...new URL(s.url).searchParams.keys()].sort();
+    } catch {
+      // not a URL: matched as written
+    }
+    what = [launchOf({ url: s.url }), query, names(s.headers)];
+  } else what = [s.command, s.args, names(s.env)];
+  return createHash("sha256").update(JSON.stringify(what)).digest("hex").slice(0, 16);
+}
+
 type Launched = { command: string; args?: string[] } | { url: string };
 const launchLine = (e: Launched) =>
   "url" in e ? launchOf({ url: e.url }) : launchOf({ command: e.command, args: e.args ?? [] });
@@ -41,15 +66,49 @@ export type RepoState = (
   v: unknown,
 ) => Promise<{ on: boolean; new?: true; changed?: true; asks?: true }>;
 
-/** A project's own `.mcp.json` line, for a server left out. */
-const leftOutOf = (p: string, name: string) => ({
-  name: stripControl(name).slice(0, 40),
-  why: `${basename(p)}'s .mcp.json: ${NAME_RULE}`,
-});
+/** The `${NAME}`s a definition asks for (a repo's is never filled from your environment). */
+export const refsIn = (v: unknown): string[] => [
+  ...new Set([...JSON.stringify(v ?? null).matchAll(/\$\{([^}:]+)(?::-[^}]*)?\}/g)].map((m) => m[1]!)),
+];
+
+/** Why a repo's server is left out: a name ion can't show, or a key it would read from your environment. */
+function repoProblem(p: string, name: string, v: unknown): { name: string; why: string } | null {
+  const file = `${basename(p)}'s .mcp.json`;
+  // Held scan, 2026-11-21: a name that breaks the rule isn't shown at all, not even cleaned.
+  if (!NAME.test(name)) return { name: "a server with an unusable name", why: `${file}: ${NAME_RULE}` };
+  const refs = refsIn(v);
+  return refs.length ? { name, why: `${file}: asks for ${refs.join(", ")} from your environment` } : null;
+}
+
+/** A repo's server as Settings shows it: the whole URL or command as written, and the names of its headers and env. */
+function repoInfo(l: Launch, name: string, repo: Record<string, unknown>): OwnServerInfo {
+  const names = (o: Record<string, string>) => (Object.keys(o).length ? Object.keys(o) : undefined);
+  const match = matchOf(l.kind === "stdio" ? l : { url: l.url, headers: l.headers });
+  if (l.kind === "stdio") {
+    const env = names(l.env);
+    return {
+      agent: "claude-code",
+      name,
+      match,
+      transport: "stdio",
+      launch: launchOf(l),
+      repo: { ...repo, ...(env ? { env } : {}) } as OwnServerInfo["repo"],
+    };
+  }
+  const headers = names(l.headers);
+  return {
+    agent: "claude-code",
+    name,
+    match,
+    transport: "http",
+    launch: l.url,
+    repo: { ...repo, ...(headers ? { headers } : {}) } as OwnServerInfo["repo"],
+  };
+}
 
 /**
  * Claude Code's servers in each project's own `.mcp.json` (the repo's): each with your switch (remote) or asked in each
- * chat (local); one whose name breaks the rule is left out with one plain line.
+ * chat (local); one with an unusable name, or that asks for a key from your environment, is left out with one line.
  */
 async function repoRows(projects: string[], state: RepoState) {
   const leftOut: { name: string; why: string }[] = [];
@@ -57,19 +116,24 @@ async function repoRows(projects: string[], state: RepoState) {
     Object.entries(repoServers(p)).map(async ([name, v]): Promise<OwnServerInfo | null> => {
       const l = isObj(v) ? standardLaunch(v) : null;
       if (!l || l.kind === "sse" || name.toLowerCase() === "ion") return null;
-      if (!NAME.test(name)) {
-        leftOut.push(leftOutOf(p, name));
-        return null;
-      }
-      const project = basename(p);
-      const repo = { project, file: ".mcp.json", id: `${project}:${name}`, ...(await state(p, name, v)) };
-      const launch = l.kind === "stdio" ? launchOf(l) : launchOf({ url: l.url });
-      return { agent: "claude-code", name, transport: l.kind, launch, repo };
+      const problem = repoProblem(p, name, v);
+      if (problem) leftOut.push(problem);
+      if (problem) return null;
+      const repo = {
+        project: basename(p),
+        file: ".mcp.json",
+        id: repoKey(p, name),
+        ...(await state(p, name, v)),
+      };
+      return repoInfo(l, name, repo);
     }),
   );
   const servers = (await Promise.all(rows)).filter((r): r is OwnServerInfo => r !== null);
   return { servers, leftOut };
 }
+
+/** A repo server's record and id: the project's folder and the server's name. */
+export const repoKey = (project: string, name: string) => `${project}#${name}`;
 
 /**
  * Every agent's own servers (yours; a repo's own `.mcp.json` for Claude Code with your switch, off until you turn it
@@ -87,11 +151,16 @@ export async function ownToolsOf(o: {
     .found.filter((f) => !f.repo)
     .map((f) => {
       const e = f.entry;
+      const match =
+        "url" in e
+          ? matchOf({ url: e.url, headers: e.headers ?? {} })
+          : matchOf({ command: e.command, args: e.args ?? [], env: e.env ?? {} });
       return {
         agent: f.agent,
         name: f.name,
         transport: "url" in e ? "http" : "stdio",
         launch: launchLine(e),
+        match,
       };
     });
   const repo = await repoRows(o.projects, o.repo);
@@ -169,33 +238,107 @@ function claudeServers(home: string, project: string): Entry[] {
   const all: Entry[] = [
     ...Object.entries(obj(user.mcpServers)),
     ...Object.entries(obj(inProject.mcpServers)),
+    // A repo's: only a usable name, and never one that would read your environment (task review, 2026-11-21).
     ...Object.entries(repoServers(project))
-      .filter(([n]) => NAME.test(n))
+      .filter(([n, v]) => !repoProblem(project, n, v))
       .map(([n, v]): Entry => [n, v, true]),
   ];
   return all.filter(([n]) => !disabled.has(n) && n.toLowerCase() !== "ion");
 }
 
-/** A plugin's servers, `${CLAUDE_PLUGIN_ROOT}` its folder. */
-const pluginServers = (p: FoundPlugin): Entry[] =>
-  Object.entries(p.servers ?? {}).map(([n, v]) => [
-    n,
-    JSON.parse(JSON.stringify(v).replaceAll("${CLAUDE_PLUGIN_ROOT}", p.path ?? "")),
-  ]);
+/** Every string in a value with `${NAME}` swapped (structurally: a folder's quotes can't break the definition). */
+function fillStrings(v: unknown, fills: Record<string, string>): unknown {
+  if (typeof v === "string")
+    return Object.entries(fills).reduce((t, [k, x]) => t.replaceAll(`\${${k}}`, () => x), v);
+  if (Array.isArray(v)) return v.map((x) => fillStrings(x, fills));
+  if (!isObj(v)) return v;
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fillStrings(x, fills)]));
+}
 
 const SAFE = /[^A-Za-z0-9._-]/g;
 
+/** A plugin's servers: `${CLAUDE_PLUGIN_ROOT}` its folder, `${CLAUDE_PLUGIN_DATA}` a folder of its own in ion's data. */
+const pluginServers = (p: FoundPlugin, dataRoot: string): Entry[] => {
+  const fills = {
+    CLAUDE_PLUGIN_ROOT: p.path ?? "",
+    CLAUDE_PLUGIN_DATA: join(dataRoot, p.name.replace(SAFE, "-")),
+  };
+  return Object.entries(p.servers ?? {}).map(([n, v]) => [n, fillStrings(v, fills)]);
+};
+
+/** A skill's, subagent's or command's markdown without `hooks:` in its front matter (hooks stay ion's). */
+function withoutHooksKey(md: string): string {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md);
+  if (!m) return md;
+  const lines = m[1]!.split(/\r?\n/);
+  const kept: string[] = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (/^hooks\s*:/.test(line)) skipping = true;
+    else if (skipping && /^\S/.test(line)) skipping = false;
+    if (!skipping) kept.push(line);
+  }
+  return `---\n${kept.join("\n")}\n---${md.slice(m[0].length)}`;
+}
+
+/** Markdown files under a plugin's skills, agents and commands that set their own hooks. */
+const HOOKED = /^---\r?\n[\s\S]*?^hooks\s*:/m;
+function mdFiles(dir: string, depth = 0): string[] {
+  let out: string[] = [];
+  let entries: import("node:fs").Dirent[] = [];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const e of entries) {
+    if (e.isDirectory() && depth < 3) out = out.concat(mdFiles(join(dir, e.name), depth + 1));
+    else if (e.isFile() && e.name.endsWith(".md")) out.push(join(dir, e.name));
+  }
+  return out;
+}
+const hookedMd = (root: string) =>
+  ["skills", "agents", "commands"]
+    .flatMap((d) => mdFiles(join(root, d)))
+    .filter((f) => HOOKED.test(readText(f)));
+const readText = (f: string) => {
+  try {
+    return readFileSync(f, "utf8");
+  } catch {
+    return "";
+  }
+};
+
+/** A copy of `from` at `to`: links to each file, folders made, the files in `strip` written without their hooks. */
+async function mirror(from: string, to: string, strip: Set<string>): Promise<void> {
+  await mkdir(to, { recursive: true, mode: 0o700 });
+  for (const e of await readdir(from, { withFileTypes: true })) {
+    const src = join(from, e.name);
+    const dst = join(to, e.name);
+    if ([...strip].some((f) => f.startsWith(`${src}/`)) && e.isDirectory()) await mirror(src, dst, strip);
+    else if (strip.has(src)) await writeFile(dst, withoutHooksKey(readText(src)), { mode: 0o600 });
+    else await symlink(src, dst);
+  }
+}
+
 /**
- * A plugin as the run takes it: as it is, or (one that bundles hooks) ion's copy in the run's folder without them:
- * links to everything else, and its manifest without `hooks`. Hooks stay ion's (the user, 2026-11-21).
+ * A plugin as the run takes it: as it is, or (one that bundles hooks: its own, or in a skill's, subagent's or
+ * command's front matter) ion's copy in the run's folder without them: links to everything else, its manifest without
+ * `hooks`, and those files without theirs. Hooks stay ion's (the user, 2026-11-21).
  */
 async function withoutHooks(p: FoundPlugin, dir: string, n: number): Promise<string> {
   const from = p.path ?? "";
-  if (!p.hooks) return from;
+  const strip = new Set(hookedMd(from));
+  if (!p.hooks && !strip.size) return from;
   const to = join(dir, `${n}-${p.name.replace(SAFE, "-")}`);
   await mkdir(join(to, ".claude-plugin"), { recursive: true, mode: 0o700 });
-  for (const e of await readdir(from))
-    if (e !== "hooks" && e !== ".claude-plugin") await symlink(join(from, e), join(to, e));
+  for (const e of await readdir(from, { withFileTypes: true })) {
+    if (e.name === "hooks" || e.name === ".claude-plugin") continue;
+    const src = join(from, e.name);
+    if (e.isDirectory() && [...strip].some((f) => f.startsWith(`${src}/`)))
+      await mirror(src, join(to, e.name), strip);
+    else await symlink(src, join(to, e.name));
+  }
   const manifest = obj(readFile(join(from, ".claude-plugin", "plugin.json")));
   delete manifest.hooks;
   delete manifest.mcpServers;
@@ -203,11 +346,30 @@ async function withoutHooks(p: FoundPlugin, dir: string, n: number): Promise<str
   return to;
 }
 
-/** Every value of a server as filled, for the run's redaction (security review, 2026-11-21: all of them). */
-const valuesOf = (s: McpSpec): string[] =>
-  s.transport === "http"
-    ? [s.url, ...Object.values(s.headers)]
-    : [s.command, ...s.args, ...Object.values(s.env)];
+/**
+ * The values of a server to mask in a run's events (task review, 2026-11-21): env and header values always, anything
+ * filled from `${VAR}` always, and its command, args or URL only when they look like a key (a path or a package name
+ * stays readable).
+ */
+function valuesOf(s: McpSpec, raw: Launch): string[] {
+  const filled = (now: string, was: string | undefined) => now !== was;
+  if (s.transport === "http") {
+    const was = raw.kind === "stdio" ? undefined : raw.url;
+    const url = filled(s.url, was) || urlHoldsKey(s.url) ? [s.url] : [];
+    return [...url, ...Object.values(s.headers)];
+  }
+  const r = raw.kind === "stdio" ? raw : { command: "", args: [] as string[] };
+  const command = filled(s.command, r.command) || argKey(s.command, undefined) ? [s.command] : [];
+  const args = s.args.filter((a, i) => filled(a, r.args[i]) || argKey(a, s.args[i - 1]));
+  return [...command, ...args, ...Object.values(s.env)];
+}
+
+/** One server filled for the run, and its values to mask; null when it can't be (SSE, a variable that isn't set). */
+function filled(name: string, v: unknown, env: Env): { spec: McpSpec; secrets: string[] } | null {
+  const raw = isObj(v) ? standardLaunch(v) : null;
+  const spec = specOf(name, raw, env);
+  return spec && raw ? { spec, secrets: valuesOf(spec, raw) } : null;
+}
 
 /**
  * What a Claude Code chat brings of its own: its servers (filled, each name once, the first found wins) and its
@@ -222,6 +384,8 @@ export async function claudeOwnForRun(o: {
   dir: string;
   /** A repo's own server comes only once you turned it on in ion. */
   repoOn: RepoOn;
+  /** Where each plugin's own data folder goes (`${CLAUDE_PLUGIN_DATA}`): in ion's data folder. */
+  pluginData?: string;
 }) {
   const plugins = readPlugins({ home: o.home, env: o.env, projects: [o.project] }).filter(
     (p) => p.agent === "claude-code",
@@ -229,18 +393,24 @@ export async function claudeOwnForRun(o: {
   const seen = new Set<string>();
   const servers: McpSpec[] = [];
   const secrets: string[] = [];
-  for (const [name, v, repo] of [...claudeServers(o.home, o.project), ...plugins.flatMap(pluginServers)]) {
+  const dataRoot = o.pluginData ?? join(o.dir, "plugin-data");
+  const entries = [
+    ...claudeServers(o.home, o.project),
+    ...plugins.flatMap((p) => pluginServers(p, dataRoot)),
+  ];
+  for (const [name, v, repo] of entries) {
     if (seen.has(name)) continue;
     seen.add(name);
     // A repo's server isn't even filled until you turned it on.
-    if (repo && !(await o.repoOn(name, v))) continue;
-    const spec = specOf(name, isObj(v) ? standardLaunch(v) : null, o.env);
-    if (!spec) continue;
-    servers.push(spec);
-    secrets.push(...valuesOf(spec));
+    const got = repo && !(await o.repoOn(name, v)) ? null : filled(name, v, o.env);
+    if (!got) continue;
+    servers.push(got.spec);
+    secrets.push(...got.secrets);
   }
   await rm(o.dir, { recursive: true, force: true });
   await mkdir(o.dir, { recursive: true, mode: 0o700 });
+  for (const p of plugins.filter((x) => Object.keys(x.servers ?? {}).length))
+    await mkdir(join(dataRoot, p.name.replace(SAFE, "-")), { recursive: true, mode: 0o700 });
   const paths = await Promise.all(plugins.map((p, i) => withoutHooks(p, o.dir, i)));
   return { servers, plugins: paths, secrets };
 }

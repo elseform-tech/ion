@@ -48,12 +48,28 @@ function readConfig(path: string): Record<string, unknown> {
 /** Your config folder for opencode, as opencode finds it. */
 export const userConfigHome = (): string => process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
 
-/** Without its servers and plugins. */
+/** Without its servers, plugins and skill folders. */
 function withoutTools(c: Record<string, unknown>): Record<string, unknown> {
   const rest = { ...c };
   delete rest.mcp;
   delete rest.plugin;
+  delete rest.skills;
   return rest;
+}
+
+/**
+ * The skill folders opencode reads with your own tools (task review, 2026-11-21): its own (your config folder's, which
+ * moving XDG_CONFIG_HOME would drop) and the home ones it reads from Claude Code and the shared folder, then any your
+ * config names; external skills are off (OPENCODE_DISABLE_EXTERNAL_SKILLS), so a project's never come by themselves.
+ */
+export function ownSkillPaths(base: Record<string, unknown>): string[] {
+  const yours = isObject(base.skills) && Array.isArray(base.skills.paths) ? base.skills.paths : [];
+  const home = [
+    join(userConfigHome(), "opencode", "skills"),
+    join(homedir(), ".claude", "skills"),
+    join(homedir(), ".agents", "skills"),
+  ];
+  return [...new Set([...home, ...yours.filter((p): p is string => typeof p === "string")])];
 }
 
 /** Shallow merge, one level into objects (what opencode merges deeply, enough for its top-level sections). */

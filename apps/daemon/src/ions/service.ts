@@ -71,6 +71,8 @@ export type IonsDeps = {
   turns: Pick<IonTurns, "turn"> & Partial<Pick<IonTurns, "busy" | "stop">>;
   /** The agents and whether each is ready, to pick one for a project with none set. */
   agents?: () => Promise<HarnessInfo[]>;
+  /** One agent, asked alone. */
+  agent?: (id: string) => Promise<HarnessInfo | undefined>;
 };
 
 type Thread = { chatId: string; projectId: string };

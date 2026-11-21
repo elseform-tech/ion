@@ -363,6 +363,10 @@ export type HarnessInfo = {
   ownTools?: true;
   /** Its own hooks run in ion's chats too (no switch for them). */
   ownHooks?: true;
+  /** What "Use its own tools" off really turns off, by kind. Absent: all of it. */
+  ownOff?: { servers: boolean; skills: boolean; plugins: boolean };
+  /** It trusts a project's own tools by its own list. */
+  ownTrust?: true;
 };
 
 export type MemoryInfo = {

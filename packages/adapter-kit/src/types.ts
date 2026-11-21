@@ -71,11 +71,6 @@ export type StartOpts = {
    * every call. Absent or false: ion's tools only.
    */
   ownTools?: boolean;
-  /**
-   * With `ownTools`, for an agent that loads no config of its own under ion (Claude Code): its own servers, read for it
-   * by ion, values filled (they may hold keys: kept off its command line).
-   */
-  ownServers?: McpSpec[];
   /** With `ownTools`, Claude Code's own enabled plugins: folders (a plugin with hooks is ion's copy without them). */
   ownPlugins?: string[];
   /** Added to the agent process's environment (a chat's run: `ION_CHAT`, which its tool calls' processes inherit). */
@@ -100,6 +95,9 @@ export interface Session {
 
 export type AuthStatus = { signedIn: boolean; method: string };
 
+/** By kind: whether an agent's switch turns its own off in ion's chats. */
+type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };
+
 export interface HarnessAdapter {
   id: string;
   detect(): Promise<{ installed: boolean; version?: string; path?: string }>;
@@ -114,6 +112,10 @@ export interface HarnessAdapter {
   ownTools?: true;
   /** Its own hooks run in ion's chats too (it has no switch for them). */
   ownHooks?: true;
+  /** What "Use its own tools" off really turns off, by kind (task review, 2026-11-21). Absent: all of it. */
+  ownOff?: OwnOff;
+  /** It decides by itself whether to trust a project's own tools (its own trust list). */
+  ownTrust?: true;
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

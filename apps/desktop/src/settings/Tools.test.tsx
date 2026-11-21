@@ -564,7 +564,7 @@ describe("Settings → Tools: Import", () => {
 describe("Settings → Tools: each agent's own", () => {
   const AGENTS = [
     agent("claude-code", "Claude Code"),
-    agent("codex", "Codex"),
+    { ...agent("codex", "Codex"), ownOff: { servers: true, skills: false, plugins: true } },
     agent("grok-build", "Grok Build"),
     agent("opencode", "opencode"),
   ];
@@ -578,6 +578,7 @@ describe("Settings → Tools: each agent's own", () => {
     name,
     transport: "stdio" as const,
     launch,
+    match: launch,
   });
   const facesOf = (r: HTMLElement) =>
     [...r.querySelectorAll(".hsup > span")].map((e) => e.getAttribute("title"));
@@ -629,6 +630,60 @@ describe("Settings → Tools: each agent's own", () => {
     const fs = await findRow("fs");
     expect(fs.className).toContain("dim");
     expect(within(fs).getByText("Off in ion")).toBeTruthy();
+  });
+
+  // Task review, 2026-11-21: "Off in ion" only for what an agent's switch really turns off; Codex's own skills load
+  // whatever it says, so they read "Also loads its own", not dimmed.
+  it("says Off in ion only for what the switch turns off; the rest Also loads its own", async () => {
+    const skill = {
+      ...{ id: "~/.codex/skills/a11y", name: "a11y", description: "Checks", whose: "codex" as const },
+      ...{
+        where: "~/.codex/skills/a11y",
+        on: false,
+        support: { codex: "own" as const },
+        hash: "eeeeeeeeeeee",
+      },
+      ...{ own: "codex", readers: ["codex"] },
+    };
+    const c = withOwn(
+      { agents: { "claude-code": true, codex: false, "grok-build": true, opencode: true } },
+      { skills: [skill] },
+    );
+    await open(c, "Skills");
+    const r = await findRow("a11y");
+    expect(r.className).not.toContain("dim");
+    expect(within(r).getByText("Also loads its own")).toBeTruthy();
+  });
+
+  it("a skill several agents load is one row with each one's face", async () => {
+    const skill = {
+      ...{ id: "~/.claude/skills/pdf", name: "pdf", description: "PDFs", whose: "claude" as const },
+      ...{
+        where: "~/.claude/skills/pdf",
+        on: true,
+        support: { "claude-code": "own" as const },
+        hash: "ffffffffffff",
+      },
+      ...{ own: "claude-code", readers: ["claude-code", "opencode"] },
+    };
+    await open(withOwn({}, { skills: [skill] }), "Skills");
+    expect(facesOf(await findRow("pdf"))).toEqual(["From Claude Code", "From opencode"]);
+  });
+
+  it("a plugin two agents have shows each one's hooks", async () => {
+    const plug = (agent0: string, hooks: "off" | "run") => ({
+      agent: agent0,
+      name: "kit",
+      version: "1.0.0",
+      bundles: { skills: 1, servers: 0, commands: 0, agents: 0 },
+      hooks,
+    });
+    await open(withOwn({ plugins: [plug("claude-code", "off"), plug("grok-build", "run")] }));
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const r = await findRow("kit");
+    expect(
+      within(r).getByText("Its hooks don't run in ion (Claude Code), run too (Grok Build)"),
+    ).toBeTruthy();
   });
 
   it("the Plugins tab lists each agent's plugins and what they bundle", async () => {
@@ -728,13 +783,24 @@ describe("Settings → Tools: a repo's own", () => {
       info({
         own: {
           ...info().own,
-          servers: [{ agent: "claude-code", name: "repotool", transport: "stdio", launch: "repo-mcp", repo }],
+          servers: [
+            {
+              agent: "claude-code",
+              name: "repotool",
+              transport: "stdio",
+              launch: "repo-mcp",
+              match: "m1",
+              repo: { ...repo, env: ["MODE", "LOG"] },
+            },
+          ],
         },
       }),
     );
     await open(c);
     const r = await findRow("repotool");
     expect(within(r).getByText("From shop's .mcp.json")).toBeTruthy();
+    // Task review, 2026-11-21: what it would read is named (never a value).
+    expect(within(r).getByText("Env: MODE, LOG")).toBeTruthy();
     fireEvent.click(within(r).getByRole("switch", { name: "repotool" }));
     expect(c.call).toHaveBeenCalledWith("tools.setOn", { kind: "repo", id: "shop:repotool", on: true });
   });
@@ -754,6 +820,7 @@ describe("Settings → Tools: a repo's own", () => {
       name: "local",
       transport: "stdio" as const,
       launch: "node ./tools/mcp.js",
+      match: "m2",
       repo,
     };
     await open(toolsClient(() => info({ own: { ...info().own, servers: [server] } })));

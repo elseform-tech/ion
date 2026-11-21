@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OPENCODE_PLUGIN } from "./gate.js";
-import { GROK_BUILD, OPENCODE } from "./harnesses.js";
+import { GROK_BUILD, OPENCODE, opencodeFailure } from "./harnesses.js";
 
 // Regression (final review I8): a repo's opencode.json could set permissions back to "allow".
 describe("opencode environment", () => {
@@ -266,12 +266,13 @@ describe("agents bring their own tools", () => {
     const { env, config } = started(h, {}, true);
     // A folder of its own, so a chat with its own tools and ion's judge never rewrite each other's file.
     expect(env.XDG_CONFIG_HOME).toBe(join(h.cache, "ion", "opencode", "default-own"));
+    // ion's gate plugin last (task review, 2026-11-21): it judges a call as your plugins left it.
     expect(config.plugin).toEqual([
-      OPENCODE_PLUGIN,
       "oc-thing",
       `file://${join(dir, "local.js")}`,
       "file:///somewhere/mine.js",
       `file://${join(dir, "plugin", "notify.js")}`,
+      OPENCODE_PLUGIN,
     ]);
     expect(config.mcp).toEqual({
       everything: { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-everything"] },
@@ -314,5 +315,46 @@ describe("agents bring their own tools", () => {
     for (const k of ["CLAUDE_HOOKS", "CURSOR_HOOKS"]) expect(env[`GROK_${k}_ENABLED`]).toBe("false");
     expect(GROK_BUILD.ownHooks).toBe(true);
     expect(OPENCODE.ownHooks).toBe(true);
+  });
+});
+
+// Task review, 2026-11-21: opencode read skills from ~/.claude and ~/.agents by itself, whatever the switch said, and
+// its own skills folder was dropped with its config folder. External skills are off; with "Use its own tools" on,
+// ion names your home skill folders; a project's never (they'd come only once consented in ion).
+describe("opencode's skills", () => {
+  it("are what the switch says: your home folders with it on, none of its own with it off", () => {
+    const h = opencodeHome();
+    const on = started(h, {}, true);
+    expect(on.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBe("1");
+    expect(on.config.skills.paths).toEqual([
+      join(h.xdg, "opencode", "skills"),
+      join(h.home, ".claude", "skills"),
+      join(h.home, ".agents", "skills"),
+    ]);
+    const off = started(h, {}, false);
+    expect(off.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBe("1");
+    expect(off.config.skills).toBeUndefined();
+  });
+});
+
+// Task review, 2026-11-21: Settings said "Off in ion" for what an agent still loads. Each agent says what its switch
+// really turns off, by kind, and whether it trusts a project's own tools by itself.
+describe("what each switch really turns off", () => {
+  it("opencode: its servers and skills, not every plugin; Grok: none of its own, and its own trust", () => {
+    expect(OPENCODE.ownOff).toEqual({ servers: true, skills: true, plugins: false });
+    expect(GROK_BUILD.ownOff).toEqual({ servers: false, skills: false, plugins: false });
+    expect(GROK_BUILD.ownTrust).toBe(true);
+    expect(OPENCODE.ownTrust).toBeUndefined();
+  });
+});
+
+// Live, 2026-11-21: opencode out of its free quota only said so in its own log.
+describe("opencode's log", () => {
+  it("gives a failed model call's reason, without the SDK's error name", () => {
+    const line =
+      'timestamp=x level=ERROR message="stream error" providerID=opencode error.error="AI_APICallError: Free usage limit reached. Try again later." x=1';
+    expect(opencodeFailure(line)).toBe("Free usage limit reached. Try again later.");
+    expect(opencodeFailure('level=INFO message="init"')).toBeNull();
+    expect(OPENCODE.args).toEqual(["acp", "--print-logs", "--log-level", "WARN"]);
   });
 });

@@ -304,3 +304,29 @@ describe("a project's skills", () => {
     expect(readdirSync(join(after!, "skills")).sort()).toEqual(["pdf", "style"]);
   });
 });
+
+// Task review, 2026-11-21: Settings → Tools showed which folder a skill was in, not who really loads it. Each skill
+// says the agents that load it themselves: Claude Code its home skills (while its switch is on), opencode its own,
+// Claude's and the shared home folders (external skills are off: never a project's), Codex its own and the shared
+// ones (a project's by its own trust).
+describe("who loads a skill", () => {
+  it("lists the agents that load it themselves", async () => {
+    const { home, project, skills } = setup();
+    skill(join(home, ".claude/skills/pdf"), md("pdf", "PDFs"));
+    skill(join(home, ".codex/skills/deploy"), md("deploy", "Deploys"));
+    skill(join(home, ".config/opencode/skills/review"), md("review", "Reviews"));
+    skill(join(home, ".agents/skills/notes"), md("notes", "Notes"));
+    skill(join(project, ".opencode/skills/x"), md("x", "X"));
+    skill(join(project, ".agents/skills/y"), md("y", "Y"));
+    const list = await skills.list([], [project], { "claude-code": true, codex: true, opencode: true });
+    const by = Object.fromEntries(list.map((s) => [s.name, s.readers ?? []]));
+    expect(by).toEqual({
+      pdf: ["claude-code", "opencode"],
+      deploy: ["codex"],
+      review: ["opencode"],
+      notes: ["codex", "opencode"],
+      x: [],
+      y: ["codex"],
+    });
+  });
+});

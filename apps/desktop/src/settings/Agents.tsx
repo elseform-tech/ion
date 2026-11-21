@@ -30,6 +30,8 @@ function AgentRow({ h, own, onOwn }: { h: HarnessInfo; own: boolean; onOwn: (on:
           {ready(h) && <i className="okd" />}
           {stateOf(h)}
         </div>
+        {/* Task review, 2026-11-21 (ruled line): it loads a project's own tools by its own trust list. */}
+        {h.ownTrust && <div className="s">Uses its own trust for project tools</div>}
       </div>
       {/* The lab's third column (its usage meter) stays empty here; the switch sits where the lab's does. */}
       <span />

@@ -219,10 +219,11 @@ function ServerRow({ s, part, r }: { s: McpToolInfo; part: Part; r: Merged<McpTo
 
 /** Your mcp.json's servers (ion's) and each agent's own, one row per setup. */
 function rowsOf(info: ToolsInfo): Merged<McpToolInfo>[] {
-  const ion = info.mcp.map((s) => ({ agent: "ion", name: s.name, key: launchOf(s), item: s }));
+  // Matched by what makes a setup the same (task review, 2026-11-21: env, header and query names too): ion's hash.
+  const ion = info.mcp.map((s) => ({ agent: "ion", name: s.name, key: s.match ?? launchOf(s), item: s }));
   const own = info.own.servers
     .filter((s) => !s.repo)
-    .map((s) => ({ agent: s.agent, name: s.name, key: s.launch }));
+    .map((s) => ({ agent: s.agent, name: s.name, key: s.match }));
   return merge<McpToolInfo>([...ion, ...own], "Runs something else");
 }
 
@@ -240,7 +241,14 @@ function RepoRow({ s, part }: { s: OwnServerInfo; part: Part }) {
         name={s.name}
         chip={repo.asks ? null : stateOf(repo, part.locked)}
         origin={fromOf(`From ${repo.project}'s ${repo.file}`)}
-        line={ownLine(s.launch)}
+        line={
+          <>
+            {/* As the repo wrote it, whole (a URL's query too): it's yours to judge. */}
+            <code title={s.launch}>{short(s.launch)}</code>
+            {repo.headers && <span className="part">Headers: {repo.headers.join(", ")}</span>}
+            {repo.env && <span className="part">Env: {repo.env.join(", ")}</span>}
+          </>
+        }
         mid={<Faces who={[s.agent]} agents={part.agents} />}
         end={
           repo.asks ? (
@@ -294,7 +302,7 @@ export function Connections(p: {
                 icon={PlugZap}
                 r={r}
                 agents={p.agents}
-                off={offIn(r, info.own)}
+                off={offIn(r, info.own, "servers", p.agents)}
                 line={ownLine(launch.get(`${r.agents[0]}:${r.name}`) ?? "")}
               />
             ),

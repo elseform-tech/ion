@@ -507,6 +507,28 @@ describe("asking when ion blocks a tool call", () => {
   });
 });
 
+// Task review, 2026-11-21: a repo's server is asked about before a chat starts it, not after a tool call: a late yes or
+// your own words post nothing to the agent (there's no call of its to tell it about), and nothing is kept as a
+// decision (ion keeps the answer for that chat itself).
+describe("a repo's server, asked in the chat", () => {
+  const block = {
+    requestId: "repo-1",
+    summary: 'shop\'s .mcp.json wants to run "local" from the repo',
+    reason: "node ./tools/mcp.js",
+    key: "repo local",
+    repo: true as const,
+  };
+  it("a late yes or typed answer posts nothing and records nothing", async () => {
+    const d = new Decisions({ store, db, needs, followUp, blockedWaitMs: 20 });
+    expect(await d.askBlocked(scope(), block)).toBe("timeout");
+    await d.answer(needs.open("c1")[0]!.needId, 1);
+    void d.askBlocked(scope(), { ...block, requestId: "repo-2" });
+    await d.answer(needs.open("c1")[0]!.needId, "only on Fridays");
+    expect(followUp).not.toHaveBeenCalled();
+    expect(of(EV.decisionRecorded)).toEqual([]);
+  });
+});
+
 // Security review: "Always allow" lets the exact same action through, decided by ion, never by the judge's reading.
 describe("always allow, exactly", () => {
   const block = {

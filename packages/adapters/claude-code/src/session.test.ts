@@ -224,7 +224,8 @@ describe("claude-code session", () => {
 
   // The user, 2026-11-21: "user would like to use the skills, mcp, or plugins that is already in the harness … Hooks
   // probably should stay". Claude Code still loads no settings files (its permission rules and hooks stay out); its own
-  // servers and plugins, read by ion, are passed explicitly, keys in the environment, never on the command line.
+  // plugins are passed explicitly. Task review, 2026-11-21: its own servers reach it as ion's URLs (ion runs them, as
+  // it runs yours), so no command, args or env of a server is in Claude Code's environment at all.
   it("Claude Code gets its own servers, skills and plugins, not its permission rules or hooks", async () => {
     const calls: FakeQueryCall[] = [];
     const start = (ownTools: boolean) =>
@@ -232,23 +233,16 @@ describe("claude-code session", () => {
         cwd,
         model: null,
         effort: null,
-        mcpServers: [{ name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} }],
-        ownTools,
-        ownServers: [
+        mcpServers: [
+          { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} },
           {
             name: "github",
-            transport: "stdio",
-            command: "npx",
-            args: ["-y", "gh-mcp", "--token=argkey"],
-            env: { GITHUB_TOKEN: "ghp_secret" },
-          },
-          {
-            name: "docs",
             transport: "http",
-            url: "https://docs.example/mcp",
-            headers: { "X-Key": "hdrkey" },
+            url: "http://127.0.0.1:9/mcp/s/github",
+            headers: { Authorization: "Bearer k" },
           },
         ],
+        ownTools,
         ownPlugins: ["/data/own/r1/superpowers"],
         pluginDir: "/data/skills/r1",
         signal: new AbortController().signal,
@@ -261,34 +255,15 @@ describe("claude-code session", () => {
       plugins: unknown[];
     };
     expect(o).toMatchObject({ strictMcpConfig: true, settingSources: [], permissionMode: "default" });
-    // Security review, 2026-11-21: the command too travels in the environment (a path can say too much).
-    expect(o.mcpServers.github).toEqual({
-      type: "stdio",
-      command: "${ION_MCP_C0}",
-      args: ["${ION_MCP_A0}", "${ION_MCP_A1}", "${ION_MCP_A2}"],
-      env: { GITHUB_TOKEN: "${ION_MCP_E0}" },
-    });
-    expect(o.mcpServers.docs).toEqual({
-      type: "http",
-      url: "${ION_MCP_U1}",
-      headers: { "X-Key": "${ION_MCP_H0}" },
-    });
-    for (const secret of ["argkey", "ghp_secret", "hdrkey"])
-      expect(JSON.stringify(o.mcpServers)).not.toContain(secret);
-    expect(o.env).toMatchObject({
-      ION_MCP_C0: "npx",
-      ION_MCP_A2: "--token=argkey",
-      ION_MCP_E0: "ghp_secret",
-      ION_MCP_H0: "hdrkey",
-    });
+    expect(Object.keys(o.mcpServers)).toEqual(["ion", "github"]);
+    expect(Object.keys(o.env).filter((k) => /^ION_MCP_[CAE]/.test(k))).toEqual([]);
     expect(o.plugins).toEqual([
       { type: "local", path: "/data/skills/r1", skipMcpDiscovery: true },
       { type: "local", path: "/data/own/r1/superpowers", skipMcpDiscovery: true },
     ]);
     // "Use its own tools" off: ion's tools only, as before.
     await (await start(false)).close();
-    const off = calls.at(-1)!.options as { mcpServers: Record<string, unknown>; plugins: unknown[] };
-    expect(Object.keys(off.mcpServers)).toEqual(["ion"]);
+    const off = calls.at(-1)!.options as { plugins: unknown[] };
     expect(off.plugins).toEqual([{ type: "local", path: "/data/skills/r1", skipMcpDiscovery: true }]);
   });
 
@@ -301,7 +276,6 @@ describe("claude-code session", () => {
       model: null,
       effort: null,
       ownTools: true,
-      ownServers: [{ name: "github", transport: "stdio", command: "gh-mcp", args: [], env: {} }],
       signal: new AbortController().signal,
       decide: async (r) => {
         asked.push(r);
@@ -500,5 +474,18 @@ describe("claude-code session", () => {
     await expect(run("hello", { exec: apiKeyOnly })).rejects.toThrow(
       "Claude Code isn't signed in. Run: claude auth login",
     );
+  });
+});
+
+// Task review, 2026-11-21: Claude Code's switch turns off everything of its own (ion passes it all).
+describe("what Claude Code's switch really turns off", () => {
+  it("all of it", () => {
+    const a = make();
+    expect(a.ownOff ?? { servers: true, skills: true, plugins: true }).toEqual({
+      servers: true,
+      skills: true,
+      plugins: true,
+    });
+    expect(a.ownTools).toBeUndefined();
   });
 });

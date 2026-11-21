@@ -30,6 +30,11 @@ export class HarnessInfos {
     return Promise.all(this.idList().map((id) => this.get(id)));
   }
 
+  /** One agent ion knows (read alone), or undefined. */
+  async one(id: string): Promise<HarnessInfo | undefined> {
+    return this.idList().includes(id) ? this.get(id) : undefined;
+  }
+
   /** Reads every agent now, so the first list is quick (at the daemon's start). */
   warm(): void {
     for (const id of this.idList()) void this.read(id);

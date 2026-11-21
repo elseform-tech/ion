@@ -109,6 +109,8 @@ export class Decisions {
   private readonly requests = new Map<string, string>();
   /** Tool calls ion stopped, waiting on your answer. */
   private readonly holds: Holds;
+  /** Questions about a repo's server before a chat starts it: no agent's call to tell, nothing kept as a decision. */
+  private readonly repoAsks = new Set<string>();
   /** Each stopped call's exact key (hashed), for an "Always allow" answer. */
   private readonly keys = new Map<string, string>();
 
@@ -165,6 +167,7 @@ export class Decisions {
       ...q,
       blocked: { requestId: b.requestId },
     });
+    if (b.repo) this.repoAsks.add(needId);
     this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
     this.keys.set(needId, keyHash(b.key));
     return this.holds.hold(needId);
@@ -231,6 +234,12 @@ export class Decisions {
   private async answerBlocked(asked: NeedInfo, pick: number | string, label: string): Promise<void> {
     const custom = typeof pick === "string";
     const { allow, scope } = blockedAnswer(label, custom);
+    if (this.repoAsks.delete(asked.needId)) {
+      // Task review, 2026-11-21: a repo's server, asked before the chat starts it: the answer only releases it.
+      this.d.needs.answered(asked.needId, label, "chat");
+      this.holds.release(asked.needId, allow ? "allow" : "deny");
+      return;
+    }
     this.d.needs.answered(asked.needId, label, scope ?? "chat");
     const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom }) : undefined;
     const waited = this.holds.release(asked.needId, allow ? "allow" : "deny");

@@ -51,6 +51,7 @@ describe("each agent's own tools", () => {
       name: "github",
       transport: "stdio",
       launch: "gh-mcp serve",
+      match: expect.any(String),
     });
     expect(t.own.plugins.map((p) => `${p.agent}:${p.name}`)).toContain("claude-code:superpowers");
     // No switch: it's the agent's.
@@ -70,22 +71,22 @@ describe("each agent's own tools", () => {
     expect(await repo("pkgtool")).toEqual({
       project: "shop",
       file: ".mcp.json",
-      id: "shop:pkgtool",
+      id: `${project}#pkgtool`,
       on: false,
       new: true,
     });
-    await client.call("tools.setOn", { kind: "repo", id: "shop:pkgtool", on: true });
+    await client.call("tools.setOn", { kind: "repo", id: `${project}#pkgtool`, on: true });
     expect(await repo("pkgtool")).toMatchObject({ on: true });
     expect(loadUserConfig(join(root, "config.toml")).config.tools.repoOn).toEqual([
-      expect.stringMatching(/^shop:pkgtool@/),
+      expect.stringMatching(/#pkgtool@/),
     ]);
-    await client.call("tools.setOn", { kind: "repo", id: "shop:pkgtool", on: false });
+    await client.call("tools.setOn", { kind: "repo", id: `${project}#pkgtool`, on: false });
     expect(await repo("pkgtool")).toMatchObject({ on: false, new: true });
     // Ruling, 2026-11-21: a repo's local one (any command) has no lasting switch; ion asks in each chat.
     expect(await repo("repotool")).toMatchObject({ asks: true, on: false });
-    await expect(client.call("tools.setOn", { kind: "repo", id: "shop:repotool", on: true })).rejects.toThrow(
-      "It runs code from the repo: ion asks in each chat",
-    );
+    await expect(
+      client.call("tools.setOn", { kind: "repo", id: `${project}#repotool`, on: true }),
+    ).rejects.toThrow("It runs code from the repo: ion asks in each chat");
   });
 
   it("Use its own tools off brings back ion's tools only (the switch, in your config)", async () => {

@@ -1,4 +1,5 @@
 import type { McpToolInfo } from "@ion/schema";
+import { matchOf } from "../tools/own.js";
 import type { OAuth } from "../secrets/oauth.js";
 import {
   keysNeeded,
@@ -15,6 +16,10 @@ const firstRef = (o: Record<string, string>) => Object.keys(o).find((k) => /\$\{
 
 /** A server as the app sees it: names, never values (only a remote server's host; a command's safe arguments). */
 function toolOf(s: McpServer, on: boolean): McpToolInfo {
+  return { ...toolBase(s, on), match: matchOf(s) };
+}
+
+function toolBase(s: McpServer, on: boolean): McpToolInfo {
   const base = { id: s.name, name: s.name, on, keys: refsOf(s), signedIn: true };
   if (s.transport === "http") {
     const keyHeader = firstRef(s.headers) ?? Object.keys(s.headers)[0];

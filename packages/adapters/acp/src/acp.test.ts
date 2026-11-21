@@ -387,6 +387,32 @@ describe("acp adapter", () => {
     expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
   });
 
+  // Task review, 2026-11-21 (live: opencode out of its free quota sat for 8 minutes): updates that aren't progress
+  // don't count as an answer; the run fails, with the agent's own reason from its log when it gave one.
+  it("fails a run whose agent sends only updates that aren't progress, with its log's reason", async () => {
+    const h = {
+      ...fake,
+      silenceMs: 300,
+      logFailure: (line: string) =>
+        /error\.error="([^"]*)"/.exec(line)?.[1]?.replace(/^AI_\w+: /, "") ?? null,
+    };
+    const quota = await turn(h, "quota");
+    expect(quota.at(-2)).toMatchObject({
+      type: "error",
+      data: {
+        code: "agent",
+        retryable: false,
+        message: "Fake ACP: Free usage limit reached. Try again later.",
+      },
+    });
+    expect(quota.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
+    const busy = await turn(h, "busy");
+    expect(busy.at(-2)).toMatchObject({
+      type: "error",
+      data: { message: "Fake ACP didn't answer. Check that it's signed in: fake login" },
+    });
+  });
+
   it("treats the agent cancelling on its own (after a refusal) as done, not interrupted", async () => {
     expect((await turn(fake, "refuse")).at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
   });

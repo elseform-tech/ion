@@ -53,11 +53,15 @@ function SkillRow(p: { s: SkillInfo; r: Merged<SkillInfo>; part: Part; agents: H
 export function Skills(p: TabProps & { data: SettingsData; whose: Whose }) {
   const part = partOf(p);
   const agents = p.data.harnesses;
-  const items = p.info.skills.map((s) => ({ agent: s.own ?? "ion", name: s.name, key: s.hash, item: s }));
+  // Who has it: ion when it passes it (its switch), and each agent that loads it itself (task review, 2026-11-21).
+  const items = p.info.skills.flatMap((s) => {
+    const ion = !s.own && Object.values(s.support).includes("ion") ? ["ion"] : [];
+    const who = [...ion, ...(s.readers ?? (s.own ? [s.own] : []))];
+    return [...new Set(who)].map((agent) => ({ agent, name: s.name, key: s.hash, item: s }));
+  });
   const rows = whoseRows(merge(items, "Different files"), p.whose);
   if (!rows.length) return null;
-  const first = (r: Merged<SkillInfo>) =>
-    p.info.skills.find((s) => s.name === r.name && r.agents.includes(s.own ?? "ion"));
+  const first = (r: Merged<SkillInfo>) => p.info.skills.find((s) => s.name === r.name);
   return (
     <div className="group">
       {rows.map((r, i) => {
@@ -69,7 +73,7 @@ export function Skills(p: TabProps & { data: SettingsData; whose: Whose }) {
             icon={BookOpen}
             r={r}
             agents={agents}
-            off={offIn(r, p.info.own)}
+            off={offIn(r, p.info.own, "skills", agents)}
             line={s ? about(s) : null}
           />
         );

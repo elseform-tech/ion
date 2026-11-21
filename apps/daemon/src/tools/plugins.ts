@@ -1,4 +1,5 @@
-import { existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { readFile } from "./import.js";
 
@@ -20,6 +21,8 @@ export type FoundPlugin = {
   version?: string;
   bundles: Bundles;
   hooks?: "off" | "run";
+  /** With no version: what's in it, hashed (to match the same plugin in two agents). */
+  hash?: string;
   path?: string;
   servers?: Record<string, unknown>;
 };
@@ -55,6 +58,22 @@ function serversOf(dir: string, manifest: Obj): Obj {
   return isObj(file.mcpServers) ? file.mcpServers : file;
 }
 
+/** What's in a plugin with no version: its manifest and the text of its skills, commands and agents, hashed. */
+function contentHash(dir: string, manifest: Obj): string {
+  const h = createHash("sha256").update(JSON.stringify(manifest));
+  for (const sub of ["skills", "commands", "agents"])
+    for (const e of list(join(dir, sub))) {
+      const f = sub === "skills" ? join(dir, sub, e, "SKILL.md") : join(dir, sub, e);
+      h.update(`${sub}/${e}\0`);
+      try {
+        h.update(readFileSync(f));
+      } catch {
+        // a folder, or not readable: its name counts
+      }
+    }
+  return h.digest("hex").slice(0, 12);
+}
+
 /** A plugin in its folder: what it bundles, and whether it has hooks. */
 function inFolder(agent: string, dir: string, hooks: "off" | "run", fallback: Obj = {}): FoundPlugin {
   const m = { ...fallback, ...manifestOf(dir) };
@@ -68,12 +87,14 @@ function inFolder(agent: string, dir: string, hooks: "off" | "run", fallback: Ob
   };
   const hasHooks = m.hooks !== undefined || existsSync(join(dir, "hooks", "hooks.json"));
   const version = text(m.version);
+  const hash = version ? undefined : contentHash(dir, m);
   return {
     agent,
     name: text(m.name) ?? basename(dir),
     ...(version ? { version } : {}),
     bundles,
     ...(hasHooks ? { hooks } : {}),
+    ...(hash ? { hash } : {}),
     path: dir,
     servers,
   };
