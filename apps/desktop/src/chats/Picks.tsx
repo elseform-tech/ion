@@ -1,11 +1,12 @@
 import type { IonClient } from "@ion/client/browser";
-import { FileText, type LucideIcon, Plug, Sparkles, SquareTerminal, X } from "@ion/design-system";
+import { FileText, type LucideIcon, Plug, Sparkles, Spinner, SquareTerminal, X } from "@ion/design-system";
 import type { Commands, PickInfo, Picks } from "@ion/schema";
 import {
   type KeyboardEvent,
   type Ref,
   type TextareaHTMLAttributes,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -15,8 +16,31 @@ import {
  * servers. Typing filters, Enter (or Tab) picks, Escape closes; a pick leaves the text and shows as a chip, and the
  * message goes with its names.
  */
-export type Picked = { skills: string[]; mentions: string[] };
+/** `kinds` and `labels`: what each pick is and how its chip reads (a resource's mention is "<server> resource <uri>"). */
+export type Picked = {
+  skills: string[];
+  mentions: string[];
+  kinds?: Record<string, PickInfo["kind"]>;
+  labels?: Record<string, string>;
+};
 const NONE: Picked = { skills: [], mentions: [] };
+
+/** What a pick sends: a server's or skill's name, or "<server> resource <uri>" for a resource. */
+const sentAs = (item: PickInfo) =>
+  item.kind === "resource" && item.server && item.uri ? `${item.server} resource ${item.uri}` : item.name;
+
+/** The picks with one more (once), remembering its kind and its chip's words. */
+function withPick(picked: Picked, item: PickInfo): Picked {
+  const k = item.kind === "skill" || item.kind === "command" ? "skills" : "mentions";
+  const name = sentAs(item);
+  if (picked[k].includes(name)) return picked;
+  return {
+    ...picked,
+    [k]: [...picked[k], name],
+    kinds: { ...picked.kinds, [name]: item.kind },
+    labels: { ...picked.labels, [name]: item.name },
+  };
+}
 const SHOWN = 8;
 
 const ICON: Record<PickInfo["kind"], LucideIcon> = {
@@ -73,7 +97,7 @@ function usePickList(
 }
 
 /** What a key does while the menu is open: close it, move by n, pick, or nothing (null: the box takes it). */
-function menuKey(key: string, shift: boolean, n: number): "close" | "pick" | number | null {
+function menuKey(key: string, shift: boolean, n: number): "close" | "pick" | "wait" | number | null {
   if (key === "Escape") return "close";
   if (!n) return null;
   if (key === "ArrowDown") return 1;
@@ -95,6 +119,7 @@ export function usePicker(o: {
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [closed, setClosed] = useState<string | null>(null);
+  const id = useId();
   const word = wordAt(o.text, caret);
   const open = word && closed !== `${word.start}${word.mark}` ? word : null;
   const list = usePickList(o.client, o.args, Boolean(open));
@@ -105,22 +130,21 @@ export function usePicker(o: {
   useEffect(() => setActive(0), [open?.mark, open?.query]);
   const pick = (item: PickInfo) => {
     if (!open) return;
-    const k = item.kind === "skill" || item.kind === "command" ? "skills" : "mentions";
-    const name = item.kind === "resource" && item.server ? `${item.server}:${item.name}` : item.name;
-    if (!picked[k].includes(name)) setPicked({ ...picked, [k]: [...picked[k], name] });
+    setPicked(withPick(picked, item));
     o.setText(o.text.slice(0, open.start) + o.text.slice(caret).replace(/^\S*/, ""));
     setCaret(open.start);
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
     if (!open) return false;
-    const did = menuKey(e.key, e.shiftKey, ref.current.length);
+    // The list is still coming: Enter waits for it, never sending the "/word" as text.
+    const did = !list && e.key === "Enter" ? "wait" : menuKey(e.key, e.shiftKey, ref.current.length);
     if (did === "close") setClosed(`${open.start}${open.mark}`);
     else if (typeof did === "number") setActive((a) => (a + did) % ref.current.length);
     else if (did === "pick") pick(ref.current[Math.min(active, ref.current.length - 1)]!);
     if (did !== null) e.preventDefault();
     return did !== null;
   };
-  const drop = (k: keyof Picked, name: string) =>
+  const drop = (k: "skills" | "mentions", name: string) =>
     setPicked({ ...picked, [k]: picked[k].filter((x) => x !== name) });
   return {
     picked,
@@ -133,7 +157,7 @@ export function usePicker(o: {
     /** The caret moved (typing, a click): the word at it may have changed. */
     track: (el: HTMLTextAreaElement) => setCaret(el.selectionStart ?? el.value.length),
     onKey,
-    menu: open ? { mark: open.mark, items: shown, active, loading: !list, pick } : null,
+    menu: open ? { mark: open.mark, items: shown, active, loading: !list, pick, id } : null,
     drop,
   };
 }
@@ -148,14 +172,27 @@ type Menu = NonNullable<ReturnType<typeof usePicker>["menu"]>;
 
 /** The menu above the box: each match with its icon (its kind on hover), name and one line. */
 function PickMenu({ menu }: { menu: Menu }) {
+  // Still coming (a server may be starting to list its resources): a sign it's on its way.
+  if (menu.loading)
+    return (
+      <div className="pmenu smenu" aria-busy="true">
+        <Spinner label="Loading" />
+      </div>
+    );
   if (!menu.items.length) return null;
   return (
-    <div className="pmenu smenu" role="listbox" aria-label={menu.mark === "/" ? "Skills" : "Connections"}>
+    <div
+      id={`${menu.id}-list`}
+      className="pmenu smenu"
+      role="listbox"
+      aria-label={menu.mark === "/" ? "Skills" : "Connections"}
+    >
       {menu.items.map((item, i) => {
         const Icon = ICON[item.kind];
         return (
           <button
             key={`${item.kind}:${item.server ?? ""}:${item.name}`}
+            id={`${menu.id}-${i}`}
             type="button"
             role="option"
             aria-selected={i === menu.active}
@@ -178,19 +215,36 @@ function PickMenu({ menu }: { menu: Menu }) {
   );
 }
 
+/** A chip's kind: as picked, else read from the name (a message's picks come back as names). */
+function kindOf(picked: Picked, k: "skills" | "mentions", name: string): PickInfo["kind"] {
+  const known = picked.kinds?.[name];
+  if (known) return known;
+  if (k === "skills") return "skill";
+  return name.includes(" resource ") ? "resource" : "server";
+}
+
+/** A chip's icon: the menu's for its kind. */
+function ChipIcon(p: { picked: Picked; k: "skills" | "mentions"; name: string }) {
+  const Icon = ICON[kindOf(p.picked, p.k, p.name)];
+  return <Icon />;
+}
+
+/** A chip's words: what the menu showed; a resource's mention without that shows its server and URI. */
+const chipWords = (picked: Picked, name: string) => picked.labels?.[name] ?? name.replace(" resource ", ": ");
+
 /** The picks as chips: a skill's or command's, a server's; each with its remove button. */
-export function PickChips(p: { picked: Picked; onDrop?: (k: keyof Picked, name: string) => void }) {
+export function PickChips(p: { picked: Picked; onDrop?: (k: "skills" | "mentions", name: string) => void }) {
   const all = [
-    ...p.picked.skills.map((name) => ({ k: "skills" as const, name, Icon: Sparkles })),
-    ...p.picked.mentions.map((name) => ({ k: "mentions" as const, name, Icon: Plug })),
+    ...p.picked.skills.map((name) => ({ k: "skills" as const, name })),
+    ...p.picked.mentions.map((name) => ({ k: "mentions" as const, name })),
   ];
   if (!all.length) return null;
   return (
     <div className="catt">
-      {all.map(({ k, name, Icon }) => (
+      {all.map(({ k, name }) => (
         <span key={`${k}:${name}`} className="chip pick">
-          <Icon />
-          {name}
+          <ChipIcon picked={p.picked} k={k} name={name} />
+          {chipWords(p.picked, name)}
           {p.onDrop && (
             <button type="button" aria-label={`Remove ${name}`} onClick={() => p.onDrop?.(k, name)}>
               <X />
@@ -201,6 +255,16 @@ export function PickChips(p: { picked: Picked; onDrop?: (k: keyof Picked, name: 
     </div>
   );
 }
+
+/** The box as a combobox for screen readers: whether its list is open, which it is, and which option Enter picks. */
+const comboOf = (menu: Menu | null) => ({
+  role: "combobox",
+  "aria-autocomplete": "list" as const,
+  "aria-expanded": Boolean(menu?.items.length),
+  ...(menu?.items.length
+    ? { "aria-controls": `${menu.id}-list`, "aria-activedescendant": `${menu.id}-${menu.active}` }
+    : {}),
+});
 
 /**
  * A message box's text area with "/" and "@": the menu above it, the picks as chips, and its keys (the menu's first,
@@ -221,6 +285,7 @@ export function PickedBox(p: {
       <PickChips picked={pk.picked} onDrop={pk.drop} />
       <textarea
         {...p.box}
+        {...comboOf(pk.menu)}
         onChange={(e) => {
           p.onEdit(e.target.value);
           pk.track(e.target);

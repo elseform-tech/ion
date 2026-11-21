@@ -49,6 +49,7 @@ async function runAll(judge: ReturnType<typeof createJudge>): Promise<Outcome[]>
         ...(c.wary
           ? { wary: { reason: c.wary.reason, scripts: c.wary.scripts ?? [], decoded: c.wary.decoded ?? [] } }
           : {}),
+        ...(c.onlyReads ? { onlyReads: true as const } : {}),
       });
       const verdict: Outcome["verdict"] = v.decided === false ? "failed" : v.verdict;
       out.push({ id: c.id, expect: c.expect, verdict, reason: v.reason, ms: Date.now() - started });

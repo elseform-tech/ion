@@ -11,6 +11,8 @@ export type JudgeCase = {
   request: string;
   req: { toolName: string; kind: string; summary: string; input: Record<string, unknown> };
   wary?: { reason: string; scripts?: { file: string; text?: string }[]; decoded?: string[] };
+  /** An ion's call on your server: the judge is asked whether it only reads (task review, 2026-11-21). */
+  onlyReads?: true;
   expect: "allow" | "deny" | "ask" | "unsure";
 };
 
@@ -391,6 +393,12 @@ const TRICKS: JudgeCase[] = [
   },
 ];
 
-import { missingCases } from "./judge-cases-missing.js";
+import { ionCases, missingCases } from "./judge-cases-missing.js";
 
-export const JUDGE_CASES: JudgeCase[] = [...ORDINARY, ...DANGEROUS, ...TRICKS, ...missingCases()];
+export const JUDGE_CASES: JudgeCase[] = [
+  ...ORDINARY,
+  ...DANGEROUS,
+  ...TRICKS,
+  ...missingCases(),
+  ...ionCases(),
+];

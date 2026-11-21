@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import type { WaryData } from "./hard.js";
-import type { Judge } from "./judge.js";
+import type { Judge, JudgeInput } from "./judge.js";
 import { ruleFor, type Verdict } from "./rules.js";
 
 export { createJudge, type Judge, judgePrompt, parseVerdict } from "./judge.js";
@@ -21,11 +21,25 @@ type At = {
   plugin?: string;
   /** ion's guess about this call (the user, 2026-11-21): the judge decides, shown what will run. */
   wary?: WaryData;
+  /** The skills you picked with "/" for this message (the judge is told, in ion's words). */
+  picked?: string[];
 };
 /** source: a rule (your secrets, ion's files: never asks you) or the judge (its "no" asks you). */
 /** unsure: the judge's no is that it's missing information (the user, 2026-11-21); asked like a no, never kept. */
-export type AccessVerdict = Verdict & { source: "rule" | "judge"; unsure?: true };
+/** undecided: the judge gave no verdict (failed, slow, garbled): asked as "ion couldn't decide", nothing recorded. */
+export type AccessVerdict = Verdict & { source: "rule" | "judge"; unsure?: true; undecided?: true };
 export type Access = { decide(at: At, req: ApprovalRequest): Promise<AccessVerdict> };
+
+/** What the judge is shown: your request, the action, your decisions, and ion's notes (checks, guess, picks). */
+function judgeInput(at: At, req: ApprovalRequest, decisions: string[]): JudgeInput {
+  return {
+    ...{ projectId: at.projectId, text: at.text, req },
+    ...(decisions.length ? { decisions } : {}),
+    ...(at.checksFailed ? { checksFailed: true as const } : {}),
+    ...(at.wary ? { wary: at.wary } : {}),
+    ...(at.picked?.length ? { picked: at.picked } : {}),
+  };
+}
 
 /** The same action for the same request (and decisions, checks and scripts) in a chat. */
 function cacheKey(at: At, req: ApprovalRequest, decisions?: string[]): string {
@@ -39,6 +53,7 @@ function cacheKey(at: At, req: ApprovalRequest, decisions?: string[]): string {
         !!at.checksFailed,
         // Keyed on the scripts' contents: a changed script is judged again.
         at.wary ?? null,
+        at.picked ?? null,
       ]),
     )
     .digest("hex");
@@ -51,6 +66,7 @@ const fromJudge = (v: Awaited<ReturnType<Judge>>): AccessVerdict => ({
   reason: v.reason,
   source: "judge",
   ...(v.verdict === "unsure" ? { unsure: true as const } : {}),
+  ...(v.decided === false ? { undecided: true as const } : {}),
 });
 
 /** Auto: rules first, then the judge, at most once per action in a chat. */
@@ -74,15 +90,7 @@ export function createAccess(o: {
       const key = cacheKey(at, req, o.decisionsFor?.(at.projectId, at.chatId));
       const known = cache.get(key);
       if (known) return known;
-      const decisions = o.decisionsFor?.(at.projectId, at.chatId) ?? [];
-      const v = await o.judge({
-        projectId: at.projectId,
-        text: at.text,
-        req,
-        ...(decisions.length ? { decisions } : {}),
-        ...(at.checksFailed ? { checksFailed: true as const } : {}),
-        ...(at.wary ? { wary: at.wary } : {}),
-      });
+      const v = await o.judge(judgeInput(at, req, o.decisionsFor?.(at.projectId, at.chatId) ?? []));
       const verdict = fromJudge(v);
       // A judge that couldn't decide (slow, signed out) or wasn't sure is asked again next time.
       if (v.verdict === "unsure") o.onUnsure?.(req);

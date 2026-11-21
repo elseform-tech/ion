@@ -30,16 +30,18 @@ describe("each agent's own commands", () => {
     );
     put(join(home, ".codex", "prompts", "plan.md"), "---\ndescription: Make a plan\n---\nPlan $ARGUMENTS.");
     const o = { home, env: {}, projects: [] };
+    // Live, Claude Code 2026-11-21: with ion's settingSources [] a plugin's command runs by name, a settings-folder
+    // command doesn't ("isn't installed in this session"): ~/.claude/commands go as their text (runs: false).
     expect(ownCommands("claude-code", o)).toEqual([
-      { name: "review", description: "Review the diff", body: "Review it." },
-      { name: "kit:ship", description: "", body: "Ship the release." },
+      { name: "review", description: "Review the diff", body: "Review it.", runs: false },
+      { name: "kit:ship", description: "", body: "Ship the release.", runs: true },
     ]);
     expect(ownCommands("opencode", o)).toEqual([
-      { name: "tidy", description: "Tidy up", body: "Tidy." },
-      { name: "lint", description: "Lint it", body: "Run the linter" },
+      { name: "tidy", description: "Tidy up", body: "Tidy.", runs: true },
+      { name: "lint", description: "Lint it", body: "Run the linter", runs: true },
     ]);
     expect(ownCommands("codex", o)).toEqual([
-      { name: "prompts:plan", description: "Make a plan", body: "Plan $ARGUMENTS." },
+      { name: "prompts:plan", description: "Make a plan", body: "Plan $ARGUMENTS.", runs: false },
     ]);
     expect(ownCommands("grok-build", o)).toEqual([]);
   });

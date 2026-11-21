@@ -31,9 +31,26 @@ describe("unsure too often", () => {
     // Older than 7 days doesn't count.
     now += 8 * DAY;
     const fresh = new UnsureLog(file, () => now);
-    expect(fresh.notes()).toEqual(["Auto often isn't sure about: npm publish"]);
+    // A note goes after 7 days (task review, 2026-11-21).
+    expect(fresh.notes()).toEqual([]);
     for (let i = 0; i < 4; i++) expect(fresh.add(bash("make deploy"))).toBeNull();
     now += 8 * DAY;
     expect(fresh.add(bash("make deploy"))).toBeNull();
+  });
+});
+
+// Task review, 2026-11-21: a kind is shown in the log and `ion status`, so it's cleaned (control characters, odd
+// characters); a note older than 7 days goes.
+describe("unsure notes, cleaned and kept a week", () => {
+  it("cleans a kind and drops a note older than 7 days", () => {
+    expect(kindOfAction(bash("npm\u001b[2J publish"))).toBe("npm[2J");
+    expect(kindOfAction(bash("rm\u0007 -rf /"))).toBe("rm");
+    const file = join(mkdtempSync(join(tmpdir(), "ion-unsure-")), "unsure.json");
+    let now = 1_000 * DAY;
+    const log = new UnsureLog(file, () => now);
+    for (let i = 0; i < 5; i++) log.add(bash("make deploy"));
+    expect(log.notes()).toEqual(["Auto often isn't sure about: make deploy"]);
+    now += 8 * DAY;
+    expect(new UnsureLog(file, () => now).notes()).toEqual([]);
   });
 });

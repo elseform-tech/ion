@@ -117,3 +117,35 @@ describe("an agent's own servers beside ion's", () => {
     expect(withOwnServers(yours, own).specs).toEqual([]);
   });
 });
+
+// Task review, 2026-11-21: a run whose project ion can't find (removed meanwhile) never runs a repo's server from the
+// chat's folder: repo servers are left out (fail closed).
+describe("a repo server when the project isn't found", () => {
+  it("is left out, never taken from the worktree", async () => {
+    const { home, project } = agentHome();
+    writeFileSync(join(home, ".claude.json"), JSON.stringify({}));
+    writeFileSync(
+      join(project, ".mcp.json"),
+      JSON.stringify({ mcpServers: { local: { command: "node", args: ["./srv.js"] } } }),
+    );
+    const root = mkdtempSync(join(tmpdir(), "ion-own-run-"));
+    const configFile = join(root, "config.toml");
+    saveUserConfig(configFile, DEFAULT_CONFIG);
+    const own = runOwnOf({
+      home,
+      dataDir: join(root, "data"),
+      configFile,
+      env: {},
+      sign: async (m) => m,
+      ask: async () => true,
+    });
+    const r = await own.forRun({
+      runId: "r9",
+      chatId: "c9",
+      harness: "claude-code",
+      projectId: "gone",
+      cwd: project,
+    });
+    expect(r.ownServers?.map((s) => s.name) ?? []).not.toContain("local");
+  });
+});

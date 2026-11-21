@@ -20,6 +20,8 @@ export type AskingRun = {
   viaIon?: string[];
   /** This run's skills plugin (in ion's data folder): it may read and run the files there, never write them. */
   pluginDir?: string;
+  /** The skills you picked with "/" for this message (the judge is told, in ion's words). */
+  picked?: string[];
 };
 
 /** route: a safer way the agent is told with ion's no. wary: ion's own guess, which asks you (the user, 2026-11-21). */
@@ -103,7 +105,7 @@ const HANDED = new Set<Verdict["by"]>(["ion", "you", "full"]);
 
 /** What the judge said when it didn't allow: no, or unsure; null when it allowed or a rule decided. */
 function judgeSaid(v: AccessVerdict): "deny" | "unsure" | null {
-  if (v.source !== "judge" || v.decision !== "deny") return null;
+  if (v.source !== "judge" || v.decision !== "deny" || v.undecided) return null;
   return v.unsure ? "unsure" : "deny";
 }
 
@@ -315,6 +317,7 @@ export class Approvals {
     const at = {
       ...{ chatId: r.chatId, projectId: r.projectId, text: r.request, roots },
       ...(r.pluginDir ? { plugin: r.pluginDir } : {}),
+      ...(r.picked?.length ? { picked: r.picked } : {}),
     };
     const data =
       wary &&
@@ -328,19 +331,33 @@ export class Approvals {
       req,
     );
     // The judge's no (or unsure) on ion's guess: you're asked, as ion is wary.
-    if (wary && v.decision === "deny" && v.source === "judge") return this.wary(r, req, wary);
+    if (wary && v.decision === "deny" && v.source === "judge") return this.waryJudged(r, req, wary, v);
     return this.afterJudge(r, req, v);
   }
 
   /** A rule's no (your secrets, ion's files) stands. The judge's no or unsure is a question for you. */
   private async afterJudge(r: AskingRun, req: ApprovalRequest, v: AccessVerdict): Promise<Verdict> {
     const judge = judgeSaid(v);
-    if (judge && this.opts.askBlocked) {
-      const unsure = judge === "unsure" ? { unsure: true as const } : {};
-      const asked = await this.askYou(this.opts.askBlocked, r, req, { reason: v.reason, ...unsure });
-      return { ...asked, judge };
+    if (v.source === "judge" && v.decision === "deny" && this.opts.askBlocked) {
+      const how = {
+        ...(v.undecided ? { undecided: true as const } : {}),
+        ...(judge === "unsure" ? { unsure: true as const } : {}),
+      };
+      const asked = await this.askYou(this.opts.askBlocked, r, req, { reason: v.reason, ...how });
+      return { ...asked, ...(judge ? { judge } : {}) };
     }
     return { decision: v.decision, by: "ion", reason: v.reason, ...(judge ? { judge } : {}) };
+  }
+
+  /** ion's guess asked of you after the judge's no or unsure: what the judge said is recorded with your answer. */
+  private async waryJudged(
+    r: AskingRun,
+    req: ApprovalRequest,
+    wary: Verdict,
+    v: AccessVerdict,
+  ): Promise<Verdict> {
+    const said = judgeSaid(v);
+    return { ...(await this.wary(r, req, wary)), ...(said ? { judge: said } : {}) };
   }
 
   /** ion's guess, asked of you (in Full, or after the judge's no); with no one to ask, refused with its route. */
@@ -354,7 +371,7 @@ export class Approvals {
     a: AskBlocked,
     r: AskingRun,
     req: ApprovalRequest,
-    { reason, wary, unsure }: { reason: string; wary?: true; unsure?: true },
+    { reason, ...how }: { reason: string; wary?: true; unsure?: true; undecided?: true },
   ): Promise<Verdict> {
     const key = actionKey(req);
     if (a.allowed(r, key)) return { decision: "allow", by: "you", reason: "You always allow this" };
@@ -364,8 +381,7 @@ export class Approvals {
     const b = {
       ...{ requestId: req.requestId, summary: req.summary, reason, input, key },
       ...(cut ? { cut } : {}),
-      ...(wary ? { wary } : {}),
-      ...(unsure ? { unsure } : {}),
+      ...how,
     };
     return HELD[await a.ask(r, b)];
   }

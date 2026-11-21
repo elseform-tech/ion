@@ -15,6 +15,8 @@ export type Blocked = {
   wary?: true;
   /** The judge said it's missing information, not that it's risky (the user, 2026-11-21): "ion isn't sure". */
   unsure?: true;
+  /** The judge gave no verdict (failed, slow): "ion couldn't decide" (task review, 2026-11-21). */
+  undecided?: true;
   /** A repo's server that runs the repo's own code, before a chat starts it: asked as it is, for this chat only. */
   repo?: true;
 };
@@ -64,6 +66,7 @@ export const blockedQuestion = (b: Blocked) => (b.repo ? repoQuestion(b) : callQ
 /** Why ion asks, in plain words: its own guess, the judge unsure, or the judge's no. */
 const whyWord = (b: Blocked) => {
   if (b.wary) return "ion is wary of this";
+  if (b.undecided) return "ion couldn't decide";
   return b.unsure ? "ion isn't sure" : "ion thinks this is risky";
 };
 

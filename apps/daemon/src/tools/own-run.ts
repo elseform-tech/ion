@@ -96,13 +96,17 @@ export function runOwnOf(o: {
       const { config } = loadUserConfig(o.configFile);
       const ownTools = ownToolsOn(config, r.harness);
       if (!ownTools || r.harness !== "claude-code") return { ownTools, secrets: [] };
-      const project = config.projects.find((p) => p.id === r.projectId)?.path ?? r.cwd;
+      const found = config.projects.find((p) => p.id === r.projectId)?.path;
+      const project = found ?? r.cwd;
       const pluginDir = r.pluginDir ?? pluginDirOf(o.dataDir, r.runId);
       if (!r.pluginDir) await writePlugin(pluginDir, []);
       const env = agentOnly(o.env ?? agentsHomeOf(o).env, await envDropOf(o.configFile));
       const lasting = repoConsent(o.sign, project, config.tools.repoOn);
-      const repoOn: RepoOn = (name, v) =>
-        runsRepoCode(v) ? askedFor(o.ask, allowed, { ...r, project, name, v }) : lasting(name, v);
+      // A project ion can't find: a repo's servers stay out (task review, 2026-11-21), never run from the worktree.
+      const repoOn: RepoOn = async (name, v) => {
+        if (!found) return false;
+        return runsRepoCode(v) ? askedFor(o.ask, allowed, { ...r, project, name, v }) : lasting(name, v);
+      };
       const pluginData = join(o.dataDir, "plugin-data");
       const own = await claudeOwnForRun({
         home: o.home,

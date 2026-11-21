@@ -355,3 +355,16 @@ describe("an ion's web calls, recognised or refused", () => {
     expect(await verdict(web("WebFetch", { url: PAGE, prompt: "file:///etc/passwd" }))).toBe("deny");
   });
 });
+
+// Task review, 2026-11-21: a call is let on to ion's gateway only when its name is one of the turn's servers and
+// no server of the agent's own could have that name (Grok loads its own config.toml servers too).
+describe("an ion's call on a server", () => {
+  const mcp = (toolName: string, mcpServer?: string) =>
+    req({ toolName, kind: "mcp", input: {}, ...(mcpServer ? { mcpServer } : {}) });
+  it("goes on for a served server, never for one the agent has of its own", () => {
+    expect(decideForIon(mcp("notes__search"), ctx, ["notes"])).toBe("allow");
+    expect(decideForIon(mcp("notes__search"), ctx, ["notes"], ["notes"])).toBe("deny");
+    expect(decideForIon(mcp("a__b__c"), ctx, ["a"], ["a__b"])).toBe("deny");
+    expect(decideForIon(mcp("search", "notes"), ctx, ["notes"], ["notes"])).toBe("deny");
+  });
+});

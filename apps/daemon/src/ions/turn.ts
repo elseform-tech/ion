@@ -233,7 +233,7 @@ export class IonTurns {
     const call = t?.adapter.gateCall?.(payload);
     if (!t || !call) return null;
     const req = { requestId: "gate", toolId: "gate", ...call };
-    return ionVerdict(req, t.rules, this.webOf(t), this.servers.names(scope.turnId));
+    return ionVerdict(req, t.rules, this.webOf(t), this.servers.of(scope.turnId));
   }
 
   /** ion's gate for an ion's call on one of your servers (ion's gateway asks): only what reads, and only yours. */
@@ -389,7 +389,7 @@ export class IonTurns {
       signal: abort.signal,
       decide: async (req: ApprovalRequest) => {
         const live = this.live.get(t.turnId);
-        const on = this.servers.names(t.turnId);
+        const on = this.servers.of(t.turnId);
         return live ? (await ionVerdict(req, t.rules, this.webOf(live), on)).decision : "deny";
       },
     };

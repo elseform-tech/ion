@@ -1,3 +1,4 @@
+import { stripControl } from "@ion/schema";
 import { readFileSync, writeFileSync } from "node:fs";
 
 /** How often, and over how long, before ion says Auto is often unsure about one kind of action. */
@@ -11,15 +12,22 @@ type Action = { toolName: string; kind: string; input: Record<string, unknown> }
 /** One kind of action: a command's first word (and its subcommand), else the tool's name. */
 export function kindOfAction(a: Action): string {
   const command = a.input.command;
-  if (a.kind === "mcp" || typeof command !== "string") return a.toolName.slice(0, 80);
-  const [first = a.toolName, second] = command.trim().split(/\s+/);
+  if (a.kind === "mcp" || typeof command !== "string") return clean(a.toolName);
+  const [first = a.toolName, second] = stripControl(command).trim().split(/\s+/);
   // A subcommand only after a program's bare name (npm publish), not a script's arguments (./deploy.sh prod).
   const bare = /^[a-z][\w-]*$/.test(first);
   const sub = bare && second && /^[a-z][a-z0-9-]*$/.test(second) ? ` ${second}` : "";
-  return `${first}${sub}`.slice(0, 80);
+  return clean(`${first}${sub}`);
 }
 
-type Saved = { seen: Record<string, number[]>; noted: string[] };
+/** A kind as the log and `ion status` show it: no control characters, only plain command characters, short. */
+const clean = (t: string) =>
+  stripControl(t)
+    .replace(/[^\w ./:@+=[\]-]/g, "")
+    .slice(0, 80);
+
+/** `noted`: each kind noted, and when (a note goes after 7 days). */
+type Saved = { seen: Record<string, number[]>; noted: { kind: string; at: number }[] };
 
 /**
  * The judge's unsure answers by kind of action, kept in a file (the user, 2026-11-21): 5 in 7 days on one kind is
@@ -42,19 +50,21 @@ export class UnsureLog {
     const times = [...(this.saved.seen[kind] ?? []).filter((t) => t > since), this.now()];
     this.saved.seen[kind] = times;
     this.trim(since);
-    const note = times.length >= TIMES && !this.saved.noted.includes(kind);
-    if (note) this.saved.noted.push(kind);
+    const note = times.length >= TIMES && !this.saved.noted.some((n) => n.kind === kind);
+    if (note) this.saved.noted.push({ kind, at: this.now() });
     this.save();
     return note ? `${NOTE}${kind}` : null;
   }
 
   /** What's been noted, one line each. */
   notes(): string[] {
-    return this.saved.noted.map((k) => `${NOTE}${k}`);
+    const since = this.now() - WINDOW_MS;
+    return this.saved.noted.filter((n) => n.at > since).map((n) => `${NOTE}${n.kind}`);
   }
 
   /** Old answers go; at most MAX_KINDS kinds are kept. */
   private trim(since: number): void {
+    this.saved.noted = this.saved.noted.filter((n) => n.at > since);
     for (const [k, ts] of Object.entries(this.saved.seen)) {
       const kept = ts.filter((t) => t > since);
       if (kept.length) this.saved.seen[k] = kept;
@@ -77,7 +87,10 @@ function load(file: string): Saved {
   try {
     const v = JSON.parse(readFileSync(file, "utf8")) as Partial<Saved>;
     const seen = v.seen && typeof v.seen === "object" ? v.seen : {};
-    return { seen, noted: Array.isArray(v.noted) ? v.noted.filter((n) => typeof n === "string") : [] };
+    const noted = Array.isArray(v.noted)
+      ? v.noted.filter((n) => typeof n?.kind === "string" && typeof n.at === "number")
+      : [];
+    return { seen, noted };
   } catch {
     return { seen: {}, noted: [] };
   }

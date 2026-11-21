@@ -12,6 +12,12 @@ describe("blockedQuestion", () => {
       "ion isn't sure: it runs a file this command creates",
     );
   });
+  // Task review, 2026-11-21: a judge that couldn't decide isn't "risky".
+  it("says ion couldn't decide when the judge gave no verdict", () => {
+    expect(blockedQuestion({ ...b, undecided: true, reason: "ion couldn't decide in time" }).why).toBe(
+      "ion couldn't decide: ion couldn't decide in time",
+    );
+  });
   it("says ion is wary of it for a guess", () => {
     expect(blockedQuestion({ ...b, wary: true }).why).toBe(
       "ion is wary of this: it runs a file this command creates",

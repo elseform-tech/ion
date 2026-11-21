@@ -29,7 +29,7 @@ import { createGateway } from "../gateway/index.js";
 import { Ions } from "../ions/service.js";
 import { IonTurns } from "../ions/turn.js";
 import { IonServers } from "../ions/servers.js";
-import { pickSource } from "./tools-picks.js";
+import { ownServerNames, pickSource } from "./tools-picks.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
 import { diffOfChat, handlers, harnessInfos } from "./commands.js";
@@ -408,7 +408,7 @@ function runCtxOf(o: {
   late: { decisions?: Decisions };
   grants: Grants;
   hooks: Hooks;
-  picks: { tools: Tools; skills: Skills };
+  picks: { tools: Tools; skills: Skills; ionServers: IonServers };
 }) {
   const { opts, base, late } = o;
   return {
@@ -452,8 +452,13 @@ function openState(
   const hooks = startHooks(store, db, opts.configFile, tools);
   const servers = serversFor({ tools, oauth, configFile: opts.configFile });
   // Your servers for ions' turns: only what reads, as Auto's judge agrees (the user, 2026-11-21).
-  const ionServers = new IonServers({ ...opts, servers, judge: createJudge(quick) });
-  const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills } });
+  const ownNames = (agent: string) => ownServerNames({ tools, skills, configFile: opts.configFile }, agent);
+  const onUnsure = (c: GateCall) => {
+    const note = unsure.add({ ...c, input: c.input });
+    if (note) console.warn(note);
+  };
+  const ionServers = new IonServers({ ...opts, servers, judge: createJudge(quick), ownNames, onUnsure });
+  const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers } });
   const runs = new RunManager(store, { ...runCtx, access, ionBin, servers, ...forRuns }, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({

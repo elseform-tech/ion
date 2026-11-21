@@ -31,4 +31,11 @@ describe("a picked skill reaches the run (Claude Code by name; others as context
     const t = withPicks("x", "tell", { skills: [{ name: "big", kind: "skill", body: "a".repeat(50_000) }] });
     expect(t.length).toBeLessThan(17_000);
   });
+
+  // Task review, 2026-11-21: a resource you picked with "@".
+  it("names a picked resource by its server and URI", () => {
+    expect(withPicks("x", "tell", { mentions: ["notes resource file:///a"] })).toBe(
+      "x\n\nRead the notes resource file:///a.",
+    );
+  });
 });

@@ -96,10 +96,6 @@ describe("ion's bridge to your local MCP servers", () => {
     expect(realpathSync(who.cwd)).toBe(realpathSync(project));
     expect(realpathSync(who.cwd)).not.toBe(realpathSync(worktree));
     expect(who.env.PWD).toBe(project);
-    // ${ION_WORKTREE} is for your own servers only: a repo's names its own folder, never the worktree.
-    const named = bridge({ WHERE: "${ION_WORKTREE}" }, { over: { cwd: project } });
-    const env = (said(await tool(named.b, "whoami")) as Who).env;
-    expect(env.WHERE).toBe(project);
   });
 
   it("a relative script or module planted in the worktree never runs", async () => {

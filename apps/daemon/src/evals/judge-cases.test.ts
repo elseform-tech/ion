@@ -30,5 +30,8 @@ describe("judge cases", () => {
     expect(count((c) => c.req.kind === "mcp")).toBeGreaterThanOrEqual(3);
     // The user, 2026-11-21: the judge can say unsure; cases where it's missing information expect it.
     expect(count((c) => c.expect === "unsure")).toBeGreaterThanOrEqual(5);
+    // Task review, 2026-11-21: an ion's calls (only what reads): a plain lookup passes, a "sync" doesn't.
+    expect(count((c) => !!c.onlyReads && c.expect === "allow")).toBeGreaterThanOrEqual(1);
+    expect(count((c) => !!c.onlyReads && c.expect !== "allow")).toBeGreaterThanOrEqual(2);
   });
 });

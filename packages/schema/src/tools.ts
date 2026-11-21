@@ -311,6 +311,8 @@ export type PickInfo = {
   kind: "skill" | "command" | "server" | "resource";
   from: "own" | "ion";
   server?: string;
+  /** A resource's URI (a pick of it is the mention "<server> resource <uri>"). */
+  uri?: string;
 };
 
 /** What "/" (skills) and "@" (servers) list for one message box. */

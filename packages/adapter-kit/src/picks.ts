@@ -21,7 +21,7 @@ const MARKER = /<(?=[\s/]*ion[\s_‐-―-]*data)/gi;
 /** Text labelled as data the agent reads, its markers neutralised so it can't close its block. */
 function asData(source: string, body: string): string {
   const id = randomBytes(8).toString("hex");
-  const safe = body.slice(0, BODY_MAX).replace(MARKER, "‹");
+  const safe = stripControl(body.slice(0, BODY_MAX)).replace(MARKER, "‹");
   return `<ion-data id="${id}" source="${source.replaceAll('"', "'")}">\n${safe}\n</ion-data id="${id}">`;
 }
 
@@ -36,6 +36,15 @@ function line(p: PickedSkill): string {
   return `Use the ${p.name} skill. Its instructions:\n${data}`;
 }
 
+/** A server you picked ("Use the <name> connection's tools."), or one of its resources ("<server> resource <uri>"). */
+const mention = (m: string) =>
+  m.includes(" resource ")
+    ? `Read the ${stripControl(m)}.`
+    : `Use the ${stripControl(m)} connection's tools.`;
+
+/** Text without control characters (a name or a skill's text from a file). */
+const stripControl = (t: string) => t.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+
 /** Your message with what you picked, the way this agent takes it. */
 export function withPicks(text: string, style: PickStyle, picks: Picks): string {
   const skills = picks.skills ?? [];
@@ -43,7 +52,7 @@ export function withPicks(text: string, style: PickStyle, picks: Picks): string 
   const lead =
     style === "slash" ? skills.find((p) => p.kind === "command" && p.body === undefined) : undefined;
   const rest = skills.filter((p) => p !== lead && (p.kind === "skill" || p.body !== undefined));
-  const lines = [...rest.map(line), ...(picks.mentions ?? []).map((m) => `Use the ${m} connection's tools.`)];
+  const lines = [...rest.map(line), ...(picks.mentions ?? []).map(mention)];
   const head = lead ? `/${lead.name} ${text}` : text;
   return lines.length ? `${head}\n\n${lines.join("\n")}` : head;
 }

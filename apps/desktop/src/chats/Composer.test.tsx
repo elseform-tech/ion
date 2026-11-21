@@ -362,3 +362,74 @@ describe("/ and @ in the message box", () => {
     );
   });
 });
+
+// Task review, 2026-11-21: "@" lists a served server's resources (a pick is "<server> resource <uri>"); the box is a
+// combobox for screen readers; Enter while the list loads never sends the raw "/word"; chips use the menu's icons.
+describe("/ and @: resources, keys and names", () => {
+  const picks = {
+    skills: [{ name: "review", description: "", kind: "command", from: "own" }],
+    servers: [
+      { name: "everything", description: "", kind: "server", from: "ion" },
+      {
+        name: "Readme",
+        description: "file:///readme",
+        kind: "resource",
+        from: "ion",
+        server: "everything",
+        uri: "file:///readme",
+      },
+    ],
+  };
+  const setup = (slow = false) => {
+    let release: () => void = () => {};
+    const call = vi.fn(async (cmd: string) => {
+      if (cmd === "tools.picks") {
+        if (slow) await new Promise<void>((r) => (release = r));
+        return picks;
+      }
+      return cmd === "queue.list" ? [] : { chatId: "c1", runId: "r1" };
+    });
+    render(
+      <Composer
+        client={chatClient(call as never)}
+        harnesses={[fake]}
+        to={{ chatId: "c1" }}
+        harness="fake"
+        running={null}
+        onSent={() => {}}
+      />,
+    );
+    return { call, box: screen.getByLabelText("Message") as HTMLTextAreaElement, release: () => release() };
+  };
+  it("picks a resource as its server's mention, with the resource's icon", async () => {
+    const { call, box } = setup();
+    fireEvent.change(box, { target: { value: "read @Rea", selectionStart: 9 } });
+    await screen.findByRole("listbox", { name: "Connections" });
+    expect(box.getAttribute("role")).toBe("combobox");
+    expect(box.getAttribute("aria-expanded")).toBe("true");
+    const list = screen.getByRole("listbox");
+    expect(box.getAttribute("aria-controls")).toBe(list.id);
+    expect(box.getAttribute("aria-activedescendant")).toBe(list.querySelector('[aria-selected="true"]')?.id);
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(screen.getByText("Readme").closest(".chip")?.querySelector(".lucide-file-text")).not.toBeNull();
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith(
+        "ask",
+        expect.objectContaining({ mentions: ["everything resource file:///readme"] }),
+      ),
+    );
+  });
+  it("Enter while the list loads doesn't send the word", async () => {
+    const { call, box, release } = setup(true);
+    fireEvent.change(box, { target: { value: "/rev", selectionStart: 4 } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(call).not.toHaveBeenCalledWith("ask", expect.anything());
+    release();
+    await screen.findByRole("listbox", { name: "Skills" });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(
+      screen.getByText("review").closest(".chip")?.querySelector(".lucide-square-terminal"),
+    ).not.toBeNull();
+  });
+});

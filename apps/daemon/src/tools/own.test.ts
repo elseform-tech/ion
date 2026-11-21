@@ -481,3 +481,28 @@ describe("a plugin ion can't copy", () => {
     expect(own.lines.filter((l) => l.startsWith("bad"))).toEqual(["bad: left out (ion couldn't copy it)"]);
   });
 });
+
+// Task review, 2026-11-21 (ruling): a repo's definitions are never filled, ${ION_WORKTREE} too: such a server is left out
+// with a line, like any other ${…} in a repo's file.
+describe("a repo's server naming ${ION_WORKTREE}", () => {
+  it("is left out with a line", async () => {
+    const { home, project } = agentHome();
+    const file = join(home, ".claude.json");
+    const c = JSON.parse(readFileSync(file, "utf8"));
+    c.projects[project].enableAllProjectMcpServers = true;
+    writeFileSync(file, JSON.stringify(c));
+    const tree = { command: "node", args: ["${ION_WORKTREE}/srv.js"] };
+    writeFileSync(join(project, ".mcp.json"), JSON.stringify({ mcpServers: { tree } }));
+    const dir = mkdtempSync(join(tmpdir(), "ion-own-"));
+    const own = await claudeOwnForRun({ home, env: {}, project, dir, repoOn: async () => true });
+    expect(own.servers.map((s) => s.name)).not.toContain("tree");
+    const listed = await ownToolsOf({
+      home,
+      env: {},
+      projects: [project],
+      agents: {},
+      repo: async () => ({ on: true }),
+    });
+    expect(listed.leftOut.map((l) => l.name)).toContain("tree");
+  });
+});

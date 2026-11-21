@@ -25,7 +25,7 @@ const local = (): LocalUpstream & { calls: unknown[] } => {
   };
 };
 
-function setup(verdict: "allow" | "deny" | "unsure" = "allow", ionUse: string[] = []) {
+function setup(verdict: "allow" | "deny" | "unsure" = "allow", ionUse: string[] = [], own: string[] = []) {
   const home = mkdtempSync(join(tmpdir(), "ion-ionsrv-"));
   const configFile = join(home, "config.toml");
   saveUserConfig(configFile, { ...DEFAULT_CONFIG, tools: { ...DEFAULT_CONFIG.tools, ionUse } });
@@ -51,8 +51,9 @@ function setup(verdict: "allow" | "deny" | "unsure" = "allow", ionUse: string[] 
       refs: ["NOTES_KEY"],
     }),
     local: () => up,
+    ownNames: async () => own,
   });
-  return { s, judge, up };
+  return { s, judge, up, configFile };
 }
 const call = (toolName: string, input: Record<string, unknown> = { q: "kiwi" }) => ({
   toolName,
@@ -138,5 +139,61 @@ describe("ions and your servers", () => {
     await s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect((await s.gate("turn_1", call("search", { q: "z".repeat(300) }), "x")).decision).toBe("deny");
     expect(judge).not.toHaveBeenCalled();
+  });
+});
+
+// Task review, 2026-11-21: Grok also loads its own config.toml servers, so an ion's call to Grok's own server named
+// like one of yours passed the hook as yours and skipped ion's read-only gate.
+describe("an agent's own server named like yours", () => {
+  it("an ion's call to an agent's own server named like yours is refused", async () => {
+    const { s } = setup("allow", [], ["notes"]);
+    const ion = { url: "https://ion.test/mcp", key: "k" };
+    const given = await s.forTurn("turn_1", ion, { id: "grok-build", mcpTransports: { http: true } }, false);
+    expect(given).toEqual([]);
+    expect(s.names("turn_1")).toEqual([]);
+    expect((await s.gate("turn_1", call("search"), "x")).decision).toBe("deny");
+    expect(s.own("turn_1")).toEqual(["notes"]);
+  });
+});
+
+// Task review, 2026-11-21: a tool's first look (by the gate, not only Settings) is kept, so a later change turns it off.
+describe("a tool's first look", () => {
+  it("is kept when the gate first sees it, and a later change turns it off for ions", async () => {
+    const { s, configFile } = setup("allow");
+    await s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
+    expect(await s.gate("turn_1", call("search"), "x")).toEqual({ decision: "allow" });
+    const { loadUserConfig } = await import("@ion/config");
+    expect(loadUserConfig(configFile).config.tools.ionUse.some((e) => e.startsWith("notes/search@"))).toBe(
+      true,
+    );
+  });
+});
+
+// Task review, 2026-11-21: an ion's call the judge couldn't decide says so; an ion's unsure counts toward "often unsure".
+describe("the judge on an ion's call", () => {
+  it("says ion couldn't decide, and tells the log of unsure answers", async () => {
+    const told: string[] = [];
+    const home = mkdtempSync(join(tmpdir(), "ion-ionsrv-"));
+    const configFile = join(home, "config.toml");
+    saveUserConfig(configFile, DEFAULT_CONFIG);
+    const make = (v: { verdict: "deny" | "unsure"; reason: string; decided?: false }) =>
+      new IonServers({
+        ...{ configFile, dataDir: join(home, "data"), judge: async () => v },
+        servers: async () => ({
+          specs: [{ name: "notes", transport: "stdio", command: "n", args: [], env: {} }],
+          ...{ skipped: [], secrets: [], fresh: {}, refs: [] },
+        }),
+        local,
+        onUnsure: (c) => told.push(c.toolName),
+      });
+    const slow = make({ verdict: "deny", reason: "ion couldn't decide in time", decided: false });
+    await slow.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
+    expect((await slow.gate("turn_1", call("search"), "x")).reason).toBe(
+      "ion couldn't decide, so I'll start a thread",
+    );
+    const unsure = make({ verdict: "unsure", reason: "can't tell" });
+    await unsure.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
+    await unsure.gate("turn_1", call("search"), "x");
+    expect(told).toEqual(["search"]);
   });
 });

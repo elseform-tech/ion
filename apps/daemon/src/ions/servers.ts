@@ -1,13 +1,13 @@
-import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { EnvDrop, GateCall, HttpMcpSpec, McpTransports } from "@ion/adapter-kit";
-import { loadUserConfig } from "@ion/config";
+import { loadUserConfig, saveUserConfig } from "@ion/config";
 import type { Judge } from "../access/index.js";
 import { askServer } from "../gateway/client.js";
-import { type LocalUpstream, type Upstream, upstreamOf } from "../gateway/index.js";
+import type { LocalUpstream, Upstream } from "../gateway/index.js";
 import type { GateAnswer } from "../gate/index.js";
 import { MCP_RUN, throughIon } from "../runs/servers.js";
-import { ionMayUse, type ListedTool } from "../tools/ion-use.js";
+import { ionMayUse, ionUseOf, type ListedTool } from "../tools/ion-use.js";
+import { type ListedResource, ServerAsks, toolList } from "../tools/server-asks.js";
 import type { RunAgent, RunServers } from "../tools/run-servers.js";
 import { bridgesFor, type StdioSpec } from "../workspace/mcp-bridge.js";
 import { MCP_GROUPS } from "../workspace/server-groups.js";
@@ -48,18 +48,22 @@ function refusalOf(call: GateCall): string | null {
 }
 
 type Served = Upstream | LocalUpstream;
+
+/** Your servers less any named like one of the agent's own (it would reach its own by that name, past ion). */
+function withoutOwn(yours: RunServers, own: string[]): RunServers {
+  const lower = new Set(own.map((n) => n.toLowerCase()));
+  const left = yours.specs.filter((s) => lower.has(s.name.toLowerCase()));
+  for (const s of left)
+    console.warn(`ion: ions go without ${s.name}: the agent has a server of its own by that name`);
+  return { ...yours, specs: yours.specs.filter((s) => !lower.has(s.name.toLowerCase())) };
+}
 /** A call an ion's agent makes on one of your servers, as ion's gateway reads it. */
 export type IonGateCall = GateCall;
 
-const LIST_KEPT_MS = 60_000;
-
-/** The tools in a tools/list answer (only ones with a name). */
-const toolList = (r: unknown): ListedTool[] =>
-  ((r as { tools?: unknown[] } | null)?.tools ?? []).filter(
-    (x): x is ListedTool => typeof (x as ListedTool | null)?.name === "string",
-  );
 type Turn = {
   upstreams: Map<string, Served>;
+  /** The agent's own servers' names: a call to one is never let on (task review, 2026-11-21). */
+  own: string[];
   close(): Promise<void>;
   tools: Map<string, Promise<ListedTool[]>>;
 };
@@ -73,6 +77,10 @@ export type IonServersDeps = {
   judge?: Judge;
   /** Tests: a local server's stand-in (else ion's bridge runs it for the turn). */
   local?: (spec: StdioSpec) => LocalUpstream;
+  /** Told each time the judge is unsure of an ion's call (it counts toward "Auto often isn't sure about"). */
+  onUnsure?: (call: GateCall) => void;
+  /** An agent's own servers' names (it loads them itself, e.g. Grok's config.toml): ions never reach these names. */
+  ownNames?: (agent: string) => Promise<string[]>;
 };
 
 /**
@@ -83,18 +91,23 @@ export type IonServersDeps = {
  */
 export class IonServers {
   private readonly turns = new Map<string, Turn>();
-  /** What Settings listed of each server, and when. */
-  private readonly listed = new Map<string, { at: number; tools: ListedTool[] }>();
+  /** Ion's own questions to your servers (their tools, their resources). */
+  private readonly asks: ServerAsks;
 
-  constructor(private readonly d: IonServersDeps) {}
+  constructor(private readonly d: IonServersDeps) {
+    this.asks = new ServerAsks(d);
+  }
 
   /** What a turn's agent gets for your servers, and what its process may not inherit. */
   async open(
     turnId: string,
     ion: { url: string; key: string },
     takes: McpTransports,
+    own: string[] = [],
   ): Promise<{ servers: HttpMcpSpec[]; envDrop: EnvDrop }> {
-    const yours = this.d.servers ? await this.d.servers({ label: "ion", takes }).catch(() => null) : null;
+    const all = this.d.servers ? await this.d.servers({ label: "ion", takes }).catch(() => null) : null;
+    const yours = all && withoutOwn(all, own);
+    this.turns.set(turnId, { upstreams: new Map(), own, tools: new Map(), close: async () => {} });
     if (!yours || !yours.specs.length)
       return { servers: [], envDrop: { names: yours?.refs ?? [], values: [] } };
     const given = throughIon(yours, ion);
@@ -109,6 +122,7 @@ export class IonServers {
       given.upstreams.set(s.name, this.d.local ? this.d.local(s) : (bridges!.get(s.name) as LocalUpstream));
     this.turns.set(turnId, {
       upstreams: given.upstreams,
+      own,
       tools: new Map(),
       close: async () => {
         await bridges?.close();
@@ -124,11 +138,22 @@ export class IonServers {
   async forTurn(
     turnId: string,
     ion: { url: string; key: string },
-    adapter: { mcpTransports: McpTransports },
+    adapter: { id: string; mcpTransports: McpTransports },
     report: boolean,
   ): Promise<HttpMcpSpec[]> {
     if (report) return [];
-    return (await this.open(turnId, ion, adapter.mcpTransports).catch(() => null))?.servers ?? [];
+    const own = (await this.d.ownNames?.(adapter.id).catch(() => [])) ?? [];
+    return (await this.open(turnId, ion, adapter.mcpTransports, own).catch(() => null))?.servers ?? [];
+  }
+
+  /** A turn's servers through ion's gateway, and the agent's own names its hook never lets a call to. */
+  of(turnId: string): { served: string[]; own: string[] } {
+    return { served: this.names(turnId), own: this.own(turnId) };
+  }
+
+  /** The agent's own servers' names in a turn (its hook never lets a call to one on). */
+  own(turnId: string): string[] {
+    return this.turns.get(turnId)?.own ?? [];
   }
 
   /** The names of a turn's servers (its agent's own hook lets their calls through: the gateway decides them). */
@@ -157,8 +182,20 @@ export class IonServers {
     if (refused || !up) return { decision: "deny", reason: refused ?? ONLY_TOOLS };
     const tool = (await this.toolsOf(turnId, server, up)).find((t) => t.name === call.toolName);
     const entries = loadUserConfig(this.d.configFile).config.tools.ionUse;
+    if (tool) this.firstLook(entries, server, tool);
     if (!tool || !ionMayUse(entries, server, tool)) return { decision: "deny", reason: NOT_ON };
     return this.judged(call, request);
+  }
+
+  /** A tool ion sees for the first time is kept as its server labels it, so a later change turns it off for ions. */
+  private firstLook(entries: string[], server: string, tool: ListedTool): void {
+    const { seen } = ionUseOf(entries, server, [tool]);
+    if (seen.length === entries.length) return;
+    const file = this.d.configFile;
+    const { config, error } = loadUserConfig(file);
+    if (error) return;
+    const ionUse = ionUseOf(config.tools.ionUse, server, [tool]).seen;
+    saveUserConfig(file, { ...config, tools: { ...config.tools, ionUse } });
   }
 
   /** The judge's word on whether the call only reads: yes allows; no or unsure starts a thread. */
@@ -170,7 +207,10 @@ export class IonServers {
       req: { requestId: "ion", toolId: "ion", ...call },
       onlyReads: true,
     });
-    if (v.verdict === "allow" && v.decided !== false) return { decision: "allow" };
+    if (v.decided === false)
+      return { decision: "deny", reason: "ion couldn't decide, so I'll start a thread" };
+    if (v.verdict === "allow") return { decision: "allow" };
+    if (v.verdict === "unsure") this.d.onUnsure?.(call);
     if (v.verdict === "unsure")
       return {
         decision: "deny",
@@ -179,40 +219,14 @@ export class IonServers {
     return { decision: "deny", reason: WRITES };
   }
 
-  /**
-   * A server's tools for Settings (only one that's on): started just to ask (a local one in its own folder, stopped
-   * after), kept for a minute. A plain line when it can't be listed.
-   */
-  async listTools(name: string): Promise<ListedTool[] | string> {
-    const kept = this.listed.get(name);
-    if (kept && kept.at > Date.now() - LIST_KEPT_MS) return kept.tools;
-    const yours = this.d.servers
-      ? await this.d.servers({ label: "ion", takes: { http: true } }).catch(() => null)
-      : null;
-    const spec = yours?.specs.find((s) => s.name === name);
-    if (!yours || !spec) return "Turn it on to see its tools";
-    const { up, bridges } = this.reach(spec, yours.fresh[name]);
-    try {
-      const tools = toolList(await askServer(up, "tools/list"));
-      this.listed.set(name, { at: Date.now(), tools });
-      return tools;
-    } catch {
-      return `ion couldn't reach ${name}`;
-    } finally {
-      await bridges?.close();
-    }
+  /** A server's tools for Settings (only one that's on), or a plain line why they can't be listed. */
+  listTools(name: string): Promise<ListedTool[] | string> {
+    return this.asks.tools(name);
   }
 
-  /** One server, reached just to ask it (a local one in its own folder, closed by the caller). */
-  private reach(spec: RunServers["specs"][number], fresh?: () => Promise<string | null>) {
-    if (spec.transport === "http") return { up: upstreamOf(spec, fresh) as Served, bridges: null };
-    if (this.d.local) return { up: this.d.local(spec) as Served, bridges: null };
-    const bridges = bridgesFor([spec], {
-      folder: join(this.d.dataDir, MCP_RUN, `list-${randomUUID()}`),
-      stopped: () => {},
-      groups: join(this.d.dataDir, MCP_GROUPS),
-    });
-    return { up: bridges.get(spec.name) as Served, bridges };
+  /** A server's resources for "@" (servers ion runs). */
+  listResources(name: string): Promise<ListedResource[]> {
+    return this.asks.resources(name);
   }
 
   /** A server's tools as it lists them now (once per turn). */

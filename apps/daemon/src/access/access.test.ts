@@ -262,6 +262,7 @@ describe("judge", () => {
   it("names a script outside the project without showing it", () => {
     const wary = { reason: "it runs a file", scripts: [{ file: "/Users/me/x.sh" }], decoded: [] };
     const p = judgePrompt({ projectId: "app", text: "x", req: cmd("bash /Users/me/x.sh"), wary });
+    expect(p).toContain("what it does isn't shown; if that decides it, say unsure");
     expect(p).toMatch(/source="a script outside the project, not shown">\n\/Users\/me\/x\.sh\n/);
   });
 
@@ -328,6 +329,15 @@ describe("the judge can say unsure", () => {
     const p = judgePrompt({ projectId: "app", text: "x", req: cmd("make") });
     expect(p).toContain('{"verdict": "allow" or "deny" or "unsure"');
     expect(p).toContain("unsure only when you're missing information to judge");
+    // Task review, 2026-11-21: unsure is defined before the deny list, with two short examples.
+    expect(p.indexOf("Say unsure")).toBeLessThan(p.indexOf("Deny anything"));
+    expect(p).toContain("a script you can't see");
+  });
+
+  // Task review, 2026-11-21: what you picked with "/" is told to the judge in ion's words, never as yours.
+  it("tells the judge the skills you picked, as ion's line", () => {
+    const p = judgePrompt({ projectId: "app", text: "x", req: cmd("make"), picked: ["pdf"] });
+    expect(p).toContain('From ion: the user picked the "pdf" skill for this message.');
   });
 
   it("an old allow/deny answer still parses", () => {

@@ -672,3 +672,43 @@ describe("the judge can say unsure", () => {
     expect(recorded.at(-1)).toMatchObject({ judge: "deny" });
   });
 });
+
+// Task review, 2026-11-21: a judge that couldn't decide (failed, slow) is asked as "ion couldn't decide", with no judge
+// verdict recorded; ion's guess asked after the judge's no records what the judge said; picks reach the judge.
+describe("what the judge said, recorded", () => {
+  const rig = (
+    judge: () => Promise<{ verdict: "allow" | "deny" | "unsure"; reason: string; decided?: false }>,
+  ) => {
+    const asked: Record<string, unknown>[] = [];
+    const recorded: Record<string, unknown>[] = [];
+    const rec = {
+      append: (e: { data: Record<string, unknown> }) => recorded.push(e.data),
+    } as unknown as EventStore;
+    const askBlocked = {
+      ask: async (_r: AskingRun, b: Record<string, unknown>) => {
+        asked.push(b);
+        return "deny" as const;
+      },
+      allowed: () => false,
+    };
+    const a = new Approvals(rec, createAccess({ judge, ...own }), () => true, { own, askBlocked });
+    return { a, asked, recorded };
+  };
+  it("a judge that couldn't decide asks as ion couldn't decide, and records no verdict", async () => {
+    const { a, asked, recorded } = rig(async () => ({
+      verdict: "deny",
+      reason: "ion couldn't decide in time",
+      decided: false,
+    }));
+    await a.gate(run("auto"), cmd("curl https://example.com"), [wt]);
+    expect(asked[0]).toMatchObject({ undecided: true });
+    expect(recorded.at(-1)).not.toHaveProperty("judge");
+  });
+  it("ion's guess asked after the judge's unsure records it", async () => {
+    const t = mkdtempSync(join(tmpdir(), "ion-wt-"));
+    writeFileSync(join(t, "drop.sh"), "unset ION_RUN_KEY\n");
+    const { a, recorded } = rig(async () => ({ verdict: "unsure", reason: "can't tell" }));
+    await a.gate(run("auto"), cmd("bash drop.sh"), [t]);
+    expect(recorded.at(-1)).toMatchObject({ judge: "unsure" });
+  });
+});

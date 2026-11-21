@@ -135,6 +135,8 @@ export interface HarnessAdapter {
   ownTrust?: true;
   /** How it takes what you picked with "/" (picks.ts): "slash", it runs `/command` itself. Absent: "tell". */
   picks?: PickStyle;
+  /** It reads an MCP server's resources (so "@" lists them for it). */
+  mcpResources?: true;
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

@@ -52,6 +52,8 @@ type Launch = {
   request: string;
   /** This run's skills plugin (ion's data folder), when its agent takes skills from ion and some are on. */
   pluginDir?: string;
+  /** The skills you picked with "/" (the judge is told, in ion's words). */
+  picked?: string[];
   // & your MCP servers for this run, read at its start (its retries keep them, whatever changes meanwhile): what
   // its agent is given, what ion's gateway serves (local ones ion runs, stopped when it ends), and what the agent's
   // process may not inherit from ion's environment (your keys' names and values); its agent's own tools ("Use its own
@@ -198,7 +200,10 @@ export class RunManager {
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
     // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
     const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };
-    return { h, args: a, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
+    const l = { h, args: a, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
+    // The judge is told what you picked, in ion's words.
+    const picked = shownPicks(picks).skills;
+    return picked ? { ...l, picked } : l;
   }
 
   /**

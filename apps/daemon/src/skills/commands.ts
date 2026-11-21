@@ -10,7 +10,11 @@ import { readPlugins } from "../tools/plugins.js";
  * its config's `command`), Codex's custom prompts (`prompts:name`). Only read: nothing is run. `body`: the command's
  * text, for an agent that can't run it by name.
  */
-export type OwnCommand = { name: string; description: string; body: string };
+/**
+ * `runs`: the agent runs it by name in ion's chats (a plugin's for Claude Code, opencode's); else it gets the text (live,
+ * 2026-11-21: with ion's settingSources [] Claude Code doesn't load ~/.claude/commands).
+ */
+export type OwnCommand = { name: string; description: string; body: string; runs: boolean };
 
 type ReadOpts = { home: string; env: Record<string, string | undefined>; projects: string[] };
 
@@ -43,7 +47,7 @@ function parse(md: string): { description: string; body: string } {
 }
 
 /** The `.md` files in a folder, as commands named by their file (with a prefix). */
-function folder(dir: string, prefix = ""): OwnCommand[] {
+function folder(dir: string, runs: boolean, prefix = ""): OwnCommand[] {
   let names: string[] = [];
   try {
     names = readdirSync(dir)
@@ -57,7 +61,7 @@ function folder(dir: string, prefix = ""): OwnCommand[] {
     try {
       const file = join(dir, n);
       if (!NAME.test(name) || !statSync(file).isFile() || statSync(file).size > MAX_FILE) return [];
-      return [{ name, ...parse(readFileSync(file, "utf8")) }];
+      return [{ name, ...parse(readFileSync(file, "utf8")), runs }];
     } catch {
       return [];
     }
@@ -68,15 +72,15 @@ function folder(dir: string, prefix = ""): OwnCommand[] {
 function claude(o: ReadOpts): OwnCommand[] {
   const plugins = readPlugins(o).filter((p) => p.agent === "claude-code" && p.path);
   return [
-    ...folder(join(o.home, ".claude", "commands")),
-    ...plugins.flatMap((p) => folder(join(p.path!, "commands"), `${p.name}:`)),
+    ...folder(join(o.home, ".claude", "commands"), false),
+    ...plugins.flatMap((p) => folder(join(p.path!, "commands"), true, `${p.name}:`)),
   ];
 }
 
 /** opencode's: its command folders, then its config's `command` table. */
 function opencode(o: ReadOpts): OwnCommand[] {
   const dir = join(o.env.XDG_CONFIG_HOME || join(o.home, ".config"), "opencode");
-  const files = [...folder(join(dir, "command")), ...folder(join(dir, "commands"))];
+  const files = [...folder(join(dir, "command"), true), ...folder(join(dir, "commands"), true)];
   const table = ["opencode.json", "opencode.jsonc", "config.json"]
     .map((f) => readFile(join(dir, f)))
     .find(isObj)?.command;
@@ -88,6 +92,7 @@ function opencode(o: ReadOpts): OwnCommand[] {
                 name,
                 description: clean(String(v.description ?? ""), 200),
                 body: v.template.slice(0, MAX_FILE),
+                runs: true,
               },
             ]
           : [],
@@ -98,7 +103,7 @@ function opencode(o: ReadOpts): OwnCommand[] {
 
 /** Codex's custom prompts (`/prompts:name` in Codex). */
 const codex = (o: ReadOpts) =>
-  folder(join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts"), "prompts:");
+  folder(join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts"), false, "prompts:");
 
 const BY_AGENT: Record<string, (o: ReadOpts) => OwnCommand[]> = { "claude-code": claude, opencode, codex };
 

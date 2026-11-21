@@ -79,6 +79,9 @@ export function skillReaders(): Record<string, { fromIon: boolean; own: SkillWho
 /** How an agent takes what you picked with "/" (its adapter says; "tell" for one that doesn't). */
 export const pickStyle = (id: string): PickStyle => getHarness(id)?.adapter.picks ?? "tell";
 
+/** Whether an agent reads MCP resources (its adapter says): "@" lists them only for one that does. */
+export const takesResources = (id: string): boolean => getHarness(id)?.adapter.mcpResources === true;
+
 /** Whether ion passes skills to this agent (a plugin folder per run). */
 export const takesSkills = (id: string): boolean => SKILLS.has(id);
 

@@ -274,7 +274,7 @@ enabled plugins' `commands/` as `plugin:name`; opencode: `~/.config/opencode/com
 `command` table; Codex: custom prompts in `~/.codex/prompts` as `prompts:name`; Grok: none found that ion can read),
 then the skills that agent loads itself (Settings' `readers`), then ion's skills that are on. "@" lists the agent's own
 servers (its switch on; a repo's once it's on or asks in the chat) and your mcp.json servers that are on. Resources:
-not listed yet (servers by name only); a server's resources would need it started just to list them.
+listed for servers ion runs (below).
 
 How a pick reaches the agent (`withPicks`, adapter-kit; each adapter says its `picks` style):
 
@@ -284,7 +284,23 @@ How a pick reaches the agent (`withPicks`, adapter-kit; each adapter says its `p
 | opencode (`slash`) | `/name …` leads the prompt (its ACP agent runs listed commands) | "Use the <name> skill." (its skill tool) | SKILL.md body as labelled data |
 | Codex, Grok (`tell`) | the command's text as labelled data ("Do what the <name> command says") | "Use the <name> skill." | SKILL.md body as labelled data |
 
-Only one command can lead a prompt; others go as text. A server pick is "Use the <name> connection's tools." The chat
+Only one command can lead a prompt; others go as text.
+
+Checked live on Claude Code (haiku, 2026-11-21, ion's options: `settingSources: []`, a plugin folder): `/kit:plugping`
+from a plugin's `commands/` ran ("PLUGIN COMMAND RAN"); `/projping` from the project's `.claude/commands` didn't ("isn't
+installed in this session"). Settings-folder commands (`~/.claude/commands`, a project's) load only with a setting
+source, so ion sends them as their text (`runs: false`, the tell path); plugin commands (ion's copy of your plugins)
+go by name.
+
+"@" resources: for servers ion runs (your mcp.json servers that are on), ion asks `resources/list` (started just to
+ask, kept a minute; names cleaned, at most 50 per server); a pick is the mention "<server> resource <uri>", which the
+agent gets as "Read the <server> resource <uri>.". An agent's own servers: by name only. Only for an agent that reads resources
+(`mcpResources`: Claude Code). Live on Grok (2026-11-21): given a resource mention it found no way to read MCP resources
+and searched the web, so Grok and opencode get servers by name only; ions' "@" lists servers only.
+
+Ions and an agent's own servers (task review, 2026-11-21): Grok loads its config.toml servers whatever ion passes, so an
+ion's turn leaves out any of your servers named like one of that agent's own (said in the daemon's log), and its hook
+never lets on a call to an own server's name (or a name that could be one, by the `server__` prefix). A server pick is "Use the <name> connection's tools." The chat
 shows your words with the picks as chips (`message.sent.skills/mentions`); the judge reads only your words. Not yet
 checked live on each agent: whether opencode's ACP runs `/name` from a prompt (its TUI does), and whether Codex's
 app-server expands `/prompts:` (it doesn't in our reading, so ion sends the text).

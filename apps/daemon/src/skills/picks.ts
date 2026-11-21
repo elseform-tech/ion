@@ -2,7 +2,7 @@ import { type PickedSkill, type Picks as RunPicks, type PickStyle, withPicks } f
 
 export type { RunPicks };
 import type { PickInfo, Picks, SkillInfo } from "@ion/schema";
-import { pickStyle } from "../adapters/registry.js";
+import { pickStyle, takesResources } from "../adapters/registry.js";
 import type { OwnCommand } from "./commands.js";
 
 /**
@@ -17,7 +17,12 @@ export type PickSource = {
   commands: OwnCommand[];
   servers: { name: string; on: boolean }[];
   own: { name: string }[];
+  /** The resources of servers ion runs, by server (task review, 2026-11-21: "@" lists them). */
+  resources?: Record<string, { name: string; uri: string }[]>;
 };
+
+/** Whether "@" lists servers' resources for this agent: only one that reads them (live, 2026-11-21: Grok can't). */
+export const readsResources = (agent: string): boolean => takesResources(agent);
 
 /** How a skill reaches an agent: it loads it itself ("own"), ion passes it ("ion"), or ion gives its text ("text"). */
 function reach(s: SkillInfo, agent: string): "own" | "ion" | "text" | null {
@@ -61,21 +66,34 @@ export function chatPicks(agent: string, at: Omit<PickSource, "bodyOf">): Picks 
       ...at.commands.map((c) => row(c.name, c.description, "command", "own")),
       ...ordered.map(({ s, from }) => row(s.name, s.description, "skill", from)),
     ],
-    servers: [
-      ...at.own.map((s) => row(s.name, "", "server", "own")),
-      ...at.servers.filter((s) => s.on).map((s) => row(s.name, "", "server", "ion")),
-    ],
+    servers: [...at.own.map((s) => row(s.name, "", "server", "own")), ...servedRows(at)],
   };
 }
 
+/** Your servers that are on, each followed by its resources (ion runs them, so it can list them). */
+function servedRows(at: Pick<PickSource, "servers" | "resources">): PickInfo[] {
+  return at.servers
+    .filter((s) => s.on)
+    .flatMap((s) => [
+      row(s.name, "", "server", "ion"),
+      ...(at.resources?.[s.name] ?? []).map((r) => ({
+        ...row(r.name, r.uri, "resource", "ion"),
+        ...{ server: s.name, uri: r.uri },
+      })),
+    ]);
+}
+
+/** A mention as the agent gets it: a server's name, or "<server> resource <uri>". */
+const mentionOf = (p: PickInfo) => (p.kind === "resource" ? `${p.server} resource ${p.uri}` : p.name);
+
 /** An ion's chat: every skill that's on (it reads them, or names them for a thread), and the servers that are on. */
-export function ionPicks(at: Pick<PickSource, "skills" | "servers">): Picks {
+export function ionPicks(at: Pick<PickSource, "skills" | "servers" | "resources">): Picks {
   const on = at.skills.filter((s) => s.on && !ambiguous(at.skills, s.name));
   return {
     skills: on
       .filter((s, i) => on.findIndex((x) => x.name === s.name) === i)
       .map((s) => row(s.name, s.description, "skill", s.own ? "own" : "ion")),
-    servers: at.servers.filter((s) => s.on).map((s) => row(s.name, "", "server", "ion")),
+    servers: servedRows(at),
   };
 }
 
@@ -89,16 +107,19 @@ export function resolvePicks(
   names: { skills?: string[]; mentions?: string[] },
 ): { skills: PickedSkill[]; mentions: string[] } {
   const slash = pickStyle(agent) === "slash";
-  const skills = (names.skills ?? []).flatMap((n): PickedSkill[] => {
+  const picked = Array.isArray(names.skills) ? names.skills.filter((n) => typeof n === "string") : [];
+  const skills = picked.flatMap((n): PickedSkill[] => {
     const c = at.commands.find((x) => x.name === n);
-    if (c) return [slash ? { name: n, kind: "command" } : { name: n, kind: "command", body: c.body }];
+    if (c)
+      return [slash && c.runs ? { name: n, kind: "command" } : { name: n, kind: "command", body: c.body }];
     const s = ambiguous(at.skills, n) ? undefined : at.skills.find((x) => x.name === n && reach(x, agent));
     if (!s) return [];
     const body = reach(s, agent) === "text" ? at.bodyOf(s) : null;
     return [body ? { name: n, kind: "skill", body } : { name: n, kind: "skill" }];
   });
-  const servers = chatPicks(agent, { ...at, commands: [] }).servers.map((s) => s.name);
-  return { skills, mentions: (names.mentions ?? []).filter((m) => servers.includes(m)) };
+  const servers = chatPicks(agent, { ...at, commands: [] }).servers.map(mentionOf);
+  const mentions = Array.isArray(names.mentions) ? names.mentions.filter((m) => typeof m === "string") : [];
+  return { skills, mentions: mentions.filter((m) => servers.includes(m)) };
 }
 
 /**
@@ -111,7 +132,8 @@ export async function picksOfRun(
   names: { skills?: string[]; mentions?: string[] },
   projectId?: string | null,
 ): Promise<RunPicks | undefined> {
-  if (!names.skills?.length && !names.mentions?.length) return undefined;
+  const any = (v: unknown) => Array.isArray(v) && v.length > 0;
+  if (!any(names.skills) && !any(names.mentions)) return undefined;
   const at = await source?.(agent, projectId ?? "").catch(() => undefined);
   return at ? resolvePicks(agent, at, names) : undefined;
 }
