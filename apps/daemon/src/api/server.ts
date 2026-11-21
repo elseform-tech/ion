@@ -44,6 +44,7 @@ import { createVault } from "../secrets/vault.js";
 import { Hooks } from "../hooks/index.js";
 import { createSkills, ionSkillsDir, type Skills } from "../skills/index.js";
 import { runSkillsOf } from "../skills/run.js";
+import { runOwnOf } from "../tools/own-run.js";
 import { skillReaders } from "../adapters/registry.js";
 
 /** The scope of a run that ion asks you about. */
@@ -300,9 +301,13 @@ function connectionsOf(
   // Your keys, as filling reads them (keychain, then ion's environment), for what no agent may inherit.
   setDropLookup(tools.lookup);
   const skills = skillsOf(opts, tools);
-  const runSkills = runSkillsOf(skills, opts.configFile);
+  // What a chat's run gets besides your servers: your skills, and its agent's own tools.
+  const forRuns = {
+    skills: runSkillsOf(skills, opts.configFile),
+    own: runOwnOf({ home: skills.home, dataDir: opts.dataDir, configFile: opts.configFile }),
+  };
   const ionBin = ionLauncher(opts.dataDir);
-  return { tools, oauth: oauthOf(tools, store, opts.net), skills, runSkills, cli: cliOf(opts), ionBin };
+  return { tools, oauth: oauthOf(tools, store, opts.net), skills, forRuns, cli: cliOf(opts), ionBin };
 }
 
 /**
@@ -349,7 +354,7 @@ function openState(
   base: () => string,
 ): { ctx: Ctx; turns: IonTurns } {
   const { db, store } = openStore(opts.dataDir);
-  const { tools, oauth, skills, runSkills, cli, ionBin } = connectionsOf(opts, store);
+  const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   const quick = harnessRunner(opts.configFile);
@@ -363,7 +368,7 @@ function openState(
   const hooks = startHooks(store, db, opts.configFile, tools);
   const runCtx = {
     ...{ configFile: opts.configFile, dataDir: opts.dataDir, access, ionBin },
-    ...{ servers: serversFor({ tools, oauth, configFile: opts.configFile }), skills: runSkills },
+    ...{ servers: serversFor({ tools, oauth, configFile: opts.configFile }), ...forRuns },
     beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => hooks.beforeTool(r, c),
     mcp: { grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },

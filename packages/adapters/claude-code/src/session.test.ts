@@ -222,6 +222,107 @@ describe("claude-code session", () => {
     expect(calls[0]!.options).toMatchObject({ strictMcpConfig: true, settingSources: [] });
   });
 
+  // The user, 2026-11-21: "user would like to use the skills, mcp, or plugins that is already in the harness … Hooks
+  // probably should stay". Claude Code still loads no settings files (its permission rules and hooks stay out); its own
+  // servers and plugins, read by ion, are passed explicitly, keys in the environment, never on the command line.
+  it("Claude Code gets its own servers, skills and plugins, not its permission rules or hooks", async () => {
+    const calls: FakeQueryCall[] = [];
+    const start = (ownTools: boolean) =>
+      make(calls).start({
+        cwd,
+        model: null,
+        effort: null,
+        mcpServers: [{ name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} }],
+        ownTools,
+        ownServers: [
+          {
+            name: "github",
+            transport: "stdio",
+            command: "npx",
+            args: ["-y", "gh-mcp", "--token=argkey"],
+            env: { GITHUB_TOKEN: "ghp_secret" },
+          },
+          {
+            name: "docs",
+            transport: "http",
+            url: "https://docs.example/mcp",
+            headers: { "X-Key": "hdrkey" },
+          },
+        ],
+        ownPlugins: ["/data/own/r1/superpowers"],
+        pluginDir: "/data/skills/r1",
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+    await (await start(true)).close();
+    const o = calls.at(-1)!.options as {
+      mcpServers: Record<string, unknown>;
+      env: Record<string, string>;
+      plugins: unknown[];
+    };
+    expect(o).toMatchObject({ strictMcpConfig: true, settingSources: [], permissionMode: "default" });
+    expect(o.mcpServers.github).toEqual({
+      type: "stdio",
+      command: "npx",
+      args: ["${ION_MCP_A0}", "${ION_MCP_A1}", "${ION_MCP_A2}"],
+      env: { GITHUB_TOKEN: "${ION_MCP_E0}" },
+    });
+    expect(o.mcpServers.docs).toEqual({
+      type: "http",
+      url: "${ION_MCP_U1}",
+      headers: { "X-Key": "${ION_MCP_H0}" },
+    });
+    for (const secret of ["argkey", "ghp_secret", "hdrkey"])
+      expect(JSON.stringify(o.mcpServers)).not.toContain(secret);
+    expect(o.env).toMatchObject({
+      ION_MCP_A2: "--token=argkey",
+      ION_MCP_E0: "ghp_secret",
+      ION_MCP_H0: "hdrkey",
+    });
+    expect(o.plugins).toEqual([
+      { type: "local", path: "/data/skills/r1", skipMcpDiscovery: true },
+      { type: "local", path: "/data/own/r1/superpowers", skipMcpDiscovery: true },
+    ]);
+    // "Use its own tools" off: ion's tools only, as before.
+    await (await start(false)).close();
+    const off = calls.at(-1)!.options as { mcpServers: Record<string, unknown>; plugins: unknown[] };
+    expect(Object.keys(off.mcpServers)).toEqual(["ion"]);
+    expect(off.plugins).toEqual([{ type: "local", path: "/data/skills/r1", skipMcpDiscovery: true }]);
+  });
+
+  // The user, 2026-11-21: ion's gate still judges every call, an agent's own tools' too.
+  it("an agent's own tool call is judged by ion (Claude Code)", async () => {
+    const calls: FakeQueryCall[] = [];
+    const asked: { toolName: string; mcpServer?: string | null }[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      ownTools: true,
+      ownServers: [{ name: "github", transport: "stdio", command: "gh-mcp", args: [], env: {} }],
+      signal: new AbortController().signal,
+      decide: async (r) => {
+        asked.push(r);
+        return "deny";
+      },
+    });
+    const canUseTool = calls.at(-1)!.options.canUseTool!;
+    const r = await canUseTool(
+      "mcp__github__create_issue",
+      { title: "x" },
+      {
+        signal: new AbortController().signal,
+        toolUseID: "tu9",
+        requestId: "rq9",
+      },
+    );
+    await s.close();
+    expect(asked).toMatchObject([
+      { toolName: "mcp__github__create_issue", mcpServer: "github", kind: "mcp" },
+    ]);
+    expect(r.behavior).toBe("deny");
+  });
+
   // Regression (security review): a repo's CLAUDE.md symlinked to a secret must never reach the model.
   it("ignores a CLAUDE.md that is a symlink, and caps a large one", async () => {
     const { writeFileSync, symlinkSync, mkdtempSync: mk } = await import("node:fs");

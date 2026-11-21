@@ -72,6 +72,7 @@ export function createAcpAdapter(
     capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps.startTimeoutMs)),
     mcpTransports: { http: h.mcpHttp ?? true },
     ...(h.ownTools ? { ownTools: true as const } : {}),
+    ...(h.ownHooks ? { ownHooks: true as const } : {}),
     async start(opts) {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);

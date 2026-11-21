@@ -15,7 +15,14 @@ import { type HookTrust, hookArgs, hookCommand } from "./gate.js";
 
 /** How to start Codex: its binary, and anything before ion's own arguments (tests run a script with Node). */
 /** `envDrop`: what a chat's Codex may not inherit from ion's environment (your keys). */
-export type Launch = { bin: string; prefix: string[]; timeoutMs: number; envDrop?: EnvDrop };
+/** `ownTools`: Codex brings its own servers and plugins (a chat with "Use its own tools" on); its hooks stay off. */
+export type Launch = {
+  bin: string;
+  prefix: string[];
+  timeoutMs: number;
+  envDrop?: EnvDrop;
+  ownTools?: boolean;
+};
 
 export type Connection = {
   child: ChildProcessByStdio<Writable, Readable, null>;
@@ -32,12 +39,12 @@ type Io = Pick<Connection, "child" | "rpc">;
  * Always, under ion: no background memory agent (it runs tools of its own, outside the chat) and no question card
  * (nobody can answer it headless; agents ask through ion's ask tool).
  */
-const BASE_ARGS = [
-  ...["-c", "features.memories=false", "-c", "features.default_mode_request_user_input=false"],
-  // The user, 2026-11-21: only ion's tools in ion's chats. Codex's plugins (their servers, hooks and skills) stay
-  // Codex's own.
-  ...["-c", "features.plugins=false"],
-];
+const BASE_ARGS = ["-c", "features.memories=false", "-c", "features.default_mode_request_user_input=false"];
+/**
+ * "Use its own tools" off: ion's tools only, so Codex's plugins (their servers and skills) stay Codex's own. On (the
+ * user, 2026-11-21), they load; their hooks are turned off with Codex's others (withGate).
+ */
+const baseArgs = (l: Launch) => [...BASE_ARGS, ...(l.ownTools ? [] : ["-c", "features.plugins=false"])];
 
 export const SIGNED_OUT = "Codex isn't signed in. Run: codex login";
 
@@ -45,7 +52,7 @@ export const SIGNED_OUT = "Codex isn't signed in. Run: codex login";
 class NotResponding extends Error {}
 
 function spawnAppServer(l: Launch, args: string[], env: Record<string, string>): Io {
-  const child = spawn(l.bin, [...l.prefix, ...BASE_ARGS, ...args, "app-server"], {
+  const child = spawn(l.bin, [...l.prefix, ...baseArgs(l), ...args, "app-server"], {
     stdio: ["pipe", "pipe", "ignore"],
     env: { ...agentEnv(process.env, l.envDrop), ...env },
   });
@@ -175,7 +182,10 @@ function mcpConfig(servers: StartOpts["mcpServers"] = [], own: string[] = []): R
  * them all off, so when it can't say (config/read fails), a chat doesn't start (task review, 2026-11-21: it quietly
  * ran with your own servers); ion's judge (bare, read-only) goes on with none named.
  */
-async function ownServers(rpc: Rpc, cwd: string, bare: boolean): Promise<string[]> {
+async function ownServers(rpc: Rpc, opts: StartOpts): Promise<string[]> {
+  // Codex brings its own: none turned off, nothing to read.
+  if (opts.ownTools) return [];
+  const { cwd, bare } = opts;
   const r = (await rpc.request("config/read", { cwd }).catch(() => null)) as {
     config?: { mcp_servers?: unknown };
   } | null;
@@ -205,7 +215,7 @@ function threadParams(opts: StartOpts, own: string[]): Record<string, unknown> {
 }
 
 async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string; model: string }> {
-  const params = threadParams(opts, await ownServers(rpc, opts.cwd, !!opts.bare));
+  const params = threadParams(opts, await ownServers(rpc, opts));
   let r: { thread?: { id?: unknown }; model?: unknown };
   try {
     r = (await (opts.resume
@@ -224,7 +234,11 @@ async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string
 
 /** Starts Codex's app-server in the chat's folder (with ion's gate when the run has one) and opens a thread. */
 export async function connect(l0: Launch, opts: StartOpts): Promise<Connection> {
-  const l: Launch = { ...l0, ...(opts.envDrop ? { envDrop: opts.envDrop } : {}) };
+  const l: Launch = {
+    ...l0,
+    ...(opts.envDrop ? { envDrop: opts.envDrop } : {}),
+    ...(opts.ownTools ? { ownTools: true } : {}),
+  };
   const env: Record<string, string> = { ...opts.env, ...(opts.gate ? { ION_GATE_URL: opts.gate.url } : {}) };
   const io = opts.gate ? await withGate(l, opts.cwd, env) : spawnAppServer(l, [], env);
   return within(l, io, async () => {

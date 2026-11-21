@@ -102,7 +102,11 @@ interface Loose {
 
 const gate = (home: string) => ({ url: "http://127.0.0.1:1/gate/k", cwd: home });
 /** opencode's env for a run in this home, and the config file ion wrote for it. */
-function started(h: ReturnType<typeof opencodeHome>, more: Record<string, string | undefined> = {}) {
+function started(
+  h: ReturnType<typeof opencodeHome>,
+  more: Record<string, string | undefined> = {},
+  own?: boolean,
+) {
   const vars = {
     HOME: h.home,
     XDG_CONFIG_HOME: h.xdg,
@@ -110,7 +114,7 @@ function started(h: ReturnType<typeof opencodeHome>, more: Record<string, string
     OPENCODE_CONFIG_CONTENT: undefined,
     ION_HOME: undefined,
   };
-  const env = withEnv({ ...vars, ...more }, () => OPENCODE.env?.(gate(h.home)) ?? {});
+  const env = withEnv({ ...vars, ...more }, () => OPENCODE.env?.(gate(h.home), own) ?? {});
   const file = join(env.XDG_CONFIG_HOME ?? "", "opencode", "opencode.json");
   return { env, file, config: JSON.parse(readFileSync(file, "utf8")) as Loose };
 }
@@ -243,5 +247,72 @@ describe("only ion's tools in ion's chats", () => {
       expect(env[`GROK_${k}_ENABLED`]).toBe("false");
     expect(GROK_BUILD.ownTools).toBe(true);
     expect(OPENCODE.ownTools).toBe(true);
+  });
+});
+
+// The user, 2026-11-21: "since grok build and opencode can't turn their own servers and plugins off, then i don't see
+// the point of disabling … Hooks probably should stay as these would need to be consistent." With "Use its own
+// tools" on, each agent brings its own; ion's gate stays.
+describe("agents bring their own tools", () => {
+  it("opencode carries the user's mcp and plugins, and ion's gate plugin stays", () => {
+    const h = opencodeHome();
+    const dir = join(h.xdg, "opencode");
+    mkdirSync(join(dir, "plugin"));
+    writeFileSync(join(dir, "plugin", "notify.js"), "export const N = async () => ({})");
+    writeFileSync(
+      join(dir, "opencode.json"),
+      JSON.stringify({ command: { ship: { template: "ship it" } }, plugin: ["oc-thing", "./local.js"] }),
+    );
+    const { env, config } = started(h, {}, true);
+    // A folder of its own, so a chat with its own tools and ion's judge never rewrite each other's file.
+    expect(env.XDG_CONFIG_HOME).toBe(join(h.cache, "ion", "opencode", "default-own"));
+    expect(config.plugin).toEqual([
+      OPENCODE_PLUGIN,
+      "oc-thing",
+      `file://${join(dir, "local.js")}`,
+      "file:///somewhere/mine.js",
+      `file://${join(dir, "plugin", "notify.js")}`,
+    ]);
+    expect(config.mcp).toEqual({
+      everything: { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-everything"] },
+    });
+    expect(config.command.ship).toEqual({ template: "ship it" });
+    expect(config.agent.review.prompt).toBe(`{file:${join(dir, "prompts", "review.md")}}`);
+    expect(config.instructions).toEqual([join(dir, "rules.md"), "/abs/other.md"]);
+    expect(config.permission).toMatchObject({ edit: "ask", bash: "ask", webfetch: "ask" });
+    expect(env.ION_GATE_URL).toBe("http://127.0.0.1:1/gate/k");
+  });
+
+  it("Use its own tools off brings back ion's tools only (opencode)", () => {
+    const h = opencodeHome();
+    const { config, env } = started(h, {}, false);
+    expect(env.XDG_CONFIG_HOME).toBe(join(h.cache, "ion", "opencode", "default"));
+    expect(config.plugin).toEqual([OPENCODE_PLUGIN]);
+    expect(config.mcp).toEqual({ legacy: { enabled: false } });
+  });
+
+  it("a folder of its own takes opencode's plugin package from the other, so a first chat needn't wait", () => {
+    const h = opencodeHome();
+    const off = started(h).env.XDG_CONFIG_HOME!;
+    mkdirSync(join(off, "opencode", "node_modules", "@opencode-ai", "plugin"), { recursive: true });
+    writeFileSync(
+      join(off, "opencode", "package.json"),
+      JSON.stringify({ dependencies: { "@opencode-ai/plugin": "1" } }),
+    );
+    const own = started(h, {}, true).env.XDG_CONFIG_HOME!;
+    expect(statSync(join(own, "opencode", "node_modules", "@opencode-ai", "plugin")).isDirectory()).toBe(
+      true,
+    );
+    const hint = () => withEnv({ XDG_CACHE_HOME: h.cache }, () => OPENCODE.notResponding?.(true));
+    expect(hint()).toBeUndefined();
+  });
+
+  it("Grok keeps its own servers and skills; Claude's and Cursor's hooks stay off, and Settings says its own hooks run", () => {
+    const env = GROK_BUILD.env!(undefined, true);
+    for (const k of ["CLAUDE_MCPS", "CLAUDE_SKILLS", "CURSOR_MCPS", "CURSOR_SKILLS"])
+      expect(env[`GROK_${k}_ENABLED`]).toBeUndefined();
+    for (const k of ["CLAUDE_HOOKS", "CURSOR_HOOKS"]) expect(env[`GROK_${k}_ENABLED`]).toBe("false");
+    expect(GROK_BUILD.ownHooks).toBe(true);
+    expect(OPENCODE.ownHooks).toBe(true);
   });
 });

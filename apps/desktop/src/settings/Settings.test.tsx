@@ -18,6 +18,7 @@ const grok: HarnessInfo = {
   ],
   defaultModel: "grok-code",
   ownTools: true,
+  ownHooks: true,
 };
 const claude: HarnessInfo = {
   id: "claude-code",
@@ -81,11 +82,19 @@ const activity = {
   yesterday: [],
 };
 
-function client(o: { projects?: ProjectInfo[]; fail?: string[]; problem?: string } = {}) {
+function client(
+  o: { projects?: ProjectInfo[]; fail?: string[]; problem?: string; own?: Record<string, boolean> } = {},
+) {
   const call = vi.fn(async (cmd: string) => {
     if (o.fail?.includes(cmd)) throw new ApiCallError("invalid", "Fix your config first.");
     if (cmd === "harnesses.list") return [claude, grok];
-    if (cmd === "settings.get") return { quick: "grok-build", effort: null, problem: o.problem };
+    if (cmd === "settings.get")
+      return {
+        quick: "grok-build",
+        effort: null,
+        problem: o.problem,
+        ownTools: o.own ?? { "claude-code": true, "grok-build": true },
+      };
     if (cmd === "ions.list") return ions;
     if (cmd === "projects.list") return o.projects ?? projects;
     if (cmd === "activity.list") return activity;
@@ -126,14 +135,32 @@ describe("Settings", () => {
   });
 
   // The user, 2026-11-21: "Only ion's, plus Import". Grok has no switch for its own servers, hooks and plugins, so
-  // Settings says it also loads its own; the others load only ion's.
+  // with "Use its own tools" off Settings says it also loads its own; the others load only ion's.
   it("says which agent also loads its own servers and hooks", async () => {
-    render(<Settings client={client()} onOpenIon={() => {}} />);
+    render(
+      <Settings
+        client={client({ own: { "claude-code": false, "grok-build": false } })}
+        onOpenIon={() => {}}
+      />,
+    );
     const rows = await screen.findAllByText(/^(Claude Code|Grok Build)$/);
     expect(rows).toHaveLength(2);
     expect(screen.getAllByText("Also loads its own")).toHaveLength(1);
     const own = screen.getByText("Also loads its own");
     expect(own.closest(".hrow")?.textContent).toContain("Grok Build");
+  });
+
+  // The user, 2026-11-21: agents bring their own servers, skills and plugins by default; each has "Use its own tools".
+  // Hooks stay ion's: an agent whose own hooks can't be turned off says so.
+  it("Use its own tools off brings back ion's tools only (the switch in Agents)", async () => {
+    const c = client();
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const sw = await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("Its own hooks run too").closest(".hrow")?.textContent).toContain("Grok Build");
+    expect(screen.queryByText("Also loads its own")).toBeNull();
+    fireEvent.click(sw);
+    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { ownTools: { "grok-build": false } } });
   });
 
   // The user, 2026-11-19: you choose how hard ion thinks.

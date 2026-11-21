@@ -25,14 +25,36 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
   agent writes there (`.npmrc`, `node_modules`, `x.py`, a relative script) runs with your keys. A server that needs the
   chat's folder names it in mcp.json: `"args": ["${ION_WORKTREE}"]` (also in `command`/`env`) is filled per run. Every
   `tools/call` is judged by its real name and input; batches are refused; only a short list of methods passes ungated.
-- **Only ion's tools in ion's chats.** Each agent's own MCP servers and hooks are switched off in ion's chats where the
-  agent allows it (see `research/acp-and-harnesses.md`, "Only ion's tools in ion's chats"). Plugins stay the agent's.
-- **Import.** Tools reads your agents' own configs (Claude Code, Codex, opencode, Grok Build) only when you open it or
-  run `ion mcp import --list`. One line names what it found ("4 servers in Claude Code, Codex and opencode"; one agent:
-  "New in Codex: sentry" later). Import shows each server's command or host and the keys it needs first; they come in
-  off, marked "Imported from <agent>". A server from a project's own file comes in only on its own. Dismiss hides the
-  line until something new appears. `ION_AGENTS_HOME` points this reading (and skills) at another folder: the tour
-  seeds a fake one so it never reads yours.
+- **Agents bring their own tools** (the user, 2026-11-21). In ion's chats each agent loads its own MCP servers, skills
+  and plugins by default, beside ion's; Settings → Agents has **Use its own tools** per agent (`agents.<id>.ownTools`
+  in config.toml, default on). Off is the old "only ion's tools" (Task 9). Hooks stay ion's: an agent's own hooks are
+  off wherever it can turn them off; where it can't (Grok's `~/.grok/hooks`, opencode's plugins, which are hook code),
+  Settings → Agents says **Its own hooks run too**. ion's gate judges every call, an agent's own tools' too, hard rules
+  first. How each agent does it: `research/acp-and-harnesses.md`, "Agents bring their own tools".
+  - Claude Code still loads no settings files (its permission rules and hooks stay out) and MCP stays strict: ion reads
+    its servers (`~/.claude.json`, this project's entry there, and the project's `.mcp.json` servers you approved in
+    Claude Code; `${VAR}` and `${VAR:-default}` filled as Claude fills them; SSE left out) and its enabled plugins
+    (`~/.claude/plugins/installed_plugins.json` and `enabledPlugins`; their servers too), and passes them. A plugin that
+    bundles hooks comes as ion's copy without them, inside the run's skills plugin folder. Its own skills come on, as
+    they are. Every value of its servers that could hold a key is in the run's redaction list, and passed in the
+    environment, never on the command line.
+  - Codex keeps its own servers and plugins (`features.plugins` stays on); its hooks are still turned off.
+  - opencode: your `mcp`, `plugin`, `agent`, `command` and `instructions` (and your config folder's plugin files) are
+    carried into ion's config file, ion's gate plugin first; a folder of its own (`<hash>-own`), so a chat and ion's
+    judge never rewrite each other's file. Its `agent/` and `command/` folders (markdown) aren't carried.
+  - Grok keeps its own servers and skills and Claude's and Cursor's it reads; only the Claude and Cursor hooks are off.
+  - ion's own turns and the judge get ion's tools only.
+- **Settings → Tools** has Connections, Skills, Plugins and Hooks. Under the tabs (Hooks stay ion's) chips filter
+  whose: All, ion, each agent. One row per thing several have (servers by name and what they run, skills by name and
+  files, plugins by name and version), every face on it; the same name set up differently is a row each, **Differs**
+  (what, on hover). An agent's own rows have no switch; one whose agent's own tools are off is dimmed, **Off in ion**.
+  Plugins say what they bring ("4 skills, 1 server") and whether their hooks run. Reading is local: nothing is run or
+  contacted.
+- **Import** (optional, quiet). Tools reads your agents' own configs (Claude Code, Codex, opencode, Grok Build) only
+  when you open it or run `ion mcp import --list`. The Import icon ("Use on every agent") shows each server's command or
+  host and the keys it needs first; they come in off, marked "Imported from <agent>", and then reach every agent. A
+  server from a project's own file comes in only on its own. `ION_AGENTS_HOME` points this reading (and skills,
+  plugins) at another folder: the tour seeds a fake one so it never reads yours.
 
 ## Hooks
 

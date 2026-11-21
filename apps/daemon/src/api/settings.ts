@@ -4,6 +4,7 @@ import { runsView } from "../views/runs.js";
 import { type EffortLevel, type ProjectPatch, type SettingsInfo, stripControl } from "@ion/schema";
 import { applyGeneral, generalOf } from "./general-settings.js";
 import { harnessIds } from "../adapters/registry.js";
+import { ownSwitches } from "../tools/own-run.js";
 import type { Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
 
@@ -94,10 +95,27 @@ function ionPatch(ion: UserConfig["ion"], quick: string | undefined, effort: Eff
   return next;
 }
 
+/** "Use its own tools" by agent, checked: an agent ion knows, on or off. */
+function ownPatch(given: Record<string, boolean> | undefined) {
+  const entries = Object.entries(given ?? {});
+  for (const [id, on] of entries) {
+    checkAgent(id);
+    if (typeof on !== "boolean") throw new UserError("Pick on or off");
+  }
+  return (agents: UserConfig["agents"]): UserConfig["agents"] => {
+    const next = { ...agents };
+    for (const [id, on] of entries) next[id] = { ...next[id], ownTools: on };
+    return next;
+  };
+}
+
 /** Every setting as your config file has it; when it doesn't load, the defaults and why. */
 function settingsOf(file: string): SettingsInfo {
   const { config: c, error } = loadUserConfig(file);
-  const settings = { quick: c.ion.quick, effort: c.ion.quickEffort ?? null, ...generalOf(c) };
+  const settings = {
+    ...{ quick: c.ion.quick, effort: c.ion.quickEffort ?? null, ...generalOf(c) },
+    ownTools: ownSwitches(c),
+  };
   return error ? { ...settings, problem: error } : settings;
 }
 
@@ -128,7 +146,12 @@ export const settingsHandlers: Pick<
     const p = a.patch ?? {};
     const quick = p.quick === undefined ? undefined : checkAgent(String(p.quick));
     if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
-    changeConfig(ctx.configFile, (c) => ({ ...applyGeneral(c, p), ion: ionPatch(c.ion, quick, p.effort) }));
+    const own = ownPatch(p.ownTools);
+    changeConfig(ctx.configFile, (c) => ({
+      ...applyGeneral(c, p),
+      ion: ionPatch(c.ion, quick, p.effort),
+      agents: own(c.agents),
+    }));
     // A higher limit lets waiting runs start now.
     ctx.runs.limitChanged();
     return settingsOf(ctx.configFile);

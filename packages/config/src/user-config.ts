@@ -155,6 +155,12 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   tools: Tools.prefault({}),
+  /**
+   * Each coding agent's own setup, by agent id. `ownTools`: whether it brings its own MCP servers, skills and plugins
+   * into ion's chats (the user, 2026-11-21: on by default); off, ion's tools only. Its own hooks never run where ion
+   * can turn them off.
+   */
+  agents: z.record(z.string(), z.looseObject({ ownTools: z.boolean().optional() })).default({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -189,7 +195,12 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["tools", "hooks"], z.array(z.unknown())],
   [["tools", "hooksOn"], z.array(z.string())],
   [["tools", "skills"], z.looseObject({ on: z.array(z.string()).optional() })],
+  [["agents"], z.looseObject({})],
 ];
+
+/** Whether this agent brings its own servers, skills and plugins into ion's chats (on unless you turned it off). */
+export const ownToolsOn = (c: Pick<UserConfig, "agents">, agent: string): boolean =>
+  c.agents?.[agent]?.ownTools !== false;
 
 /** A project's bad `notify` is dropped (its default applies); returns "<id>.notify" for each. */
 function dropBadNotify(raw: unknown): string[] {
@@ -208,6 +219,23 @@ function dropBadHooks(raw: unknown): string[] {
   const bad = tools.hooks.filter((h) => !HookTool.safeParse(h).success);
   tools.hooks = tools.hooks.filter((h) => !bad.includes(h));
   return bad.map((h, i) => `hooks.${String((h as { id?: unknown } | null)?.id ?? i)}`);
+}
+
+/** An agent's `ownTools` that isn't true or false is dropped (on applies); returns "<id>.ownTools" for each. */
+function dropBadAgents(raw: unknown): string[] {
+  const agents = (raw as { agents?: unknown } | null)?.agents;
+  if (typeof agents !== "object" || agents === null) return [];
+  const bad: string[] = [];
+  for (const [id, a] of Object.entries(agents as Record<string, unknown>)) {
+    if (typeof a !== "object" || a === null) {
+      delete (agents as Record<string, unknown>)[id];
+      bad.push(id);
+    } else if ("ownTools" in a && typeof (a as { ownTools?: unknown }).ownTools !== "boolean") {
+      delete (a as { ownTools?: unknown }).ownTools;
+      bad.push(`${id}.ownTools`);
+    }
+  }
+  return bad;
 }
 
 const isBadNotify = (p: unknown): boolean =>
@@ -230,7 +258,7 @@ function dropBad(raw: unknown, file: string): string | null {
   const dropped = FALLBACKS.filter(([path, schema]) => dropIfBad(raw, path, schema)).map(([path]) =>
     path.length === 1 ? path[0]! : path.slice(1).join("."),
   );
-  dropped.push(...dropBadNotify(raw), ...dropBadHooks(raw));
+  dropped.push(...dropBadNotify(raw), ...dropBadHooks(raw), ...dropBadAgents(raw));
   if (!dropped.length) return null;
   const verb = dropped.length > 1 ? "are" : "is";
   return `${basename(file)}: ${dropped.join(", ")} ${verb} not valid; using the default`;

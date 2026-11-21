@@ -142,12 +142,14 @@ export type SettingsInfo = IonSettings & {
     /** By project id. */
     projects: Record<string, NotifyLevel>;
   };
+  /** By agent id: "Use its own tools" (its own servers, skills and plugins in ion's chats). */
+  ownTools: Record<string, boolean>;
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
-/** What Settings changes: only the given fields; notifications by part. */
-export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort">> & {
+/** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
+export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools">> & {
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
@@ -354,8 +356,10 @@ export type HarnessInfo = {
   /** From the harness itself when it's signed in; empty otherwise. */
   models: { id: string; label: string }[];
   defaultModel: string | null;
-  /** It also loads MCP servers, hooks or plugins of its own in ion's chats, beside ion's. */
+  /** With "Use its own tools" off, it still loads MCP servers, hooks or plugins of its own (no switch for them all). */
   ownTools?: true;
+  /** Its own hooks run in ion's chats too (no switch for them). */
+  ownHooks?: true;
 };
 
 export type MemoryInfo = {

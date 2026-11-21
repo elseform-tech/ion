@@ -50,14 +50,44 @@ put .claude.json <<'JSON'
 { "mcpServers": { "weather": { "command": "npx", "args": ["-y", "@example/weather-mcp"] },
   "tickets": { "type": "http", "url": "https://tickets.example.com/mcp" } } }
 JSON
+# weather is in Claude Code and Codex alike (one row, both faces); tickets in Codex runs something else (Differs).
 put .codex/config.toml <<'TOML'
 [mcp_servers.docs]
 command = "npx"
 args = ["-y", "@example/docs-mcp"]
+
+[mcp_servers.weather]
+command = "npx"
+args = ["-y", "@example/weather-mcp"]
+
+[mcp_servers.tickets]
+command = "tickets-mcp"
+
+[plugins."sales@curated"]
+enabled = true
 TOML
 put .config/opencode/opencode.json <<'JSON'
-{ "mcp": { "todo": { "type": "local", "command": ["npx", "-y", "@example/todo-mcp"] } } }
+{ "mcp": { "todo": { "type": "local", "command": ["npx", "-y", "@example/todo-mcp"] } },
+  "plugin": ["opencode-notify@1.2.0"] }
 JSON
+# Plugins: Claude Code's (skills, a server and hooks ion leaves out) and Codex's.
+P="$ION_AGENTS_HOME/.claude/plugins/cache/mkt/superpowers/5.0.0"
+put .claude/plugins/installed_plugins.json <<JSON
+{ "version": 2, "plugins": { "superpowers@mkt": [{ "scope": "user", "installPath": "$P", "version": "5.0.0" }] } }
+JSON
+put .claude/settings.json <<'JSON'
+{ "enabledPlugins": { "superpowers@mkt": true } }
+JSON
+put .claude/plugins/cache/mkt/superpowers/5.0.0/.claude-plugin/plugin.json <<'JSON'
+{ "name": "superpowers", "version": "5.0.0" }
+JSON
+for k in brainstorming writing-plans; do
+  printf -- '---\nname: %s\ndescription: %s\n---\nSteps.\n' "$k" "$k" | put ".claude/plugins/cache/mkt/superpowers/5.0.0/skills/$k/SKILL.md"
+done
+echo '{ "hooks": { "SessionStart": [] } }' | put .claude/plugins/cache/mkt/superpowers/5.0.0/hooks/hooks.json
+echo '{ "mcpServers": { "notes": { "command": "notes-mcp" } } }' | put .claude/plugins/cache/mkt/superpowers/5.0.0/.mcp.json
+echo '{ "name": "sales", "version": "1.1.7" }' | put .codex/plugins/cache/curated/sales/1.1.7/.codex-plugin/plugin.json
+printf -- '---\nname: pitch\ndescription: Writes a sales pitch.\n---\nPitch.\n' | put .codex/plugins/cache/curated/sales/1.1.7/skills/pitch/SKILL.md
 put .claude/skills/release-notes/SKILL.md <<'MD'
 ---
 name: release-notes

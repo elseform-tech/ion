@@ -5,17 +5,34 @@ import { useState } from "react";
 import { useCallError } from "../callError.js";
 import { CANT_OPEN, openLink } from "../opener.js";
 import { Switch } from "./Switch.js";
-import { short, stateOf, ToolRow, Works } from "./tools-parts.js";
+import { short, stateOf, ToolRow } from "./tools-parts.js";
+import { Faces, type Merged, merge, OwnRow, offIn, type Whose, whoseRows } from "./tools-own.js";
 
 type Part = {
   client: IonClient;
   agents: HarnessInfo[];
   set: (t: ToolsInfo) => void;
   locked: boolean;
-  support: ToolsInfo["support"];
   /** The connection a chat's link opened. */
   at?: string | null;
 };
+
+/** What a server runs, or where it connects (no query): the same setup reads the same, whoever has it. */
+function launchOf(s: McpToolInfo): string {
+  if (s.transport === "stdio") return [s.command, ...s.args].join(" ");
+  try {
+    const u = new URL(s.url);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return s.url;
+  }
+}
+
+/** An agent's own server's line: what it runs, or its host. */
+function ownLine(launch: string) {
+  if (!/^https?:\/\//.test(launch)) return <code title={launch}>{short(launch)}</code>;
+  return new URL(launch).host;
+}
 
 /** Where it connects (the host, never the path or a value) or what it runs (one line; all of it on hover). */
 function whereOf(s: McpToolInfo) {
@@ -159,20 +176,22 @@ function useServer(s: McpToolInfo, part: Part) {
   return { error, run, open, setOpen, signIn, saveKeys };
 }
 
-function ServerRow({ s, part }: { s: McpToolInfo; part: Part }) {
+function ServerRow({ s, part, r }: { s: McpToolInfo; part: Part; r: Merged<McpToolInfo> }) {
   const { error, run, open, setOpen, signIn, saveKeys } = useServer(s, part);
   const state = s.needs === "can't reach" ? "Can't reach" : stateOf(s, part.locked);
+  const chip = state ?? (r.differs ? "Differs" : null);
   const missing = s.missing ?? [];
   return (
     <>
       <ToolRow
         icon={PlugZap}
         name={s.name}
-        chip={state}
+        chip={chip}
+        {...(chip === "Differs" && r.differs ? { chipTitle: r.differs } : {})}
         line={whereOf(s)}
         {...(s.origin ? { origin: s.origin } : {})}
         at={part.at === s.name}
-        mid={<Works agents={part.agents} works={(id) => !!part.support[id]?.[s.transport]} />}
+        mid={<Faces who={r.agents} agents={part.agents} />}
         end={
           <>
             <Needs
@@ -198,26 +217,51 @@ function ServerRow({ s, part }: { s: McpToolInfo; part: Part }) {
   );
 }
 
-/** Settings → Tools → Connections: each server in your mcp.json, what it needs, and on or off. */
+/** Your mcp.json's servers (ion's) and each agent's own, one row per setup. */
+function rowsOf(info: ToolsInfo): Merged<McpToolInfo>[] {
+  const ion = info.mcp.map((s) => ({ agent: "ion", name: s.name, key: launchOf(s), item: s }));
+  const own = info.own.servers.map((s) => ({ agent: s.agent, name: s.name, key: s.launch }));
+  return merge<McpToolInfo>([...ion, ...own], "Runs something else");
+}
+
+/**
+ * Settings → Tools → Connections: each server in your mcp.json (what it needs, and on or off), and each agent's own
+ * (read-only: they're the agent's), filtered by whose.
+ */
 export function Connections(p: {
   client: IonClient;
   agents: HarnessInfo[];
   info: ToolsInfo;
   set: (t: ToolsInfo) => void;
   at?: string | null;
+  whose: Whose;
 }) {
   const { info } = p;
-  const part: Part = { ...p, locked: !!info.keychainProblem, support: info.support, at: p.at ?? null };
+  const part: Part = { ...p, locked: !!info.keychainProblem, at: p.at ?? null };
+  const rows = whoseRows(rowsOf(info), p.whose);
+  const launch = new Map(info.own.servers.map((s) => [`${s.agent}:${s.name}`, s.launch]));
+  const leftOut = p.whose === "all" || p.whose === "ion" ? info.leftOut : [];
   return (
     <>
       {info.mcpProblem && <div className="perr">{info.mcpProblem}</div>}
       {info.keychainProblem && <div className="perr">{info.keychainProblem}</div>}
-      {(info.mcp.length > 0 || info.leftOut.length > 0) && (
+      {(rows.length > 0 || leftOut.length > 0) && (
         <div className="group">
-          {info.mcp.map((s) => (
-            <ServerRow key={s.id} s={s} part={part} />
-          ))}
-          {info.leftOut.map((l) => (
+          {rows.map((r, i) =>
+            r.ion ? (
+              <ServerRow key={`ion:${r.ion.id}`} s={r.ion} part={part} r={r} />
+            ) : (
+              <OwnRow
+                key={`${r.name}:${i}`}
+                icon={PlugZap}
+                r={r}
+                agents={p.agents}
+                off={offIn(r, info.own)}
+                line={ownLine(launch.get(`${r.agents[0]}:${r.name}`) ?? "")}
+              />
+            ),
+          )}
+          {leftOut.map((l) => (
             <ToolRow key={l.name} icon={PlugZap} name={l.name} line={l.why} />
           ))}
         </div>

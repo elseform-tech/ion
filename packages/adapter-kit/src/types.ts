@@ -65,6 +65,19 @@ export type StartOpts = {
    * data folder for this run, never in the worktree.
    */
   pluginDir?: string;
+  /**
+   * The agent brings its own MCP servers, skills and plugins (a chat's run with "Use its own tools" on; the user,
+   * 2026-11-21). Its own hooks and permission rules stay off wherever the agent can turn them off: ion's gate judges
+   * every call. Absent or false: ion's tools only.
+   */
+  ownTools?: boolean;
+  /**
+   * With `ownTools`, for an agent that loads no config of its own under ion (Claude Code): its own servers, read for it
+   * by ion, values filled (they may hold keys: kept off its command line).
+   */
+  ownServers?: McpSpec[];
+  /** With `ownTools`, Claude Code's own enabled plugins: folders (a plugin with hooks is ion's copy without them). */
+  ownPlugins?: string[];
   /** Added to the agent process's environment (a chat's run: `ION_CHAT`, which its tool calls' processes inherit). */
   env?: Record<string, string>;
   /** What the agent's process may not inherit from ion's environment (your keys: mcp.json's names and values). */
@@ -94,8 +107,13 @@ export interface HarnessAdapter {
   capabilities(): Promise<Capabilities>;
   /** The kinds of MCP server it takes from ion (a server of another kind is left out of its runs). */
   mcpTransports: McpTransports;
-  /** It also loads MCP servers, hooks or plugins of its own in ion's chats (it has no switch to leave them out). */
+  /**
+   * With "Use its own tools" off, it still loads MCP servers, hooks or plugins of its own in ion's chats (it has no
+   * switch to leave them all out).
+   */
   ownTools?: true;
+  /** Its own hooks run in ion's chats too (it has no switch for them). */
+  ownHooks?: true;
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

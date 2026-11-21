@@ -116,6 +116,44 @@ export type SkillInfo = {
   changed?: true;
   support: Record<string, "ion" | "own">;
   origin?: ToolOrigin;
+  /** What's in it (SKILL.md and its files), short: the same skill in two agents' folders has the same. */
+  hash: string;
+  /**
+   * The agent whose own it is (it loads it itself, or ion passes it as that agent's own): read-only in Settings. Absent:
+   * ion's to turn on or off.
+   */
+  own?: string;
+};
+
+/** One MCP server in an agent's own config: read-only in Settings (it's the agent's). */
+export type OwnServerInfo = {
+  agent: string;
+  name: string;
+  transport: "stdio" | "http";
+  /** What it runs, or where it connects (no query): the same setup in two agents reads the same. */
+  launch: string;
+};
+
+/** What a plugin brings. */
+export type PluginBundles = { skills: number; servers: number; commands: number; agents: number };
+
+/**
+ * One plugin an agent has installed and on. `hooks`: it bundles hooks; "off": they don't run in ion's chats, "run":
+ * they run too (the agent has no switch for them).
+ */
+export type OwnPluginInfo = {
+  agent: string;
+  name: string;
+  version?: string;
+  bundles: PluginBundles;
+  hooks?: "off" | "run";
+};
+
+/** Each agent's own tools, read from its folders (nothing run or contacted); `agents`: its "Use its own tools". */
+export type OwnInfo = {
+  agents: Record<string, boolean>;
+  servers: OwnServerInfo[];
+  plugins: OwnPluginInfo[];
 };
 
 export type ToolsInfo = {
@@ -134,6 +172,8 @@ export type ToolsInfo = {
   skills: SkillInfo[];
   /** By agent id. */
   support: Record<string, ToolSupport>;
+  /** Each agent's own servers and plugins (its skills are in `skills`, with `own`). */
+  own: OwnInfo;
 };
 
 /** A new hook: what it's called, when it runs, the command, and optionally one project. */

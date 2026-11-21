@@ -49,6 +49,7 @@ afterEach(() => {
   delete process.env.FAKE_CODEX_OWN_MCP;
   delete process.env.FAKE_CODEX_OWN_HOOK;
   delete process.env.FAKE_CODEX_NO_CONFIG_READ;
+  delete process.env.FAKE_CODEX_MCP_SERVER;
 });
 
 describe("codex adapter", () => {
@@ -178,6 +179,41 @@ describe("codex adapter", () => {
   it("refuses a chat when it can't turn off Codex's own servers", async () => {
     process.env.FAKE_CODEX_NO_CONFIG_READ = "1";
     await expect(turn("hello")).rejects.toThrow("ion couldn't turn off Codex's own servers");
+  });
+
+  // The user, 2026-11-21: "frontier harnesses are already mature rather than reinventing the wheel. Hooks probably
+  // should stay": with "Use its own tools" on, Codex keeps its own servers and plugins; its own hooks stay off.
+  it("Codex keeps its own servers; its hooks are off", async () => {
+    process.env.FAKE_CODEX_OWN_MCP = JSON.stringify({ mine: { command: "echo" } });
+    process.env.FAKE_CODEX_OWN_HOOK = "1";
+    const ion: HttpMcpSpec = { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp/k", headers: {} };
+    const gate = { url: "http://127.0.0.1:9/gate/k" };
+    const { thread, overrides } = await whoami({ mcpServers: [ion], gate, ownTools: true });
+    expect(thread.config.mcp_servers).toEqual({ ion: { url: "http://127.0.0.1:9/mcp/k", http_headers: {} } });
+    expect(overrides).not.toContain("features.plugins=false");
+    const state = overrides.filter((o: string) => o.startsWith("hooks.state="));
+    expect(state[0]).toContain('"/home/.codex/config.toml:post_tool_use:0:0"={enabled=false}');
+    // It needn't know Codex's own servers to start: nothing of Codex's is turned off.
+    process.env.FAKE_CODEX_NO_CONFIG_READ = "1";
+    await expect(turn("hello", { ownTools: true })).resolves.toBeTruthy();
+  });
+
+  // The user, 2026-11-21: ion's gate still judges every call, an agent's own tools' too.
+  it("an agent's own tool call is judged by ion (Codex)", async () => {
+    process.env.FAKE_CODEX_MCP_SERVER = "github";
+    const seen: ApprovalRequest[] = [];
+    await turn("mcp", {
+      ownTools: true,
+      decide: async (r) => {
+        seen.push(r);
+        return "deny";
+      },
+    });
+    expect(seen[0]).toMatchObject({
+      toolName: "mcp__github__search_chats",
+      mcpServer: "github",
+      kind: "mcp",
+    });
   });
 
   // Final review, 2026-11-21: every server reaches an agent as ion's URL (ion runs local ones), so adapters take http.

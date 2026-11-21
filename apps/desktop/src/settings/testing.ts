@@ -13,6 +13,7 @@ export const settings: SettingsInfo = {
     quiet: { on: true, from: "22:00", to: "08:00" },
     projects: { shop: "needs" },
   },
+  ownTools: { "claude-code": true, "grok-build": true },
 };
 
 /** A daemon that answers Settings; `refuse`: settings.set says no with this reason. */

@@ -13,6 +13,8 @@ import { hookChange, hookGroups } from "./tools-hooks.js";
 import type { Skills } from "../skills/index.js";
 import type { YourTools } from "../mcp/ion-your-tools.js";
 import { consentOf, turnedOn } from "../tools/on.js";
+import { agentsHomeOf, ownSwitches } from "../tools/own-run.js";
+import { ownToolsOf } from "../tools/own.js";
 
 const KEY_NAME = /^[A-Za-z_]\w{0,63}$/;
 const MAX_KEY = 16_384;
@@ -31,8 +33,13 @@ async function toolsInfo(
     mcp,
     leftOut: r.leftOut,
     hooks: await hookGroups(config, ctx.hooks, ctx.tools.sign),
-    skills: await ctx.skills.list(config.tools.skills.on, projectDirs(config)),
+    skills: await ctx.skills.list(config.tools.skills.on, projectDirs(config), ownSwitches(config)),
     support: toolSupport(),
+    own: ownToolsOf({
+      ...agentsHomeOf(ctx.skills),
+      projects: projectDirs(config),
+      agents: ownSwitches(config),
+    }),
   };
   return withOrigins(ctx, info, r.servers);
 }
@@ -51,7 +58,7 @@ export function yourToolsOf(ctx: { tools: Tools; skills: Skills; configFile: str
         on: (await consentOf(ctx.tools, server, on)).on,
       })),
     );
-    const skills = await ctx.skills.list(config.tools.skills.on, projectDirs);
+    const skills = await ctx.skills.list(config.tools.skills.on, projectDirs, ownSwitches(config));
     return { servers, skills, support: toolSupport() };
   };
 }
@@ -79,7 +86,7 @@ async function mcpTurned(tools: Tools, c: UserConfig, id: string, on: boolean): 
 /** Turning a skill on is consent to exactly what's in it now; off takes that back. */
 async function skillTurned(skills: Skills, c: UserConfig, id: string, on: boolean): Promise<string[]> {
   if (!id || id.length > 1000) throw new UserError("Unknown skill");
-  return skills.turn(c.tools.skills.on, id, on, projectDirs(c));
+  return skills.turn(c.tools.skills.on, id, on, { projects: projectDirs(c), own: ownSwitches(c) });
 }
 
 async function setOn(

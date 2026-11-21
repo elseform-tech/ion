@@ -589,3 +589,30 @@ describe("refused, judged or asked: what ion knows, and what it guesses", () => 
     expect(JSON.stringify(judged)).not.toContain("private-words");
   });
 });
+
+// The user, 2026-11-21: agents bring their own servers into ion's chats; ion's gate still judges every call. An own
+// server's tool (not ion's, not one ion serves) is never allowed by ion's policy: in Auto it goes to the judge.
+describe("an agent's own tool call is judged by ion", () => {
+  it("goes to the judge in Auto, with its server and tool named", async () => {
+    const seen: string[] = [];
+    const judging = createAccess({
+      judge: async (prompt: unknown) => {
+        seen.push(JSON.stringify(prompt));
+        return { allow: false, reason: "not asked for" };
+      },
+      ...own,
+    });
+    const a = new Approvals(store, judging, () => true, { own });
+    const call: ApprovalRequest = {
+      requestId: "q",
+      toolId: "t",
+      toolName: "mcp__github__delete_repo",
+      kind: "mcp",
+      mcpServer: "github",
+      summary: "delete_repo",
+      input: { repo: "me/app" },
+    };
+    expect((await a.gate(run("auto"), call, [wt])).decision).toBe("deny");
+    expect(seen.join("\n")).toContain("mcp__github__delete_repo");
+  });
+});

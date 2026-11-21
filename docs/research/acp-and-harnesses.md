@@ -236,6 +236,25 @@ all or the prompts, and comes in only by name with its project's file named too 
 shop:.mcp.json`). Your own servers are listed before any in a project's file, and a project's server with one of their
 names is left out (a repo's `github` never hides yours). Nothing comes in before its command (or host) and keys are shown.
 
+## Agents bring their own tools (2026-11-21, Plan 18 Task 13)
+
+The user, 2026-11-21: "since grok build and opencode can't turn their own servers and plugins off, then i don't see the
+point of disabling … frontier harnesses are already mature rather than reinventing the wheel. Hooks probably should stay
+as these would need to be consistent." Each agent now brings its own by default ("Use its own tools", per agent); off
+is the table above, kept.
+
+| Agent | With its own tools | Its own hooks |
+|---|---|---|
+| Claude Code | Still `settingSources: []` and `strictMcpConfig: true`. ion reads its servers (yours in `~/.claude.json`, this project's entry there, the project's `.mcp.json` ones approved there: `enabledMcpjsonServers` / `enableAllProjectMcpServers`, minus `disabledMcpjsonServers` / `disabledMcpServers`) and its enabled plugins (`installed_plugins.json` + `enabledPlugins` in `~/.claude/settings.json`; their `.mcp.json` servers with `${CLAUDE_PLUGIN_ROOT}` filled) and passes them (`mcpServers`, `plugins` with `skipMcpDiscovery`). Values travel as `${ION_MCP_*}` env references (Claude expands them in command, args, env, url and headers). Its skills: ion's skills plugin includes Claude's own folders as they are. | Never loaded: no settings files; a plugin with hooks is passed as ion's copy (links to everything but `hooks/`, the manifest without `hooks`). |
+| Codex 0.153.2 | Nothing turned off: no `config/read`, `features.plugins` stays on. | Turned off as before (`hooks/list` → `hooks.state`), a plugin's too if Codex lists it there (not checked live). |
+| opencode 1.18.8 | Your `mcp`, `plugin` (relative paths made `file://` whole), `agent`, `command`, `instructions` carried into ion's file; your folder's `plugin/` and `plugins/` files added as `file://` entries; ion's gate plugin first. Its own folder (`<hash>-own`; the plugin package copied from the other). Not carried: `agent/` and `command/` markdown folders. | opencode plugins are hook code and don't distinguish hooks, so yours run (Settings says so). |
+| Grok 1.0.92 | Its own setup; Claude's and Cursor's servers and skills it reads stay on. | `GROK_CLAUDE_HOOKS_ENABLED=false`, `GROK_CURSOR_HOOKS_ENABLED=false`; `~/.grok/hooks` has no switch (Settings says "Its own hooks run too"). |
+
+The gate sees every call from an own tool: Claude Code's `canUseTool` and PreToolUse hook (`mcp__<server>__<tool>`),
+Codex's approvals (`mcpServer/elicitation/request`), Grok's hook (`<server>__<tool>`), opencode's plugin (`<server>_<tool>`,
+kind "other": opencode doesn't say which server). ion's policy never allows an MCP call that isn't ion's own, so in Auto
+each goes to the judge.
+
 ## Seen live in PR A's verification (2026-11-21, opencode big-pickle and Grok 4.7)
 
 - opencode's `tool.started` for a bash call carries only `summary: "bash"` and `input: { cwd }`; the command arrives

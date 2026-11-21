@@ -35,7 +35,7 @@ export type AgentServers = {
 type ReadOpts = { home: string; env: Record<string, string | undefined>; projects: string[] };
 
 /** A neutral launch before it's cleaned: local (a command) or remote (a URL, "sse" when it says so). */
-type Launch =
+export type Launch =
   | { kind: "stdio"; command: string; args: string[]; env: Record<string, string> }
   | { kind: "http"; url: string; headers: Record<string, string> }
   | { kind: "sse"; url: string; headers: Record<string, string> };
@@ -61,7 +61,7 @@ const textMap = (v: unknown): Record<string, string> =>
     : {};
 
 /** Claude Code's, Cursor's and Grok's shape: `command`/`args`/`env`, or `url`/`headers` (`type` "sse" when it is). */
-function standardLaunch(v: Obj): Launch | null {
+export function standardLaunch(v: Obj): Launch | null {
   const url = text(v.url);
   if (url)
     return {
@@ -158,7 +158,7 @@ function sourcesOf(o: ReadOpts): Agent[] {
 }
 
 /** A file's contents, parsed: undefined when it isn't there, null when it can't be read (too big, broken). */
-function readFile(path: string): unknown {
+export function readFile(path: string): unknown {
   let fd: number;
   try {
     fd = openSync(path, "r");

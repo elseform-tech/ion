@@ -88,9 +88,9 @@ describe("skills", () => {
     const list = await skills.list([], []);
     expect(list.find((s) => s.name === "pdf")?.support).toEqual({ "claude-code": "ion", opencode: "own" });
     expect(list.find((s) => s.name === "deploy")?.support).toEqual({ codex: "own" });
-    await expect(skills.turn([], list.find((s) => s.name === "deploy")!.id, true, [])).rejects.toThrow(
-      "Codex uses its own",
-    );
+    await expect(
+      skills.turn([], list.find((s) => s.name === "deploy")!.id, true, { projects: [] }),
+    ).rejects.toThrow("Codex uses its own");
   });
 
   it("a skill is off until turned on", async () => {
@@ -98,11 +98,11 @@ describe("skills", () => {
     skill(join(home, ".claude/skills/pdf"), md("pdf", "PDFs"));
     const [s] = await skills.list([], []);
     expect(s).toMatchObject({ on: false, new: true });
-    const on = await skills.turn([], s!.id, true, []);
+    const on = await skills.turn([], s!.id, true, { projects: [] });
     expect(on).toEqual([expect.stringMatching(/^~\/\.claude\/skills\/pdf@[0-9a-f]{32}$/)]);
     expect((await skills.list(on, []))[0]).toMatchObject({ on: true });
     expect((await skills.list(on, []))[0]).not.toHaveProperty("new");
-    expect(await skills.turn(on, s!.id, false, [])).toEqual([]);
+    expect(await skills.turn(on, s!.id, false, { projects: [] })).toEqual([]);
     // A record written by hand (not signed with ion's key) turns nothing on.
     expect((await skills.list([`${s!.id}@${"0".repeat(32)}`], []))[0]).toMatchObject({
       on: false,
@@ -114,7 +114,7 @@ describe("skills", () => {
     const { home, skills } = setup();
     const dir = join(home, ".claude/skills/pdf");
     skill(dir, md("pdf", "PDFs"), { "helper.py": "print(1)\n" });
-    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, []);
+    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, { projects: [] });
     writeFileSync(join(dir, "helper.py"), "print(2)\n");
     expect((await skills.list(on, []))[0]).toMatchObject({ on: false, changed: true });
     expect(await skills.forRun({ runId: "r1", on, projectDir: null })).toBeNull();
@@ -131,11 +131,11 @@ describe("skills", () => {
     skill(dir, md("pdf", "PDFs"), { "helper.sh": "echo hi\n" });
     chmodSync(join(dir, "helper.sh"), 0o644);
     const id = (await skills.list([], []))[0]!.id;
-    const on = await skills.turn([], id, true, []);
+    const on = await skills.turn([], id, true, { projects: [] });
     chmodSync(join(dir, "helper.sh"), 0o755);
     expect((await skills.list(on, []))[0]).toMatchObject({ on: false, changed: true });
     expect(await skills.forRun({ runId: "r1", on, projectDir: project })).toBeNull();
-    const again = await skills.turn(on, id, true, []);
+    const again = await skills.turn(on, id, true, { projects: [] });
     expect((await skills.list(again, []))[0]).toMatchObject({ on: true });
     chmodSync(join(dir, "helper.sh"), 0o644);
     expect((await skills.list(on, []))[0]).toMatchObject({ on: true });
@@ -153,7 +153,7 @@ describe("skills", () => {
     const list = await skills.list([], [project]);
     let on: string[] = [];
     for (const n of ["pdf", "style"])
-      on = await skills.turn(on, list.find((s) => s.name === n)!.id, true, [project]);
+      on = await skills.turn(on, list.find((s) => s.name === n)!.id, true, { projects: [project] });
     const dir = await skills.forRun({ runId: "r1", on, projectDir: project });
     expect(dir).not.toBeNull();
     expect(JSON.parse(readFileSync(join(dir!, ".claude-plugin/plugin.json"), "utf8"))).toMatchObject({
@@ -178,7 +178,7 @@ describe("skills", () => {
     });
     chmodSync(join(home, ".claude/skills/pdf/run.sh"), 0o755);
     chmodSync(join(home, ".claude/skills/pdf/ref.md"), 0o644);
-    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, []);
+    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, { projects: [] });
     const dir = await skills.forRun({ runId: "r1", on, projectDir: project });
     expect(statSync(join(dir!, "skills/pdf/run.sh")).mode & 0o777).toBe(0o700);
     expect(statSync(join(dir!, "skills/pdf/ref.md")).mode & 0o777).toBe(0o600);
@@ -187,7 +187,7 @@ describe("skills", () => {
   it("the plugin folder is in ion's data folder, rebuilt per run, removed at run end", async () => {
     const { home, project, dataDir, skills } = setup();
     skill(join(home, ".claude/skills/pdf"), md("pdf", "PDFs"));
-    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, []);
+    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, { projects: [] });
     const dir = await skills.forRun({ runId: "r1", on, projectDir: project });
     expect(dir).toBe(join(dataDir, "skills", "r1"));
     expect(dir!.startsWith(project)).toBe(false);
@@ -220,7 +220,7 @@ describe("skills", () => {
   it("only Claude Code runs get a plugin; other agents use their own", async () => {
     const { root, home, project, skills } = setup();
     skill(join(home, ".claude/skills/pdf"), md("pdf", "PDFs"));
-    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, []);
+    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, { projects: [] });
     const configFile = join(root, "config.toml");
     const c = DEFAULT_CONFIG;
     const projects = [{ id: "app", path: project, starred: false }];
@@ -241,7 +241,7 @@ describe("skills", () => {
     mkdirSync(join(dir, "inner"));
     writeFileSync(join(dir, "inner", "SKILL.md"), md("sneaky", "Not turned on"));
     writeFileSync(join(dir, "inner", "Skill.MD"), md("sneaky2", "Not turned on"));
-    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, []);
+    const on = await skills.turn([], (await skills.list([], []))[0]!.id, true, { projects: [] });
     const out = await skills.forRun({ runId: "r1", on, projectDir: null });
     expect(readdirSync(join(out!, "skills/pdf")).sort()).toEqual(["SKILL.md", "ref.md"]);
   });
@@ -275,7 +275,7 @@ describe("skills", () => {
     const { home, dataDir } = setup();
     skill(join(home, ".claude/skills/pdf"), md("pdf", "PDFs"));
     const ok = createSkills({ home, dataDir, sign, readers });
-    const on = await ok.turn([], (await ok.list([], []))[0]!.id, true, []);
+    const on = await ok.turn([], (await ok.list([], []))[0]!.id, true, { projects: [] });
     const locked = createSkills({ home, dataDir, readers, sign: () => Promise.reject(new Error("locked")) });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(await locked.forRun({ runId: "r1", on, projectDir: null })).toBeNull();

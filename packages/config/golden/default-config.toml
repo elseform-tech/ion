@@ -31,3 +31,5 @@ hooksOn = []
 
 [tools.skills]
 on = []
+
+[agents]

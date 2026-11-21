@@ -13,7 +13,7 @@ export type AcpHarness = {
   loginHint: string;
   defaultModel: string | null;
   /** Extra environment for the agent (e.g. making it ask before editing); with a gate, its hook too. */
-  env?: (gate?: GateEnv) => Record<string, string>;
+  env?: (gate?: GateEnv, own?: boolean) => Record<string, string>;
   /** The agent's gate-hook payload as one tool call. */
   toCall?: (payload: unknown) => GateCall | null;
   /** `_meta` sent with `session/new` (agent-specific session options). */
@@ -26,10 +26,12 @@ export type AcpHarness = {
    * when the agent's `initialize` doesn't.
    */
   mcpHttp?: boolean;
-  /** It also loads MCP servers, hooks or plugins of its own in ion's chats: it has no switch to leave them out. */
+  /** With "Use its own tools" off, it still loads MCP servers, hooks or plugins of its own: no switch for them all. */
   ownTools?: true;
+  /** Its own hooks run in ion's chats too: it has no switch for them. */
+  ownHooks?: true;
   /** What a start that timed out says instead of "didn't respond" (an agent still setting up); none: the usual. */
-  notResponding?: () => string | undefined;
+  notResponding?: (own?: boolean) => string | undefined;
 };
 
 export const GROK_BUILD: AcpHarness = {
@@ -44,27 +46,22 @@ export const GROK_BUILD: AcpHarness = {
   defaultModel: null,
   // Always ask ion before tools run, whatever the user's own Grok permission mode is.
   sessionMeta: { yoloMode: false, autoMode: false },
-  env: (gate) => ({ ...grokAskEnv(), ...grokOwnToolsEnv(), ...(gate ? grokGateEnv(gate) : {}) }),
+  env: (gate, own) => ({ ...grokAskEnv(), ...grokOwnToolsEnv(own), ...(gate ? grokGateEnv(gate) : {}) }),
   toCall: grokToCall,
   // Its own config.toml servers, ~/.grok/hooks and plugins have no switch (GROK_CONFIG can't set them; GROK_HOME
   // moves its sign-in too). Checked on Grok 1.0.92: docs/research/acp-and-harnesses.md.
   ownTools: true,
+  ownHooks: true,
 };
 
 /**
- * Only ion's tools in ion's chats (the user, 2026-11-21): Grok's switches for what it reads from Claude Code
- * (~/.claude.json servers, ~/.claude/settings.json hooks) and Cursor.
+ * Grok's switches for what it reads from Claude Code (~/.claude.json servers and skills, ~/.claude/settings.json hooks)
+ * and Cursor. Hooks stay ion's always (the user, 2026-11-21); servers and skills only with "Use its own tools" off.
  */
-function grokOwnToolsEnv(): Record<string, string> {
+function grokOwnToolsEnv(own?: boolean): Record<string, string> {
+  const hooks = ["CLAUDE_HOOKS", "CURSOR_HOOKS"];
   // Skills too (task review, 2026-11-21): Grok's own ~/.grok skills stay; Claude's and Cursor's aren't read.
-  const off = [
-    "CLAUDE_MCPS",
-    "CLAUDE_HOOKS",
-    "CLAUDE_SKILLS",
-    "CURSOR_MCPS",
-    "CURSOR_HOOKS",
-    "CURSOR_SKILLS",
-  ];
+  const off = own ? hooks : [...hooks, "CLAUDE_MCPS", "CLAUDE_SKILLS", "CURSOR_MCPS", "CURSOR_SKILLS"];
   return Object.fromEntries(off.map((k) => [`GROK_${k}_ENABLED`, "false"]));
 }
 
@@ -92,7 +89,9 @@ export const OPENCODE: AcpHarness = {
   // ~/.opencode/plugin and the plugins listed in ~/.opencode's config still load: opencode has no switch for that
   // folder short of moving HOME (which moves its sign-in). Task review, 2026-11-21.
   ownTools: true,
-  notResponding: () => (settingUp() ? "Not responding — opencode is setting up, try again" : undefined),
+  // opencode's plugins are hook code: with your own tools, yours run too.
+  ownHooks: true,
+  notResponding: (own) => (settingUp(own) ? "Not responding — opencode is setting up, try again" : undefined),
 };
 
 /**
@@ -100,8 +99,8 @@ export const OPENCODE: AcpHarness = {
  * (opencode-config.ts). The config is a file in ion's folder, never the environment (task review, 2026-11-21: your
  * provider keys reached every process opencode started); only the gate's address is in env.
  */
-function opencodeAskEnv(gate?: GateEnv): Record<string, string> {
-  const base = carriedConfig();
+function opencodeAskEnv(gate?: GateEnv, own = false): Record<string, string> {
+  const base = carriedConfig(own);
   const ask = { edit: "ask", bash: "ask", webfetch: "ask" };
   const permission = { ...((base.permission as object) ?? {}), ...ask };
   // Agent-level permissions win over top-level ones, so set them too.
@@ -114,7 +113,9 @@ function opencodeAskEnv(gate?: GateEnv): Record<string, string> {
   // ion's plugin reports every tool call to ion before it runs (with a gate; without one it does nothing). Listed
   // always, so the config is the same for every start and the daemon's first sign-in check installs what opencode needs
   // for it, not a chat's start (live, 2026-11-21: a first chat timed out waiting on that install).
-  const home = writeIonConfig({ ...base, permission, agent, plugin: [OPENCODE_PLUGIN] });
+  // Your own plugins (with your own tools) after ion's, which is always first and always there.
+  const yours = (Array.isArray(base.plugin) ? base.plugin : []).filter((p) => p !== OPENCODE_PLUGIN);
+  const home = writeIonConfig({ ...base, permission, agent, plugin: [OPENCODE_PLUGIN, ...yours] }, own);
   return {
     ...(gate ? { ION_GATE_URL: gate.url } : {}),
     // An inline config in ion's own environment is carried into the file, never passed on.

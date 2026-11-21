@@ -38,16 +38,34 @@ const records = (on: string[]) =>
 
 type State = { on: boolean; new?: true; changed?: true };
 
+/** By agent id: its "Use its own tools" switch (on unless you turned it off). */
+export type OwnSwitches = Record<string, boolean>;
+/** Only what you turned on in ion counts (a run's own skills are added on their own). */
+const BY_CONSENT: OwnSwitches = { "claude-code": false };
+
+/** The agent whose own a skill is: Codex's and opencode's always; Claude Code's while it brings its own. */
+function ownerOf(whose: SkillWhose, own: OwnSwitches): string | undefined {
+  if (whose === "claude") return own["claude-code"] !== false ? "claude-code" : undefined;
+  return whose === "codex" || whose === "opencode" ? whose : undefined;
+}
+
 /** On only while it's exactly what you turned on (its record verifies with ion's key); changed since: off. */
-function stateOf(s: FoundSkill, was: string | undefined, now: string | undefined): State {
+function stateOf(s: FoundSkill, was: string | undefined, now: string | undefined, own: OwnSwitches): State {
+  // Claude Code's own, while it brings its own: on, as it is (the user, 2026-11-21).
+  if (s.whose === "claude" && ownerOf(s.whose, own)) return { on: true };
   if (!FOR_CLAUDE.includes(s.whose)) return { on: false };
   if (was === undefined) return { on: false, new: true };
   if (!now || !sameMark(was, now)) return { on: false, changed: true };
   return { on: true };
 }
 
-function supportOf(whose: SkillWhose, readers: SkillReaders): Record<string, "ion" | "own"> {
+function supportOf(
+  whose: SkillWhose,
+  readers: SkillReaders,
+  own: OwnSwitches,
+): Record<string, "ion" | "own"> {
   const out: Record<string, "ion" | "own"> = {};
+  if (whose === "claude" && ownerOf(whose, own)) return { "claude-code": "own" };
   for (const [id, r] of Object.entries(readers)) {
     if (r.fromIon && FOR_CLAUDE.includes(whose)) out[id] = "ion";
     else if (r.own.includes(whose)) out[id] = "own";
@@ -55,16 +73,45 @@ function supportOf(whose: SkillWhose, readers: SkillReaders): Record<string, "io
   return out;
 }
 
-/** A skill as the Tools page shows it. */
-function infoOf(s: FoundSkill, state: State, readers: SkillReaders): SkillInfo {
+/** A skill as the Tools page shows it: whose own it is (read-only there), and what's in it (to match it elsewhere). */
+function infoOf(s: FoundSkill, state: State, readers: SkillReaders, own: OwnSwitches): SkillInfo {
   const { id, name, description, whose, where } = s;
-  return { id, name, description, whose, where, ...state, support: supportOf(whose, readers) };
+  const owner = ownerOf(whose, own);
+  const hash = createHash("sha256")
+    .update(JSON.stringify([sha(s.md), ...s.files.map((f) => [f.rel, sha(f.bytes)])]))
+    .digest("hex")
+    .slice(0, 12);
+  return {
+    ...{ id, name, description, whose, where, ...state, hash },
+    support: supportOf(whose, readers, own),
+    ...(owner ? { own: owner } : {}),
+  };
 }
 
 export type Skills = ReturnType<typeof createSkills>;
 
 /** ion's own skills folder: beside its config file and mcp.json (out of every run's reach, as they are). */
 export const ionSkillsDir = (configFile: string): string => join(dirname(configFile), "skills");
+
+/** A chat run's skills: yours that are on, and (`own`) Claude Code's own as they are. */
+type SkillsForRun = { runId: string; on: string[]; projectDir: string | null; own?: boolean };
+
+/** Your records with a skill turned on (consent to it as it is now, signed) or off; an agent's own has no switch. */
+async function turnSkill(
+  t: { on: string[]; id: string; turnOn: boolean; own: OwnSwitches },
+  found: FoundSkill[],
+  mark: (s: FoundSkill) => Promise<string | undefined>,
+): Promise<string[]> {
+  const kept = t.on.filter((e) => e.slice(0, e.lastIndexOf("@")) !== t.id);
+  const s = found.find((x) => x.id === t.id);
+  if (s && ownerOf(s.whose, t.own)) throw new UserError(`${OWNER[s.whose]} uses its own`);
+  if (!t.turnOn) return kept;
+  if (!s) throw new UserError("Unknown skill");
+  if (!FOR_CLAUDE.includes(s.whose)) throw new UserError(`${OWNER[s.whose]} uses its own`);
+  const m = await mark(s);
+  if (!m) throw new UserError(CANT_READ_KEYCHAIN);
+  return [...kept, `${t.id}@${m}`];
+}
 
 /**
  * The skills your agents already have (found in each one's folders and your projects'), Claude Code's on or off: off
@@ -87,33 +134,31 @@ export function createSkills(o: {
     const marks = await Promise.all(found.map(mark));
     if (found.some((s, i) => was.has(s.id) && !marks[i]))
       console.warn(`skills skipped: ${CANT_READ_KEYCHAIN}`);
-    return found.filter((s, i) => stateOf(s, was.get(s.id), marks[i]).on);
+    return found.filter((s, i) => stateOf(s, was.get(s.id), marks[i], BY_CONSENT).on);
   };
   return {
     ionDir: o.ionDir,
     home: o.home,
-    async list(on: string[], projects: string[]): Promise<SkillInfo[]> {
+    async list(on: string[], projects: string[], own: OwnSwitches = BY_CONSENT): Promise<SkillInfo[]> {
       const found = find(projects);
       const was = records(on);
       const marks = await Promise.all(found.map(mark));
-      return found.map((s, i) => infoOf(s, stateOf(s, was.get(s.id), marks[i]), o.readers));
+      return found.map((s, i) => infoOf(s, stateOf(s, was.get(s.id), marks[i], own), o.readers, own));
     },
-    /** Your records with this skill turned on (as it is now) or off. */
-    async turn(on: string[], id: string, turnOn: boolean, projects: string[]): Promise<string[]> {
-      const kept = on.filter((e) => e.slice(0, e.lastIndexOf("@")) !== id);
-      if (!turnOn) return kept;
-      const s = find(projects).find((x) => x.id === id);
-      if (!s) throw new UserError("Unknown skill");
-      if (!FOR_CLAUDE.includes(s.whose)) throw new UserError(`${OWNER[s.whose]} uses its own`);
-      const m = await mark(s);
-      if (!m) throw new UserError(CANT_READ_KEYCHAIN);
-      return [...kept, `${id}@${m}`];
-    },
-    /** A Claude Code run's plugin of the skills on (yours, and its project's), made afresh; null when none is on. */
-    async forRun(r: { runId: string; on: string[]; projectDir: string | null }): Promise<string | null> {
+    /** Your records with this skill turned on (as it is now) or off; an agent's own has no switch. */
+    turn: (on: string[], id: string, turnOn: boolean, at: { projects: string[]; own?: OwnSwitches }) =>
+      turnSkill({ on, id, turnOn, own: at.own ?? BY_CONSENT }, find(at.projects), mark),
+    /** A Claude Code run's plugin of the skills on (yours, its project's, its own), made afresh; null when none is on. */
+    async forRun(r: SkillsForRun): Promise<string | null> {
       const dir = pluginDirOf(o.dataDir, r.runId);
       const found = find(r.projectDir ? [r.projectDir] : []);
-      const given = await turnedOn(found, r.on);
+      // Claude Code's own skills come as they are while it brings its own (its settings files never load).
+      const own = r.own ? found.filter((s) => s.whose === "claude") : [];
+      const yours = await turnedOn(
+        found.filter((s) => !own.includes(s)),
+        r.on,
+      );
+      const given = [...own, ...yours];
       if (!given.length) {
         await rm(dir, { recursive: true, force: true });
         return null;

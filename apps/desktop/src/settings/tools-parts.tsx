@@ -1,6 +1,6 @@
-import { Avatar, Link, type LucideIcon, MessageSquare } from "@ion/design-system";
+import { Link, type LucideIcon, MessageSquare } from "@ion/design-system";
 import type { IonClient } from "@ion/client/browser";
-import type { HarnessInfo, ToolOrigin, ToolsInfo } from "@ion/schema";
+import type { ToolOrigin, ToolsInfo } from "@ion/schema";
 import { type ReactNode, useEffect, useRef } from "react";
 import { openLink } from "../opener.js";
 
@@ -89,6 +89,10 @@ export function ToolRow(p: {
   end?: ReactNode;
   origin?: ToolOrigin;
   at?: boolean;
+  /** What the chip means, on hover. */
+  chipTitle?: string;
+  /** Not in use in ion (an agent's own, with its own tools off). */
+  dim?: boolean;
 }) {
   const Icon = p.icon;
   const ref = useRef<HTMLDivElement>(null);
@@ -96,13 +100,17 @@ export function ToolRow(p: {
     if (p.at) ref.current?.scrollIntoView?.({ block: "center" });
   }, [p.at]);
   return (
-    <div className={p.at ? "trow at" : "trow"} ref={ref}>
+    <div className={["trow", p.at && "at", p.dim && "dim"].filter(Boolean).join(" ")} ref={ref}>
       <span className="ti">
         <Icon />
       </span>
       <div>
         <span className="tname">{p.name}</span>
-        {p.chip && <span className="chip">{p.chip}</span>}
+        {p.chip && (
+          <span className="chip" {...(p.chipTitle ? { title: p.chipTitle } : {})}>
+            {p.chip}
+          </span>
+        )}
         {p.origin && <Origin o={p.origin} />}
         {p.line && <div className="s">{p.line}</div>}
       </div>
@@ -110,17 +118,4 @@ export function ToolRow(p: {
       <div className="acts2">{p.end}</div>
     </div>
   );
-}
-
-/** Which agents work with it: each ready agent's face, crossed out where it doesn't. */
-export function Works({ agents, works }: { agents: HarnessInfo[]; works: (id: string) => boolean }) {
-  return agents.map((h) => (
-    <span
-      key={h.id}
-      className={works(h.id) ? "" : "no"}
-      title={`${h.label}: ${works(h.id) ? "works" : "not supported"}`}
-    >
-      <Avatar harness={h.id} />
-    </span>
-  ));
 }

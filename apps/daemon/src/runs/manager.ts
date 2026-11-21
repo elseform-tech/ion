@@ -28,7 +28,8 @@ import { defaultProject, projectPath } from "./projects.js";
 import type { RunAgent, RunServers } from "../tools/run-servers.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
 import { type RunKeys, runEnv, runKeys } from "./run-env.js";
-import { type RunSkills, skillsFor } from "../skills/run.js";
+import type { RunSkills } from "../skills/run.js";
+import { type OwnForRun, ownOpts, type RunOwn, skillsAndOwn } from "../tools/own-run.js";
 
 type AskArgs = Commands["ask"]["args"];
 
@@ -52,8 +53,9 @@ type Launch = {
   pluginDir?: string;
   // & your MCP servers for this run, read at its start (its retries keep them, whatever changes meanwhile): what
   // its agent is given, what ion's gateway serves (local ones ion runs, stopped when it ends), and what the agent's
-  // process may not inherit from ion's environment (your keys' names and values). & its keys (from launch to its end).
-} & Partial<Given> &
+  // process may not inherit from ion's environment (your keys' names and values); its agent's own tools ("Use its own
+  // tools"), read at its start. & its keys (from launch to its end).
+} & Partial<Given & { own: OwnForRun }> &
   RunKeys;
 type Between = {
   chatId: string;
@@ -106,6 +108,8 @@ export class RunManager {
       servers?: (agent: RunAgent) => Promise<RunServers>;
       /** Your skills for a chat's run: a plugin folder made for it (null: none, or its agent doesn't take them). */
       skills?: RunSkills;
+      /** What a chat's run brings of its agent's own (its servers, skills and plugins; "Use its own tools"). */
+      own?: RunOwn;
     },
     private readonly needs: NeedsService,
     private readonly db: Db,
@@ -207,12 +211,12 @@ export class RunManager {
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
     try {
       const yours = await yourServers(this.store, this.ctx.servers, l);
-      // Every key of the run: redacted from every event of the run, wherever in ion it's stored from.
-      const redact = redactor([...yours.secrets, l.mcpKey, l.gateKey, l.cliKey]);
+      Object.assign(l, await skillsAndOwn(this.ctx, l));
+      // Every key of the run (its agent's own too): redacted from every event of the run, wherever it's stored from.
+      const redact = redactor([...yours.secrets, ...(l.own?.secrets ?? []), l.mcpKey, l.gateKey, l.cliKey]);
       this.store.redactRun(l.runId, redact);
       const o = { ion: this.ionServer(l), redact, dataDir: this.ctx.dataDir };
       Object.assign(l, givenToRun(this.store, l, yours, o));
-      l.pluginDir = (await skillsFor(this.ctx.skills, l)) ?? undefined;
       for (;;) {
         if (this.stopping) return;
         state.tries++;
@@ -446,6 +450,7 @@ export class RunManager {
       ...(this.ctx.gate && l.gateKey ? { gate: { url: `${this.ctx.gate.url()}/${l.gateKey}` } } : {}),
       ...runMcp(this.ionServer(l), l.servers, l.envDrop),
       ...(l.pluginDir ? { pluginDir: l.pluginDir } : {}),
+      ...ownOpts(l.own),
       signal: new AbortController().signal,
       decide,
     });

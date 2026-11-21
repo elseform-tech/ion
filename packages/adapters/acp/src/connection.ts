@@ -33,13 +33,14 @@ export type ConnectOpts = {
   gate?: StartOpts["gate"];
   env?: StartOpts["env"];
   envDrop?: StartOpts["envDrop"];
+  ownTools?: StartOpts["ownTools"];
 };
 
 /** Starts of an agent that's setting up, by agent: they take turns (two at once slowed each other past the limit). */
 const settingUp = new Map<string, Promise<unknown>>();
 
 export function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
-  if (!h.notResponding?.()) return open(h, bin, o);
+  if (!h.notResponding?.(o.ownTools)) return open(h, bin, o);
   const before = settingUp.get(h.id) ?? Promise.resolve();
   const mine = before.then(() => open(h, bin, o));
   settingUp.set(
@@ -56,7 +57,7 @@ async function open(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connect
     env: {
       ...agentEnv(process.env, o.envDrop),
       ...o.env,
-      ...(h.env?.(o.gate ? { url: o.gate.url, cwd: o.cwd } : undefined) ?? {}),
+      ...(h.env?.(o.gate ? { url: o.gate.url, cwd: o.cwd } : undefined, !!o.ownTools) ?? {}),
     },
   });
   const rpc = createRpc({ stdin: child.stdin, stdout: child.stdout });
@@ -64,7 +65,7 @@ async function open(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connect
   child.on("exit", () => child.stdout.destroy());
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    const why = h.notResponding?.() ?? `${h.label} didn't respond`;
+    const why = h.notResponding?.(o.ownTools) ?? `${h.label} didn't respond`;
     timer = setTimeout(() => reject(new NotResponding(why)), timeoutMs);
   });
   try {
