@@ -45,7 +45,7 @@ export async function yourServers(
  * the agent. A remote one is forwarded to; a local (stdio) one ion starts itself for the run (`local`, to bridge).
  * Without ion's server (no key), yours are left out.
  */
-function throughIon(
+export function throughIon(
   yours: Omit<RunServers, "skipped">,
   ion: { url: string; key: string } | null,
 ): {
@@ -71,7 +71,7 @@ function throughIon(
 }
 
 /** Under ion's data folder: each run's empty folder its local servers start in (`mcp-run/<runId>`). */
-const MCP_RUN = "mcp-run";
+export const MCP_RUN = "mcp-run";
 
 /** What ion's gateway serves for a run, by name: a remote server it forwards to, or a local one it runs. */
 export type Served = Upstream | LocalUpstream;

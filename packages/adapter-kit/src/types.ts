@@ -1,4 +1,5 @@
 import type { Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
+import type { PickStyle } from "./picks.js";
 import type { EnvDrop } from "./run-env.js";
 
 /** What an adapter emits. The daemon stamps chatId, runId and origin ("adapter") before storing. */
@@ -132,6 +133,8 @@ export interface HarnessAdapter {
   ownOff?: OwnOff;
   /** It decides by itself whether to trust a project's own tools (its own trust list). */
   ownTrust?: true;
+  /** How it takes what you picked with "/" (picks.ts): "slash", it runs `/command` itself. Absent: "tell". */
+  picks?: PickStyle;
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

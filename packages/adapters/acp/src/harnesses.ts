@@ -40,6 +40,8 @@ export type AcpHarness = {
   ownOff?: { servers: boolean; skills: boolean; plugins: boolean };
   /** It trusts a project's own tools by its own list. */
   ownTrust?: true;
+  /** How it takes what you picked with "/": "slash", it runs `/command` (ACP's available commands) itself. */
+  picks?: "slash" | "tell";
   /**
    * Reads one line of the agent's own log (stderr): the reason a turn failed, when the line says one (opencode's
    * "stream error … error.error=…"). With it, the agent is started with its log on stderr.
@@ -143,6 +145,8 @@ export const OPENCODE: AcpHarness = {
   ownHooks: true,
   // Off: its servers and skills stay out; ~/.opencode's plugins still load.
   ownOff: { servers: true, skills: true, plugins: false },
+  // opencode runs a prompt that starts with `/command` as that command (its ACP agent lists them).
+  picks: "slash",
   notResponding: (own) => (settingUp(own) ? "Not responding — opencode is setting up, try again" : undefined),
   logFailure: opencodeFailure,
 };

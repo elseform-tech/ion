@@ -108,6 +108,12 @@ const Tools = z.looseObject({
    * "<project>:<name>@<what it runs>" (signed with ion's key): one the repo adds or changes is off until you turn it on.
    */
   repoOn: z.array(z.string()).default([]),
+  /**
+   * "Ions can use" for your servers' tools (the user, 2026-11-21), as "<server>/<tool>@<what it is>=on|off|label" (a
+   * hash of its name, description and labels): "label" is the server's own label as ion first saw it. A tool that
+   * changes is off for ions until you look.
+   */
+  ionUse: z.array(z.string()).default([]),
 });
 
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
@@ -200,6 +206,7 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["tools", "hooks"], z.array(z.unknown())],
   [["tools", "hooksOn"], z.array(z.string())],
   [["tools", "repoOn"], z.array(z.string())],
+  [["tools", "ionUse"], z.array(z.string())],
   [["tools", "skills"], z.looseObject({ on: z.array(z.string()).optional() })],
   [["agents"], z.looseObject({})],
 ];

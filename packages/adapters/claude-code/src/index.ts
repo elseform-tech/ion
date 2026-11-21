@@ -52,6 +52,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     capabilities: capabilitiesWith(CAPABILITIES, claudeCatalog(deps, binary)),
     // The Agent SDK's mcpServers takes both.
     mcpTransports: { http: true },
+    // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.
+    picks: "slash",
     gateCall: claudeGateCall,
     async start(opts) {
       const path = binary();

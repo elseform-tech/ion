@@ -8,6 +8,8 @@ import { projectDirs, withOrigins } from "./tools-entries.js";
 import { UserError } from "./errors.js";
 import { changeConfig } from "./settings.js";
 import { mcpInfo } from "./tools-mcp.js";
+import { picksFor } from "./tools-picks.js";
+import { serverTools, turnIonUse } from "./tools-ion-use.js";
 import { remoteToSignIn } from "./tools-oauth.js";
 import { hookChange, hookGroups } from "./tools-hooks.js";
 import type { Skills } from "../skills/index.js";
@@ -61,7 +63,8 @@ export function yourToolsOf(ctx: { tools: Tools; skills: Skills; configFile: str
       })),
     );
     const skills = await ctx.skills.list(config.tools.skills.on, projectDirs, ownSwitches(config));
-    return { servers, skills, support: toolSupport() };
+    const body = (name: string) => ctx.skills.bodyOf(projectDirs, name);
+    return { servers, skills, support: toolSupport(), body };
   };
 }
 
@@ -166,8 +169,14 @@ export const toolsHandlers: Pick<
   | "tools.removeHook"
   | "tools.signIn"
   | "tools.signOut"
+  | "tools.picks"
+  | "tools.serverTools"
+  | "tools.setIonUse"
 > = {
   "tools.list": (_a, ctx) => toolsInfo(ctx),
+  "tools.picks": (a, ctx) => picksFor(ctx, a),
+  "tools.serverTools": (a, ctx) => serverTools(ctx, String(a.id ?? "")),
+  "tools.setIonUse": (a, ctx) => turnIonUse(ctx, a),
   "tools.setOn": async (a, ctx) => {
     if (typeof a.on !== "boolean") throw new UserError("Pick on or off");
     if (a.kind === "hook") {

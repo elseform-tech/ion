@@ -1,3 +1,4 @@
+import type { GateCall } from "@ion/adapter-kit";
 import { randomUUID } from "node:crypto";
 import { loadUserConfig } from "@ion/config";
 import { agentsHome, dropInheritedMarkers } from "../env.js";
@@ -27,6 +28,8 @@ import { createGrants, createMcpHandler, type Grants, type RunScope } from "../m
 import { createGateway } from "../gateway/index.js";
 import { Ions } from "../ions/service.js";
 import { IonTurns } from "../ions/turn.js";
+import { IonServers } from "../ions/servers.js";
+import { pickSource } from "./tools-picks.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
 import { diffOfChat, handlers, harnessInfos } from "./commands.js";
@@ -168,6 +171,15 @@ function httpServer(ctx: Ctx, turns: IonTurns) {
     grants,
     upstream: (runId, name) => ctx.runs.upstream(runId, name),
     gate: (runId, call) => ctx.runs.gateMcp(runId, call),
+    // An ion's turn reaches your servers too, with its turn's key: only what reads (ion's gate for ions).
+    ...(ctx.ionServers
+      ? {
+          ion: {
+            upstream: (turnId: string, name: string) => ctx.ionServers!.upstream(turnId, name),
+            gate: (turnId: string, call: GateCall) => turns.gateMcp(turnId, call),
+          },
+        }
+      : {}),
   });
   ctx.runs.onEnded(() => gateway.closeEnded());
   return createServer((req, res) => {
@@ -234,9 +246,10 @@ function startIons(
     dataDir: string;
     grants: Grants;
     base: () => string;
+    ionServers: IonServers;
   },
 ): { ions: Ions; turns: IonTurns } {
-  const { dataDir, grants, base, ...deps } = d;
+  const { dataDir, grants, base, ionServers, ...deps } = d;
   const agents = () => harnessInfos.list();
   const agent = (id: string) => harnessInfos.one(id);
   // Turns start threads through the ions, and the ions think through turns: the ions are made just below.
@@ -245,8 +258,11 @@ function startIons(
     ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents, agent },
     mcpUrl: () => `${base()}/mcp`,
     gateUrl: () => `${base()}/gate`,
-    startThread: (projectId, brief, turn) =>
-      late.ions ? late.ions.startThread(projectId, brief, turn) : Promise.resolve({ why: "ion is starting" }),
+    servers: ionServers,
+    startThread: (projectId, brief, turn, picks) =>
+      late.ions
+        ? late.ions.startThread(projectId, brief, turn, picks)
+        : Promise.resolve({ why: "ion is starting" }),
   });
   const ions = new Ions({ ...deps, turns, agents, agent });
   late.ions = ions;
@@ -404,9 +420,17 @@ function openState(
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
   const access = autoAccess(opts, quick, late, unsure);
   const hooks = startHooks(store, db, opts.configFile, tools);
+  const servers = serversFor({ tools, oauth, configFile: opts.configFile });
+  // Your servers for ions' turns: only what reads, as Auto's judge agrees (the user, 2026-11-21).
+  const ionServers = new IonServers({ ...opts, servers, judge: createJudge(quick) });
   const runCtx = {
     ...{ configFile: opts.configFile, dataDir: opts.dataDir, access, ionBin },
-    ...{ servers: serversFor({ tools, oauth, configFile: opts.configFile }), ...forRuns },
+    ...{ servers, ...forRuns },
+    // A message's "/" and "@" picks, as its agent takes them.
+    picks: (agent: string, projectId: string) => {
+      const dir = loadUserConfig(opts.configFile).config.projects.find((p) => p.id === projectId)?.path;
+      return pickSource({ tools, skills, configFile: opts.configFile }, agent, dir ? [dir] : []);
+    },
     beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => hooks.beforeTool(r, c),
     mcp: { grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
@@ -430,14 +454,17 @@ function openState(
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base });
+  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base, ionServers });
   // A routine's time came (or you ran it now): its ion starts its thread.
   const routines = new Routines({
     ...{ store, db, configFile: opts.configFile },
     start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
-  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION, tools, oauth, unsure };
+  const base0 = {
+    ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
+    ...{ tools, oauth, unsure, ionServers },
+  };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };
   return { ctx, turns };

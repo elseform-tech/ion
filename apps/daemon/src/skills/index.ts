@@ -183,6 +183,9 @@ export function createSkills(o: {
       await writePlugin(dir, given);
       return dir;
     },
+    /** A skill's SKILL.md after its front matter, by name, from your folders and these projects'; null: none. */
+    bodyOf: (projects: string[], name: string): string | null =>
+      find(projects).find((s) => s.name === name)?.body ?? null,
     /** A run's plugin, gone when the run ends. */
     remove: (runId: string) => rm(pluginDirOf(o.dataDir, runId), { recursive: true, force: true }),
     /** Plugins left by runs that never ended (ion stopped hard): gone when ion starts. */

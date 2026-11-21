@@ -225,6 +225,7 @@ describe("tools in your config", () => {
       hooksOn: [],
       skills: { on: [] },
       repoOn: [],
+      ionUse: [],
     });
     const f = join(tmp(), "config.toml");
     const hook = { id: "h1", name: "Tell me", on: true, event: "run.finished" as const, run: "say done" };
@@ -244,6 +245,7 @@ describe("tools in your config", () => {
       hooksOn: ["h1@0123456789ab"],
       skills: { on: ["~/.claude/skills/pdf@0123456789ab"] },
       repoOn: [],
+      ionUse: [],
     });
   });
 

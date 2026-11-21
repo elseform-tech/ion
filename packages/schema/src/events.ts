@@ -241,6 +241,10 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     shown: z.string().optional(),
     /** The question (its needId) this message answers: the chat shows it as your reply, where you sent it. */
     answers: z.string().optional(),
+    /** Skills and commands you picked with "/" (shown as chips; the agent got them its way). */
+    skills: z.array(z.string()).optional(),
+    /** Servers you picked with "@". */
+    mentions: z.array(z.string()).optional(),
   }),
   /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
   "memory.written": z.object({

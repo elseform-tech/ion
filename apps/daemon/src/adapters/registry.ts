@@ -3,7 +3,7 @@ import { createAcpAdapter, GROK_BUILD, OPENCODE } from "@ion/adapter-acp";
 import { createClaudeCodeAdapter } from "@ion/adapter-claude-code";
 import { createCodexAdapter } from "@ion/adapter-codex";
 import { createFakeAdapter } from "@ion/adapter-fake";
-import type { HarnessAdapter } from "@ion/adapter-kit";
+import type { HarnessAdapter, PickStyle } from "@ion/adapter-kit";
 import type { SkillWhose } from "@ion/schema";
 
 export type HarnessEntry = { adapter: HarnessAdapter; label: string; loginHint: string };
@@ -75,6 +75,9 @@ export function skillReaders(): Record<string, { fromIon: boolean; own: SkillWho
     listedHarnessIds().map((id) => [id, { fromIon: SKILLS.has(id), own: OWN_SKILLS[id] ?? [] }]),
   );
 }
+
+/** How an agent takes what you picked with "/" (its adapter says; "tell" for one that doesn't). */
+export const pickStyle = (id: string): PickStyle => getHarness(id)?.adapter.picks ?? "tell";
 
 /** Whether ion passes skills to this agent (a plugin folder per run). */
 export const takesSkills = (id: string): boolean => SKILLS.has(id);

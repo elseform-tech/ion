@@ -300,3 +300,35 @@ export type ToolCheck = ToolItem & {
   /** A hook that's on, run with a test event: the end of what it printed (keys masked; never told to a chat). */
   output?: string;
 };
+
+/**
+ * One thing "/" or "@" lists: a skill or command ("/"), or a server or one of its resources ("@"). `from`: the agent's
+ * own, or ion's. `server`: a resource's server.
+ */
+export type PickInfo = {
+  name: string;
+  description: string;
+  kind: "skill" | "command" | "server" | "resource";
+  from: "own" | "ion";
+  server?: string;
+};
+
+/** What "/" (skills) and "@" (servers) list for one message box. */
+export type Picks = { skills: PickInfo[]; servers: PickInfo[] };
+
+/**
+ * One of a server's tools, for "Ions can use": `readOnly`, the server labels it read-only and not destructive (what
+ * the switch starts as); `ions`, whether ions can use it now; `yours`, your switch, when you set one; `changed`: it
+ * changed since you set it (or since ion first saw it), so it's off for ions until you look.
+ */
+export type ServerToolInfo = {
+  name: string;
+  description: string;
+  readOnly: boolean;
+  ions: boolean;
+  yours?: boolean;
+  changed?: true;
+};
+
+/** A server's tools, or why they couldn't be listed (it's off, or it couldn't be reached). */
+export type ServerTools = { tools: ServerToolInfo[]; problem?: string };

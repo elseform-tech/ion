@@ -1,3 +1,4 @@
+import type { ThreadPicks } from "../mcp/ion-tools.js";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
 import { UserError } from "../api/errors.js";
@@ -201,6 +202,7 @@ export class Ions {
     projectId: string,
     brief: string,
     turn: { ionId: string; request: string; turnId: string },
+    picks: ThreadPicks = {},
   ): Promise<{ chatId: string } | { why: string }> {
     const refused = this.refusal(projectId, turn.ionId);
     if (refused) return { why: refused };
@@ -209,7 +211,7 @@ export class Ions {
     this.counted(turn.turnId, n);
     const chief = turn.ionId === "chief";
     if (chief) this.say(projectId, `From ion: ${brief.trim()}`);
-    const t = await this.thread(projectId, brief, { request: turn.request });
+    const t = await this.thread(projectId, brief, { request: turn.request, ...picks });
     if ("why" in t) {
       this.counted(turn.turnId, (this.perTurn.get(turn.turnId) ?? 1) - 1);
       return t;
@@ -260,7 +262,7 @@ export class Ions {
   private async thread(
     projectId: string,
     text: string,
-    o: { request?: string; title?: string; effort?: Effort } = {},
+    o: { request?: string; title?: string; effort?: Effort } & ThreadPicks = {},
   ): Promise<Thread | { why: string }> {
     const harness = await projectAgent(this.d, projectId);
     try {
@@ -271,6 +273,8 @@ export class Ions {
         ...(harness ? { harness } : {}),
         ...brainOf(this.d.configFile, projectId, harness),
         ...(o.effort ? { effort: o.effort } : {}),
+        ...(o.skills?.length ? { skills: o.skills } : {}),
+        ...(o.mentions?.length ? { mentions: o.mentions } : {}),
         access: "auto" as const,
       };
       const opts = { by: "ion" as const, ...(o.request ? { request: o.request } : {}) };

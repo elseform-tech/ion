@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   type AdapterEvent,
   type ApprovalRequest,
+  type GateCall,
   type HarnessAdapter,
   ION_SERVER,
   projectRoots,
@@ -28,6 +29,8 @@ import { ionInstructions } from "./instructions.js";
 import { envDropOf } from "../tools/env-drop.js";
 import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
+import type { ThreadPicks } from "../mcp/ion-tools.js";
+import type { IonServers } from "./servers.js";
 
 /** A turn's hard limit: past it the agent is stopped and the ion says it couldn't finish. */
 const ION_TURN_MS = 300_000;
@@ -54,6 +57,7 @@ type StartIonThread = (
   projectId: string,
   brief: string,
   turn: { ionId: string; request: string; turnId: string },
+  picks?: ThreadPicks,
 ) => Promise<{ chatId: string } | { why: string }>;
 
 /**
@@ -86,6 +90,8 @@ export type IonTurnsDeps = {
   home?: string;
   /** How a page's host is looked up before an ion reads it (tests give their own). */
   dns?: Net["dns"];
+  /** Your servers for ions' turns, through ion's gateway (only what reads; the user, 2026-11-21). */
+  servers?: IonServers;
 };
 
 /** A turn while it runs: what its tools and its gate need, and how to stop it (set once its session starts). */
@@ -98,6 +104,8 @@ type Live = {
   /** The addresses this turn found (your message's, its searches' results): the only pages it may read. */
   web: WebFound;
   threads: Thread[];
+  /** Your servers this turn reaches through ion's gateway (its agent's hook lets their calls on; ion decides there). */
+  served: string[];
   /** Ends the turn now: past its limit or ion stopping, or `stopped`: you stopped it. */
   halt?: (stopped?: true) => void;
 };
@@ -206,11 +214,14 @@ export class IonTurns {
   }
 
   /** start_thread for a live turn (ion's MCP server): the thread joins the turn's reply. */
-  readonly startThread = async (projectId: string, brief: string, turnId: string) => {
+  readonly startThread = async (projectId: string, brief: string, turnId: string, picks?: ThreadPicks) => {
     const t = this.live.get(turnId);
     if (!t) return { why: "That turn is over" };
     if (t.request === null) return { why: "Not in a report" };
-    const r = await this.d.startThread(projectId, brief, { ionId: t.ionId, request: t.request, turnId });
+    const turn = { ionId: t.ionId, request: t.request, turnId };
+    const r = picks
+      ? await this.d.startThread(projectId, brief, turn, picks)
+      : await this.d.startThread(projectId, brief, turn);
     if ("chatId" in r) t.threads.push({ chatId: r.chatId, projectId });
     return r;
   };
@@ -220,7 +231,16 @@ export class IonTurns {
     const t = this.live.get(scope.turnId);
     const call = t?.adapter.gateCall?.(payload);
     if (!t || !call) return null;
-    return ionVerdict({ requestId: "gate", toolId: "gate", ...call }, t.rules, this.webOf(t));
+    return ionVerdict({ requestId: "gate", toolId: "gate", ...call }, t.rules, this.webOf(t), t.served);
+  }
+
+  /** ion's gate for an ion's call on one of your servers (ion's gateway asks): only what reads, and only yours. */
+  async gateMcp(turnId: string, call: GateCall): Promise<GateAnswer> {
+    const t = this.live.get(turnId);
+    if (!t || !this.d.servers) return { decision: "deny", reason: "That turn is over" };
+    // A report's turn has no words of yours to judge by: it reads nothing of your servers.
+    if (t.request === null) return { decision: "deny", reason: "Not in a report" };
+    return this.d.servers.gate(turnId, call, t.request);
   }
 
   /** What a live turn may read on the web. */
@@ -261,7 +281,10 @@ export class IonTurns {
     const turnId = `turn_${randomUUID()}`;
     const rules = this.rulesFor(cwd);
     // Only your own words seed what it may read: a report's prompt is an agent's.
-    const live: Live = { ionId, request, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
+    const live: Live = {
+      ...{ ionId, request, adapter: h.adapter, rules, web: new WebFound(request), threads: [] },
+      served: [],
+    };
     this.live.set(turnId, live);
     try {
       const t = { ionId, turnId, text, cwd, rules, report: request === null };
@@ -278,6 +301,7 @@ export class IonTurns {
     } finally {
       this.live.delete(turnId);
       this.d.grants.revoke(turnId);
+      await this.d.servers?.close(turnId);
     }
   }
 
@@ -346,12 +370,16 @@ export class IonTurns {
     const mcpKey = this.d.grants.create(scope);
     const gateKey = adapter.gateCall ? this.d.grants.create(scope, "gate") : null;
     const abort = new AbortController();
+    // Your servers that are on, at ion's URL for each with only the turn's key (a report's turn gets none).
+    const yours = t.report
+      ? { servers: [], envDrop: undefined }
+      : await this.yourServers(t.turnId, mcpKey, adapter);
     const opts: StartOpts = {
       cwd: t.cwd,
       model: brain.model,
       effort: brain.effort,
       instructions: ionInstructions(t.ionId),
-      // ion's server only: your servers reach chats' agents, never an ion's own turn.
+      // ion's server first, then yours through ion's gateway (ion decides each call there: only what reads).
       mcpServers: [
         {
           name: ION_SERVER,
@@ -359,6 +387,7 @@ export class IonTurns {
           url: this.d.mcpUrl(),
           headers: { Authorization: `Bearer ${mcpKey}` },
         },
+        ...yours.servers,
       ],
       ...(gateKey ? { gate: { url: `${this.d.gateUrl()}/${gateKey}` } } : {}),
       // ion's own agents don't inherit your keys either.
@@ -366,7 +395,7 @@ export class IonTurns {
       signal: abort.signal,
       decide: async (req: ApprovalRequest) => {
         const live = this.live.get(t.turnId);
-        return live ? (await ionVerdict(req, t.rules, this.webOf(live))).decision : "deny";
+        return live ? (await ionVerdict(req, t.rules, this.webOf(live), live.served)).decision : "deny";
       },
     };
     const resume = this.resumeOf(t.ionId, brain.harness, scope.projects);
@@ -374,6 +403,16 @@ export class IonTurns {
       this.drive({ ...t, adapter, opts, resume }, e, hold),
     );
     return { end, projects: scope.projects };
+  }
+
+  /** Your servers for a turn, through ion's gateway with its key; none when ion can't give them. */
+  private async yourServers(turnId: string, key: string, adapter: HarnessAdapter) {
+    if (!this.d.servers) return { servers: [] };
+    const url = this.d.mcpUrl();
+    const given = await this.d.servers.open(turnId, { url, key }, adapter.mcpTransports).catch(() => null);
+    const live = this.live.get(turnId);
+    if (live && given) live.served = given.servers.map((s) => s.name);
+    return { servers: given?.servers ?? [] };
   }
 
   /**

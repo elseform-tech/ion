@@ -29,6 +29,7 @@ mcpOn = []
 hooks = []
 hooksOn = []
 repoOn = []
+ionUse = []
 
 [tools.skills]
 on = []

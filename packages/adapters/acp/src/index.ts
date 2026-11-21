@@ -72,6 +72,7 @@ export function createAcpAdapter(
     capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps.startTimeoutMs)),
     mcpTransports: { http: h.mcpHttp ?? true },
     ...(h.ownTools ? { ownTools: true as const } : {}),
+    ...(h.picks ? { picks: h.picks } : {}),
     ...(h.ownHooks ? { ownHooks: true as const } : {}),
     ...(h.ownOff ? { ownOff: h.ownOff } : {}),
     ...(h.ownTrust ? { ownTrust: true as const } : {}),

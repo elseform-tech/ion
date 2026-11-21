@@ -1,3 +1,4 @@
+import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
@@ -95,6 +96,8 @@ export type Ctx = {
   configFile: string;
   startedAt: number;
   version: string;
+  /** Your servers for ions' turns, and each server's tools for "Ions can use". */
+  ionServers?: IonServers;
   /** What Auto is often unsure about (said in `ion status`). */
   unsure?: { notes(): string[] };
 };

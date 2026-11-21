@@ -190,6 +190,17 @@ describe("a thread an ion starts", () => {
     expect(said("payments-api")).toEqual([]);
   });
 
+  // The user, 2026-11-21: start_thread takes skills (and mentions), so a thread starts with them.
+  it("start_thread passes skills to the thread", async () => {
+    await ions().startThread(
+      "payments-api",
+      "Fill the form",
+      { ionId: "payments-api", request: "fill it", turnId: "turn_1" },
+      { skills: ["pdf"], mentions: ["github"] },
+    );
+    expect(ask.mock.calls[0]![0]).toMatchObject({ skills: ["pdf"], mentions: ["github"] });
+  });
+
   // Final review I3: the brief is ion chief's words, shown as ion's in the project's chat, never as yours.
   it("from ion chief: the project's ion says the brief and the thread's line", async () => {
     await ions().startThread("storefront", "Run the cart tests", {

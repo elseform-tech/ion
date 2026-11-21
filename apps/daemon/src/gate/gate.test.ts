@@ -133,7 +133,7 @@ describe("the gate, end to end with the fake harness", () => {
     const [need] = await client.call("needs.list", { chatId: first.chatId });
     // The command is the question's title; the detail is only the reason (tour, final review, 2026-11-21).
     expect(need!.summary).toBe("Allow this? deny-me now");
-    expect(need!.detail).toBe("ion stopped it: Looks risky");
+    expect(need!.detail).toBe("ion thinks this is risky: Looks risky");
     await client.call("need.answer", { needId: need!.needId, choice: 2 });
     await until(() => seen.some((e) => e.runId === first.runId && e.type === "run.finished"));
     const again = await client.call("ask", { text: "gated deny-me now", harness: "fake", projectId: "repo" });

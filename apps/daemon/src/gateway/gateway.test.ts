@@ -346,3 +346,45 @@ describe("ion's gateway to your remote servers", () => {
     expect(gated).toHaveLength(0);
   });
 });
+
+// The user, 2026-11-21 ("Read-only use"): an ion's turn reaches your servers through ion's gateway too, with its turn's
+// key; ion's gate for ions decides each call; the key never opens another turn's servers or a run's.
+describe("an ion's turn through the gateway", () => {
+  it("an ion's MCP call goes through the gateway with no key in its environment", async () => {
+    const ionGated: { turnId: string; call: GateCall }[] = [];
+    let ionSays: { decision: "allow" | "deny"; reason?: string } = { decision: "allow" };
+    const gateway = createGateway({
+      grants,
+      upstream: () => null,
+      gate: async () => ({ decision: "deny" }),
+      ion: {
+        upstream: (turnId, name) => (turnId === "turn_1" ? (upstreams[name] ?? null) : null),
+        gate: async (turnId, call) => {
+          ionGated.push({ turnId, call });
+          return ionSays;
+        },
+      },
+    });
+    const srv = createServer((req, res) => void gateway.handle(req, res));
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const turnKey = grants.create({ kind: "ion", ionId: "chief", projects: [], turnId: "turn_1" });
+    const other = grants.create({ kind: "ion", ionId: "chief", projects: [], turnId: "turn_2" });
+    const send = (k: string, body: object) =>
+      fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/mcp/s/docs`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${k}`, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+    const r = await send(turnKey, callTool("echo", { q: "hi" }));
+    const text = ((await r.json()) as { result: { content: { text: string }[] } }).result.content[0]!.text;
+    // Your key is added by ion; the ion's agent held only its turn key.
+    expect(JSON.parse(text)).toMatchObject({ args: { q: "hi" } });
+    expect(up.seen.at(-1)?.headers["x-api-key"]).toBe("key-secret-1");
+    expect(ionGated).toEqual([{ turnId: "turn_1", call: expect.objectContaining({ toolName: "echo", mcpServer: "docs" }) }]);
+    ionSays = { decision: "deny", reason: "That changes something, so I'll start a thread" };
+    const no = (await (await send(turnKey, callTool("echo", {}))).json()) as { result: { isError: boolean } };
+    expect(no.result.isError).toBe(true);
+    expect((await send(other, callTool("echo", {}))).status).toBe(404);
+    srv.close();
+  });
+});

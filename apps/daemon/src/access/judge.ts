@@ -11,7 +11,13 @@ export type JudgeInput = {
   checksFailed?: true;
   /** ion's guess (the user, 2026-11-21): why it's wary, the scripts that will run, and text the command decodes. */
   wary?: { reason: string; scripts: { file: string; text?: string }[]; decoded: string[] };
+  /** An ion's call on your server (the user, 2026-11-21): allowed only when it only reads. */
+  onlyReads?: true;
 };
+
+/** What the judge is told about an ion's call: ions only read. */
+const ONLY_READS =
+  "From ion: this call is from an ion, which may only read. Allow it only if it just reads or looks up and changes nothing anywhere (no writes, sends, deletes, posts or payments); deny anything that could change something.";
 
 /** What the judge is told when a check didn't finish: fixed words, never a hook's name or output (config text). */
 const CHECKS_FAILED =
@@ -53,6 +59,7 @@ export function judgePrompt(i: JudgeInput): string {
       : []),
     ...(i.checksFailed ? [CHECKS_FAILED] : []),
     ...(i.wary ? waryBlocks(i.wary) : []),
+    ...(i.onlyReads ? [ONLY_READS] : []),
     "Say unsure only when you're missing information to judge (what a script does, where data goes), not just to be careful.",
     'Answer with only JSON: {"verdict": "allow" or "deny" or "unsure", "reason": "at most 12 plain words"}',
   ].join("\n\n");

@@ -4,7 +4,9 @@ import type {
   ImportInfo,
   ImportResult,
   NewHook,
+  Picks,
   RegistryHit,
+  ServerTools,
   ToolAdd,
   ToolCheck,
   ToolItem,
@@ -252,6 +254,10 @@ export type Commands = {
       effort?: EffortLevel;
       /** This message's access mode; else the project's, else the default. */
       access?: "auto" | "full";
+      /** Skills and commands picked with "/" (by name): the agent is told to use them, the way it expects. */
+      skills?: string[];
+      /** MCP servers or resources picked with "@" (by name). */
+      mentions?: string[];
     };
     result: { chatId: string; runId: string };
   };
@@ -351,6 +357,15 @@ export type Commands = {
   "tools.import": { args: { agent?: string; names?: string[]; repo?: string }; result: ImportResult };
   /** Hides the Import line (one agent's, or every one) until a server ion hasn't seen appears. */
   "tools.dismissImport": { args: { agent?: string }; result: ImportInfo };
+  /**
+   * What "/" and "@" list in a message box (the user, 2026-11-21): a chat's agent's own skills and commands and ion's
+   * that reach it, and its servers; for an ion's chat (`ionId`), the skills and servers that ion's threads can use.
+   */
+  "tools.picks": { args: { harness?: string; projectId?: string | null; ionId?: string }; result: Picks };
+  /** A server's tools (from its tools/list; only one that's on), each with whether ions can use it. */
+  "tools.serverTools": { args: { id: string }; result: ServerTools };
+  /** "Ions can use" for one of a server's tools: your switch, kept with what the tool is now. */
+  "tools.setIonUse": { args: { id: string; tool: string; on: boolean }; result: { ok: true } };
 };
 
 export type HarnessInfo = {
@@ -533,6 +548,9 @@ export const COMMANDS = [
   "tools.importable",
   "tools.import",
   "tools.dismissImport",
+  "tools.picks",
+  "tools.serverTools",
+  "tools.setIonUse",
 ] as const;
 
 export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };
