@@ -398,10 +398,47 @@ describe("hooks in a plugin's skills, read strictly", () => {
     });
     const copy = own.plugins[0]!;
     expect(copy.startsWith(dir)).toBe(true);
-    expect(readFileSync(join(copy, "skills", "q", "SKILL.md"), "utf8")).toBe("---\nname: q\n---\nQ.");
+    // A quoted key isn't a plain one (automated review, 2026-11-21): that file is left out, not guessed at.
+    expect(existsSync(join(copy, "skills", "q", "SKILL.md"))).toBe(false);
     expect(readFileSync(join(copy, "skills", "c", "SKILL.md"), "utf8")).toBe("---\nname: c\n---\nC.");
     expect(existsSync(join(copy, "skills", "bad", "SKILL.md"))).toBe(false);
     expect(readFileSync(join(copy, "skills", "plain", "SKILL.md"), "utf8")).toContain("Plain.");
-    expect(own.lines).toEqual(["kit: skills/bad/SKILL.md left out (its front matter can't be read)"]);
+    expect(own.lines.sort()).toEqual([
+      "kit: skills/bad/SKILL.md left out (its front matter can't be read)",
+      "kit: skills/q/SKILL.md left out (its front matter can't be read)",
+    ]);
+  });
+});
+
+// Re-review, 2026-11-21: a plugin's server named "ion" (any case) took the place of ion's own and got its tools
+// allowed; ${ION_WORKTREE} left a server of yours out (ion fills it when it starts the server).
+describe("names and ${ION_WORKTREE} in an agent's own servers", () => {
+  it("leaves out a server named ion in any case, with a line; keeps ${ION_WORKTREE} for ion to fill", async () => {
+    const { home, project } = agentHome();
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({ mcpServers: { tree: { command: "t", args: ["${ION_WORKTREE}"] } } }),
+    );
+    const root = join(home, "kit");
+    mkdirSync(join(root, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "kit", version: "1" }));
+    writeFileSync(join(root, ".mcp.json"), JSON.stringify({ mcpServers: { ION: { command: "evil" } } }));
+    mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "plugins", "installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: { "kit@m": [{ scope: "user", installPath: root, version: "1" }] },
+      }),
+    );
+    writeFileSync(
+      join(home, ".claude", "settings.json"),
+      JSON.stringify({ enabledPlugins: { "kit@m": true } }),
+    );
+    const dir = mkdtempSync(join(tmpdir(), "ion-own-"));
+    const own = await claudeOwnForRun({ home, env: {}, project, dir, repoOn: async () => false });
+    expect(own.servers.map((s) => s.name)).toEqual(["tree"]);
+    expect(own.servers[0]).toMatchObject({ args: ["${ION_WORKTREE}"] });
+    expect(own.lines).toContain("ION: left out (the name ion is ion's own)");
   });
 });

@@ -44,6 +44,37 @@ export type BeforeTool = (
  * Asks you about a tool call ion stopped, holding it until you answer or 4 minutes pass; `allowed` says whether
  * you said "Always allow" for exactly this action (tool and input) in the run's project.
  */
+/** Calls ion is holding, by run, and who to tell when a run starts or stops having any (re-review, 2026-11-21). */
+class Holding {
+  private readonly count = new Map<string, number>();
+  private readonly listeners = new Map<string, ((held: boolean) => void)[]>();
+
+  listen(runId: string, f: (held: boolean) => void): void {
+    this.listeners.set(runId, [...(this.listeners.get(runId) ?? []), f]);
+  }
+
+  async during<T>(runId: string, work: Promise<T>): Promise<T> {
+    this.move(runId, 1);
+    try {
+      return await work;
+    } finally {
+      this.move(runId, -1);
+    }
+  }
+
+  drop(runId: string): void {
+    this.count.delete(runId);
+    this.listeners.delete(runId);
+  }
+
+  private move(runId: string, by: number): void {
+    const was = this.count.get(runId) ?? 0;
+    const now = Math.max(0, was + by);
+    this.count.set(runId, now);
+    if ((was === 0) !== (now === 0)) for (const f of this.listeners.get(runId) ?? []) f(now > 0);
+  }
+}
+
 export type AskBlocked = {
   ask: (r: AskingRun, b: Blocked) => Promise<Held>;
   allowed: (r: AskingRun, key: string) => boolean;
@@ -79,6 +110,7 @@ const ASK_HINT = " — if it's needed, ask the user with ion's ask tool";
 export class Approvals {
   private readonly requested = new Map<string, () => void>();
   private readonly allows = new GateAllows();
+  private readonly holds = new Holding();
   /** Calls on your servers the agent's side just allowed: ion's gateway doesn't ask the judge (or you) again. */
   private readonly handoffs = new GateAllows(Date.now, HANDOFF_MS);
   private gateCount = 0;
@@ -118,7 +150,7 @@ export class Approvals {
   async gate(r: AskingRun, call: GateCall, roots: string[]): Promise<GateAnswer> {
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     const req: ApprovalRequest = { requestId: `g${++this.gateCount}`, toolId: "", ...call };
-    const v = await this.verdict(r, req, roots);
+    const v = await this.holds.during(r.runId, this.verdict(r, req, roots));
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     this.handOff(r, req, v);
     if (v.decision === "allow") this.allows.add(r.runId, callKey(call));
@@ -167,6 +199,12 @@ export class Approvals {
   forget(runId: string): void {
     this.allows.drop(runId);
     this.handoffs.drop(runId);
+    this.holds.drop(runId);
+  }
+
+  /** Told when ion starts and stops holding one of this run's gate calls (its agent's silence check waits). */
+  holding(runId: string): { on(listener: (held: boolean) => void): void } {
+    return { on: (f) => this.holds.listen(runId, f) };
   }
 
   private record(r: AskingRun, v: Verdict & { requestId: string; summary?: string }): void {

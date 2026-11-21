@@ -30,7 +30,15 @@ export class ResumeFailed extends Error {}
  */
 export type McpSpec =
   | HttpMcpSpec
-  | { name: string; transport: "stdio"; command: string; args: string[]; env: Record<string, string> };
+  | {
+      name: string;
+      transport: "stdio";
+      command: string;
+      args: string[];
+      env: Record<string, string>;
+      /** A repo's own server you allowed for this chat: it runs from the chat's folder (it's the repo's code). */
+      inWorktree?: true;
+    };
 
 /** A remote (Streamable HTTP) MCP server: the only kind a run's agent is given (a local one is ion's URL for it). */
 export type HttpMcpSpec = { name: string; transport: "http"; url: string; headers: Record<string, string> };
@@ -78,6 +86,11 @@ export type StartOpts = {
   /** What the agent's process may not inherit from ion's environment (your keys: mcp.json's names and values). */
   envDrop?: EnvDrop;
   signal: AbortSignal;
+  /**
+   * When ion is holding one of the run's calls for your answer (through any path: its gate too), so an agent's silence
+   * check waits (re-review, 2026-11-21).
+   */
+  holding?: { on(listener: (held: boolean) => void): void };
   /** The daemon decides every permission prompt (policy now, a "Needs you" pin in Plan 3). */
   decide: (req: ApprovalRequest) => Promise<Decision>;
 };

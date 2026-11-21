@@ -240,11 +240,11 @@ function mcpPlan(opts: StartOpts): { servers: Record<string, unknown>; env: Reco
   };
   const headers = (o: Record<string, string>) =>
     Object.fromEntries(Object.entries(o).map(([k, v]) => [k, ref("H", v)]));
+  // The first of each name wins: ion's own comes first and stays ion's (re-review, 2026-11-21).
+  const taken = new Set<string>();
+  const first = (opts.mcpServers ?? []).filter((s) => !taken.has(s.name) && Boolean(taken.add(s.name)));
   const servers = Object.fromEntries(
-    (opts.mcpServers ?? []).map((s) => [
-      s.name,
-      { type: "http", url: ref("U", s.url), headers: headers(s.headers) },
-    ]),
+    first.map((s) => [s.name, { type: "http", url: ref("U", s.url), headers: headers(s.headers) }]),
   );
   return { servers, env };
 }

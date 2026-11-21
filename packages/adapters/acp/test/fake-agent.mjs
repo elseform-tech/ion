@@ -37,6 +37,28 @@ const NO_PROGRESS = {
   busy: false,
 };
 
+/** A tool that runs a while (longer than the silence check) before it's done; then a word. */
+async function longTool(id, sessionId) {
+  update(sessionId, {
+    sessionUpdate: "tool_call",
+    toolCallId: "lt",
+    title: "make",
+    kind: "execute",
+    status: "in_progress",
+  });
+  await new Promise((r) => setTimeout(r, 1500));
+  update(sessionId, { sessionUpdate: "tool_call_update", toolCallId: "lt", status: "completed" });
+  update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "built" } });
+  send({ id, result: { stopReason: "end_turn" } });
+}
+
+/** Quiet a while (ion holding a call elsewhere, in the test), then a word. */
+async function quietThenSay(id, sessionId) {
+  await new Promise((r) => setTimeout(r, 1500));
+  update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "ok" } });
+  send({ id, result: { stopReason: "end_turn" } });
+}
+
 /** The prompt's text, and ion's standing instructions (their own first block) apart from it. */
 function split(blocks) {
   const all = blocks.map((b) => b.text ?? "");
@@ -78,9 +100,17 @@ function noProgress(sessionId, text) {
   setInterval(tick, 50);
 }
 
+/** Prompts that go quiet, or take a while, on purpose. */
+const TIMED = {
+  quota: (_id, sessionId) => noProgress(sessionId, "quota"),
+  busy: (_id, sessionId) => noProgress(sessionId, "busy"),
+  longtool: longTool,
+  quietheld: quietThenSay,
+};
+
 async function prompt(id, { sessionId, prompt: blocks }) {
   const { told, text } = split(blocks);
-  if (text in NO_PROGRESS) return noProgress(sessionId, text);
+  if (text in TIMED) return TIMED[text](id, sessionId);
   const cwd = sessions.get(sessionId);
   if (text.startsWith("approve")) {
     update(sessionId, {

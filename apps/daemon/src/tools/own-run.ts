@@ -197,8 +197,8 @@ export function withOwnServers<T extends { specs: McpSpec[]; secrets: string[] }
   yours: T,
   own?: OwnForRun,
 ): T {
-  const taken = new Set(yours.specs.map((s) => s.name));
-  const theirs = (own?.ownServers ?? []).filter((s) => !taken.has(s.name));
+  const taken = new Set(["ion", ...yours.specs.map((s) => s.name.toLowerCase())]);
+  const theirs = (own?.ownServers ?? []).filter((s) => !taken.has(s.name.toLowerCase()));
   return {
     ...yours,
     specs: [...yours.specs, ...theirs],

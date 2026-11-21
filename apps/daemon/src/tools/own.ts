@@ -5,7 +5,7 @@ import type { McpSpec } from "@ion/adapter-kit";
 import type { OwnServerInfo } from "@ion/schema";
 import { harnessIds } from "../adapters/registry.js";
 import { type Launch, readAgentServers, readFile, standardLaunch } from "./import.js";
-import { copyWithoutHooks, needsCopy } from "./plugin-copy.js";
+import { copyWithoutHooks } from "./plugin-copy.js";
 import { type FoundPlugin, readPlugins } from "./plugins.js";
 import { argKey, urlHoldsKey } from "./secretish.js";
 
@@ -172,7 +172,9 @@ export async function ownToolsOf(o: {
 
 /** `${VAR}` and `${VAR:-default}` filled as Claude Code fills them; null when a variable without a default is unset. */
 function fill(v: string, env: Env, missing: string[]): string {
-  return v.replace(/\$\{([A-Za-z_]\w*)(?::-([^}]*))?\}/g, (_m, name: string, def?: string) => {
+  return v.replace(/\$\{([A-Za-z_]\w*)(?::-([^}]*))?\}/g, (m, name: string, def?: string) => {
+    // ion fills the chat's folder itself when it starts the server (re-review, 2026-11-21).
+    if (name === "ION_WORKTREE") return m;
     const x = env[name];
     if (x !== undefined) return x;
     if (def !== undefined) return def;
@@ -243,7 +245,7 @@ function claudeServers(home: string, project: string): Entry[] {
       .filter(([n, v]) => !repoProblem(project, n, v))
       .map(([n, v]): Entry => [n, v, true]),
   ];
-  return all.filter(([n]) => !disabled.has(n) && n.toLowerCase() !== "ion");
+  return all.filter(([n]) => !disabled.has(n));
 }
 
 /** Every string in a value with `${NAME}` swapped (structurally: a folder's quotes can't break the definition). */
@@ -267,12 +269,11 @@ const pluginServers = (p: FoundPlugin, dataRoot: string): Entry[] => {
 };
 
 /**
- * A plugin as the run takes it: as it is, or ion's copy in the run's folder without hooks (its own, and any in a
- * skill's, subagent's or command's front matter; plugin-copy.ts). Hooks stay ion's (the user, 2026-11-21).
+ * A plugin as the run takes it: always ion's copy in the run's folder, built from a whitelist without hooks
+ * (plugin-copy.ts). Hooks stay ion's (the user, 2026-11-21).
  */
 async function withoutHooks(p: FoundPlugin, dir: string, n: number, lines: string[]): Promise<string> {
   const from = p.path ?? "";
-  if (!needsCopy(from, !!p.hooks)) return from;
   const to = join(dir, `${n}-${p.name.replace(SAFE, "-")}`);
   await copyWithoutHooks(from, to, p.name, lines);
   return to;
@@ -304,6 +305,17 @@ function filled(name: string, v: unknown, env: Env): { spec: McpSpec; secrets: s
 }
 
 /**
+ * A server as a run takes it: a repo's isn't even filled until you turned it on, and a repo's local one, allowed for
+ * this chat, runs from the chat's folder (it's the repo's own code).
+ */
+async function taken(name: string, v: unknown, repo: true | undefined, o: { env: Env; repoOn: RepoOn }) {
+  if (repo && !(await o.repoOn(name, v))) return null;
+  const got = filled(name, v, o.env);
+  if (!got || !repo || got.spec.transport !== "stdio") return got;
+  return { ...got, spec: { ...got.spec, inWorktree: true as const } };
+}
+
+/**
  * What a Claude Code chat brings of its own: its servers (filled, each name once, the first found wins) and its
  * enabled plugins (in `dir`, ion's folder for this run, those with hooks copied without them). `secrets`: the values to
  * keep out of the run's events.
@@ -330,11 +342,16 @@ export async function claudeOwnForRun(o: {
     ...claudeServers(o.home, o.project),
     ...plugins.flatMap((p) => pluginServers(p, dataRoot)),
   ];
+  const lines: string[] = [];
   for (const [name, v, repo] of entries) {
     if (seen.has(name)) continue;
     seen.add(name);
-    // A repo's server isn't even filled until you turned it on.
-    const got = repo && !(await o.repoOn(name, v)) ? null : filled(name, v, o.env);
+    // ion's own server is ion's (re-review, 2026-11-21): no server of an agent's takes its name, in any case.
+    if (name.toLowerCase() === "ion") {
+      lines.push(`${name}: left out (the name ion is ion's own)`);
+      continue;
+    }
+    const got = await taken(name, v, repo, o);
     if (!got) continue;
     servers.push(got.spec);
     secrets.push(...got.secrets);
@@ -343,7 +360,6 @@ export async function claudeOwnForRun(o: {
   await mkdir(o.dir, { recursive: true, mode: 0o700 });
   for (const p of plugins.filter((x) => Object.keys(x.servers ?? {}).length))
     await mkdir(join(dataRoot, p.name.replace(SAFE, "-")), { recursive: true, mode: 0o700 });
-  const lines: string[] = [];
   const paths = await Promise.all(plugins.map((p, i) => withoutHooks(p, o.dir, i, lines)));
   return { servers, plugins: paths, secrets, lines };
 }

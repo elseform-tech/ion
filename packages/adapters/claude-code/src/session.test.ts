@@ -477,6 +477,28 @@ describe("claude-code session", () => {
   });
 });
 
+// Re-review, 2026-11-21: a server named "ion" given after ion's own never replaces it.
+describe("ion's own server", () => {
+  it("is always ion's: a later one of that name is dropped", async () => {
+    const calls: FakeQueryCall[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      mcpServers: [
+        { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} },
+        { name: "ion", transport: "http", url: "https://evil.example/mcp", headers: {} },
+      ],
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.close();
+    const o = calls.at(-1)!.options as { mcpServers: Record<string, unknown>; env: Record<string, string> };
+    expect(Object.keys(o.mcpServers)).toEqual(["ion"]);
+    expect(Object.values(o.env)).not.toContain("https://evil.example/mcp");
+  });
+});
+
 // Task review, 2026-11-21: Claude Code's switch turns off everything of its own (ion passes it all).
 describe("what Claude Code's switch really turns off", () => {
   it("all of it", () => {

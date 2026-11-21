@@ -124,29 +124,46 @@ function silence(
   fail: (why: string) => void,
 ) {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const stop = () => clearTimeout(timer);
+  /** Why the check is paused: a call ion holds, a tool still running (re-review, 2026-11-21). */
+  const paused = new Set<string>();
+  const start = () => {
+    clearTimeout(timer);
+    if (!silent || paused.size) return;
+    // The agent's own reason, as its harness words it (opencode's: "opencode's free usage is used up …").
+    timer = setTimeout(() => fail(c.failure?.() ?? silent.why), silent.ms);
+    timer.unref();
+  };
   return {
-    heard() {
-      stop();
-      if (!silent) return;
-      timer = setTimeout(() => {
-        // The agent's own reason, as its harness words it (opencode's: "opencode's free usage is used up …").
-        fail(c.failure?.() ?? silent.why);
-      }, silent.ms);
-      timer.unref();
+    heard: start,
+    pause(why: string) {
+      paused.add(why);
+      clearTimeout(timer);
     },
-    hold: stop,
+    resume(why: string) {
+      if (paused.delete(why)) start();
+    },
   };
 }
 
+type Quiet = ReturnType<typeof silence>;
+
 /** ion holding a call for your answer isn't the agent being quiet: the silence check waits for the answer. */
-async function held<T>(quiet: { hold(): void; heard(): void }, answer: Promise<T>): Promise<T> {
-  quiet.hold();
+async function held<T>(quiet: Quiet, answer: Promise<T>): Promise<T> {
+  const why = `ask:${randomUUID()}`;
+  quiet.pause(why);
   try {
     return await answer;
   } finally {
-    quiet.heard();
+    quiet.resume(why);
   }
+}
+
+/** A tool call that's running pauses the check until its update says it's done. */
+function trackTools(u: Record<string, unknown>, quiet: Quiet): void {
+  const id = `tool:${String(u.toolCallId ?? "")}`;
+  const status = String(u.status ?? "");
+  if (status === "completed" || status === "failed") quiet.resume(id);
+  else if (u.sessionUpdate === "tool_call") quiet.pause(id);
 }
 
 export function startAcpSession(
@@ -187,6 +204,7 @@ export function startAcpSession(
   );
   c.rpc.onNotification("session/update", (p) => {
     const u = (p.update ?? {}) as Record<string, unknown>;
+    if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") trackTools(u, quiet);
     if (PROGRESS.has(String(u.sessionUpdate))) quiet.heard();
     for (const e of mapUpdate(u, state)) emit(e);
   });
@@ -195,6 +213,8 @@ export function startAcpSession(
       ? Promise.resolve({ outcome: { outcome: "cancelled" } })
       : held(quiet, answerPermission(p, opts.decide, emit)),
   );
+  // ion holding a call through its gate (Grok's hook, opencode's plugin) tells the session too.
+  opts.holding?.on((on) => (on ? quiet.pause("ion") : quiet.resume("ion")));
   c.child.on("exit", () => finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : CRASH));
   opts.signal.addEventListener("abort", () => c.child.kill());
 

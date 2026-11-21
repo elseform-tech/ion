@@ -39,11 +39,14 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
     with its folder and `${CLAUDE_PLUGIN_DATA}` with a folder of its own in ion's data). **Its servers run through ion**
     (task review, 2026-11-21), as yours do: a local one is started by ion in the run's own folder with only its own
     values, a remote one is forwarded to, each gated with its real name, and Claude Code gets only ion's URL for each
-    (nothing of a server in its environment). A plugin with hooks of its own, or with skills, subagents or
-    commands, comes as ion's copy inside the run's skills plugin folder: no `hooks/`, no manifest `hooks`, and each
-    markdown file's front matter parsed as YAML with any top-level `hooks` key dropped (a file it can't parse is left
-    out, with one line in the daemon's log). ion walks those folders itself: a link must stay inside the plugin and
-    anything deeper than three folders is left out. Its own skills in your
+    (nothing of a server in its environment). Every plugin comes as ion's copy, built from a whitelist, inside the run's
+    skills plugin folder: each component's folders (skills, agents, commands: the default one in any case, and any the
+    manifest names) are walked by ion and written in the default layout; every markdown file (.md, .markdown, any case)
+    is written anew, its front matter (after a BOM and trailing spaces, ended by `---` or `...`) parsed as YAML with any
+    top-level `hooks` key dropped; front matter with a quoted key, a merge key, an anchor or alias, a `--- x` first line
+    or a parse error leaves that file out (one line in the daemon's log); other files are copied from inside the plugin
+    only (a link must stay inside it; anything deeper than three folders is left out); the manifest keeps only its name,
+    version and description. Nothing else is carried. Its own skills in your
     home come on, as they are. A server's env and header values, and anything filled from `${VAR}`, are masked in the
     run's events; its command, args or URL only when they look like a key.
   - What a repo wrote isn't yours (security review, 2026-11-21): a project's `.mcp.json` servers and its
@@ -69,6 +72,11 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
     reached…"), else "opencode didn't answer".
   - Grok keeps its own servers and skills and Claude's and Cursor's it reads; only the Claude and Cursor hooks are off.
   - Codex, opencode and Grok start their own servers themselves, with their own environment (Task 12's sandbox).
+  - No server of an agent's (its own, a plugin's, a repo's) takes the name `ion` in any case: it's left out with a line,
+    and ion's own entry always comes first. A repo's local server you allowed for a chat runs from the chat's folder
+    (it's the repo's code); your own run from ion's folder, with `${ION_WORKTREE}` filled.
+  - The silence check also waits while ion holds one of the run's calls (its gate, the judge, your answer) and while a
+    tool call is still running.
   - ion's own turns and the judge get ion's tools only.
   - Each agent says what its switch really turns off, by kind; Settings says "Off in ion" (dimmed) only for those, and
     "Also loads its own" for what it loads anyway (Codex's skills; Grok's servers, skills and plugins; opencode's

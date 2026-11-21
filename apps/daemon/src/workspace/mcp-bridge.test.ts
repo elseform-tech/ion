@@ -86,6 +86,15 @@ describe("ion's bridge to your local MCP servers", () => {
     expect(existsSync(folder)).toBe(false);
   });
 
+  // Re-review, 2026-11-21: a repo's own server you allowed for this chat is the repo's code: it runs from the chat's
+  // folder (so `node ./srv.js` works); yours still run from ion's own folder.
+  it("a repo's server you allowed for this chat runs from the chat's folder", async () => {
+    const { b, worktree } = bridge({}, { over: { inWorktree: true } });
+    const who = said(await tool(b, "whoami")) as Who;
+    expect(realpathSync(who.cwd)).toBe(realpathSync(worktree));
+    expect(who.env.PWD).toBe(worktree);
+  });
+
   it("a relative script or module planted in the worktree never runs", async () => {
     const marker = join(mkdtempSync(join(tmpdir(), "ion-bridge-mark-")), "ran");
     const js = bridge({}, { over: { args: ["x.js"] } });

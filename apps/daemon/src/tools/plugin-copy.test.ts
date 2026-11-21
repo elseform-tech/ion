@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,18 +17,18 @@ import { copyWithoutHooks } from "./plugin-copy.js";
 // key like "hoo\x6bs", a linked .md outside the plugin, a file deeper than the scan). ion parses front matter as YAML,
 // drops any top-level key that is hooks once unescaped, and walks the plugin itself: a link must stay inside it, and
 // anything deeper than the walk is left out.
-describe("ion's copy of a plugin", () => {
-  const put = (p: string, t: string) => {
-    mkdirSync(join(p, ".."), { recursive: true });
-    writeFileSync(p, t);
-  };
-  function plugin() {
-    const home = mkdtempSync(join(tmpdir(), "ion-pcopy-"));
-    const root = join(home, "kit");
-    put(join(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "kit", hooks: "./h.json" }));
-    return { home, root };
-  }
+const put = (p: string, t: string) => {
+  mkdirSync(join(p, ".."), { recursive: true });
+  writeFileSync(p, t);
+};
+function plugin(manifest: Record<string, unknown> = { name: "kit", hooks: "./h.json" }) {
+  const home = mkdtempSync(join(tmpdir(), "ion-pcopy-"));
+  const root = join(home, "kit");
+  put(join(root, ".claude-plugin", "plugin.json"), JSON.stringify(manifest));
+  return { home, root };
+}
 
+describe("ion's copy of a plugin", () => {
   it("drops hooks however the front matter writes them, and leaves out what it can't parse", async () => {
     const { home, root } = plugin();
     put(join(root, "skills", "ind", "SKILL.md"), "---\n  name: ind\n  hooks: {}\n---\nI.");
@@ -32,15 +41,17 @@ describe("ion's copy of a plugin", () => {
     const to = join(home, "copy");
     await copyWithoutHooks(root, to, "kit", lines);
     const read = (p: string) => readFileSync(join(to, "skills", p, "SKILL.md"), "utf8");
-    for (const s of ["ind", "esc", "case"]) {
+    for (const s of ["ind", "case"]) {
       expect(read(s)).not.toMatch(/hoo/i);
       expect(read(s)).toContain(`name: ${s}`);
     }
     expect(read("ok")).toBe("---\nname: ok\n---\nOK.");
-    for (const s of ["bad", "dup"]) expect(existsSync(join(to, "skills", s, "SKILL.md"))).toBe(false);
+    // A quoted key isn't a plain one (automated review, 2026-11-21): left out, as is anything unparseable.
+    for (const s of ["bad", "dup", "esc"]) expect(existsSync(join(to, "skills", s, "SKILL.md"))).toBe(false);
     expect(lines.sort()).toEqual([
       "kit: skills/bad/SKILL.md left out (its front matter can't be read)",
       "kit: skills/dup/SKILL.md left out (its front matter can't be read)",
+      "kit: skills/esc/SKILL.md left out (its front matter can't be read)",
     ]);
     expect(JSON.parse(readFileSync(join(to, ".claude-plugin", "plugin.json"), "utf8"))).toEqual({
       name: "kit",
@@ -69,5 +80,88 @@ describe("ion's copy of a plugin", () => {
     expect(lines).toContain("kit: skills/far/SKILL.md left out (it links outside the plugin)");
     expect(lines).toContain("kit: agents left out (it links outside the plugin)");
     expect(lines).toContain("kit: skills/a/b/c/d left out (too deep)");
+  });
+});
+
+// Automated review, 2026-11-21 (again): hooks still came through a folder named "Skills/" or a file "X.MD" on a disk
+// that ignores case, a folder the manifest names for a component, and front matter with a BOM, trailing spaces or CRs,
+// or "..." to end it. ion's copy is now built from a whitelist: each component's folders (the manifest's and the
+// default), every markdown file written anew, other files copied from inside the plugin, nothing else carried.
+describe("ion's copy of a plugin, from a whitelist", () => {
+  it("walks folders and markdown whatever their case, and the folders the manifest names", async () => {
+    const { home, root } = plugin({
+      name: "kit",
+      version: "2",
+      description: "d",
+      skills: "./extra",
+      hooks: {},
+    });
+    put(join(root, "Skills", "s", "SKILL.md"), "---\nname: s\nhooks: {}\n---\nS.");
+    put(join(root, "agents", "A.MD"), "---\nname: a\nhooks: {}\n---\nA.");
+    put(join(root, "commands", "go.markdown"), "---\nhooks: {}\ndescription: go\n---\nGo.");
+    put(join(root, "extra", "x", "SKILL.md"), "---\nname: x\nhooks: {}\n---\nX.");
+    put(join(root, "extra", "x", "run.sh"), "echo hi");
+    put(join(root, "scripts", "evil.sh"), "echo evil");
+    put(join(root, "hooks", "hooks.json"), "{}");
+    const to = join(home, "copy");
+    await copyWithoutHooks(root, to, "kit", []);
+    const all = (d: string): string[] =>
+      readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? all(join(d, e.name)).map((f) => `${e.name}/${f}`) : [e.name],
+      );
+    expect(all(to).sort()).toEqual([
+      ".claude-plugin/plugin.json",
+      "agents/A.MD",
+      "commands/go.markdown",
+      "skills/s/SKILL.md",
+      "skills/x/SKILL.md",
+      "skills/x/run.sh",
+    ]);
+    for (const f of ["agents/A.MD", "commands/go.markdown", "skills/s/SKILL.md", "skills/x/SKILL.md"])
+      expect(readFileSync(join(to, f), "utf8")).not.toMatch(/hooks/);
+    expect(lstatSync(join(to, "skills", "x", "run.sh")).isSymbolicLink()).toBe(false);
+    expect(JSON.parse(readFileSync(join(to, ".claude-plugin", "plugin.json"), "utf8"))).toEqual({
+      name: "kit",
+      version: "2",
+      description: "d",
+    });
+  });
+
+  it("reads front matter with a BOM, trailing spaces or CRs, or a ... end; one it can't delimit is left out", async () => {
+    const { home, root } = plugin();
+    put(join(root, "skills", "bom", "SKILL.md"), "﻿---\nname: bom\nhooks: {}\n---\nB.");
+    put(join(root, "skills", "crlf", "SKILL.md"), "---  \r\nname: crlf\r\nhooks: {}\r\n---  \r\nC.");
+    put(join(root, "skills", "dots", "SKILL.md"), "---\nname: dots\nhooks: {}\n...\nD.");
+    put(join(root, "skills", "open", "SKILL.md"), "---\nname: open\nhooks: {}\nNo end.");
+    const lines: string[] = [];
+    const to = join(home, "copy");
+    await copyWithoutHooks(root, to, "kit", lines);
+    for (const s of ["bom", "crlf", "dots"]) {
+      const t = readFileSync(join(to, "skills", s, "SKILL.md"), "utf8");
+      expect(t).not.toMatch(/hooks/);
+      expect(t).toContain(`name: ${s}`);
+    }
+    expect(existsSync(join(to, "skills", "open", "SKILL.md"))).toBe(false);
+    expect(lines).toEqual(["kit: skills/open/SKILL.md left out (its front matter can't be read)"]);
+  });
+});
+
+// Automated review, 2026-11-21: a merge key or an alias could bring hooks back after they're dropped, and a first line
+// like "--- x" could be front matter to Claude Code but not to ion. Both are left out; kept front matter is always
+// written again from what was parsed.
+describe("front matter ion won't guess at", () => {
+  it("leaves out `<<: *h` carrying hooks, any anchor or alias, and a `--- x` first line", async () => {
+    const { home, root } = plugin();
+    put(join(root, "skills", "merge", "SKILL.md"), "---\nbase: &h\n  hooks: {}\n<<: *h\nname: m\n---\nM.");
+    put(join(root, "skills", "alias", "SKILL.md"), "---\nname: &n a\nalso: *n\n---\nA.");
+    put(join(root, "skills", "dash", "SKILL.md"), "--- x\nhooks: {}\n---\nX.");
+    put(join(root, "skills", "plain", "SKILL.md"), "---\nname:   plain   # a comment\n---\nP.");
+    const lines: string[] = [];
+    const to = join(home, "copy");
+    await copyWithoutHooks(root, to, "kit", lines);
+    for (const s of ["merge", "alias", "dash"])
+      expect(existsSync(join(to, "skills", s, "SKILL.md"))).toBe(false);
+    expect(readFileSync(join(to, "skills", "plain", "SKILL.md"), "utf8")).toBe("---\nname: plain\n---\nP.");
+    expect(lines).toHaveLength(3);
   });
 });

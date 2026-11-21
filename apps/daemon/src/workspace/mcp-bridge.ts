@@ -176,6 +176,11 @@ class Local implements LocalServer {
     this.o.stopped(this.spec.name, why);
   }
 
+  /** Where it runs: ion's own folder for the run; a repo's server you allowed here, the chat's folder. */
+  private cwd(): string {
+    return this.spec.inWorktree && this.o.worktree ? this.o.worktree : this.o.folder;
+  }
+
   private async start(): Promise<Client | null> {
     try {
       this.makeFolder();
@@ -186,8 +191,8 @@ class Local implements LocalServer {
     const t = new GroupTransport({
       command: this.spec.command,
       args: this.spec.args,
-      env: serverEnv(this.spec, this.o.folder),
-      cwd: this.o.folder,
+      env: serverEnv(this.spec, this.cwd()),
+      cwd: this.cwd(),
       ...(this.o.groups ? { groups: this.o.groups } : {}),
     });
     this.transport = t;

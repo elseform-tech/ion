@@ -412,6 +412,23 @@ describe("acp adapter", () => {
     });
   });
 
+  // Re-review, 2026-11-21: a long tool run, or ion holding a call for your answer through its gate (not only a
+  // permission request), isn't the agent being quiet.
+  it("doesn't fail a turn while a tool runs or while ion holds a call", async () => {
+    // Slower than the check (1.5 s of work, an 0.8 s check), with room for a busy machine to start the agent.
+    const long = await turn({ ...fake, silenceMs: 800 }, "longtool");
+    expect(long.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
+    // ion holds a call from the session's start until well after the agent's quiet spell (no timing race).
+    const holding = {
+      on: (f: (held: boolean) => void) => {
+        f(true);
+        setTimeout(() => f(false), 3000).unref();
+      },
+    };
+    const held = await turn({ ...fake, silenceMs: 800 }, "quietheld", { holding });
+    expect(held.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
+  });
+
   it("treats the agent cancelling on its own (after a refusal) as done, not interrupted", async () => {
     expect((await turn(fake, "refuse")).at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
   });

@@ -440,7 +440,6 @@ export class RunManager {
 
   private async start(l: Launch): Promise<Session> {
     const roots = projectRoots(l.cwd);
-    const decide = (req: ApprovalRequest) => this.approvals.decide(l, req, roots);
     return l.h.adapter.start({
       cwd: l.cwd,
       model: l.args.model ?? null,
@@ -452,7 +451,8 @@ export class RunManager {
       ...(l.pluginDir ? { pluginDir: l.pluginDir } : {}),
       ...ownOpts(l.own),
       signal: new AbortController().signal,
-      decide,
+      decide: (req: ApprovalRequest) => this.approvals.decide(l, req, roots),
+      holding: this.approvals.holding(l.runId),
     });
   }
 

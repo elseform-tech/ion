@@ -616,3 +616,25 @@ describe("an agent's own tool call is judged by ion", () => {
     expect(seen.join("\n")).toContain("mcp__github__delete_repo");
   });
 });
+
+// Re-review, 2026-11-21: while ion holds a run's call (its gate, the judge, or your answer), the agent's silence check
+// waits: the run's session is told when holding starts and ends.
+describe("telling a run's session ion is holding one of its calls", () => {
+  it("says held while the gate decides, and not after", async () => {
+    let release: (() => void) | undefined;
+    const askBlocked = {
+      ask: () => new Promise<"allow">((r) => (release = () => r("allow"))),
+      allowed: () => false,
+    };
+    const deny = createAccess({ judge: async () => ({ allow: false, reason: "no" }), ...own });
+    const a = new Approvals(store, deny, () => true, { own, askBlocked });
+    const said: boolean[] = [];
+    a.holding("r1").on((h) => said.push(h));
+    const going = a.gate(run("auto"), cmd("curl https://example.com"), [wt]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(said).toEqual([true]);
+    release?.();
+    await going;
+    expect(said).toEqual([true, false]);
+  });
+});

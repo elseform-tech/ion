@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { describe, expect, it } from "vitest";
 import { agentHome } from "./import-testing.js";
-import { repoState, runOwnOf } from "./own-run.js";
+import { repoState, runOwnOf, withOwnServers } from "./own-run.js";
 import { repoKey, repoMaterial } from "./own.js";
 
 // Security review, 2026-11-21: `${VAR}` in an agent's own server is filled only from the environment an agent may
@@ -76,6 +76,9 @@ describe("a repo's local servers ask in each chat", () => {
     const names = async (chatId: string, runId: string) =>
       (await run(chatId, runId)).ownServers?.map((s) => s.name);
     expect(await names("c1", "r1")).toEqual(["local", "pkg", "remote"]);
+    // Re-review, 2026-11-21: a repo's local server runs from the chat's folder (it's the repo's code, allowed here).
+    const specs = (await run("c1", "r1b")).ownServers ?? [];
+    expect(specs.find((s) => s.name === "local")).toMatchObject({ inWorktree: true });
     expect(await names("c1", "r2")).toEqual(["local", "pkg", "remote"]);
     expect(asked).toEqual([
       `c1: shop's .mcp.json wants to run "local" from the repo`,
@@ -98,5 +101,18 @@ describe("a repo's local servers ask in each chat", () => {
     // A local one has no lasting switch to give it; a remote one does.
     expect(await repoState(sign, marks)(project, "pkg", pkg)).toEqual({ on: false, new: true, asks: true });
     expect(await repoState(sign, marks)(project, "remote", remote)).toEqual({ on: true });
+  });
+});
+
+// Re-review, 2026-11-21: ion's own server is always ion's, whatever an agent's own are called.
+describe("an agent's own servers beside ion's", () => {
+  it("never take ion's name, in any case", () => {
+    const yours = { specs: [], secrets: [] };
+    const own = {
+      ownTools: true,
+      ownServers: [{ name: "Ion", transport: "stdio" as const, command: "x", args: [], env: {} }],
+      secrets: [],
+    };
+    expect(withOwnServers(yours, own).specs).toEqual([]);
   });
 });
