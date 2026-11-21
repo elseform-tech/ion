@@ -138,11 +138,18 @@ things on, sign in or add keys.
   is off until you turn it on).
 - **Auto** gives agents the freedom they already have (the user, 2026-11-21: Codex's workspace-write, Claude Code's
   sandbox), then the judge; its no (or "not sure") asks you:
-  - **Reads anywhere:** read and search tools, and read-only commands (`ls`, `cat`, `grep`, `git log`, …), whatever
-    folder they name, except your secrets (`~/.ssh`, `~/.aws`, `.netrc`, …), ion's files, and another agent's settings
-    (`~/.claude`, `~/.codex`, opencode's and Grok's folders; an agent reading its own is fine). A search of a folder
-    that holds your secrets (`~`, `/`), a recursive `ls -R` or `grep -r` outside the project, and a path with `~`, `..`
-    or a wildcard go to the judge.
+  - **Reads anywhere:** read tools and read-only commands (`ls`, `cat`, `grep`, `git log`, …) outside the project are
+    free for other repos, `~/Downloads`, `~/Documents`, `/usr`, `/etc/hosts` and the like. By class, these go to the
+    judge instead (security review, 2026-11-21): anything under a dot-folder or a dotfile (`~/.config/…`, `~/.local/…`,
+    `~/.zsh_history`, another repo's `.git`, other agents' folders), `~/Library/{Application Support, Keychains, Cookies,
+    Containers, Group Containers, Mail, Messages, Safari}`, `/proc`, `/sys`, `/dev`, `/private/var/db`, and files named
+    `.env*`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `*credential*`, `*secret*`, `id_*`. Searches (`grep -r`, `ls -R`, a
+    search tool, a glob) outside the project go to the judge, and a command reads outside freely only regular files
+    (a folder it names goes to the judge, whatever its flags); inside it, everything reads as before. A path with `~`,
+    `..` or a wildcard goes to the judge.
+  - **Refused outright, in Auto:** your secrets (`~/.ssh`, `~/.aws`, `.netrc`, …) and agents' sign-in files, for every
+    chat (its own agent's too): `~/.codex/auth.json`, `~/.claude/.credentials.json`, opencode's `auth.json` in its data
+    folder, and any `*credential*`, `*token*` or `auth*.json` in an agent's folder.
   - **Writes in the project and the system temp folders:** the chat's worktree, `/tmp` (and `/private/tmp`), `$TMPDIR`
     and macOS's `/var/folders/…/T`, links followed. Files in the worktree that make git, an agent or a package manager
     run code (`.git`, `.npmrc`, `.mcp.json`, `.envrc`, any dot-folder, …) still go to the judge.
@@ -165,7 +172,9 @@ things on, sign in or add keys.
     allow of every command or every edit (`Bash`, `Edit`, `Write`, opencode's `"bash": "allow"` or `"*"`): that's what
     Full access is for.
   - An allow is Auto's: it never lets through what the floor refuses, and ion's own guesses still go to the judge. A
-    deny refuses in every mode, Full too: "Your Claude Code settings deny this".
+    deny refuses in every mode, Full too: "Your Claude Code settings deny this". A denied command wrapped in another
+    (`sh -c "git push"`) isn't matched, as in Claude Code itself; it goes to the judge in Auto like any command.
+  - The settings files are read again only when one changes.
 - **Full:** no judging, no asking. Everything else runs: pushes, publishes, deploys, payments, sending messages. Two
   things still stop a call: a guess in a run that isn't sandboxed asks you (Codex, or a computer without a sandbox),
   and what you said never to: "Don't allow" with **Remember** ticked is kept for that exact action in that project, and

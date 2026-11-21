@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
@@ -234,5 +234,25 @@ describe("each agent's own allow and deny rules", () => {
     });
     await a.gate(run("codex"), cmd("npm test"), [wt]);
     expect(seen[0]).toContain("Codex trusts this project (its own setting)");
+  });
+});
+
+// Task review, 2026-11-21: rules are read again only when a settings file changes (per file mtime).
+describe("reading agents' rules", () => {
+  it("re-reads a settings file only when it changes", () => {
+    const home = claudeHome(["WebSearch"]);
+    const file = join(home, ".claude/settings.json");
+    const mtime = new Date(Math.floor(Date.now() / 1000) * 1000);
+    utimesSync(file, mtime, mtime);
+    expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(1);
+    // Two rules now, the file the same size (so only the mtime tells).
+    const next = JSON.stringify({ permissions: { deny: ["Bash", "WebFetch"] } });
+    writeFileSync(file, next.padEnd(statSync(file).size, " "));
+    utimesSync(file, mtime, mtime);
+    // Same mtime: the rules ion read stand (the file isn't read again).
+    expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(1);
+    const later = new Date(mtime.getTime() + 5000);
+    utimesSync(file, later, later);
+    expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(2);
   });
 });

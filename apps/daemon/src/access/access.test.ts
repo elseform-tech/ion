@@ -561,8 +561,20 @@ describe("ruleFor, ion's config and keys", () => {
   });
 });
 
+/** A read tool's call, and a search tool's, for Auto's free reads. */
+const readOf = (file_path: string): ApprovalRequest => ({
+  ...cmd(file_path),
+  kind: "read",
+  input: { file_path },
+});
+const searchOf = (path: string): ApprovalRequest => ({
+  ...cmd(path),
+  kind: "search",
+  input: { pattern: "x", path },
+});
+
 // The user, 2026-11-21: "i still want the agent to have more freedom outside its space not just for scratchpad" →
-// Auto mirrors what agents already do: reads anywhere, except your secrets, ion's files and other agents' settings.
+// Auto mirrors what agents already do: reads anywhere, except your secrets, ion's files and private kinds of files.
 describe("Auto's reads, anywhere", () => {
   const judged: string[] = [];
   const judge = async (i: { req: ApprovalRequest }) => {
@@ -571,29 +583,25 @@ describe("Auto's reads, anywhere", () => {
   };
   const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
   const at = { chatId: "c1", projectId: "app", text: "x", roots: ctx.roots };
-  const read = (file_path: string): ApprovalRequest => ({
-    ...cmd(file_path),
-    kind: "read",
-    input: { file_path },
-  });
-  const search = (path: string): ApprovalRequest => ({
-    ...cmd(path),
-    kind: "search",
-    input: { pattern: "x", path },
-  });
+  const source = async (r: ApprovalRequest) => (await access.decide(at, r)).source;
 
   it("a read outside the project (not secret) is allowed in Auto", async () => {
     judged.length = 0;
-    for (const r of [read("/etc/hosts"), read(`${home}/code/other/README.md`), cmd("cat /etc/hosts")])
+    for (const r of [
+      readOf("/etc/hosts"),
+      readOf(`${home}/other-repo/README.md`),
+      readOf(`${home}/Downloads/notes.txt`),
+      readOf("/usr/include/stdio.h"),
+      cmd("cat /etc/hosts"),
+    ])
       expect(await access.decide(at, r), r.summary).toMatchObject({ decision: "allow", source: "rule" });
-    expect(await access.decide(at, search(`${home}/code/other`))).toMatchObject({ decision: "allow" });
     expect(judged).toEqual([]);
   });
 
   it("a secret read is refused", async () => {
     for (const r of [
-      read(`${home}/.ssh/id_ed25519`),
-      read(`${home}/.aws/credentials`),
+      readOf(`${home}/.ssh/id_ed25519`),
+      readOf(`${home}/.aws/credentials`),
       cmd(`cat ${home}/.netrc`),
     ])
       expect(await access.decide(at, r), r.summary).toMatchObject({
@@ -602,18 +610,108 @@ describe("Auto's reads, anywhere", () => {
       });
   });
 
-  // (A folder holding ion's own is refused by the hard rules; here ion's folders are elsewhere.)
-  it("a search that would sweep your secrets, or a recursive look from above, goes to the judge", async () => {
-    judged.length = 0;
-    const away = createAccess({ judge, home, ionDirs: ["/data"] });
-    for (const r of [search(home), search("/Users"), cmd(`grep -r token ${home}`), cmd("ls -R /Users")])
-      expect((await away.decide(at, r)).source, r.summary).toBe("judge");
-    expect(judged).toHaveLength(4);
+  // Security review, 2026-11-21: reads anywhere, but by class: private places and private kinds of files outside the
+  // worktree go to the judge, not a few names.
+  it("private places and kinds of files outside the project go to the judge", async () => {
+    for (const p of [
+      `${home}/.config/x`,
+      `${home}/.local/state/x`,
+      `${home}/.zsh_history`,
+      `${home}/.bash_history`,
+      `${home}/other-repo/.git/config`,
+      `${home}/Library/Cookies/x`,
+      `${home}/Library/Application Support/x/y`,
+      `${home}/Library/Messages/chat.db`,
+      "/proc/1/environ",
+      "/sys/x",
+      "/dev/disk0",
+      "/private/var/db/x",
+      `${home}/proj/.env`,
+      `${home}/proj/.env.local`,
+      `${home}/certs/key.pem`,
+      `${home}/certs/server.key`,
+      `${home}/certs/me.p12`,
+      `${home}/x/aws_credentials.txt`,
+      `${home}/x/my-secret.txt`,
+      `${home}/x/id_rsa_old`,
+      `${home}/x/vault.kdbx`,
+    ])
+      expect(await source(readOf(p)), p).toBe("judge");
+    expect(await source(cmd(`cat ${home}/proj/.env`))).toBe("judge");
+    // Inside the worktree, the same kinds are read freely as before.
+    expect(await access.decide(at, readOf(join(wt, ".env")))).toMatchObject({
+      decision: "allow",
+      source: "rule",
+    });
   });
 
-  it("another agent's settings aren't read freely; an agent's own are", async () => {
-    const claude = read(`${home}/.claude/settings.json`);
-    expect((await access.decide({ ...at, agent: "grok-build" }, claude)).source).toBe("judge");
-    expect(await access.decide({ ...at, agent: "claude-code" }, claude)).toMatchObject({ decision: "allow" });
+  // Security review, 2026-11-21: a search from a path outside the project goes to the judge.
+  it("searches outside the project go to the judge", async () => {
+    const away = createAccess({ judge, home, ionDirs: ["/data"] });
+    for (const r of [
+      searchOf(`${home}/other-repo`),
+      searchOf("/usr"),
+      cmd("grep -r foo /usr"),
+      cmd(`grep -r token ${home}`),
+      cmd("ls -R /Users"),
+    ])
+      expect((await away.decide(at, r)).source, r.summary).toBe("judge");
+    expect(await access.decide(at, searchOf(join(wt, "src")))).toMatchObject({ decision: "allow" });
+    // From / it reaches ion's folders too: refused, never allowed.
+    expect((await away.decide(at, cmd("grep -r foo /"))).decision).not.toBe("allow");
+  });
+});
+
+describe("agents' sign-in files", () => {
+  const judge = async (_i: { req: ApprovalRequest }) => ({ verdict: "allow" as const, reason: "fine" });
+  const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: ctx.roots, agent: "grok-build" };
+
+  // Task review, 2026-11-21: an agent's credential files are secrets for every chat, refused like ~/.ssh, even by
+  // its own agent; the rest of an agent's folder goes to the judge.
+  it("refuses agents' credential files outright, for every agent", async () => {
+    for (const p of [
+      `${home}/.codex/auth.json`,
+      `${home}/.claude/.credentials.json`,
+      `${home}/.local/share/opencode/auth.json`,
+      `${home}/.codex/token.json`,
+      `${home}/.config/opencode/credentials.json`,
+    ])
+      for (const agent of ["grok-build", "codex", "claude-code", "opencode"])
+        expect(await access.decide({ ...at, agent }, readOf(p)), `${agent} ${p}`).toMatchObject({
+          decision: "deny",
+          reason: "Touches your secrets",
+        });
+    expect(await access.decide(at, cmd("cat ~/.codex/auth.json"))).toMatchObject({ decision: "deny" });
+    expect((await access.decide(at, readOf(`${home}/.codex/config.toml`))).source).toBe("judge");
+    expect(
+      (await access.decide({ ...at, agent: "claude-code" }, readOf(`${home}/.claude/settings.json`))).source,
+    ).toBe("judge");
+  });
+});
+
+// Security review, 2026-11-21: a command reads outside the project freely only regular files that pass the class
+// check; a folder (or anything else) goes to the judge, whatever its flags say (`grep -d recurse`).
+describe("a command's reads outside the project", () => {
+  const real = mkdtempSync(join(tmpdir(), "ion-home-"));
+  mkdirSync(join(real, "other"));
+  writeFileSync(join(real, "other/README.md"), "# other\n");
+  mkdirSync(join(real, ".config"));
+  const judge = async (_i: { req: ApprovalRequest }) => ({ verdict: "deny" as const, reason: "no" });
+  const access = createAccess({ judge, home: real, ionDirs: ["/data"] });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: ctx.roots };
+
+  it("reads a regular file freely, and judges a folder", async () => {
+    expect(await access.decide(at, cmd("cat ~/other/README.md"))).toMatchObject({
+      decision: "allow",
+      source: "rule",
+    });
+    for (const c of [
+      "grep -d recurse token ~",
+      "ls -la ~/.config",
+      `ls ${real}/other`,
+      `grep --directories=recurse x ${real}`,
+    ])
+      expect((await access.decide(at, cmd(c))).source, c).toBe("judge");
   });
 });

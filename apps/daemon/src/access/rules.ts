@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { statSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { realish } from "../runs/policy.js";
 import { agentConfigs } from "../runs/sandbox.js";
@@ -31,6 +32,10 @@ const READ_ONLY = new Set(["ls", "cat", "head", "tail", "wc", "grep", "pwd", "ec
 const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "blame"]);
 /** Secret folders and files named anywhere in an action (any case) are denied: they never belong to a project. */
 const SECRET_NAMES = [
+  // Agents' sign-in files (task review, 2026-11-21).
+  ".codex/auth.json",
+  ".claude/.credentials.json",
+  "opencode/auth.json",
   ".ssh",
   ".aws",
   ".gnupg",
@@ -47,6 +52,8 @@ const SECRET_NAMES = [
 ];
 /** A plain relative path or word: no absolute or home paths, no shell syntax. */
 const PLAIN = /^[\w.\-/@+=:,%]+$/;
+/** A plain path from your home (`~/notes/a.md`), for Auto's free reads. */
+const HOME_PATH = /^~\/[\w.\-/@+=:,%]+$/;
 /** A plain flag ("-n5", "--count"): no "=value" or path tucked into it. */
 const FLAG = /^--?[\w-]+$/;
 /**
@@ -61,7 +68,9 @@ function readOnly(command: string, anywhere = false): boolean {
     const [word, sub, ...rest] = part.trim().split(/\s+/);
     // Every argument is a flag or a plain relative path ("/", "~" and the like go to the judge).
     const args = word === "git" ? rest : [sub, ...rest].filter((x): x is string => x !== undefined);
-    const plain = (t: string) => PLAIN.test(t) && (anywhere || !t.startsWith("/")) && !t.startsWith("-");
+    const plain = (t: string) =>
+      (PLAIN.test(t) && (anywhere || !t.startsWith("/")) && !t.startsWith("-")) ||
+      (anywhere && HOME_PATH.test(t));
     if (!args.every((t) => FLAG.test(t) || plain(t))) return false;
     if (word === "tail" && /\s(-[a-zA-Z]*[fF]|--follow)/.test(part)) return false;
     return word === "git"
@@ -70,7 +79,21 @@ function readOnly(command: string, anywhere = false): boolean {
   });
 }
 
+/** A sign-in file's name: credentials, tokens, auth*.json. */
+const SIGN_IN = /credential|token|^auth.*\.json$/i;
+/** Where agents keep their settings and sign-ins: every agent's config folder, and opencode's data folder. */
+const agentHomes = (home: string) => [
+  ...agentConfigs("", { ...process.env, HOME: home }),
+  join(process.env.XDG_DATA_HOME || join(home, ".local/share"), "opencode"),
+];
+/**
+ * An agent's sign-in file (task review, 2026-11-21): a secret for every chat, its own agent's too, refused like ~/.ssh.
+ */
+const signInFile = (p: string, home: string) =>
+  SIGN_IN.test(basename(p)) && agentHomes(home).some((d) => under(fold(p), fold(realish(d))));
+
 const isSecret = (p: string, home: string) =>
+  signInFile(p, home) ||
   SECRETS.some((s) => {
     const secret = fold(realish(join(home, s)));
     return s.endsWith("/") ? under(fold(p), secret) : fold(p) === secret;
@@ -84,30 +107,58 @@ const recurses = (command: string) =>
     return (word === "ls" || word === "grep") && rest.some((t) => RECURSIVE_FLAG.test(t));
   });
 
-/** Every agent's settings but the run's own (they hold your provider settings and keys). */
-const othersSettings = (c: RuleCtx) =>
-  agentConfigs(c.agent ?? "", { ...process.env, HOME: c.home }).map((d) => fold(realish(d)));
+/** Private folders on your computer: outside the project, reading them is for the judge (security review, 2026-11-21). */
+const PRIVATE_FOLDERS = ["/proc", "/sys", "/dev", "/private/var/db", "/var/db"];
+const PRIVATE_LIBRARY = [
+  "Application Support",
+  "Keychains",
+  "Cookies",
+  "Containers",
+  "Group Containers",
+  "Mail",
+  "Messages",
+  "Safari",
+];
+/** Private kinds of files, by name: keys, certificates, vaults, credentials, secrets, .env files. */
+const PRIVATE_NAME = /^\.env|\.(pem|key|p12|kdbx)$|credential|secret|^id_/i;
 
-/** Free to read in Auto: not a secret, not another agent's settings (ion's own files are the hard rules'). */
-const readable = (p: string, c: RuleCtx) =>
-  !isSecret(p, c.home) && !othersSettings(c).some((d) => under(fold(p), d));
-
-/** A folder a search would sweep that holds your secrets or another agent's settings. */
-const sweeps = (p: string, c: RuleCtx) =>
-  [...SECRETS.map((s) => fold(realish(join(c.home, s)))), ...othersSettings(c)].some((s) =>
-    under(s, fold(p)),
-  );
+/** Under a dot-folder or a dotfile itself (`~/.config/…`, `~/.zsh_history`, `.git/…`, `.env`). */
+const dotted = (p: string) => p.split("/").some((s) => s.startsWith(".") && s !== "." && s !== "..");
 
 /**
- * Auto's free reads (the user, 2026-11-21): a read or search tool, or a read-only command, whose every path is free to
- * read; a search never of a folder holding secrets, a command never recursive outside the project.
+ * Free to read in Auto, outside the project (security review, 2026-11-21: by class, not a few names): not a secret
+ * (refused before), not under a dot-folder or a dotfile, not a private folder of your computer or your Library, not a
+ * private kind of file. Other repos, ~/Downloads, ~/Documents, /usr and /etc/hosts stay free.
+ */
+function readable(p: string, c: RuleCtx): boolean {
+  const f = fold(p);
+  const library = PRIVATE_LIBRARY.map((d) => fold(realish(join(c.home, "Library", d))));
+  const folders = [...PRIVATE_FOLDERS.map((d) => fold(d)), ...library];
+  return (
+    !isSecret(p, c.home) && !dotted(p) && !PRIVATE_NAME.test(basename(p)) && !folders.some((d) => under(f, d))
+  );
+}
+
+/** An existing regular file (links followed), not a folder or a device. */
+function regularFile(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Auto's free reads (the user, 2026-11-21): a read tool, or a read-only command, whose every path is free to read; a
+ * search from outside the project and a recursive command outside it go to the judge.
  */
 function readsFreely(req: ApprovalRequest, c: RuleCtx, outside: string[]): boolean {
   if (!c.freeReads || !outside.every((p) => readable(p, c))) return false;
   const command = commandText(req);
-  if (req.kind === "command") return readOnly(command, true) && !(outside.length > 0 && recurses(command));
-  if (req.kind === "search" && outside.some((p) => sweeps(p, c))) return false;
-  return (req.kind === "read" || req.kind === "search") && !climbs(req);
+  // A command reads outside freely only regular files: a folder goes to the judge, whatever its flags say.
+  if (req.kind === "command")
+    return readOnly(command, true) && outside.every(regularFile) && !recurses(command);
+  return req.kind === "read" && !climbs(req);
 }
 
 /** Only looks: inside the worktree (read-only commands, reads and searches), or anywhere free to read in Auto. */
@@ -117,7 +168,11 @@ function looks(req: ApprovalRequest, c: RuleCtx, paths: string[]): Verdict | nul
   if (req.kind === "command" && command && readOnly(command) && paths.every(inWorktree))
     return { decision: "allow", reason: "Only looks inside the project" };
   // A read or search tool (not a shell) names its paths as they are: inside the worktree, it only looks.
-  const named = req.kind === "command" ? paths : [...paths, ...toolPaths(req, c)];
+  // A tool's absolute paths whole, spaces and all (`~/Library/Application Support/…`).
+  const whole = pathStrings(req)
+    .filter((v) => v.startsWith("/"))
+    .map((v) => realish(resolve(v)));
+  const named = req.kind === "command" ? paths : [...paths, ...whole, ...toolPaths(req, c)];
   if ((req.kind === "read" || req.kind === "search") && !climbs(req) && named.every(inWorktree))
     return { decision: "allow", reason: "Only looks inside the project" };
   const outside = named.filter((p) => !inWorktree(p));

@@ -23,10 +23,20 @@ const MAX = 1024 * 1024;
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** Files read, by path, with the mtime and size they had: read again only when they change (task review, 2026-11-21). */
+const read = new Map<string, { at: string; text: string | null }>();
+
 /** A file's text: missing, too big or unreadable is nothing. */
 function textOf(path: string): string | null {
   try {
-    return existsSync(path) && statSync(path).size <= MAX ? readFileSync(path, "utf8") : null;
+    if (!existsSync(path)) return null;
+    const st = statSync(path);
+    const at = `${st.mtimeMs}:${st.size}`;
+    const known = read.get(path);
+    if (known?.at === at) return known.text;
+    const text = st.size <= MAX ? readFileSync(path, "utf8") : null;
+    read.set(path, { at, text });
+    return text;
   } catch {
     return null;
   }
