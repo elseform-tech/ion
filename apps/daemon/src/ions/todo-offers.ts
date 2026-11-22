@@ -54,12 +54,43 @@ const saidDone = (reply: string) =>
 function matches(t: MemoryRow, did: Set<string>): boolean {
   const want = wordsOf(`${t.name} ${t.description}`);
   const hits = [...want].filter((w) => did.has(w)).length;
-  return hits >= Math.min(2, want.size) && hits * 2 >= want.size;
+  // A to-do with no telling words ("Do it") matches nothing (task review, 2026-11-22).
+  return want.size > 0 && hits >= Math.min(2, want.size) && hits * 2 >= want.size;
 }
 
-/** An unanswered card for this to-do is still waiting (one at a time per to-do). */
-const waiting = (db: Db, path: string) =>
-  suggestionsView.list(db).some((s) => s.answer === null && s.card.kind === "todo" && s.card.path === path);
+/** How long an unanswered "Mark done?" card holds back new ones for its to-do. */
+const CARD_WAITS_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** When the to-do last went from done back to open ("" if never). */
+function reopenedAt(memory: MemoryFiles, path: string): string {
+  let was: string | undefined;
+  let at = "";
+  for (const c of memory.history(path)) {
+    const now = c.kind === "written" ? c.header?.status : undefined;
+    if (was === "done" && now === "open") at = c.at;
+    was = now;
+  }
+  return at;
+}
+
+/**
+ * An unanswered card for this to-do is still waiting (one at a time per to-do): one older than a week, or from before
+ * the to-do was closed and reopened, no longer holds back new ones (task review, 2026-11-22).
+ */
+function waiting(db: Db, memory: MemoryFiles, path: string): boolean {
+  const since = new Date(Date.now() - CARD_WAITS_MS).toISOString();
+  const reopened = reopenedAt(memory, path);
+  return suggestionsView
+    .list(db)
+    .some(
+      (s) =>
+        s.answer === null &&
+        s.card.kind === "todo" &&
+        s.card.path === path &&
+        s.at >= since &&
+        s.at > reopened,
+    );
+}
 
 const isOpen = (r: MemoryRow | undefined) => r?.type === "todo" && r.status === "open";
 
@@ -127,7 +158,7 @@ export class TodoOffers {
         path: t.path,
         name: t.name,
       };
-      const offered = suggestionsView.offered(this.d.db, sameAs(card)) || waiting(this.d.db, t.path);
+      const offered = suggestionsView.offered(this.d.db, sameAs(card)) || waiting(this.d.db, this.d.memory, t.path);
       if (offered || !this.open(t.path)) continue;
       const thread = cardThread(card);
       this.d.store.append({

@@ -11,7 +11,7 @@ import {
 } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
-import { type MemoryQuery, type MemoryRow, memoryView } from "../views/memory.js";
+import { type MemoryChange, type MemoryQuery, type MemoryRow, memoryView } from "../views/memory.js";
 import { moveNotes } from "./migrate.js";
 import { watchMemory } from "./watch.js";
 import {
@@ -115,6 +115,11 @@ export class MemoryFiles {
   /** One file in the index, or nothing. */
   row(path: string): MemoryRow | undefined {
     return memoryView.get(this.o.db, path);
+  }
+
+  /** Each change to a file, oldest first: who, when, its header, and the text before. */
+  history(path: string): MemoryChange[] {
+    return memoryView.history(this.o.db, path);
   }
 
   /** Every file's path on disk. */

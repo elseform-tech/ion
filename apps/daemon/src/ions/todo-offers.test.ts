@@ -145,6 +145,45 @@ describe("Mark done?", () => {
     expect(cards("ion:chief").map((s) => s.card.chatId)).toEqual(["c4"]);
   });
 
+  // Task review, 2026-11-22: a to-do with no telling words ("Do it") matched every finished chat.
+  it("a to-do with no telling words matches nothing", async () => {
+    todo("you", "Do it");
+    await finish("c1", "storefront", "Fixed the cart badge colour.");
+    expect(cards("ion:chief")).toEqual([]);
+  });
+
+  // Task review, 2026-11-22: an unanswered "Mark done?" card blocked new cards for that to-do forever.
+  it("a card left over a week, or from before the to-do was closed and reopened, no longer blocks", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-01T10:00:00Z"));
+      await finish("c1", "storefront", "I updated the README.");
+      vi.setSystemTime(new Date("2026-11-09T10:00:00Z"));
+      await finish("c2", "storefront", "Updated the README again.");
+      expect(cards("ion:chief").map((s) => s.card.chatId)).toEqual(["c1", "c2"]);
+      // Closed and reopened by you since c2's card: c3 is offered.
+      const path = "you/update-the-readme.md";
+      const read = () => (memory.read(path) as { ok: true; file: { header: object; hash: string } }).file;
+      const flip = (status: "open" | "done") =>
+        memory.write({
+          scope: "you",
+          slug: "update-the-readme",
+          header: { ...read().header, status } as never,
+          text: "Update the README",
+          expectHash: read().hash,
+          by: "you",
+        });
+      vi.setSystemTime(new Date("2026-11-09T11:00:00Z"));
+      flip("done");
+      flip("open");
+      vi.setSystemTime(new Date("2026-11-09T12:00:00Z"));
+      await finish("c3", "storefront", "Updated the README for deploys.");
+      expect(cards("ion:chief").map((s) => s.card.chatId)).toEqual(["c1", "c2", "c3"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Task review, 2026-11-22: Done with no to-dos wired said it was done and closed nothing.
   it("Done without to-dos to close says so", async () => {
     await finish("c1", "storefront", "I updated the README.");
