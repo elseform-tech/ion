@@ -17,6 +17,9 @@ type Deps = { memory: MemoryFiles; grants: Grants };
 
 const lines = (source: string, rows: MemoryRow[]) => ok(wrapData(source, rows.map(lineOf).join("\n")));
 
+/** A name is words (Task 5, 2026-11-22: agents named files like file names). */
+const NAME_HELP = 'A few words, as you\'d say them ("Release branch"), not a file name';
+
 /** What a scope means to this caller, for the write tool's description. */
 const scopeHelp = (c: Caller) =>
   c.kind === "chat"
@@ -58,12 +61,7 @@ export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, 
         "Keep something for later as a small file, one topic each: a new one needs name, description, type and text. To update one, memory_read it, pass its hash as expect, and give only what changes.",
       inputSchema: {
         scope: z.string().min(1).max(64).describe(scopeHelp(caller)),
-        name: z
-          .string()
-          .min(1)
-          .max(80)
-          .optional()
-          .describe('A few words, as you\'d say them ("Release branch"), not a file name'),
+        name: z.string().min(1).max(80).optional().describe(NAME_HELP),
         description: z.string().min(1).max(160).optional().describe("One line: what the index shows"),
         type: z.enum(MEMORY_TYPES).optional(),
         text: z.string().min(1).max(MEMORY_TEXT_MAX).optional(),

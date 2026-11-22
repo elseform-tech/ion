@@ -15,7 +15,8 @@ import { EV, type IonEvent } from "@ion/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startServer } from "../api/server.js";
 import { NO_AGENT } from "../ions/turn.js";
-import { fillerSeeds, MEMORY_CASES, MEMORY_MEASURES, type MemoryCase, type Seed } from "./memory-cases.js";
+import { MEMORY_CASES, MEMORY_MEASURES, type MemoryCase } from "./memory-cases.js";
+import { fillerSeeds, type Seed } from "./memory-seeds.js";
 
 /**
  * Memory evals (the user, 2026-11-22): each case in memory-cases.ts through a real daemon (a temp ion home with its

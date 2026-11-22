@@ -1,6 +1,7 @@
 import { MEMORY_PATH, MEMORY_TYPES } from "@ion/schema";
 import { describe, expect, it } from "vitest";
-import { fillerSeeds, MEMORY_CASES, MEMORY_MEASURES } from "./memory-cases.js";
+import { MEMORY_CASES, MEMORY_MEASURES } from "./memory-cases.js";
+import { fillerSeeds } from "./memory-seeds.js";
 
 // The memory eval's cases (Task 5, 2026-11-22): a broken seed or a case that can't fail would quietly skew the numbers.
 describe("memory cases", () => {
