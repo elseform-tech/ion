@@ -105,6 +105,19 @@ export function runSandbox(
   return { kind, paths: { deny: ionDenied(o), read, write: [o.cwd], noWrite } };
 }
 
+/**
+ * The sandbox of one of ion's own agent processes (the judge, ion's quick model, an ion's turn; final review,
+ * 2026-11-22): a run's, in its folder; none where the computer has none.
+ */
+export function ownAgentSandbox(
+  o: { dataDir: string; configFile: string; sandbox?: SandboxKind },
+  cwd: string,
+  harness: string,
+): { sandbox?: RunSandbox } {
+  const sandbox = runSandbox(o.sandbox ?? machineSandbox(), { ...o, cwd, harness });
+  return sandbox ? { sandbox } : {};
+}
+
 /** Whether an agent's chats run without a sandbox here (Settings → Agents: "Not sandboxed"). */
 export const notSandboxed = (how: "own" | "ion" | undefined, kind: SandboxKind): boolean =>
   !how || kind === "none";

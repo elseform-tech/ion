@@ -17,13 +17,11 @@ import { Connection } from "./connection.js";
 import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
-import { runSandbox, startSandbox } from "../runs/sandbox.js";
+import { startSandbox } from "../runs/sandbox.js";
 import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
-import type { JudgeOthers } from "../access/judge.js";
-import { useJudgeMisses } from "../access/misses.js";
-import { clearScratch, scratchOf, startOf, sweepTmp } from "../access/runner.js";
+import { judgeOthers, startOwnAgents } from "../access/runner.js";
 import { theirRulesOf } from "../access/agent-rules.js";
 import { UnsureLog } from "../access/unsure.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
@@ -56,7 +54,7 @@ import { Hooks } from "../hooks/index.js";
 import { createSkills, ionSkillsDir, type Skills } from "../skills/index.js";
 import { runSkillsOf } from "../skills/run.js";
 import { type AskInChat, runOwnOf } from "../tools/own-run.js";
-import { placeProbes, skillReaders } from "../adapters/registry.js";
+import { skillReaders } from "../adapters/registry.js";
 
 /** The scope of a run that ion asks you about. */
 const runScopeOf = (r: AskingRun): RunScope => ({
@@ -219,7 +217,7 @@ function autoAccess(
   unsure: UnsureLog,
 ) {
   return createAccess({
-    judge: createJudge(quick, undefined, judgeOthers(opts)),
+    judge: judgeOn(opts, quick),
     // Unsure often on one kind of action: said once in the log (and `ion status`), so a rule can be added.
     onUnsure: (req) => {
       const note = unsure.add(req);
@@ -231,18 +229,13 @@ function autoAccess(
   });
 }
 
-/**
- * The agents a judge that didn't answer may ask once more (final review, 2026-11-22): any other signed-in one; each
- * miss is counted for its agent (Settings → Agents).
- */
-function judgeOthers(opts: { dataDir: string; configFile: string }): JudgeOthers {
-  const misses = useJudgeMisses(join(opts.dataDir, "judge-misses.json"));
-  return {
-    first: () => startOf(loadUserConfig(opts.configFile).config, "judge").id,
-    ready: async () => (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id),
-    missed: (agent) => misses.add(agent),
-  };
-}
+/** Auto's judge: its second try on another agent signed in now. */
+const judgeOn = (opts: { dataDir: string; configFile: string }, quick: ReturnType<typeof harnessRunner>) =>
+  createJudge(quick, undefined, judgeOthers(opts, readyAgents));
+
+/** The agents signed in now (the judge's second try picks one). */
+const readyAgents = async () =>
+  (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
 
 /** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
 const followAsk = (chatId: string, m: { harness: string | null; text: string }) => ({
@@ -479,18 +472,10 @@ function openState(
     const note = unsure.add({ ...c, input: c.input });
     if (note) console.warn(note);
   };
-  const judge = createJudge(quick, undefined, judgeOthers(opts));
-  const ionServers = new IonServers({ ...opts, servers, judge, ownNames, onUnsure });
+  const ionServers = new IonServers({ ...opts, servers, judge: judgeOn(opts, quick), ownNames, onUnsure });
   const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers } });
   // Said once in the daemon's log when this computer can't sandbox chats' agents; ion's own git runs sandboxed too.
-  const sandbox = startSandbox(opts);
-  // ion's checks of an agent open it in ion's data folder, sandboxed; what they left in the temp folder goes.
-  placeProbes({
-    root: scratchOf(opts.dataDir),
-    sandbox: (cwd, harness) => runSandbox(sandbox, { ...opts, cwd, harness }),
-  });
-  sweepTmp();
-  clearScratch(opts.dataDir);
+  const sandbox = startOwnAgents(opts, startSandbox(opts));
   const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({

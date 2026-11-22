@@ -21,7 +21,7 @@ import type { AcpHarness } from "./harnesses.js";
 type Choice = { value?: unknown; name?: unknown; options?: Choice[] };
 type ConfigOption = { id: string; category?: string; currentValue?: unknown; options?: Choice[] };
 /** The agent's process as a session sees it: a real one, or one session of ion's warm judge (bare.ts). */
-export type AgentChild = { kill(): unknown; on(event: "exit", listener: () => void): unknown };
+type AgentChild = { kill(): unknown; on(event: "exit", listener: () => void): unknown };
 export type Connection = {
   child: AgentChild;
   rpc: Rpc;

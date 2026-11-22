@@ -9,7 +9,6 @@ import {
   ION_SERVER,
   projectRoots,
   ResumeFailed,
-  type RunSandbox,
   type Session,
   type StartOpts,
 } from "@ion/adapter-kit";
@@ -26,8 +25,7 @@ import { ionsView } from "../views/ions.js";
 import { type IonBrain, ionBrain } from "./brain.js";
 import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
-import { machineSandbox, runSandbox } from "../runs/sandbox.js";
-import { envDropOf } from "../tools/env-drop.js";
+import { ownAgentStart } from "../access/runner.js";
 import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
 import { type IonGateCall as GateCall, IonServers } from "./servers.js";
@@ -334,12 +332,6 @@ export class IonTurns {
     return dir;
   }
 
-  /** A turn's sandbox: a run's, in the ion's folder; none where the computer has none. */
-  private sandboxOf(cwd: string, harness: string): { sandbox?: RunSandbox } {
-    const sandbox = runSandbox(machineSandbox(), { ...this.d, cwd, harness });
-    return sandbox ? { sandbox } : {};
-  }
-
   private rulesFor(cwd: string): RuleCtx {
     return ionRules(this.d, cwd);
   }
@@ -392,10 +384,8 @@ export class IonTurns {
         ...yours,
       ],
       ...(gateKey ? { gate: { url: `${this.d.gateUrl()}/${gateKey}` } } : {}),
-      // ion's own agents don't inherit your keys either.
-      envDrop: await envDropOf(this.d.configFile),
-      // In a run's sandbox (final review, 2026-11-22): ion's folders denied but its own, agents' configs read-only.
-      ...this.sandboxOf(t.cwd, brain.harness),
+      // ion's own agents don't inherit your keys either, and start in a run's sandbox (final review, 2026-11-22).
+      ...(await ownAgentStart(this.d, t.cwd, brain.harness)),
       signal: abort.signal,
       decide: async (req: ApprovalRequest) => {
         const live = this.live.get(t.turnId);

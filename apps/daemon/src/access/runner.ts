@@ -1,11 +1,13 @@
 import { mkdirSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SandboxKind, Session } from "@ion/adapter-kit";
+import type { SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
 import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
-import { getHarness } from "../adapters/registry.js";
-import { machineSandbox, runSandbox } from "../runs/sandbox.js";
+import { getHarness, placeProbes } from "../adapters/registry.js";
+import { ownAgentSandbox, runSandbox } from "../runs/sandbox.js";
+import type { JudgeOthers } from "./judge.js";
+import { useJudgeMisses } from "./misses.js";
 import { envDropOf } from "../tools/env-drop.js";
 
 /** Where ion's own agent processes (the judge, ion's quick model, sign-in and model checks) work: in its data folder. */
@@ -56,15 +58,13 @@ export function harnessRunner(
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
     const dir = judgeFolder(o.dataDir, id);
-    const sandbox = runSandbox(o.sandbox ?? machineSandbox(), { ...o, cwd: dir, harness: id });
     {
       const session = await h.adapter.start({
         cwd: dir,
         model,
         effort,
         bare: true,
-        envDrop: await envDropOf(o.configFile),
-        ...(sandbox ? { sandbox } : {}),
+        ...(await ownAgentStart(o, dir, id)),
         signal,
         decide: async () => "deny",
       });
@@ -126,4 +126,43 @@ export async function answerWithin(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Where ion's own agent processes work, set at the daemon's start: its checks of an agent open it in ion's data folder,
+ * sandboxed; what judges and checks left in the temp folder and in ion's scratch folder goes.
+ */
+export function startOwnAgents(o: { dataDir: string; configFile: string }, kind: SandboxKind): SandboxKind {
+  placeProbes({
+    root: scratchOf(o.dataDir),
+    sandbox: (cwd, harness) => runSandbox(kind, { ...o, cwd, harness }),
+  });
+  sweepTmp();
+  clearScratch(o.dataDir);
+  return kind;
+}
+
+/**
+ * The agents a judge that didn't answer may ask once more (final review, 2026-11-22): any other ready one; each miss is
+ * counted for its agent (Settings → Agents).
+ */
+export function judgeOthers(
+  o: { dataDir: string; configFile: string },
+  ready: () => Promise<string[]>,
+): JudgeOthers {
+  const misses = useJudgeMisses(join(o.dataDir, "judge-misses.json"));
+  return {
+    first: () => startOf(loadUserConfig(o.configFile).config, "judge").id,
+    ready,
+    missed: (agent) => misses.add(agent),
+  };
+}
+
+/** What one of ion's own agent processes starts with: your keys kept from it, and its sandbox (none where there's none). */
+export async function ownAgentStart(
+  o: { dataDir: string; configFile: string; sandbox?: SandboxKind },
+  cwd: string,
+  harness: string,
+): Promise<Pick<StartOpts, "envDrop" | "sandbox">> {
+  return { envDrop: await envDropOf(o.configFile), ...ownAgentSandbox(o, cwd, harness) };
 }

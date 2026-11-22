@@ -102,24 +102,25 @@ export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdap
     capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps)),
     mcpTransports: { http: h.mcpHttp ?? true },
     ...ownOf(h),
-    async start(opts) {
-      const path = binary();
-      if (!path) throw new Error(`${h.label} isn't installed`);
-      // Not set up yet: once outside the sandbox first, where it can write ion's folder for it.
-      if (opts.sandbox && h.prepare && !h.prepare(opts.ownTools))
-        await setUpOutside(h, path, { ownTools: !!opts.ownTools, timeoutMs: deps.startTimeoutMs });
-      // The chat's folder, session, MCP server, gate and env (ConnectOpts reads only those). ion's judge (bare): a
-      // session of a warm agent with no tools, on the harness's fast model and low effort.
-      const c = opts.bare
-        ? await bareConnect(h, path, bareOpts(h, opts, deps.startTimeoutMs))
-        : await connect(h, path, { ...opts, timeoutMs: deps.startTimeoutMs });
-      const want = wanted(h, opts);
-      const model = (await setOption(c, "model", want.model)) ?? h.defaultModel ?? "default";
-      const effort = want.effort;
-      await setOption(c, "thought_level", effort === "max" ? "high" : effort);
-      return startAcpSession(c, { ...opts, effort }, { harness: h.id, model, silent: silenceOf(h) });
-    },
+    start: (opts) => startAcp(h, binary(), deps, opts),
   };
+}
+
+/** A chat's run (or ion's judge, bare) on the agent. */
+async function startAcp(h: AcpHarness, path: string | null, deps: AcpDeps, opts: StartOpts) {
+  if (!path) throw new Error(`${h.label} isn't installed`);
+  // Not set up yet: once outside the sandbox first, where it can write ion's folder for it.
+  if (opts.sandbox && h.prepare && !h.prepare(opts.ownTools))
+    await setUpOutside(h, path, { ownTools: !!opts.ownTools, timeoutMs: deps.startTimeoutMs });
+  // The chat's folder, session, MCP server, gate and env (ConnectOpts reads only those). ion's judge (bare): a
+  // session of a warm agent with no tools, on the harness's fast model and low effort.
+  const c = opts.bare
+    ? await bareConnect(h, path, bareOpts(h, opts, deps.startTimeoutMs))
+    : await connect(h, path, { ...opts, timeoutMs: deps.startTimeoutMs });
+  const want = wanted(h, opts);
+  const model = (await setOption(c, "model", want.model)) ?? h.defaultModel ?? "default";
+  await setOption(c, "thought_level", want.effort === "max" ? "high" : want.effort);
+  return startAcpSession(c, { ...opts, effort: want.effort }, { harness: h.id, model, silent: silenceOf(h) });
 }
 
 /** The model and effort a start asks for: yours, else (ion's judge) the harness's fast model and low effort. */
