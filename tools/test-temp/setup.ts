@@ -41,7 +41,8 @@ export function tempRun(o: { real?: string; base?: string } = {}): () => void {
     restore("TMPDIR", saved.TMPDIR);
     restore("XDG_CACHE_HOME", saved.XDG);
     restore("ION_AGENTS_HOME", saved.AGENTS);
-    rmSync(root, { recursive: true, force: true });
+    // A daemon a test started may still be writing its last file there: tried again for a moment.
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     if (existsSync(root)) throw new Error(`The test run's folder is still there: ${root}`);
     const left = [...leftovers(real)].filter((n) => !before.has(n) && !n.startsWith(RUN_PREFIX));
     if (left.length)

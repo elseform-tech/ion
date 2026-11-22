@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { tempRun } from "../../test-temp/setup.ts";
+import { tempRun } from "./setup.js";
 
 // CI (ubuntu), PR #25, 2026-11-22: "Tests left 4 folders in /tmp: ion-test-run-…". turbo runs packages' tests at once,
 // so one run's teardown saw the other runs' own folders. A run checks only the folder it made (gone) and new ion-*
