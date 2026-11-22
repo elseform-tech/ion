@@ -19,7 +19,7 @@ import { UserError } from "../api/errors.js";
 import type { GateAnswer } from "../gate/index.js";
 import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
-import { type IonBrain, ionBrain, limitedUntil, nextBrain } from "./brain.js";
+import { allLimited, type IonBrain, ionBrain, limitedUntil, nextBrain } from "./brain.js";
 import { forgetSession, type Kept, keepSession, resumeOf, startSession } from "./sessions.js";
 import { errLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, TOO_LONG, type Tried } from "./fallback.js";
 import { ionVerdict } from "./gate.js";
@@ -255,13 +255,15 @@ export class IonTurns {
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, threads: [] };
-    if (!brain) return { reply: NO_AGENT, threads: [] };
+    // No agent: when every ready one is limited with a stated reset, which frees up first (review, 2026-11-22).
+    if (!brain) return { reply: (await allLimited(this.d).catch(() => null)) ?? NO_AGENT, threads: [] };
     // Every try is one turn (security review, 2026-11-22): its id, and so its caps on memory and threads.
     const turnId = `turn_${randomUUID()}`;
     const r = await onReadyAgents(brain, {
       once: (b) => this.once(ionId, text, { ...o, cwd, turnId }, b),
       next: (not) => nextBrain(this.d, ionId, not),
       limitedUntil: (h) => limitedUntil(this.d.db, h),
+      none: () => allLimited(this.d),
       stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,
     });
     return o.dream && noAgent(r.reply) ? { ...r, reply: NO_AGENT } : r;
@@ -428,7 +430,13 @@ export class IonTurns {
     turnId: string,
     work: (end: Ended, hold: (s: Session) => void) => Promise<void>,
   ): Promise<Ended> {
-    const end: Ended = { last: "", nativeId: null, late: false, failed: false };
+    const end: Ended = {
+      startedAt: new Date().toISOString(),
+      last: "",
+      nativeId: null,
+      late: false,
+      failed: false,
+    };
     let session: Session | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<void>((r) => {
@@ -503,7 +511,7 @@ export class IonTurns {
         this.d.store.append({ ...e, chatId: `ion:${t.ionId}`, runId: t.turnId, origin: "adapter" });
       this.live.get(t.turnId)?.web.note(e);
       // What the turn spends, and a limit it hits, go in its agent's usage (never on the ion's chat).
-      const kept = ledgerEvent(t.adapter.id, e, t.turnId);
+      const kept = ledgerEvent(t.adapter.id, e, { runId: t.turnId, startedAt: end.startedAt });
       if (kept) this.d.store.append(kept);
       note(e, end);
     }

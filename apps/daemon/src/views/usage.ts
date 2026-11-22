@@ -61,11 +61,21 @@ function limited(db: Db, e: IonEvent, harness: string, limit: Limit): void {
 }
 
 /** A run that started after the mark and ended well: the agent got past its limit. */
-function cleared(db: Db, runId: string, harness: string): void {
+function cleared(db: Db, harness: string, startedAt: string | null): void {
+  if (!startedAt) return;
   db.prepare(
-    `UPDATE view_usage_agents SET limited_until = NULL, limited_at = NULL WHERE harness = ? AND limited_at <=
-       (SELECT started_at FROM view_runs WHERE run_id = ?)`,
-  ).run(harness, runId);
+    "UPDATE view_usage_agents SET limited_until = NULL, limited_at = NULL WHERE harness = ? AND limited_at <= ?",
+  ).run(harness, startedAt);
+}
+
+/** When the run or turn that ended started: an ion's turn says so; a chat's run is in view_runs. */
+function startOf(db: Db, e: IonEvent, d: Data): string | null {
+  if (typeof d.startedAt === "string") return d.startedAt;
+  if (!e.runId) return null;
+  const r = db.prepare("SELECT started_at AS at FROM view_runs WHERE run_id = ?").get(e.runId) as
+    | { at: string | null }
+    | undefined;
+  return r?.at ?? null;
 }
 
 type Sum = { harness: string; tokens: number; cost: number };
@@ -108,17 +118,25 @@ function agents(db: Db, now: Date): Record<string, AgentUsageRow> {
  * What of an ion's turn or the judge's session goes in its agent's ledger (the user, 2026-11-22: ions' spending and
  * limits count too): its usage, and a limit it hit, named with the agent and kept off any chat. Null for the rest.
  */
-export function ledgerEvent(harness: string, e: AdapterEvent, runId: string | null): NewEvent | null {
-  const limit = e.type === EV.error && !!(e.data as Data).limit;
-  if (e.type !== EV.usageReported && !limit) return null;
-  return { ...e, data: { ...e.data, harness }, chatId: null, runId, origin: "adapter" };
+export function ledgerEvent(
+  harness: string,
+  e: AdapterEvent,
+  s: { runId: string | null; startedAt: string },
+): NewEvent | null {
+  const d = e.data as Data;
+  const limit = e.type === EV.error && !!d.limit;
+  // One that ended well, with when it started: it clears a mark made before it (the agent is past its limit).
+  const done = e.type === EV.runFinished && d.status === "done";
+  if (e.type !== EV.usageReported && !limit && !done) return null;
+  const data = { ...e.data, harness, ...(done ? { startedAt: s.startedAt } : {}) };
+  return { ...e, data, chatId: null, runId: s.runId, origin: "adapter" };
 }
 
 /** Keeps what of a session goes in its agent's ledger (ledgerEvent), for sessions outside a chat's run. */
 export const recordTo =
   (store: { append(e: NewEvent): unknown }) =>
-  (harness: string, e: AdapterEvent): void => {
-    const kept = ledgerEvent(harness, e, null);
+  (harness: string, e: AdapterEvent, startedAt: string): void => {
+    const kept = ledgerEvent(harness, e, { runId: null, startedAt });
     if (kept) store.append(kept);
   };
 
@@ -150,7 +168,7 @@ export const usageView: View & { agents(db: Db, now: Date): Record<string, Agent
     if (e.type === EV.usageReported) reported(db, e, harness, d);
     else if (e.type === EV.error && d.limit && typeof d.limit === "object")
       limited(db, e, harness, d.limit as Limit);
-    else if (e.type === EV.runFinished && d.status === "done" && e.runId) cleared(db, e.runId, harness);
+    else if (e.type === EV.runFinished && d.status === "done") cleared(db, harness, startOf(db, e, d));
   },
   agents,
 };

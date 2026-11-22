@@ -92,13 +92,13 @@ function client(
     fail?: string[];
     problem?: string;
     own?: Record<string, boolean>;
-    usage?: AgentUsage[];
+    usage?: AgentUsage[] | (() => AgentUsage[]);
   } = {},
 ) {
   const call = vi.fn(async (cmd: string) => {
     if (o.fail?.includes(cmd)) throw new ApiCallError("invalid", "Fix your config first.");
     if (cmd === "harnesses.list") return [claude, grok];
-    if (cmd === "usage.list") return o.usage ?? [];
+    if (cmd === "usage.list") return typeof o.usage === "function" ? o.usage() : (o.usage ?? []);
     if (cmd === "settings.get")
       return {
         quick: "grok-build",
@@ -245,6 +245,27 @@ describe("Settings", () => {
     it("billing comes from the sign-in", async () => {
       const m = await meterOf(grokUsage({ billing: "free" }));
       expect(m.textContent).toBe("Free");
+    });
+
+    // Review, 2026-11-22: Settings read usage only with the agents list, so a limit hit while it was open didn't show.
+    it("a limit hit while Settings is open shows at once", async () => {
+      let usage = grokUsage({});
+      let heard: ((e: { type: string; data: Record<string, unknown> }) => void) | undefined;
+      const c = client({ usage: () => usage });
+      (c.subscribe as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        async (_q: unknown, fn: typeof heard) => {
+          heard = fn;
+          return () => {};
+        },
+      );
+      render(<Settings client={c} onOpenIon={() => {}} />);
+      const row = (await screen.findByRole("switch", { name: "Grok Build: use its own tools" })).closest(
+        ".hrow",
+      )!;
+      await waitFor(() => expect(row.querySelector(".meter")?.textContent).toBe("Learned from errors"));
+      usage = grokUsage({ limitedUntil: new Date(Date.now() + 3600_000).toISOString() });
+      heard?.({ type: "error", data: { code: "usage_limit", limit: {}, harness: "grok-build" } });
+      await waitFor(() => expect(row.querySelector(".meter")?.textContent).toMatch(/^limited until /));
     });
   });
 

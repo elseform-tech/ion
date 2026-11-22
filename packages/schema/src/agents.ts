@@ -59,10 +59,17 @@ export function clockOf(iso: string, now: Date): string {
   return t.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/** The window nearest its limit among those still current (an old one, past its reset, says nothing now). */
+/**
+ * The window nearest its limit among those still current (an old one, past its reset, says nothing now); on a tie, the
+ * one that resets sooner.
+ */
 function fullest(u: AgentUsage, now: Date): UsageWindow | null {
   const current = u.windows.filter((w) => w.resetsAt === null || Date.parse(w.resetsAt) > now.getTime());
-  return current.reduce<UsageWindow | null>((a, w) => (!a || w.usedPercent > a.usedPercent ? w : a), null);
+  const resets = (w: UsageWindow) => (w.resetsAt ? Date.parse(w.resetsAt) : Number.POSITIVE_INFINITY);
+  // Equally used: the one that resets sooner says more.
+  const fuller = (w: UsageWindow, a: UsageWindow) =>
+    w.usedPercent > a.usedPercent || (w.usedPercent === a.usedPercent && resets(w) < resets(a));
+  return current.reduce<UsageWindow | null>((a, w) => (!a || fuller(w, a) ? w : a), null);
 }
 
 /** What's known when there's no gauge: free, this week's cost for an agent paid per token, else what errors said. */

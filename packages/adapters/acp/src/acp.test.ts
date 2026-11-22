@@ -478,6 +478,17 @@ describe("acp adapter", () => {
       await createAcpAdapter({ ...fake, billing: "free" }, { which: () => process.execPath }).auth.status(),
     ).toEqual({ signedIn: true, method: "Signed in", billing: "free" });
     expect(await make().auth.status()).not.toHaveProperty("billing");
+    // A harness that asks its agent (opencode: what its model costs) goes by that answer.
+    const asked = createAcpAdapter(
+      { ...fake, billingOf: async () => "free" },
+      { which: () => process.execPath },
+    );
+    expect(await asked.auth.status()).toMatchObject({ billing: "free" });
+    const unknown = createAcpAdapter(
+      { ...fake, billingOf: async () => undefined },
+      { which: () => process.execPath },
+    );
+    expect(await unknown.auth.status()).not.toHaveProperty("billing");
   });
 
   // Re-review, 2026-11-21: a long tool run, or ion holding a call for your answer through its gate (not only a
@@ -506,6 +517,20 @@ describe("acp adapter", () => {
     expect(await errorOf("crash")).toMatchObject({ code: "crash", retryable: true });
     expect(await errorOf("ratelimit")).toMatchObject({ code: "rate_limit", retryable: true });
     expect(await errorOf("badinput")).toMatchObject({ code: "agent", retryable: false });
+  });
+
+  // Review, 2026-11-22: an agent's error saying its usage limit is reached was retried as a rate limit (its "429"). It's
+  // the agent's limit (no reset said). Wording as opencode 1.18.8 says it (live, 2026-11-22: "Free usage limit
+  // reached"); a plain 429 is still a rate limit.
+  it("an error that says the usage limit is reached is the agent's limit, not a rate limit", async () => {
+    const errorOf = async (text: string) => (await turn(fake, text)).find((e) => e.type === "error")?.data;
+    expect(await errorOf("usagelimit")).toEqual({
+      code: "usage_limit",
+      retryable: false,
+      message: "AI_APICallError: Free usage limit reached (429)",
+      limit: {},
+    });
+    expect(await errorOf("ratelimit")).toMatchObject({ code: "rate_limit", retryable: true });
   });
 
   // Regression (final review I5): an agent that never answers startup used to hang ion forever.

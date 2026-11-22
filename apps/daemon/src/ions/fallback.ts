@@ -7,7 +7,11 @@ export const NO_AGENT = "I couldn't reach my agent; try again.";
 /** NO_AGENT with the agent's own reason, when it gave one. */
 const NO_AGENT_WHY = "I couldn't reach my agent: ";
 /** The turn found no agent, or its agents failed (with or without their reason). */
-export const noAgent = (reply: string): boolean => reply === NO_AGENT || reply.startsWith(NO_AGENT_WHY);
+export const noAgent = (reply: string): boolean =>
+  reply === NO_AGENT || reply.startsWith(NO_AGENT_WHY) || LIMITED.test(reply);
+/** Every ready agent is limited: which frees up first ("Claude Code is limited until 16:00"), the whole reply. */
+export const limitedLine = (label: string, clock: string): string => `${label} is limited until ${clock}`;
+const LIMITED = /^[^\n*]+ is limited until [^\n*]+$/;
 export const TOO_LONG = "I couldn't finish that in time.";
 /** What an ion says when you stopped its turn (Esc twice). */
 export const STOPPED = "Stopped.";
@@ -94,6 +98,8 @@ export async function onReadyAgents<R extends { reply: string }>(
     once: (b: IonBrain) => Promise<Tried<R>>;
     next: (not: string[]) => Promise<IonBrain | null>;
     stay: (r: R) => boolean;
+    /** With no agent left: when every ready one is limited, which frees up first ("… is limited until 16:00"). */
+    none?: () => Promise<string | null>;
   } & Limits,
 ): Promise<R> {
   const failed: Failed[] = [];
@@ -105,7 +111,7 @@ export async function onReadyAgents<R extends { reply: string }>(
     if (!f) return answered(r, brain.harness, passed, o);
     failed.push({ harness: brain.harness, why: f.why });
     const next = f.did || o.stay(r) ? null : await o.next(failed.map((x) => x.harness)).catch(() => null);
-    if (!next) return { ...r, reply: couldNot(failed) };
+    if (!next) return { ...r, reply: (await o.none?.().catch(() => null)) ?? couldNot(failed) };
     brain = next;
   }
 }

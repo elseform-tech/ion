@@ -7,6 +7,8 @@ import { cleanWhy } from "./fallback.js";
  * didn't close in time (the agent may still hold it open).
  */
 export type Ended = {
+  /** When the turn's session started (ISO): a turn that ends well clears a limit mark made before it. */
+  startedAt: string;
   last: string;
   nativeId: string | null;
   late: boolean;

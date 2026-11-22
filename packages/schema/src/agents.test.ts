@@ -86,6 +86,16 @@ describe("usageLine", () => {
     expect(usageLine(api, local(12)).text).toBe("this week $1.20");
   });
 
+  // Review, 2026-11-22: two windows equally used (both 0% on a fresh plan) showed whichever came first; the one that
+  // resets sooner says more.
+  it("on a tie, the window that resets sooner", () => {
+    const windows = [
+      { name: "week", usedPercent: 0, resetsAt: local(9, 5, 25).toISOString() },
+      { name: "5 h", usedPercent: 0, resetsAt: local(14, 20).toISOString() },
+    ];
+    expect(usageLine(usage({ windows }), local(12)).text).toBe("0% of 5 h · resets 14:20");
+  });
+
   it("a reset on another day says the day", () => {
     const windows = [{ name: "week", usedPercent: 81, resetsAt: local(9, 5, 25).toISOString() }];
     expect(usageLine(usage({ windows }), local(12)).text).toBe("81% of week · resets Wed 09:05");

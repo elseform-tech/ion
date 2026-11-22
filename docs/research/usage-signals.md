@@ -8,7 +8,7 @@ names, units and the kind of sign-in.
 |---|---|---|---|---|---|---|---|
 | Codex | codex-cli 0.153.2 | yes | no | yes: 5 h and week | `usageLimitExceeded` | from the full window | ChatGPT: subscription; API key: api |
 | Claude Code | 2.1.326 (Agent SDK 0.3.326) | yes | yes (`total_cost_usd`) | yes: 5 h and week | `rate_limit_event` `rejected` | `resetsAt` | claude.ai or long-lived token: subscription; API key or cloud: api |
-| opencode | 1.18.8 | when ACP reports it | `usage_update.cost` | no | its log line "Free usage limit reached" | none | free (ion runs its free model) |
+| opencode | 1.18.8 | when ACP reports it | `usage_update.cost` | no | its log line, or an error, "Free usage limit reached" | none | free only on a model it prices at 0, else unknown |
 | Grok Build | 1.0.92 | yes (`_meta`) | yes (`_meta.usage.costUsdTicks`) | no (over ACP) | not seen | not seen | subscription (Sign in with Grok) |
 
 ## Codex
@@ -41,6 +41,13 @@ names, units and the kind of sign-in.
   `{ five_hour: { utilization: 0.03, resetsAt, status }, seven_day: { utilization: 0.64, resetsAt, status } }`.
   `utilization` is a fraction (0–1), `resetsAt` unix seconds. ion keeps `five_hour` (5 h) and `seven_day` (week);
   the recorded transcripts in `fixtures/transcripts/claude-code/2.1.326` carry them too.
+- **Per-model weekly windows:** the SDK's `rateLimitType` also names `seven_day_opus`, `seven_day_sonnet` and
+  `seven_day_overage_included` (a weekly cap on one model family, or with overage). ion shows only `five_hour` and
+  `seven_day`; a rejected per-model window still counts as a limit by its `resetsAt` (the run's error), but has no
+  gauge of its own.
+- **Lag:** the windows are your whole plan's (claude.ai, the desktop app, other machines), as of the last request ion
+  made. Use outside ion moves them without ion seeing it until its next run: the week window can lag what you've used.
+  A gauge older than its reset is dropped; one that's merely old isn't refreshed until the agent runs again.
 - **Tokens and cost:** the `result` message: `usage.input_tokens`, `usage.output_tokens`, `total_cost_usd` (what the
   run would cost at API prices; on a subscription it isn't billed).
 - **Limit:** `rate_limit_info.status: "rejected"`. With `resetsAt` more than 2 minutes away it's the usage limit
@@ -59,8 +66,13 @@ names, units and the kind of sign-in.
   the limit with no reset (`limit: {}`): limited for 30 minutes, then one more try.
 - **Usage:** `session/update` `usage_update` (`used`, `size`, `cost.amount`), and the prompt result's `usage` when the
   ACP version has it. No windows.
-- **Billing:** ion runs opencode's free model (`opencode/big-pickle`, from Zen; its ACP auth method is
-  `opencode-login`, not needed for free models): `free`. A paid provider picked in opencode isn't seen by ion.
+- **Billing:** `opencode models <provider> --verbose` lists each model with `cost.input` and `cost.output` (per million
+  tokens). Zen's free models (`opencode/big-pickle`, `opencode/*-free`) are priced at 0; OpenCode Go's and provider
+  models list a price. ion asks it for the model it runs (`opencode/big-pickle` unless picked): `free` at 0/0, else
+  unknown (a Go plan and a provider key both list a price, and ion can't tell which bills), shown as "Learned from
+  errors", never as free.
+- **Limit as an error:** when opencode's prompt fails with "… usage limit reached" (its own wording above), the
+  turn's error is the limit (`usage_limit`, no reset), not a retried rate limit; a bare 429 is still a rate limit.
 
 ## Grok Build
 
@@ -89,5 +101,9 @@ names, units and the kind of sign-in.
   so an agent's line includes what ions spend, and a limit an ion hits marks the agent for everyone. An ion whose
   agent is limited goes on the next ready one that isn't, and its reply says so in one line: "On Grok Build — Claude
   Code is limited until 16:00" (checked live: opencode out of free usage, ion chief answered on Grok).
+- A limit ion guessed (no stated reset) isn't trusted blindly: with no other agent free, an ion tries that agent anyway
+  (one turn), and a chat's handoff offers it as "may be free again". With every ready agent limited by a stated reset,
+  an ion says which frees up first ("Claude Code is limited until 16:00") instead of "I couldn't reach my agent". A
+  run or ion turn that started after a mark and ended well clears it.
 - Billing comes from each adapter's sign-in check (`AuthStatus.billing`); unknown stays unknown and is never shown as
   free.

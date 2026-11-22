@@ -459,7 +459,12 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     /** The agent, for usage outside a chat's run (an ion's turn, the judge): ion stamps it. */
     harness: z.string().optional(),
   }),
-  "run.finished": z.object({ status: z.enum(RUN_END_STATUSES) }),
+  "run.finished": z.object({
+    status: z.enum(RUN_END_STATUSES),
+    /** An ion's turn or the judge's session (kept off any chat): its agent and when it started (views/usage.ts). */
+    harness: z.string().optional(),
+    startedAt: z.iso.datetime().optional(),
+  }),
   error: z.object({
     code: z.string(),
     retryable: z.boolean(),

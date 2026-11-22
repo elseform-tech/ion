@@ -90,8 +90,8 @@ export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdap
         });
         const slow = h.notResponding?.() ?? "Not responding";
         const method = { yes: "Signed in", no: "Not signed in", "not-responding": slow }[probe];
-        const billing = probe === "yes" && h.billing ? { billing: h.billing } : {};
-        return { signedIn: probe === "yes", method, ...billing };
+        const billing = probe === "yes" ? ((await h.billingOf?.(path)) ?? h.billing) : undefined;
+        return { signedIn: probe === "yes", method, ...(billing ? { billing } : {}) };
       },
       login: () =>
         new Promise<void>((resolve, reject) => {

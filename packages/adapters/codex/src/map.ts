@@ -178,6 +178,14 @@ function noteUsage(p: Json, s: CodexState): void {
   };
 }
 
+/** A sparse update's windows over the last ones, by name: one it doesn't name stays as it was. */
+function mergeWindows(was: UsageWindow[] | null, now: UsageWindow[] | null): UsageWindow[] | null {
+  if (!now) return was;
+  const byName = new Map((was ?? []).map((w) => [w.name, w]));
+  for (const w of now) byName.set(w.name, w);
+  return [...byName.values()];
+}
+
 /** Translates one app-server notification into ion events. Pure apart from `state`. */
 export function mapNotification(method: string, p: Json, s: CodexState): AdapterEvent[] {
   switch (method) {
@@ -193,7 +201,7 @@ export function mapNotification(method: string, p: Json, s: CodexState): Adapter
       noteUsage(p, s);
       return [];
     case "account/rateLimits/updated":
-      s.windows = windowsOf(p.rateLimits) ?? s.windows;
+      s.windows = mergeWindows(s.windows, windowsOf(p.rateLimits));
       return [];
     case "error":
       // Codex retries some errors itself (willRetry); only the last one that ends the turn counts.

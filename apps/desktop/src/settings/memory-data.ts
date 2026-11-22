@@ -1,6 +1,14 @@
 import type { IonClient } from "@ion/client/browser";
-import { type DreamInfo, EV, type IonInfo, type MemoryInfo, type MemoryType } from "@ion/schema";
+import {
+  type DreamInfo,
+  EV,
+  type IonEvent,
+  type IonInfo,
+  type MemoryInfo,
+  type MemoryType,
+} from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
+import { useEvents } from "../events.js";
 
 export type MemoryData = {
   files: MemoryInfo[];
@@ -13,29 +21,6 @@ export type MemoryData = {
 
 /** What changes the Memory page: a file written or forgotten (by you, a chat, an ion, or in your editor), a dream. */
 const CHANGES = new Set<string>([EV.memoryWritten, EV.memoryForgotten, EV.memoryDreamed]);
-
-/** Hears ion's events from now on while mounted; `fn` for each. */
-function useEvents(client: IonClient, fn: (type: string) => void): void {
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    let gone = false;
-    void client
-      .subscribe({ fromNow: true }, (e) => {
-        if (!gone) fn(e.type);
-      })
-      .then(
-        (s) => {
-          if (gone) s();
-          else stop = s;
-        },
-        () => {},
-      );
-    return () => {
-      gone = true;
-      stop?.();
-    };
-  }, [client, fn]);
-}
 
 /** Every memory file (yours and each project's) and the folder, read again when one changes. */
 export function useMemory(client: IonClient): MemoryData {
@@ -51,7 +36,7 @@ export function useMemory(client: IonClient): MemoryData {
   useEffect(reload, [reload]);
   useEvents(
     client,
-    useCallback((type: string) => CHANGES.has(type) && reload(), [reload]),
+    useCallback((e: IonEvent) => CHANGES.has(e.type) && reload(), [reload]),
   );
   return { files, folder, tidied, reload };
 }
@@ -150,7 +135,7 @@ export function useOpenTodos(client: IonClient): number {
   useEffect(read, [read]);
   useEvents(
     client,
-    useCallback((type: string) => CHANGES.has(type) && read(), [read]),
+    useCallback((e: IonEvent) => CHANGES.has(e.type) && read(), [read]),
   );
   return n;
 }

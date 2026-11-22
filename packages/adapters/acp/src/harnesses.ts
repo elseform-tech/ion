@@ -1,7 +1,8 @@
 import { closeSync, constants, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { GateCall, SandboxPaths } from "@ion/adapter-kit";
+import { execFile } from "node:child_process";
+import { agentEnv, type GateCall, type SandboxPaths } from "@ion/adapter-kit";
 import type { Billing, EffortLevel } from "@ion/schema";
 import { type GateEnv, grokGateEnv, grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
 import {
@@ -87,6 +88,8 @@ export type AcpHarness = {
   forgetArgs?: (sessionId: string) => string[];
   /** How its sign-in bills, when ion knows (docs/research/usage-signals.md); absent: unknown, never free. */
   billing?: Billing;
+  /** Asks the agent how the model ion runs on it bills (opencode: its own price for it); undefined: unknown. */
+  billingOf?: (bin: string) => Promise<Billing | undefined>;
 };
 
 /** Grok's folder: `$GROK_HOME`, else `~/.grok`. */
@@ -242,6 +245,42 @@ export function opencodeGiveUp(line: string): { why: string; sessionId?: string 
   return sessionId ? { why, sessionId } : { why };
 }
 
+/**
+ * How a model bills, from `opencode models <provider> --verbose` (opencode 1.18.8: each model's id line, then its JSON
+ * with `cost.input` and `cost.output` per million tokens): free when opencode prices it at 0, else undefined (a Go
+ * plan's model and a provider key's both list a price; ion can't tell which bills).
+ */
+export function opencodeBilling(listing: string, model: string): Billing | undefined {
+  const at = listing.split("\n").indexOf(model);
+  if (at < 0) return undefined;
+  const rest = listing.split("\n").slice(at + 1);
+  const end = rest.findIndex((l) => l === "}");
+  try {
+    const cost = (
+      JSON.parse(rest.slice(0, end + 1).join("\n")) as { cost?: { input?: unknown; output?: unknown } }
+    ).cost;
+    return cost?.input === 0 && cost.output === 0 ? "free" : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Asks opencode how `model` bills (its own listing); undefined when it doesn't say in 10 s. */
+function opencodeModelBilling(bin: string, model: string): Promise<Billing | undefined> {
+  const provider = model.split("/")[0]!;
+  return new Promise((resolve) =>
+    execFile(
+      bin,
+      ["models", provider, "--verbose"],
+      { timeout: 10_000, env: agentEnv(), maxBuffer: 8 << 20 },
+      (e, out) => resolve(e ? undefined : opencodeBilling(String(out), model)),
+    ),
+  );
+}
+
+/** The model ion runs opencode on when none is picked. */
+const OPENCODE_MODEL = "opencode/big-pickle";
+
 export const OPENCODE: AcpHarness = {
   id: "opencode",
   label: "opencode",
@@ -252,7 +291,7 @@ export const OPENCODE: AcpHarness = {
   loginArgs: ["auth", "login"],
   loginHint: "opencode auth login",
   // A free model, so trying ion costs nothing.
-  defaultModel: "opencode/big-pickle",
+  defaultModel: OPENCODE_MODEL,
   // Its free models differ; the smallest common context, to be safe.
   contextTokens: 128_000,
   env: opencodeAskEnv,
@@ -281,8 +320,8 @@ export const OPENCODE: AcpHarness = {
   bare: { effort: "low" },
   noWeb: ({ own }) => opencodeNoWeb(own),
   forgetArgs: (id) => ["session", "delete", id],
-  // ion runs its free model (opencode/big-pickle, Zen's: no sign-in needed), out of free usage at times.
-  billing: "free",
+  // Free only when opencode prices the model ion runs at 0 (its Zen free models; review, 2026-11-22: not assumed).
+  billingOf: (bin) => opencodeModelBilling(bin, OPENCODE_MODEL),
 };
 
 /**

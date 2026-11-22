@@ -114,4 +114,21 @@ describe("usageView", () => {
     });
     expect(agent("grok-build")).toMatchObject({ week: { tokens: 42, costUsd: 0.1 }, limitedUntil: resetsAt });
   });
+
+  // Review, 2026-11-22: only a chat's run cleared a mark early; an ion's turn (or the judge) that started after the mark
+  // and ended well shows the agent is past its limit too. One that started before it doesn't.
+  it("a successful ion turn started after the mark clears it", () => {
+    const ion = (type: string, data: Record<string, unknown>) =>
+      store.append({ chatId: null, runId: "turn_1", origin: "adapter", type, data } as NewEvent);
+    const before = new Date(Date.now() - MIN).toISOString();
+    ion("error", { code: "usage_limit", retryable: false, message: "x", limit: {}, harness: "grok-build" });
+    ion("run.finished", { status: "done", harness: "grok-build", startedAt: before });
+    expect(agent("grok-build")?.limitedUntil).not.toBeNull();
+    ion("run.finished", {
+      status: "done",
+      harness: "grok-build",
+      startedAt: new Date(Date.now() + 1000).toISOString(),
+    });
+    expect(agent("grok-build")?.limitedUntil).toBeNull();
+  });
 });

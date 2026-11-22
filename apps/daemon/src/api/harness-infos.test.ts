@@ -36,6 +36,25 @@ describe("HarnessInfos", () => {
     expect(load).toHaveBeenCalledTimes(1);
   });
 
+  // Review, 2026-11-22: the first `ion status` after a daemon start had no agent lines (nothing read yet). It waits for
+  // the first reads, a few seconds at most.
+  it("waits a little for the first reads, never longer", async () => {
+    const quick = new HarnessInfos(["a"], async (id) => {
+      await new Promise((r) => setTimeout(r, 50));
+      return info(id, 1);
+    });
+    expect((await quick.settled(2000)).map((h) => h.id)).toEqual(["a"]);
+    const stuck = new HarnessInfos(["b"], () => new Promise<HarnessInfo>(() => {}));
+    const t0 = Date.now();
+    expect(await stuck.settled(100)).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    // Only a fresh start waits: once its few seconds are over, every later ask answers at once (pnpm check,
+    // 2026-11-22: each `ion status` waited again on a slow agent).
+    const t1 = Date.now();
+    expect(await stuck.settled(100)).toEqual([]);
+    expect(Date.now() - t1).toBeLessThan(150);
+  });
+
   it("doesn't wait on a slow agent once it knows it", async () => {
     let slow: (v: HarnessInfo) => void = () => {};
     const load = vi.fn((id: string) =>

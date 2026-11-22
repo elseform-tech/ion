@@ -36,6 +36,8 @@ const QUICK = {
   refuse: (id) => send({ id, result: { stopReason: "cancelled" } }),
   crash: () => process.exit(3),
   ratelimit: (id) => send({ id, error: { code: -32603, message: "Rate limit exceeded (429)" } }),
+  usagelimit: (id) =>
+    send({ id, error: { code: -32603, message: "AI_APICallError: Free usage limit reached (429)" } }),
   badinput: (id) => send({ id, error: { code: -32602, message: "Invalid params" } }),
   // Like Grok 1.0.92 (probed 2026-11-22): its usage and cost (in 1e-10 USD ticks) in the prompt result's _meta.
   grokusage: (id) =>

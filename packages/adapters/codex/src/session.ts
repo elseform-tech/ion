@@ -181,6 +181,8 @@ type Run = {
   finished: boolean;
   interrupted: boolean;
   turnId: string | null;
+  /** How the turn ends, once Codex said it completed (set while its windows are read). */
+  ending?: () => void;
 };
 
 /** The run's state, and how it ends: an error if any, the turn's tokens, then exactly one run.finished. */
@@ -247,14 +249,16 @@ function watch(r: Run): void {
     });
   c.rpc.onNotification("turn/completed", (p) => {
     const turn = (p.turn ?? {}) as { status?: unknown; error?: TurnError | null };
-    void readWindows(r).then(() => {
+    // How it ended is known now; reading its windows first mustn't turn it into a crash if Codex exits meanwhile.
+    r.ending = () => {
       if (turn.status === "completed") return r.finish("done");
       if (turn.status === "interrupted") return r.finish("interrupted");
       r.finish("failed", failureOf(turn.error ?? state.error, state.windows));
-    });
+    };
+    void readWindows(r).then(() => r.ending?.());
   });
   answerRequests(c, r.opts, state, r.emit);
-  c.child.on("exit", () => endWith(r, CRASH));
+  c.child.on("exit", () => (r.ending ? r.ending() : endWith(r, CRASH)));
   r.opts.signal.addEventListener("abort", () => c.child.kill());
 }
 

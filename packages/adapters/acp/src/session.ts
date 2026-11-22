@@ -86,11 +86,15 @@ export function promptOf(text: string, instructions?: string): { type: "text"; t
 /** One ACP prompt turn mapped to ion events. The agent process lives as long as the turn. */
 type Failure = { code: string; retryable: boolean; message: string; limit?: { resetsAt?: string } };
 const CRASH: Failure = { code: "crash", retryable: true, message: "The agent stopped" };
+/** Its usage limit, as opencode 1.18.8 words it ("Free usage limit reached", live 2026-11-22): no reset said. */
+const USAGE_LIMIT = /\busage limit reached\b/i;
 const RATE_LIMIT = /rate.?limit|\b429\b|overloaded|too many requests|timed? ?out/i;
 
 /** A transport error (the agent died) or a rate limit is transient; any other agent error is a real failure. */
 function failureOf(e: Error): Failure {
   if (!(e instanceof RpcError)) return { ...CRASH, message: e.message };
+  if (USAGE_LIMIT.test(e.message))
+    return { code: "usage_limit", retryable: false, message: e.message, limit: {} };
   if (RATE_LIMIT.test(e.message)) return { code: "rate_limit", retryable: true, message: e.message };
   return { code: "agent", retryable: false, message: e.message };
 }

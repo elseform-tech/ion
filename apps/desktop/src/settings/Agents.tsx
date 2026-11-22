@@ -1,7 +1,8 @@
 import type { IonClient } from "@ion/client/browser";
 import { Avatar, Brain, Zap } from "@ion/design-system";
-import { type AgentUsage, type EffortLevel, type HarnessInfo, usageLine } from "@ion/schema";
-import { Fragment, useEffect, useState } from "react";
+import { type AgentUsage, EV, type EffortLevel, type HarnessInfo, usageLine } from "@ion/schema";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { useEvents } from "../events.js";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
 import { EFFORTS } from "./IonPage.js";
@@ -14,11 +15,6 @@ function stateOf(h: HarnessInfo): string {
   return h.installed ? "Not signed in" : "Not installed";
 }
 
-/**
- * One agent: its face, name and state, and "Use its own tools" (the user, 2026-11-21: its own servers, skills and
- * plugins in ion's chats, on by default). On: one whose own hooks can't be turned off says they run too. Off: one that
- * has no switch to leave out all its own tools says it loads them too.
- */
 /**
  * The lab's meter: its usage in one quiet line (the user, 2026-11-21: "62% of 5 h · resets 14:20", "limited until
  * 16:00", "Free", "Learned from errors"), with a bar only for a window the agent reports.
@@ -47,6 +43,11 @@ function UsageMeter({ u }: { u: AgentUsage | undefined }) {
   );
 }
 
+/**
+ * One agent: its face, name and state, and "Use its own tools" (the user, 2026-11-21: its own servers, skills and
+ * plugins in ion's chats, on by default). On: one whose own hooks can't be turned off says they run too. Off: one that
+ * has no switch to leave out all its own tools says it loads them too.
+ */
 function AgentRow(p: { h: HarnessInfo; usage?: AgentUsage; own: boolean; onOwn: (on: boolean) => void }) {
   const { h, own, onOwn } = p;
   const chip = own ? h.ownHooks && "Its own hooks run too" : h.ownTools && "Also loads its own";
@@ -152,12 +153,24 @@ function QuickEffort({
   );
 }
 
-/** Each ready agent's usage, read again whenever the agents are. */
+/** What changes an agent's usage line: its usage, a limit it hit, a run or turn that ended (it may clear one). */
+const changesUsage = (e: { type: string; data: unknown }) =>
+  e.type === EV.usageReported ||
+  e.type === EV.runFinished ||
+  (e.type === EV.error && !!(e.data as { limit?: unknown } | null)?.limit);
+
+/**
+ * Each ready agent's usage, read again whenever the agents are, and when it changes while Settings is open (review,
+ * 2026-11-22: a limit hit meanwhile didn't show).
+ */
 function useUsage(client: IonClient, harnesses: HarnessInfo[]): AgentUsage[] {
   const [usage, setUsage] = useState<AgentUsage[]>([]);
-  useEffect(() => {
-    void client.call("usage.list", {}).then(setUsage, () => {});
-  }, [client, harnesses]);
+  const read = useCallback(() => void client.call("usage.list", {}).then(setUsage, () => {}), [client]);
+  useEffect(read, [read, harnesses]);
+  useEvents(
+    client,
+    useCallback((e) => changesUsage(e) && read(), [read]),
+  );
   return usage;
 }
 

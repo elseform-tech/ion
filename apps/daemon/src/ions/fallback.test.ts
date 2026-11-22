@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanWhy, onReadyAgents } from "./fallback.js";
+import { cleanWhy, noAgent, onReadyAgents } from "./fallback.js";
 
 // Security review, 2026-11-22: an agent's error went into the ion's reply and ion's log as it was. A key, a token or
 // a link with a query string in it would have been shown. Only a short, clean line is.
@@ -59,5 +59,31 @@ describe("an ion's agent at its limit", () => {
       now,
     });
     expect(r.reply).toBe("Done.\n\n*On Grok Build — Claude Code is limited until 16:00.*");
+  });
+});
+
+// Review, 2026-11-22: an ion whose agent hit its limit mid-turn, with every other agent limited too, said "I couldn't
+// reach my agent: …". It says which frees up first.
+describe("all agents limited", () => {
+  it("after its agent fails, with none left, says which frees up first", async () => {
+    const r = await onReadyAgents(
+      { harness: "claude-code", model: null, effort: null },
+      {
+        once: async () => ({ reply: "", failed: { why: "Claude usage limit reached", did: false } }),
+        next: async () => null,
+        stay: () => false,
+        none: async () => "Grok Build is limited until 16:00",
+      },
+    );
+    expect(r.reply).toBe("Grok Build is limited until 16:00");
+  });
+});
+
+// Live check, 2026-11-22: "Codex is limited until 00:34" is a turn that found no agent: a dream counts it failed, a
+// thread's report falls back to its plain line. A reply that only mentions a limit in its note is an answer.
+describe("a limited reply is no agent", () => {
+  it("is told from an answer", () => {
+    expect(noAgent("Codex is limited until Mon 00:34")).toBe(true);
+    expect(noAgent("Done.\n\n*On Grok Build — Claude Code is limited until 16:00.*")).toBe(false);
   });
 });

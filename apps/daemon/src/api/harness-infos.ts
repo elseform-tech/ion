@@ -11,6 +11,8 @@ export class HarnessInfos {
   private readonly known = new Map<string, Entry>();
   /** First reads still going (nothing known yet), so a list waits on them instead of starting its own. */
   private readonly first = new Map<string, Promise<void>>();
+  /** When the first reads began (the warm-up, or the first ask that waits on them). */
+  private since: number | undefined;
 
   constructor(
     private readonly ids: (() => string[]) | string[],
@@ -40,6 +42,25 @@ export class HarnessInfos {
     return ids.map((id) => this.known.get(id)?.info).filter((i): i is HarnessInfo => !!i);
   }
 
+  /**
+   * What's known once the first reads are done, waiting `maxMs` at most (a fresh daemon's first `ion status` has its
+   * agents' lines; one slow agent can't hold it longer).
+   */
+  async settled(maxMs: number): Promise<HarnessInfo[]> {
+    this.cached();
+    // Only a fresh start waits: the window opens at the first ask (or the warm-up) and closes `maxMs` later.
+    this.since ??= this.now();
+    const left = this.since + maxMs - this.now();
+    if (left <= 0) return this.cached();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<void>((r) => {
+      timer = setTimeout(r, left);
+    });
+    await Promise.race([Promise.allSettled([...this.first.values()]), late]);
+    clearTimeout(timer);
+    return this.cached();
+  }
+
   /** One agent ion knows (read alone), or undefined. */
   async one(id: string): Promise<HarnessInfo | undefined> {
     return this.idList().includes(id) ? this.get(id) : undefined;
@@ -47,6 +68,7 @@ export class HarnessInfos {
 
   /** Reads every agent now, so the first list is quick (at the daemon's start). */
   warm(): void {
+    this.since ??= this.now();
     for (const id of this.idList()) void this.read(id);
   }
 

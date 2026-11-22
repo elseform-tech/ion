@@ -119,6 +119,13 @@ describe("codex adapter", () => {
     expect(usage).not.toHaveProperty("windows");
   });
 
+  // Review, 2026-11-22: a turn Codex completed ended as a crash when its app-server exited while ion read its windows.
+  it("a completed turn stays done when Codex exits while its windows are read", async () => {
+    const events = await turn("completeexit");
+    expect(events.filter((e) => e.type === "error")).toEqual([]);
+    expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
+  });
+
   // The user, 2026-11-21: Codex's used-up plan is its limit, with the reset of the window that's full.
   it("a limit error marks the agent limited until its reset", async () => {
     const events = await turn("usagelimit");

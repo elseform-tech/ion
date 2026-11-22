@@ -14,7 +14,7 @@ export function openStore(dataDir: string): {
   db: Db;
   store: EventStore;
   memory: MemoryFiles;
-  record: (harness: string, e: AdapterEvent) => void;
+  record: (harness: string, e: AdapterEvent, startedAt: string) => void;
 } {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists

@@ -2,11 +2,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
-import type { HarnessInfo, NewEvent } from "@ion/schema";
+import { clockOf, type HarnessInfo, type NewEvent } from "@ion/schema";
 import { describe, expect, it } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
-import { ionBrain } from "./brain.js";
+import { allLimited, ionBrain } from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
 // test run past a test's wait), even when the agent was already chosen. Only the chosen one is checked; every agent
@@ -109,6 +109,47 @@ describe("an ion's agent", () => {
       model: null,
       effort: null,
       skipped: ["claude-code"],
+    });
+  });
+
+  // Review, 2026-11-22: with every agent limited an ion said only "I couldn't reach my agent". An agent whose mark is
+  // only ion's guess (its limit named no reset) is tried anyway, one turn; with only stated resets left, the ion has no
+  // agent and says which frees up first: "<Agent> is limited until 16:00". The same for ion chief, a project's ion and
+  // the dream.
+  describe("all agents limited", () => {
+    const at = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
+    const setup = (marks: Record<string, string | null>) => {
+      const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+      const projects = [{ id: "app", path: "/x/app", starred: false, harness: "grok-build" }];
+      saveUserConfig(configFile, {
+        ...DEFAULT_CONFIG,
+        ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build" },
+        memory: { dream: "nightly", dreamAgent: "grok-build" },
+        projects,
+      });
+      const db = viewsDb();
+      const store = new EventStore(db, allViews);
+      for (const [harness, resetsAt] of Object.entries(marks)) {
+        const limit = resetsAt ? { resetsAt } : {};
+        const data = { code: "usage_limit", retryable: false, message: "x", limit, harness };
+        store.append({ chatId: null, runId: null, origin: "adapter", type: "error", data } as NewEvent);
+      }
+      const ids = Object.keys(marks);
+      return { configFile, db, agents: async () => ids.map((id) => info(id, true)) };
+    };
+
+    it("an agent limited by ion's guess only is tried anyway", async () => {
+      const d = setup({ "grok-build": at(2), opencode: null });
+      for (const ionId of ["chief", "app", "_dream"])
+        expect(await ionBrain(d, ionId)).toMatchObject({ harness: "opencode" });
+    });
+
+    it("with only stated resets, no agent, and the earliest reset said", async () => {
+      const d = setup({ "grok-build": at(3), opencode: at(1) });
+      for (const ionId of ["chief", "app", "_dream"]) expect(await ionBrain(d, ionId)).toBeNull();
+      const clock = clockOf(at(1), new Date());
+      expect(await allLimited(d)).toBe(`opencode is limited until ${clock}`);
+      expect(await allLimited(setup({ "grok-build": at(3), opencode: null }))).toBeNull();
     });
   });
 });

@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentEnv, sandboxKind, type StartOpts } from "@ion/adapter-kit";
 import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
-import { EV, type HarnessInfo, type IonEvent, type MemoryScope, type MemoryType } from "@ion/schema";
+import { clockOf, EV, type HarnessInfo, type IonEvent, type MemoryScope, type MemoryType } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
@@ -166,6 +166,35 @@ afterEach(async () => {
 const onIon = (ionId: string) => store.read({ chatId: `ion:${ionId}` });
 
 describe("an ion's turn", () => {
+  // Review, 2026-11-22: with its only agent limited (a stated reset) an ion said "I couldn't reach my agent". It says
+  // which agent frees up first, and when.
+  // Review, 2026-11-22: an ion's turn that went well on an agent marked limited by ion's guess clears the mark.
+  it("a successful ion turn started after the mark clears it", async () => {
+    const data = { code: "usage_limit", retryable: false, message: "x", limit: {}, harness: "fake" };
+    store.append({ chatId: null, runId: null, origin: "adapter", type: EV.error, data });
+    expect(usageView.agents(db, new Date()).fake?.limitGuessed).toBe(true);
+    await new Promise((r) => setTimeout(r, 5));
+    const r = await turns().turn("chief", "hello");
+    expect(r.reply).not.toContain("limited");
+    expect(usageView.agents(db, new Date()).fake?.limitedUntil).toBeNull();
+  });
+
+  it("all agents limited: says when the first frees up", async () => {
+    const resetsAt = new Date(Date.now() + 3600_000).toISOString();
+    const data = {
+      code: "usage_limit",
+      retryable: false,
+      message: "x",
+      limit: { resetsAt },
+      harness: "fake",
+    };
+    store.append({ chatId: null, runId: null, origin: "adapter", type: EV.error, data });
+    const before = starts.length;
+    const r = await turns().turn("chief", "hello");
+    expect(r.reply).toBe(`Fake is limited until ${clockOf(resetsAt, new Date())}`);
+    expect(starts).toHaveLength(before);
+  });
+
   // The user, 2026-11-22: what ions spend on an agent counts in its usage line, and an ion's turn that hits the agent's
   // limit marks it limited for everyone (chats and ions alike). Neither shows in the ion's chat.
   it("an ion turn's usage and limit go in its agent's usage", async () => {

@@ -143,4 +143,20 @@ describe("Codex app-server notifications", () => {
     expect(map(s, "thread/started", {})).toEqual([]);
     expect(map(s, "item/started", started({ type: "plan", id: "p" }))).toEqual([]);
   });
+
+  // Review, 2026-11-22: account/rateLimits/updated is sparse; one naming only the 5 h window dropped the week one.
+  it("merges a sparse window update by name", () => {
+    const s = createCodexState(["/w"]);
+    const w = (usedPercent: number, windowDurationMins: number) => ({
+      usedPercent,
+      windowDurationMins,
+      resetsAt: 1795394159,
+    });
+    map(s, "account/rateLimits/updated", { rateLimits: { primary: w(10, 300), secondary: w(20, 10080) } });
+    map(s, "account/rateLimits/updated", { rateLimits: { primary: w(30, 300), secondary: null } });
+    expect(s.windows?.map((x) => [x.name, x.usedPercent])).toEqual([
+      ["5 h", 30],
+      ["week", 20],
+    ]);
+  });
 });

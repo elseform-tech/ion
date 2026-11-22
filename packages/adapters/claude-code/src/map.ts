@@ -71,6 +71,7 @@ const WINDOW_MINS: Record<string, number> = { five_hour: 300, seven_day: 10_080 
 function noteWindows(info: RateInfo, s: MapState): void {
   const one = info.rateLimitType ? { [info.rateLimitType]: info } : {};
   for (const [kind, w] of Object.entries(info.unifiedWindows ?? one)) {
+    if (!w || typeof w !== "object") continue;
     const mins = WINDOW_MINS[kind];
     const used = typeof w.utilization === "number" ? Math.round(w.utilization * 1000) / 10 : undefined;
     const window = mins ? usageWindow(mins, used, w.resetsAt) : null;
@@ -78,11 +79,18 @@ function noteWindows(info: RateInfo, s: MapState): void {
   }
 }
 
+/** The reset it said, else the rejected window's own (unifiedWindows), before ion would have to guess one. */
+function resetOf(info: RateInfo): number | undefined {
+  const own = info.rateLimitType ? info.unifiedWindows?.[info.rateLimitType]?.resetsAt : undefined;
+  const said = typeof info.resetsAt === "number" ? info.resetsAt : own;
+  return typeof said === "number" ? said : undefined;
+}
+
 function mapRateLimit(msg: Obj, s: MapState): AdapterEvent[] {
   const info = (msg.rate_limit_info ?? {}) as RateInfo;
   noteWindows(info, s);
   if (info.status !== "rejected") return [];
-  const resetsAt = typeof info.resetsAt === "number" ? info.resetsAt : undefined;
+  const resetsAt = resetOf(info);
   const waitS = resetsAt === undefined ? undefined : Math.max(0, resetsAt - Date.now() / 1000);
   // A plan window that's full is the limit even when it names no reset (ion then waits a cautious while).
   const planWindow = waitS === undefined && !!info.rateLimitType && info.rateLimitType in WINDOW_MINS;

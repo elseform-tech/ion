@@ -55,6 +55,9 @@ import type { Handoffs } from "../runs/limit-handoff.js";
 
 export { UserError } from "./errors.js";
 
+/** How long `usage.list` waits on agents still being read (a fresh daemon). */
+const USAGE_WAIT_MS = 4000;
+
 /** What a chat changed in its worktree since it started (nothing once archived). */
 export async function diffOfChat(ctx: { db: Db; configFile: string }, chatId: string) {
   const chat = chatsView.list(ctx.db).find((c) => c.chatId === chatId);
@@ -143,10 +146,12 @@ export const handlers: Handlers = {
       .filter((h) => listed.includes(h.id))
       .map((h) => ({ ...h, ...missesOf(h.id) }));
   },
-  // The ready agents ion already knows (never waiting on an agent's CLI: `ion status` stays quick).
-  "usage.list": (_a, ctx) => {
+  // The ready agents ion knows, waiting a few seconds at most on ones still being read (`ion status` stays quick).
+  "usage.list": async (_a, ctx) => {
     const listed = listedHarnessIds();
-    const infos = harnessInfos.cached().filter((h) => listed.includes(h.id) && h.installed && h.signedIn);
+    // A fresh daemon's agents are still being read: a few seconds for them, never longer (review, 2026-11-22).
+    const known = await harnessInfos.settled(USAGE_WAIT_MS);
+    const infos = known.filter((h) => listed.includes(h.id) && h.installed && h.signedIn);
     return agentUsages(infos, usageView.agents(ctx.db, new Date()));
   },
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),

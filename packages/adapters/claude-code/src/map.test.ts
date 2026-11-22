@@ -210,6 +210,33 @@ describe("mapSdkMessage", () => {
     ]);
   });
 
+  // Review, 2026-11-22: a unifiedWindows entry that isn't an object threw; it's left out, the others kept.
+  it("leaves out a window entry that isn't an object", () => {
+    const s = state();
+    const unifiedWindows = { five_hour: null, seven_day: { utilization: 0.5, resetsAt: 1795834800 } };
+    expect(() =>
+      mapSdkMessage(
+        { type: "rate_limit_event", rate_limit_info: { status: "allowed", unifiedWindows } } as never,
+        s,
+      ),
+    ).not.toThrow();
+    expect([...s.windows.keys()]).toEqual(["week"]);
+  });
+
+  // Review, 2026-11-22: a rejected window with no top-level reset still has its own in unifiedWindows; that one is
+  // used, not ion's 30-minute guess.
+  it("a rejected window without a top-level reset uses its own window's reset", () => {
+    const s = state();
+    const resetsAt = Math.floor(Date.now() / 1000) + 4 * 3600;
+    const unifiedWindows = { five_hour: { utilization: 1, resetsAt, status: "rejected" } };
+    const info = { status: "rejected", rateLimitType: "five_hour", unifiedWindows };
+    mapSdkMessage({ type: "rate_limit_event", rate_limit_info: info } as never, s);
+    expect(errorOf(mapSdkMessage(result("error_during_execution"), s))).toMatchObject({
+      code: "usage_limit",
+      limit: { resetsAt: new Date(resetsAt * 1000).toISOString() },
+    });
+  });
+
   it("overloaded and server errors are retryable; account errors aren't", () => {
     const after = (error: string) => {
       const s = state();

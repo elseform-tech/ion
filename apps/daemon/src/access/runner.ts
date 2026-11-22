@@ -37,7 +37,7 @@ export type RunnerOpts = {
   dataDir: string;
   sandbox?: SandboxKind;
   /** Hears each event of a session with its agent's id (the daemon keeps its usage and limits: views/usage.ts). */
-  record?: (harness: string, e: AdapterEvent) => void;
+  record?: (harness: string, e: AdapterEvent, startedAt: string) => void;
 };
 
 /**
@@ -81,7 +81,8 @@ export function harnessRunner(
         signal,
         decide: async () => "deny",
       });
-      return await lastMessage(session, prompt, signal, (e) => o.record?.(id, e));
+      const startedAt = new Date().toISOString();
+      return await lastMessage(session, prompt, signal, (e) => o.record?.(id, e, startedAt));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
