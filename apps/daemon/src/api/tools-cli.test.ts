@@ -479,6 +479,20 @@ describe("ion's commands for tools", () => {
     expect(hooks).toMatchObject([{ name: "say done", on: false, new: true, origin: { by: "agent" } }]);
   });
 
+  // Task 11, 2026-11-22 (Task 12 deferred probe): a hook outside any chat has a key with chatId ""; what it added was
+  // kept as added by chat "" and a tool.added event went to chat "". Now it's added by an agent with no chat.
+  it("a hook outside a chat adds with no chat", async () => {
+    const you = await start();
+    const a = await agent("");
+    await a.call("tools.add", { kind: "mcp", name: "docs", url: "https://docs.example.com/mcp" });
+    const seen: IonEvent[] = [];
+    await you.subscribe({ chatId: "" }, (e) => seen.push(e));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(seen.filter((e) => e.type === "tool.added")).toEqual([]);
+    const item = (await you.call("tools.list", {})).mcp.find((s) => s.name === "docs");
+    expect(item?.origin?.chatId).toBeUndefined();
+  });
+
   it("skills add copies a skill into ion's folder, off, and refuses a folder outside the chat for an agent", async () => {
     const you = await start();
     const src = mkdtempSync(join(tmpdir(), "ion-skill-"));
