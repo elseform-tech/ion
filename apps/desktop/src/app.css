@@ -164,6 +164,58 @@
 .cbox textarea:disabled {
   cursor: not-allowed;
 }
+/* Picks in the sentence (the user, 2026-11-22): the box's text drawn again under it, each pick a chip in place; the
+   box's own letters are see-through while it holds one (its caret and selection stay). Same font, same wrapping. */
+.cfield {
+  position: relative;
+  display: grid;
+}
+.cfield > textarea {
+  width: 100%;
+}
+.cfield > textarea,
+.cmirror {
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  margin: 0;
+}
+.cmirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0;
+  color: var(--ink);
+  pointer-events: none;
+}
+.cfield.inl > textarea {
+  position: relative;
+  color: transparent;
+  caret-color: var(--ink);
+  scrollbar-width: none;
+}
+.cfield.inl > textarea::-webkit-scrollbar {
+  display: none;
+}
+/* A chip in a line of text: its letters keep their size and place, the pill drawn around them. */
+.chip.inl,
+.u .chip.inl {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--brand) 22%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 22%, transparent);
+  color: var(--accent);
+}
+/* On your light bubble in an ion's chat: the brand's own blue. */
+.bu .chip.inl {
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
+}
 
 /* Below 1100 px the side panel, when you open it, lies over the conversation instead of squeezing it. */
 .chat {

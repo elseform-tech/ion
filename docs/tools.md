@@ -115,6 +115,12 @@ Where each agent keeps them (the user, 2026-11-22: "/" lists each agent's own): 
 `.grok/skills`, `.agents/skills`. A Grok chat's "/" lists Grok's own, then ion's that are on; a project's
 `.grok/skills` is the repo's, off until you turn it on, and then given to Grok as its text.
 
+A pick stays in your sentence where you typed it, drawn as a chip (the user, 2026-11-22): "use /review on this, then
+/pdf". Any number; Backspace after one (or Delete before it) takes it out whole, and the arrows step over it. The box
+stays a text field (its picks named for screen readers). The message is that text, picks in place, with their names in
+the order they come; the chat shows it with the same chips. An agent never gets a skill at the very start as a command
+(its slash is left out), and a command you put first isn't put in front again.
+
 ## ion's commands for agents
 
 A chat's agent finds `ion` first on its PATH (`<data>/bin/ion`, the daemon's own CLI) with its run's key

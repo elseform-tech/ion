@@ -347,24 +347,29 @@ describe("/ and @ in the message box", () => {
     expect([...list.querySelectorAll(".nm")].map((n) => n.textContent)).toEqual(["pdf", "plan"]);
     expect(call).toHaveBeenCalledWith("tools.picks", { harness: "fake", chatId: "c1" });
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(screen.getByText("pdf").closest(".chip")).not.toBeNull();
+    // The user, 2026-11-22: a pick stays where it was typed, drawn as a chip there.
+    expect(screen.getByText("/pdf", { selector: ".chip" })).not.toBeNull();
     expect(screen.queryByRole("listbox")).toBeNull();
-    fireEvent.change(box, { target: { value: "fill it @ev", selectionStart: 11 } });
+    fireEvent.change(box, { target: { value: "/pdf fill it @ev", selectionStart: 16 } });
     await screen.findByRole("listbox", { name: "Connections" });
     fireEvent.keyDown(box, { key: "Tab" });
-    expect(box.value).toBe("fill it ");
+    expect(box.value).toBe("/pdf fill it @everything ");
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith(
         "ask",
-        expect.objectContaining({ text: "fill it ", skills: ["pdf"], mentions: ["everything"] }),
+        expect.objectContaining({
+          text: "/pdf fill it @everything ",
+          skills: ["pdf"],
+          mentions: ["everything"],
+        }),
       ),
     );
   });
 });
 
 // Task review, 2026-11-21: "@" lists a served server's resources (a pick is "<server> resource <uri>"); the box is a
-// combobox for screen readers; Enter while the list loads never sends the raw "/word"; chips use the menu's icons.
+// combobox for screen readers; Enter while the list loads never sends the raw "/word"; chips say their kind on hover.
 describe("/ and @: resources, keys and names", () => {
   const picks = {
     skills: [{ name: "review", description: "", kind: "command", from: "own" }],
@@ -411,7 +416,7 @@ describe("/ and @: resources, keys and names", () => {
     expect(box.getAttribute("aria-controls")).toBe(list.id);
     expect(box.getAttribute("aria-activedescendant")).toBe(list.querySelector('[aria-selected="true"]')?.id);
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(screen.getByText("Readme").closest(".chip")?.querySelector(".lucide-file-text")).not.toBeNull();
+    expect(screen.getByText("@Readme", { selector: ".chip" }).getAttribute("title")).toBe("Resource");
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith(
@@ -428,8 +433,6 @@ describe("/ and @: resources, keys and names", () => {
     release();
     await screen.findByRole("listbox", { name: "Skills" });
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(
-      screen.getByText("review").closest(".chip")?.querySelector(".lucide-square-terminal"),
-    ).not.toBeNull();
+    expect(screen.getByText("/review", { selector: ".chip" }).getAttribute("title")).toBe("Command");
   });
 });

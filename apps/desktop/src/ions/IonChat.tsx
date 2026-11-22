@@ -16,7 +16,8 @@ import { IonHead } from "./IonHead.js";
 import { type IonItem, ionTimeline } from "./ionTimeline.js";
 import { Starting } from "../chats/ChatView.js";
 import { Markdown } from "../chats/Message.js";
-import { PickChips, PickedBox, usePicker } from "../chats/Picks.js";
+import { PickedText } from "../chats/PickChips.js";
+import { PickedBox, usePicker } from "../chats/Picks.js";
 import { onEnter, QueueLines, submit, useDoubleEsc, useEditInto, useQueue } from "../chats/Queue.js";
 import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
@@ -217,8 +218,7 @@ function Bubbles(p: { items: IonItem[] } & Omit<CardProps, "card">) {
           if (m.kind === "you")
             return (
               <div className="bu" key={i}>
-                {m.picked && <PickChips picked={m.picked} />}
-                {m.text}
+                <PickedText text={m.text} picked={m.picked} />
               </div>
             );
           return <IonLine key={i} {...p} m={m} last={!ions(p.items[i + 1])} />;

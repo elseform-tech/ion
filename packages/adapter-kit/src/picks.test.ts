@@ -39,3 +39,19 @@ describe("a picked skill reaches the run (Claude Code by name; others as context
     );
   });
 });
+
+// The user, 2026-11-22: picks sit in the sentence where you typed them ("use /review on this, then /pdf"). A command
+// already leading the text isn't put in front again; a skill leading it isn't sent as a command the agent can't run.
+describe("picks in the sentence", () => {
+  it("a command already at the start leads once; a skill at the start loses its slash", () => {
+    const review = { name: "review", kind: "command" as const };
+    const pdf = { name: "pdf", kind: "skill" as const };
+    expect(withPicks("/review on this, then /pdf", "slash", { skills: [review, pdf] })).toBe(
+      "/review on this, then /pdf\n\nUse the pdf skill.",
+    );
+    expect(withPicks("/pdf this, then /review", "slash", { skills: [pdf, review] })).toBe(
+      "/review pdf this, then /review\n\nUse the pdf skill.",
+    );
+    expect(withPicks("/pdf it", "tell", { skills: [pdf] })).toBe("pdf it\n\nUse the pdf skill.");
+  });
+});
