@@ -258,7 +258,9 @@ describe("answered questions and added tools in the chat", () => {
   });
 
   it("an answered question shows in the chat with your answer", () => {
-    const { container, getByText } = view([q({ outcome: { by: "you", choice: "Keep xs", always: "Always" } })]);
+    const { container, getByText } = view([
+      q({ outcome: { by: "you", choice: "Keep xs", always: "Always" } }),
+    ]);
     const asked = container.querySelector(".qa .qq") as HTMLButtonElement;
     expect(asked.textContent).toBe("Should I keep your custom xs breakpoint when moving to Tailwind 4?");
     expect(asked.className).toBe("qq");
@@ -285,7 +287,9 @@ describe("answered questions and added tools in the chat", () => {
 
   // Task 11, 2026-11-22 (live): a remembered answer to a stopped call says Remember.
   it("a remembered answer says Remember", () => {
-    const { getByText } = view([q({ blocked: true, outcome: { by: "you", choice: "Don't allow", always: "Remember" } })]);
+    const { getByText } = view([
+      q({ blocked: true, outcome: { by: "you", choice: "Don't allow", always: "Remember" } }),
+    ]);
     expect(getByText("Remember").className).toBe("chip");
   });
 

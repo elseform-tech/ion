@@ -423,7 +423,13 @@ describe("timeline", () => {
         ...{ needId: "n1", requestId: "g4", kind: "ask", summary: "Allow this? npm publish", detail: "x" },
         ...{ dedupeKey: "k", choices: [], blocked: true },
       }),
-      ev("need.resolved", { needId: "n1", decision: "answered", by: "you", choice: "Don't allow", scope: "project" }),
+      ev("need.resolved", {
+        needId: "n1",
+        decision: "answered",
+        by: "you",
+        choice: "Don't allow",
+        scope: "project",
+      }),
     );
     expect(t.items[0]).toMatchObject({ outcome: { by: "you", choice: "Don't allow", always: "Remember" } });
   });

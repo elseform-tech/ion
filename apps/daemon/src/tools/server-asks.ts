@@ -81,7 +81,9 @@ export class ServerAsks {
     if (!yours || !spec) {
       // Task 11, 2026-11-22: on but left out (not signed in, no key) says why.
       const skipped = yours?.skipped.find((x) => x.id === name)?.text;
-      return skipped ? skipped.replace(/, so this chat runs without it\.$/, "") : "Turn it on to see its tools";
+      return skipped
+        ? skipped.replace(/, so this chat runs without it\.$/, "")
+        : "Turn it on to see its tools";
     }
     const { up, bridges } = this.reach(spec, yours.fresh[name]);
     try {

@@ -293,7 +293,10 @@ describe("judge", () => {
       verdict: "deny",
       reason: "pushes code",
     });
-    expect(parseVerdict('Sure. {"verdict": "allow", "reason": "ok"}')).toEqual({ verdict: "unsure", reason: "ok" });
+    expect(parseVerdict('Sure. {"verdict": "allow", "reason": "ok"}')).toEqual({
+      verdict: "unsure",
+      reason: "ok",
+    });
     expect(parseVerdict('Thinking...\n```json\n{"verdict": "unsure", "reason": "hm"}\n```')).toEqual({
       verdict: "unsure",
       reason: "hm",

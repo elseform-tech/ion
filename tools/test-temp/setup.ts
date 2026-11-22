@@ -19,7 +19,11 @@ export default function setup(): () => void {
   const real = tmpdir();
   const before = leftovers(real);
   const root = mkdtempSync("/tmp/ion-test-run-");
-  const saved = { TMPDIR: process.env.TMPDIR, XDG: process.env.XDG_CACHE_HOME, AGENTS: process.env.ION_AGENTS_HOME };
+  const saved = {
+    TMPDIR: process.env.TMPDIR,
+    XDG: process.env.XDG_CACHE_HOME,
+    AGENTS: process.env.ION_AGENTS_HOME,
+  };
   process.env.TMPDIR = root;
   // Tests never write your real cache folder (ion's config folder for opencode lives there), nor read your agents'
   // own configs (an empty stand-in home; a test that needs one names its own). Task review / Task 13, 2026-11-21.
@@ -31,6 +35,7 @@ export default function setup(): () => void {
     restore("ION_AGENTS_HOME", saved.AGENTS);
     rmSync(root, { recursive: true, force: true });
     const left = [...leftovers(real)].filter((n) => !before.has(n));
-    if (left.length) throw new Error(`Tests left ${left.length} folders in ${real}: ${left.slice(0, 5).join(", ")}`);
+    if (left.length)
+      throw new Error(`Tests left ${left.length} folders in ${real}: ${left.slice(0, 5).join(", ")}`);
   };
 }
