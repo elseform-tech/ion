@@ -200,7 +200,7 @@ await c.call("ask", { text: "hello", projectId: "storefront", harness: "fake", s
 const tools = await c.call("tools.serverTools", { id: "everything" }).catch(() => null);
 if (tools?.tools?.some((t) => t.name === "echo")) await c.call("tools.setIonUse", { id: "everything", tool: "echo", on: true });
 c.close();'
-(ion ask "gated npm install unsure-me" -p storefront --harness fake >/dev/null 2>&1 &) # waits on your answer
+(ion ask "gated npm install unsure-me" -p storefront --harness fake >/dev/null 2>&1 &) # waits on you 4 minutes
 (ion ask "slow" -p payments-api --harness fake >/dev/null 2>&1 &) # running while you look
 pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
 sleep 3
