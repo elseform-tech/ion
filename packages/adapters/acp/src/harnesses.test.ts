@@ -456,6 +456,19 @@ describe("ion's judge on ACP agents", () => {
     expect(GROK_BUILD.bare?.effort).toBe("low");
   });
 
+  // PR #25 review, 2026-11-22: the profile is written fresh (no link followed, nothing left in its place reused).
+  it("writes Grok's profile fresh, never through a link left in its place", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ion-bare-grok-"));
+    const target = join(dir, "elsewhere.md");
+    writeFileSync(target, "keep");
+    symlinkSync(target, join(dir, "ion-judge.md"));
+    const args = GROK_BUILD.bare?.args?.(dir) ?? [];
+    const file = args[args.indexOf("--agent-profile") + 1]!;
+    expect(readFileSync(target, "utf8")).toBe("keep");
+    expect(readFileSync(file, "utf8")).toMatch(/^tools: todo_write$/m);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
   it("deletes the judge's sessions from each agent's history", () => {
     expect(GROK_BUILD.forgetArgs?.("abc")).toEqual(["sessions", "delete", "abc"]);
     expect(OPENCODE.forgetArgs?.("ses_1")).toEqual(["session", "delete", "ses_1"]);

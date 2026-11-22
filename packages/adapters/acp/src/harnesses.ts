@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { closeSync, constants, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { GateCall, SandboxPaths } from "@ion/adapter-kit";
@@ -109,7 +109,7 @@ export const GROK_BUILD: AcpHarness = {
 };
 
 /**
- * Grok for ion's judge: an agent profile in the judge's folder whose only tool is its todo list (a profile needs one;
+ * Grok for ion's judge: an agent profile in ion's folder for it (`dir`, daemon-only, outside the session's folder) whose only tool is its todo list (a profile needs one;
  * `search_tool`/`use_tool` stay, and ion's gate refuses them), no servers inherited, no shared leader.
  */
 function grokBareArgs(dir: string): string[] {
@@ -124,7 +124,19 @@ function grokBareArgs(dir: string): string[] {
     "Answer the user's message directly, in the format it asks for. You have no tools.",
     "",
   ].join("\n");
-  writeFileSync(file, profile, { mode: 0o600 });
+  // Written fresh: whatever is in its place goes, and the new file is made, never opened through a link.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  rmSync(file, { force: true });
+  const fd = openSync(
+    file,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    writeFileSync(fd, profile);
+  } finally {
+    closeSync(fd);
+  }
   return ["--permission-mode", "default", "agent", "--agent-profile", file, "--no-leader", "stdio"];
 }
 

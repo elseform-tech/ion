@@ -48,23 +48,47 @@ describe("harnessRunner's sandbox and folder", () => {
   // Final review, 2026-11-22: the judge (and ion's quick model) started agents outside the OS sandbox, in $TMPDIR;
   // on Grok and opencode those processes keep their tools and load their plugins. Each now starts in a run's sandbox
   // (ion's folders denied, agents' configs read-only), in a folder of ion's data folder that's removed after.
-  // Its folder is one per agent (an ACP agent's judge stays warm there between verdicts), emptied at the daemon's start.
-  it("starts the agent in a run's sandbox, in its agent's folder in ion's data folder", async () => {
+  // PR #25 review, 2026-11-22: the judge and the quick model shared one folder per agent, kept between verdicts, and
+  // Grok's profile was written inside it. Each session now gets a fresh folder (removed when it ends) under its kind's
+  // own folder (judge and quick model apart: their processes too), and the agent's own files (Grok's profile) go in a
+  // daemon-only folder outside it.
+  it("gives every session its own folder, judge and quick model apart, removed when it ends", async () => {
     const o = setup();
+    saveUserConfig(o.configFile, {
+      ...DEFAULT_CONFIG,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "x" },
+      access: { ...DEFAULT_CONFIG.access, judge: "x" },
+    });
     started.length = 0;
+    seen.length = 0;
     expect(await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal)).toBe("ok");
     await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal);
-    const s = started[0]!;
-    expect(s.cwd).toBe(join(o.dataDir, "scratch", "ion-judge-x"));
-    expect(started[1]?.cwd).toBe(s.cwd);
-    expect(seen[0]?.dirExists).toBe(true);
+    await harnessRunner({ ...o, sandbox: "seatbelt" }, "quick")("hi", new AbortController().signal);
+    const [a, b, q] = started as [StartOpts, StartOpts, StartOpts];
+    const judgeBase = join(o.dataDir, "scratch", "ion-judge-x");
+    const quickBase = join(o.dataDir, "scratch", "ion-quick-x");
+    expect(a.cwd.startsWith(`${judgeBase}/`)).toBe(true);
+    expect(b.cwd.startsWith(`${judgeBase}/`)).toBe(true);
+    expect(a.cwd).not.toBe(b.cwd);
+    expect(q.cwd.startsWith(`${quickBase}/`)).toBe(true);
+    expect(seen.every((x) => x.dirExists)).toBe(true);
+    for (const s of started) expect(existsSync(s.cwd)).toBe(false);
+    expect(a.sandbox?.paths.write).toEqual([judgeBase]);
+    expect(q.sandbox?.paths.write).toEqual([quickBase]);
+    expect(a.bareHome?.startsWith(join(o.dataDir, "scratch"))).toBe(true);
+    expect(a.bareHome?.startsWith(`${judgeBase}/`)).toBe(false);
+    expect(q.bareHome).not.toBe(a.bareHome);
+    expect(a.sandbox?.kind).toBe("seatbelt");
+    expect(a.sandbox?.paths.deny).toContain(o.dataDir);
+    expect(a.bare).toBe(true);
+  });
+
+  it("empties ion's scratch folder at the daemon's start", async () => {
+    const o = setup();
+    await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal);
+    expect(existsSync(join(o.dataDir, "scratch"))).toBe(true);
     clearScratch(o.dataDir);
-    expect(existsSync(s.cwd)).toBe(false);
-    expect(s.bare).toBe(true);
-    expect(s.sandbox?.kind).toBe("seatbelt");
-    expect(s.sandbox?.paths.deny).toContain(o.dataDir);
-    expect(s.sandbox?.paths.write).toEqual([s.cwd]);
-    expect(s.sandbox?.paths.noWrite.length).toBeGreaterThan(0);
+    expect(existsSync(join(o.dataDir, "scratch"))).toBe(false);
   });
 
   it("starts it with no sandbox only where the computer has none", async () => {

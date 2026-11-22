@@ -142,8 +142,11 @@ The judge, ion's quick model (how ion chief and the project ions think), an ion'
 and model checks used to start agents outside the sandbox, in `$TMPDIR`. On Grok and opencode those processes keep
 their tools and load their plugins, so code a run planted in a plugin ran unsandboxed later. Now each starts in a
 run's sandbox (ion's folders denied, every other agent's config read-only, the agent's own config files read-only as
-in a run) in a folder of ion's data folder: `<data>/scratch/ion-judge-<agent>` for the judge (its warm agent works
-there between verdicts; emptied at the daemon's start) and `<data>/scratch/ion-probe-*` for checks (removed after).
+in a run) in a folder of ion's data folder: each judge or quick-model session in a fresh folder under
+`<data>/scratch/ion-judge-<agent>` or `ion-quick-<agent>` (apart, with their own warm agents; removed when the session
+ends), the agent's own files (Grok's profile, written fresh, never through a link) in a daemon-only
+`…-own` folder beside it that the agent can only read, and `<data>/scratch/ion-probe-*` for checks (removed after).
+The scratch folder is emptied at the daemon's start.
 Folders `ion-probe-*` and `ion-judge-*` left in `$TMPDIR` are removed at the daemon's start (nothing else there). Only
 opencode's first setup still runs outside (it installs ion's plugin package into a folder runs can only read).
 
@@ -166,7 +169,7 @@ edited in place inside an enabled plugin's folder is loaded as edited: the folde
 Live (Task 11): Grok's judge timed out in every live chat (up to 44 s). Each verdict spawned the agent and its server,
 with all its tools, on its default model at high effort. Now:
 
-- **No tools.** Grok runs with an agent profile in the judge's folder (`grok agent --agent-profile <file> --no-leader
+- **No tools.** Grok runs with an agent profile in ion's folder for it (`grok agent --agent-profile <file> --no-leader
   stdio`) whose only tool is its todo list (`tools: todo_write`, `mcpInheritance: none`). Tried first: `GROK_CONFIG`'s
   `toolset` only narrows settings (it can't remove a tool), and `--tools`/`--disallowed-tools` before `agent` don't
   reach `agent stdio` (the model still listed every tool). `search_tool`/`use_tool` stay; ion's gate refuses them. For

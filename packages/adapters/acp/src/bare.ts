@@ -68,12 +68,13 @@ class SessionChild extends EventEmitter {
 }
 
 /**
- * A bare session (ion's judge) on a warm agent (final review, 2026-11-22: spawning the agent and starting its server
- * for every verdict made Grok's judge time out): the agent for this harness, folder, sandbox and env, started once,
+ * A bare session (ion's judge) on a warm agent, in its own folder (final review, 2026-11-22: spawning the agent and starting its server
+ * for every verdict made Grok's judge time out): the agent for this harness, sandbox and env, started once,
  * and a fresh session in it per verdict. Its end closes the session and has the agent forget it.
  */
 export async function bareConnect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
-  const key = JSON.stringify([h.id, bin, o.cwd, o.args ?? null, o.sandbox ?? null, o.envDrop ?? null]);
+  // Not its folder: each verdict's session opens in a folder of its own (PR #25 review, 2026-11-22).
+  const key = JSON.stringify([h.id, bin, o.args ?? null, o.sandbox ?? null, o.envDrop ?? null]);
   let w = warm.get(key);
   if (!w) {
     w = warmUp(h, bin, o, key);

@@ -317,7 +317,8 @@ export function forget(h: AcpHarness, bin: string, o: ConnectOpts, sessionId: st
   if (!args) return;
   const run = sandboxed(withPaths(o.sandbox, h.sandboxPaths?.() ?? {}), bin, args);
   const env = { ...agentEnv(process.env, o.envDrop), ...o.env };
-  const child = spawn(run.command, run.args, { stdio: "ignore", env, cwd: o.cwd });
+  // Not in the session's folder: it may be gone by now.
+  const child = spawn(run.command, run.args, { stdio: "ignore", env });
   child.on("error", () => {});
   child.unref();
 }

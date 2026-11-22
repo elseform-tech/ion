@@ -7,6 +7,7 @@ import {
   readVersion,
   type StartOpts,
   whichOnPath,
+  withPaths,
 } from "@ion/adapter-kit";
 import type { Capabilities } from "@ion/schema";
 import {
@@ -139,8 +140,11 @@ function bareOpts(h: AcpHarness, opts: StartOpts, timeoutMs?: number): ConnectOp
     gate: { url: REFUSE_ALL },
     env: { ION_GATE_URL: REFUSE_ALL },
     ...(opts.envDrop ? { envDrop: opts.envDrop } : {}),
-    ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
-    ...(h.bare?.args ? { args: h.bare.args(opts.cwd) } : {}),
+    // The agent's own files (Grok's profile) in the daemon's folder for them, which it may only read.
+    ...(opts.sandbox
+      ? { sandbox: withPaths(opts.sandbox, { read: opts.bareHome ? [opts.bareHome] : [] }) }
+      : {}),
+    ...(h.bare?.args ? { args: h.bare.args(opts.bareHome ?? opts.cwd) } : {}),
     ...(timeoutMs ? { timeoutMs } : {}),
   };
 }

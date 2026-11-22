@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
@@ -45,7 +45,7 @@ export function startOf(c: UserConfig, which: "judge" | "quick", agent?: string)
 /**
  * Runs one prompt on a model from your config: the Auto judge's ("judge", the default), or ion's own quick model
  * ("quick": how ion chief and the project ions think); `agent` ("<harness>[:<model>]") instead, when given. It runs
- * in an empty folder in ion's data folder, as a bare session (no tools where the harness allows it; every permission
+ * in a fresh folder of ion's data folder (removed after), as a bare session (no tools where the harness allows it; every permission
  * denied), in a run's sandbox (final review, 2026-11-22: ion's folders denied, agents' configs read-only), and
  * returns its last message.
  */
@@ -57,30 +57,42 @@ export function harnessRunner(
     const { id, model, effort } = startOf(loadUserConfig(o.configFile).config, which, agent);
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
-    const dir = judgeFolder(o.dataDir, id);
-    {
+    const f = foldersOf(o.dataDir, which, id);
+    const dir = realpathSync(mkdtempSync(join(f.base, "s-")));
+    try {
       const session = await h.adapter.start({
         cwd: dir,
         model,
         effort,
         bare: true,
-        ...(await ownAgentStart(o, dir, id)),
+        bareHome: f.home,
+        // Its sandbox writes its kind's folder (a warm agent's sessions each open in a folder there).
+        ...(await ownAgentStart(o, f.base, id)),
         signal,
         decide: async () => "deny",
       });
       return await lastMessage(session, prompt, signal);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   };
 }
 
 /**
- * The folder an agent's judge (and ion's quick model on it) works in: one per agent in ion's data folder, kept while
- * the daemon runs (an ACP agent's judge stays warm there between verdicts), emptied at the daemon's start.
+ * Where an agent's judge or ion's quick model on it works (PR #25 review, 2026-11-22), apart from each other: `base`,
+ * which holds each session's own folder (made fresh, removed when it ends) and which its sandbox may write, and
+ * `home`, a daemon-only folder for the agent's own files (Grok's profile), outside it. Emptied at the daemon's start.
  */
-function judgeFolder(dataDir: string, harness: string): string {
-  const dir = join(scratchOf(dataDir), `ion-judge-${harness.replace(/[^\w-]/g, "_")}`);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return realpathSync(dir);
+function foldersOf(
+  dataDir: string,
+  which: "judge" | "quick",
+  harness: string,
+): { base: string; home: string } {
+  const name = `ion-${which}-${harness.replace(/[^\w-]/g, "_")}`;
+  const base = join(scratchOf(dataDir), name);
+  const home = join(scratchOf(dataDir), `${name}-own`);
+  for (const d of [base, home]) mkdirSync(d, { recursive: true, mode: 0o700 });
+  return { base: realpathSync(base), home: realpathSync(home) };
 }
 
 /** Empties ion's scratch folder (the daemon's start): what judges and checks left there before goes. */

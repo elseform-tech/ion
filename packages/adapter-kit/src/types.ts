@@ -66,6 +66,11 @@ export type StartOpts = {
   resume?: string;
   /** A plain model call (ion's judge): no tools at all, a short system prompt, one turn, no thinking. */
   bare?: boolean;
+  /**
+   * A bare start's daemon-only folder for the agent's own files (Grok's profile): outside its working folder, only read
+   * by the agent (PR #25 review, 2026-11-22).
+   */
+  bareHome?: string;
   /** ion's gate for this run: the harness's pre-tool hook sends every tool call here before it runs. */
   gate?: { url: string };
   /**

@@ -17,7 +17,7 @@ const judge: AcpHarness = {
   loginArgs: [],
   loginHint: "fake login",
   defaultModel: null,
-  bare: { model: "fake-2", effort: "low", args: () => [AGENT, "--bare-profile"] },
+  bare: { model: "fake-2", effort: "low", args: (home) => [AGENT, "--bare-profile", home] },
   forgetArgs: (id) => [AGENT, "--forget", id],
 };
 
@@ -91,13 +91,31 @@ describe("a bare start (ion's judge) on an ACP agent", () => {
     ).toEqual(["s1", "s2"]);
   });
 
+  // PR #25 review, 2026-11-22: every verdict gets its own folder (the warm agent opens each session there), and the
+  // agent's own files go in the daemon's folder for them (bareHome), not the session's.
+  it("opens each verdict's session in its own folder on the same warm agent; its files in bareHome", async () => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "ion-bare-")));
+    const log = join(base, "log");
+    process.env.FAKE_ACP_RECORD = log;
+    const sandbox = { kind: "none" as const, paths: { deny: [], read: [], write: [base], noWrite: [] } };
+    const home = join(base, "home");
+    const one = mkdtempSync(join(base, "s-"));
+    const two = mkdtempSync(join(base, "s-"));
+    await verdict(judge, one, { sandbox, bareHome: home });
+    await verdict(judge, two, { sandbox, bareHome: home });
+    const opened = rows(log).filter((r) => r.cwd);
+    expect(opened.map((r) => r.cwd)).toEqual([one, two]);
+    expect(opened[0]!.pid).toBe(opened[1]!.pid);
+    expect(opened[0]!.args).toEqual(["--bare-profile", home]);
+  });
+
   it("starts with the harness's bare arguments, every tool refused, on its fast model", async () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ion-bare-")));
     const log = join(cwd, "log");
     process.env.FAKE_ACP_RECORD = log;
     const events = await verdict(judge, cwd);
     const [r] = rows(log);
-    expect(r?.args).toEqual(["--bare-profile"]);
+    expect(r?.args?.[0]).toBe("--bare-profile");
     expect(r?.gate).toMatch(/^http:\/\/127\.0\.0\.1:0\//);
     const started = events.find((e) => e.type === "run.started")?.data as { model: string; effort: string };
     expect(started.model).toBe("fake-2");
