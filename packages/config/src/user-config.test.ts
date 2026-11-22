@@ -55,7 +55,24 @@ describe("loadUserConfig", () => {
     );
     const r = loadUserConfig(f);
     expect(r.config.projects.map((p) => p.id)).toEqual(["shop"]);
-    expect(r.warning).toBe("config.toml: a project can't be called you; rename it (it's left out)");
+    expect(r.warning).toBe(
+      "config.toml: rename project 'you' (the name is ion's own; ion leaves it out until then)",
+    );
+  });
+  // Task review, 2026-11-22: the next save took the project called you out of your file.
+  it("keeps a project called you in the file when it saves, still left out", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(
+      f,
+      '[[projects]]\nid = "you"\npath = "/p/you"\nname = "Me"\n\n[[projects]]\nid = "shop"\npath = "/p/shop"\n',
+    );
+    const { config } = loadUserConfig(f);
+    saveUserConfig(f, { ...config, ion: { ...config.ion, useDeep: "never" } });
+    const again = loadUserConfig(f);
+    expect(again.config.ion.useDeep).toBe("never");
+    expect(again.config.projects.map((p) => p.id)).toEqual(["shop"]);
+    expect(again.warning).toMatch(/rename project 'you'/);
+    expect(readFileSync(f, "utf8")).toMatch(/id = "you"\npath = "\/p\/you"\nname = "Me"/);
   });
   it("returns defaults and an error for broken TOML", () => {
     const f = join(tmp(), "config.toml");
