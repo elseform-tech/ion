@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import { forgetMemory } from "../memory/index.js";
@@ -42,6 +44,9 @@ import type { Skills } from "../skills/index.js";
 import { toolsHandlers } from "./tools.js";
 import { toolsCliHandlers } from "./tools-cli.js";
 import { toolsImportHandlers } from "./tools-import.js";
+import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
+import { missesOf } from "../access/misses.js";
+import { readAgentRules, ruleCount } from "../access/agent-rules.js";
 
 export { UserError } from "./errors.js";
 
@@ -95,6 +100,10 @@ export type Ctx = {
   configFile: string;
   startedAt: number;
   version: string;
+  /** Your servers for ions' turns, and each server's tools for "Ions can use". */
+  ionServers?: IonServers;
+  /** What Auto is often unsure about (said in `ion status`). */
+  unsure?: { notes(): string[] };
 };
 
 export type Handlers = {
@@ -117,7 +126,9 @@ export const handlers: Handlers = {
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
   "harnesses.list": async () => {
     const listed = listedHarnessIds();
-    return (await harnessInfos.list()).filter((h) => listed.includes(h.id));
+    return (await harnessInfos.list())
+      .filter((h) => listed.includes(h.id))
+      .map((h) => ({ ...h, ...missesOf(h.id) }));
   },
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
   "memory.forget": (a, ctx) => {
@@ -174,6 +185,7 @@ export const handlers: Handlers = {
       uptimeS: Math.round((Date.now() - ctx.startedAt) / 1000),
       projects: config.projects.length,
       configError: error,
+      notes: ctx.unsure?.notes() ?? [],
     };
   },
   "projects.list": (_a, ctx) => loadUserConfig(ctx.configFile).config.projects,
@@ -185,7 +197,10 @@ export const handlers: Handlers = {
     const ionId = String(a.ionId ?? "");
     // You sent a message: what you queued for the ion (held after a stop) goes on after it.
     ctx.queue.goOn({ ionId });
-    await ctx.ions.message(ionId, text);
+    await ctx.ions.message(ionId, text, {
+      ...(a.skills ? { skills: a.skills } : {}),
+      ...(a.mentions ? { mentions: a.mentions } : {}),
+    });
     return { ok: true as const };
   },
   // ion chief's own suggestions (a routine, a stalled chat), else a project ion's "always?".
@@ -282,6 +297,18 @@ async function harnessInfo(id: string): Promise<HarnessInfo> {
   }));
 }
 
+/** Where your agents' configs are (set once when ion starts: ION_AGENTS_HOME in the tour). */
+let agentsDir = homedir();
+export const useAgentsHome = (home: string): void => {
+  agentsDir = home;
+};
+
+/** How many of its own allow and deny rules (your settings for it) ion goes by in its chats. */
+function ownRulesOf(id: string): { ownRules?: number } {
+  const n = ruleCount(readAgentRules(id, { home: agentsDir }));
+  return n ? { ownRules: n } : {};
+}
+
 async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness>>): Promise<HarnessInfo> {
   const installed = (await h.adapter.detect()).installed;
   const signedIn = installed && (await h.adapter.auth.status()).signedIn;
@@ -294,5 +321,10 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     models: caps?.models ?? [],
     defaultModel: caps?.defaultModel ?? null,
     ...(h.adapter.ownTools ? { ownTools: true as const } : {}),
+    ...(h.adapter.ownHooks ? { ownHooks: true as const } : {}),
+    ...(h.adapter.ownOff ? { ownOff: h.adapter.ownOff } : {}),
+    ...(h.adapter.ownTrust ? { ownTrust: true as const } : {}),
+    ...(notSandboxed(h.adapter.sandbox, machineSandbox()) ? { notSandboxed: true as const } : {}),
+    ...ownRulesOf(id),
   };
 }

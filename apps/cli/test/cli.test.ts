@@ -178,10 +178,12 @@ describe("ion cli", { timeout: 20_000 }, () => {
     const env = { ...process.env, ION_HOME: home };
     const a = spawn("node", [DAEMON_MAIN], { env, stdio: "ignore" });
     const b = spawn("node", [DAEMON_MAIN], { env, stdio: "ignore" });
-    await new Promise((r) => setTimeout(r, 1500));
     started.push(a.pid!, b.pid!);
-    const live = [a.pid!, b.pid!].filter(alive);
-    expect(live).toHaveLength(1);
+    // The second daemon exits once it reaches the lock (its first step); loading the code first can take
+    // seconds on a busy machine, so wait for it rather than a fixed 1.5 s (flaky under load, 2026-11-21).
+    const live = () => [a.pid!, b.pid!].filter(alive);
+    for (let i = 0; i < 150 && live().length > 1; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(live()).toHaveLength(1);
     expect((await ion("status")).code).toBe(0);
   });
 
@@ -295,7 +297,13 @@ describe("ion cli", { timeout: 20_000 }, () => {
       old: { type: "sse", url: "https://o.example/sse" },
     };
     writeFileSync(join(agentHome, ".claude.json"), JSON.stringify({ mcpServers: servers }));
-    const env = { HOME: agentHome, CODEX_HOME: "", GROK_HOME: "", XDG_CONFIG_HOME: "" };
+    const env = {
+      HOME: agentHome,
+      ION_AGENTS_HOME: agentHome,
+      CODEX_HOME: "",
+      GROK_HOME: "",
+      XDG_CONFIG_HOME: "",
+    };
     await ionWith(env, "daemon", "start");
     const list = await ionWith(env, "mcp", "import", "--list");
     expect(list.out).toMatch(/^github\s+Claude Code\s+gh-mcp\s+GITHUB_TOKEN$/m);

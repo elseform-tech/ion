@@ -201,7 +201,8 @@ export async function addTool(ctx: Ctx, a: ToolAdd): Promise<ToolItem> {
   const local = kind === "skill" && !text(a.from).startsWith("https://");
   const source = local ? undefined : sourceOf(a.from);
   const made = await make(ctx, kind, a);
-  const { caller } = ctx;
+  // Task 11, 2026-11-22: a hook outside a chat has a key with chatId ""; it adds as an agent with no chat.
+  const caller = ctx.caller?.chatId ? ctx.caller : undefined;
   const link = await linkOf(ctx, source);
   ctx.added.put({
     ...{ kind, name: made.id, hash: made.hash, at: new Date().toISOString() },

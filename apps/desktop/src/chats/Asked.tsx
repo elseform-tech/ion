@@ -11,7 +11,7 @@ import {
 import type { ToolType } from "@ion/schema";
 import { useState } from "react";
 import { openTools } from "../goto.js";
-import type { Item } from "./timeline.js";
+import type { Item, Keep } from "./timeline.js";
 
 /** A quiet line: an icon and one muted line in the conversation, never a banner. */
 export const Quiet = ({ text, icon: Icon }: { text: string; icon: LucideIcon }) => (
@@ -60,11 +60,11 @@ export function Answered({ q }: { q: Question }) {
   );
 }
 
-/** Your answer as your reply, with "Always" when it reaches past the chat. */
-export const Reply = ({ text, always }: { text: string; always?: boolean }) => (
+/** Your answer as your reply, with "Always" (or "Remember", for a call ion stopped) when it reaches past the chat. */
+export const Reply = ({ text, always }: { text: string; always: Keep | undefined }) => (
   <div className="u">
     {text}
-    {always && <span className="chip">Always</span>}
+    {always && <span className="chip">{always}</span>}
   </div>
 );
 

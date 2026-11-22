@@ -8,6 +8,7 @@ import { bridgesFor, type RunBridges, type StdioSpec, type Why } from "../worksp
 import { type RunAgent, type RunServers, SECRET_MIN } from "../tools/run-servers.js";
 import { MCP_GROUPS } from "../workspace/server-groups.js";
 import { ION_INSTRUCTIONS } from "./instructions.js";
+import { serverSandbox } from "./sandbox.js";
 
 /** Each line about a server the chat goes without, unless the chat already says it. */
 function sayOnce(
@@ -45,7 +46,7 @@ export async function yourServers(
  * the agent. A remote one is forwarded to; a local (stdio) one ion starts itself for the run (`local`, to bridge).
  * Without ion's server (no key), yours are left out.
  */
-function throughIon(
+export function throughIon(
   yours: Omit<RunServers, "skipped">,
   ion: { url: string; key: string } | null,
 ): {
@@ -71,7 +72,7 @@ function throughIon(
 }
 
 /** Under ion's data folder: each run's empty folder its local servers start in (`mcp-run/<runId>`). */
-const MCP_RUN = "mcp-run";
+export const MCP_RUN = "mcp-run";
 
 /** What ion's gateway serves for a run, by name: a remote server it forwards to, or a local one it runs. */
 export type Served = Upstream | LocalUpstream;
@@ -89,7 +90,7 @@ export function givenToRun(
   store: EventStore,
   l: { chatId: string; runId: string; cwd: string },
   yours: Omit<RunServers, "skipped">,
-  o: { ion: { url: string; key: string } | null; redact: Redact; dataDir: string },
+  o: { ion: { url: string; key: string } | null; redact: Redact; dataDir: string; configFile?: string },
 ): Given {
   const { local, ...given } = throughIon(yours, o.ion);
   const bridges = bridgesFor(local, {
@@ -98,10 +99,17 @@ export function givenToRun(
     stopped: (name, why) => sayOnce(store, l, [{ id: name, text: `${name} ${GONE[why]}` }]),
     redact: o.redact,
     groups: join(o.dataDir, MCP_GROUPS),
+    ...sandboxOf(o),
   });
   for (const s of local) given.upstreams.set(s.name, bridges.get(s.name) as LocalUpstream);
   return { ...given, bridges };
 }
+
+/** Local servers run in the OS sandbox, away from ion's folders (when ion knows its config's folder). */
+const sandboxOf = (o: { dataDir: string; configFile?: string }) => {
+  const sandbox = o.configFile ? serverSandbox({ dataDir: o.dataDir, configFile: o.configFile }) : undefined;
+  return sandbox ? { sandbox } : {};
+};
 
 const GONE: Record<Why, string> = {
   start: "couldn't start, so this chat goes on without it.",

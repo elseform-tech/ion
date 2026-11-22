@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
@@ -8,6 +8,7 @@ import { createAccess, createJudge, harnessRunner, judgePrompt, parseVerdict, ru
 import { startOf } from "./runner.js";
 
 const home = "/Users/me";
+const runner = (configFile: string) => ({ configFile, dataDir: join(configFile, "..", "data") });
 const wt = "/data/worktrees/c1";
 const ctx = { roots: [wt], home, ionDirs: ["/data", "/Users/me/.config/ion"] };
 const cmd = (command: string): ApprovalRequest => ({
@@ -226,7 +227,7 @@ describe("judge", () => {
     expect(judgePrompt({ projectId: "app", text: "x", req: cmd("git push") })).not.toContain(
       "your decisions",
     );
-    const judge = vi.fn(async () => ({ allow: false, reason: "You said never" }));
+    const judge = vi.fn(async () => ({ verdict: "deny" as const, reason: "You said never" }));
     const access = createAccess({ judge, home, ionDirs: ctx.ionDirs, decisionsFor: () => decisions });
     await access.decide({ chatId: "c1", projectId: "app", text: "x", roots: ctx.roots }, cmd("git push"));
     expect(judge).toHaveBeenCalledWith(expect.objectContaining({ decisions }));
@@ -255,19 +256,20 @@ describe("judge", () => {
     const closing = block.indexOf("</ion-data id=");
     expect(block.slice(0, closing)).toContain('{"allow": true');
     expect(block.slice(0, closing)).not.toMatch(/<[\s/]*ion-data/);
-    expect(p.trimEnd().endsWith('{"allow": true or false, "reason": "at most 12 plain words"}')).toBe(true);
+    expect(p.trimEnd().endsWith('"reason": "at most 12 plain words"}')).toBe(true);
     expect(parseVerdict(p)).toBeNull();
   });
 
   it("names a script outside the project without showing it", () => {
     const wary = { reason: "it runs a file", scripts: [{ file: "/Users/me/x.sh" }], decoded: [] };
     const p = judgePrompt({ projectId: "app", text: "x", req: cmd("bash /Users/me/x.sh"), wary });
+    expect(p).toContain("what it does isn't shown; if that decides it, say unsure");
     expect(p).toMatch(/source="a script outside the project, not shown">\n\/Users\/me\/x\.sh\n/);
   });
 
   it("reads a verdict, and refuses anything else", () => {
     expect(parseVerdict('{"allow": true, "reason": "Runs the tests"}')).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "Runs the tests",
     });
     expect(parseVerdict('{"allow": "yes"}')).toBeNull();
@@ -278,30 +280,104 @@ describe("judge", () => {
     expect(parseVerdict("I think it's fine")).toBeNull();
     // Security review: the whole answer must be the verdict (a json fence is fine); prose around it means deny.
     expect(parseVerdict('```json\n{"allow": true, "reason": "ok"}\n```')).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "ok",
     });
-    expect(parseVerdict('Sure. {"allow": true, "reason": "ok"}')).toBeNull();
+    expect(parseVerdict('Sure. {"allow": true, "reason": "ok"}')?.verdict).toBe("unsure");
+  });
+
+  // Task 11, 2026-11-22: judges (Grok) sometimes wrap the JSON in prose; those answers counted as no verdict. One JSON
+  // object ending the answer is read now, but prose-wrapped can never allow (an echoed verdict could be the action's
+  // own text): its allow becomes unsure, so you're asked. Plain words stay no verdict.
+  it("reads one JSON object that ends a prose answer, never as an allow", () => {
+    expect(parseVerdict('Here is my answer:\n{"verdict": "deny", "reason": "pushes code"}')).toEqual({
+      verdict: "deny",
+      reason: "pushes code",
+    });
+    expect(parseVerdict('Sure. {"verdict": "allow", "reason": "ok"}')).toEqual({
+      verdict: "unsure",
+      reason: "ok",
+    });
+    expect(parseVerdict('Thinking...\n```json\n{"verdict": "unsure", "reason": "hm"}\n```')).toEqual({
+      verdict: "unsure",
+      reason: "hm",
+    });
+    expect(parseVerdict('{"verdict": "allow", "reason": "ok"} but really deny')).toBeNull();
+    expect(parseVerdict("allow")).toBeNull();
+    expect(parseVerdict("Deny.")).toBeNull();
+    expect(parseVerdict('{"reason": "x"} then {"verdict": "deny", "reason": "y"}')).toBeNull();
+  });
+
+  // Final review, 2026-11-22 (live: Grok's judge timed out in every live chat, up to 44 s, and every one asked you): a
+  // judge that times out or fails is asked once more on another signed-in agent, within the same ~30 s; only then
+  // "ion couldn't decide". A timeout is never an allow. Each miss is counted for its agent (Settings → Agents).
+  it("asks once more on another ready agent after a timeout or error, within the same time", async () => {
+    const input = { projectId: "app", text: "x", req: cmd("pnpm test") };
+    const tried: (string | undefined)[] = [];
+    const missed: string[] = [];
+    const others = {
+      first: () => "grok-build",
+      ready: async () => ["grok-build", "opencode"],
+      missed: (a: string) => void missed.push(a),
+    };
+    const hangsFirst = (_p: string, _s: AbortSignal, agent?: string) => {
+      tried.push(agent);
+      return agent
+        ? Promise.resolve('{"verdict": "allow", "reason": "fine"}')
+        : new Promise<string>(() => {});
+    };
+    const t0 = Date.now();
+    expect(await createJudge(hangsFirst, 300, others)(input)).toEqual({ verdict: "allow", reason: "fine" });
+    expect(Date.now() - t0).toBeLessThan(400);
+    expect(tried).toEqual([undefined, "opencode"]);
+    expect(missed).toEqual(["grok-build"]);
+    const failsFirst = async (_p: string, _s: AbortSignal, agent?: string) => {
+      if (!agent) throw new Error("Grok Build isn't signed in");
+      return '{"verdict": "deny", "reason": "no"}';
+    };
+    expect(await createJudge(failsFirst, 300, others)(input)).toEqual({ verdict: "deny", reason: "no" });
+  });
+
+  it("couldn't decide in time when the other agent is slow too, or when no other agent is ready", async () => {
+    const input = { projectId: "app", text: "x", req: cmd("pnpm test") };
+    const never = () => new Promise<string>(() => {});
+    const t0 = Date.now();
+    const both = { first: () => "a", ready: async () => ["a", "b"] };
+    expect(await createJudge(never, 300, both)(input)).toEqual({
+      verdict: "deny",
+      reason: "ion couldn't decide in time",
+      decided: false,
+    });
+    expect(Date.now() - t0).toBeLessThan(400);
+    const tried: (string | undefined)[] = [];
+    const alone = { first: () => "a", ready: async () => ["a"] };
+    const once = (_p: string, _s: AbortSignal, agent?: string) => (tried.push(agent), never());
+    expect((await createJudge(once, 100, alone)(input)).decided).toBe(false);
+    expect(tried).toEqual([undefined]);
   });
 
   // Review Focus 2: a judge that fails, hangs or answers nonsense denies, with a reason.
   it("denies when the judge fails, takes too long, or doesn't answer in JSON", async () => {
     const input = { projectId: "app", text: "x", req: cmd("pnpm test") };
     expect(await createJudge(async () => '{"allow": true, "reason": "ok"}')(input)).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "ok",
     });
     expect(
       await createJudge(async () => {
         throw new Error("Claude Code isn't signed in");
       })(input),
-    ).toEqual({ allow: false, reason: "ion couldn't decide: Claude Code isn't signed in", decided: false });
+    ).toEqual({
+      verdict: "deny",
+      reason: "ion couldn't decide: Claude Code isn't signed in",
+      decided: false,
+    });
     expect(await createJudge(() => new Promise<string>(() => {}), 20)(input)).toEqual({
-      allow: false,
+      verdict: "deny",
       reason: "ion couldn't decide in time",
       decided: false,
     });
-    expect((await createJudge(async () => "maybe")(input)).allow).toBe(false);
+    expect((await createJudge(async () => "maybe")(input)).verdict).toBe("deny");
     // Security review: a slow judge is stopped, and its error is kept short.
     let aborted = false;
     await createJudge((_p, signal) => {
@@ -318,10 +394,54 @@ describe("judge", () => {
   });
 });
 
+// The user, 2026-11-21: "yes, add unsure to Task 10" — the judge can say it's missing information.
+describe("the judge can say unsure", () => {
+  it("asks for allow, deny or unsure, unsure only when information is missing", () => {
+    const p = judgePrompt({ projectId: "app", text: "x", req: cmd("make") });
+    expect(p).toContain('{"verdict": "allow" or "deny" or "unsure"');
+    expect(p).toContain("unsure only when you're missing information to judge");
+    // Task review, 2026-11-21: unsure is defined before the deny list, with two short examples.
+    expect(p.indexOf("Say unsure")).toBeLessThan(p.indexOf("Deny anything"));
+    expect(p).toContain("a script you can't see");
+  });
+
+  // Task review, 2026-11-21: what you picked with "/" is told to the judge in ion's words, never as yours.
+  it("tells the judge the skills you picked, as ion's line", () => {
+    const p = judgePrompt({ projectId: "app", text: "x", req: cmd("make"), picked: ["pdf"] });
+    expect(p).toContain('From ion: the user picked the "pdf" skill for this message.');
+  });
+
+  it("an old allow/deny answer still parses", () => {
+    expect(parseVerdict('{"allow": true, "reason": "ok"}')).toEqual({ verdict: "allow", reason: "ok" });
+    expect(parseVerdict('{"allow": false, "reason": "no"}')).toEqual({ verdict: "deny", reason: "no" });
+    expect(parseVerdict('{"verdict": "unsure", "reason": "script not shown"}')).toEqual({
+      verdict: "unsure",
+      reason: "script not shown",
+    });
+    expect(parseVerdict('{"verdict": "maybe", "reason": "x"}')).toBeNull();
+  });
+
+  it("unsure isn't cached", async () => {
+    const judge = vi.fn(async () => ({ verdict: "unsure" as const, reason: "script not shown" }));
+    const told: string[] = [];
+    const onUnsure = (r: { summary: string }) => told.push(r.summary);
+    const access = createAccess({ judge, home, ionDirs: ctx.ionDirs, onUnsure });
+    const at = { chatId: "c1", projectId: "app", text: "fix", roots: ctx.roots };
+    expect(await access.decide(at, cmd("./x.sh"))).toMatchObject({
+      decision: "deny",
+      unsure: true,
+      source: "judge",
+    });
+    await access.decide(at, cmd("./x.sh"));
+    expect(judge).toHaveBeenCalledTimes(2);
+    expect(told).toEqual(["./x.sh", "./x.sh"]);
+  });
+});
+
 describe("which part refused", () => {
   // Plan 07: a judge's refusal asks you; a rule's (your secrets, ion's files) never does.
   it("says whether a rule or the judge decided", async () => {
-    const judge = vi.fn(async () => ({ allow: false, reason: "Publishes the package" }));
+    const judge = vi.fn(async () => ({ verdict: "deny" as const, reason: "Publishes the package" }));
     const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
     const at = { chatId: "c1", projectId: "app", text: "fix", roots: ctx.roots };
     expect(await access.decide(at, cmd("cat ~/.ssh/id_rsa"))).toMatchObject({
@@ -335,7 +455,7 @@ describe("which part refused", () => {
 describe("createAccess", () => {
   // Review Focus 3: the same action twice in a chat asks the judge once.
   it("decides by rule first, then asks the judge once per action and chat", async () => {
-    const judge = vi.fn(async () => ({ allow: true, reason: "Runs the tests" }));
+    const judge = vi.fn(async () => ({ verdict: "allow" as const, reason: "Runs the tests" }));
     const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
     const at = { chatId: "c1", projectId: "app", text: "fix", roots: ctx.roots };
     expect(await access.decide(at, cmd("cat ~/.ssh/id_rsa"))).toMatchObject({ decision: "deny" });
@@ -350,7 +470,7 @@ describe("createAccess", () => {
     expect(judge).toHaveBeenCalledTimes(2);
     // Final review: "couldn't decide" isn't kept; the next ask tries the judge again.
     const flaky = vi.fn(async () => ({
-      allow: false,
+      verdict: "deny" as const,
       reason: "ion couldn't decide in time",
       decided: false,
     }));
@@ -382,15 +502,15 @@ describe("what ion's model runs on", () => {
 describe("harnessRunner", () => {
   it("asks ion's quick harness, with no tools, and reads its verdict", async () => {
     process.env.ION_ALLOW_FAKE = "1";
-    const configFile = join(mkdtempSync(join(tmpdir(), "ion-judge-")), "config.toml");
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "config.toml");
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, access: { ...DEFAULT_CONFIG.access, judge: "fake" } });
-    const judge = createJudge(harnessRunner(configFile));
+    const judge = createJudge(harnessRunner(runner(configFile)));
     expect(await judge({ projectId: "app", text: "x", req: cmd("pnpm test") })).toEqual({
-      allow: true,
+      verdict: "allow",
       reason: "Part of the task",
     });
     expect(await judge({ projectId: "app", text: "x", req: cmd("deny-me now") })).toEqual({
-      allow: false,
+      verdict: "deny",
       reason: "Looks risky",
     });
   });
@@ -398,7 +518,7 @@ describe("harnessRunner", () => {
   // The user, 2026-11-20: your MCP servers reach chats' agents only; the judge gets no server at all.
   it("gives the judge no MCP servers, even with yours turned on", async () => {
     process.env.ION_ALLOW_FAKE = "1";
-    const configFile = join(mkdtempSync(join(tmpdir(), "ion-judge-")), "config.toml");
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "config.toml");
     writeFileSync(
       join(configFile, "..", "mcp.json"),
       JSON.stringify({ mcpServers: { docs: { command: "d" } } }),
@@ -408,7 +528,26 @@ describe("harnessRunner", () => {
       access: { ...DEFAULT_CONFIG.access, judge: "fake" },
       tools: { ...DEFAULT_CONFIG.tools, mcpOn: ["docs@any"] },
     });
-    expect(await harnessRunner(configFile)("mcplist", new AbortController().signal)).toBe("[]");
+    expect(await harnessRunner(runner(configFile))("mcplist", new AbortController().signal)).toBe("[]");
+  });
+});
+
+// pnpm check, 2026-11-22: another test's daemon swept this test's config away and the judge fell back to its default,
+// claude-code:haiku: a real model call in a test (AGENTS.md: none). Under tests, without ION_LIVE*, no real agent
+// starts: a judge with no config fails closed, saying so.
+describe("a judge with no config, in tests", () => {
+  it("fails closed without starting Claude", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "gone", "config.toml");
+    const v = await createJudge(harnessRunner(runner(configFile)))({
+      projectId: "app",
+      text: "x",
+      req: cmd("ls"),
+    });
+    expect(v).toEqual({
+      verdict: "deny",
+      reason: "ion couldn't decide: real agents are off in tests",
+      decided: false,
+    });
   });
 });
 
@@ -422,9 +561,9 @@ describe("harnessRunner for ion's own thinking", () => {
       ion: { ...DEFAULT_CONFIG.ion, quick: "fake" },
       access: { ...DEFAULT_CONFIG.access, judge: "nope" },
     });
-    const said = await harnessRunner(configFile, "quick")("hello", new AbortController().signal);
+    const said = await harnessRunner(runner(configFile), "quick")("hello", new AbortController().signal);
     expect(said).toBe("Hi from the fake harness.");
-    await expect(harnessRunner(configFile)("hello", new AbortController().signal)).rejects.toThrow(
+    await expect(harnessRunner(runner(configFile))("hello", new AbortController().signal)).rejects.toThrow(
       "Unknown harness: nope",
     );
   });
@@ -434,7 +573,11 @@ describe("harnessRunner for ion's own thinking", () => {
     process.env.ION_ALLOW_FAKE = "1";
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-quick-")), "config.toml");
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "nope" } });
-    const said = await harnessRunner(configFile, "quick")("hello", new AbortController().signal, "fake");
+    const said = await harnessRunner(runner(configFile), "quick")(
+      "hello",
+      new AbortController().signal,
+      "fake",
+    );
     expect(said).toBe("Hi from the fake harness.");
   });
 });
@@ -509,5 +652,198 @@ describe("ruleFor, ion's config and keys", () => {
     });
     expect(ruleFor(cmd("grep -r security src"), ctx)).toMatchObject({ decision: "deny" });
     expect(ruleFor(cmd("grep -r audit src"), ctx)?.decision).not.toBe("deny");
+  });
+});
+
+/** A read tool's call, and a search tool's, for Auto's free reads. */
+const readOf = (file_path: string): ApprovalRequest => ({
+  ...cmd(file_path),
+  kind: "read",
+  input: { file_path },
+});
+const searchOf = (path: string): ApprovalRequest => ({
+  ...cmd(path),
+  kind: "search",
+  input: { pattern: "x", path },
+});
+
+// The user, 2026-11-21: "i still want the agent to have more freedom outside its space not just for scratchpad" →
+// Auto mirrors what agents already do: reads anywhere, except your secrets, ion's files and private kinds of files.
+describe("Auto's reads, anywhere", () => {
+  const judged: string[] = [];
+  const judge = async (i: { req: ApprovalRequest }) => {
+    judged.push(i.req.summary);
+    return { verdict: "deny" as const, reason: "no" };
+  };
+  const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: ctx.roots };
+  const source = async (r: ApprovalRequest) => (await access.decide(at, r)).source;
+
+  it("a read outside the project (not secret) is allowed in Auto", async () => {
+    judged.length = 0;
+    // Real files (a read of a folder, or of nothing, goes to the judge).
+    const mine = mkdtempSync(join(tmpdir(), "ion-mine-"));
+    mkdirSync(join(mine, "other-repo"));
+    writeFileSync(join(mine, "other-repo/README.md"), "# other\n");
+    const there = createAccess({ judge, home: mine, ionDirs: ["/data"] });
+    for (const r of [readOf("/etc/hosts"), readOf(join(mine, "other-repo/README.md")), cmd("cat /etc/hosts")])
+      expect(await there.decide(at, r), r.summary).toMatchObject({ decision: "allow", source: "rule" });
+    expect(judged).toEqual([]);
+    // Task review, 2026-11-22: a read tool on a folder outside the project goes to the judge, like a command.
+    expect((await there.decide(at, readOf(join(mine, "other-repo")))).source).toBe("judge");
+  });
+
+  it("a secret read is refused", async () => {
+    for (const r of [
+      readOf(`${home}/.ssh/id_ed25519`),
+      readOf(`${home}/.aws/credentials`),
+      cmd(`cat ${home}/.netrc`),
+    ])
+      expect(await access.decide(at, r), r.summary).toMatchObject({
+        decision: "deny",
+        reason: "Touches your secrets",
+      });
+  });
+
+  // Security review, 2026-11-21: reads anywhere, but by class: private places and private kinds of files outside the
+  // worktree go to the judge, not a few names.
+  it("private places and kinds of files outside the project go to the judge", async () => {
+    for (const p of [
+      `${home}/.config/x`,
+      `${home}/.local/state/x`,
+      `${home}/.zsh_history`,
+      `${home}/.bash_history`,
+      `${home}/other-repo/.git/config`,
+      `${home}/Library/Cookies/x`,
+      `${home}/Library/Application Support/x/y`,
+      `${home}/Library/Messages/chat.db`,
+      // Task review, 2026-11-22: more private Library folders, and folders named secret(s), private or credentials.
+      `${home}/Library/Preferences/com.x.plist`,
+      `${home}/Library/Accounts/a.sqlite`,
+      `${home}/Library/Calendars/c`,
+      `${home}/Library/Mobile Documents/d`,
+      `${home}/Library/Logs/l`,
+      `${home}/Library/IdentityServices/i`,
+      `${home}/work/secrets/notes.txt`,
+      `${home}/work/secret/notes.txt`,
+      `${home}/work/private/notes.txt`,
+      `${home}/work/credentials/notes.txt`,
+      "/proc/1/environ",
+      "/sys/x",
+      "/dev/disk0",
+      "/private/var/db/x",
+      `${home}/proj/.env`,
+      `${home}/proj/.env.local`,
+      `${home}/certs/key.pem`,
+      `${home}/certs/server.key`,
+      `${home}/certs/me.p12`,
+      `${home}/x/aws_credentials.txt`,
+      `${home}/x/my-secret.txt`,
+      `${home}/x/id_rsa_old`,
+      `${home}/x/vault.kdbx`,
+    ])
+      expect(await source(readOf(p)), p).toBe("judge");
+    expect(await source(cmd(`cat ${home}/proj/.env`))).toBe("judge");
+    // Inside the worktree, the same kinds are read freely as before.
+    expect(await access.decide(at, readOf(join(wt, ".env")))).toMatchObject({
+      decision: "allow",
+      source: "rule",
+    });
+  });
+
+  // Security review, 2026-11-21: a search from a path outside the project goes to the judge.
+  it("searches outside the project go to the judge", async () => {
+    const away = createAccess({ judge, home, ionDirs: ["/data"] });
+    for (const r of [
+      searchOf(`${home}/other-repo`),
+      searchOf("/usr"),
+      cmd("grep -r foo /usr"),
+      cmd(`grep -r token ${home}`),
+      cmd("ls -R /Users"),
+    ])
+      expect((await away.decide(at, r)).source, r.summary).toBe("judge");
+    expect(await access.decide(at, searchOf(join(wt, "src")))).toMatchObject({ decision: "allow" });
+    // From / it reaches ion's folders too: refused, never allowed.
+    expect((await away.decide(at, cmd("grep -r foo /"))).decision).not.toBe("allow");
+  });
+});
+
+describe("agents' sign-in files", () => {
+  const judge = async (_i: { req: ApprovalRequest }) => ({ verdict: "allow" as const, reason: "fine" });
+  const access = createAccess({ judge, home, ionDirs: ctx.ionDirs });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: ctx.roots, agent: "grok-build" };
+
+  // Task review, 2026-11-21: an agent's credential files are secrets for every chat, refused like ~/.ssh, even by
+  // its own agent; the rest of an agent's folder goes to the judge.
+  it("refuses agents' credential files outright, for every agent", async () => {
+    for (const p of [
+      `${home}/.codex/auth.json`,
+      `${home}/.claude/.credentials.json`,
+      `${home}/.local/share/opencode/auth.json`,
+      `${home}/.codex/token.json`,
+      `${home}/.config/opencode/credentials.json`,
+    ])
+      for (const agent of ["grok-build", "codex", "claude-code", "opencode"])
+        expect(await access.decide({ ...at, agent }, readOf(p)), `${agent} ${p}`).toMatchObject({
+          decision: "deny",
+          reason: "Touches your secrets",
+        });
+    expect(await access.decide(at, cmd("cat ~/.codex/auth.json"))).toMatchObject({ decision: "deny" });
+    expect((await access.decide(at, readOf(`${home}/.codex/config.toml`))).source).toBe("judge");
+    expect(
+      (await access.decide({ ...at, agent: "claude-code" }, readOf(`${home}/.claude/settings.json`))).source,
+    ).toBe("judge");
+  });
+});
+
+// Security review, 2026-11-21: a command reads outside the project freely only regular files that pass the class
+// check; a folder (or anything else) goes to the judge, whatever its flags say (`grep -d recurse`).
+describe("a command's reads outside the project", () => {
+  const real = mkdtempSync(join(tmpdir(), "ion-home-"));
+  mkdirSync(join(real, "other"));
+  writeFileSync(join(real, "other/README.md"), "# other\n");
+  mkdirSync(join(real, ".config"));
+  const judge = async (_i: { req: ApprovalRequest }) => ({ verdict: "deny" as const, reason: "no" });
+  const access = createAccess({ judge, home: real, ionDirs: ["/data"] });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: ctx.roots };
+
+  it("reads a regular file freely, and judges a folder", async () => {
+    expect(await access.decide(at, cmd("cat ~/other/README.md"))).toMatchObject({
+      decision: "allow",
+      source: "rule",
+    });
+    for (const c of [
+      "grep -d recurse token ~",
+      "ls -la ~/.config",
+      `ls ${real}/other`,
+      `grep --directories=recurse x ${real}`,
+    ])
+      expect((await access.decide(at, cmd(c))).source, c).toBe("judge");
+  });
+});
+
+// Task review, 2026-11-22: a command given as a list of words (Codex's shell) skipped the path checks: `cat key`, with
+// the worktree's `key` a link to ~/.ssh/id_rsa, was allowed.
+describe("a command given as a list of words", () => {
+  const mine = realpathSync(mkdtempSync(join(tmpdir(), "ion-list-")));
+  const tree = join(mine, "wt");
+  for (const d of [".ssh", ".config", "wt"]) mkdirSync(join(mine, d));
+  writeFileSync(join(mine, ".ssh/id_rsa"), "k");
+  writeFileSync(join(mine, ".config/x"), "x");
+  writeFileSync(join(tree, "a.txt"), "a");
+  symlinkSync(join(mine, ".ssh/id_rsa"), join(tree, "key"));
+  symlinkSync(join(mine, ".config/x"), join(tree, "cfg"));
+  const judge = async (_i: { req: ApprovalRequest }) => ({ verdict: "deny" as const, reason: "no" });
+  const access = createAccess({ judge, home: mine, ionDirs: ["/data"] });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: [tree] };
+  const list = (...words: string[]): ApprovalRequest => ({
+    ...cmd(words.join(" ")),
+    input: { command: words },
+  });
+
+  it("is checked like a string: links to secrets are refused, links to private files judged", async () => {
+    expect(await access.decide(at, list("cat", "key"))).toMatchObject({ decision: "deny" });
+    expect((await access.decide(at, list("cat", "cfg"))).source).toBe("judge");
+    expect(await access.decide(at, list("cat", "a.txt"))).toMatchObject({ decision: "allow" });
   });
 });

@@ -19,23 +19,37 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * A connected client when ion is up: daemon.json's pid is alive, the token works, and the daemon reports
- * that same pid. A reused pid or an unrelated process never passes. `runKey`: inside a chat (`ION_RUN_KEY`), ion is
- * reached with the chat's run key instead of ion's token, for ion's commands for tools only.
+ * that same pid. A reused pid or an unrelated process never passes. Inside a chat's run, `reachRun` instead.
  */
-export async function reach(
-  dataDir: string,
-  runKey?: string,
-): Promise<{ client: IonClient; info: DaemonInfo } | null> {
+export async function reach(dataDir: string): Promise<{ client: IonClient; info: DaemonInfo } | null> {
   const info = readDaemonInfo(dataDir);
   if (!info || !isAlive(info.pid)) return null;
   const timeout = () => sleep(1000).then(() => Promise.reject(new Error("timeout")));
   let client: IonClient | undefined;
   try {
-    const auth = runKey ? { port: info.port, runKey } : info;
-    client = await Promise.race([connect(auth), timeout()]);
+    client = await Promise.race([connect(info), timeout()]);
     const s = await Promise.race([client.call("status", {}), timeout()]);
     if (s.pid !== info.pid) throw new Error("pid mismatch");
     return { client, info };
+  } catch {
+    client?.close();
+    return null;
+  }
+}
+
+/**
+ * Inside a chat's run: ion reached with only its port (ION_PORT) and the run's key, never daemon.json, which the
+ * run's sandbox keeps out of reach (Plan 18 Task 12). Null when it doesn't answer.
+ */
+export async function reachRun(port: string | undefined, runKey: string): Promise<IonClient | null> {
+  const n = Number(port);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  const timeout = () => sleep(1000).then(() => Promise.reject(new Error("timeout")));
+  let client: IonClient | undefined;
+  try {
+    // The key is checked as the connection opens: a wrong or ended one never connects.
+    client = await Promise.race([connect({ port: n, runKey }), timeout()]);
+    return client;
   } catch {
     client?.close();
     return null;

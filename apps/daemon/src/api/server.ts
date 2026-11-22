@@ -1,3 +1,5 @@
+import type { GateCall } from "@ion/adapter-kit";
+import { randomUUID } from "node:crypto";
 import { loadUserConfig } from "@ion/config";
 import { agentsHome, dropInheritedMarkers } from "../env.js";
 import { chmodSync, mkdirSync } from "node:fs";
@@ -15,8 +17,13 @@ import { Connection } from "./connection.js";
 import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
+import { startSandbox } from "../runs/sandbox.js";
+import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
+import { judgeOthers, startOwnAgents } from "../access/runner.js";
+import { theirRulesOf } from "../access/agent-rules.js";
+import { UnsureLog } from "../access/unsure.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
@@ -25,9 +32,11 @@ import { createGrants, createMcpHandler, type Grants, type RunScope } from "../m
 import { createGateway } from "../gateway/index.js";
 import { Ions } from "../ions/service.js";
 import { IonTurns } from "../ions/turn.js";
+import { IonServers } from "../ions/servers.js";
+import { ownServerNames, pickSource } from "./tools-picks.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
-import { diffOfChat, handlers, harnessInfos } from "./commands.js";
+import { diffOfChat, handlers, harnessInfos, useAgentsHome } from "./commands.js";
 import { PromptQueue } from "../queue/index.js";
 import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
@@ -44,6 +53,7 @@ import { createVault } from "../secrets/vault.js";
 import { Hooks } from "../hooks/index.js";
 import { createSkills, ionSkillsDir, type Skills } from "../skills/index.js";
 import { runSkillsOf } from "../skills/run.js";
+import { type AskInChat, runOwnOf } from "../tools/own-run.js";
 import { skillReaders } from "../adapters/registry.js";
 
 /** The scope of a run that ion asks you about. */
@@ -82,10 +92,21 @@ const toolsOf = (o: Pick<ServerOpts, "configFile" | "secrets" | "dataDir">) => {
   });
 };
 
+/**
+ * Where your agents' configs are, read once before ION_AGENTS_HOME is dropped (security review, 2026-11-22); then the
+ * per-run variables go (idempotent: embedders and tests start the server without main()).
+ */
+function withAgentsHome<T extends ServerOpts>(given: T): T & { home: string } {
+  const opts = { ...given, home: given.home ?? agentsHome() };
+  useAgentsHome(opts.home);
+  dropInheritedMarkers();
+  return opts;
+}
+
 export async function startServer(
-  opts: ServerOpts,
+  given: ServerOpts,
 ): Promise<{ port: number; token: string; oauth: OAuth; grants: Grants; close(): Promise<void> }> {
-  dropInheritedMarkers(); // idempotent: embedders and tests start the server without main()
+  const opts = withAgentsHome(given);
   let port = 0;
   const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
   const { db } = ctx;
@@ -165,6 +186,15 @@ function httpServer(ctx: Ctx, turns: IonTurns) {
     grants,
     upstream: (runId, name) => ctx.runs.upstream(runId, name),
     gate: (runId, call) => ctx.runs.gateMcp(runId, call),
+    // An ion's turn reaches your servers too, with its turn's key: only what reads (ion's gate for ions).
+    ...(ctx.ionServers
+      ? {
+          ion: {
+            upstream: (turnId: string, name: string) => ctx.ionServers!.upstream(turnId, name),
+            gate: (turnId: string, call: GateCall) => turns.gateMcp(turnId, call),
+          },
+        }
+      : {}),
   });
   ctx.runs.onEnded(() => gateway.closeEnded());
   return createServer((req, res) => {
@@ -184,14 +214,28 @@ function autoAccess(
   opts: { dataDir: string; configFile: string },
   quick: ReturnType<typeof harnessRunner>,
   late: { decisions?: Decisions },
+  unsure: UnsureLog,
 ) {
   return createAccess({
-    judge: createJudge(quick),
+    judge: judgeOn(opts, quick),
+    // Unsure often on one kind of action: said once in the log (and `ion status`), so a rule can be added.
+    onUnsure: (req) => {
+      const note = unsure.add(req);
+      if (note) console.warn(note);
+    },
     home: homedir(),
     ionDirs: ionDirsOf(opts),
     decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
   });
 }
+
+/** Auto's judge: its second try on another agent signed in now. */
+const judgeOn = (opts: { dataDir: string; configFile: string }, quick: ReturnType<typeof harnessRunner>) =>
+  createJudge(quick, undefined, judgeOthers(opts, readyAgents));
+
+/** The agents signed in now (the judge's second try picks one). */
+const readyAgents = async () =>
+  (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
 
 /** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
 const followAsk = (chatId: string, m: { harness: string | null; text: string }) => ({
@@ -225,20 +269,25 @@ function startIons(
     dataDir: string;
     grants: Grants;
     base: () => string;
+    ionServers: IonServers;
   },
 ): { ions: Ions; turns: IonTurns } {
-  const { dataDir, grants, base, ...deps } = d;
+  const { dataDir, grants, base, ionServers, ...deps } = d;
   const agents = () => harnessInfos.list();
+  const agent = (id: string) => harnessInfos.one(id);
   // Turns start threads through the ions, and the ions think through turns: the ions are made just below.
   const late: { ions?: Ions } = {};
   const turns = new IonTurns({
-    ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents },
+    ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents, agent },
     mcpUrl: () => `${base()}/mcp`,
     gateUrl: () => `${base()}/gate`,
-    startThread: (projectId, brief, turn) =>
-      late.ions ? late.ions.startThread(projectId, brief, turn) : Promise.resolve({ why: "ion is starting" }),
+    servers: ionServers,
+    startThread: (projectId, brief, turn, picks) =>
+      late.ions
+        ? late.ions.startThread(projectId, brief, turn, picks)
+        : Promise.resolve({ why: "ion is starting" }),
   });
-  const ions = new Ions({ ...deps, turns, agents });
+  const ions = new Ions({ ...deps, turns, agents, agent });
   late.ions = ions;
   // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
   ions.answerUnanswered();
@@ -295,14 +344,25 @@ const oauthOf = (tools: Tools, store: EventStore, net?: Net): OAuth =>
 function connectionsOf(
   opts: { configFile: string; dataDir: string; secrets?: Secrets; net?: Net; home?: string },
   store: EventStore,
+  late: { decisions?: Decisions },
 ) {
   const tools = toolsOf(opts);
   // Your keys, as filling reads them (keychain, then ion's environment), for what no agent may inherit.
   setDropLookup(tools.lookup);
   const skills = skillsOf(opts, tools);
-  const runSkills = runSkillsOf(skills, opts.configFile);
+  // What a chat's run gets besides your servers: your skills, and its agent's own tools.
+  const forRuns = {
+    skills: runSkillsOf(skills, opts.configFile),
+    own: runOwnOf({
+      home: skills.home,
+      dataDir: opts.dataDir,
+      configFile: opts.configFile,
+      sign: tools.sign,
+      ask: repoAsker(late),
+    }),
+  };
   const ionBin = ionLauncher(opts.dataDir);
-  return { tools, oauth: oauthOf(tools, store, opts.net), skills, runSkills, cli: cliOf(opts), ionBin };
+  return { tools, oauth: oauthOf(tools, store, opts.net), skills, forRuns, cli: cliOf(opts), ionBin };
 }
 
 /**
@@ -315,18 +375,6 @@ async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
   await turns.shutdown();
   await ctx.runs.shutdown();
   ctx.hooks.stop();
-}
-
-/** Your hooks, hearing every event stored from now on (until the store closes with the daemon). */
-function startHooks(
-  store: EventStore,
-  db: ReturnType<typeof openDb>,
-  configFile: string,
-  tools: Tools,
-): Hooks {
-  const hooks = new Hooks({ store, db, configFile, sign: tools.sign });
-  hooks.start();
-  return hooks;
 }
 
 /** Your agents' skills; plugins left by runs ion didn't see end are removed first. */
@@ -343,39 +391,92 @@ function skillsOf(opts: { dataDir: string; configFile: string; home?: string }, 
   return skills;
 }
 
-/** The data folder, the event store and the services every connection shares. */
-function openState(
-  opts: { dataDir: string; configFile: string; secrets?: Secrets; net?: Net; home?: string },
-  base: () => string,
-): { ctx: Ctx; turns: IonTurns } {
-  const { db, store } = openStore(opts.dataDir);
-  const { tools, oauth, skills, runSkills, cli, ionBin } = connectionsOf(opts, store);
-  const needs = new NeedsService(store, db);
-  const grants = createGrants();
-  const quick = harnessRunner(opts.configFile);
-  // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
-  const ionQuick = harnessRunner(opts.configFile, "quick");
-  const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
-  sweepNeeds(needs, ionQuestions);
-  // Made after the run manager it needs; the judge and the gate reach it through this holder.
-  const late: { decisions?: Decisions } = {};
-  const access = autoAccess(opts, quick, late);
-  const hooks = startHooks(store, db, opts.configFile, tools);
-  const runCtx = {
-    ...{ configFile: opts.configFile, dataDir: opts.dataDir, access, ionBin },
-    ...{ servers: serversFor({ tools, oauth, configFile: opts.configFile }), skills: runSkills },
-    beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => hooks.beforeTool(r, c),
-    mcp: { grants, url: () => `${base()}/mcp` },
+/** Your answer to a repo server's question: yes, no, or none in time (not kept: ion asks again). */
+const HELD_ANSWER = { allow: true, deny: false, timeout: null } as const;
+
+/**
+ * Asks in a run's chat about a repo's server that runs the repo's own code (ruling, 2026-11-21): "Allow for this chat"
+ * lets it start in that chat; no answer in 4 minutes is a no.
+ */
+const repoAsker =
+  (late: { decisions?: Decisions }): AskInChat =>
+  async (r, text, command) => {
+    const b: Blocked = {
+      requestId: `repo-${randomUUID()}`,
+      summary: text,
+      reason: command,
+      key: `repo ${text}`,
+      repo: true,
+    };
+    const h = await late.decisions?.askBlocked({ kind: "run", ...r }, b);
+    return HELD_ANSWER[h ?? "timeout"];
+  };
+
+/** What a run needs besides its access and servers: picks, hooks, ion's server and gate, and asking you. */
+function runCtxOf(o: {
+  opts: { dataDir: string; configFile: string; home?: string };
+  base: () => string;
+  late: { decisions?: Decisions };
+  grants: Grants;
+  hooks: Hooks;
+  picks: { tools: Tools; skills: Skills; ionServers: IonServers };
+}) {
+  const { opts, base, late } = o;
+  return {
+    ...{ configFile: opts.configFile, dataDir: opts.dataDir },
+    // A message's "/" and "@" picks, as its agent takes them.
+    picks: (agent: string, projectId: string) => {
+      const dir = loadUserConfig(opts.configFile).config.projects.find((p) => p.id === projectId)?.path;
+      return pickSource({ ...o.picks, configFile: opts.configFile }, agent, dir ? [dir] : []);
+    },
+    beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => o.hooks.beforeTool(r, c),
+    theirs: theirRulesOf(opts.configFile, opts.home ?? agentsHome()),
+    mcp: { grants: o.grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
+    // `ion` inside a run reaches ion by this port and its run key (daemon.json is out of the run's reach).
+    port: () => Number(new URL(base()).port),
     // When ion stops a tool call it asks you; made here, answered through the decisions made below.
     askBlocked: {
       ask: (r: AskingRun, b: Blocked) =>
         late.decisions?.askBlocked(runScopeOf(r), b) ?? Promise.resolve("timeout" as const),
       allowed: (r: AskingRun, key: string) =>
         late.decisions?.alwaysAllowed(r.projectId, r.chatId, key) ?? false,
+      never: (r: AskingRun, key: string) => late.decisions?.saidNever(r.projectId, r.chatId, key) ?? null,
     },
   };
-  const runs = new RunManager(store, runCtx, needs, db);
+}
+
+/** The data folder, the event store and the services every connection shares. */
+function openState(
+  opts: { dataDir: string; configFile: string; secrets?: Secrets; net?: Net; home?: string },
+  base: () => string,
+): { ctx: Ctx; turns: IonTurns } {
+  const { db, store } = openStore(opts.dataDir);
+  // Made after the run manager it needs; the judge, the gate and runs' questions reach it through this holder.
+  const late: { decisions?: Decisions } = {};
+  const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store, late);
+  const needs = new NeedsService(store, db);
+  const grants = createGrants();
+  const quick = harnessRunner(opts);
+  // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
+  const ionQuick = harnessRunner(opts, "quick");
+  const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
+  sweepNeeds(needs, ionQuestions);
+  const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
+  const access = autoAccess(opts, quick, late, unsure);
+  const hooks = startHooks({ store, db, opts, tools }, { grants, base, ...(ionBin ? { bin: ionBin } : {}) });
+  const servers = serversFor({ tools, oauth, configFile: opts.configFile });
+  // Your servers for ions' turns: only what reads, as Auto's judge agrees (the user, 2026-11-21).
+  const ownNames = (agent: string) => ownServerNames({ tools, skills, configFile: opts.configFile }, agent);
+  const onUnsure = (c: GateCall) => {
+    const note = unsure.add({ ...c, input: c.input });
+    if (note) console.warn(note);
+  };
+  const ionServers = new IonServers({ ...opts, servers, judge: judgeOn(opts, quick), ownNames, onUnsure });
+  const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers } });
+  // Said once in the daemon's log when this computer can't sandbox chats' agents; ion's own git runs sandboxed too.
+  const sandbox = startOwnAgents(opts, startSandbox(opts));
+  const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({
     ...{ store, db, needs },
@@ -387,14 +488,17 @@ function openState(
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base });
+  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base, ionServers });
   // A routine's time came (or you ran it now): its ion starts its thread.
   const routines = new Routines({
     ...{ store, db, configFile: opts.configFile },
     start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
-  const base0 = { configFile: opts.configFile, startedAt: Date.now(), version: VERSION, tools, oauth };
+  const base0 = {
+    ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
+    ...{ tools, oauth, unsure, ionServers },
+  };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };
   return { ctx, turns };

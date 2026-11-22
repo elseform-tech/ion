@@ -1,16 +1,6 @@
 import type { EffortLevel } from "./capabilities.js";
 import type { IonEvent } from "./events.js";
-import type {
-  ImportInfo,
-  ImportResult,
-  NewHook,
-  RegistryHit,
-  ToolAdd,
-  ToolCheck,
-  ToolItem,
-  ToolType,
-  ToolsInfo,
-} from "./tools.js";
+import type { ToolsCommands } from "./tools-api.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -142,12 +132,14 @@ export type SettingsInfo = IonSettings & {
     /** By project id. */
     projects: Record<string, NotifyLevel>;
   };
+  /** By agent id: "Use its own tools" (its own servers, skills and plugins in ion's chats). */
+  ownTools: Record<string, boolean>;
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
-/** What Settings changes: only the given fields; notifications by part. */
-export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort">> & {
+/** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
+export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools">> & {
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
@@ -203,10 +195,12 @@ export type StatusResult = {
   uptimeS: number;
   projects: number;
   configError: string | null;
+  /** Things worth a look, one line each (e.g. "Auto often isn't sure about: npm publish"). */
+  notes?: string[];
 };
 
 /** Every command the daemon accepts: its arguments and its result. */
-export type Commands = {
+export type Commands = ToolsCommands & {
   status: { args: Record<string, never>; result: StatusResult };
   "projects.list": { args: Record<string, never>; result: ProjectInfo[] };
   "projects.add": { args: { path: string }; result: ProjectInfo };
@@ -248,6 +242,10 @@ export type Commands = {
       effort?: EffortLevel;
       /** This message's access mode; else the project's, else the default. */
       access?: "auto" | "full";
+      /** Skills and commands picked with "/" (by name): the agent is told to use them, the way it expects. */
+      skills?: string[];
+      /** MCP servers or resources picked with "@" (by name). */
+      mentions?: string[];
     };
     result: { chatId: string; runId: string };
   };
@@ -268,7 +266,11 @@ export type Commands = {
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
-  "ion.message": { args: { ionId: string; text: string }; result: { ok: true } };
+  /** `skills`, `mentions`: what you picked with "/" and "@" (the ion reads them, or passes them to a thread). */
+  "ion.message": {
+    args: { ionId: string; text: string; skills?: string[]; mentions?: string[] };
+    result: { ok: true };
+  };
   /**
    * Stops the ion's turn answering your message (Stop, Esc twice; a report goes on): it says it stopped, and what's
    * queued waits ("Stopped") until you send one now, change the queue or send a message. `stopped`: one was going.
@@ -305,45 +307,6 @@ export type Commands = {
   /** Pause all: no routine runs until you resume. */
   "routines.pause": { args: { paused: boolean }; result: { ok: true } };
   "activity.list": { args: Record<string, never>; result: ActivityInfo };
-  /** Connections from mcp.json, your hooks, and what each agent can take. */
-  "tools.list": { args: Record<string, never>; result: ToolsInfo };
-  /** Turns a connection, a hook or a skill on or off (kept in ion's config, never in mcp.json). */
-  "tools.setOn": { args: { kind: "mcp" | "hook" | "skill"; id: string; on: boolean }; result: ToolsInfo };
-  /** Keeps a key for `${name}` in a server of mcp.json (`id`), in the keychain (never in config or the log). */
-  "tools.setKey": { args: { id: string; name: string; key: string }; result: ToolsInfo };
-  "tools.addHook": { args: NewHook; result: ToolsInfo };
-  /** null clears the project (every project's events). */
-  "tools.updateHook": {
-    args: { id: string } & Partial<Omit<NewHook, "project">> & { project?: string | null };
-    result: ToolsInfo;
-  };
-  "tools.removeHook": { args: { id: string }; result: ToolsInfo };
-  /**
-   * Starts signing in to a remote server (OAuth): the page the app opens in your browser. A server that can't
-   * register ion needs a client ID (and maybe a secret, kept in the keychain).
-   */
-  "tools.signIn": { args: { id: string; clientId?: string; clientSecret?: string }; result: { url: string } };
-  /** Forgets a remote server's sign-in (its tokens and any client secret). */
-  "tools.signOut": { args: { id: string }; result: ToolsInfo };
-  /** The official MCP Registry's servers for a name: how each runs, the keys it needs, its source. */
-  "tools.search": { args: { query: string }; result: RegistryHit[] };
-  /** Adds a connection, skill or hook, off (you turn it on in Settings → Tools); a literal key is refused. */
-  "tools.add": { args: ToolAdd; result: ToolItem };
-  /** Whether it's valid, where it came from, and whether it's on. */
-  "tools.verify": { args: { kind: ToolType; name: string }; result: ToolCheck };
-  /** Safe checks (never starting anything off); for a local server that's on, its tools. No name: every one. */
-  "tools.doctor": { args: { kind: ToolType; name?: string }; result: ToolCheck[] };
-  /** Removes one (a chat's agent: only what a chat added). */
-  "tools.remove": { args: { kind: ToolType; name: string }; result: { ok: true } };
-  /** Every connection, skill or hook of this kind, on or off, with where it came from. */
-  "tools.items": { args: { kind: ToolType }; result: ToolItem[] };
-  /** The servers in your agents' own configs that aren't in mcp.json (read only now; nothing is run or contacted). */
-  "tools.importable": { args: Record<string, never>; result: ImportInfo };
-  /** Adds them to mcp.json, off, keys left out as `${NAME}`s: one agent's, these names, or every one listed. */
-  /** `repo`: a project's own file (`shop:.mcp.json`): its servers come in only when it's named. */
-  "tools.import": { args: { agent?: string; names?: string[]; repo?: string }; result: ImportResult };
-  /** Hides the Import line (one agent's, or every one) until a server ion hasn't seen appears. */
-  "tools.dismissImport": { args: { agent?: string }; result: ImportInfo };
 };
 
 export type HarnessInfo = {
@@ -354,8 +317,20 @@ export type HarnessInfo = {
   /** From the harness itself when it's signed in; empty otherwise. */
   models: { id: string; label: string }[];
   defaultModel: string | null;
-  /** It also loads MCP servers, hooks or plugins of its own in ion's chats, beside ion's. */
+  /** With "Use its own tools" off, it still loads MCP servers, hooks or plugins of its own (no switch for them all). */
   ownTools?: true;
+  /** Its own hooks run in ion's chats too (no switch for them). */
+  ownHooks?: true;
+  /** What "Use its own tools" off really turns off, by kind. Absent: all of it. */
+  ownOff?: { servers: boolean; skills: boolean; plugins: boolean };
+  /** It trusts a project's own tools by its own list. */
+  ownTrust?: true;
+  /** Its chats run without the OS sandbox here (no sandbox on this computer): ion's folders are only word-guarded. */
+  notSandboxed?: true;
+  /** How many of its own allow and deny rules (your settings for it) its chats go by: deny wins, in every mode. */
+  ownRules?: number;
+  /** How often its judge didn't answer (too slow, or failed) in the last 7 days; absent when it always did. */
+  judgeMisses?: number;
 };
 
 export type MemoryInfo = {
@@ -381,6 +356,8 @@ export type NeedInfo = {
   choices?: { label: string; consequence: string; recommended?: boolean }[];
   /** ion's own question about a tool call it stopped. */
   blocked?: boolean;
+  /** Its answer can't be remembered (the action's input was cut): no Remember. */
+  noRemember?: true;
   /** In an ion thread: the project's ion's one line of context. */
   via?: { note: string };
   raisedAt: string;
@@ -440,7 +417,10 @@ export type IonInfo = {
 export type QueueTarget = { chatId: string } | { ionId: string };
 
 /** What the message box picks for a message: its agent, model, effort and access (each optional, as for ask). */
-export type AskBrain = Pick<Commands["ask"]["args"], "harness" | "model" | "effort" | "access">;
+export type AskBrain = Pick<
+  Commands["ask"]["args"],
+  "harness" | "model" | "effort" | "access" | "skills" | "mentions"
+>;
 
 /** A message waiting to go out. */
 export type QueuedInfo = {
@@ -520,6 +500,9 @@ export const COMMANDS = [
   "tools.importable",
   "tools.import",
   "tools.dismissImport",
+  "tools.picks",
+  "tools.serverTools",
+  "tools.setIonUse",
 ] as const;
 
 export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };

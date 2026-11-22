@@ -8,7 +8,9 @@ type AddOpts = { on: string; run: string; name?: string; from?: string };
 
 /** `ion hooks …`: commands that run on ion's events. One added starts off. */
 export function hooksCommands(program: Command, out: () => Out) {
-  const h = program.command("hooks").description("Hooks");
+  const h = program
+    .command("hooks")
+    .description("Hooks on ion's events, for every agent (each agent manages its own)");
   h.command("add")
     .description("Add one, off")
     .requiredOption("--on <event>", `When it runs: ${HOOK_EVENTS.join(", ")}`)

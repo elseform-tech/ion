@@ -1,5 +1,5 @@
-import { existsSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { ION_RUN_TOOLS } from "@ion/schema";
@@ -44,11 +44,29 @@ function pathsOf(req: ApprovalRequest): string[] {
   return out;
 }
 
-/** The real path, resolving symlinks; for a file that doesn't exist yet, its nearest existing parent's. */
-export function realish(p: string): string {
+/** Where a path that can't be resolved (a link loop, links too deep) is taken to be: outside everything. */
+const UNRESOLVED = "/.ion-unresolved-link";
+
+/** A link's target, when `p` is a link (broken or not); else null. */
+function linkOf(p: string): string | null {
+  try {
+    return lstatSync(p).isSymbolicLink() ? readlinkSync(p) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The real path, resolving symlinks; for a file that doesn't exist yet, its nearest existing parent's. A broken link is
+ * followed to where it points (task review, 2026-11-22), however deep (40 links at most; past that, outside).
+ */
+export function realish(p: string, depth = 0): string {
   let dir = p;
   const tail: string[] = [];
   while (!existsSync(dir) && dirname(dir) !== dir) {
+    const link = linkOf(dir);
+    if (link !== null)
+      return depth >= 40 ? UNRESOLVED : realish(join(resolve(dirname(dir), link), ...tail), depth + 1);
     tail.unshift(basename(dir));
     dir = dirname(dir);
   }
@@ -71,10 +89,29 @@ function inside(p: string, roots: string[]): boolean {
 
 const allInside = (paths: string[], roots: string[]) => paths.every((p) => inside(p, roots));
 
+/** The system temp folder everyone shares: /tmp (and /private/tmp). */
+const SYSTEM_TEMP = /^(\/private)?\/tmp(\/|$)/;
+/** macOS's per-user temp folder, `/var/folders/<a>/<b>/T`: only your own counts (task review, 2026-11-22). */
+const VAR_TEMP = /^(\/private)?\/var\/folders\/[^/]+\/[^/]+\/T$/;
+
+/** Your `$TMPDIR` (real path), when it's your own /var/folders temp folder or under /tmp; else none. */
+function namedTemp(): string | null {
+  const d = realish(tmpdir()); // $TMPDIR when set (no trailing slash: a real path)
+  return VAR_TEMP.test(d) || SYSTEM_TEMP.test(d) ? d : null;
+}
+
+/** Inside a system temp folder (links followed): agents write their scratch files there freely (the user, 2026-11-21). */
+function inTemp(p: string, roots: string[]): boolean {
+  const real = realish(resolve(roots[0] ?? "/", expandHome(p)));
+  const named = namedTemp();
+  return SYSTEM_TEMP.test(real) || (!!named && inside(real, [named]));
+}
+
 /**
- * Reads, searches and edits whose every named path is inside the chat's worktree (symlinks resolved) are
- * allowed: the worktree is the sandbox. Anything else (commands, web, MCP, paths outside, or an edit that
- * names no path) is "ask": it becomes a need you answer. Edits to git internals and agent config always ask.
+ * Reads and searches whose every named path is inside the chat's worktree (symlinks resolved) are allowed; edits too,
+ * and in the system temp folders (the user, 2026-11-21: the freedom agents already have, as Codex's workspace-write
+ * and Claude Code's sandbox). Anything else (commands, web, MCP, paths elsewhere, or an edit that names no path) is
+ * "ask": Auto's rules and judge decide it. Edits to git internals and agent config always ask.
  */
 export function decideByPolicy(
   req: ApprovalRequest,
@@ -86,10 +123,14 @@ export function decideByPolicy(
     return opts.ionMcp && req.mcpServer === "ion" && ION_TOOL.test(req.toolName) ? "allow" : "ask";
   const paths = pathsOf(req);
   // A URL (https:, file:, …) in a path field is never "inside the worktree".
-  const inWorktree = paths.length > 0 && !paths.some((p) => URL_LIKE.test(p)) && allInside(paths, opts.roots);
-  if (req.kind === "edit" && paths.some((p) => runsCode(p, opts.roots))) return "ask";
-  return ["read", "search", "edit"].includes(req.kind) && inWorktree ? "allow" : "ask";
+  if (paths.length === 0 || paths.some((p) => URL_LIKE.test(p))) return "ask";
+  if (req.kind === "edit") return editsFreely(paths, opts.roots) ? "allow" : "ask";
+  return ["read", "search"].includes(req.kind) && allInside(paths, opts.roots) ? "allow" : "ask";
 }
+
+/** An edit whose every path is in the worktree or a temp folder, none of them a file that makes something run code. */
+const editsFreely = (paths: string[], roots: string[]) =>
+  !paths.some((p) => runsCode(p, roots)) && paths.every((p) => inside(p, roots) || inTemp(p, roots));
 
 /**
  * Git internals, agent config and tool config can make git, a coding agent or a package manager run code:

@@ -22,19 +22,25 @@ import { type HistoryMessage, messagesView } from "../views/messages.js";
 import { HISTORY_CHARS, withHistory } from "./history.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import type { GateAnswer } from "../gate/index.js";
-import { type AskBlocked, Approvals, type BeforeTool } from "./approvals.js";
+import { type AskBlocked, type AskingRun, Approvals, type BeforeTool } from "./approvals.js";
+import type { TheirRules } from "../access/agent-rules.js";
 import { keep, type Retry, type RetryState, type RunError, retryPlan, type TryEnd } from "./retry.js";
 import { defaultProject, projectPath } from "./projects.js";
 import type { RunAgent, RunServers } from "../tools/run-servers.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
 import { type RunKeys, runEnv, runKeys } from "./run-env.js";
-import { type RunSkills, skillsFor } from "../skills/run.js";
+import { type LaunchSandbox, launchSandbox, type SandboxCtx } from "./sandbox.js";
+import type { RunSkills } from "../skills/run.js";
+import { agentText, type PickSource, picksOfRun, type RunPicks, shownPicks } from "../skills/picks.js";
+import { type OwnForRun, ownOpts, type RunOwn, skillsAndOwn, withOwnServers } from "../tools/own-run.js";
 
 type AskArgs = Commands["ask"]["args"];
 
 type Active = { chatId: string; session: Session };
 type Launch = {
   h: HarnessEntry;
+  /** Its agent's id (its own allow and deny rules apply). */
+  harness?: string;
   args: AskArgs;
   chatId: string;
   runId: string;
@@ -50,11 +56,15 @@ type Launch = {
   request: string;
   /** This run's skills plugin (ion's data folder), when its agent takes skills from ion and some are on. */
   pluginDir?: string;
+  /** The skills you picked with "/" (the judge is told, in ion's words). */
+  picked?: string[];
   // & your MCP servers for this run, read at its start (its retries keep them, whatever changes meanwhile): what
   // its agent is given, what ion's gateway serves (local ones ion runs, stopped when it ends), and what the agent's
-  // process may not inherit from ion's environment (your keys' names and values). & its keys (from launch to its end).
-} & Partial<Given> &
-  RunKeys;
+  // process may not inherit from ion's environment (your keys' names and values); its agent's own tools ("Use its own
+  // tools"), read at its start. & its keys (from launch to its end).
+} & Partial<Given & { own: OwnForRun }> &
+  RunKeys &
+  LaunchSandbox;
 type Between = {
   chatId: string;
   interrupt: boolean;
@@ -102,11 +112,17 @@ export class RunManager {
       askBlocked?: AskBlocked;
       /** Your "Before a tool runs" hooks (Settings → Tools → Hooks). */
       beforeTool?: BeforeTool;
+      /** A run's agent's own allow and deny rules, from your settings for it (they count as your decisions). */
+      theirs?: (r: AskingRun) => TheirRules | null;
       /** Your MCP servers for a chat's run on this agent, and the ones it goes without (Settings → Tools). */
       servers?: (agent: RunAgent) => Promise<RunServers>;
       /** Your skills for a chat's run: a plugin folder made for it (null: none, or its agent doesn't take them). */
       skills?: RunSkills;
-    },
+      /** What a chat's run brings of its agent's own (its servers, skills and plugins; "Use its own tools"). */
+      own?: RunOwn;
+      /** What "/" and "@" can pick for a chat on this agent in this project (a message's picks resolve here). */
+      picks?: (agent: string, projectId: string) => Promise<PickSource>;
+    } & SandboxCtx,
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
@@ -114,7 +130,7 @@ export class RunManager {
     this.queue = createRunQueue(limitIn(ctx.configFile));
     this.approvals = new Approvals(store, ctx.access, (runId) => !this.stopping && this.active.has(runId), {
       own: { home: homedir(), ionDirs: ionDirsOf(ctx) },
-      ...{ askBlocked: ctx.askBlocked, beforeTool: ctx.beforeTool },
+      ...{ askBlocked: ctx.askBlocked, beforeTool: ctx.beforeTool, theirs: ctx.theirs },
     });
   }
 
@@ -133,7 +149,8 @@ export class RunManager {
       args = { ...args, projectId: await defaultProject(this.ctx.configFile) };
     const chat = chatFor(this.db, args, opts.title);
     // An existing chat stays in its own project: its worktree belongs to that repo.
-    const repo = projectPath(this.ctx.configFile, chat.chatId ? chat.projectId : args.projectId);
+    const projectId = chat.chatId ? chat.projectId : args.projectId;
+    const repo = projectPath(this.ctx.configFile, projectId);
     if (this.stopping) throw new UserError("ion is stopping");
     const key = chat.chatId;
     if (key && this.busy(key)) throw new UserError("This chat is already running");
@@ -141,9 +158,10 @@ export class RunManager {
     let launch: Launch;
     try {
       await this.ready.check(h, args.model);
+      const picks = await picksOfRun(this.ctx.picks, h.adapter.id, args, projectId);
       launch = await this.prepare(
         h,
-        { ...args, shown: opts.shown, answers: opts.answers, by: opts.by },
+        { ...args, shown: opts.shown, answers: opts.answers, by: opts.by, picks },
         chat,
         repo,
       );
@@ -165,11 +183,11 @@ export class RunManager {
   /** `ask.shown`: what the chat shows as yours, when the text is ion's wording (your answer to a question). */
   private async prepare(
     h: HarnessEntry,
-    ask: AskArgs & { shown?: string; answers?: string; by?: "ion" },
+    ask: AskArgs & { shown?: string; answers?: string; by?: "ion"; picks?: RunPicks },
     chat: Chat,
     repo: string,
   ): Promise<Launch> {
-    const { shown, answers, by, ...args } = ask;
+    const { shown, answers, by, picks, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
@@ -183,15 +201,19 @@ export class RunManager {
       by === "ion" || chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
     const access = ionThread ? "auto" : (args.access ?? "auto");
     const runId = `run_${randomUUID()}`;
-    this.store.append({
-      chatId,
-      runId,
-      origin: "daemon",
-      type: EV.messageSent,
-      data: { text: args.text, ...(shown ? { shown } : {}), ...(answers ? { answers } : {}) },
-    });
+    const data = { text: args.text, ...(shown ? { shown } : {}), ...(answers ? { answers } : {}) };
+    const sent = { ...data, ...shownPicks(picks) };
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: sent });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
-    return { h, args, chatId, runId, cwd: wt.path, history, projectId, access, request: args.text };
+    // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
+    const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };
+    const l = {
+      ...{ h, harness: h.adapter.id, args: a, chatId, runId, cwd: wt.path, history, projectId, access },
+      request: args.text,
+    };
+    // The judge is told what you picked, in ion's words.
+    const picked = shownPicks(picks).skills;
+    return picked ? { ...l, picked } : l;
   }
 
   /**
@@ -206,13 +228,15 @@ export class RunManager {
     this.between.set(l.runId, b);
     const state: RetryState = { tries: 0, effortRetried: false, effort: l.args.effort ?? null };
     try {
-      const yours = await yourServers(this.store, this.ctx.servers, l);
-      // Every key of the run: redacted from every event of the run, wherever in ion it's stored from.
+      Object.assign(l, await skillsAndOwn(this.ctx, l));
+      Object.assign(l, launchSandbox(l.h.adapter.sandbox, this.ctx, { ...l, harness: l.h.adapter.id }));
+      const yours = withOwnServers(await yourServers(this.store, this.ctx.servers, l), l.own);
+      // Every key of the run (its agent's own too): redacted from every event of the run, wherever it's stored from.
       const redact = redactor([...yours.secrets, l.mcpKey, l.gateKey, l.cliKey]);
       this.store.redactRun(l.runId, redact);
-      const o = { ion: this.ionServer(l), redact, dataDir: this.ctx.dataDir };
+      const { dataDir, configFile } = this.ctx;
+      const o = { ion: this.ionServer(l), redact, dataDir, configFile };
       Object.assign(l, givenToRun(this.store, l, yours, o));
-      l.pluginDir = (await skillsFor(this.ctx.skills, l)) ?? undefined;
       for (;;) {
         if (this.stopping) return;
         state.tries++;
@@ -265,13 +289,8 @@ export class RunManager {
     if (!retry) return null;
     if (retry.effort !== state.effort) state.effortRetried = true;
     state.effort = retry.effort;
-    this.store.append({
-      chatId: l.chatId,
-      runId: l.runId,
-      origin: "daemon",
-      type: EV.runRetrying,
-      data: retry,
-    });
+    const { chatId, runId } = l;
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.runRetrying, data: retry });
     return retry;
   }
 
@@ -290,14 +309,8 @@ export class RunManager {
   }
 
   private finish(l: Launch, status: string): void {
-    if (!this.stopping)
-      this.store.append({
-        chatId: l.chatId,
-        runId: l.runId,
-        origin: "daemon",
-        type: EV.runFinished,
-        data: { status },
-      });
+    const [{ chatId, runId }, data] = [l, { status }];
+    if (!this.stopping) this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data });
   }
 
   /** Waits a retry's delay; false if interrupted (or ion stopped) meanwhile. */
@@ -424,30 +437,27 @@ export class RunManager {
   }
 
   private endFailed(chatId: string | null, runId: string, code: string, message: string): void {
-    this.store.append({
-      chatId,
-      runId,
-      origin: "daemon",
-      type: EV.error,
-      data: { code, retryable: false, message },
-    });
+    const data = { code, retryable: false, message };
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.error, data });
     this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
   }
 
   private async start(l: Launch): Promise<Session> {
     const roots = projectRoots(l.cwd);
-    const decide = (req: ApprovalRequest) => this.approvals.decide(l, req, roots);
     return l.h.adapter.start({
       cwd: l.cwd,
       model: l.args.model ?? null,
       effort: l.args.effort ?? null,
       ...(l.resume ? { resume: l.resume } : {}),
-      env: runEnv(l, this.ctx.ionBin),
+      env: runEnv(l, this.ctx.ionBin, this.ctx.port?.()),
+      ...(l.sandbox ? { sandbox: l.sandbox } : {}),
       ...(this.ctx.gate && l.gateKey ? { gate: { url: `${this.ctx.gate.url()}/${l.gateKey}` } } : {}),
       ...runMcp(this.ionServer(l), l.servers, l.envDrop),
       ...(l.pluginDir ? { pluginDir: l.pluginDir } : {}),
+      ...ownOpts(l.own),
       signal: new AbortController().signal,
-      decide,
+      decide: (req: ApprovalRequest) => this.approvals.decide(l, req, roots),
+      holding: this.approvals.holding(l.runId),
     });
   }
 

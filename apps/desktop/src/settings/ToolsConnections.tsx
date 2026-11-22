@@ -1,21 +1,39 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import { Copy, PlugZap } from "@ion/design-system";
-import type { HarnessInfo, McpToolInfo, ToolsInfo } from "@ion/schema";
+import { Copy, PlugZap, Wrench } from "@ion/design-system";
+import type { HarnessInfo, McpToolInfo, OwnServerInfo, ToolsInfo } from "@ion/schema";
 import { useState } from "react";
 import { useCallError } from "../callError.js";
 import { CANT_OPEN, openLink } from "../opener.js";
 import { Switch } from "./Switch.js";
-import { short, stateOf, ToolRow, Works } from "./tools-parts.js";
+import { ServerToolsList } from "./ToolsServerTools.js";
+import { short, stateOf, ToolRow } from "./tools-parts.js";
+import { Faces, fromOf, type Merged, merge, OwnRow, offIn, type Whose, whoseRows } from "./tools-own.js";
 
 type Part = {
   client: IonClient;
   agents: HarnessInfo[];
   set: (t: ToolsInfo) => void;
   locked: boolean;
-  support: ToolsInfo["support"];
   /** The connection a chat's link opened. */
   at?: string | null;
 };
+
+/** What a server runs, or where it connects (no query): the same setup reads the same, whoever has it. */
+function launchOf(s: McpToolInfo): string {
+  if (s.transport === "stdio") return [s.command, ...s.args].join(" ");
+  try {
+    const u = new URL(s.url);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return s.url;
+  }
+}
+
+/** An agent's own server's line: what it runs, or its host. */
+function ownLine(launch: string) {
+  if (!/^https?:\/\//.test(launch)) return <code title={launch}>{short(launch)}</code>;
+  return new URL(launch).host;
+}
 
 /** Where it connects (the host, never the path or a value) or what it runs (one line; all of it on hover). */
 function whereOf(s: McpToolInfo) {
@@ -159,20 +177,40 @@ function useServer(s: McpToolInfo, part: Part) {
   return { error, run, open, setOpen, signIn, saveKeys };
 }
 
-function ServerRow({ s, part }: { s: McpToolInfo; part: Part }) {
+/** Opens a server's tools under its row (only one that's on). */
+function ToolsButton(p: { s: McpToolInfo; open: boolean; onClick: () => void }) {
+  if (!p.s.on) return null;
+  return (
+    <button
+      className={`ib${p.open ? " on" : ""}`}
+      type="button"
+      title="Tools"
+      aria-label={`Tools of ${p.s.name}`}
+      aria-expanded={p.open}
+      onClick={p.onClick}
+    >
+      <Wrench />
+    </button>
+  );
+}
+
+function ServerRow({ s, part, r }: { s: McpToolInfo; part: Part; r: Merged<McpToolInfo> }) {
   const { error, run, open, setOpen, signIn, saveKeys } = useServer(s, part);
+  const [tools, setTools] = useState(false);
   const state = s.needs === "can't reach" ? "Can't reach" : stateOf(s, part.locked);
+  const chip = state ?? (r.differs ? "Differs" : null);
   const missing = s.missing ?? [];
   return (
     <>
       <ToolRow
         icon={PlugZap}
         name={s.name}
-        chip={state}
+        chip={chip}
+        {...(chip === "Differs" && r.differs ? { chipTitle: r.differs } : {})}
         line={whereOf(s)}
         {...(s.origin ? { origin: s.origin } : {})}
         at={part.at === s.name}
-        mid={<Works agents={part.agents} works={(id) => !!part.support[id]?.[s.transport]} />}
+        mid={<Faces who={r.agents} agents={part.agents} />}
         end={
           <>
             <Needs
@@ -180,6 +218,7 @@ function ServerRow({ s, part }: { s: McpToolInfo; part: Part }) {
               onSignIn={() => void signIn()}
               onKey={() => setOpen(open === "key" ? null : "key")}
             />
+            <ToolsButton s={s} open={tools} onClick={() => setTools(!tools)} />
             <Switch
               label={s.name}
               on={s.on}
@@ -192,32 +231,107 @@ function ServerRow({ s, part }: { s: McpToolInfo; part: Part }) {
         <Fields names={missing.map((name) => ({ name, masked: true }))} onSave={saveKeys} />
       )}
       {open === "client" && <ClientFields onSave={signIn} />}
+      {tools && <ServerToolsList client={part.client} id={s.id} />}
       {typeof open === "object" && open && <LocalPage url={open.local} />}
       {error && <div className="perr">{error}</div>}
     </>
   );
 }
 
-/** Settings → Tools → Connections: each server in your mcp.json, what it needs, and on or off. */
+/** Your mcp.json's servers (ion's) and each agent's own, one row per setup. */
+function rowsOf(info: ToolsInfo): Merged<McpToolInfo>[] {
+  // Matched by what makes a setup the same (task review, 2026-11-21: env, header and query names too): ion's hash.
+  const ion = info.mcp.map((s) => ({ agent: "ion", name: s.name, key: s.match ?? launchOf(s), item: s }));
+  const own = info.own.servers
+    .filter((s) => !s.repo)
+    .map((s) => ({ agent: s.agent, name: s.name, key: s.match, ...(s.new ? { fresh: s.new } : {}) }));
+  return merge<McpToolInfo>([...ion, ...own], "Runs something else");
+}
+
+/**
+ * A server in a project's own file (security review, 2026-11-21: the repo wrote it, not you): its switch, off until you
+ * turn it on, which is consent to exactly what it runs; one that runs code from the repo has none: ion asks in each chat.
+ */
+function RepoRow({ s, part }: { s: OwnServerInfo; part: Part }) {
+  const [error, run] = useCallError();
+  const repo = s.repo!;
+  return (
+    <>
+      <ToolRow
+        icon={PlugZap}
+        name={s.name}
+        chip={repo.asks ? null : stateOf(repo, part.locked)}
+        origin={fromOf(`From ${repo.project}'s ${repo.file}`)}
+        line={
+          <>
+            {/* As the repo wrote it, whole (a URL's query too): it's yours to judge. */}
+            <code title={s.launch}>{short(s.launch)}</code>
+            {repo.headers && <span className="part">Headers: {repo.headers.join(", ")}</span>}
+            {repo.env && <span className="part">Env: {repo.env.join(", ")}</span>}
+          </>
+        }
+        mid={<Faces who={[s.agent]} agents={part.agents} />}
+        end={
+          repo.asks ? (
+            <span className="s">Asks in each chat</span>
+          ) : (
+            <Switch
+              label={s.name}
+              on={repo.on}
+              onPick={(on) =>
+                run(part.client.call("tools.setOn", { kind: "repo", id: repo.id, on }), part.set)
+              }
+            />
+          )
+        }
+      />
+      {error && <div className="perr">{error}</div>}
+    </>
+  );
+}
+
+/**
+ * Settings → Tools → Connections: each server in your mcp.json (what it needs, and on or off), and each agent's own
+ * (read-only: they're the agent's), filtered by whose.
+ */
 export function Connections(p: {
   client: IonClient;
   agents: HarnessInfo[];
   info: ToolsInfo;
   set: (t: ToolsInfo) => void;
   at?: string | null;
+  whose: Whose;
 }) {
   const { info } = p;
-  const part: Part = { ...p, locked: !!info.keychainProblem, support: info.support, at: p.at ?? null };
+  const part: Part = { ...p, locked: !!info.keychainProblem, at: p.at ?? null };
+  const rows = whoseRows(rowsOf(info), p.whose);
+  const launch = new Map(info.own.servers.map((s) => [`${s.agent}:${s.name}`, s.launch]));
+  const leftOut = p.whose === "all" || p.whose === "ion" ? info.leftOut : [];
+  const repos = info.own.servers.filter((s) => s.repo && (p.whose === "all" || p.whose === s.agent));
   return (
     <>
       {info.mcpProblem && <div className="perr">{info.mcpProblem}</div>}
       {info.keychainProblem && <div className="perr">{info.keychainProblem}</div>}
-      {(info.mcp.length > 0 || info.leftOut.length > 0) && (
+      {(rows.length > 0 || leftOut.length > 0 || repos.length > 0) && (
         <div className="group">
-          {info.mcp.map((s) => (
-            <ServerRow key={s.id} s={s} part={part} />
+          {rows.map((r, i) =>
+            r.ion ? (
+              <ServerRow key={`ion:${r.ion.id}`} s={r.ion} part={part} r={r} />
+            ) : (
+              <OwnRow
+                key={`${r.name}:${i}`}
+                icon={PlugZap}
+                r={r}
+                agents={p.agents}
+                off={offIn(r, info.own, "servers", p.agents)}
+                line={ownLine(launch.get(`${r.agents[0]}:${r.name}`) ?? "")}
+              />
+            ),
+          )}
+          {repos.map((s) => (
+            <RepoRow key={s.repo?.id} s={s} part={part} />
           ))}
-          {info.leftOut.map((l) => (
+          {leftOut.map((l) => (
             <ToolRow key={l.name} icon={PlugZap} name={l.name} line={l.why} />
           ))}
         </div>

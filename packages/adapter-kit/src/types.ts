@@ -1,5 +1,7 @@
 import type { Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
+import type { PickStyle } from "./picks.js";
 import type { EnvDrop } from "./run-env.js";
+import type { RunSandbox } from "./sandbox.js";
 
 /** What an adapter emits. The daemon stamps chatId, runId and origin ("adapter") before storing. */
 export type AdapterEvent = Omit<NewEvent, "chatId" | "runId" | "origin">;
@@ -30,7 +32,18 @@ export class ResumeFailed extends Error {}
  */
 export type McpSpec =
   | HttpMcpSpec
-  | { name: string; transport: "stdio"; command: string; args: string[]; env: Record<string, string> };
+  | {
+      name: string;
+      transport: "stdio";
+      command: string;
+      args: string[];
+      env: Record<string, string>;
+      /**
+       * A repo's own server you allowed for this chat: it runs from the project's own folder (the checkout ion read
+       * its .mcp.json from, which chats don't write), never the chat's worktree (security review, 2026-11-21).
+       */
+      cwd?: string;
+    };
 
 /** A remote (Streamable HTTP) MCP server: the only kind a run's agent is given (a local one is ion's URL for it). */
 export type HttpMcpSpec = { name: string; transport: "http"; url: string; headers: Record<string, string> };
@@ -53,6 +66,11 @@ export type StartOpts = {
   resume?: string;
   /** A plain model call (ion's judge): no tools at all, a short system prompt, one turn, no thinking. */
   bare?: boolean;
+  /**
+   * A bare start's daemon-only folder for the agent's own files (Grok's profile): outside its working folder, only read
+   * by the agent (PR #25 review, 2026-11-22).
+   */
+  bareHome?: string;
   /** ion's gate for this run: the harness's pre-tool hook sends every tool call here before it runs. */
   gate?: { url: string };
   /**
@@ -65,11 +83,29 @@ export type StartOpts = {
    * data folder for this run, never in the worktree.
    */
   pluginDir?: string;
+  /**
+   * The agent brings its own MCP servers, skills and plugins (a chat's run with "Use its own tools" on; the user,
+   * 2026-11-21). Its own hooks and permission rules stay off wherever the agent can turn them off: ion's gate judges
+   * every call. Absent or false: ion's tools only.
+   */
+  ownTools?: boolean;
+  /** With `ownTools`, Claude Code's own enabled plugins: folders (a plugin with hooks is ion's copy without them). */
+  ownPlugins?: string[];
   /** Added to the agent process's environment (a chat's run: `ION_CHAT`, which its tool calls' processes inherit). */
   env?: Record<string, string>;
   /** What the agent's process may not inherit from ion's environment (your keys: mcp.json's names and values). */
   envDrop?: EnvDrop;
+  /**
+   * The run's sandbox (a chat's run, on a computer that has one): ion's folders out of reach of the agent and every
+   * process it starts, the run's own paths let through. The adapter applies it its own way (`HarnessAdapter.sandbox`).
+   */
+  sandbox?: RunSandbox;
   signal: AbortSignal;
+  /**
+   * When ion is holding one of the run's calls for your answer (through any path: its gate too), so an agent's silence
+   * check waits (re-review, 2026-11-21).
+   */
+  holding?: { on(listener: (held: boolean) => void): void };
   /** The daemon decides every permission prompt (policy now, a "Needs you" pin in Plan 3). */
   decide: (req: ApprovalRequest) => Promise<Decision>;
 };
@@ -87,6 +123,9 @@ export interface Session {
 
 export type AuthStatus = { signedIn: boolean; method: string };
 
+/** By kind: whether an agent's switch turns its own off in ion's chats. */
+type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };
+
 export interface HarnessAdapter {
   id: string;
   detect(): Promise<{ installed: boolean; version?: string; path?: string }>;
@@ -94,8 +133,26 @@ export interface HarnessAdapter {
   capabilities(): Promise<Capabilities>;
   /** The kinds of MCP server it takes from ion (a server of another kind is left out of its runs). */
   mcpTransports: McpTransports;
-  /** It also loads MCP servers, hooks or plugins of its own in ion's chats (it has no switch to leave them out). */
+  /**
+   * With "Use its own tools" off, it still loads MCP servers, hooks or plugins of its own in ion's chats (it has no
+   * switch to leave them all out).
+   */
   ownTools?: true;
+  /** Its own hooks run in ion's chats too (it has no switch for them). */
+  ownHooks?: true;
+  /** What "Use its own tools" off really turns off, by kind (task review, 2026-11-21). Absent: all of it. */
+  ownOff?: OwnOff;
+  /** It decides by itself whether to trust a project's own tools (its own trust list). */
+  ownTrust?: true;
+  /** How it takes what you picked with "/" (picks.ts): "slash", it runs `/command` itself. Absent: "tell". */
+  picks?: PickStyle;
+  /** It reads an MCP server's resources (so "@" lists them for it). */
+  mcpResources?: true;
+  /**
+   * How its runs are sandboxed (docs/research/sandbox.md): "own", its own sandbox told to keep ion's folders out
+   * (Codex); "ion", ion's wrapper around its process (the rest). Absent: never (the fake agent starts no process).
+   */
+  sandbox?: "own" | "ion";
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

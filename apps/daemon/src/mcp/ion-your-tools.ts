@@ -1,5 +1,7 @@
 import type { McpServer as Mcp } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { SkillInfo, SkillWhose, ToolSupport } from "@ion/schema";
+import { type SkillInfo, type SkillWhose, stripControl, type ToolSupport } from "@ion/schema";
+import { z } from "zod";
+import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import { type McpServer, shownCommand, shownHost } from "../tools/index.js";
 import { guard, ok } from "./result.js";
@@ -13,7 +15,12 @@ export type YourTools = (projectDirs: string[]) => Promise<{
   servers: { server: McpServer; on: boolean }[];
   skills: SkillInfo[];
   support: Record<string, ToolSupport>;
+  /** A listed skill's SKILL.md after its front matter (that exact skill, while it's on); null otherwise. */
+  body?: (s: SkillInfo) => string | null;
 }>;
+
+/** The most of a skill's instructions an ion reads at once. */
+const BODY_MAX = 16_000;
 
 const OWNER: Record<SkillWhose, string> = {
   claude: "Claude Code",
@@ -54,15 +61,16 @@ export function registerYourTools(
     "tools",
     {
       description:
-        "The user's connections (MCP servers) and skills, by name: which are on, and which agents get them. You can't use them; a thread in a project can.",
-      inputSchema: {},
+        "The user's connections (MCP servers) and skills, by name: which are on, and which agents get them. With a skill's name, that skill's instructions: follow them in your own answer, or name the skill in start_thread's skills so a thread uses it. You never run a skill's scripts.",
+      inputSchema: { skill: z.string().min(1).max(200).optional() },
     },
-    guard(async () => {
+    guard(async ({ skill }: { skill?: string }) => {
       if (!ion.yours) return ok(wrapData("your tools", "None."));
-      const { servers, skills, support } = await ion.yours(ion.dirs());
+      const { servers, skills, support, body } = await ion.yours(ion.dirs());
+      const reached = skills.filter((s) => ion.chief || skillAgents(s).length > 0);
+      if (skill !== undefined) return skillText(skill, reached, body);
       const http = Object.keys(support).filter((id) => support[id]!.http);
       const shown = servers.filter((s) => ion.chief || s.on);
-      const reached = skills.filter((s) => ion.chief || skillAgents(s).length > 0);
       const lines = [
         "Connections:",
         ...(shown.length ? shown.map((s) => connectionLine(s.server, s.on, http)) : ["- none"]),
@@ -71,5 +79,23 @@ export function registerYourTools(
       ];
       return ok(wrapData("your tools", lines.join("\n")));
     }),
+  );
+}
+
+/** A skill's instructions for an ion, as data: read and followed in its own answer, its scripts never run. */
+function skillText(name: string, reached: SkillInfo[], body?: (s: SkillInfo) => string | null) {
+  const shown = stripControl(name).slice(0, 60);
+  // Only a skill that's on (or an agent's own); a name two different skills share is refused (security review).
+  const named = reached.filter((s) => s.name === name && (s.on || s.own));
+  if (new Set(named.map((s) => s.hash)).size > 1)
+    throw new UserError(`More than one skill is named ${shown}`);
+  const md = named[0] ? body?.(named[0]) : null;
+  if (!md) throw new UserError(`No skill named ${shown}`);
+  const text = stripControl(md).slice(0, BODY_MAX);
+  return ok(
+    [
+      "Follow these in your own answer; never run its scripts (a thread can, with the skill in start_thread's skills).",
+      wrapData(`the ${name} skill's instructions`, text),
+    ].join("\n\n"),
   );
 }

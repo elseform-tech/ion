@@ -2,7 +2,14 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CONFIG, ionPaths, loadUserConfig, PROFILE_CHARS, saveUserConfig } from "./index.js";
+import {
+  DEFAULT_CONFIG,
+  ionPaths,
+  loadUserConfig,
+  ownToolsOn,
+  PROFILE_CHARS,
+  saveUserConfig,
+} from "./index.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "ion-cfg-"));
 
@@ -212,7 +219,14 @@ describe("a bad hand-edited setting", () => {
 // The user, 2026-11-20: a new server starts off until you turn it on — ion keeps the ones you turned on.
 describe("tools in your config", () => {
   it("has empty tools by default, keeps what you turned off and your hooks, and never a key", () => {
-    expect(DEFAULT_CONFIG.tools).toEqual({ mcpOn: [], hooks: [], hooksOn: [], skills: { on: [] } });
+    expect(DEFAULT_CONFIG.tools).toEqual({
+      mcpOn: [],
+      hooks: [],
+      hooksOn: [],
+      skills: { on: [] },
+      repoOn: [],
+      ionUse: [],
+    });
     const f = join(tmp(), "config.toml");
     const hook = { id: "h1", name: "Tell me", on: true, event: "run.finished" as const, run: "say done" };
     saveUserConfig(f, {
@@ -222,6 +236,7 @@ describe("tools in your config", () => {
         hooks: [hook],
         hooksOn: ["h1@0123456789ab"],
         skills: { on: ["~/.claude/skills/pdf@0123456789ab"] },
+        repoOn: [],
       },
     });
     expect(loadUserConfig(f).config.tools).toEqual({
@@ -229,6 +244,8 @@ describe("tools in your config", () => {
       hooks: [hook],
       hooksOn: ["h1@0123456789ab"],
       skills: { on: ["~/.claude/skills/pdf@0123456789ab"] },
+      repoOn: [],
+      ionUse: [],
     });
   });
 
@@ -256,5 +273,23 @@ describe("tools in your config", () => {
     expect(config.tools.mcpOn).toEqual(["github@0123456789ab"]);
     expect(config.tools.hooks.map((h) => [h.id, h.on])).toEqual([["good", true]]);
     expect(warning).toContain("hooks.bad");
+  });
+});
+
+describe("agents.<id>.ownTools", () => {
+  // The user, 2026-11-21: "user would like to use the skills, mcp, or plugins that is already in the harness": each
+  // agent brings its own by default; "Use its own tools" off brings back ion's tools only.
+  it("is on unless you turn it off, and a bad value falls back alone", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(
+      f,
+      ["[agents.codex]", "ownTools = false", "[agents.grok-build]", 'ownTools = "no"', ""].join("\n"),
+    );
+    const { config, error } = loadUserConfig(f);
+    expect(error).toBeNull();
+    expect(ownToolsOn(config, "codex")).toBe(false);
+    expect(ownToolsOn(config, "grok-build")).toBe(true);
+    expect(ownToolsOn(config, "claude-code")).toBe(true);
+    expect(ownToolsOn(DEFAULT_CONFIG, "opencode")).toBe(true);
   });
 });

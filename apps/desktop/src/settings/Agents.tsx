@@ -5,6 +5,7 @@ import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
 import { EFFORTS } from "./IonPage.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
+import { Switch } from "./Switch.js";
 
 /** An agent's state, in plain words. */
 function stateOf(h: HarnessInfo): string {
@@ -12,19 +13,39 @@ function stateOf(h: HarnessInfo): string {
   return h.installed ? "Not signed in" : "Not installed";
 }
 
-/** One agent: its face, name and state; one that has no switch to leave out its own tools says it loads them too. */
-function AgentRow({ h }: { h: HarnessInfo }) {
+/**
+ * One agent: its face, name and state, and "Use its own tools" (the user, 2026-11-21: its own servers, skills and
+ * plugins in ion's chats, on by default). On: one whose own hooks can't be turned off says they run too. Off: one that
+ * has no switch to leave out all its own tools says it loads them too.
+ */
+function AgentRow({ h, own, onOwn }: { h: HarnessInfo; own: boolean; onOwn: (on: boolean) => void }) {
+  const chip = own ? h.ownHooks && "Its own hooks run too" : h.ownTools && "Also loads its own";
   return (
     <div className="hrow">
       <Avatar harness={h.id} />
       <div>
         {h.label}
-        {h.ownTools && <span className="chip">Also loads its own</span>}
+        {chip && <span className="chip">{chip}</span>}
         <div className="s">
           {ready(h) && <i className="okd" />}
           {stateOf(h)}
         </div>
+        {/* Task review, 2026-11-21 (ruled line): it loads a project's own tools by its own trust list. */}
+        {h.ownTrust && <div className="s">Uses its own trust for project tools</div>}
+        {/* Plan 18 Task 12: its chats run without the OS sandbox on this computer. */}
+        {h.notSandboxed && <div className="s">Not sandboxed</div>}
+        {/* Plan 18 Task 14: its own allow and deny rules count as your decisions in its chats. */}
+        {h.ownRules ? <div className="s">Uses its own allow/deny rules ({h.ownRules})</div> : null}
+        {/* Final review, 2026-11-22: how often its judge didn't answer (too slow, or failed) this week. */}
+        {h.judgeMisses ? (
+          <div className="s">
+            Judge didn't answer {h.judgeMisses === 1 ? "once" : `${h.judgeMisses} times`} this week
+          </div>
+        ) : null}
       </div>
+      {/* The lab's third column (its usage meter) stays empty here; the switch sits where the lab's does. */}
+      <span />
+      <Switch label={`${h.label}: use its own tools`} title="Use its own tools" on={own} onPick={onOwn} />
     </div>
   );
 }
@@ -112,7 +133,14 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
         <h4>Coding agents</h4>
         <div className="group">
           {data.harnesses.map((h) => (
-            <AgentRow key={h.id} h={h} />
+            <AgentRow
+              key={h.id}
+              h={h}
+              own={data.settings?.ownTools?.[h.id] ?? true}
+              onOwn={(on) =>
+                run(client.call("settings.set", { patch: { ownTools: { [h.id]: on } } }), data.reload)
+              }
+            />
           ))}
         </div>
       </div>

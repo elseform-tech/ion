@@ -77,6 +77,8 @@ export type McpTool =
 
 /** A connection as the Tools page shows it: whether it's ready, and what it needs if not. */
 export type McpToolInfo = McpTool & {
+  /** As `OwnServerInfo.match`: the same setup an agent has matches. */
+  match?: string;
   /** Every `${NAME}` it uses (names only). */
   keys: string[];
   /** Never turned on: a server new to mcp.json starts off. */
@@ -116,6 +118,71 @@ export type SkillInfo = {
   changed?: true;
   support: Record<string, "ion" | "own">;
   origin?: ToolOrigin;
+  /** What's in it (SKILL.md and its files), short: the same skill in two agents' folders has the same. */
+  hash: string;
+  /**
+   * The agent whose own it is (it loads it itself, or ion passes it as that agent's own): read-only in Settings. Absent:
+   * ion's to turn on or off.
+   */
+  own?: string;
+  /** In a project's own folder (the repo wrote it, not you): the project. Off until you turn it on. */
+  project?: string;
+  /** The agents that load it themselves, of their own (with their switch on, or always where it can't be off). */
+  readers?: string[];
+};
+
+/** One MCP server in an agent's own config: read-only in Settings (it's the agent's). */
+export type OwnServerInfo = {
+  agent: string;
+  name: string;
+  transport: "stdio" | "http";
+  /** What it runs, or where it connects (no query; a repo's: as written). */
+  launch: string;
+  /** What makes two setups the same (what it runs, URL query names, env or header names), hashed: never a value. */
+  match: string;
+  /** It appeared after ion first listed them (a run may have added it), until Settings has shown it once. */
+  new?: true;
+  /**
+   * A project's own file (the repo wrote it, not you; Claude Code's `.mcp.json`): `id` turns it on (`tools.setOn` kind
+   * "repo"), off until you do; `new`: never turned on, `changed`: it runs something else since.
+   */
+  repo?: {
+    project: string;
+    file: string;
+    id: string;
+    on: boolean;
+    new?: true;
+    changed?: true;
+    /** A local one: it runs code here, so no switch; ion asks in each chat. */
+    asks?: true;
+    /** The names of its headers (a remote one) or env (a local one), never their values. */
+    headers?: string[];
+    env?: string[];
+  };
+};
+
+/** What a plugin brings. */
+export type PluginBundles = { skills: number; servers: number; commands: number; agents: number };
+
+/**
+ * One plugin an agent has installed and on. `hooks`: it bundles hooks; "off": they don't run in ion's chats, "run":
+ * they run too (the agent has no switch for them).
+ */
+export type OwnPluginInfo = {
+  agent: string;
+  name: string;
+  version?: string;
+  bundles: PluginBundles;
+  hooks?: "off" | "run";
+  /** With no version: what's in it, hashed (the same plugin in two agents matches). */
+  hash?: string;
+};
+
+/** Each agent's own tools, read from its folders (nothing run or contacted); `agents`: its "Use its own tools". */
+export type OwnInfo = {
+  agents: Record<string, boolean>;
+  servers: OwnServerInfo[];
+  plugins: OwnPluginInfo[];
 };
 
 export type ToolsInfo = {
@@ -134,6 +201,8 @@ export type ToolsInfo = {
   skills: SkillInfo[];
   /** By agent id. */
   support: Record<string, ToolSupport>;
+  /** Each agent's own servers and plugins (its skills are in `skills`, with `own`). */
+  own: OwnInfo;
 };
 
 /** A new hook: what it's called, when it runs, the command, and optionally one project. */
@@ -229,7 +298,43 @@ export type ToolItem = { kind: ToolType; name: string; id: string; on: boolean; 
 /** What verify or doctor found: each problem in one plain line; doctor on a server that's on lists its tools. */
 export type ToolCheck = ToolItem & {
   problems: string[];
+  /** An agent's own (its config, its folder): checked read-only, managed by that agent, never by ion. */
+  agent?: string;
   tools?: string[];
   /** A hook that's on, run with a test event: the end of what it printed (keys masked; never told to a chat). */
   output?: string;
 };
+
+/**
+ * One thing "/" or "@" lists: a skill or command ("/"), or a server or one of its resources ("@"). `from`: the agent's
+ * own, or ion's. `server`: a resource's server.
+ */
+export type PickInfo = {
+  name: string;
+  description: string;
+  kind: "skill" | "command" | "server" | "resource";
+  from: "own" | "ion";
+  server?: string;
+  /** A resource's URI (a pick of it is the mention "<server> resource <uri>"). */
+  uri?: string;
+};
+
+/** What "/" (skills) and "@" (servers) list for one message box. */
+export type Picks = { skills: PickInfo[]; servers: PickInfo[] };
+
+/**
+ * One of a server's tools, for "Ions can use": `readOnly`, the server labels it read-only and not destructive (what
+ * the switch starts as); `ions`, whether ions can use it now; `yours`, your switch, when you set one; `changed`: it
+ * changed since you set it (or since ion first saw it), so it's off for ions until you look.
+ */
+export type ServerToolInfo = {
+  name: string;
+  description: string;
+  readOnly: boolean;
+  ions: boolean;
+  yours?: boolean;
+  changed?: true;
+};
+
+/** A server's tools, or why they couldn't be listed (it's off, or it couldn't be reached). */
+export type ServerTools = { tools: ServerToolInfo[]; problem?: string };

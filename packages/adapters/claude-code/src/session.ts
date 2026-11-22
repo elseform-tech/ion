@@ -1,8 +1,10 @@
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { AdapterEvent, Decision, Session, StartOpts } from "@ion/adapter-kit";
-import { agentEnv, createEventQueue, ION_SERVER } from "@ion/adapter-kit";
+import { agentEnv, createEventQueue, ION_SERVER, sandboxed, withPaths } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 import { loginOnlyEnv } from "./cli.js";
 import { createDeltaCoalescer } from "@ion/adapter-kit";
@@ -111,11 +113,15 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...(opts.resume ? { resume: opts.resume } : {}),
     ...(Object.keys(mcp.servers).length ? { mcpServers: mcp.servers } : {}),
+    // Only `${ION_MCP_*}` names reach the command line (their values are in env), so the SDK's argv delivery is kept
+    // on purpose: it works with older Claude Codes, and says so to quiet the SDK's warning (Task 11, 2026-11-22).
+    mcpServersDelivery: "argv" as const,
     // With ion's MCP server, questions go through its ask tool (a question in the app); Claude's own pop-up
     // question can't be shown in a headless session and comes back empty.
     ...(hasIon(opts) ? { disallowedTools: ["AskUserQuestion"] } : {}),
     ...(opts.gate ? { hooks: gateHooks(opts.gate.url) } : {}),
-    ...(opts.pluginDir ? skillsPlugin(opts.pluginDir) : {}),
+    ...pluginsOf(opts),
+    ...sandboxOf(opts),
     thinking: { type: "adaptive", display: "summarized" },
     includePartialMessages: true,
     abortController: abort,
@@ -125,8 +131,8 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     // ion decides permissions: no settings files (a repo's .claude/ or your own allow rules and default mode
     // would skip canUseTool), and the default mode, so every non-read tool asks.
     settingSources: [],
-    // Only ion's servers: none of yours from ~/.claude.json, a project's .mcp.json or a plugin (the user,
-    // 2026-11-21: "Only ion's, plus Import").
+    // Only the servers passed here: ion's, and Claude Code's own when it brings them (read by ion, so its settings
+    // files, with their permission rules and hooks, never load).
     strictMcpConfig: true,
     permissionMode: "default",
     systemPrompt: { type: "preset", preset: "claude_code", ...appendFor(opts) },
@@ -135,13 +141,65 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
 }
 
 /**
- * Your skills, as a plugin (how T3 Code does it; docs/research/skills.md): no MCP servers from it, and a skill's
- * inline shell lines (!`command`) are never run, so everything it leads to is a tool call ion's gate sees.
+ * Your skills, as a plugin (how T3 Code does it; docs/research/skills.md), then Claude Code's own enabled plugins when
+ * it brings its own (their servers come in mcpServers, read by ion: MCP stays strict). A skill's inline shell lines
+ * (!`command`) are never run, so everything it leads to is a tool call ion's gate sees.
  */
-const skillsPlugin = (path: string) => ({
-  plugins: [{ type: "local", path, skipMcpDiscovery: true }],
-  settings: { disableSkillShellExecution: true },
-});
+function pluginsOf(opts: StartOpts) {
+  const paths = [
+    ...(opts.pluginDir ? [opts.pluginDir] : []),
+    ...(opts.ownTools ? (opts.ownPlugins ?? []) : []),
+  ];
+  if (!paths.length) return {};
+  return {
+    plugins: paths.map((path) => ({ type: "local", path, skipMcpDiscovery: true })),
+    settings: { disableSkillShellExecution: true },
+  };
+}
+
+/** Claude Code's own config, which nothing in a run may change (its sessions and state it still writes). */
+const OWN_CONFIG = [
+  "settings.json",
+  "settings.local.json",
+  "CLAUDE.md",
+  "agents",
+  "commands",
+  "skills",
+  "hooks",
+  "plugins",
+];
+
+/**
+ * The run's sandbox around the whole claude process (docs/research/sandbox.md): its Read tool, its commands and
+ * everything they start stay away from ion's folders. Claude Code's own sandbox stays off (settingSources is []):
+ * it covers only commands, and macOS refuses a sandbox inside a sandbox.
+ */
+function sandboxOf(opts: StartOpts) {
+  const home = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+  const sb = withPaths(opts.sandbox, { noWrite: OWN_CONFIG.map((f) => join(home, f)) });
+  if (!sb) return {};
+  return {
+    spawnClaudeCodeProcess: (o: {
+      command: string;
+      args: string[];
+      cwd?: string;
+      env: NodeJS.ProcessEnv;
+      signal?: AbortSignal;
+    }) => {
+      const run = sandboxed(sb, o.command, o.args);
+      const child = spawn(run.command, run.args, {
+        ...(o.cwd ? { cwd: o.cwd } : {}),
+        env: o.env,
+        ...(o.signal ? { signal: o.signal } : {}),
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      // Its log is drained unread, so it never fills up and stalls claude.
+      child.stderr.resume();
+      child.on("error", () => {});
+      return child;
+    },
+  };
+}
 
 /** A bare session (ion's judge): no tools, a short system prompt, one turn, no thinking. */
 const BARE = {
@@ -217,10 +275,10 @@ function appendFor(opts: StartOpts): { append?: string } {
 }
 
 /**
- * The run's MCP servers as the SDK takes them. The SDK puts MCP servers on Claude Code's command line, which any local
- * user can read with `ps`, so every value that could hold a key (url, header values, args, env values) travels in the
- * environment as `ION_MCP_<U|H><n>` and the config only names it: Claude Code expands `${VAR}` in an MCP server's url
- * and headers (and blanks only its own credential variables, by name). Every server is http (ion's URL for it).
+ * The run's MCP servers as the SDK takes them: every one is http (ion's URL for it: ion's own, yours, and Claude Code's
+ * own, which ion runs too; task review, 2026-11-21). The SDK puts MCP servers on Claude Code's command line, which any
+ * local user can read with `ps`, so each url and header value travels in the environment as `ION_MCP_<U|H><n>` and the
+ * config only names it: Claude Code expands `${VAR}` in an MCP server's url and headers.
  */
 function mcpPlan(opts: StartOpts): { servers: Record<string, unknown>; env: Record<string, string> } {
   const env: Record<string, string> = {};
@@ -232,11 +290,11 @@ function mcpPlan(opts: StartOpts): { servers: Record<string, unknown>; env: Reco
   };
   const headers = (o: Record<string, string>) =>
     Object.fromEntries(Object.entries(o).map(([k, v]) => [k, ref("H", v)]));
+  // The first of each name wins: ion's own comes first and stays ion's (re-review, 2026-11-21).
+  const taken = new Set<string>();
+  const first = (opts.mcpServers ?? []).filter((s) => !taken.has(s.name) && Boolean(taken.add(s.name)));
   const servers = Object.fromEntries(
-    (opts.mcpServers ?? []).map((s) => [
-      s.name,
-      { type: "http", url: ref("U", s.url), headers: headers(s.headers) },
-    ]),
+    first.map((s) => [s.name, { type: "http", url: ref("U", s.url), headers: headers(s.headers) }]),
   );
   return { servers, env };
 }

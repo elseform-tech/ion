@@ -75,6 +75,8 @@ export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
   );
   return {
     id: "codex",
+    // Its own sandbox, told to keep ion's folders out (it sandboxes its commands; macOS won't nest ion's around it).
+    sandbox: "own",
     async detect() {
       const l = launch();
       if (!l) return { installed: false };
@@ -99,6 +101,11 @@ export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
     capabilities: capabilitiesWith(CAPABILITIES, catalog),
     // Codex's mcp_servers takes a url (Streamable HTTP).
     mcpTransports: { http: true },
+    // Task review, 2026-11-21: off turns off its servers and plugins; its own skills (~/.codex/skills, .agents/skills)
+    // load whatever the switch says, and a project's own tools load by its own trust.
+    ownOff: { servers: true, skills: false, plugins: true },
+    ownTools: true,
+    ownTrust: true,
     async start(opts) {
       const l = launch();
       if (!l) throw new Error("Codex isn't installed");

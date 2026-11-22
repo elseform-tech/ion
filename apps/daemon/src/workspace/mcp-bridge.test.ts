@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { GateCall } from "@ion/adapter-kit";
+import { type GateCall, type RunSandbox, sandboxKind } from "@ion/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGateway } from "../gateway/index.js";
 import { createGrants } from "../mcp/index.js";
@@ -29,11 +29,17 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((b) => b.close()));
 });
 
-type Extra = { over?: Partial<ReturnType<typeof spec>>; redact?: <T>(d: T) => T; groups?: string };
+type Extra = {
+  over?: Partial<ReturnType<typeof spec>>;
+  redact?: <T>(d: T) => T;
+  groups?: string;
+  sandbox?: (data: string) => RunSandbox;
+};
 
 function bridge(env: Record<string, string> = {}, x: Extra = {}) {
   const worktree = mkdtempSync(join(tmpdir(), "ion-bridge-wt-"));
-  const folder = join(mkdtempSync(join(tmpdir(), "ion-bridge-data-")), "mcp-run", "run-1");
+  const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-bridge-data-")));
+  const folder = join(data, "mcp-run", "run-1");
   const stopped: string[] = [];
   const b = bridgesFor([{ ...spec(env), ...x.over }], {
     folder,
@@ -41,9 +47,10 @@ function bridge(env: Record<string, string> = {}, x: Extra = {}) {
     stopped: (name, why) => stopped.push(`${name} ${why}`),
     ...(x.redact ? { redact: x.redact } : {}),
     ...(x.groups ? { groups: x.groups } : {}),
+    ...(x.sandbox ? { sandbox: x.sandbox(data) } : {}),
   });
   open.push(b);
-  return { b, stopped, folder, worktree };
+  return { b, stopped, folder, worktree, data };
 }
 
 type Answer = {
@@ -84,6 +91,18 @@ describe("ion's bridge to your local MCP servers", () => {
     expect(who.env.TINY_KEY).toBe("filled-value-1");
     await b.close();
     expect(existsSync(folder)).toBe(false);
+  });
+
+  // Security review, 2026-11-21: a repo's server you allowed ran from the chat's worktree, where the agent can
+  // rewrite its code after you said yes and ion would run it outside the agent's gate. It runs from the project's own
+  // folder (the checkout ion read its .mcp.json from, which chats don't write); yours still run from ion's folder.
+  it("a repo's server you allowed for this chat runs from the project folder, never the worktree", async () => {
+    const project = mkdtempSync(join(tmpdir(), "ion-bridge-proj-"));
+    const { b, worktree } = bridge({}, { over: { cwd: project } });
+    const who = said(await tool(b, "whoami")) as Who;
+    expect(realpathSync(who.cwd)).toBe(realpathSync(project));
+    expect(realpathSync(who.cwd)).not.toBe(realpathSync(worktree));
+    expect(who.env.PWD).toBe(project);
   });
 
   it("a relative script or module planted in the worktree never runs", async () => {
@@ -411,4 +430,23 @@ describe("ion's gateway checks a local server's traffic like a remote one's", ()
     expect(r.error).toBeUndefined();
     expect(r.result).toBeDefined();
   }, 30_000);
+});
+
+// The user, 2026-11-21 (Plan 18 Task 12): ion's local servers run in the OS sandbox too, away from ion's folders
+// (they get their values through their env), in their own folder.
+describe.skipIf(sandboxKind() !== "seatbelt")("a local server in the sandbox", () => {
+  it("can't read ion's folders; its own folder and the project it can", async () => {
+    const sandbox = (data: string): RunSandbox => ({
+      kind: "seatbelt",
+      paths: { deny: [data], read: [], write: [], noWrite: [] },
+      dataDir: data,
+    });
+    const { b, data, folder, worktree } = bridge({}, { sandbox });
+    writeFileSync(join(data, "daemon.json"), "full-token\n");
+    writeFileSync(join(worktree, "p.txt"), "project\n");
+    const read = async (path: string) => (await tool(b, "read", { path })).result!.content![0]!.text;
+    expect(await read(join(data, "daemon.json"))).toBe("failed: EPERM");
+    expect(await read(join(worktree, "p.txt"))).toBe("project\n");
+    expect(said(await tool(b, "whoami")).cwd).toBe(folder);
+  });
 });

@@ -1,8 +1,22 @@
-import { mkdtempSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ApprovalRequest, type HttpMcpSpec, ResumeFailed, type StartOpts } from "@ion/adapter-kit";
+import {
+  type ApprovalRequest,
+  type HttpMcpSpec,
+  ResumeFailed,
+  sandboxKind,
+  type StartOpts,
+} from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { promptOf } from "./session.js";
@@ -387,6 +401,48 @@ describe("acp adapter", () => {
     expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
   });
 
+  // Task review, 2026-11-21 (live: opencode out of its free quota sat for 8 minutes): updates that aren't progress
+  // don't count as an answer; the run fails, with the agent's own reason from its log when it gave one.
+  it("fails a run whose agent sends only updates that aren't progress, with its log's reason", async () => {
+    const h = {
+      ...fake,
+      silenceMs: 300,
+      logFailure: (line: string) => (line.includes("Free usage") ? "Fake ACP is out of quota" : null),
+    };
+    const quota = await turn(h, "quota");
+    expect(quota.at(-2)).toMatchObject({
+      type: "error",
+      data: {
+        code: "agent",
+        retryable: false,
+        message: "Fake ACP is out of quota",
+      },
+    });
+    expect(quota.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
+    const busy = await turn(h, "busy");
+    expect(busy.at(-2)).toMatchObject({
+      type: "error",
+      data: { message: "Fake ACP didn't answer. Check that it's signed in: fake login" },
+    });
+  });
+
+  // Re-review, 2026-11-21: a long tool run, or ion holding a call for your answer through its gate (not only a
+  // permission request), isn't the agent being quiet.
+  it("doesn't fail a turn while a tool runs or while ion holds a call", async () => {
+    // Slower than the check (1.5 s of work, an 0.8 s check), with room for a busy machine to start the agent.
+    const long = await turn({ ...fake, silenceMs: 800 }, "longtool");
+    expect(long.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
+    // ion holds a call from the session's start until well after the agent's quiet spell (no timing race).
+    const holding = {
+      on: (f: (held: boolean) => void) => {
+        f(true);
+        setTimeout(() => f(false), 3000).unref();
+      },
+    };
+    const held = await turn({ ...fake, silenceMs: 800 }, "quietheld", { holding });
+    expect(held.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
+  });
+
   it("treats the agent cancelling on its own (after a refusal) as done, not interrupted", async () => {
     expect((await turn(fake, "refuse")).at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
   });
@@ -449,6 +505,124 @@ describe("acp adapter", () => {
       });
     } finally {
       delete process.env.FAKE_ACP_HANG;
+    }
+  });
+});
+
+// The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files. The agent's process is started
+// inside it, so a command it runs can't read ion's full key in daemon.json; its worktree it can.
+describe.skipIf(sandboxKind() !== "seatbelt")("acp adapter in the run's sandbox", () => {
+  it("starts the agent in the sandbox: what it runs can't read ion's folder, its worktree it can", async () => {
+    const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-acp-data-")));
+    const wt = join(data, "worktrees", "c1");
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(data, "daemon.json"), "full-token\n");
+    writeFileSync(join(wt, "a.txt"), "worktree text\n");
+    const said = async (text: string) => {
+      const s = await make().start({
+        cwd: wt,
+        model: null,
+        effort: null,
+        sandbox: {
+          kind: "seatbelt",
+          paths: { deny: [data], read: [], write: [wt], noWrite: [] },
+          dataDir: data,
+        },
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+      await s.send({ text });
+      let out = "";
+      for await (const e of s.events())
+        if (e.type === "message.completed") out += (e.data as { text: string }).text;
+      return out;
+    };
+    expect(await said(`cat ${join(data, "daemon.json")}`)).toMatch(/^failed: .*Operation not permitted/);
+    expect(await said(`cat ${join(wt, "a.txt")}`)).toBe("worktree text\n");
+    rmSync(data, { recursive: true, force: true });
+  });
+});
+
+// Task review, 2026-11-21: opencode installs its plugin package into ion's folder on a first start; a run in the
+// sandbox can't write there (and mustn't). ion opens the agent once outside the sandbox first, with no prompt and no
+// sandbox, so it sets itself up; then the run starts sandboxed.
+describe("an agent that sets itself up first", () => {
+  it("is opened once outside the sandbox before a sandboxed start, only while it isn't ready", async () => {
+    let ready = false;
+    const starts: number[] = [];
+    const h: AcpHarness = { ...fake, prepare: () => ready, env: () => (starts.push(1), {}) };
+    const sandbox = {
+      kind: "none" as const,
+      paths: { deny: [], read: [], write: [], noWrite: [] },
+      dataDir: "",
+    };
+    const go = async () => {
+      const s = await createAcpAdapter(h, { which: () => process.execPath }).start({
+        cwd,
+        model: null,
+        effort: null,
+        sandbox,
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+      await s.close();
+    };
+    await go();
+    expect(starts).toHaveLength(2);
+    ready = true;
+    await go();
+    expect(starts).toHaveLength(3);
+  });
+});
+
+// Final review, 2026-11-22: ion's sign-in and model checks started the agent outside the OS sandbox, in $TMPDIR, so a
+// plugin a run had planted (Grok's installed-plugins, opencode's plugin cache) ran unsandboxed. They now start in the
+// sandbox the daemon gives (ion's folders denied), in a folder under the root it gives (ion's data folder).
+describe.skipIf(sandboxKind() !== "seatbelt")("ion's checks of an agent", () => {
+  it("open the agent in the daemon's sandbox, in a folder under its root, removed after", async () => {
+    const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-acp-probe-")));
+    const root = join(data, "scratch");
+    const log = join(mkdtempSync(join(tmpdir(), "ion-acp-log-")), "log");
+    const deny = join(data, "secret");
+    mkdirSync(deny);
+    process.env.FAKE_ACP_RECORD = log;
+    process.env.FAKE_ACP_TOUCH = join(deny, "planted");
+    try {
+      const probes = () => ({
+        root,
+        sandbox: (dir: string) => ({
+          kind: "seatbelt" as const,
+          paths: { deny: [deny], read: [], write: [dir], noWrite: [] },
+          dataDir: deny,
+        }),
+      });
+      // Final review, 2026-11-22: each check's session is deleted from the agent's history after (Grok kept them all).
+      const forgetArgs = (id: string) => [AGENT, "--forget", id];
+      const a = createAcpAdapter(
+        { ...fake, id: "fake-probed", forgetArgs },
+        { which: () => process.execPath, probes },
+      );
+      expect(await a.auth.status()).toEqual({ signedIn: true, method: "Signed in" });
+      expect((await a.capabilities()).models.map((m) => m.id)).toEqual(["fake-1", "fake-2"]);
+      const all = () =>
+        readFileSync(log, "utf8")
+          .trim()
+          .split("\n")
+          .map((l) => JSON.parse(l));
+      for (let i = 0; i < 100 && all().filter((r) => r.forgot).length < 2; i++)
+        await new Promise((r) => setTimeout(r, 20));
+      expect(all().filter((r) => r.forgot)).toHaveLength(2);
+      const rows = all().filter((r) => r.cwd);
+      expect(rows).toHaveLength(2);
+      for (const r of rows) {
+        expect(r.cwd.startsWith(join(root, "ion-probe-"))).toBe(true);
+        expect(r.wrote).toBe("blocked");
+        expect(existsSync(r.cwd)).toBe(false);
+      }
+    } finally {
+      delete process.env.FAKE_ACP_RECORD;
+      delete process.env.FAKE_ACP_TOUCH;
+      rmSync(data, { recursive: true, force: true });
     }
   });
 });

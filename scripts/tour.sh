@@ -6,7 +6,7 @@
 # model from the app as part of the tour.
 set -e
 cd "$(dirname "$0")/.."
-export ION_HOME="${ION_TOUR_HOME:-/tmp/ion-tour}" ION_ALLOW_FAKE=1
+export ION_HOME="${ION_TOUR_HOME:-/tmp/ion-tour}" ION_ALLOW_FAKE=1 ION_TOUR=1
 ion() { node apps/cli/dist/index.js "$@"; }
 if [ "$1" = stop ]; then
   ion daemon stop >/dev/null 2>&1 || true
@@ -50,14 +50,45 @@ put .claude.json <<'JSON'
 { "mcpServers": { "weather": { "command": "npx", "args": ["-y", "@example/weather-mcp"] },
   "tickets": { "type": "http", "url": "https://tickets.example.com/mcp" } } }
 JSON
+# weather is in Claude Code and Codex alike (one row, both faces); tickets in Codex runs something else (Differs).
 put .codex/config.toml <<'TOML'
 [mcp_servers.docs]
 command = "npx"
 args = ["-y", "@example/docs-mcp"]
+
+[mcp_servers.weather]
+command = "npx"
+args = ["-y", "@example/weather-mcp"]
+
+[mcp_servers.tickets]
+command = "tickets-mcp"
+
+[plugins."sales@curated"]
+enabled = true
 TOML
 put .config/opencode/opencode.json <<'JSON'
-{ "mcp": { "todo": { "type": "local", "command": ["npx", "-y", "@example/todo-mcp"] } } }
+{ "mcp": { "todo": { "type": "local", "command": ["npx", "-y", "@example/todo-mcp"] } },
+  "plugin": ["opencode-notify@1.2.0"] }
 JSON
+# Plugins: Claude Code's (skills, a server and hooks ion leaves out) and Codex's.
+P="$ION_AGENTS_HOME/.claude/plugins/cache/mkt/superpowers/5.0.0"
+put .claude/plugins/installed_plugins.json <<JSON
+{ "version": 2, "plugins": { "superpowers@mkt": [{ "scope": "user", "installPath": "$P", "version": "5.0.0" }] } }
+JSON
+put .claude/settings.json <<'JSON'
+{ "enabledPlugins": { "superpowers@mkt": true },
+  "permissions": { "allow": ["Bash(npm test)"], "deny": ["Bash(git push:*)"] } }
+JSON
+put .claude/plugins/cache/mkt/superpowers/5.0.0/.claude-plugin/plugin.json <<'JSON'
+{ "name": "superpowers", "version": "5.0.0" }
+JSON
+for k in brainstorming writing-plans; do
+  printf -- '---\nname: %s\ndescription: %s\n---\nSteps.\n' "$k" "$k" | put ".claude/plugins/cache/mkt/superpowers/5.0.0/skills/$k/SKILL.md"
+done
+echo '{ "hooks": { "SessionStart": [] } }' | put .claude/plugins/cache/mkt/superpowers/5.0.0/hooks/hooks.json
+echo '{ "mcpServers": { "notes": { "command": "notes-mcp" } } }' | put .claude/plugins/cache/mkt/superpowers/5.0.0/.mcp.json
+echo '{ "name": "sales", "version": "1.1.7" }' | put .codex/plugins/cache/curated/sales/1.1.7/.codex-plugin/plugin.json
+printf -- '---\nname: pitch\ndescription: Writes a sales pitch.\n---\nPitch.\n' | put .codex/plugins/cache/curated/sales/1.1.7/skills/pitch/SKILL.md
 put .claude/skills/release-notes/SKILL.md <<'MD'
 ---
 name: release-notes
@@ -65,6 +96,9 @@ description: Writes release notes from the merged pull requests since the last t
 ---
 List the merged pull requests since the last tag and group them by area.
 MD
+# An ion skill, for "/" in the message box (its marker phrase shows a skill was followed, on a real agent).
+mkdir -p "$ION_HOME/skills/tour-check"
+printf -- '---\nname: tour-check\ndescription: Checks the tour. Start the reply with TOUR-CHECK-OK.\n---\nStart your reply with the words TOUR-CHECK-OK, then answer.\n' > "$ION_HOME/skills/tour-check/SKILL.md"
 ion daemon start >/dev/null
 ion projects new storefront >/dev/null
 ion projects new payments-api >/dev/null
@@ -151,6 +185,22 @@ const chat = (await c.call("chats.list", {})).find((x) => x.title === "asks" && 
 const need = (await c.call("needs.list", { chatId: chat.chatId }))[0];
 if (need) await c.call("need.answer", { needId: need.needId, choice: 1, scope: "project" });
 c.close();'
+# Plan 18 Part 2 (Task 11): a repo's own server (storefront's .mcp.json runs repo code: it asks in each chat), "/"
+# and "@" picks on a message, "Ions can use" on everything's echo, and a call ion isn't sure about (the fake judge
+# says unsure for "unsure-me"), asked with the Remember checkbox.
+SF="$(node -e 'const c=require("fs").readFileSync(process.env.ION_HOME+"/config.toml","utf8");console.log((/path = "([^"]*storefront)"/.exec(c)||[])[1]||"")')"
+[ -n "$SF" ] && printf '{ "mcpServers": { "lint": { "command": "node", "args": ["./tools/lint-mcp.js"] } } }\n' > "$SF/.mcp.json"
+node --input-type=module -e '
+const { connect, readDaemonInfo } = await import("./packages/client/dist/index.js");
+const c = await connect(readDaemonInfo(process.env.ION_HOME + "/data"));
+const skill = (await c.call("tools.list", {})).skills.find((x) => x.name === "tour-check");
+if (skill) await c.call("tools.setOn", { kind: "skill", id: skill.id, on: true });
+await c.call("ask", { text: "hello", projectId: "storefront", harness: "fake", skills: ["tour-check"],
+  mentions: ["everything"] }).catch((e) => console.error("picks:", e.message));
+const tools = await c.call("tools.serverTools", { id: "everything" }).catch(() => null);
+if (tools?.tools?.some((t) => t.name === "echo")) await c.call("tools.setIonUse", { id: "everything", tool: "echo", on: true });
+c.close();'
+(ion ask "gated npm install unsure-me" -p storefront --harness fake >/dev/null 2>&1 &) # waits on you 4 minutes
 (ion ask "slow" -p payments-api --harness fake >/dev/null 2>&1 &) # running while you look
 pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
 sleep 3

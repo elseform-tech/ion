@@ -96,6 +96,7 @@ function info(o: Partial<ToolsInfo> = {}): ToolsInfo {
         on: false,
         new: true,
         support: { "claude-code": "ion" },
+        hash: "aaaaaaaaaaaa",
       },
       {
         id: "~/.codex/skills/a11y",
@@ -105,11 +106,18 @@ function info(o: Partial<ToolsInfo> = {}): ToolsInfo {
         where: "~/.codex/skills/a11y",
         on: false,
         support: { codex: "own" },
+        hash: "bbbbbbbbbbbb",
+        own: "codex",
       },
     ],
     support: {
       "claude-code": { http: true, stdio: true, skills: true },
       "grok-build": { http: true, stdio: true, skills: false },
+    },
+    own: {
+      agents: { "claude-code": true, codex: true, "grok-build": true, opencode: true },
+      servers: [],
+      plugins: [],
     },
     ...o,
   };
@@ -127,7 +135,11 @@ function toolsClient(now: () => ToolsInfo, answer?: (cmd: string) => Promise<unk
     if (cmd === "tools.import") return { imported: [], skipped: [] };
     if (cmd === "settings.get") return settings;
     if (cmd === "harnesses.list")
-      return [agent("claude-code", "Claude Code"), agent("grok-build", "Grok Build")];
+      return [
+        agent("claude-code", "Claude Code"),
+        agent("codex", "Codex"),
+        agent("grok-build", "Grok Build"),
+      ];
     if (cmd === "tools.signIn") return { url: "https://auth.example/authorize?x=1" };
     if (cmd.startsWith("tools.")) return now();
     return [];
@@ -297,6 +309,40 @@ describe("Settings → Tools → Connections", () => {
 
 // The user, 2026-11-20: "it should be hooks, showing all available events regardless if we have hooks, and of course,
 // auto-approval hook should be listed as built-in, so it cannot be removed"; "hooks do not need a test button".
+// The user, 2026-11-21: "yes, add both to Task 10" — each server's row opens its tools, each with "Ions can use".
+describe("Settings → Tools → Connections: Ions can use", () => {
+  it("a server that's on opens its tools, each with an Ions can use switch", async () => {
+    let tools = {
+      tools: [
+        { name: "search", description: "Search files", readOnly: true, ions: true },
+        { name: "write", description: "Write a file", readOnly: false, ions: false, changed: true },
+      ],
+    };
+    const c = toolsClient(
+      () => info(),
+      (cmd) => {
+        if (cmd === "tools.serverTools") return Promise.resolve(tools);
+        return cmd === "tools.setIonUse" ? Promise.resolve({ ok: true }) : undefined;
+      },
+    );
+    await open(c);
+    fireEvent.click(within(await findRow("files")).getByRole("button", { name: "Tools of files" }));
+    expect(c.call).toHaveBeenCalledWith("tools.serverTools", { id: "files" });
+    const search = await findRow("search");
+    expect(within(search).getByText("Search files")).toBeTruthy();
+    expect(
+      within(search).getByRole("switch", { name: "Ions can use search" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(within(row("write")).getByText("Changed")).toBeTruthy();
+    tools = {
+      tools: [{ ...tools.tools[0]! }, { ...tools.tools[1]!, ions: true, changed: undefined as never }],
+    };
+    fireEvent.click(within(row("write")).getByRole("switch", { name: "Ions can use write" }));
+    expect(c.call).toHaveBeenCalledWith("tools.setIonUse", { id: "files", tool: "write", on: true });
+    await waitFor(() => expect(within(row("write")).queryByText("Changed")).toBeNull());
+  });
+});
+
 describe("Settings → Tools → Hooks", () => {
   it("lists every event, and Auto-approval has no switch or remove", async () => {
     await open(
@@ -359,7 +405,7 @@ describe("Settings → Tools → Hooks", () => {
 // The plan (2026-11-20): Skills are the skills your agents already have; ion passes Claude Code's (on or off), the
 // other agents read their own folders.
 describe("Settings → Tools → Skills", () => {
-  it("skills: Claude Code's have switches, others say Uses its own", async () => {
+  it("skills: ion's have switches, an agent's own are read-only with its face", async () => {
     const c = toolsClient(() => info());
     await open(c, "Skills");
     expect(await screen.findByText("Release notes from merged pull requests")).toBeTruthy();
@@ -370,21 +416,14 @@ describe("Settings → Tools → Skills", () => {
       id: "~/.claude/skills/release",
       on: true,
     });
-    // Tour, 2026-11-21: Skills named agents in words ("Claude Code") where Connections shows faces. Each ready
-    // agent's face now, its name on hover, crossed out where it doesn't use the skill; no word chip.
+    // Tour, 2026-11-21: Skills named agents in words ("Claude Code") where Connections shows faces. The user,
+    // 2026-11-21: faces say whose it is (ion's, or an agent's own: "From Codex"), its name on hover; no word chip.
     const faces = (n: string) =>
-      [...row(n).querySelectorAll(".hsup > span")].map((e) => [e.getAttribute("title"), e.className]);
-    expect(faces("release")).toEqual([
-      ["Claude Code: works", ""],
-      ["Grok Build: not supported", "no"],
-    ]);
-    expect(faces("a11y")).toEqual([
-      ["Claude Code: not supported", "no"],
-      ["Grok Build: not supported", "no"],
-    ]);
+      [...row(n).querySelectorAll(".hsup > span")].map((e) => e.getAttribute("title"));
+    expect(faces("release")).toEqual(["ion"]);
+    expect(faces("a11y")).toEqual(["From Codex"]);
     expect(within(row("release")).queryByText("Claude Code")).toBeNull();
     expect(within(row("a11y")).queryByText("Codex")).toBeNull();
-    expect(within(row("a11y")).getByText("Uses its own")).toBeTruthy();
     // Tour, 2026-11-21: a long description is clamped to two lines; the whole of it shows on hover.
     const d = screen.getByText("Release notes from merged pull requests");
     expect(d.getAttribute("title")).toBe("Release notes from merged pull requests");
@@ -484,70 +523,40 @@ describe("Settings → Tools: Import", () => {
     problems: ["ion couldn't read ~/.grok/config.toml"],
     skipped: [],
   };
-  const later: ImportInfo = {
-    servers: [
-      server("claude-code", "Claude Code", "notes", false),
-      server("claude-code", "Claude Code", "github"),
-    ],
-    prompts: [{ agent: "claude-code", from: "Claude Code", names: ["github"], first: false }],
-    problems: [],
-    skipped: [],
-  };
   const withImports = (i: ImportInfo) =>
     toolsClient(info, (cmd) => (cmd === "tools.importable" ? Promise.resolve(i) : undefined));
-  const lineOf = async (text: string) => (await screen.findByText(text)).closest(".srow") as HTMLElement;
   const toolbar = () => within(document.querySelector(".tabs2") as HTMLElement);
 
-  it("the first time, Tools says how many servers each agent has, with Import", async () => {
+  // The user, 2026-11-21: agents bring their own tools, so Import is optional and quiet: no line about what an agent
+  // has (Settings lists it); the Import icon stays, "Use on every agent" on hover.
+  it("Import is quiet: no line about an agent's servers, and the icon says Use on every agent", async () => {
     const c = withImports(first);
     await open(c);
-    const line = await lineOf("3 servers in Claude Code");
+    fireEvent.click(await toolbar().findByRole("button", { name: "Use on every agent" }));
+    expect(screen.queryByText("3 servers in Claude Code")).toBeNull();
     expect(screen.getByText("ion couldn't read ~/.grok/config.toml")).toBeTruthy();
-    fireEvent.click(within(line).getByRole("button", { name: "Import" }));
     // Shown first: what each runs and the keys it needs. Nothing is imported yet.
     const gh = await findRow("github");
     expect(within(gh).getByText("github-mcp serve")).toBeTruthy();
     expect(within(gh).getByText("GITHUB_TOKEN")).toBeTruthy();
-    expect(screen.queryByText("repotool", { selector: ".tname" })).toBeNull();
     expect(c.call).not.toHaveBeenCalledWith("tools.import", expect.anything());
     fireEvent.click(screen.getByRole("button", { name: "Import these" }));
     await waitFor(() =>
       expect(c.call).toHaveBeenCalledWith("tools.import", { names: ["github", "notes", "shopdb"] }),
     );
-    await waitFor(() => expect(c.call).toHaveBeenCalledWith("tools.list", {}));
-  });
-
-  it("a server added to an agent's config later shows as New in that agent", async () => {
-    const c = withImports(later);
-    await open(c);
-    const line = await lineOf("New in Claude Code: github");
-    fireEvent.click(within(line).getByRole("button", { name: "Import" }));
-    await findRow("github");
-    expect(screen.queryByText("notes", { selector: ".tname" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Import these" }));
-    await waitFor(() => expect(c.call).toHaveBeenCalledWith("tools.import", { names: ["github"] }));
-  });
-
-  it("a dismissed prompt stays hidden until something new appears", async () => {
-    const c = withImports(first);
-    await open(c);
-    const line = await lineOf("3 servers in Claude Code");
-    fireEvent.click(within(line).getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(c.call).toHaveBeenCalledWith("tools.dismissImport", { agent: "claude-code" }));
   });
 
   it("Import beside Open config file shows every server; a repo's one says its file and comes in on its own", async () => {
     const c = withImports(first);
     await open(c);
-    await lineOf("3 servers in Claude Code");
-    fireEvent.click(toolbar().getByRole("button", { name: "Import" }));
+    fireEvent.click(await toolbar().findByRole("button", { name: "Use on every agent" }));
     const repo = await findRow("repotool");
     expect(within(repo).getByText("From shop's .mcp.json")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Import these" }));
     await waitFor(() =>
       expect(c.call).toHaveBeenCalledWith("tools.import", { names: ["github", "notes", "shopdb"] }),
     );
-    fireEvent.click(toolbar().getByRole("button", { name: "Import" }));
+    fireEvent.click(toolbar().getByRole("button", { name: "Use on every agent" }));
     fireEvent.click(within(await findRow("repotool")).getByRole("button", { name: "Import repotool" }));
     await waitFor(() =>
       expect(c.call).toHaveBeenCalledWith("tools.import", { names: ["repotool"], repo: "shop:.mcp.json" }),
@@ -559,40 +568,8 @@ describe("Settings → Tools: Import", () => {
     ).toBe(true);
   });
 
-  // Tour, 2026-11-21: three agents with servers made three boxed lines. More than one agent: one line naming them.
-  it("more than one agent with servers: one line naming them, one Import, one dismiss", async () => {
-    const many: ImportInfo = {
-      servers: [
-        server("claude-code", "Claude Code", "github"),
-        server("codex", "Codex", "notes"),
-        server("codex", "Codex", "shopdb"),
-        server("grok-build", "Grok Build", "docs"),
-      ],
-      prompts: [
-        { agent: "claude-code", from: "Claude Code", names: ["github"], first: true },
-        { agent: "codex", from: "Codex", names: ["notes", "shopdb"], first: true },
-        { agent: "grok-build", from: "Grok Build", names: ["docs"], first: false },
-      ],
-      problems: [],
-      skipped: [],
-    };
-    const c = withImports(many);
-    await open(c);
-    const text = "4 servers in Claude Code, Codex and Grok Build";
-    const line = await lineOf(text);
-    expect(document.querySelectorAll(".srow.imp")).toHaveLength(1);
-    fireEvent.click(within(line).getByRole("button", { name: "Import" }));
-    await findRow("docs");
-    fireEvent.click(screen.getByRole("button", { name: "Import these" }));
-    await waitFor(() =>
-      expect(c.call).toHaveBeenCalledWith("tools.import", { names: ["github", "notes", "shopdb", "docs"] }),
-    );
-    fireEvent.click(within(await lineOf(text)).getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(c.call).toHaveBeenCalledWith("tools.dismissImport", {}));
-  });
-
   // Task review, 2026-11-21: servers that can't come in, and an import or dismiss that fails, were never shown.
-  it("shows what can't come in, and why an import or dismiss failed", async () => {
+  it("shows what can't come in, and why an import failed", async () => {
     const skipped = {
       ...first,
       skipped: [{ agent: "claude-code", name: "docs", why: "ion connects over HTTP, not SSE" }],
@@ -604,18 +581,335 @@ describe("Settings → Tools: Import", () => {
           imported: [],
           skipped: [{ name: "github", why: "github is already in mcp.json" }],
         });
-      if (cmd === "tools.dismissImport")
-        return Promise.reject(new ApiCallError("invalid", "ion couldn't save that"));
       return undefined;
     });
     await open(c);
-    await lineOf("3 servers in Claude Code");
-    fireEvent.click(toolbar().getByRole("button", { name: "Import" }));
+    fireEvent.click(await toolbar().findByRole("button", { name: "Use on every agent" }));
     const docs = await findRow("docs");
     expect(within(docs).getByText("ion connects over HTTP, not SSE")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Import these" }));
     expect(await screen.findByText("github: github is already in mcp.json")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(await screen.findByText("ion couldn't save that")).toBeTruthy();
+  });
+});
+
+// The user, 2026-11-21: agents bring their own servers, skills and plugins. Settings → Tools shows them read-only beside
+// ion's, one row per thing several have (every face, ion's too), "Differs" when the same name is set up differently, a
+// Plugins tab, and agent chips that filter.
+describe("Settings → Tools: each agent's own", () => {
+  const AGENTS = [
+    agent("claude-code", "Claude Code"),
+    { ...agent("codex", "Codex"), ownOff: { servers: true, skills: false, plugins: true } },
+    agent("grok-build", "Grok Build"),
+    agent("opencode", "opencode"),
+  ];
+  const withOwn = (own: Partial<ToolsInfo["own"]>, more: Partial<ToolsInfo> = {}) =>
+    toolsClient(
+      () => info({ own: { ...info().own, ...own }, ...more }),
+      (cmd) => (cmd === "harnesses.list" ? Promise.resolve(AGENTS) : undefined),
+    );
+  const stdio = (agent0: string, name: string, launch: string) => ({
+    agent: agent0,
+    name,
+    transport: "stdio" as const,
+    launch,
+    match: launch,
+  });
+  const facesOf = (r: HTMLElement) =>
+    [...r.querySelectorAll(".hsup > span")].map((e) => e.getAttribute("title"));
+  const rows = (name: string) =>
+    screen.getAllByText(name, { selector: ".tname" }).map((e) => e.closest(".trow") as HTMLElement);
+
+  it("a server two agents have is one row with both faces", async () => {
+    const c = withOwn({
+      servers: [
+        stdio("claude-code", "github", "gh-mcp serve"),
+        stdio("codex", "github", "gh-mcp serve"),
+        // ion's files server, the same in Claude Code: one row, ion's switch kept.
+        stdio("claude-code", "files", "npx -y @modelcontextprotocol/server-filesystem /tmp"),
+      ],
+    });
+    await open(c);
+    await findRow("github");
+    expect(rows("github")).toHaveLength(1);
+    expect(facesOf(row("github"))).toEqual(["From Claude Code", "From Codex"]);
+    expect(within(row("github")).queryByRole("switch")).toBeNull();
+    expect(rows("files")).toHaveLength(1);
+    expect(facesOf(row("files"))).toEqual(["ion", "From Claude Code"]);
+    expect(within(row("files")).getByRole("switch", { name: "files" })).toBeTruthy();
+  });
+
+  it("the same name with a different launch shows Differs", async () => {
+    const c = withOwn({
+      servers: [
+        stdio("codex", "sentry", "https://mcp.sentry.dev/mcp"),
+        stdio("grok-build", "sentry", "sentry-mcp"),
+      ],
+    });
+    await open(c);
+    await screen.findAllByText("sentry", { selector: ".tname" });
+    const both = rows("sentry");
+    expect(both).toHaveLength(2);
+    for (const r of both) {
+      const chip = within(r).getByText("Differs");
+      expect(chip.getAttribute("title")).toBe("Runs something else");
+    }
+  });
+
+  // Final review, 2026-11-22: a server that appeared in an agent's own config since ion last listed them (a run may
+  // write ~/.claude.json) shows New, once.
+  it("an agent's own server that's new shows New", async () => {
+    const c = withOwn({
+      servers: [
+        { ...stdio("claude-code", "planted", "planted-mcp"), new: true },
+        stdio("codex", "fs", "fs-mcp"),
+      ],
+    });
+    await open(c);
+    const planted = await findRow("planted");
+    expect(within(planted).getByText("New")).toBeTruthy();
+    expect(within(row("fs")).queryByText("New")).toBeNull();
+  });
+
+  // Automated review of M3, 2026-11-22: New must never hide Differs (both show, with Differs' title).
+  it("a new own server that also differs shows both New and Differs", async () => {
+    const c = withOwn({
+      servers: [
+        { ...stdio("claude-code", "sentry", "planted-sentry"), new: true },
+        stdio("codex", "sentry", "sentry-mcp"),
+      ],
+    });
+    await open(c);
+    await screen.findAllByText("sentry", { selector: ".tname" });
+    const fresh = rows("sentry").find((r) => within(r).queryByText("New"))!;
+    expect(within(fresh).getByText("Differs").getAttribute("title")).toBe("Runs something else");
+  });
+
+  it("an agent whose own tools are off in ion shows its rows dimmed, Off in ion", async () => {
+    const c = withOwn({
+      agents: { "claude-code": true, codex: false, "grok-build": true, opencode: true },
+      servers: [stdio("codex", "fs", "fs-mcp /tmp")],
+    });
+    await open(c);
+    const fs = await findRow("fs");
+    expect(fs.className).toContain("dim");
+    expect(within(fs).getByText("Off in ion")).toBeTruthy();
+  });
+
+  // Task review, 2026-11-21: "Off in ion" only for what an agent's switch really turns off; Codex's own skills load
+  // whatever it says, so they read "Also loads its own", not dimmed.
+  it("says Off in ion only for what the switch turns off; the rest Also loads its own", async () => {
+    const skill = {
+      ...{ id: "~/.codex/skills/a11y", name: "a11y", description: "Checks", whose: "codex" as const },
+      ...{
+        where: "~/.codex/skills/a11y",
+        on: false,
+        support: { codex: "own" as const },
+        hash: "eeeeeeeeeeee",
+      },
+      ...{ own: "codex", readers: ["codex"] },
+    };
+    const c = withOwn(
+      { agents: { "claude-code": true, codex: false, "grok-build": true, opencode: true } },
+      { skills: [skill] },
+    );
+    await open(c, "Skills");
+    const r = await findRow("a11y");
+    expect(r.className).not.toContain("dim");
+    expect(within(r).getByText("Also loads its own")).toBeTruthy();
+  });
+
+  it("a skill several agents load is one row with each one's face", async () => {
+    const skill = {
+      ...{ id: "~/.claude/skills/pdf", name: "pdf", description: "PDFs", whose: "claude" as const },
+      ...{
+        where: "~/.claude/skills/pdf",
+        on: true,
+        support: { "claude-code": "own" as const },
+        hash: "ffffffffffff",
+      },
+      ...{ own: "claude-code", readers: ["claude-code", "opencode"] },
+    };
+    await open(withOwn({}, { skills: [skill] }), "Skills");
+    expect(facesOf(await findRow("pdf"))).toEqual(["From Claude Code", "From opencode"]);
+  });
+
+  it("a plugin two agents have shows each one's hooks", async () => {
+    const plug = (agent0: string, hooks: "off" | "run") => ({
+      agent: agent0,
+      name: "kit",
+      version: "1.0.0",
+      bundles: { skills: 1, servers: 0, commands: 0, agents: 0 },
+      hooks,
+    });
+    await open(withOwn({ plugins: [plug("claude-code", "off"), plug("grok-build", "run")] }));
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const r = await findRow("kit");
+    expect(
+      within(r).getByText("Its hooks don't run in ion (Claude Code), run too (Grok Build)"),
+    ).toBeTruthy();
+  });
+
+  it("the Plugins tab lists each agent's plugins and what they bundle", async () => {
+    const c = withOwn({
+      plugins: [
+        {
+          agent: "claude-code",
+          name: "superpowers",
+          version: "5.0.0",
+          bundles: { skills: 4, servers: 1, commands: 0, agents: 0 },
+          hooks: "off",
+        },
+        {
+          agent: "grok-build",
+          name: "frontend-design",
+          version: "1.0.0",
+          bundles: { skills: 1, servers: 0, commands: 0, agents: 0 },
+          hooks: "run",
+        },
+        {
+          agent: "opencode",
+          name: "guard",
+          bundles: { skills: 0, servers: 0, commands: 0, agents: 0 },
+          hooks: "run",
+        },
+      ],
+    });
+    await open(c);
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const sp = await findRow("superpowers");
+    expect(within(sp).getByText("4 skills, 1 server")).toBeTruthy();
+    expect(within(sp).getByText("Its hooks don't run in ion")).toBeTruthy();
+    expect(facesOf(sp)).toEqual(["From Claude Code"]);
+    expect(within(row("frontend-design")).getByText("1 skill")).toBeTruthy();
+    expect(within(row("frontend-design")).getByText("Its hooks run too")).toBeTruthy();
+    expect(within(row("guard")).getByText("Its hooks run too")).toBeTruthy();
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("filtering by an agent shows only its rows", async () => {
+    const c = withOwn({
+      servers: [stdio("codex", "fs", "fs-mcp /tmp"), stdio("claude-code", "github", "gh-mcp serve")],
+    });
+    await open(c);
+    await findRow("fs");
+    const chips = within(screen.getByRole("group", { name: "Whose" }));
+    expect(chips.getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "All",
+      "ion",
+      "Claude Code",
+      "Codex",
+      "Grok Build",
+      "opencode",
+    ]);
+    fireEvent.click(chips.getByRole("button", { name: "Codex" }));
+    expect(screen.getByText("fs", { selector: ".tname" })).toBeTruthy();
+    expect(screen.queryByText("github", { selector: ".tname" })).toBeNull();
+    expect(screen.queryByText("files", { selector: ".tname" })).toBeNull();
+    fireEvent.click(chips.getByRole("button", { name: "ion" }));
+    expect(screen.getByText("files", { selector: ".tname" })).toBeTruthy();
+    expect(screen.queryByText("fs", { selector: ".tname" })).toBeNull();
+    // Hooks stay ion's: no chips there.
+    fireEvent.click(screen.getByRole("button", { name: "Hooks" }));
+    expect(screen.queryByRole("group", { name: "Whose" })).toBeNull();
+  });
+
+  it("a skill two agents have with the same files is one row; Claude Code's own has no switch", async () => {
+    const skill = (id: string, whose: "claude" | "codex", own: string) => ({
+      ...{ id, name: "review", description: "Reviews", whose, where: id, on: true },
+      ...{ support: { [own]: "own" as const }, hash: "cccccccccccc", own },
+    });
+    const c = withOwn(
+      {},
+      {
+        skills: [
+          skill("~/.claude/skills/review", "claude", "claude-code"),
+          skill("~/.codex/skills/review", "codex", "codex"),
+        ],
+      },
+    );
+    await open(c, "Skills");
+    await findRow("review");
+    expect(rows("review")).toHaveLength(1);
+    expect(facesOf(row("review"))).toEqual(["From Claude Code", "From Codex"]);
+    expect(within(row("review")).queryByRole("switch")).toBeNull();
+  });
+});
+
+// Security review, 2026-11-21: what a repo wrote (a project's .mcp.json, its .claude/skills) isn't yours: it shows
+// with a switch, off until you turn it on, and says whose it is.
+describe("Settings → Tools: a repo's own", () => {
+  it("a repo's .mcp.json server has a switch, off, and says its file", async () => {
+    const repo = {
+      ...{ project: "shop", file: ".mcp.json", id: "shop:repotool", on: false, new: true as const },
+    };
+    const c = toolsClient(() =>
+      info({
+        own: {
+          ...info().own,
+          servers: [
+            {
+              agent: "claude-code",
+              name: "repotool",
+              transport: "stdio",
+              launch: "repo-mcp",
+              match: "m1",
+              repo: { ...repo, env: ["MODE", "LOG"] },
+            },
+          ],
+        },
+      }),
+    );
+    await open(c);
+    const r = await findRow("repotool");
+    expect(within(r).getByText("From shop's .mcp.json")).toBeTruthy();
+    // Task review, 2026-11-21: what it would read is named (never a value).
+    expect(within(r).getByText("Env: MODE, LOG")).toBeTruthy();
+    fireEvent.click(within(r).getByRole("switch", { name: "repotool" }));
+    expect(c.call).toHaveBeenCalledWith("tools.setOn", { kind: "repo", id: "shop:repotool", on: true });
+  });
+
+  // Ruling, 2026-11-21: one that runs code from the repo has no lasting switch: ion asks in each chat.
+  it("a repo server that runs the repo's own code says it asks in each chat, with no switch", async () => {
+    const repo = {
+      project: "shop",
+      file: ".mcp.json",
+      id: "shop:local",
+      on: false,
+      new: true as const,
+      asks: true as const,
+    };
+    const server = {
+      agent: "claude-code",
+      name: "local",
+      transport: "stdio" as const,
+      launch: "node ./tools/mcp.js",
+      match: "m2",
+      repo,
+    };
+    await open(toolsClient(() => info({ own: { ...info().own, servers: [server] } })));
+    const r = await findRow("local");
+    expect(within(r).getByText("Asks in each chat")).toBeTruthy();
+    expect(within(r).queryByRole("switch")).toBeNull();
+    expect(within(r).queryByText("New")).toBeNull();
+  });
+
+  it("a project's skill says it's the project's, with a switch", async () => {
+    const style = {
+      ...{
+        id: "~/code/app/.claude/skills/style",
+        name: "style",
+        description: "House style",
+        whose: "claude" as const,
+      },
+      ...{ where: "~/code/app/.claude/skills/style", on: false, new: true as const, hash: "dddddddddddd" },
+      ...{ support: { "claude-code": "ion" as const }, project: "app" },
+    };
+    await open(
+      toolsClient(() => info({ skills: [style] })),
+      "Skills",
+    );
+    const r = await findRow("style");
+    expect(within(r).getByText("app's skills")).toBeTruthy();
+    expect(within(r).getByRole("switch", { name: "style" })).toBeTruthy();
   });
 });

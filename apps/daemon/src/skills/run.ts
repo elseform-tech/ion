@@ -1,4 +1,4 @@
-import { loadUserConfig } from "@ion/config";
+import { loadUserConfig, ownToolsOn } from "@ion/config";
 import { takesSkills } from "../adapters/registry.js";
 import type { Skills } from "./index.js";
 
@@ -15,7 +15,8 @@ export function runSkillsOf(skills: Skills, configFile: string): RunSkills {
       if (!takesSkills(r.harness)) return null;
       const { config } = loadUserConfig(configFile);
       const projectDir = config.projects.find((p) => p.id === r.projectId)?.path ?? null;
-      return skills.forRun({ runId: r.runId, on: config.tools.skills.on, projectDir });
+      const own = ownToolsOn(config, r.harness);
+      return skills.forRun({ runId: r.runId, on: config.tools.skills.on, projectDir, own });
     },
     remove: (runId) => skills.remove(runId),
   };

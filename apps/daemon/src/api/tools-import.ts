@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { loadUserConfig } from "@ion/config";
 import type {
   Commands,
@@ -10,6 +9,7 @@ import type {
 } from "@ion/schema";
 import { launchHash } from "../tools/added.js";
 import { type AgentServers, type Found, readAgentServers } from "../tools/import.js";
+import { agentsHomeOf } from "../tools/own-run.js";
 import type { McpServer } from "../tools/mcp-file.js";
 import type { Ctx, Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
@@ -27,9 +27,7 @@ const told = (agent: string) => `import:${agent}`;
  */
 function scan(ctx: Ctx): { read: AgentServers; listed: Found[] } {
   const { config } = loadUserConfig(ctx.configFile);
-  const home = ctx.skills.home;
-  const env = home === homedir() ? process.env : {};
-  const read = readAgentServers({ home, env, projects: projectDirs(config) });
+  const read = readAgentServers({ ...agentsHomeOf(ctx.skills), projects: projectDirs(config) });
   const file = ctx.tools.read();
   const taken = new Set([...file.servers, ...file.leftOut].map((s) => s.name.toLowerCase()));
   // Yours first, then any in a project's own file (task review, 2026-11-21: a repo's server hid yours of that name).

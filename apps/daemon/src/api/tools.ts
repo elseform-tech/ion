@@ -1,5 +1,5 @@
 import { loadUserConfig, type UserConfig } from "@ion/config";
-import type { Commands, ToolsInfo } from "@ion/schema";
+import type { Commands, SkillInfo, ToolsInfo } from "@ion/schema";
 import { toolSupport } from "../adapters/registry.js";
 import { CANT_READ_KEYCHAIN, keyAccount } from "../secrets/index.js";
 import { EXPOSED, refsOf, type Tools } from "../tools/index.js";
@@ -8,11 +8,15 @@ import { projectDirs, withOrigins } from "./tools-entries.js";
 import { UserError } from "./errors.js";
 import { changeConfig } from "./settings.js";
 import { mcpInfo } from "./tools-mcp.js";
+import { picksFor } from "./tools-picks.js";
+import { serverTools, turnIonUse } from "./tools-ion-use.js";
 import { remoteToSignIn } from "./tools-oauth.js";
 import { hookChange, hookGroups } from "./tools-hooks.js";
 import type { Skills } from "../skills/index.js";
 import type { YourTools } from "../mcp/ion-your-tools.js";
 import { consentOf, turnedOn } from "../tools/on.js";
+import { agentsHomeOf, ownSwitches, repoState } from "../tools/own-run.js";
+import { ownToolsOf, refsIn, repoKey, repoMaterial, repoServers, runsRepoCode } from "../tools/own.js";
 
 const KEY_NAME = /^[A-Za-z_]\w{0,63}$/;
 const MAX_KEY = 16_384;
@@ -24,15 +28,22 @@ async function toolsInfo(
   const { config } = loadUserConfig(ctx.configFile);
   const { mcp, keychain } = await mcpInfo(ctx, r.servers, config.tools.mcpOn);
   const problem = r.problem ?? (r.exposed ? EXPOSED : undefined);
+  const { leftOut, ...own } = await ownToolsOf({
+    ...agentsHomeOf(ctx.skills),
+    ...{ projects: projectDirs(config), agents: ownSwitches(config) },
+    repo: repoState(ctx.tools.sign, config.tools.repoOn),
+  });
   const info: ToolsInfo = {
     mcpFile: tools.file.path,
     ...(problem ? { mcpProblem: problem } : {}),
     ...(keychain ? { keychainProblem: keychain } : {}),
     mcp,
-    leftOut: r.leftOut,
+    // mcp.json's, then a repo's own whose name breaks the rule.
+    leftOut: [...r.leftOut, ...leftOut],
     hooks: await hookGroups(config, ctx.hooks, ctx.tools.sign),
-    skills: await ctx.skills.list(config.tools.skills.on, projectDirs(config)),
+    skills: await ctx.skills.list(config.tools.skills.on, projectDirs(config), ownSwitches(config)),
     support: toolSupport(),
+    own,
   };
   return withOrigins(ctx, info, r.servers);
 }
@@ -51,8 +62,9 @@ export function yourToolsOf(ctx: { tools: Tools; skills: Skills; configFile: str
         on: (await consentOf(ctx.tools, server, on)).on,
       })),
     );
-    const skills = await ctx.skills.list(config.tools.skills.on, projectDirs);
-    return { servers, skills, support: toolSupport() };
+    const skills = await ctx.skills.list(config.tools.skills.on, projectDirs, ownSwitches(config));
+    const body = (s: SkillInfo) => ctx.skills.bodyOf(projectDirs, s);
+    return { servers, skills, support: toolSupport(), body };
   };
 }
 
@@ -76,10 +88,29 @@ async function mcpTurned(tools: Tools, c: UserConfig, id: string, on: boolean): 
   return [...kept, `${id}@${mark}`];
 }
 
+/**
+ * Turning a repo's own server on (a project's .mcp.json, "<project folder>#<name>") is consent to exactly what it runs now
+ * (security review, 2026-11-21); off takes that back.
+ */
+async function repoTurned(tools: Tools, c: UserConfig, id: string, on: boolean): Promise<string[]> {
+  const kept = c.tools.repoOn.filter((e) => e.slice(0, e.lastIndexOf("@")) !== id);
+  if (!on) return kept;
+  const name = id.slice(id.lastIndexOf("#") + 1);
+  const dir = projectDirs(c).find((p) => repoKey(p, name) === id);
+  const v = dir ? repoServers(dir)[name] : undefined;
+  if (!dir || v === undefined || refsIn(v).length) throw new UserError(`Unknown connection: ${id}`);
+  // A repo's local server has no lasting consent (ruling, 2026-11-21): ion asks in each chat.
+  if (runsRepoCode(v)) throw new UserError("It runs code from the repo: ion asks in each chat");
+  const mark = await tools.sign(repoMaterial(dir, name, v)).catch(() => {
+    throw new UserError(CANT_READ_KEYCHAIN);
+  });
+  return [...kept, `${id}@${mark}`];
+}
+
 /** Turning a skill on is consent to exactly what's in it now; off takes that back. */
 async function skillTurned(skills: Skills, c: UserConfig, id: string, on: boolean): Promise<string[]> {
   if (!id || id.length > 1000) throw new UserError("Unknown skill");
-  return skills.turn(c.tools.skills.on, id, on, projectDirs(c));
+  return skills.turn(c.tools.skills.on, id, on, { projects: projectDirs(c), own: ownSwitches(c) });
 }
 
 async function setOn(
@@ -91,6 +122,10 @@ async function setOn(
   if (a.kind === "mcp") {
     const mcpOn = await mcpTurned(ctx.tools, now, id, a.on);
     return changeConfig(ctx.configFile, (c) => ({ ...c, tools: { ...c.tools, mcpOn } }));
+  }
+  if (a.kind === "repo") {
+    const repoOn = await repoTurned(ctx.tools, now, id, a.on);
+    return changeConfig(ctx.configFile, (c) => ({ ...c, tools: { ...c.tools, repoOn } }));
   }
   if (a.kind !== "skill") throw new UserError("Pick a connection, a hook or a skill");
   const on = await skillTurned(ctx.skills, now, id, a.on);
@@ -134,8 +169,14 @@ export const toolsHandlers: Pick<
   | "tools.removeHook"
   | "tools.signIn"
   | "tools.signOut"
+  | "tools.picks"
+  | "tools.serverTools"
+  | "tools.setIonUse"
 > = {
   "tools.list": (_a, ctx) => toolsInfo(ctx),
+  "tools.picks": (a, ctx) => picksFor(ctx, a),
+  "tools.serverTools": (a, ctx) => serverTools(ctx, String(a.id ?? "")),
+  "tools.setIonUse": (a, ctx) => turnIonUse(ctx, a),
   "tools.setOn": async (a, ctx) => {
     if (typeof a.on !== "boolean") throw new UserError("Pick on or off");
     if (a.kind === "hook") {

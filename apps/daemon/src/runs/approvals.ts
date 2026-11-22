@@ -1,6 +1,7 @@
 import type { ApprovalRequest, Decision, GateCall } from "@ion/adapter-kit";
 import { EV, type IonEvent } from "@ion/schema";
-import { type Access, hardRuleFor, onlyPlugin, waryData } from "../access/index.js";
+import { type Access, type AccessVerdict, hardRuleFor, onlyPlugin, waryData } from "../access/index.js";
+import { type TheirRules, theirSay } from "../access/agent-rules.js";
 import type { Blocked, Held } from "../decisions/blocked.js";
 import { type GateAnswer, GateAllows } from "../gate/index.js";
 import type { EventStore } from "../store/index.js";
@@ -20,7 +21,16 @@ export type AskingRun = {
   viaIon?: string[];
   /** This run's skills plugin (in ion's data folder): it may read and run the files there, never write them. */
   pluginDir?: string;
+  /** The skills you picked with "/" for this message (the judge is told, in ion's words). */
+  picked?: string[];
+  /** Its agent runs in the OS sandbox, away from ion's folders: ion's guesses that only guarded its key go. */
+  sandboxed?: boolean;
+  /** Its agent (harness id): its own allow and deny rules apply to its chats only. */
+  harness?: string;
 };
+
+/** What Auto is told besides the call: a check that didn't finish, ion's guess, your agent's own rules. */
+type AutoHow = { checksFailed: boolean; wary?: Verdict; notes?: string[]; allowedBy?: string };
 
 /** route: a safer way the agent is told with ion's no. wary: ion's own guess, which asks you (the user, 2026-11-21). */
 type Verdict = {
@@ -29,6 +39,8 @@ type Verdict = {
   reason?: string;
   route?: string;
   wary?: true;
+  /** What the judge said before you were asked (the user, 2026-11-21): no, or that it wasn't sure. */
+  judge?: "deny" | "unsure";
 };
 
 /**
@@ -44,9 +56,42 @@ export type BeforeTool = (
  * Asks you about a tool call ion stopped, holding it until you answer or 4 minutes pass; `allowed` says whether
  * you said "Always allow" for exactly this action (tool and input) in the run's project.
  */
+/** Calls ion is holding, by run, and who to tell when a run starts or stops having any (re-review, 2026-11-21). */
+class Holding {
+  private readonly count = new Map<string, number>();
+  private readonly listeners = new Map<string, ((held: boolean) => void)[]>();
+
+  listen(runId: string, f: (held: boolean) => void): void {
+    this.listeners.set(runId, [...(this.listeners.get(runId) ?? []), f]);
+  }
+
+  async during<T>(runId: string, work: Promise<T>): Promise<T> {
+    this.move(runId, 1);
+    try {
+      return await work;
+    } finally {
+      this.move(runId, -1);
+    }
+  }
+
+  drop(runId: string): void {
+    this.count.delete(runId);
+    this.listeners.delete(runId);
+  }
+
+  private move(runId: string, by: number): void {
+    const was = this.count.get(runId) ?? 0;
+    const now = Math.max(0, was + by);
+    this.count.set(runId, now);
+    if ((was === 0) !== (now === 0)) for (const f of this.listeners.get(runId) ?? []) f(now > 0);
+  }
+}
+
 export type AskBlocked = {
   ask: (r: AskingRun, b: Blocked) => Promise<Held>;
   allowed: (r: AskingRun, key: string) => boolean;
+  /** What you said never to, when it's exactly this action (a kept "Don't allow"): refused in every mode. */
+  never?: (r: AskingRun, key: string) => string | null;
 };
 
 /** The exact action: its tool and its whole input. */
@@ -68,6 +113,12 @@ const callKey = (c: { kind: string; input: Record<string, unknown> }) => {
 /** Allows decided for exactly this call (never the gate's loose allows, nor the policy's), which may hand off. */
 const HANDED = new Set<Verdict["by"]>(["ion", "you", "full"]);
 
+/** What the judge said when it didn't allow: no, or unsure; null when it allowed or a rule decided. */
+function judgeSaid(v: AccessVerdict): "deny" | "unsure" | null {
+  if (v.source !== "judge" || v.decision !== "deny" || v.undecided) return null;
+  return v.unsure ? "unsure" : "deny";
+}
+
 /** Added to every Auto deny an agent reads: the way through is asking you. */
 const ASK_HINT = " — if it's needed, ask the user with ion's ask tool";
 
@@ -79,6 +130,7 @@ const ASK_HINT = " — if it's needed, ask the user with ion's ask tool";
 export class Approvals {
   private readonly requested = new Map<string, () => void>();
   private readonly allows = new GateAllows();
+  private readonly holds = new Holding();
   /** Calls on your servers the agent's side just allowed: ion's gateway doesn't ask the judge (or you) again. */
   private readonly handoffs = new GateAllows(Date.now, HANDOFF_MS);
   private gateCount = 0;
@@ -95,6 +147,8 @@ export class Approvals {
       askBlocked?: AskBlocked;
       /** Your "Before a tool runs" hooks: after ion's own files, before everything else. */
       beforeTool?: BeforeTool;
+      /** The run's agent's own allow and deny rules (your settings for it), as your decisions; deny wins. */
+      theirs?: (r: AskingRun) => TheirRules | null;
     },
   ) {}
 
@@ -118,7 +172,7 @@ export class Approvals {
   async gate(r: AskingRun, call: GateCall, roots: string[]): Promise<GateAnswer> {
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     const req: ApprovalRequest = { requestId: `g${++this.gateCount}`, toolId: "", ...call };
-    const v = await this.verdict(r, req, roots);
+    const v = await this.holds.during(r.runId, this.verdict(r, req, roots));
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     this.handOff(r, req, v);
     if (v.decision === "allow") this.allows.add(r.runId, callKey(call));
@@ -133,7 +187,7 @@ export class Approvals {
   async gateway(r: AskingRun, call: GateCall, roots: string[]): Promise<GateAnswer> {
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     const req: ApprovalRequest = { requestId: `g${++this.gateCount}`, toolId: "", ...call };
-    const own = this.ownFiles(req, roots, r.pluginDir);
+    const own = this.ownFiles(r, req, roots);
     let v: Verdict;
     if (own && !own.wary) v = own;
     else if (!own && this.handoffs.take(r.runId, gatewayKey(call))) v = { decision: "allow", by: "gate" };
@@ -167,6 +221,12 @@ export class Approvals {
   forget(runId: string): void {
     this.allows.drop(runId);
     this.handoffs.drop(runId);
+    this.holds.drop(runId);
+  }
+
+  /** Told when ion starts and stops holding one of this run's gate calls (its agent's silence check waits). */
+  holding(runId: string): { on(listener: (held: boolean) => void): void } {
+    return { on: (f) => this.holds.listen(runId, f) };
   }
 
   private record(r: AskingRun, v: Verdict & { requestId: string; summary?: string }): void {
@@ -176,6 +236,7 @@ export class Approvals {
       by: v.by,
       ...(v.reason ? { reason: v.reason } : {}),
       ...(v.summary ? { summary: v.summary } : {}),
+      ...(v.judge ? { judge: v.judge } : {}),
     };
     this.store.append({
       chatId: r.chatId,
@@ -201,9 +262,15 @@ export class Approvals {
    * ion's own files and keys: refused first, in every access mode; a check that fails refuses too. A guess (wary)
    * asks you instead, in every mode (the user, 2026-11-21).
    */
-  private ownFiles(req: ApprovalRequest, roots: string[], plugin?: string): Verdict | null {
+  private ownFiles(r: AskingRun, req: ApprovalRequest, roots: string[]): Verdict | null {
     try {
-      const v = hardRuleFor(req, { roots, ...this.opts.own, ...(plugin ? { plugin } : {}) });
+      const plugin = r.pluginDir;
+      const v = hardRuleFor(req, {
+        roots,
+        ...this.opts.own,
+        ...(plugin ? { plugin } : {}),
+        ...(r.sandboxed ? { sandboxed: true } : {}),
+      });
       if (!v) return null;
       return {
         decision: "deny",
@@ -240,35 +307,68 @@ export class Approvals {
   }
 
   private async verdict(r: AskingRun, req: ApprovalRequest, roots: string[]): Promise<Verdict> {
-    const own = this.ownFiles(req, roots, r.pluginDir);
+    const own = this.ownFiles(r, req, roots);
     if (own && !own.wary) return own;
+    const yours = this.yours(r, req);
+    if ("decision" in yours) return yours;
     const hooks = await this.hooksOn(r, req);
     if (hooks && "decision" in hooks) return hooks;
+    const how = { ...yours, checksFailed: !!hooks };
     // A guess: in Full (no judge) it asks you; in Auto the judge decides, shown what will run.
     if (own && r.access === "full") return this.wary(r, req, own);
-    if (own) return this.auto(r, req, roots, { checksFailed: !!hooks, wary: own });
+    if (own) return this.auto(r, req, roots, { ...how, wary: own });
     if (
       decideByPolicy(req, { roots, ionMcp: Boolean(r.mcpKey) }) === "allow" ||
       this.readsPlugin(r, req, roots)
     )
       return { decision: "allow", by: "policy" };
     if (r.access === "full") return { decision: "allow", by: "full" };
-    return this.auto(r, req, roots, { checksFailed: !!hooks });
+    return this.auto(r, req, roots, how);
+  }
+
+  /**
+   * What you decided: your saved never, and your agent's own rules (the user, 2026-11-21), both holding in every mode,
+   * Full too, as a no; else what Auto is told of the agent's rules (its allow, lines for the judge).
+   */
+  private yours(r: AskingRun, req: ApprovalRequest): Verdict | Omit<AutoHow, "checksFailed"> {
+    const never = this.opts.askBlocked?.never?.(r, actionKey(req));
+    if (never)
+      return { decision: "deny", by: "you", reason: `You said never: ${never}`, route: "do something else" };
+    const theirs = this.theirRules(r);
+    const said = theirs && theirSay(req, theirs);
+    if (said?.decision === "deny") return { ...said, by: "you", route: "do something else" };
+    return {
+      ...(theirs?.notes.length ? { notes: theirs.notes } : {}),
+      ...(said ? { allowedBy: said.reason } : {}),
+    };
+  }
+
+  /** The run's agent's own rules; ones that can't be read are none. */
+  private theirRules(r: AskingRun): TheirRules | null {
+    try {
+      return this.opts.theirs?.(r) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** What Auto is told about the run: its chat, request and roots, picks and plugin, and `how`. */
+  private atOf(r: AskingRun, roots: string[], how: AutoHow) {
+    return {
+      ...{ chatId: r.chatId, projectId: r.projectId, text: r.request, roots },
+      ...(r.pluginDir ? { plugin: r.pluginDir } : {}),
+      ...(r.picked?.length ? { picked: r.picked } : {}),
+      ...(how.notes?.length ? { notes: how.notes } : {}),
+      ...(how.allowedBy ? { allowedBy: how.allowedBy } : {}),
+      ...(how.checksFailed ? { checksFailed: true } : {}),
+    };
   }
 
   /** Auto: ion's rules, then the judge (told when one of your checks before tools run didn't finish). */
-  private async auto(
-    r: AskingRun,
-    req: ApprovalRequest,
-    roots: string[],
-    { checksFailed, wary }: { checksFailed: boolean; wary?: Verdict },
-  ): Promise<Verdict> {
+  private async auto(r: AskingRun, req: ApprovalRequest, roots: string[], how: AutoHow): Promise<Verdict> {
     if (!this.access)
       return { decision: "deny", by: "ion", reason: "ion couldn't decide: Auto isn't set up" };
-    const at = {
-      ...{ chatId: r.chatId, projectId: r.projectId, text: r.request, roots },
-      ...(r.pluginDir ? { plugin: r.pluginDir } : {}),
-    };
+    const { wary } = how;
     const data =
       wary &&
       waryData(
@@ -276,16 +376,35 @@ export class Approvals {
         { roots, ...this.opts.own, ...(r.pluginDir ? { plugin: r.pluginDir } : {}) },
         wary.reason ?? "",
       );
-    const v = await this.access.decide(
-      { ...at, ...(checksFailed ? { checksFailed } : {}), ...(data ? { wary: data } : {}) },
-      req,
-    );
+    const v = await this.access.decide({ ...this.atOf(r, roots, how), ...(data ? { wary: data } : {}) }, req);
     // The judge's no (or unsure) on ion's guess: you're asked, as ion is wary.
-    if (wary && v.decision === "deny" && v.source === "judge") return this.wary(r, req, wary);
-    // A rule's no (your secrets, ion's files) stands. The judge's no is a question for you.
-    if (v.decision === "deny" && v.source === "judge" && this.opts.askBlocked)
-      return this.askYou(this.opts.askBlocked, r, req, { reason: v.reason });
-    return { decision: v.decision, by: "ion", reason: v.reason };
+    if (wary && v.decision === "deny" && v.source === "judge") return this.waryJudged(r, req, wary, v);
+    return this.afterJudge(r, req, v);
+  }
+
+  /** A rule's no (your secrets, ion's files) stands. The judge's no or unsure is a question for you. */
+  private async afterJudge(r: AskingRun, req: ApprovalRequest, v: AccessVerdict): Promise<Verdict> {
+    const judge = judgeSaid(v);
+    if (v.source === "judge" && v.decision === "deny" && this.opts.askBlocked) {
+      const how = {
+        ...(v.undecided ? { undecided: true as const } : {}),
+        ...(judge === "unsure" ? { unsure: true as const } : {}),
+      };
+      const asked = await this.askYou(this.opts.askBlocked, r, req, { reason: v.reason, ...how });
+      return { ...asked, ...(judge ? { judge } : {}) };
+    }
+    return { decision: v.decision, by: "ion", reason: v.reason, ...(judge ? { judge } : {}) };
+  }
+
+  /** ion's guess asked of you after the judge's no or unsure: what the judge said is recorded with your answer. */
+  private async waryJudged(
+    r: AskingRun,
+    req: ApprovalRequest,
+    wary: Verdict,
+    v: AccessVerdict,
+  ): Promise<Verdict> {
+    const said = judgeSaid(v);
+    return { ...(await this.wary(r, req, wary)), ...(said ? { judge: said } : {}) };
   }
 
   /** ion's guess, asked of you (in Full, or after the judge's no); with no one to ask, refused with its route. */
@@ -299,7 +418,7 @@ export class Approvals {
     a: AskBlocked,
     r: AskingRun,
     req: ApprovalRequest,
-    { reason, wary }: { reason: string; wary?: true },
+    { reason, ...how }: { reason: string; wary?: true; unsure?: true; undecided?: true },
   ): Promise<Verdict> {
     const key = actionKey(req);
     if (a.allowed(r, key)) return { decision: "allow", by: "you", reason: "You always allow this" };
@@ -309,7 +428,7 @@ export class Approvals {
     const b = {
       ...{ requestId: req.requestId, summary: req.summary, reason, input, key },
       ...(cut ? { cut } : {}),
-      ...(wary ? { wary } : {}),
+      ...how,
     };
     return HELD[await a.ask(r, b)];
   }

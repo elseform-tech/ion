@@ -29,6 +29,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
   const binary = () => which("claude");
   return {
     id: "claude-code",
+    // ion's sandbox around the claude process (its own covers commands only, not its Read tool).
+    sandbox: "ion",
     async detect() {
       const path = binary();
       if (!path) return { installed: false };
@@ -52,6 +54,10 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     capabilities: capabilitiesWith(CAPABILITIES, claudeCatalog(deps, binary)),
     // The Agent SDK's mcpServers takes both.
     mcpTransports: { http: true },
+    // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.
+    picks: "slash",
+    // It reads a server's resources (@server:uri, and its resource tools).
+    mcpResources: true,
     gateCall: claudeGateCall,
     async start(opts) {
       const path = binary();

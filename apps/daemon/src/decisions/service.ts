@@ -22,6 +22,8 @@ import { isAllowAnswer, overlap, SAME_QUESTION } from "./words.js";
 import type { IonQuestions } from "../ions/questions.js";
 
 const keyHash = (key: string) => createHash("sha256").update(key).digest("hex");
+/** A kept "Don't allow" for an exact action: its key's hash with this in front (never an allow's). */
+const NEVER = "never:";
 
 /** The message your answer becomes in the chat: a choice, or your own words. */
 const followText = (question: string, answer: string, custom = false) =>
@@ -109,6 +111,8 @@ export class Decisions {
   private readonly requests = new Map<string, string>();
   /** Tool calls ion stopped, waiting on your answer. */
   private readonly holds: Holds;
+  /** Questions about a repo's server before a chat starts it: no agent's call to tell, nothing kept as a decision. */
+  private readonly repoAsks = new Set<string>();
   /** Each stopped call's exact key (hashed), for an "Always allow" answer. */
   private readonly keys = new Map<string, string>();
 
@@ -164,15 +168,27 @@ export class Decisions {
       runId: s.runId,
       ...q,
       blocked: { requestId: b.requestId },
+      // A cut input can't be remembered: you don't see all of the action.
+      ...(b.cut || b.repo ? { noRemember: true as const } : {}),
     });
+    if (b.repo) this.repoAsks.add(needId);
     this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
-    this.keys.set(needId, keyHash(b.key));
+    if (!b.cut) this.keys.set(needId, keyHash(b.key));
     return this.holds.hold(needId);
   }
 
   /** Whether you said "Always allow" for exactly this action (tool and input) in this project. */
   alwaysAllowed(projectId: string, _chatId: string, key: string): boolean {
     return decisionsView.allows(this.d.db, projectId, keyHash(key));
+  }
+
+  /**
+   * The action, when you said "Don't allow" to exactly it with Remember on, in this project: ion refuses it there in
+   * every access mode, Full too (the user, 2026-11-21). Null otherwise.
+   */
+  saidNever(projectId: string, chatId: string, key: string): string | null {
+    const q = decisionsView.never(this.d.db, { projectId, chatId }, NEVER + keyHash(key));
+    return q === null ? null : actionOf(q);
   }
 
   /**
@@ -193,7 +209,7 @@ export class Decisions {
     const asked = this.d.needs.open(need.chatId, true).find((x) => x.needId === needId);
     if (need.kind !== "ask" || !asked?.choices) throw new UserError("That isn't a question");
     const { label, custom } = answerOf(pick, asked.choices);
-    if (asked.blocked) return this.answerBlocked(asked, pick, label);
+    if (asked.blocked) return this.answerBlocked(asked, pick, label, scope === "project");
     this.answering.add(needId);
     try {
       // After a restart the request is gone: the judge then gets none, which only makes it stricter.
@@ -228,11 +244,23 @@ export class Decisions {
    * exactly this action run in the project from now on, and "Don't allow" is kept for the chat. The agent hears
    * about it only when it can't otherwise know: your own words, or a yes after its call was already refused.
    */
-  private async answerBlocked(asked: NeedInfo, pick: number | string, label: string): Promise<void> {
+  private async answerBlocked(
+    asked: NeedInfo,
+    pick: number | string,
+    label: string,
+    remember: boolean,
+  ): Promise<void> {
     const custom = typeof pick === "string";
-    const { allow, scope } = blockedAnswer(label, custom);
+    const { allow, scope } = blockedAnswer(label, custom, remember && !asked.noRemember);
+    if (this.repoAsks.delete(asked.needId)) {
+      // Task review, 2026-11-21: a repo's server, asked before the chat starts it: the answer only releases it.
+      this.d.needs.answered(asked.needId, label, "chat");
+      this.holds.release(asked.needId, allow ? "allow" : "deny");
+      return;
+    }
     this.d.needs.answered(asked.needId, label, scope ?? "chat");
-    const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom }) : undefined;
+    const decisionId = scope ? this.recordBlocked(asked, { label, scope, custom, allow }) : undefined;
+    this.keys.delete(asked.needId);
     const waited = this.holds.release(asked.needId, allow ? "allow" : "deny");
     const text = blockedFollowText(asked.summary, { custom, label, late: !waited && allow });
     const request = this.requests.get(asked.needId) ?? "";
@@ -254,9 +282,12 @@ export class Decisions {
   /** Your answer about a stopped call, kept; "Always allow" with the exact action's key, never the question's words. */
   private recordBlocked(
     asked: NeedInfo,
-    a: { label: string; scope: "chat" | "project"; custom: boolean },
+    a: { label: string; scope: "chat" | "project"; custom: boolean; allow: boolean },
   ): string {
-    const allowKey = a.scope === "project" ? this.keys.get(asked.needId) : undefined;
+    const key = a.scope === "project" && !a.custom ? this.keys.get(asked.needId) : undefined;
+    // Remembered (the user, 2026-11-21): Allow as always allow, Don't allow as never, for this exact action here.
+    let allowKey: string | undefined;
+    if (key) allowKey = a.allow ? key : NEVER + key;
     return this.record({
       ...{ chatId: asked.chatId, runId: asked.runId, needId: asked.needId, projectId: asked.projectId ?? "" },
       ...{ question: asked.summary, choice: a.label, scope: a.scope, by: "you", blocked: true },

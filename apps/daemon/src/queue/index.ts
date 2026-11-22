@@ -38,7 +38,7 @@ export type QueueDeps = {
   /** The ions: whether one exists; your message to one; whether it's thinking; Esc twice; when its turn ends. */
   ions: {
     knows(ionId: string): boolean;
-    message(ionId: string, text: string): Promise<void>;
+    message(ionId: string, text: string, picks?: { skills?: string[]; mentions?: string[] }): Promise<void>;
     busy(ionId: string): boolean;
     stopTurn(ionId: string): boolean;
     onTurnEnd(fn: (ionId: string) => void): void;
@@ -250,7 +250,11 @@ export class PromptQueue {
       return;
     }
     this.sent(q, key);
-    void this.d.ions.message(q.to.ionId, q.text).catch(() => {});
+    const picks = {
+      ...(q.brain.skills ? { skills: q.brain.skills } : {}),
+      ...(q.brain.mentions ? { mentions: q.brain.mentions } : {}),
+    };
+    void this.d.ions.message(q.to.ionId, q.text, picks).catch(() => {});
   }
 
   private sent(q: QueuedRow, key: string): void {
@@ -314,7 +318,16 @@ function brainOf(x: unknown): AskBrain {
   const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
   const effort = EFFORTS.includes(String(b.effort)) ? (b.effort as AskBrain["effort"]) : undefined;
   const access = b.access === "auto" || b.access === "full" ? b.access : undefined;
-  const all = { harness: text(b.harness), model: text(b.model), effort, access };
+  const names = (v: unknown) => {
+    const xs = Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === "string" && !!x).slice(0, 10)
+      : [];
+    return xs.length ? xs.map((x) => x.slice(0, 100)) : undefined;
+  };
+  const all = {
+    ...{ harness: text(b.harness), model: text(b.model), effort, access },
+    ...{ skills: names(b.skills), mentions: names(b.mentions) },
+  };
   return Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) as AskBrain;
 }
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addProject, DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
+import type { StartOpts } from "@ion/adapter-kit";
 import { EV, type IonEvent } from "@ion/schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAccess } from "../access/index.js";
@@ -21,9 +22,7 @@ import { RunManager } from "./manager.js";
 /** How often a fake harness was asked whether it's installed. */
 const detects = vi.hoisted(() => ({ n: 0 }));
 /** What each fake agent was started with (its MCP servers: what the agent's config holds). */
-const started = vi.hoisted(
-  () => [] as { mcpServers?: unknown[]; env?: Record<string, string>; pluginDir?: string }[],
-);
+const started = vi.hoisted(() => [] as Partial<StartOpts>[]);
 vi.mock("@ion/adapter-fake", async (real) => {
   const m = await real<typeof import("@ion/adapter-fake")>();
   return {
@@ -37,9 +36,8 @@ vi.mock("@ion/adapter-fake", async (real) => {
       };
       const start = adapter.start.bind(adapter);
       adapter.start = (opts) => {
-        started.push(
-          structuredClone({ mcpServers: opts.mcpServers, env: opts.env, pluginDir: opts.pluginDir }),
-        );
+        const { mcpServers, env, pluginDir, ownTools } = opts;
+        started.push(structuredClone({ mcpServers, env, pluginDir, ownTools }));
         return start(opts);
       };
       return adapter;
@@ -58,6 +56,10 @@ let configFile: string;
 let judge: ReturnType<typeof vi.fn>;
 let access: ReturnType<typeof createAccess>;
 let dataDir: string;
+
+/** A manager with these besides the usual (config, data folder, Auto). */
+const managerWith = (more: object) =>
+  new RunManager(store, { configFile, dataDir, random: () => 0, access, ...more }, needs, db);
 
 /** A fresh manager that reads max_runs from the config file. */
 const limitTo = (n: number) => {
@@ -85,8 +87,8 @@ beforeEach(() => {
   needs = new NeedsService(store, db);
   judge = vi.fn(async ({ req }: { req: { input: unknown } }) =>
     JSON.stringify(req.input).includes("/etc/")
-      ? { allow: false, reason: "Outside the project" }
-      : { allow: true, reason: "Fine for the task" },
+      ? { verdict: "deny" as const, reason: "Outside the project" }
+      : { verdict: "allow" as const, reason: "Fine for the task" },
   );
   access = createAccess({ judge, home: "/nonexistent-home", ionDirs: [dataDir] });
   runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
@@ -112,6 +114,28 @@ const ask = (text: string, extra: object = {}) =>
   runs.ask({ text, projectId: "repo", harness: "fake", ...extra });
 
 describe("RunManager", () => {
+  // The user, 2026-11-21: each agent brings its own servers, skills and plugins into a chat (its "Use its own tools",
+  // on); off, ion's tools only. A key of its own never reaches the chat's events.
+  it("Use its own tools off brings back ion's tools only (what the agent is told)", async () => {
+    const key = "own-secret-key-0123456789";
+    const ownServers = [
+      { name: "gh", transport: "stdio" as const, command: "gh", args: [], env: { T: key } },
+    ];
+    const own = { forRun: async () => ({ ownTools: true, ownServers, secrets: [key] }) };
+    runs = managerWith({ own, mcp: { grants: createGrants(), url: () => "http://127.0.0.1:9/mcp" } });
+    const { runId } = await ask(`echo ${key}`);
+    const said = JSON.stringify((await finished(runId)).filter((e) => e.origin === "adapter"));
+    expect([said.includes("•••"), said.includes(key)]).toEqual([true, false]);
+    // Task review, 2026-11-21: its own servers reach it as ion's URLs (ion runs them, in its own folder, with only
+    // their own values), never as a command or env of its own.
+    const s = started.at(-1)!;
+    expect(s.ownTools).toBe(true);
+    expect(s.mcpServers).toContainEqual(
+      expect.objectContaining({ name: "gh", url: "http://127.0.0.1:9/mcp/s/gh" }),
+    );
+    expect(JSON.stringify(s)).not.toContain(key);
+  });
+
   // The user, 2026-11-20 (skills, T3 Code's way): the plugin folder is made for each run in ion's data folder and
   // removed when the run ends; a run's skills that can't be made don't fail it.
   it("gives a run its skills plugin and removes it at run end", async () => {
@@ -131,15 +155,11 @@ describe("RunManager", () => {
     expect(calls).toEqual(["make fake repo", `remove ${runId}`]);
     const failing = { forRun: () => Promise.reject(new Error("disk full")), remove: async () => {} };
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    runs = new RunManager(
-      store,
-      { configFile, dataDir, random: () => 0, access, skills: failing },
-      needs,
-      db,
-    );
+    runs = managerWith({ skills: failing });
     const two = await ask("hello");
     expect((await finished(two.runId)).at(-1)?.data).toEqual({ status: "done" });
-    expect(started.at(-1)?.pluginDir).toBeUndefined();
+    // No own tools for the run ("Use its own tools" off, or none to read): ion's tools only.
+    expect(started.at(-1)).toMatchObject({ pluginDir: undefined, ownTools: undefined });
   });
 
   it("creates a chat with its own worktree and stores the run's events in order", async () => {
@@ -508,12 +528,7 @@ describe("RunManager", () => {
       keys.push(k);
       return k;
     };
-    runs = new RunManager(
-      store,
-      { configFile, dataDir, random: () => 0, access, mcp: { grants, url: () => "http://127.0.0.1:9/mcp" } },
-      needs,
-      db,
-    );
+    runs = managerWith({ mcp: { grants, url: () => "http://127.0.0.1:9/mcp" } });
     const events = await finished((await ask("mcpinfo")).runId);
     const info = JSON.parse(said(events)[0]!) as {
       name: string;
@@ -1069,8 +1084,8 @@ describe("every event of a run is redacted where it's stored", () => {
       judge: async ({ req }: { req: { input: unknown } }) => {
         const said = JSON.stringify(req.input);
         return said.includes("deny-me")
-          ? { allow: false, reason: `No: ${said}` }
-          : { allow: true, reason: `Fine: ${said}` };
+          ? { verdict: "deny" as const, reason: `No: ${said}` }
+          : { verdict: "allow" as const, reason: `Fine: ${said}` };
       },
       home: "/nonexistent-home",
       ionDirs: [dataDir],
@@ -1091,12 +1106,7 @@ describe("every event of a run is redacted where it's stored", () => {
       allowed: () => false,
     };
     const mcp = { grants, url: () => "http://127.0.0.1:9/mcp" };
-    runs = new RunManager(
-      store,
-      { configFile, dataDir, random: () => 0, access: quoting, mcp, askBlocked },
-      needs,
-      db,
-    );
+    runs = managerWith({ access: quoting, mcp, askBlocked });
     const { chatId, runId } = await ask("leakretry");
     await until(() => store.read({ runId }).some((e) => e.type === "tool.started"), 5000);
     const key = keys[0]!;

@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { setStandingDrop } from "@ion/adapter-kit";
 import { ionPaths } from "@ion/config";
 import { harnessInfos } from "./api/commands.js";
-import { dropInheritedMarkers } from "./env.js";
+import { agentsHome, dropInheritedMarkers } from "./env.js";
 import { startServer } from "./api/server.js";
 import { acquireDaemonLock } from "./store/index.js";
 import { standingDropOf } from "./tools/env-drop.js";
@@ -13,6 +13,7 @@ import { MCP_GROUPS, sweepGroups } from "./workspace/server-groups.js";
 export { startServer, VERSION } from "./api/server.js";
 
 async function main() {
+  const home = agentsHome(); // before ION_AGENTS_HOME is dropped
   dropInheritedMarkers();
   const { dataDir, configFile } = ionPaths();
   // Before anything starts an agent: what none of them may inherit (your keys, from mcp.json).
@@ -27,7 +28,7 @@ async function main() {
   // Your local servers an earlier ion left running (it died without stopping them): stopped before any run starts.
   await sweepGroups(join(dataDir, MCP_GROUPS));
   const infoFile = join(dataDir, "daemon.json");
-  const srv = await startServer({ dataDir, configFile });
+  const srv = await startServer({ dataDir, configFile, home });
   // Ask each agent what it is now, so the app's first list of agents and models doesn't wait.
   harnessInfos.warm();
   // Never follow a planted file or symlink: remove it, then create exclusively with 0600.

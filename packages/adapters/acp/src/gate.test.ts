@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPENCODE_PLUGIN } from "./gate.js";
+import { grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
 import { GROK_BUILD, OPENCODE } from "./harnesses.js";
 
 const url = `http://127.0.0.1:1/gate/${"a".repeat(64)}`;
@@ -159,5 +159,28 @@ describe("opencode's plugin for the commands it runs", () => {
     } finally {
       process.env = was;
     }
+  });
+});
+
+// The user, 2026-11-21: agents bring their own servers; ion's gate still judges every call, theirs too. Each agent's
+// hook reports an own server's tool by its name, so ion's approval names it.
+describe("an agent's own tool call is judged by ion", () => {
+  it("Grok's hook reports an own server's tool as an MCP call on that server", () => {
+    const payload = {
+      toolName: "github__create_issue",
+      toolInput: { title: "x" },
+      toolInputTruncated: false,
+    };
+    expect(grokToCall(payload)).toMatchObject({
+      toolName: "github__create_issue",
+      kind: "mcp",
+      mcpServer: "github",
+    });
+  });
+  it("opencode's plugin reports an own server's tool by its name", () => {
+    expect(opencodeToCall({ tool: "everything_echo", args: { message: "hi" } })).toMatchObject({
+      toolName: "everything_echo",
+      input: { message: "hi" },
+    });
   });
 });

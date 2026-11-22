@@ -6,8 +6,11 @@ import { git } from "./git.js";
 
 const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
 
+/** A repo ion makes for you: your git identity applies (nothing a run wrote is in a folder that's just been made). */
+const yours = { yours: true };
+
 async function mustGit(args: string[], cwd: string): Promise<string> {
-  const r = await git(args, cwd);
+  const r = await git(args, cwd, yours);
   if (r.code !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr.trim().split("\n")[0]}`);
   return r.stdout.trim();
 }
@@ -16,7 +19,7 @@ async function mustGit(args: string[], cwd: string): Promise<string> {
 async function initRepo(path: string): Promise<void> {
   mkdirSync(path, { recursive: true, mode: 0o755 });
   await mustGit(["init", "-q", "-b", "main"], path);
-  const email = (await git(["config", "user.email"], path)).stdout.trim();
+  const email = (await git(["config", "user.email"], path, yours)).stdout.trim();
   const who = email ? [] : ["-c", "user.name=ion", "-c", "user.email=ion@localhost"];
   await mustGit([...who, "commit", "-q", "--allow-empty", "-m", "Start"], path);
 }

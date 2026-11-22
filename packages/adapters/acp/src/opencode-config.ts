@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -12,10 +13,14 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseJsonc } from "@ion/adapter-kit";
 
 /**
- * Only ion's tools in ion's chats (the user, 2026-11-21: "Only ion's, plus Import"). opencode loads servers and
+ * opencode's own config, carried into a file of ion's. With "Use its own tools" on (the user, 2026-11-21: agents bring
+ * their own), your servers (`mcp`), plugins (the `plugin` list and your config folder's plugin files), agents, commands
+ * and instructions come along, ion's gate plugin first; opencode plugins are hook code, so theirs run too (Settings
+ * says so). Off: only ion's tools (the user, 2026-11-21: "Only ion's, plus Import"). opencode loads servers and
  * plugins from its own config folder (`$XDG_CONFIG_HOME/opencode`: opencode.json(c), config.json, plugin/), from
  * `~/.opencode`, and from OPENCODE_CONFIG / OPENCODE_CONFIG_DIR. Its `--pure` drops every plugin, ion's gate too, and
  * an inline config can't take servers or plugins away (it merges; plugins add up), checked on opencode 1.18.8. So
@@ -43,12 +48,28 @@ function readConfig(path: string): Record<string, unknown> {
 /** Your config folder for opencode, as opencode finds it. */
 export const userConfigHome = (): string => process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
 
-/** Without its servers and plugins. */
+/** Without its servers, plugins and skill folders. */
 function withoutTools(c: Record<string, unknown>): Record<string, unknown> {
   const rest = { ...c };
   delete rest.mcp;
   delete rest.plugin;
+  delete rest.skills;
   return rest;
+}
+
+/**
+ * The skill folders opencode reads with your own tools (task review, 2026-11-21): its own (your config folder's, which
+ * moving XDG_CONFIG_HOME would drop) and the home ones it reads from Claude Code and the shared folder, then any your
+ * config names; external skills are off (OPENCODE_DISABLE_EXTERNAL_SKILLS), so a project's never come by themselves.
+ */
+export function ownSkillPaths(base: Record<string, unknown>): string[] {
+  const yours = isObject(base.skills) && Array.isArray(base.skills.paths) ? base.skills.paths : [];
+  const home = [
+    join(userConfigHome(), "opencode", "skills"),
+    join(homedir(), ".claude", "skills"),
+    join(homedir(), ".agents", "skills"),
+  ];
+  return [...new Set([...home, ...yours.filter((p): p is string => typeof p === "string")])];
 }
 
 /** Shallow merge, one level into objects (what opencode merges deeply, enough for its top-level sections). */
@@ -70,29 +91,68 @@ function wholeFiles(v: unknown, dir: string): unknown {
   return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, wholeFiles(x, dir)]));
 }
 
-/** Your config file as ion carries it: no servers or plugins, file references and instructions made whole. */
-function carried(c: Record<string, unknown>, dir: string): Record<string, unknown> {
-  const out = wholeFiles(withoutTools(c), dir) as Record<string, unknown>;
+/** A plugin entry: an npm name as written; a relative path made a whole file URL against your folder. */
+const pluginEntry = (x: string, dir: string) => (/^\.{1,2}\//.test(x) ? pathToFileURL(join(dir, x)).href : x);
+
+/** Your config file as ion carries it (servers and plugins only with your own tools), paths made whole. */
+function carried(c: Record<string, unknown>, dir: string, own: boolean): Record<string, unknown> {
+  const out = wholeFiles(own ? c : withoutTools(c), dir) as Record<string, unknown>;
   if (Array.isArray(out.instructions))
     out.instructions = out.instructions.map((x) => (typeof x === "string" && relative(x) ? join(dir, x) : x));
+  if (Array.isArray(out.plugin))
+    out.plugin = out.plugin.filter((x) => typeof x === "string").map((x) => pluginEntry(x, dir));
   return out;
 }
 
+/** Plugin lists add up across opencode's config files (each once); other sections merge. */
+function mergeOwn(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+  const out = merge(a, b);
+  const plugins = [a.plugin, b.plugin].flatMap((p) => (Array.isArray(p) ? p : []));
+  if (plugins.length) out.plugin = [...new Set(plugins)];
+  return out;
+}
+
+/** The plugin files in your config folder (`plugin/` and `plugins/`, .js and .ts), which opencode loads by itself. */
+function folderPlugins(dir: string): string[] {
+  return ["plugin", "plugins"].flatMap((sub) => {
+    try {
+      return readdirSync(join(dir, sub))
+        .filter((f) => /\.(js|ts|mjs)$/.test(f))
+        .sort()
+        .map((f) => pathToFileURL(join(dir, sub, f)).href);
+    } catch {
+      return [];
+    }
+  });
+}
+
 /**
- * What your opencode config says besides servers and plugins (your folder's files, then an inline config in ion's
- * environment), plus `~/.opencode`'s servers, each turned off: the base of the config ion writes for opencode.
+ * The base of the config ion writes for opencode: what your opencode config says (your folder's files, then an inline
+ * config in ion's environment). Without your own tools, servers and plugins are left out and `~/.opencode`'s servers
+ * (which still load) are each turned off.
  */
-export function carriedConfig(): Record<string, unknown> {
+export function carriedConfig(own = false): Record<string, unknown> {
   const dir = join(userConfigHome(), "opencode");
   let base: Record<string, unknown> = {};
-  for (const f of FILES) base = merge(base, carried(readConfig(join(dir, f)), dir));
+  for (const f of FILES) base = mergeOwn(base, carried(readConfig(join(dir, f)), dir, own));
   let inline: unknown = null;
   try {
     inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "{}");
   } catch {
     // ignore an unreadable inline config; ion's permissions still apply
   }
-  if (isObject(inline)) base = merge(base, withoutTools(inline));
+  if (isObject(inline)) base = mergeOwn(base, own ? inline : withoutTools(inline));
+  return own ? withFolderPlugins(base, dir) : withLegacyOff(base);
+}
+
+/** Your config folder's plugin files after the plugins your config lists. */
+function withFolderPlugins(base: Record<string, unknown>, dir: string): Record<string, unknown> {
+  const plugins = [...(Array.isArray(base.plugin) ? base.plugin : []), ...folderPlugins(dir)];
+  return { ...base, ...(plugins.length ? { plugin: [...new Set(plugins)] } : {}) };
+}
+
+/** `~/.opencode`'s servers (which still load) each turned off. */
+function withLegacyOff(base: Record<string, unknown>): Record<string, unknown> {
   const legacy = FILES.map((f) => readConfig(join(homedir(), ".opencode", f)).mcp).filter(isObject);
   const names = [...new Set(legacy.flatMap((m) => Object.keys(m)))];
   return names.length
@@ -110,10 +170,12 @@ const ionCache = (): string => join(process.env.XDG_CACHE_HOME || join(homedir()
  * install it again. Final review, 2026-11-21: one per computer let the tour, a dev daemon and the app rewrite it
  * under each other. It's inside one of ion's own folders: no run can write there.
  */
-const ionConfigHome = (): string => {
+export const ionConfigHome = (own = false): string => {
   const home = process.env.ION_HOME;
   const key = home ? createHash("sha256").update(resolve(home)).digest("hex").slice(0, 12) : "default";
-  return join(ionCache(), "opencode", key);
+  // With your own tools, a folder of its own: chats and ion's judge (ion's tools only) start opencode at the same
+  // time, and one file for both would be rewritten under the other's start.
+  return join(ionCache(), "opencode", own ? `${key}-own` : key);
 };
 
 const UNSAFE = "ion's folder for opencode isn't safe";
@@ -127,6 +189,11 @@ const KEEP = new Set([
   ".gitignore",
 ]);
 const PLUGIN_PACKAGE = "@opencode-ai/plugin";
+/**
+ * What opencode writes as its config folder's .gitignore when it's missing (opencode 1.18.8, byte for byte): written
+ * by ion, so opencode needn't write there in a run's sandbox (live, 2026-11-21: it stopped at its start).
+ */
+const GITIGNORE = "node_modules\npackage.json\npackage-lock.json\nbun.lock\n.gitignore";
 
 /** A folder of ion's: made (only you), else checked: yours, only you, not a link. */
 function ownFolder(p: string): void {
@@ -169,8 +236,8 @@ function onlyPluginPackage(path: string): void {
  * or dependency left there would load in every later chat): its config, and only what opencode keeps for its plugin
  * package. A folder that isn't ion's own is refused plainly. Returns the folder (opencode's XDG_CONFIG_HOME).
  */
-export function writeIonConfig(config: Record<string, unknown>): string {
-  const home = ionConfigHome();
+export function writeIonConfig(config: Record<string, unknown>, own = false): string {
+  const home = ionConfigHome(own);
   const cache = ionCache();
   mkdirSync(dirname(cache), { recursive: true, mode: 0o700 });
   for (const p of [cache, dirname(home), home, join(home, "opencode")]) ownFolder(p);
@@ -178,10 +245,51 @@ export function writeIonConfig(config: Record<string, unknown>): string {
   for (const name of readdirSync(dir))
     if (!KEEP.has(name)) rmSync(join(dir, name), { recursive: true, force: true });
   onlyPluginPackage(join(dir, "package.json"));
+  if (own) takePluginPackage(dir, join(ionConfigHome(false), "opencode"));
+  writeWhole(join(dir, ".gitignore"), GITIGNORE);
   writeWhole(join(dir, "opencode.json"), `${JSON.stringify(config, null, 2)}\n`);
+  if (installed(dir)) prepared.add(home);
   return home;
 }
 
+/** ion's folders for opencode found ready by this daemon (its own state, never a file a run could write). */
+const prepared = new Set<string>();
+
+const versionIn = (file: string, read: (j: Record<string, unknown>) => unknown): unknown => {
+  try {
+    return read(JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * opencode's plugin package is installed as opencode asked for it: the folder's package.json names a version, and
+ * node_modules holds that package at that version (task review, 2026-11-21: an empty folder counted).
+ */
+function installed(dir: string): boolean {
+  const want = versionIn(join(dir, "package.json"), (j) =>
+    isObject(j.dependencies) ? j.dependencies[PLUGIN_PACKAGE] : undefined,
+  );
+  const pkg = join(dir, "node_modules", PLUGIN_PACKAGE, "package.json");
+  const got = versionIn(pkg, (j) => (j.name === PLUGIN_PACKAGE ? j.version : undefined));
+  return typeof want === "string" && want === got;
+}
+
+/**
+ * opencode's plugin package, copied from ion's other folder when it's installed there and not here yet, so the first
+ * chat with your own tools doesn't wait on the install (live, 2026-11-21: that wait timed a first chat out).
+ */
+function takePluginPackage(dir: string, from: string): void {
+  if (installed(dir) || !installed(from) || lstatSync(from).isSymbolicLink()) return;
+  try {
+    cpSync(join(from, "node_modules"), join(dir, "node_modules"), { recursive: true });
+    for (const f of ["package.json", "package-lock.json", "bun.lock"])
+      if (existsSync(join(from, f)) && !existsSync(join(dir, f))) cpSync(join(from, f), join(dir, f));
+  } catch {
+    // opencode installs it itself
+  }
+}
+
 /** Until opencode has installed its plugin package in ion's folder, a start can take long: said plainly. */
-export const settingUp = (): boolean =>
-  !existsSync(join(ionConfigHome(), "opencode", "node_modules", PLUGIN_PACKAGE));
+export const settingUp = (own = false): boolean => !prepared.has(ionConfigHome(own));

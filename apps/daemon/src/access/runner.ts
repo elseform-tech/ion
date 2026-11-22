@@ -1,11 +1,38 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Session } from "@ion/adapter-kit";
+import type { SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
 import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
-import { getHarness } from "../adapters/registry.js";
+import { getHarness, placeProbes } from "../adapters/registry.js";
+import { ownAgentSandbox, runSandbox } from "../runs/sandbox.js";
+import type { JudgeOthers } from "./judge.js";
+import { useJudgeMisses } from "./misses.js";
 import { envDropOf } from "../tools/env-drop.js";
+
+/** Where ion's own agent processes (the judge, ion's quick model, sign-in and model checks) work: in its data folder. */
+const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
+
+/**
+ * Removes the folders ion's judge and agent checks left in the temp folder before they moved into ion's data folder
+ * (final review, 2026-11-22): `ion-probe-*` and `ion-judge-*` folders only, nothing else there.
+ */
+export function sweepTmp(tmp: string = tmpdir()): void {
+  // Only folders untouched for an hour: one in use (another ion, a test) stays (pnpm check, 2026-11-22).
+  const before = Date.now() - 3600_000;
+  try {
+    for (const e of readdirSync(tmp, { withFileTypes: true })) {
+      if (!e.isDirectory() || !/^ion-(probe|judge)-/.test(e.name)) continue;
+      const at = statSync(join(tmp, e.name), { throwIfNoEntry: false })?.mtimeMs ?? Date.now();
+      if (at < before) rmSync(join(tmp, e.name), { recursive: true, force: true });
+    }
+  } catch {
+    // a temp folder ion can't list: nothing of ion's to remove
+  }
+}
+
+/** Where the runner's config is, where it works, and how this computer sandboxes (default: as it can). */
+export type RunnerOpts = { configFile: string; dataDir: string; sandbox?: SandboxKind };
 
 /**
  * The agent, model and effort a prompt runs on: ion's quick model at the effort you picked (`agent` overrides the
@@ -22,25 +49,29 @@ export function startOf(c: UserConfig, which: "judge" | "quick", agent?: string)
 /**
  * Runs one prompt on a model from your config: the Auto judge's ("judge", the default), or ion's own quick model
  * ("quick": how ion chief and the project ions think); `agent` ("<harness>[:<model>]") instead, when given. It runs
- * in an empty folder, as a bare session (no tools where the harness allows it; every permission denied), and
+ * in a fresh folder of ion's data folder (removed after), as a bare session (no tools where the harness allows it; every permission
+ * denied), in a run's sandbox (final review, 2026-11-22: ion's folders denied, agents' configs read-only), and
  * returns its last message.
  */
 export function harnessRunner(
-  configFile: string,
+  o: RunnerOpts,
   which: "judge" | "quick" = "judge",
 ): (prompt: string, signal: AbortSignal, agent?: string) => Promise<string> {
   return async (prompt, signal, agent) => {
-    const { id, model, effort } = startOf(loadUserConfig(configFile).config, which, agent);
+    const { id, model, effort } = startOf(loadUserConfig(o.configFile).config, which, agent);
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
-    const dir = mkdtempSync(join(tmpdir(), "ion-judge-"));
+    const f = foldersOf(o.dataDir, which, id);
+    const dir = realpathSync(mkdtempSync(join(f.base, "s-")));
     try {
       const session = await h.adapter.start({
         cwd: dir,
         model,
         effort,
         bare: true,
-        envDrop: await envDropOf(configFile),
+        bareHome: f.home,
+        // Its sandbox writes its kind's folder (a warm agent's sessions each open in a folder there).
+        ...(await ownAgentStart(o, f.base, id)),
         signal,
         decide: async () => "deny",
       });
@@ -49,6 +80,28 @@ export function harnessRunner(
       rmSync(dir, { recursive: true, force: true });
     }
   };
+}
+
+/**
+ * Where an agent's judge or ion's quick model on it works (PR #25 review, 2026-11-22), apart from each other: `base`,
+ * which holds each session's own folder (made fresh, removed when it ends) and which its sandbox may write, and
+ * `home`, a daemon-only folder for the agent's own files (Grok's profile), outside it. Emptied at the daemon's start.
+ */
+function foldersOf(
+  dataDir: string,
+  which: "judge" | "quick",
+  harness: string,
+): { base: string; home: string } {
+  const name = `ion-${which}-${harness.replace(/[^\w-]/g, "_")}`;
+  const base = join(scratchOf(dataDir), name);
+  const home = join(scratchOf(dataDir), `${name}-own`);
+  for (const d of [base, home]) mkdirSync(d, { recursive: true, mode: 0o700 });
+  return { base: realpathSync(base), home: realpathSync(home) };
+}
+
+/** Empties ion's scratch folder (the daemon's start): what judges and checks left there before goes. */
+export function clearScratch(dataDir: string): void {
+  rmSync(scratchOf(dataDir), { recursive: true, force: true });
 }
 
 /** Sends the prompt and returns the session's last message; closes the session (also when the judge gives up). */
@@ -89,4 +142,43 @@ export async function answerWithin(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Where ion's own agent processes work, set at the daemon's start: its checks of an agent open it in ion's data folder,
+ * sandboxed; what judges and checks left in the temp folder and in ion's scratch folder goes.
+ */
+export function startOwnAgents(o: { dataDir: string; configFile: string }, kind: SandboxKind): SandboxKind {
+  placeProbes({
+    root: scratchOf(o.dataDir),
+    sandbox: (cwd, harness) => runSandbox(kind, { ...o, cwd, harness }),
+  });
+  sweepTmp();
+  clearScratch(o.dataDir);
+  return kind;
+}
+
+/**
+ * The agents a judge that didn't answer may ask once more (final review, 2026-11-22): any other ready one; each miss is
+ * counted for its agent (Settings → Agents).
+ */
+export function judgeOthers(
+  o: { dataDir: string; configFile: string },
+  ready: () => Promise<string[]>,
+): JudgeOthers {
+  const misses = useJudgeMisses(join(o.dataDir, "judge-misses.json"));
+  return {
+    first: () => startOf(loadUserConfig(o.configFile).config, "judge").id,
+    ready,
+    missed: (agent) => misses.add(agent),
+  };
+}
+
+/** What one of ion's own agent processes starts with: your keys kept from it, and its sandbox (none where there's none). */
+export async function ownAgentStart(
+  o: { dataDir: string; configFile: string; sandbox?: SandboxKind },
+  cwd: string,
+  harness: string,
+): Promise<Pick<StartOpts, "envDrop" | "sandbox">> {
+  return { envDrop: await envDropOf(o.configFile), ...ownAgentSandbox(o, cwd, harness) };
 }

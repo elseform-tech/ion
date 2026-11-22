@@ -71,7 +71,7 @@ describe("tools", () => {
     expect(info.mcpFile).toBe(join(home, "mcp.json"));
     expect(info.mcpProblem).toBeUndefined();
     expect(info.leftOut).toEqual([{ name: "ion", why: "ion is ion's own server" }]);
-    expect(info.mcp).toEqual([
+    expect(info.mcp.map(({ match: _m, ...m }) => m)).toEqual([
       {
         ...{ id: "github", name: "github", on: false, new: true, auth: "apiKey", transport: "stdio" },
         ...{

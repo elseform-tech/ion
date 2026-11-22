@@ -930,7 +930,7 @@ button.arow:hover{background:var(--hover)}
 .tabs2{align-items:center}.tabs2>.ib{margin-left:auto}.tabs2>.ib+.ib{margin-left:0}.group+.group{margin-top:12px}.hrow .chip{margin-left:6px;padding:0 8px;line-height:18px}
 .group>.srow+.trow,.group>.trow+.srow{border-top:1px solid var(--line)}
 .srow.ev{padding:8px 14px}.srow.ev .g{font-size:12.5px;font-weight:500;color:var(--muted)}.srow.ev .ib{width:26px;height:26px}
-.trow .tname+.chip{margin-left:6px;padding:0 8px;line-height:18px}.trow .acts2{align-items:center;justify-content:flex-end;min-width:150px}
+.trow .tname+.chip{margin-left:6px;padding:0 8px;line-height:18px}.trow .acts2{align-items:center;justify-content:flex-end;min-width:150px}.trow.dim{opacity:.55}.seg.whose{display:flex;width:max-content;margin:0 0 10px}.seg.whose button{display:inline-grid;place-items:center}.seg.whose canvas{width:16px;height:16px;display:block}.trow .s .part+.part::before{content:" · "}
 .tmore{position:relative}.tmore .pmenu{top:50%;left:auto;right:calc(100% + 4px);transform:translateY(-50%);min-width:120px}
 .trow .s code{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.trow .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .trow .acts2{gap:10px}.trow .acts2>*{flex-shrink:0;white-space:nowrap}
@@ -1107,6 +1107,13 @@ button.arow:hover{background:var(--hover)}
 .fin.time{width:auto;padding:4px 8px;font-variant-numeric:tabular-nums}
 .acts2{align-items:center}.acts2 .dash{color:var(--faint)}
 .keys{display:flex;gap:4px}
+/* the message box's "/" and "@": the menu above the box (skills and commands; connections), picks as chips; a server's tools, each with Ions can use */
+.smenu{top:auto;bottom:calc(100% + 6px);left:8px;right:8px;max-height:280px;overflow:auto}
+.smenu button.act{background:var(--hover);color:var(--ink)}
+.smenu .nm{color:var(--ink);white-space:nowrap}
+.smenu .ds{min-width:0;color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.u .catt,.bu .catt{margin:0 0 6px;justify-content:flex-end}.u .catt .chip{margin-left:0}.bu .chip.pick{background:rgba(255,255,255,.16);color:inherit}
+.stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}.stools .trow .s{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1351,7 +1358,9 @@ export function sumLines(lines: Line[]) {
               <div class="foot"><div class="fcol">
                 <div class="await"><span class="g"><i class="wd"></i>Open pull request #482?</span><button class="btn" type="button">Review</button><button class="btn pri" type="button">Open PR</button></div>
                 <div class="cbox">
-                  <div class="catt"><span class="chip file"><i data-lucide="file-text"></i>ci-log.txt<small>4 KB</small><button type="button" aria-label="Remove ci-log.txt"><i data-lucide="x"></i></button></span></div>
+                  <div class="pmenu smenu" role="listbox" aria-label="Skills" hidden><button type="button" class="act"><span title="Skill" style="display:flex"><i data-lucide="sparkles"></i></span><span class="nm">pdf</span><span class="ds">Read and fill PDFs</span></button><button type="button"><span title="Command" style="display:flex"><i data-lucide="square-terminal"></i></span><span class="nm">review</span><span class="ds">Review the diff</span></button></div>
+                  <div class="pmenu smenu" role="listbox" aria-label="Connections" hidden><button type="button" class="act"><span title="Connection" style="display:flex"><i data-lucide="plug"></i></span><span class="nm">everything</span></button><button type="button"><span title="Resource" style="display:flex"><i data-lucide="file-text"></i></span><span class="nm">Readme</span><span class="ds">file:///readme</span></button></div>
+                  <div class="catt"><span class="chip file"><i data-lucide="file-text"></i>ci-log.txt<small>4 KB</small><button type="button" aria-label="Remove ci-log.txt"><i data-lucide="x"></i></button></span><span class="chip pick"><i data-lucide="sparkles"></i>pdf<button type="button" aria-label="Remove pdf"><i data-lucide="x"></i></button></span></div>
                   <span class="ph">Reply…</span>
                   <div class="bar">
                     <button class="ib" type="button" title="Attach files, images or recordings"><i data-lucide="paperclip"></i></button>
@@ -1437,6 +1446,8 @@ export function sumLines(lines: Line[]) {
                   <button class="acard" type="button" data-view="pricing"><span class="aic"><i data-lucide="file-text"></i></span><span class="g"><b>Pricing headline options</b><small>Document · v2 · edited 1h ago</small></span><i data-lucide="chevron-right"></i></button>
                 </div>
                 <div class="qa"><button class="qq" type="button" aria-expanded="false" title="Which one goes on the page?" data-qa><i data-lucide="message-circle-question"></i>Which one goes on the page?</button></div>
+                <!-- An answer that reaches past the chat: "Always" for an agent's question; a call ion stopped, answered with
+                     Remember ticked, says "Remember" (Task 11, 2026-11-22). -->
                 <div class="u">Every agent, one orbit.<span class="chip">Always</span></div>
                 <div class="a">
                   <div data-wslot="chat2"></div>
@@ -1519,13 +1530,13 @@ export function sumLines(lines: Line[]) {
                     <button type="button" class="ib qtog" aria-label="Collapse" aria-expanded="true" data-qtog><i data-lucide="chevron-down"></i><i data-lucide="chevron-up"></i></button>
                   </div>
                   <div class="qd">
-                    <div class="why clamp" role="button" tabindex="0" aria-expanded="false">ion is wary of this: it runs a file this command creates
+                    <div class="why clamp" role="button" tabindex="0" aria-expanded="false">ion is wary of this: it runs a script ion can't read
 
 { "command": "cargo build --release &amp;&amp; ./target/release/shop" }</div>
-                    <button type="button" class="qopt"><b>Allow once</b><span>It runs this time. ion asks again next time.</span></button>
-                    <button type="button" class="qopt"><b>Always allow in this project</b><span>It runs, and this exact action runs in this project from now on without asking.</span></button>
+                    <button type="button" class="qopt"><b>Allow</b><span>It runs.</span></button>
                     <button type="button" class="qopt"><b>Don't allow</b><span>The agent is told no and works around it.</span></button>
-                    <div class="qd-f"><input class="own" aria-label="Your own answer" placeholder="Something else…"></div>
+                    <!-- The user, 2026-11-21: Remember keeps the answer for this exact action in this project (off by default). -->
+                    <div class="qd-f"><input class="own" aria-label="Your own answer" placeholder="Something else…"><label title="Remember"><input type="checkbox" aria-label="Remember"> Remember</label></div>
                   </div>
                 </div>
                 <div class="cbox">
@@ -2881,7 +2892,7 @@ const who=k=>k==='lead'?'ion':IONS[k].name;
 const EFF=[['low','Low','~0.3× quota'],['medium','Medium','1×'],['high','High','~2×'],['max','Max','~4×'],['auto','Auto','ion decides per task']];
 const effLabel=e=>EFF.find(x=>x[0]===e)[1];
 /* one place for connections: each harness signs in with its own CLI login; ion thinks with a connected harness */
-const HCONN={claude:{st:'on',how:'Signed in',use:62},grok:{st:'on',how:'Signed in',use:88},codex:{st:'on',how:'Signed in',use:31},
+const HCONN={claude:{st:'on',how:'Signed in',use:62,rules:3},grok:{st:'on',how:'Signed in',use:88},codex:{st:'on',how:'Signed in',use:31},
   gemini:{st:'on',how:'Signed in',spend:'$4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
 const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],eff:'high',when:'auto',use:4,week:1.8};
 /* System 1 runs with thinking off where the harness allows it */
@@ -2919,14 +2930,30 @@ const TOOLS={
   hooks:[['tool.before','Before a tool runs'],['run.started','A chat starts'],['run.finished','A chat finishes'],['run.failed','A chat fails'],['need.raised','Something needs you'],['need.resolved','You answered'],['routine.ran','A routine ran'],['chat.archived','A chat is archived'],['briefing.posted','The briefing is posted']],
   mine:{'run.finished':[{id:'log',n:'Log',run:'echo done >> ~/ion-hooks.log',on:true,last:'Ran 2m ago'},{id:'say',n:'Say done',run:'say done',on:false,st:'New',by:'Release checklist'}],
         'need.raised':[{id:'slack',n:'Slack',run:'~/bin/slack-ping',on:true,last:'Failed: exit 1'}]},
-  skills:[{id:'release',n:'release',d:'Release notes from merged pull requests',who:'claude',on:true},
-          {id:'a11y',n:'a11y',d:'Checks changed screens',who:'claude',on:false,st:'New'},
-          {id:'review',n:'review',d:'Reviews a diff before you merge',who:'codex'}]};
-let toolTab='mcp', keyOpen=null, toolAt=null;
-/* Import: servers in your agents' own configs that mcp.json doesn't have, in one line. One agent: how many the first time,
-   later what's new in it ("New in Codex: sentry"); more than one (tour, 2026-11-21): "4 servers in Claude Code and Codex".
-   The line can be dismissed until something new appears; nothing is run or contacted. */
-const IMPORTS=['4 servers in Claude Code and Codex'];
+  /* who loads each: ion when it passes it (a switch), each agent that loads it itself; Codex's own skills load
+     whatever its switch says, so with it off they read "Also loads its own" (task review, 2026-11-21) */
+  skills:[{id:'release',n:'release',d:'Release notes from merged pull requests',who:['ion'],on:true},
+          {id:'a11y-codex',n:'a11y-check',d:'Checks changed screens',who:['codex'],also:true},
+          {id:'a11y',n:'a11y',d:'Checks changed screens',who:['ion'],on:false,st:'New'},
+          {id:'review',n:'review',d:'Reviews a diff before you merge',who:['claude','codex']}],
+  /* each agent's own (the user, 2026-11-21: agents bring their own; read-only, they're the agent's). One row per thing
+     several have, every face on it; the same name set up differently: a row each, "Differs" (what, on hover); an agent
+     whose own tools are off in ion: dimmed, "Off in ion". */
+  ownMcp:[{n:'github',w:'<code>gh-mcp serve</code>',who:['claude','codex']},
+          {n:'sentry',w:'mcp.sentry.dev',who:['codex'],differs:'Runs something else'},
+          {n:'sentry',w:'<code>sentry-mcp</code>',who:['grok'],differs:'Runs something else'},
+          {n:'fs',w:'<code>fs-mcp /tmp</code>',who:['gemini'],off:true}],
+  repo:[{id:'repotool',n:'repotool',on:false}],
+  plugins:[{n:'superpowers',who:['claude','grok'],what:['4 skills, 1 server','Its hooks don’t run in ion (Claude Code), run too (Grok Build)']},
+           {n:'frontend-design',who:['grok'],what:['1 skill','Its hooks run too']},
+           {n:'sales',who:['codex'],what:['1 skill']}]};
+let toolTab='mcp', keyOpen=null, toolAt=null, toolWho='all';
+/* whose faces: ion's, then each agent's ("From Claude Code") */
+const tfaces=w=>w.map(a=>a==='ion'?'<span title="ion"><canvas class="av" data-ion="lead" aria-hidden="true"></canvas></span>':`<span title="From ${esc(LIB[a].name)}"><canvas class="av" data-bot="${a}" aria-hidden="true"></canvas></span>`).join('');
+const twho=x=>toolWho==='all'||x.who.includes(toolWho);
+const town=(ic,x)=>trow(ic,x.n,x.differs?`<span title="${x.differs}">Differs</span>`:null,x.what?x.what.map(w=>`<span class="part">${w}</span>`).join(''):x.w||(x.d?`<span class="clamp" title="${esc(x.d)}">${esc(x.d)}</span>`:''),tfaces(x.who),x.off?'<span class="s">Off in ion</span>':x.also?'<span class="s">Also loads its own</span>':'',x).replace('<div class="trow',x.off?'<div class="trow dim':'<div class="trow');
+/* Import: servers in your agents' own configs that mcp.json doesn't have; nothing is run or contacted. */
+const IMPORTS=[]; /* quiet (the user, 2026-11-21): agents bring their own; Import is optional, "Use on every agent" */
 /* Import shows what would come in first: each one's command (or host) and keys; one from a project's own file (the
    repo wrote it, not you) says so and comes in only on its own. */
 const SHOWN=[['github','From Claude Code','gh-mcp serve',['GITHUB_TOKEN']],['repotool','From shop’s .mcp.json','repo-mcp --serve',[],true]];
@@ -2935,26 +2962,34 @@ const torg=x=>x&&(x.by||x.src)?`<span class="org">${x.src?`<button class="ib" ty
 const trow=(ic,n,chip,line,mid,end,x)=>`<div class="trow${x&&x.id===toolAt?' at':''}"><span class="ti"><i data-lucide="${ic}"></i></span><div><span class="tname">${esc(n)}</span>${chip?`<span class="chip">${chip}</span>`:''}${torg(x)}${line?`<div class="s">${line}</div>`:''}</div><span class="hsup">${mid||''}</span><div class="acts2">${end||''}</div></div>`;
 const tsw=(k,x)=>`<button type="button" class="sw${x.on?' on':''}" role="switch" data-tool="${k}:${x.id}" aria-label="${esc(x.n)}" aria-checked="${!!x.on}"></button>`;
 const TBODY={
-  mcp:sup=>TOOLS.mcp.map(s=>trow('plug-zap',s.n,s.st,s.w,sup,`${s.need?`<button class="btn" type="button" data-need="${s.id}">${s.need}</button>`:''}${tsw('mcp',s)}`,s)
+  mcp:()=>TOOLS.mcp.map(s=>({...s,who:s.id==='playwright'?['ion','claude']:['ion']})).filter(twho).map(s=>trow('plug-zap',s.n,s.st,s.w,tfaces(s.who),`${s.need?`<button class="btn" type="button" data-need="${s.id}">${s.need}</button>`:''}${tsw('mcp',s)}`,s)
     +(keyOpen===s.id?`<div class="srow">${s.keys.map(k=>`<input class="fin mono" type="password" autocomplete="off" placeholder="${k}" aria-label="${k}">`).join('')}</div>`:'')
     +(s.client?'<div class="srow"><input class="fin mono" placeholder="Client ID" aria-label="Client ID"><input class="fin mono" type="password" placeholder="Client secret" aria-label="Client secret"></div><div class="perr">This server needs a client ID. Register ion with http://127.0.0.1:4100/oauth/callback</div>':'')).join('')
-    +TOOLS.leftOut.map(([n,why])=>trow('plug-zap',n,null,why)).join(''),
+    +TOOLS.ownMcp.filter(twho).map(x=>town('plug-zap',x)).join('')
+    /* a repo's own .mcp.json (security review, 2026-11-21: the repo wrote it, not you): a switch, off until you turn it on */
+    +(twho({who:['claude']})?trow('plug-zap','repotool','New','mcp.acme.example',tfaces(['claude']),tsw('repo',TOOLS.repo[0])).replace('<span class="chip">New</span>','<span class="chip">New</span><span class="org"><span>From shop’s .mcp.json</span></span>'):'')
+    /* a local one (ruling, 2026-11-21: any command a repo wrote runs code here): no lasting switch, ion asks in each chat */
+    +(twho({who:['claude']})?trow('plug-zap','local',null,'<code>node ./tools/mcp.js</code>',tfaces(['claude']),'<span class="s">Asks in each chat</span>').replace('<span class="tname">local</span>','<span class="tname">local</span><span class="org"><span>From shop’s .mcp.json</span></span>'):'')
+    +(toolWho==='all'||toolWho==='ion'?TOOLS.leftOut.map(([n,why])=>trow('plug-zap',n,null,why)).join(''):''),
+  plugins:()=>TOOLS.plugins.filter(twho).map(x=>town('puzzle',x)).join(''),
   hooks:()=>TOOLS.hooks.map(([ev,n])=>`<div class="srow ev"><div class="g">${n}</div><button class="ib" type="button" title="Add" aria-label="Add to ${n}"><i data-lucide="plus"></i></button></div>`
     +(ev==='tool.before'?trow('shield-check','Auto-approval','Built in'):'')
     +(TOOLS.mine[ev]||[]).map(h=>trow('webhook',h.n,h.st,`<code title="${esc(h.run)}">${esc(h.run)}</code>`,'',`${h.last?`<span class="s">${h.last}</span>`:''}${tsw('hook',h)}<div class="tmore"><button class="ib" type="button" title="More" aria-label="More for ${esc(h.n)}"><i data-lucide="ellipsis"></i></button></div>`,h)).join('')).join(''),
-  /* skills: the agents that use each, by face as Connections shows them (tour, 2026-11-21: was a word chip) */
-  skills:()=>TOOLS.skills.map(s=>trow('book-open',s.n,s.st,`<span class="clamp" title="${esc(s.d)}">${esc(s.d)}</span>`,HARNESSES.filter(h=>HCONN[h].st==='on').map(h=>`<span class="${h===s.who?'':'no'}" title="${esc(LIB[h].name)}: ${h===s.who?'works':'not supported'}"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas></span>`).join(''),s.who==='claude'?tsw('skills',s):'<span class="s">Uses its own</span>')).join('')};
+  /* skills: whose each is, by face as Connections shows them; ion's have a switch, an agent's own none */
+  skills:()=>TOOLS.skills.filter(twho).map(s=>s.who[0]==='ion'?trow('book-open',s.n,s.st,`<span class="clamp" title="${esc(s.d)}">${esc(s.d)}</span>`,tfaces(s.who),tsw('skills',s)):town('book-open',s)).join('')};
 function renderTools(){
   const el=document.getElementById('sTools'); if(!el) return;
-  const sup=HARNESSES.filter(h=>HCONN[h].st==='on').map(h=>`<span title="${esc(LIB[h].name)}: works"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas></span>`).join('');
+  const who=[['all','All'],['ion','ion'],...HARNESSES.filter(h=>HCONN[h].st==='on').map(h=>[h,LIB[h].name])];
+  const chips=toolTab==='hooks'?'':`<span class="seg sm whose" role="group" aria-label="Whose">${who.map(([id,l])=>`<button type="button" class="${toolWho===id?'on':''}" data-twho="${id}" title="${esc(l)}" aria-label="${esc(l)}">${id==='all'?'<i data-lucide="layers"></i>':id==='ion'?'<canvas class="av" data-ion="lead" aria-hidden="true"></canvas>':`<canvas class="av" data-bot="${id}" aria-hidden="true"></canvas>`}</button>`).join('')}</span>`;
   const lines=toolTab==='mcp'?'<div class="perr">mcp.json: line 12 isn’t valid JSON; showing the last good list</div><div class="perr">ion can’t read your keychain</div>':'';
   el.innerHTML=`<div>
-    <div class="tabs2"><span class="seg sm">${[['mcp','Connections','plug-zap'],['hooks','Hooks','webhook'],['skills','Skills','book-open']].map(([id,l,ic])=>`<button type="button" class="${toolTab===id?'on':''}" data-ttab="${id}" title="${l}" aria-label="${l}"><i data-lucide="${ic}"></i></button>`).join('')}</span>${toolTab==='mcp'?'<button class="ib" type="button" title="Import" aria-label="Import"><i data-lucide="import"></i></button><button class="ib" type="button" title="Open config file" aria-label="Open config file"><i data-lucide="file-cog"></i></button>':''}</div>
-    ${toolTab==='mcp'?IMPORTS.map(l=>`<div class="srow imp"><span class="g">${l}</span><button class="btn" type="button">Import</button><button class="ib" type="button" title="Dismiss" aria-label="Dismiss"><i data-lucide="x"></i></button></div>`).join('')+`<div class="group">${SHOWN.map(([n,src,run,keys,repo])=>trow('plug-zap',n,src,`<code title="${esc(run)}">${esc(run)}</code>`,'',keys.map(k=>`<span class="chip" title="Needs a key">${k}</span>`).join('')+(repo?`<button class="btn" type="button" aria-label="Import ${n}">Import</button>`:''))).join('')}<div class="srow"><span class="g"></span><button class="btn" type="button">Import these</button><button class="ib" type="button" title="Close" aria-label="Close"><i data-lucide="x"></i></button></div></div>`:''}${lines}<div class="group">${TBODY[toolTab](sup)}</div></div>`;
+    <div class="tabs2"><span class="seg sm">${[['mcp','Connections','plug-zap'],['skills','Skills','book-open'],['plugins','Plugins','puzzle'],['hooks','Hooks','webhook']].map(([id,l,ic])=>`<button type="button" class="${toolTab===id?'on':''}" data-ttab="${id}" title="${l}" aria-label="${l}"><i data-lucide="${ic}"></i></button>`).join('')}</span>${toolTab==='mcp'?'<button class="ib" type="button" title="Use on every agent" aria-label="Use on every agent"><i data-lucide="import"></i></button><button class="ib" type="button" title="Open config file" aria-label="Open config file"><i data-lucide="file-cog"></i></button>':''}</div>${chips}
+    ${toolTab==='mcp'?IMPORTS.map(l=>`<div class="srow imp"><span class="g">${l}</span><button class="btn" type="button">Import</button><button class="ib" type="button" title="Dismiss" aria-label="Dismiss"><i data-lucide="x"></i></button></div>`).join('')+`<div class="group">${SHOWN.map(([n,src,run,keys,repo])=>trow('plug-zap',n,src,`<code title="${esc(run)}">${esc(run)}</code>`,'',keys.map(k=>`<span class="chip" title="Needs a key">${k}</span>`).join('')+(repo?`<button class="btn" type="button" aria-label="Import ${n}">Import</button>`:''))).join('')}<div class="srow"><span class="g"></span><button class="btn" type="button">Import these</button><button class="ib" type="button" title="Close" aria-label="Close"><i data-lucide="x"></i></button></div></div>`:''}${lines}<div class="group">${TBODY[toolTab]()}</div></div>`;
   hydrate(el); icons(el);
 }
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-ttab]'); if(t){ toolTab=t.dataset.ttab; renderTools(); return; }
+  const tw=e.target.closest('[data-twho]'); if(tw){ toolWho=tw.dataset.twho; renderTools(); return; }
   const q=e.target.closest('[data-qa]'); if(q){ const o=q.classList.toggle('open'); q.setAttribute('aria-expanded',String(o)); return; }
   const gt=e.target.closest('[data-gotools]'); if(gt){ toolTab='mcp'; toolAt=gt.dataset.gotools; go('settings'); showS('tools'); return; }
   const n=e.target.closest('[data-need]'); if(n){ const s=TOOLS.mcp.find(x=>x.id===n.dataset.need); if(s.need==='Add key') keyOpen=keyOpen===s.id?null:s.id; else { delete s.need; delete s.st; s.on=true; } renderTools(); return; }
@@ -3597,10 +3632,13 @@ function renderHarnesses(){
   const el=document.getElementById('hList');
   el.innerHTML=HARNESSES.map(h=>{ const c=HCONN[h], n=LIB[h].name;
     const right=c.st==='on'
-      ? `<div class="meter${c.use>=80?' hi':''}">${c.use!=null?`<span>${c.use}% this week</span><div class="tr"><i style="width:${c.use}%"></i></div>`:`<span>${c.spend} this week</span><div class="tr"><i style="width:21%"></i></div>`}</div><button class="ib" type="button" title="${esc(n)} options"><i data-lucide="ellipsis"></i></button>`
+      ? `<div class="meter${c.use>=80?' hi':''}">${c.use!=null?`<span>${c.use}% this week</span><div class="tr"><i style="width:${c.use}%"></i></div>`:`<span>${c.spend} this week</span><div class="tr"><i style="width:21%"></i></div>`}</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`
       : c.st==='busy' ? `<span class="cbusy"><i class="spin"></i>${esc(c.msg)}</span><span></span>`
       : `<span></span><button class="btn${c.st==='off'?' pri':''}" type="button" data-hconnect="${h}">${c.st==='missing'?'Install and connect':'Connect'}</button>`;
-    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Also loads its own</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div></div>${right}</div>`; }).join('');
+    /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.
+       c.nosb: on a computer without an OS sandbox (Plan 18 Task 12), each agent's chats run without one: "Not sandboxed".
+       c.rules: its own allow/deny rules ion goes by in its chats (Plan 18 Task 14), with how many. */
+    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}</div>${right}</div>`; }).join('');
   hydrate(el); icons(el); renderIonModels();
 }
 function renderIonModels(){

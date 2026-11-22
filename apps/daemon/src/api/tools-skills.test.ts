@@ -14,7 +14,7 @@ let root: string;
 let srv: Awaited<ReturnType<typeof startServer>>;
 let client: IonClient;
 
-async function start(secrets: Secrets = memorySecrets()) {
+async function start(secrets: Secrets = memorySecrets(), config = "") {
   root = mkdtempSync(join(tmpdir(), "ion-skills-api-"));
   const home = join(root, "home");
   for (const [dir, name] of [
@@ -25,7 +25,7 @@ async function start(secrets: Secrets = memorySecrets()) {
     writeFileSync(join(home, dir, "SKILL.md"), `---\nname: ${name}\ndescription: Does ${name}\n---\nBody\n`);
   }
   writeFileSync(join(root, "mcp.json"), JSON.stringify({ mcpServers: {} }), { mode: 0o600 });
-  writeFileSync(join(root, "config.toml"), "");
+  writeFileSync(join(root, "config.toml"), config);
   srv = await startServer({
     ...{ dataDir: join(root, "data"), configFile: join(root, "config.toml"), port: 0 },
     ...{ secrets, home },
@@ -40,7 +40,8 @@ afterEach(async () => {
 
 describe("skills in Settings → Tools", () => {
   it("lists your agents' skills, turns Claude Code's on, and says the others use their own", async () => {
-    await start();
+    // Claude Code with "Use its own tools" off: ion passes the Claude skills you turn on (Task 5's way, kept).
+    await start(memorySecrets(), "[agents.claude-code]\nownTools = false\n");
     const t = await client.call("tools.list", {});
     expect(t.skills.map((s) => [s.name, s.whose, s.where, s.on]).sort()).toEqual([
       ["deploy", "codex", "~/.codex/skills/deploy", false],
@@ -67,9 +68,27 @@ describe("skills in Settings → Tools", () => {
       set: () => Promise.reject(new KeychainError("Your keychain is locked")),
       remove: async () => {},
     };
-    await start(locked);
+    await start(locked, "[agents.claude-code]\nownTools = false\n");
     await expect(
       client.call("tools.setOn", { kind: "skill", id: "~/.claude/skills/pdf", on: true }),
     ).rejects.toThrow(/^ion can't read your keychain$/);
+  });
+});
+
+// The user, 2026-11-21: agents bring their own skills; Settings → Tools shows each agent's own read-only, beside ion's.
+describe("an agent's own skills", () => {
+  it("Claude Code's own skills come on, read-only, while its switch is on", async () => {
+    await start();
+    const t = await client.call("tools.list", {});
+    const pdf = t.skills.find((s) => s.name === "pdf");
+    expect(pdf).toMatchObject({
+      on: true,
+      own: "claude-code",
+      hash: expect.stringMatching(/^[0-9a-f]{12}$/),
+    });
+    expect(t.skills.find((s) => s.name === "deploy")?.own).toBe("codex");
+    await expect(
+      client.call("tools.setOn", { kind: "skill", id: "~/.claude/skills/pdf", on: false }),
+    ).rejects.toThrow(/^Claude Code uses its own$/);
   });
 });

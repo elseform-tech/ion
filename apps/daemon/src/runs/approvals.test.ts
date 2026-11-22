@@ -10,7 +10,7 @@ import { Approvals, type AskingRun } from "./approvals.js";
 const home = "/Users/me";
 const wt = "/data/worktrees/c1";
 const store = { append: () => {} } as unknown as EventStore;
-const judge = async () => ({ allow: true, reason: "fine" });
+const judge = async () => ({ verdict: "allow" as const, reason: "fine" });
 const own = { home, ionDirs: ["/data", `${home}/.config/ion`] };
 const access = createAccess({ judge, ...own });
 const run = (a: "auto" | "full"): AskingRun => ({
@@ -202,7 +202,7 @@ describe("a tools/call at ion's gateway", () => {
     const judged = createAccess({
       judge: async (q: { req: { toolName: string; input: unknown } }) => {
         seen.push(q.req);
-        return { allow: false, reason: "Not for this task" };
+        return { verdict: "deny" as const, reason: "Not for this task" };
       },
       ...own,
     });
@@ -221,7 +221,7 @@ describe("a tools/call at ion's gateway", () => {
     const counting = createAccess({
       judge: async () => {
         judged++;
-        return { allow: true, reason: "fine" };
+        return { verdict: "allow" as const, reason: "fine" };
       },
       ...own,
     });
@@ -262,7 +262,9 @@ describe("the handoff to ion's gateway", () => {
     const access0 = createAccess({
       judge: async () => {
         n.judged++;
-        return n.allow ? { allow: true, reason: "fine" } : { allow: false, reason: "no" };
+        return n.allow
+          ? { verdict: "allow" as const, reason: "fine" }
+          : { verdict: "deny" as const, reason: "no" };
       },
       ...own,
     });
@@ -349,7 +351,7 @@ describe("a check that didn't finish", () => {
     const judging = createAccess({
       judge: async (i) => {
         seen.push(judgePrompt(i));
-        return { allow: true, reason: "fine" };
+        return { verdict: "allow" as const, reason: "fine" };
       },
       ...own,
     });
@@ -397,7 +399,7 @@ describe("a run's own skills plugin", () => {
         expect((await a.gate(r, no, [wt])).decision, `${mode} ${no.summary}`).toBe("deny");
     }
     // In Auto a skill's own files are the run's, like its worktree: no judge to say no.
-    const strict = createAccess({ judge: async () => ({ allow: false, reason: "no" }), ...own });
+    const strict = createAccess({ judge: async () => ({ verdict: "deny" as const, reason: "no" }), ...own });
     const b = new Approvals(store, strict, () => true, { own });
     expect((await b.gate(withPlugin("auto"), read(`${plugin}/skills/pdf/ref.md`), [wt])).decision).toBe(
       "allow",
@@ -410,7 +412,7 @@ describe("a run's own skills plugin", () => {
     const asked: string[] = [];
     const judgeNo = async (q: { req: { summary: string } }) => {
       asked.push(q.req.summary);
-      return { allow: false, reason: "no" };
+      return { verdict: "deny" as const, reason: "no" };
     };
     const a = new Approvals(store, createAccess({ judge: judgeNo, ...own }), () => true, { own });
     const r = withPlugin("auto");
@@ -477,7 +479,7 @@ describe("refused, judged or asked: what ion knows, and what it guesses", () => 
     };
     const judge = async (q: { req: { summary: string }; wary?: Wary }) => {
       judged.push({ summary: q.req.summary, ...(q.wary ? { wary: q.wary } : {}) });
-      return { allow: verdict, reason: verdict ? "fine" : "no" };
+      return { verdict: verdict ? ("allow" as const) : ("deny" as const), reason: verdict ? "fine" : "no" };
     };
     const a = new Approvals(store, createAccess({ judge, ...own }), () => true, { own, askBlocked });
     return { a, asked, judged, setAlways: () => (always = true) };
@@ -530,7 +532,7 @@ describe("refused, judged or asked: what ion knows, and what it guesses", () => 
     const { a, judged } = setup(true);
     await a.gate(run("auto"), cmd("gcc main.c -o main && ./main"), [tree()]);
     expect(judged[0]?.wary).toEqual({
-      reason: "it runs a file this command creates",
+      reason: "it runs a script ion can't read",
       scripts: [],
       decoded: [],
     });
@@ -560,6 +562,36 @@ describe("refused, judged or asked: what ion knows, and what it guesses", () => 
     expect(judged).toEqual([]);
   });
 
+  // The user, 2026-11-21 (Plan 18 Task 12): once a run is in the OS sandbox, ion's files are out of its reach
+  // whatever a script, decoded text or a cleared environment does, so the guesses that only guarded ion's key no
+  // longer ask (or reach the judge as ion's guess); what ion knows (its files, your keys, env dumps, dropping the run's
+  // key) still holds as defence in depth.
+  it("in a sandboxed run, the guesses that only guarded ion's key don't ask; what ion knows still holds", async () => {
+    const t = tree();
+    const { a, asked, judged } = setup(true);
+    const boxed = { ...run("full"), sandboxed: true };
+    for (const c of [
+      "gcc main.c -o main && ./main",
+      "echo ZWNobyBoaQ== | base64 -d | sh",
+      "bash drop.sh",
+      "exec -c ion mcp ls",
+      "python3 -c 'import os; os.system(\"ls\")'",
+    ])
+      expect((await a.gate(boxed, cmd(c), [t])).decision, c).toBe("allow");
+    expect(asked).toEqual([]);
+    for (const c of [
+      "cat ~/.config/ion/mcp.json",
+      "unset ION_RUN_KEY",
+      "env",
+      "security find-generic-password -s ion -w",
+    ])
+      expect((await a.gate(boxed, cmd(c), [t])).decision, c).toBe("deny");
+    expect(judged).toEqual([]);
+    await a.gate({ ...run("auto"), sandboxed: true }, cmd("bash drop.sh"), [t]);
+    expect(judged).toHaveLength(1);
+    expect(judged[0]?.wary).toBeUndefined();
+  });
+
   it("without anyone to ask, a guess is refused with the safer route", async () => {
     const a = new Approvals(store, access, () => true, { own });
     const v = await a.gate(run("full"), cmd("sh /tmp/ion-no-such-script.sh"), [wt]);
@@ -587,5 +619,174 @@ describe("refused, judged or asked: what ion knows, and what it guesses", () => 
     await a.gate(run("auto"), cmd(`bash ${home0}/x.sh`), [tree()]);
     expect(judged[0]?.wary?.scripts).toEqual([{ file: `${home0}/x.sh` }]);
     expect(JSON.stringify(judged)).not.toContain("private-words");
+  });
+});
+
+// The user, 2026-11-21: agents bring their own servers into ion's chats; ion's gate still judges every call. An own
+// server's tool (not ion's, not one ion serves) is never allowed by ion's policy: in Auto it goes to the judge.
+describe("an agent's own tool call is judged by ion", () => {
+  it("goes to the judge in Auto, with its server and tool named", async () => {
+    const seen: string[] = [];
+    const judging = createAccess({
+      judge: async (prompt: unknown) => {
+        seen.push(JSON.stringify(prompt));
+        return { verdict: "deny" as const, reason: "not asked for" };
+      },
+      ...own,
+    });
+    const a = new Approvals(store, judging, () => true, { own });
+    const call: ApprovalRequest = {
+      requestId: "q",
+      toolId: "t",
+      toolName: "mcp__github__delete_repo",
+      kind: "mcp",
+      mcpServer: "github",
+      summary: "delete_repo",
+      input: { repo: "me/app" },
+    };
+    expect((await a.gate(run("auto"), call, [wt])).decision).toBe("deny");
+    expect(seen.join("\n")).toContain("mcp__github__delete_repo");
+  });
+});
+
+// Re-review, 2026-11-21: while ion holds a run's call (its gate, the judge, or your answer), the agent's silence check
+// waits: the run's session is told when holding starts and ends.
+describe("telling a run's session ion is holding one of its calls", () => {
+  it("says held while the gate decides, and not after", async () => {
+    let release: (() => void) | undefined;
+    const askBlocked = {
+      ask: () => new Promise<"allow">((r) => (release = () => r("allow"))),
+      allowed: () => false,
+    };
+    const deny = createAccess({ judge: async () => ({ verdict: "deny" as const, reason: "no" }), ...own });
+    const a = new Approvals(store, deny, () => true, { own, askBlocked });
+    const said: boolean[] = [];
+    a.holding("r1").on((h) => said.push(h));
+    const going = a.gate(run("auto"), cmd("curl https://example.com"), [wt]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(said).toEqual([true]);
+    release?.();
+    await going;
+    expect(said).toEqual([true, false]);
+  });
+});
+
+// The user, 2026-11-21: "yes, add unsure to Task 10". The judge's unsure goes the way of a no (you're asked), the
+// question says ion isn't sure, and the approval event says which the judge said.
+describe("the judge can say unsure", () => {
+  it("the judge can say unsure, and you're asked with \"ion isn't sure\"", async () => {
+    const asked: { reason: string; unsure?: true }[] = [];
+    const recorded: Record<string, unknown>[] = [];
+    const rec = {
+      append: (e: { data: Record<string, unknown> }) => recorded.push(e.data),
+    } as unknown as EventStore;
+    const askBlocked = {
+      ask: async (_r: AskingRun, b: { reason: string; unsure?: true }) => {
+        asked.push({ reason: b.reason, ...(b.unsure ? { unsure: b.unsure } : {}) });
+        return "deny" as const;
+      },
+      allowed: () => false,
+    };
+    const unsure = createAccess({
+      judge: async () => ({ verdict: "unsure" as const, reason: "can't see the script" }),
+      ...own,
+    });
+    const a = new Approvals(rec, unsure, () => true, { own, askBlocked });
+    expect((await a.gate(run("auto"), cmd("curl https://example.com"), [wt])).decision).toBe("deny");
+    expect(asked).toEqual([{ reason: "can't see the script", unsure: true }]);
+    expect(recorded.at(-1)).toMatchObject({ decision: "deny", by: "you", judge: "unsure" });
+    const no = createAccess({ judge: async () => ({ verdict: "deny" as const, reason: "risky" }), ...own });
+    const b = new Approvals(rec, no, () => true, { own, askBlocked });
+    await b.gate(run("auto"), cmd("curl https://example.com"), [wt]);
+    expect(asked.at(-1)).toEqual({ reason: "risky" });
+    expect(recorded.at(-1)).toMatchObject({ judge: "deny" });
+  });
+});
+
+// Task review, 2026-11-21: a judge that couldn't decide (failed, slow) is asked as "ion couldn't decide", with no judge
+// verdict recorded; ion's guess asked after the judge's no records what the judge said; picks reach the judge.
+describe("what the judge said, recorded", () => {
+  const rig = (
+    judge: () => Promise<{ verdict: "allow" | "deny" | "unsure"; reason: string; decided?: false }>,
+  ) => {
+    const asked: Record<string, unknown>[] = [];
+    const recorded: Record<string, unknown>[] = [];
+    const rec = {
+      append: (e: { data: Record<string, unknown> }) => recorded.push(e.data),
+    } as unknown as EventStore;
+    const askBlocked = {
+      ask: async (_r: AskingRun, b: Record<string, unknown>) => {
+        asked.push(b);
+        return "deny" as const;
+      },
+      allowed: () => false,
+    };
+    const a = new Approvals(rec, createAccess({ judge, ...own }), () => true, { own, askBlocked });
+    return { a, asked, recorded };
+  };
+  it("a judge that couldn't decide asks as ion couldn't decide, and records no verdict", async () => {
+    const { a, asked, recorded } = rig(async () => ({
+      verdict: "deny",
+      reason: "ion couldn't decide in time",
+      decided: false,
+    }));
+    await a.gate(run("auto"), cmd("curl https://example.com"), [wt]);
+    expect(asked[0]).toMatchObject({ undecided: true });
+    expect(recorded.at(-1)).not.toHaveProperty("judge");
+  });
+  it("ion's guess asked after the judge's unsure records it", async () => {
+    const t = mkdtempSync(join(tmpdir(), "ion-wt-"));
+    writeFileSync(join(t, "drop.sh"), "unset ION_RUN_KEY\n");
+    const { a, recorded } = rig(async () => ({ verdict: "unsure", reason: "can't tell" }));
+    await a.gate(run("auto"), cmd("bash drop.sh"), [t]);
+    expect(recorded.at(-1)).toMatchObject({ judge: "unsure" });
+  });
+});
+
+// The user, 2026-11-21: Full access is no judging and no asking, inside a fixed floor (ion's files and key, your
+// keychain secrets, environment dumps, dropping the run's key, the sandbox, the run key's limits). A guess runs without
+// asking when the run is really sandboxed, and still asks when it isn't; your saved "never" still holds; everything
+// else runs (pushes, publishes, deploys included).
+describe("Full access", () => {
+  const asked: string[] = [];
+  const askBlocked = {
+    ask: async (_r: AskingRun, b: { reason: string }) => {
+      asked.push(b.reason);
+      return "allow" as const;
+    },
+    allowed: () => false,
+    never: (_r: AskingRun, key: string) => (key === 'Bash {"command":"npm publish"}' ? "npm publish" : null),
+  };
+  const full = new Approvals(store, access, () => true, { own, askBlocked });
+  const t = () => {
+    const d = mkdtempSync(join(tmpdir(), "ion-full-"));
+    writeFileSync(join(d, "drop.sh"), "unset ION_RUN_KEY\n");
+    return d;
+  };
+
+  it("runs a guess without asking in a sandboxed run, and asks when the run isn't sandboxed", async () => {
+    asked.length = 0;
+    const c = cmd("echo ZWNobyBoaQ== | base64 -d | sh");
+    expect((await full.gate({ ...run("full"), sandboxed: true }, c, [t()])).decision).toBe("allow");
+    expect(asked).toEqual([]);
+    expect((await full.gate(run("full"), c, [t()])).decision).toBe("allow");
+    expect(asked).toHaveLength(1);
+  });
+
+  it("refuses what you said never, in Full too", async () => {
+    const v = await full.gate({ ...run("full"), sandboxed: true }, cmd("npm publish"), [wt]);
+    expect(v.decision).toBe("deny");
+    expect(v.reason).toContain("You said never: npm publish");
+  });
+
+  it("runs everything else: a push, a publish you never refused", async () => {
+    asked.length = 0;
+    for (const c of [
+      "git push origin main",
+      "npm publish --tag next",
+      "curl -X POST https://example.com/deploy",
+    ])
+      expect((await full.gate({ ...run("full"), sandboxed: true }, cmd(c), [wt])).decision, c).toBe("allow");
+    expect(asked).toEqual([]);
   });
 });

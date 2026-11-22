@@ -2,8 +2,19 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { realish } from "../runs/policy.js";
 
-/** `plugin`: the run's own skills plugin folder (in ion's data folder), which it may read and run, never write. */
-export type RuleCtx = { roots: string[]; home: string; ionDirs: string[]; plugin?: string };
+/**
+ * `plugin`: the run's own skills plugin folder (in ion's data folder), which it may read and run, never write.
+ * `sandboxed`: the run is in the OS sandbox, which keeps ion's folders out of its reach (Plan 18 Task 12).
+ */
+export type RuleCtx = {
+  roots: string[];
+  home: string;
+  ionDirs: string[];
+  plugin?: string;
+  sandboxed?: boolean;
+  /** Auto (the user, 2026-11-21): reads anywhere but your secrets, ion's files and private kinds of files. */
+  freeReads?: true;
+};
 
 /** A path in any text: absolute, ~ or $HOME, at the start of a word (not "/a.ts" inside "src/a.ts"). */
 export const PATH = /(?<=^|[\s'"=:(])(?:~|\$\{?HOME\}?)?\/[^\s'"`|;&<>()]+/g;
@@ -41,7 +52,11 @@ export const fillXdg = (text: string, home: string) =>
 export const unshell = (s: string) => s.replace(/\\(.)/gs, "$1").replace(/["']/g, "");
 
 // macOS folders ignore case by default: ~/.SSH is ~/.ssh.
-export const fold = (p: string) => (process.platform === "darwin" ? p.toLowerCase() : p);
+// Names compare in one Unicode form (NFC; review of 05d5c8b, 2026-11-22: macOS takes "é" either way).
+export const fold = (p: string) => {
+  const n = p.normalize("NFC");
+  return process.platform === "darwin" ? n.toLowerCase() : n;
+};
 
 /**
  * Every path the request names, resolved for real (symlinks followed): absolute and ~ paths anywhere in its input,
@@ -51,7 +66,8 @@ export function pathsIn(req: ApprovalRequest, c: RuleCtx): string[] {
   const texts = [...strings(req.input)].flatMap((s) => [s, unshell(s)].map((t) => fillXdg(t, c.home)));
   const out = texts.flatMap((s) => [...s.matchAll(PATH)].map((m) => expand(m[0], c.home)));
   // Every argument of a command is a path from the worktree (where commands run): a link named "key" counts too.
-  const command = typeof req.input.command === "string" ? unshell(req.input.command) : "";
+  // A command given as a list of words (Codex's shell) too (task review, 2026-11-22).
+  const command = unshell(commandText(req));
   const words = command.split(/[\s|;&]+/).filter((t) => t && !/^[-/~$]/.test(t));
   out.push(...words.map((t) => resolve(c.roots[0] ?? "/", t)));
   return out.map((p) => realish(resolve(p)));

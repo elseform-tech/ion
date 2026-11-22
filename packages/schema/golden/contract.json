@@ -121,6 +121,9 @@
     "tools.items",
     "tools.importable",
     "tools.import",
-    "tools.dismissImport"
+    "tools.dismissImport",
+    "tools.picks",
+    "tools.serverTools",
+    "tools.setIonUse"
   ]
 }

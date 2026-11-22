@@ -25,11 +25,15 @@ import { registerYourTools, type YourTools } from "./ion-your-tools.js";
 import { guard, ok, q } from "./result.js";
 import { type Deps, historyData, memoryData, needsData, SEARCH_MAX, searchData } from "./tools.js";
 
+/** Skills and servers a thread starts with, by name (the user, 2026-11-21: "/" and "@" for ions too). */
+export type ThreadPicks = { skills?: string[]; mentions?: string[] };
+
 /** Starts a thread in a project for an ion's turn: its chat, or why it couldn't. */
 type StartThread = (
   projectId: string,
   brief: string,
   turnId: string,
+  picks?: ThreadPicks,
 ) => Promise<{ chatId: string } | { why: string }>;
 
 export type IonDeps = Deps & { configFile: string; startThread?: StartThread; yourTools?: YourTools };
@@ -227,10 +231,17 @@ function threadTool(server: McpServer, ion: Ion): void {
   server.registerTool(
     "start_thread",
     {
-      description: `Start work in a project: a thread its agent runs, briefed with what to do there. At most ${PER_TURN} per turn.`,
-      inputSchema: { projectId: z.string().min(1), brief: z.string().min(1).max(4000) },
+      description: `Start work in a project: a thread its agent runs, briefed with what to do there. To have it use a skill or a connection, name it in skills or mentions. At most ${PER_TURN} per turn.`,
+      inputSchema: {
+        projectId: z.string().min(1),
+        brief: z.string().min(1).max(4000),
+        skills: z.array(z.string().min(1).max(100)).max(10).optional(),
+        mentions: z.array(z.string().min(1).max(100)).max(10).optional(),
+      },
     },
-    guard(async ({ projectId, brief }: { projectId: string; brief: string }) => {
+    guard(async (a: { projectId: string; brief: string } & ThreadPicks) => {
+      const { projectId, brief } = a;
+      const picks = picksOf(a);
       if (!d.startThread) throw new UserError("Not available here");
       notInReport(scope);
       ion.need(projectId);
@@ -239,7 +250,7 @@ function threadTool(server: McpServer, ion: Ion): void {
         d.grants.noteThread(scope.turnId, -1);
         throw new UserError("That's enough threads for one turn");
       }
-      const r = await d.startThread(projectId, brief, scope.turnId).catch((e: unknown) => {
+      const r = await d.startThread(projectId, brief, scope.turnId, picks).catch((e: unknown) => {
         d.grants.noteThread(scope.turnId, -1);
         throw e;
       });
@@ -251,6 +262,12 @@ function threadTool(server: McpServer, ion: Ion): void {
     }),
   );
 }
+
+/** The skills and mentions given, only the ones there are. */
+const picksOf = (a: ThreadPicks): ThreadPicks => ({
+  ...(a.skills?.length ? { skills: a.skills } : {}),
+  ...(a.mentions?.length ? { mentions: a.mentions } : {}),
+});
 
 function profileTool(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;

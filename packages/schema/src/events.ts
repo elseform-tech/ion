@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IonCardSchema, PICKED } from "./ion-cards.js";
 
 export const SCHEMA_VERSION = 1;
 
@@ -148,57 +149,7 @@ export const DECISION_SCOPES = ["chat", "project", "everywhere"] as const;
 const text = z.object({ text: z.string() });
 const count = z.number().int().min(0);
 
-/** The same schedule check as `parseWhen` (a routine's `when`). */
-const WHEN_TEXT =
-  /^(?:(?:daily|weekdays|sun|mon|tue|wed|thu|fri|sat) (?:[01]\d|2[0-3]):[0-5]\d|every (?:[1-9]|1\d|2[0-3])h)$/;
-
-/**
- * What an ion's message can carry: threads it started, a suggestion, or a decision that keeps failing. ion chief's
- * own suggestions (Plan 11): a routine for something you keep asking for, or a chat of yours that stalled.
- */
-const IonCardSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("threads"),
-    threads: z.array(z.object({ chatId: z.string(), projectId: z.string() })),
-  }),
-  z.object({
-    kind: z.literal("suggest"),
-    suggestionId: z.string(),
-    question: z.string(),
-    choice: z.string(),
-  }),
-  z.object({
-    kind: z.literal("flag"),
-    decisionId: z.string(),
-    question: z.string(),
-    choice: z.string(),
-    failed: z.number().int().min(1),
-  }),
-  z.object({
-    kind: z.literal("routine"),
-    suggestionId: z.string(),
-    projectId: z.string(),
-    /** What makes it the same thing (your words, normalised): never suggested twice. */
-    key: z.string().min(1),
-    name: z.string().min(1),
-    text: z.string().min(1),
-    when: z.string().regex(WHEN_TEXT),
-    /** When you asked (ISO), newest first, one per day. */
-    dates: z.array(z.iso.datetime()).min(1),
-  }),
-  z.object({
-    kind: z.literal("stalled"),
-    suggestionId: z.string(),
-    chatId: z.string(),
-    projectId: z.string(),
-    title: z.string(),
-    /** The chat's last activity: it stalled from then. */
-    since: z.iso.datetime(),
-    /** Files changed in its worktree. */
-    files: z.number().int().min(1),
-  }),
-]);
-export type IonCard = z.infer<typeof IonCardSchema>;
+export type { IonCard } from "./ion-cards.js";
 
 export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   "chat.created": z.object({
@@ -210,7 +161,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     by: z.literal("ion").optional(),
   }),
   /** Your message to an ion, on its chat ("ion:<ionId>"). */
-  "ion.heard": z.object({ text: z.string() }),
+  /** Your message to an ion, with what you picked with "/" and "@" (shown as chips). */
+  "ion.heard": z.object({ text: z.string(), ...PICKED }),
   /** What an ion says in its chat, with a card when it has one. */
   "ion.said": z.object({ text: z.string(), card: IonCardSchema.optional() }),
   /**
@@ -241,6 +193,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     shown: z.string().optional(),
     /** The question (its needId) this message answers: the chat shows it as your reply, where you sent it. */
     answers: z.string().optional(),
+    /** What you picked with "/" and "@" (shown as chips; the agent got them its way). */
+    ...PICKED,
   }),
   /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
   "memory.written": z.object({
@@ -329,6 +283,7 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
       model: z.string().optional(),
       effort: z.enum(["low", "medium", "high", "max"]).optional(),
       access: z.enum(["auto", "full"]).optional(),
+      ...PICKED,
     }),
   }),
   /** You took it out of the queue (removed, or back in the box to edit), or its chat was archived. */
@@ -444,6 +399,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     reason: z.string().optional(),
     /** What was asked, for a decision made at the gate (no approval.requested comes before it). */
     summary: z.string().optional(),
+    /** What Auto's judge said when it didn't allow the call: no, or that it wasn't sure (missing information). */
+    judge: z.enum(["deny", "unsure"]).optional(),
   }),
   "usage.reported": z.object({
     model: z.string(),

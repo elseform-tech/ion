@@ -82,6 +82,20 @@ describe("an ion thinks through a turn", () => {
     expect(said("chief")).toEqual([{ text: "Asked 2 projects.", card: { kind: "threads", threads } }]);
   });
 
+  // The user, 2026-11-21: "/" in an ion's chat picks a skill the ion should use or pass on; the chat shows the chip.
+  it("an ion's message with picks: the chat keeps the chips, the turn is told what to do with them", async () => {
+    await ions().message("chief", "Fill the form", { skills: ["pdf"], mentions: ["github"] });
+    expect(store.read({ chatId: "ion:chief" })[0]).toMatchObject({
+      type: EV.ionHeard,
+      data: { text: "Fill the form", skills: ["pdf"], mentions: ["github"] },
+    });
+    const [, text, opts] = turn.mock.calls[0] as unknown as [string, string, { request: string }];
+    expect(text).toContain('The user picked the skill "pdf"');
+    expect(text).toContain("start_thread's skills");
+    expect(text).toContain('The user picked the connection "github"');
+    expect(opts).toEqual({ request: "Fill the form" });
+  });
+
   // The user, 2026-11-19: "what project am I in" started a thread.
   it("a project's ion answers about its project without a thread", async () => {
     turn.mockResolvedValueOnce({ reply: "You're in storefront.", threads: [] });
@@ -188,6 +202,17 @@ describe("a thread an ion starts", () => {
     );
     // Its own ion's reply carries the thread's line: nothing more is said.
     expect(said("payments-api")).toEqual([]);
+  });
+
+  // The user, 2026-11-21: start_thread takes skills (and mentions), so a thread starts with them.
+  it("start_thread passes skills to the thread", async () => {
+    await ions().startThread(
+      "payments-api",
+      "Fill the form",
+      { ionId: "payments-api", request: "fill it", turnId: "turn_1" },
+      { skills: ["pdf"], mentions: ["github"] },
+    );
+    expect(ask.mock.calls[0]![0]).toMatchObject({ skills: ["pdf"], mentions: ["github"] });
   });
 
   // Final review I3: the brief is ion chief's words, shown as ion's in the project's chat, never as yours.

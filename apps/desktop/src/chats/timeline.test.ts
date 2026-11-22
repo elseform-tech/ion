@@ -26,6 +26,14 @@ describe("timeline", () => {
     ]);
   });
 
+  // The user, 2026-11-21: "/" and "@" picks show as chips on your message, not as text.
+  it("keeps your message's picks for its chips", () => {
+    const t = play(ev("message.sent", { text: "Fill it", skills: ["pdf"], mentions: ["github"] }));
+    expect(t.items).toEqual([
+      { kind: "you", text: "Fill it", picked: { skills: ["pdf"], mentions: ["github"] } },
+    ]);
+  });
+
   // The user, 2026-11-20 (Plan 18): a run that goes without one of your MCP servers says why in a plain line.
   it("says plainly when a run goes without one of your servers", () => {
     const text = "github isn't signed in, so this chat runs without it.";
@@ -176,7 +184,7 @@ describe("timeline", () => {
     expect(shown.map((i) => i.kind)).toEqual(["you", "question", "you"]);
     expect(shown[1]).toMatchObject({
       resolved: true,
-      outcome: { by: "you", choice: "Keep xs", always: true },
+      outcome: { by: "you", choice: "Keep xs", always: "Always" },
     });
     expect(shown[2]).toEqual({ kind: "you", text: "Thanks" });
   });
@@ -224,7 +232,7 @@ describe("timeline", () => {
       const t = play(raised, asked, ...(answerFirst ? [resolved, sentAnswer] : [sentAnswer, resolved]));
       expect(t.items.map((i) => i.kind)).toEqual(["question", "agent", "you"]);
       expect(t.items[0]).toMatchObject({ replied: true, outcome: { by: "you", choice: "Merge" } });
-      expect(t.items[2]).toMatchObject({ kind: "you", text: "Merge", answers: "n1", always: true });
+      expect(t.items[2]).toMatchObject({ kind: "you", text: "Merge", answers: "n1", always: "Always" });
     }
   });
 
@@ -390,7 +398,7 @@ describe("timeline", () => {
         requestId: "g4",
         kind: "ask",
         summary: "Allow this? npm publish",
-        detail: "ion stopped it: x",
+        detail: "ion thinks this is risky: x",
         dedupeKey: "k",
         choices,
         blocked: true,
@@ -405,6 +413,25 @@ describe("timeline", () => {
     );
     expect(t.items[0]).toMatchObject({ kind: "question", blocked: true, expired: true });
     expect(t.items[1]).toMatchObject({ kind: "ion", tone: "deny" });
+  });
+
+  // Task 11, 2026-11-22 (live): a stopped call answered "Don't allow" with Remember showed "Don't allow · Always"; it
+  // says Remember, the box's own word.
+  it("a remembered answer to a stopped call says Remember", () => {
+    const t = play(
+      ev("need.raised", {
+        ...{ needId: "n1", requestId: "g4", kind: "ask", summary: "Allow this? npm publish", detail: "x" },
+        ...{ dedupeKey: "k", choices: [], blocked: true },
+      }),
+      ev("need.resolved", {
+        needId: "n1",
+        decision: "answered",
+        by: "you",
+        choice: "Don't allow",
+        scope: "project",
+      }),
+    );
+    expect(t.items[0]).toMatchObject({ outcome: { by: "you", choice: "Don't allow", always: "Remember" } });
   });
 
   // Plan 08, a quiet chat: an error is its message only; a retry is a countdown that goes once the retry starts.

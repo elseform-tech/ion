@@ -52,12 +52,11 @@ export type ImportData = {
   show: (names: string[] | null) => void;
   /** Imports these servers (by name; one in a project's own file with that file), then reads the list again. */
   bring: (names: string[], repo?: string) => Promise<void>;
-  dismiss: (agent?: string) => Promise<void>;
 };
 
 /**
  * Import: the servers in your agents' own configs, read only when Tools opens (the daemon reads the files then, and
- * never on focus), and after an import or a dismiss. Nothing comes in before it's been shown.
+ * never on focus), and after an import. Nothing comes in before it's been shown.
  */
 export function useImports(client: IonClient, set: (info: ToolsInfo) => void): ImportData {
   const [imports, setImports] = useState<ImportInfo | null>(null);
@@ -74,7 +73,5 @@ export function useImports(client: IonClient, set: (info: ToolsInfo) => void): I
     if (r.skipped.length)
       throw new ApiCallError("invalid", r.skipped.map((x) => `${x.name}: ${x.why}`).join("\n"));
   };
-  const dismiss = (agent?: string) =>
-    client.call("tools.dismissImport", agent ? { agent } : {}).then(setImports);
-  return { imports, shown, show, bring, dismiss };
+  return { imports, shown, show, bring };
 }

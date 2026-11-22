@@ -47,6 +47,7 @@ const RANGES = [
   [1092, 1097, "the frame: the top strip, each screen inside it; the sidebar hidden"],
   [1098, 1104, "queued messages above the message box"],
   [1105, 1109, "settings: chats at once, times, a shortcut's keys"],
+  [1110, 1116, "the message box's / and @ menu, picks as chips; a server's tools"],
 ];
 
 const out = [

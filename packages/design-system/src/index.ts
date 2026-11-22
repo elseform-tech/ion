@@ -86,6 +86,7 @@ export {
   BookOpen,
   FileCog,
   Import,
+  Puzzle,
   MessageCircleQuestion,
   Link,
 } from "lucide-react";

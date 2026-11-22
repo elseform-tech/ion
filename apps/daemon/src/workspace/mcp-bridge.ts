@@ -1,5 +1,5 @@
 import { chmodSync, mkdirSync, rmSync } from "node:fs";
-import type { McpSpec } from "@ion/adapter-kit";
+import { type McpSpec, type RunSandbox, sandboxed, withPaths } from "@ion/adapter-kit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   ErrorCode,
@@ -37,6 +37,8 @@ export type BridgeOpts = {
   redact?: <T>(data: T) => T;
   /** Where ion records its servers' process groups (swept at its next start). */
   groups?: string;
+  /** The OS sandbox its servers run in (ion's folders denied); each may also read and write its own folder. */
+  sandbox?: RunSandbox;
 };
 
 /** Starting (the process and its MCP handshake), at most this long: `npx` may download the server first. */
@@ -85,7 +87,7 @@ function serverEnv(spec: StdioSpec, cwd: string): Record<string, string> {
 /** `${ION_WORKTREE}` written in mcp.json, as it reaches ion's bridge (left unfilled until the run). */
 const WORKTREE_REF = /\$\{ION_WORKTREE\}/g;
 
-/** The server with `${ION_WORKTREE}` filled with the chat's folder. */
+/** The server with `${ION_WORKTREE}` filled with the chat's folder (yours only: a repo's that names it is left out). */
 function withWorktree(spec: StdioSpec, worktree = ""): StdioSpec {
   const fill = (t: string) => t.replace(WORKTREE_REF, () => worktree);
   const env = Object.fromEntries(Object.entries(spec.env).map(([k, v]) => [k, fill(v)]));
@@ -176,6 +178,11 @@ class Local implements LocalServer {
     this.o.stopped(this.spec.name, why);
   }
 
+  /** Where it runs: ion's own folder for the run; a repo's server you allowed here, the project's own folder. */
+  private cwd(): string {
+    return this.spec.cwd ?? this.o.folder;
+  }
+
   private async start(): Promise<Client | null> {
     try {
       this.makeFolder();
@@ -183,11 +190,17 @@ class Local implements LocalServer {
       this.fail("start");
       return null;
     }
+    // In the sandbox (Plan 18 Task 12): away from ion's folders, in its own (where ion starts it).
+    const run = sandboxed(
+      withPaths(this.o.sandbox, { write: [this.o.folder] }),
+      this.spec.command,
+      this.spec.args,
+    );
     const t = new GroupTransport({
-      command: this.spec.command,
-      args: this.spec.args,
-      env: serverEnv(this.spec, this.o.folder),
-      cwd: this.o.folder,
+      command: run.command,
+      args: run.args,
+      env: serverEnv(this.spec, this.cwd()),
+      cwd: this.cwd(),
       ...(this.o.groups ? { groups: this.o.groups } : {}),
     });
     this.transport = t;

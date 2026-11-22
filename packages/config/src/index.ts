@@ -17,6 +17,7 @@ export {
   MAX_RUNS,
   MIN_RUNS,
   NOTIFY_LEVELS,
+  ownToolsOn,
   PROFILE_CHARS,
   type ProjectEntry,
   type RoutineEntry,

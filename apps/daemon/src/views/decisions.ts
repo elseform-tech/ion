@@ -15,6 +15,8 @@ export const decisionsView: View & {
   find(db: Db, decisionId: string): DecisionInfo | null;
   /** Whether you said "Always allow" for this exact action (its key's hash) in this project or everywhere. */
   allows(db: Db, projectId: string, allowKey: string): boolean;
+  /** What you said never to (a "Don't allow" kept for this exact action) in this chat, its project or everywhere. */
+  never(db: Db, at: { projectId: string; chatId: string }, neverKey: string): string | null;
 } = {
   name: "decisions",
   version: 2,
@@ -82,6 +84,15 @@ export const decisionsView: View & {
       )
       .get(allowKey, projectId);
     return row !== undefined;
+  },
+  never(db, at, neverKey) {
+    const row = db
+      .prepare(
+        `SELECT question FROM view_decisions WHERE allow_key = ? AND by = 'you' AND (scope = 'everywhere'
+           OR (scope = 'project' AND project_id = ?) OR (scope = 'chat' AND chat_id = ?)) ORDER BY rowid DESC`,
+      )
+      .get(neverKey, at.projectId, at.chatId) as { question: string } | undefined;
+    return row?.question ?? null;
   },
   find(db, decisionId) {
     const row = db.prepare(`SELECT ${COLUMNS} FROM view_decisions WHERE decision_id = ?`).get(decisionId) as

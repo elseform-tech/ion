@@ -231,15 +231,16 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, JSON.stringify(s.env()));
     return "done";
   },
-  /** Answers like ion's judge: deny when the action mentions "deny-me", else allow. */
+  /**
+   * Answers like ion's judge: deny when the action mentions "deny-me", unsure when it mentions "unsure-me" (missing
+   * information), else allow (the older `allow` answer, which ion still reads).
+   */
   async judge(s) {
-    const deny = s.text().includes("deny-me");
-    say(
-      s,
-      JSON.stringify(
-        deny ? { allow: false, reason: "Looks risky" } : { allow: true, reason: "Part of the task" },
-      ),
-    );
+    const t = s.text();
+    if (t.includes("unsure-me"))
+      say(s, JSON.stringify({ verdict: "unsure", reason: "Can't see what the script does" }));
+    else if (t.includes("deny-me")) say(s, JSON.stringify({ allow: false, reason: "Looks risky" }));
+    else say(s, JSON.stringify({ allow: true, reason: "Part of the task" }));
     return "done";
   },
   async hello(s) {

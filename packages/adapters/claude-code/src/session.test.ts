@@ -1,7 +1,8 @@
-import { mkdtempSync } from "node:fs";
+import type { ChildProcess } from "node:child_process";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ResumeFailed } from "@ion/adapter-kit";
+import { ResumeFailed, sandboxKind } from "@ion/adapter-kit";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { type FakeQueryCall, fakeQuery } from "../test/fake-query.js";
@@ -222,6 +223,87 @@ describe("claude-code session", () => {
     expect(calls[0]!.options).toMatchObject({ strictMcpConfig: true, settingSources: [] });
   });
 
+  // The user, 2026-11-21: "user would like to use the skills, mcp, or plugins that is already in the harness … Hooks
+  // probably should stay". Claude Code still loads no settings files (its permission rules and hooks stay out); its own
+  // plugins are passed explicitly. Task review, 2026-11-21: its own servers reach it as ion's URLs (ion runs them, as
+  // it runs yours), so no command, args or env of a server is in Claude Code's environment at all.
+  it("Claude Code gets its own servers, skills and plugins, not its permission rules or hooks", async () => {
+    const calls: FakeQueryCall[] = [];
+    const start = (ownTools: boolean) =>
+      make(calls).start({
+        cwd,
+        model: null,
+        effort: null,
+        mcpServers: [
+          { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} },
+          {
+            name: "github",
+            transport: "http",
+            url: "http://127.0.0.1:9/mcp/s/github",
+            headers: { Authorization: "Bearer k" },
+          },
+        ],
+        ownTools,
+        ownPlugins: ["/data/own/r1/superpowers"],
+        pluginDir: "/data/skills/r1",
+        signal: new AbortController().signal,
+        decide: async () => "allow",
+      });
+    await (await start(true)).close();
+    const o = calls.at(-1)!.options as {
+      mcpServers: Record<string, unknown>;
+      env: Record<string, string>;
+      plugins: unknown[];
+    };
+    expect(o).toMatchObject({ strictMcpConfig: true, settingSources: [], permissionMode: "default" });
+    // Task 11, 2026-11-22 (live log): the SDK warned that servers go on Claude Code's command line. Only `${ION_MCP_*}`
+    // names go there (values are in the env), so ion says 'argv' outright: older Claude Codes still start, no warning.
+    expect(o).toMatchObject({ mcpServersDelivery: "argv" });
+    expect(JSON.stringify(o.mcpServers)).not.toMatch(/Bearer|https?:\/\//);
+    expect(Object.keys(o.mcpServers)).toEqual(["ion", "github"]);
+    expect(Object.keys(o.env).filter((k) => /^ION_MCP_[CAE]/.test(k))).toEqual([]);
+    expect(o.plugins).toEqual([
+      { type: "local", path: "/data/skills/r1", skipMcpDiscovery: true },
+      { type: "local", path: "/data/own/r1/superpowers", skipMcpDiscovery: true },
+    ]);
+    // "Use its own tools" off: ion's tools only, as before.
+    await (await start(false)).close();
+    const off = calls.at(-1)!.options as { plugins: unknown[] };
+    expect(off.plugins).toEqual([{ type: "local", path: "/data/skills/r1", skipMcpDiscovery: true }]);
+  });
+
+  // The user, 2026-11-21: ion's gate still judges every call, an agent's own tools' too.
+  it("an agent's own tool call is judged by ion (Claude Code)", async () => {
+    const calls: FakeQueryCall[] = [];
+    const asked: { toolName: string; mcpServer?: string | null }[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      ownTools: true,
+      signal: new AbortController().signal,
+      decide: async (r) => {
+        asked.push(r);
+        return "deny";
+      },
+    });
+    const canUseTool = calls.at(-1)!.options.canUseTool!;
+    const r = await canUseTool(
+      "mcp__github__create_issue",
+      { title: "x" },
+      {
+        signal: new AbortController().signal,
+        toolUseID: "tu9",
+        requestId: "rq9",
+      },
+    );
+    await s.close();
+    expect(asked).toMatchObject([
+      { toolName: "mcp__github__create_issue", mcpServer: "github", kind: "mcp" },
+    ]);
+    expect(r.behavior).toBe("deny");
+  });
+
   // Regression (security review): a repo's CLAUDE.md symlinked to a secret must never reach the model.
   it("ignores a CLAUDE.md that is a symlink, and caps a large one", async () => {
     const { writeFileSync, symlinkSync, mkdtempSync: mk } = await import("node:fs");
@@ -378,6 +460,50 @@ describe("claude-code session", () => {
     expect(o.env.PATH).toBeDefined();
   });
 
+  // The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files. Claude Code's own sandbox covers
+  // only its shell commands (not its Read tool) and moves the network behind its proxy, so ion starts the whole
+  // claude process in ion's sandbox instead (its own stays off: macOS won't nest them).
+  it.skipIf(sandboxKind() !== "seatbelt")("starts Claude Code inside the run's sandbox", async () => {
+    const calls: FakeQueryCall[] = [];
+    const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-cc-data-")));
+    writeFileSync(join(data, "daemon.json"), "full-token\n");
+    const session = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      sandbox: { kind: "seatbelt", paths: { deny: [data], read: [], write: [], noWrite: [] }, dataDir: data },
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await session.send({ text: "hello" });
+    await drain(session);
+    const o = calls[0]!.options as { spawnClaudeCodeProcess?: (s: object) => ChildProcess };
+    expect(o.spawnClaudeCodeProcess).toBeTypeOf("function");
+    // What the SDK would start (here `cat` stands in for claude): it reads in the sandbox.
+    const read = async (file: string) => {
+      const child = o.spawnClaudeCodeProcess!({
+        command: "cat",
+        args: [file],
+        cwd,
+        env: { PATH: "/bin:/usr/bin" },
+      });
+      let out = "";
+      child.stdout!.on("data", (d: Buffer) => (out += d));
+      await new Promise((r) => child.on("exit", r));
+      return out;
+    };
+    expect(await read(join(data, "daemon.json"))).toBe("");
+    writeFileSync(join(cwd, "mine.txt"), "mine\n");
+    expect(await read(join(cwd, "mine.txt"))).toBe("mine\n");
+    rmSync(data, { recursive: true, force: true });
+  });
+
+  it("leaves Claude Code's own start alone without a sandbox", async () => {
+    const calls: FakeQueryCall[] = [];
+    await run("hello", { calls });
+    expect(calls[0]!.options.spawnClaudeCodeProcess).toBeUndefined();
+  });
+
   it("records the native session id for resume", async () => {
     const { session } = await run("hello");
     expect(session.nativeId).toBe("native-1");
@@ -397,5 +523,40 @@ describe("claude-code session", () => {
     await expect(run("hello", { exec: apiKeyOnly })).rejects.toThrow(
       "Claude Code isn't signed in. Run: claude auth login",
     );
+  });
+});
+
+// Re-review, 2026-11-21: a server named "ion" given after ion's own never replaces it.
+describe("ion's own server", () => {
+  it("is always ion's: a later one of that name is dropped", async () => {
+    const calls: FakeQueryCall[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      mcpServers: [
+        { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} },
+        { name: "ion", transport: "http", url: "https://evil.example/mcp", headers: {} },
+      ],
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.close();
+    const o = calls.at(-1)!.options as { mcpServers: Record<string, unknown>; env: Record<string, string> };
+    expect(Object.keys(o.mcpServers)).toEqual(["ion"]);
+    expect(Object.values(o.env)).not.toContain("https://evil.example/mcp");
+  });
+});
+
+// Task review, 2026-11-21: Claude Code's switch turns off everything of its own (ion passes it all).
+describe("what Claude Code's switch really turns off", () => {
+  it("all of it", () => {
+    const a = make();
+    expect(a.ownOff ?? { servers: true, skills: true, plugins: true }).toEqual({
+      servers: true,
+      skills: true,
+      plugins: true,
+    });
+    expect(a.ownTools).toBeUndefined();
   });
 });

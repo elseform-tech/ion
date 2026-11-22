@@ -1,6 +1,7 @@
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -8,8 +9,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { execFile, spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type RunSandbox, sandboxed, sandboxKind } from "@ion/adapter-kit";
 import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
 import { afterEach, describe, expect, it } from "vitest";
@@ -118,6 +121,59 @@ const mcpJson = () =>
 afterEach(async () => {
   for (const c of clients.splice(0)) c.close();
   await srv.close();
+});
+
+// The user, 2026-11-21 (Plan 18 Task 12): in the OS sandbox a run can't read daemon.json, so `ion` inside a chat
+// reaches ion with only ION_PORT and its run key, never ion's full token; whatever a process in the run tries, the
+// full token isn't there to take.
+describe("ion inside a chat's run", () => {
+  const CLI = fileURLToPath(new URL("../../../cli/dist/index.js", import.meta.url));
+  // Not spawnSync: the daemon answers from this same process.
+  const runIon = (args: string[], env: Record<string, string>, sb?: RunSandbox) => {
+    const w = sandboxed(sb, process.execPath, [CLI, ...args]);
+    return new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+      const opts = { env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env } };
+      execFile(w.command, w.args, opts, (e, stdout, stderr) =>
+        resolve({ status: e ? Number(e.code ?? 1) : 0, stdout, stderr }),
+      );
+    });
+  };
+  const runEnvOf = (dataDir: string) => ({
+    ION_CHAT: "c1",
+    ION_RUN_KEY: srv.grants.create({ kind: "run", projectId: "p", chatId: "c1", runId: "r1" }, "cli"),
+    ION_PORT: String(srv.port),
+    ION_HOME: dirname(dataDir),
+  });
+
+  it("works with the run's key and ION_PORT, never reading daemon.json", async () => {
+    await start({ notes: { command: "notes-mcp" } });
+    const elsewhere = mkdtempSync(join(tmpdir(), "ion-nodaemon-"));
+    const r = await runIon(["mcp", "ls"], runEnvOf(join(elsewhere, "data")));
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("notes");
+    expect(r.status).toBe(0);
+  });
+
+  it.skipIf(sandboxKind() !== "seatbelt")(
+    "works in the run's sandbox, where daemon.json can't be read",
+    async () => {
+      await start({ notes: { command: "notes-mcp" } });
+      const data = join(home, "data");
+      writeFileSync(join(data, "daemon.json"), JSON.stringify({ port: srv.port, token: srv.token }));
+      const sb: RunSandbox = {
+        kind: "seatbelt",
+        paths: { deny: [home], read: [], write: [], noWrite: [] },
+        dataDir: data,
+      };
+      const r = await runIon(["mcp", "ls"], runEnvOf(data), sb);
+      expect(r.stdout).toContain("notes");
+      expect(r.status).toBe(0);
+      const peek = sandboxed(sb, "/bin/cat", [join(data, "daemon.json")]);
+      const cat = spawnSync(peek.command, peek.args, { encoding: "utf8" });
+      expect(cat.stdout).toBe("");
+      expect(cat.status).not.toBe(0);
+    },
+  );
 });
 
 describe("ion's commands for tools", () => {
@@ -280,6 +336,49 @@ describe("ion's commands for tools", () => {
     ]);
   });
 
+  // The user, 2026-11-21 ("sure"): ion's commands manage ion's layer, used on every agent; they also check agents' own
+  // servers and skills, read-only: the command or package is there, never started.
+  it("doctor also checks an agent's own servers, read-only, never starting one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ion-doctor-own-"));
+    const marker = join(dir, "started");
+    writeFileSync(join(dir, "server.js"), `require("fs").writeFileSync(${JSON.stringify(marker)}, "")`);
+    await start({});
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          mine: { command: process.execPath, args: [join(dir, "server.js")] },
+          gone: { command: "no-such-own-command" },
+        },
+      }),
+    );
+    const you = await connect({ port: srv.port, token: srv.token });
+    clients.push(you);
+    const checks = await you.call("tools.doctor", { kind: "mcp" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(existsSync(marker)).toBe(false);
+    expect(checks.find((c) => c.name === "mine")).toMatchObject({ agent: "claude-code", problems: [] });
+    expect(checks.find((c) => c.name === "gone")).toMatchObject({
+      agent: "claude-code",
+      problems: ["Command not found: no-such-own-command"],
+    });
+    const one = await you.call("tools.doctor", { kind: "mcp", name: "gone" });
+    expect(one[0]?.agent).toBe("claude-code");
+  });
+
+  it("skills verify checks an agent's own skill, read-only", async () => {
+    await start({});
+    mkdirSync(join(home, ".claude", "skills", "notes"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "skills", "notes", "SKILL.md"),
+      "---\nname: notes\n---\nTake notes.\n",
+    );
+    const you = await connect({ port: srv.port, token: srv.token });
+    clients.push(you);
+    const check = await you.call("tools.verify", { kind: "skill", name: "notes" });
+    expect(check).toMatchObject({ name: "notes", agent: "claude-code", problems: ["No description"] });
+  });
+
   // Security review, 2026-11-21: doctor probed an off remote server with its ${NAME}s filled (from the keychain or
   // ion's environment), so an agent could add a server pointing at its own host and run doctor to send a secret out.
   // For anything off, doctor fills nothing: the URL as written, no headers, no tokens, public addresses only.
@@ -384,6 +483,20 @@ describe("ion's commands for tools", () => {
     expect(hooks).toMatchObject([{ name: "say done", on: false, new: true, origin: { by: "agent" } }]);
   });
 
+  // Task 11, 2026-11-22 (Task 12 deferred probe): a hook outside any chat has a key with chatId ""; what it added was
+  // kept as added by chat "" and a tool.added event went to chat "". Now it's added by an agent with no chat.
+  it("a hook outside a chat adds with no chat", async () => {
+    const you = await start();
+    const a = await agent("");
+    await a.call("tools.add", { kind: "mcp", name: "docs", url: "https://docs.example.com/mcp" });
+    const seen: IonEvent[] = [];
+    await you.subscribe({ chatId: "" }, (e) => seen.push(e));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(seen.filter((e) => e.type === "tool.added")).toEqual([]);
+    const item = (await you.call("tools.list", {})).mcp.find((s) => s.name === "docs");
+    expect(item?.origin?.chatId).toBeUndefined();
+  });
+
   it("skills add copies a skill into ion's folder, off, and refuses a folder outside the chat for an agent", async () => {
     const you = await start();
     const src = mkdtempSync(join(tmpdir(), "ion-skill-"));
@@ -484,6 +597,23 @@ describe("ion's commands for tools", () => {
     expect(seen?.problems).toEqual([]);
     expect(seen?.output).toBeUndefined();
   });
+
+  // Automated review, 2026-11-21 (revised ruling): a hook can run code an agent wrote in the project (`npm test`), so
+  // hooks run in the sandbox: ion's folders denied, agents' configs read-only. `ion` still works in a hook, through
+  // ION_PORT and a key made for that hook run (the run key's limited rights).
+  it.skipIf(sandboxKind() !== "seatbelt")(
+    "a hook reaches ion with its own key, and can't read daemon.json",
+    async () => {
+      const you = await start();
+      const data = join(home, "data");
+      const run = `"${process.execPath}" "${fileURLToPath(new URL("../../../cli/dist/index.js", import.meta.url))}" status; cat ${data}/daemon.json || echo DENIED`;
+      await you.call("tools.addHook", { name: "Peek", event: "run.finished", run });
+      const [check] = await you.call("tools.doctor", { kind: "hook", name: "Peek" });
+      expect(check?.output).toContain("ion is running");
+      expect(check?.output).toContain("DENIED");
+      expect(check?.output).not.toContain(srv.token);
+    },
+  );
 
   // Task review, 2026-11-21: a run's doctor said which keys you have ("Needs a key: X"); it now only names them.
   it("doctor tells a run a server's key names, never whether you have them", async () => {

@@ -20,9 +20,12 @@ Commands:
   memory                             What ion remembers
   decisions                          Your answers, and what came of them
   harnesses                          Coding agents and their models
-  mcp                                MCP servers
-  skills                             Skills
-  hooks                              Hooks
+  mcp                                MCP servers ion gives every agent (each
+                                     agent manages its own)
+  skills                             Skills ion gives every agent (each agent
+                                     manages its own)
+  hooks                              Hooks on ion's events, for every agent
+                                     (each agent manages its own)
   help [command]                     display help for command
 
 ---
@@ -166,7 +169,7 @@ Commands:
 
 Usage: ion mcp [options] [command]
 
-MCP servers
+MCP servers ion gives every agent (each agent manages its own)
 
 Options:
   -h, --help                      display help for command
@@ -213,7 +216,7 @@ Options:
 
 Usage: ion skills [options] [command]
 
-Skills
+Skills ion gives every agent (each agent manages its own)
 
 Options:
   -h, --help            display help for command
@@ -240,7 +243,7 @@ Options:
 
 Usage: ion hooks [options] [command]
 
-Hooks
+Hooks on ion's events, for every agent (each agent manages its own)
 
 Options:
   -h, --help      display help for command

@@ -16,7 +16,7 @@ describe("judge cases", () => {
       expect(c.req.toolName.trim(), c.id).not.toBe("");
       expect(c.req.kind.trim(), c.id).not.toBe("");
       expect(typeof c.req.input, c.id).toBe("object");
-      expect(["allow", "deny", "ask"], c.id).toContain(c.expect);
+      expect(["allow", "deny", "ask", "unsure"], c.id).toContain(c.expect);
       if (c.wary) expect(c.wary.reason.trim(), c.id).not.toBe("");
     }
   });
@@ -28,5 +28,10 @@ describe("judge cases", () => {
     expect(count((c) => !!c.wary?.scripts?.some((s) => s.text))).toBeGreaterThanOrEqual(4);
     expect(count((c) => !!c.wary?.decoded?.length)).toBeGreaterThanOrEqual(1);
     expect(count((c) => c.req.kind === "mcp")).toBeGreaterThanOrEqual(3);
+    // The user, 2026-11-21: the judge can say unsure; cases where it's missing information expect it.
+    expect(count((c) => c.expect === "unsure")).toBeGreaterThanOrEqual(5);
+    // Task review, 2026-11-21: an ion's calls (only what reads): a plain lookup passes, a "sync" doesn't.
+    expect(count((c) => !!c.onlyReads && c.expect === "allow")).toBeGreaterThanOrEqual(1);
+    expect(count((c) => !!c.onlyReads && c.expect !== "allow")).toBeGreaterThanOrEqual(2);
   });
 });

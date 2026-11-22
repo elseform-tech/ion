@@ -104,6 +104,80 @@ function startedEvent(
   return { type: EV.runStarted, data };
 }
 
+/** Updates that are the agent getting on with the turn (others, like its commands list, aren't). */
+const PROGRESS = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+  "plan",
+  "usage_update",
+]);
+
+/**
+ * The silence check (task review, 2026-11-21): rolling, reset by each bit of progress, paused while ion holds a
+ * permission; past its time the turn fails with the agent's own logged reason when it gave one, else `why`.
+ */
+export function silence(
+  silent: { ms: number; why: string } | undefined,
+  c: Connection,
+  fail: (why: string) => void,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Why the check is paused: a call ion holds, a tool still running (re-review, 2026-11-21). */
+  const paused = new Set<string>();
+  /** Pauses that end by themselves (a tool whose update never comes), by why. */
+  const limits = new Map<string, ReturnType<typeof setTimeout>>();
+  const start = () => {
+    clearTimeout(timer);
+    if (!silent || paused.size) return;
+    // The agent's own reason, as its harness words it (opencode's: "opencode's free usage is used up …").
+    timer = setTimeout(() => fail(c.failure?.() ?? silent.why), silent.ms);
+    timer.unref();
+  };
+  return {
+    heard: start,
+    /** maxMs: the pause ends by itself after this long (task review, 2026-11-21). */
+    pause(why: string, maxMs?: number) {
+      paused.add(why);
+      clearTimeout(timer);
+      if (maxMs === undefined || limits.has(why)) return;
+      const limit = setTimeout(() => this.resume(why), maxMs);
+      limit.unref();
+      limits.set(why, limit);
+    },
+    resume(why: string) {
+      clearTimeout(limits.get(why));
+      limits.delete(why);
+      if (paused.delete(why)) start();
+    },
+  };
+}
+
+type Quiet = ReturnType<typeof silence>;
+
+/** ion holding a call for your answer isn't the agent being quiet: the silence check waits for the answer. */
+async function held<T>(quiet: Quiet, answer: Promise<T>): Promise<T> {
+  const why = `ask:${randomUUID()}`;
+  quiet.pause(why);
+  try {
+    return await answer;
+  } finally {
+    quiet.resume(why);
+  }
+}
+
+/** The longest a running tool pauses the check: past it, a lost update doesn't keep a stuck run waiting. */
+const TOOL_PAUSE_MS = 30 * 60_000;
+
+/** A tool call that's running pauses the check until its update says it's done (at most TOOL_PAUSE_MS). */
+function trackTools(u: Record<string, unknown>, quiet: Quiet): void {
+  const id = `tool:${String(u.toolCallId ?? "")}`;
+  const status = String(u.status ?? "");
+  if (status === "completed" || status === "failed") quiet.resume(id);
+  else if (u.sessionUpdate === "tool_call") quiet.pause(id, TOOL_PAUSE_MS);
+}
+
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
@@ -137,17 +211,22 @@ export function startAcpSession(
     setTimeout(() => c.child.kill(), 100).unref();
   };
 
-  let heard = false;
+  const quiet = silence(run.silent, c, (why) =>
+    finish("failed", { code: "agent", retryable: false, message: why }),
+  );
   c.rpc.onNotification("session/update", (p) => {
-    heard = true;
-    for (const e of mapUpdate((p.update ?? {}) as Record<string, unknown>, state)) emit(e);
+    const u = (p.update ?? {}) as Record<string, unknown>;
+    if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") trackTools(u, quiet);
+    if (PROGRESS.has(String(u.sessionUpdate))) quiet.heard();
+    for (const e of mapUpdate(u, state)) emit(e);
   });
-  c.rpc.onRequest("session/request_permission", (p) => {
-    heard = true;
-    return interrupted
+  c.rpc.onRequest("session/request_permission", (p) =>
+    interrupted
       ? Promise.resolve({ outcome: { outcome: "cancelled" } })
-      : answerPermission(p, opts.decide, emit);
-  });
+      : held(quiet, answerPermission(p, opts.decide, emit)),
+  );
+  // ion holding a call through its gate (Grok's hook, opencode's plugin) tells the session too.
+  opts.holding?.on((on) => (on ? quiet.pause("ion") : quiet.resume("ion")));
   c.child.on("exit", () => finish(interrupted ? "interrupted" : "failed", interrupted ? undefined : CRASH));
   opts.signal.addEventListener("abort", () => c.child.kill());
 
@@ -156,12 +235,9 @@ export function startAcpSession(
     nativeId: c.sessionId,
     async send({ text: t }) {
       emit(startedEvent(run, opts, c.sessionId));
-      // Not a word after the prompt: the agent is stuck (an expired key leaves opencode like this), so say why.
-      const silent = run.silent;
-      if (silent)
-        setTimeout(() => {
-          if (!heard) finish("failed", { code: "agent", retryable: false, message: silent.why });
-        }, silent.ms).unref();
+      // No progress for a while after the prompt: the agent is stuck (an expired key or no quota leaves opencode like
+      // this), so say why.
+      quiet.heard();
       c.rpc
         .request("session/prompt", { sessionId: c.sessionId, prompt: promptOf(t, opts.instructions) })
         .then((r) => {

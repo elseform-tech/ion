@@ -663,7 +663,7 @@ button.arow:hover{background:var(--hover)}
 .tabs2{align-items:center}.tabs2>.ib{margin-left:auto}.tabs2>.ib+.ib{margin-left:0}.group+.group{margin-top:12px}.hrow .chip{margin-left:6px;padding:0 8px;line-height:18px}
 .group>.srow+.trow,.group>.trow+.srow{border-top:1px solid var(--line)}
 .srow.ev{padding:8px 14px}.srow.ev .g{font-size:12.5px;font-weight:500;color:var(--muted)}.srow.ev .ib{width:26px;height:26px}
-.trow .tname+.chip{margin-left:6px;padding:0 8px;line-height:18px}.trow .acts2{align-items:center;justify-content:flex-end;min-width:150px}
+.trow .tname+.chip{margin-left:6px;padding:0 8px;line-height:18px}.trow .acts2{align-items:center;justify-content:flex-end;min-width:150px}.trow.dim{opacity:.55}.seg.whose{display:flex;width:max-content;margin:0 0 10px}.seg.whose button{display:inline-grid;place-items:center}.seg.whose canvas{width:16px;height:16px;display:block}.trow .s .part+.part::before{content:" · "}
 .tmore{position:relative}.tmore .pmenu{top:50%;left:auto;right:calc(100% + 4px);transform:translateY(-50%);min-width:120px}
 .trow .s code{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.trow .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .trow .acts2{gap:10px}.trow .acts2>*{flex-shrink:0;white-space:nowrap}
@@ -715,6 +715,15 @@ button.arow:hover{background:var(--hover)}
 .fin.time{width:auto;padding:4px 8px;font-variant-numeric:tabular-nums}
 .acts2{align-items:center}.acts2 .dash{color:var(--faint)}
 .keys{display:flex;gap:4px}
+
+/* lab lines 1110-1116: the message box's / and @ menu, picks as chips; a server's tools */
+/* the message box's "/" and "@": the menu above the box (skills and commands; connections), picks as chips; a server's tools, each with Ions can use */
+.smenu{top:auto;bottom:calc(100% + 6px);left:8px;right:8px;max-height:280px;overflow:auto}
+.smenu button.act{background:var(--hover);color:var(--ink)}
+.smenu .nm{color:var(--ink);white-space:nowrap}
+.smenu .ds{min-width:0;color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.u .catt,.bu .catt{margin:0 0 6px;justify-content:flex-end}.u .catt .chip{margin-left:0}.bu .chip.pick{background:rgba(255,255,255,.16);color:inherit}
+.stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}.stools .trow .s{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

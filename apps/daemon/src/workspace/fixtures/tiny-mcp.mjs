@@ -1,7 +1,7 @@
 // A tiny local MCP server for ion's tests (no network): echo, whoami (its pid, parent, folder, environment and args),
 // crash (exits), roots (asks its client for roots, a request a server starts), fail (an error with your text),
 // sleep (waits; writes `marker` if it's cancelled), big (a text of `size` bytes), flood (100 MB, no newline).
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -37,6 +37,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
   const { name, arguments: args = {} } = req.params;
   if (name === "echo") return text(String(args.text));
+  // Not listed: reads a file (what a sandboxed server may and may not read).
+  if (name === "read") {
+    try {
+      return text(readFileSync(String(args.path), "utf8"));
+    } catch (e) {
+      return text(`failed: ${e.code}`);
+    }
+  }
   if (name === "whoami")
     return text({
       pid: process.pid,

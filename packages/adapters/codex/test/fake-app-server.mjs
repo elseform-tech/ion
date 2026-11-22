@@ -161,10 +161,11 @@ const SCRIPTS = {
     end("completed");
   },
   async mcp() {
+    const srv = process.env.FAKE_CODEX_MCP_SERVER ?? "ion";
     const it = {
       type: "mcpToolCall",
       id: "m1",
-      server: "ion",
+      server: srv,
       tool: "search_chats",
       arguments: { query: "kiwi" },
       status: "inProgress",
@@ -174,10 +175,10 @@ const SCRIPTS = {
     const r = await ask("mcpServer/elicitation/request", {
       threadId: T.threadId,
       turnId: T.turnId,
-      serverName: "ion",
+      serverName: srv,
       mode: "form",
       _meta,
-      message: 'Allow the ion MCP server to run tool "search_chats"?',
+      message: `Allow the ${srv} MCP server to run tool "search_chats"?`,
       requestedSchema: { type: "object", properties: {} },
     });
     const form = await ask("mcpServer/elicitation/request", {

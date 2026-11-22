@@ -1,45 +1,44 @@
 import { BookOpen } from "@ion/design-system";
 import type { HarnessInfo, SkillInfo } from "@ion/schema";
 import { useCallError } from "../callError.js";
-import { ready, type SettingsData } from "./data.js";
+import type { SettingsData } from "./data.js";
 import { Switch } from "./Switch.js";
-import { type Part, partOf, stateOf, type TabProps, ToolRow, Works } from "./tools-parts.js";
+import { type Part, partOf, stateOf, type TabProps, ToolRow } from "./tools-parts.js";
+import { Faces, fromOf, type Merged, merge, OwnRow, offIn, type Whose, whoseRows } from "./tools-own.js";
 
-/**
- * A skill: the agents that use it (faces, as Connections shows them; tour, 2026-11-21), and a switch when ion passes
- * it (Claude Code's); the other agents read their own.
- */
-function SkillRow({ s, part, agents }: { s: SkillInfo; part: Part; agents: HarnessInfo[] }) {
+const about = (s: SkillInfo) => (
+  <span className="clamp" title={s.description}>
+    {s.description}
+  </span>
+);
+
+/** One of ion's skills (ion passes it to Claude Code when on): who has it, by face, and its switch. */
+function SkillRow(p: { s: SkillInfo; r: Merged<SkillInfo>; part: Part; agents: HarnessInfo[] }) {
+  const { s, part } = p;
   const [error, run] = useCallError();
   const ion = Object.values(s.support).includes("ion");
+  const state = ion ? stateOf(s, part.locked) : null;
+  const chip = state ?? (p.r.differs ? "Differs" : null);
   return (
     <>
       <ToolRow
         icon={BookOpen}
         name={s.name}
-        chip={ion ? stateOf(s, part.locked) : null}
+        chip={chip}
+        {...(chip === "Differs" && p.r.differs ? { chipTitle: p.r.differs } : {})}
         {...(s.origin ? { origin: s.origin } : {})}
+        {...(s.project ? { origin: fromOf(`${s.project}'s skills`) } : {})}
         at={part.at === s.name}
-        mid={<Works agents={agents} works={(id) => !!s.support[id]} />}
-        line={
-          <span className="clamp" title={s.description}>
-            {s.description}
-          </span>
-        }
+        mid={<Faces who={p.r.agents} agents={p.agents} />}
+        line={about(s)}
         end={
-          <>
-            {ion ? (
-              <Switch
-                label={s.name}
-                on={s.on}
-                onPick={(on) =>
-                  run(part.client.call("tools.setOn", { kind: "skill", id: s.id, on }), part.set)
-                }
-              />
-            ) : (
-              <span className="s">Uses its own</span>
-            )}
-          </>
+          ion ? (
+            <Switch
+              label={s.name}
+              on={s.on}
+              onPick={(on) => run(part.client.call("tools.setOn", { kind: "skill", id: s.id, on }), part.set)}
+            />
+          ) : null
         }
       />
       {error && <div className="perr">{error}</div>}
@@ -47,16 +46,38 @@ function SkillRow({ s, part, agents }: { s: SkillInfo; part: Part; agents: Harne
   );
 }
 
-/** Settings → Tools → Skills: the skills your agents already have. `at`: the skill a chat's link opened; `data`: whose agents are ready. */
-export function Skills(p: TabProps & { data: SettingsData }) {
+/**
+ * Settings → Tools → Skills: ion's (on or off) and each agent's own (read-only), one row per skill several have with
+ * the same files. `at`: the skill a chat's link opened.
+ */
+export function Skills(p: TabProps & { data: SettingsData; whose: Whose }) {
   const part = partOf(p);
-  const agents = p.data.harnesses.filter(ready);
-  if (!p.info.skills.length) return null;
+  const agents = p.data.harnesses;
+  // Who has it: ion when it passes it (its switch), and each agent that loads it itself (task review, 2026-11-21).
+  const items = p.info.skills.flatMap((s) => {
+    const ion = !s.own && Object.values(s.support).includes("ion") ? ["ion"] : [];
+    const who = [...ion, ...(s.readers ?? (s.own ? [s.own] : []))];
+    return [...new Set(who)].map((agent) => ({ agent, name: s.name, key: s.hash, item: s }));
+  });
+  const rows = whoseRows(merge(items, "Different files"), p.whose);
+  if (!rows.length) return null;
+  const first = (r: Merged<SkillInfo>) => p.info.skills.find((s) => s.name === r.name);
   return (
     <div className="group">
-      {p.info.skills.map((s) => (
-        <SkillRow key={s.id} s={s} part={part} agents={agents} />
-      ))}
+      {rows.map((r, i) => {
+        const s = first(r);
+        if (r.ion) return <SkillRow key={r.ion.id} s={r.ion} r={r} part={part} agents={agents} />;
+        return (
+          <OwnRow
+            key={`${r.name}:${i}`}
+            icon={BookOpen}
+            r={r}
+            agents={agents}
+            off={offIn(r, p.info.own, "skills", agents)}
+            line={s ? about(s) : null}
+          />
+        );
+      })}
     </div>
   );
 }

@@ -1,0 +1,159 @@
+import { readdirSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+import { stripControl } from "@ion/schema";
+import { readFile } from "../tools/import.js";
+import { readPlugins } from "../tools/plugins.js";
+import { type Follow, openFile } from "../tools/read-file.js";
+import { fold, under } from "../access/paths.js";
+import { isPrivate } from "../access/secrets.js";
+import { realish } from "../runs/policy.js";
+
+/**
+ * Each agent's own commands, as "/" lists them (the user, 2026-11-21, after Task 13: the agent's own come first):
+ * Claude Code's (`~/.claude/commands`, its enabled plugins' as `plugin:name`), opencode's (its `command` folders and
+ * its config's `command`), Codex's custom prompts (`prompts:name`). Only read: nothing is run. `body`: the command's
+ * text, for an agent that can't run it by name.
+ */
+/**
+ * `runs`: the agent runs it by name in ion's chats (a plugin's for Claude Code, opencode's); else it gets the text (live,
+ * 2026-11-21: with ion's settingSources [] Claude Code doesn't load ~/.claude/commands).
+ */
+export type OwnCommand = { name: string; description: string; body: string; runs: boolean };
+
+type ReadOpts = { home: string; env: Record<string, string | undefined>; projects: string[] };
+
+const MAX_FILE = 64 * 1024;
+const MAX_COMMANDS = 200;
+const NAME = /^[\w.:-]{1,80}$/;
+
+const clean = (s: string, max: number) => stripControl(s.replace(/\s+/g, " ")).trim().slice(0, max);
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** A markdown command's description (front matter) and text after it. */
+function parse(md: string): { description: string; body: string } {
+  const lines = md.split("\n");
+  if (lines[0]?.trim() !== "---") return { description: "", body: md.trim() };
+  const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+  if (end < 0) return { description: "", body: md.trim() };
+  const d = lines.slice(1, end).find((l) => /^description:/.test(l)) ?? "";
+  const description = d
+    .slice("description:".length)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  return {
+    description: clean(description, 200),
+    body: lines
+      .slice(end + 1)
+      .join("\n")
+      .trim(),
+  };
+}
+
+/**
+ * Where a link in your own commands folder (`dir`: your dotfiles) may lead (review of 05d5c8b, 2026-11-22): a regular
+ * .md file in your home, not a secret or ion's, and in no dot-folder but that commands folder itself.
+ */
+const yourLinks = (home: string, dir: string): Follow => ({
+  root: home,
+  accept: (t) => {
+    if (!/\.md$/i.test(t) || isPrivate(t, home)) return false;
+    if (under(fold(t), fold(realish(dir)))) return true;
+    return !relative(realish(home), t)
+      .split(sep)
+      .some((part) => part.startsWith("."));
+  },
+});
+
+/** The `.md` files in a folder, as commands named by their file (with a prefix); `follow`: your own folder's links. */
+function folder(dir: string, runs: boolean, prefix = "", follow?: Follow): OwnCommand[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir)
+      .filter((n) => n.endsWith(".md"))
+      .sort();
+  } catch {
+    return [];
+  }
+  return names.flatMap((n) => {
+    const name = `${prefix}${n.slice(0, -3)}`;
+    if (!NAME.test(name)) return [];
+    // Checked and read through one open file (CodeQL, PR #25); a link only in your own folder (automated review).
+    const f = openFile(join(dir, n), MAX_FILE, undefined, follow ? { follow } : {});
+    return f?.kind === "file" && f.text !== null ? [{ name, ...parse(f.text), runs }] : [];
+  });
+}
+
+/** A plugin's skills (`skills/<name>/SKILL.md`) as `plugin:name`, sent as their text (Task 11, 2026-11-22). */
+function pluginSkills(dir: string, prefix: string): OwnCommand[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+  return names.flatMap((n) => {
+    if (!NAME.test(`${prefix}${n}`)) return [];
+    const f = openFile(join(dir, n, "SKILL.md"), MAX_FILE);
+    return f?.kind === "file" && f.text !== null
+      ? [{ name: `${prefix}${n}`, ...parse(f.text), runs: false }]
+      : [];
+  });
+}
+
+/** Claude Code's own: yours, then each enabled plugin's commands and skills (`plugin:name`). */
+function claude(o: ReadOpts): OwnCommand[] {
+  const plugins = readPlugins(o).filter((p) => p.agent === "claude-code" && p.path);
+  return [
+    ...folder(
+      join(o.home, ".claude", "commands"),
+      false,
+      "",
+      yourLinks(o.home, join(o.home, ".claude", "commands")),
+    ),
+    ...plugins.flatMap((p) => [
+      ...folder(join(p.path!, "commands"), true, `${p.name}:`),
+      ...pluginSkills(join(p.path!, "skills"), `${p.name}:`),
+    ]),
+  ];
+}
+
+/** opencode's: its command folders, then its config's `command` table. */
+function opencode(o: ReadOpts): OwnCommand[] {
+  const dir = join(o.env.XDG_CONFIG_HOME || join(o.home, ".config"), "opencode");
+  const files = ["command", "commands"].flatMap((c) =>
+    folder(join(dir, c), true, "", yourLinks(o.home, join(dir, c))),
+  );
+  const table = ["opencode.json", "opencode.jsonc", "config.json"]
+    .map((f) => readFile(join(dir, f)))
+    .find(isObj)?.command;
+  const listed = isObj(table)
+    ? Object.entries(table).flatMap(([name, v]) =>
+        NAME.test(name) && isObj(v) && typeof v.template === "string"
+          ? [
+              {
+                name,
+                description: clean(String(v.description ?? ""), 200),
+                body: v.template.slice(0, MAX_FILE),
+                runs: true,
+              },
+            ]
+          : [],
+      )
+    : [];
+  return [...files, ...listed];
+}
+
+/** Codex's custom prompts (`/prompts:name` in Codex). */
+const codex = (o: ReadOpts) => {
+  const dir = join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts");
+  return folder(dir, false, "prompts:", yourLinks(o.home, dir));
+};
+
+const BY_AGENT: Record<string, (o: ReadOpts) => OwnCommand[]> = { "claude-code": claude, opencode, codex };
+
+/** An agent's own commands (none for one ion can't read them for), each name once. */
+export function ownCommands(agent: string, o: ReadOpts): OwnCommand[] {
+  const all = BY_AGENT[agent]?.(o) ?? [];
+  return all.filter((c, i) => all.findIndex((x) => x.name === c.name) === i).slice(0, MAX_COMMANDS);
+}

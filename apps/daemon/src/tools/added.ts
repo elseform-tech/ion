@@ -49,17 +49,35 @@ export function replaceFile(path: string, text: string): void {
   renameSync(tmp, real);
 }
 
-/** What Settings has shown as New (kind, id and what it runs): it isn't New again. */
-export type Seen = { has(key: string): boolean; add(keys: string[]): void };
+/**
+ * What Settings has shown as New (kind, id and what it runs): it isn't New again. `state`: "empty" when nothing was
+ * ever recorded, "unreadable" when the file is there but can't be read (never taken for empty; final review,
+ * 2026-11-22), else "ok".
+ */
+export type Seen = {
+  has(key: string): boolean;
+  add(keys: string[]): void;
+  state(): "empty" | "ok" | "unreadable";
+};
 
 export function createSeen(file: string): Seen {
-  const all = (): string[] => {
+  const read = (): string[] | "missing" | "unreadable" => {
+    let text: string;
     try {
-      const v: unknown = JSON.parse(readFileSync(file, "utf8"));
-      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-    } catch {
-      return [];
+      text = readFileSync(file, "utf8");
+    } catch (e) {
+      return (e as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable";
     }
+    try {
+      const v: unknown = JSON.parse(text);
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : "unreadable";
+    } catch {
+      return "unreadable";
+    }
+  };
+  const all = (): string[] => {
+    const r = read();
+    return Array.isArray(r) ? r : [];
   };
   return {
     has: (key) => all().includes(key),
@@ -67,6 +85,11 @@ export function createSeen(file: string): Seen {
       const now = all();
       const fresh = keys.filter((k) => !now.includes(k));
       if (fresh.length) replaceFile(file, JSON.stringify([...now, ...fresh].slice(-MOST * 5)));
+    },
+    state() {
+      const r = read();
+      if (r === "unreadable") return "unreadable";
+      return r === "missing" || r.length === 0 ? "empty" : "ok";
     },
   };
 }

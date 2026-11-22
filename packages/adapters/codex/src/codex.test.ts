@@ -49,6 +49,7 @@ afterEach(() => {
   delete process.env.FAKE_CODEX_OWN_MCP;
   delete process.env.FAKE_CODEX_OWN_HOOK;
   delete process.env.FAKE_CODEX_NO_CONFIG_READ;
+  delete process.env.FAKE_CODEX_MCP_SERVER;
 });
 
 describe("codex adapter", () => {
@@ -128,6 +129,45 @@ describe("codex adapter", () => {
     );
   });
 
+  // The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files. Codex sandboxes its own commands
+  // (macOS won't nest ion's around it), and its permission profiles can deny reading a folder (checked on Codex
+  // 0.153.2: docs/research/sandbox.md), so ion turns that on with ion's folders "none" and the run's own let through.
+  it("runs Codex's commands in its own sandbox with ion's folders denied", async () => {
+    const sandbox = {
+      kind: "seatbelt" as const,
+      paths: {
+        deny: ["/ion-x/data"],
+        read: ["/ion-x/data/skills/r1"],
+        write: ["/ion-x/data/worktrees/c1"],
+        noWrite: [],
+      },
+      dataDir: "/ion-x/data",
+    };
+    const { thread, overrides } = await whoami({ sandbox });
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        'default_permissions="ion-run"',
+        'permissions.ion-run.extends=":workspace"',
+        "permissions.ion-run.network={enabled=true}",
+        'permissions.ion-run.filesystem={"/ion-x/data"="none","/ion-x/data/skills/r1"="read","/ion-x/data/worktrees/c1"="write"}',
+      ]),
+    );
+    // The thread's own sandbox setting would replace the profile (seen on 0.153.2: no active profile then).
+    expect(thread.sandbox).toBeUndefined();
+    // Task review, 2026-11-21: an approval could drop the sandbox (an escalation reached ion as a plain command
+    // approval). Codex's granular policy declines every request to run outside its sandbox by itself.
+    // Live, 2026-11-21: as a thread parameter Codex refused it ("granular requires experimentalApi capability"); as
+    // config it's taken, and the thread keeps it.
+    expect(overrides).toContain(
+      "approval_policy={granular={sandbox_approval=false,rules=true,mcp_elicitations=true,request_permissions=false,skill_approval=false}}",
+    );
+    expect(thread.approvalPolicy).toBeUndefined();
+    const plain = await whoami();
+    expect(plain.thread.sandbox).toBe("workspace-write");
+    expect(plain.thread.approvalPolicy).toBe("untrusted");
+    expect(plain.overrides.some((o: string) => o.startsWith("default_permissions"))).toBe(false);
+  });
+
   // The bearer key goes over stdin in the thread's config, never on the command line (other users' `ps`).
   // The user, 2026-11-20: "adding new mcp required us to follow industry standard…": your servers go the same way.
   it("gives Codex ion's server and yours, keys off the command line", async () => {
@@ -178,6 +218,41 @@ describe("codex adapter", () => {
   it("refuses a chat when it can't turn off Codex's own servers", async () => {
     process.env.FAKE_CODEX_NO_CONFIG_READ = "1";
     await expect(turn("hello")).rejects.toThrow("ion couldn't turn off Codex's own servers");
+  });
+
+  // The user, 2026-11-21: "frontier harnesses are already mature rather than reinventing the wheel. Hooks probably
+  // should stay": with "Use its own tools" on, Codex keeps its own servers and plugins; its own hooks stay off.
+  it("Codex keeps its own servers; its hooks are off", async () => {
+    process.env.FAKE_CODEX_OWN_MCP = JSON.stringify({ mine: { command: "echo" } });
+    process.env.FAKE_CODEX_OWN_HOOK = "1";
+    const ion: HttpMcpSpec = { name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp/k", headers: {} };
+    const gate = { url: "http://127.0.0.1:9/gate/k" };
+    const { thread, overrides } = await whoami({ mcpServers: [ion], gate, ownTools: true });
+    expect(thread.config.mcp_servers).toEqual({ ion: { url: "http://127.0.0.1:9/mcp/k", http_headers: {} } });
+    expect(overrides).not.toContain("features.plugins=false");
+    const state = overrides.filter((o: string) => o.startsWith("hooks.state="));
+    expect(state[0]).toContain('"/home/.codex/config.toml:post_tool_use:0:0"={enabled=false}');
+    // It needn't know Codex's own servers to start: nothing of Codex's is turned off.
+    process.env.FAKE_CODEX_NO_CONFIG_READ = "1";
+    await expect(turn("hello", { ownTools: true })).resolves.toBeTruthy();
+  });
+
+  // The user, 2026-11-21: ion's gate still judges every call, an agent's own tools' too.
+  it("an agent's own tool call is judged by ion (Codex)", async () => {
+    process.env.FAKE_CODEX_MCP_SERVER = "github";
+    const seen: ApprovalRequest[] = [];
+    await turn("mcp", {
+      ownTools: true,
+      decide: async (r) => {
+        seen.push(r);
+        return "deny";
+      },
+    });
+    expect(seen[0]).toMatchObject({
+      toolName: "mcp__github__search_chats",
+      mcpServer: "github",
+      kind: "mcp",
+    });
   });
 
   // Final review, 2026-11-21: every server reaches an agent as ion's URL (ion runs local ones), so adapters take http.
@@ -384,5 +459,15 @@ describe("codex adapter with ion's gate", () => {
       kind: "command",
       summary: "ls",
     });
+  });
+});
+
+// Task review, 2026-11-21: Codex's own skills load whatever the switch says, and it trusts a project's tools itself.
+describe("what Codex's switch really turns off", () => {
+  it("its servers and plugins, not its skills; Settings says it also loads its own, and uses its own trust", () => {
+    const a = make();
+    expect(a.ownOff).toEqual({ servers: true, skills: false, plugins: true });
+    expect(a.ownTools).toBe(true);
+    expect(a.ownTrust).toBe(true);
   });
 });

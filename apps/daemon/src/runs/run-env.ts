@@ -24,15 +24,18 @@ export function runKeys(
 
 /**
  * What a run's agent process is given in its environment: the chat's marker (every process it starts inherits it),
- * the run's key for ion's commands, and ion's own launcher first on its PATH, so `ion` is found.
+ * the run's key for ion's commands and ion's port (daemon.json is out of the run's reach in its sandbox), and ion's
+ * own launcher first on its PATH, so `ion` is found.
  */
 export function runEnv(
   l: { chatId: string; cliKey?: string },
   ionBin: string | undefined,
+  port?: number,
 ): Record<string, string> {
   return {
     ION_CHAT: l.chatId,
     ...(l.cliKey ? { ION_RUN_KEY: l.cliKey } : {}),
+    ...(l.cliKey && port ? { ION_PORT: String(port) } : {}),
     ...(ionBin ? { PATH: [ionBin, process.env.PATH ?? ""].filter(Boolean).join(delimiter) } : {}),
   };
 }

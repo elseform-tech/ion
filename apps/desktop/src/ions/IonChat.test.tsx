@@ -183,3 +183,34 @@ describe("an ion's message box", () => {
     expect(box().selectionStart).toBe("edit me".length);
   });
 });
+
+// The user, 2026-11-21: "/" in an ion's chat picks a skill the ion should use or pass on to a thread; the chat shows
+// the chip, not the text.
+describe("/ in an ion's message box", () => {
+  it("lists the skills that are on, and sends the pick with the message", async () => {
+    const d = daemon([ev(EV.ionHeard, { text: "hi" }), ev(EV.ionSaid, { text: "Hello." }, "turn1")]);
+    const base = d.call.getMockImplementation()!;
+    d.call.mockImplementation(async (cmd: string, a?: unknown) =>
+      cmd === "tools.picks"
+        ? { skills: [{ name: "pdf", description: "PDFs", kind: "skill", from: "ion" }], servers: [] }
+        : base(cmd, a),
+    );
+    show(d, false);
+    fireEvent.change(box(), { target: { value: "/pd", selectionStart: 3 } });
+    await screen.findByRole("listbox", { name: "Skills" });
+    expect(d.call).toHaveBeenCalledWith("tools.picks", { ionId: "storefront" });
+    fireEvent.keyDown(box(), { key: "Enter" });
+    type("fill the form");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(d.call).toHaveBeenCalledWith("ion.message", {
+      ionId: "storefront",
+      text: "fill the form",
+      skills: ["pdf"],
+    });
+  });
+
+  it("shows your message's picks as chips", () => {
+    show(daemon([ev(EV.ionHeard, { text: "fill it", skills: ["pdf"] })]), false);
+    expect(screen.getByText("pdf").closest(".chip")).not.toBeNull();
+  });
+});
