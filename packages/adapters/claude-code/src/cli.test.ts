@@ -43,23 +43,34 @@ describe("claude-code auth", () => {
     expect(await status({ code: 0, stdout: authJson(true, "claude.ai") })).toEqual({
       signedIn: true,
       method: "Claude subscription",
+      billing: "subscription",
     });
   });
   it("accepts a long-lived Claude token", async () => {
     expect(await status({ code: 0, stdout: authJson(true, "oauth_token") })).toEqual({
       signedIn: true,
       method: "Long-lived token",
+      billing: "subscription",
     });
   });
   it("doesn't count an API key as signed in", async () => {
     expect(await status({ code: 0, stdout: authJson(true, "api_key") })).toEqual({
       signedIn: false,
       method: "API key",
+      billing: "api",
     });
   });
   it("never returns account details", async () => {
     const r = await status({ code: 0, stdout: authJson(true, "claude.ai") });
-    expect(Object.keys(r).sort()).toEqual(["method", "signedIn"]);
+    expect(Object.keys(r).sort()).toEqual(["billing", "method", "signedIn"]);
+  });
+  // The user, 2026-11-21: how an agent bills comes from its sign-in; a sign-in ion can't tell isn't called free.
+  it("billing comes from the sign-in", async () => {
+    expect(await status({ code: 0, stdout: authJson(true, "claude.ai") })).toMatchObject({
+      billing: "subscription",
+    });
+    expect(await status({ code: 0, stdout: authJson(true, "api_key") })).toMatchObject({ billing: "api" });
+    expect(await status({ code: 0, stdout: "not json" })).not.toHaveProperty("billing");
   });
   it("is signed out on a non-zero exit or bad output", async () => {
     expect((await status({ code: 1, stdout: authJson(false, "none") })).signedIn).toBe(false);

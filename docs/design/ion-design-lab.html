@@ -222,6 +222,7 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .meter .tr{height:4px;border-radius:999px;background:var(--hover);overflow:hidden}
 .meter .tr i{display:block;height:100%;background:var(--ink);border-radius:inherit}
 .meter.hi .tr i{background:var(--wait)}
+.meter .mp{white-space:nowrap}
 .srow{display:flex;align-items:center;gap:12px;padding:12px 14px}
 .srow .g{flex:1}
 .sw{width:30px;height:18px;border-radius:999px;background:var(--line);position:relative;flex-shrink:0}
@@ -2906,8 +2907,10 @@ const who=k=>k==='lead'?'ion':IONS[k].name;
 const EFF=[['low','Low','~0.3× quota'],['medium','Medium','1×'],['high','High','~2×'],['max','Max','~4×'],['auto','Auto','ion decides per task']];
 const effLabel=e=>EFF.find(x=>x[0]===e)[1];
 /* one place for connections: each harness signs in with its own CLI login; ion thinks with a connected harness */
-const HCONN={claude:{st:'on',how:'Signed in',use:62,rules:3},grok:{st:'on',how:'Signed in',use:88},codex:{st:'on',how:'Signed in',use:31},
-  gemini:{st:'on',how:'Signed in',spend:'$4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
+/* line: each ready agent's usage in one quiet line (Plan 20, the user 2026-11-21), the same in `ion status`; use: the
+   window's percent when the agent reports one (a bar), lim: limited until its reset. Never a gauge ion made up. */
+const HCONN={claude:{st:'on',how:'Signed in',line:'limited until 16:00',lim:1,rules:3},grok:{st:'on',how:'Signed in',line:'Learned from errors'},codex:{st:'on',how:'Signed in',line:'62% of 5 h · resets 14:20',use:62},
+  gemini:{st:'on',how:'Signed in',line:'this week $4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
 const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],eff:'high',when:'auto',use:4,week:1.8};
 const S2WHEN=[['auto','When needed'],['always','Always'],['never','Never']];
 let NEEDS=[
@@ -3654,7 +3657,7 @@ const EFFN={low:1,medium:2,high:3,max:4};
 /* which effort levels each harness supports, and its native name for the setting */
 const ESUP={claude:['low','medium','high','max','auto'],codex:['low','medium','high','auto'],grok:['low','high','auto'],gemini:['auto'],pi:['auto'],cursor:['auto']};
 const ENATIVE={claude:'effort',codex:'model_reasoning_effort',grok:'reasoning_effort',gemini:'not configurable',pi:'not configurable',cursor:'not configurable'};
-const HUSE=new Proxy({},{get:(_,h)=>{ const c=HCONN[h]; return !c?'':c.st==='on'?(c.use!=null?c.use+'% this week':c.spend+' this week'):c.st==='missing'?'Not installed · connect in Settings':'Not connected · connect in Settings'; }});
+const HUSE=new Proxy({},{get:(_,h)=>{ const c=HCONN[h]; return !c?'':c.st==='on'?c.line:c.st==='missing'?'Not installed · connect in Settings':'Not connected · connect in Settings'; }});
 const ebars=e=>`<span class="ebars" aria-hidden="true">${[1,2,3,4].map(n=>`<i class="${e==='auto'?'a':n<=(EFFN[e]||0)?'on':''}"></i>`).join('')}</span>`;
 const BRAIN={new:{h:'claude',m:'Opus 5.5',e:'medium',src:'storefront default'},code:{h:'claude',m:'Opus 5.5',e:'high',src:'storefront default',started:'claude'},chat:{h:'claude',m:'Sonnet 5.5',e:'auto',src:'your default',started:'claude'}};
 const BDEF=JSON.parse(JSON.stringify(BRAIN));
@@ -3717,7 +3720,7 @@ function renderHarnesses(){
   const el=document.getElementById('hList');
   el.innerHTML=HARNESSES.map(h=>{ const c=HCONN[h], n=LIB[h].name;
     const right=c.st==='on'
-      ? `<div class="meter${c.use>=80?' hi':''}">${c.use!=null?`<span>${c.use}% this week</span><div class="tr"><i style="width:${c.use}%"></i></div>`:`<span>${c.spend} this week</span><div class="tr"><i style="width:21%"></i></div>`}</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`
+      ? `<div class="meter${c.lim||c.use>=80?' hi':''}"><span>${c.line.split(' · ').map(x=>`<span class="mp">${esc(x)}</span>`).join(' · ')}</span>${c.use!=null?`<div class="tr"><i style="width:${c.use}%"></i></div>`:''}</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`
       : c.st==='busy' ? `<span class="cbusy"><i class="spin"></i>${esc(c.msg)}</span><span></span>`
       : `<span></span><button class="btn${c.st==='off'?' pri':''}" type="button" data-hconnect="${h}">${c.st==='missing'?'Install and connect':'Connect'}</button>`;
     /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.

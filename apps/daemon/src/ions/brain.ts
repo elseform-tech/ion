@@ -4,6 +4,7 @@ import { defaultAgent, getHarness } from "../adapters/registry.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
+import { usageView } from "../views/usage.js";
 
 /** Where an ion's agent is picked from: your config, the chats, and the agents ion can use right now. */
 export type BrainDeps = {
@@ -27,6 +28,18 @@ async function isReady(d: BrainDeps, id: string): Promise<boolean> {
 async function readyAgents(agents?: () => Promise<HarnessInfo[]>): Promise<string[]> {
   const all = (await agents?.().catch(() => [])) ?? [];
   return all.filter((h) => h.installed && h.signedIn).map((h) => h.id);
+}
+
+/** Whether the agent is marked limited now (by any chat's run or ion's turn: views/usage.ts). */
+const isLimited = (d: BrainDeps, id: string): boolean => !!limitedUntil(d.db, id);
+
+/** Until when the agent is limited (ISO), or null. */
+export const limitedUntil = (db: Db, id: string): string | null =>
+  usageView.agents(db, new Date())[id]?.limitedUntil ?? null;
+
+/** The ready agents that aren't limited: the ones an ion can go on. */
+async function usableAgents(d: BrainDeps): Promise<string[]> {
+  return (await readyAgents(d.agents)).filter((id) => !isLimited(d, id));
 }
 
 /**
@@ -67,13 +80,19 @@ async function dreamBrain(d: BrainDeps, spec: string, effort: IonBrain["effort"]
   const [set, ...rest] = spec.split(":");
   const ready = await isReady(d, set!);
   if (ready && webOff(set!)) return { harness: set!, model: rest.join(":") || null, effort };
-  const other = defaultAgent((await readyAgents(d.agents)).filter(webOff), null);
+  const other = defaultAgent((await usableAgents(d)).filter(webOff), null);
   if (other) return { harness: other, model: null, effort };
   return ready ? { harness: set!, model: rest.join(":") || null, effort } : null;
 }
 
 /** What an ion thinks on: its agent, the model on it (null: the agent's own) and the effort (null: the agent's). */
-export type IonBrain = { harness: string; model: string | null; effort: Effort | null };
+export type IonBrain = {
+  harness: string;
+  model: string | null;
+  effort: Effort | null;
+  /** Its own agents it went past because they're limited (its reply says so in one line). */
+  skipped?: string[];
+};
 
 /**
  * An ion's agent, model and effort, or null when it has no agent ready. ion chief (and its dream, on [memory]
@@ -86,16 +105,28 @@ export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | 
   const ion = c.ion;
   const quickEffort = ion.quickEffort ?? null;
   if (ionId === DREAM_ION) return dreamBrain(d, c.memory.dreamAgent || ion.quick, quickEffort);
-  if (ionId === "chief") {
-    const [set, ...rest] = ion.quick.split(":");
-    if (await isReady(d, set!)) return { harness: set!, model: rest.join(":") || null, effort: quickEffort };
-    return nextBrain(d, ionId, [set!]);
-  }
-  // A project's own agent that isn't ready (signed out, gone) gives way to the next ready one (Plan 19's checks).
+  if (ionId === "chief") return chiefBrain(d, ion.quick, quickEffort);
+  // A project's own agent that isn't ready (signed out, gone) or is limited gives way to the next ready one (Plan 19's
+  // checks; the user, 2026-11-22).
   const harness = await projectAgent(d, ionId);
   if (!harness || !(await isReady(d, harness))) return nextBrain(d, ionId, harness ? [harness] : []);
+  if (isLimited(d, harness)) return pastLimited(nextBrain(d, ionId, [harness]), harness);
   const b = brainOf(d.configFile, ionId, harness);
   return { harness, model: b.model ?? null, effort: b.effort ?? quickEffort };
+}
+
+/** ion chief's: [ion] quick while it's ready and not limited, else the next ready one (saying it went past a limit). */
+async function chiefBrain(d: BrainDeps, quick: string, effort: Effort | null): Promise<IonBrain | null> {
+  const [set, ...rest] = quick.split(":");
+  const ready = await isReady(d, set!);
+  if (ready && !isLimited(d, set!)) return { harness: set!, model: rest.join(":") || null, effort };
+  return pastLimited(nextBrain(d, "chief", [set!]), ready ? set : undefined);
+}
+
+/** The next brain, saying it went past this limited agent (when one was). */
+async function pastLimited(next: Promise<IonBrain | null>, limited?: string): Promise<IonBrain | null> {
+  const b = await next;
+  return b && limited ? { ...b, skipped: [limited] } : b;
 }
 
 /**
@@ -104,7 +135,7 @@ export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | 
  */
 export async function nextBrain(d: BrainDeps, ionId: string, not: string[]): Promise<IonBrain | null> {
   const harness = defaultAgent(
-    (await readyAgents(d.agents)).filter((id) => !not.includes(id)),
+    (await usableAgents(d)).filter((id) => !not.includes(id)),
     null,
   );
   if (!harness) return null;

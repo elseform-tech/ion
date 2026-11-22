@@ -14,6 +14,7 @@ export type {
   StartOpts,
 } from "./types.js";
 export { createDeltaCoalescer } from "./coalesce.js";
+export { usageWindow } from "./usage.js";
 export { type PickedSkill, type Picks, type PickStyle, withPicks } from "./picks.js";
 export { parseJsonc } from "./jsonc.js";
 export { readSmallFile } from "./read-small.js";

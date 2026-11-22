@@ -89,7 +89,8 @@ export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdap
         });
         const slow = h.notResponding?.() ?? "Not responding";
         const method = { yes: "Signed in", no: "Not signed in", "not-responding": slow }[probe];
-        return { signedIn: probe === "yes", method };
+        const billing = probe === "yes" && h.billing ? { billing: h.billing } : {};
+        return { signedIn: probe === "yes", method, ...billing };
       },
       login: () =>
         new Promise<void>((resolve, reject) => {

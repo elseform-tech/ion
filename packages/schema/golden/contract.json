@@ -118,6 +118,7 @@
     "routine.run",
     "routines.pause",
     "activity.list",
+    "usage.list",
     "tools.list",
     "tools.setOn",
     "tools.setKey",

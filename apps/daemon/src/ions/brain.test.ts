@@ -2,14 +2,21 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
-import type { HarnessInfo } from "@ion/schema";
+import type { HarnessInfo, NewEvent } from "@ion/schema";
 import { describe, expect, it } from "vitest";
-import { openDb } from "../store/index.js";
+import { EventStore, openDb } from "../store/index.js";
+import { allViews } from "../views/index.js";
 import { ionBrain } from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
 // test run past a test's wait), even when the agent was already chosen. Only the chosen one is checked; every agent
 // only when ion has to pick the first ready one.
+/** A database with ion's views (the usage view marks limited agents). */
+const viewsDb = () => {
+  const db = openDb(":memory:");
+  return new EventStore(db, allViews) && db;
+};
+
 describe("an ion's agent", () => {
   const info = (id: string, ready: boolean): HarnessInfo => ({
     ...{ id, label: id, installed: ready, signedIn: ready, models: [], defaultModel: null },
@@ -25,7 +32,7 @@ describe("an ion's agent", () => {
     const asked: string[] = [];
     const d = {
       configFile,
-      db: openDb(":memory:"),
+      db: viewsDb(),
       agents: async () => {
         asked.push("all");
         return [info("fake", true), info("opencode", true)];
@@ -50,7 +57,7 @@ describe("an ion's agent", () => {
       saveUserConfig(configFile, { ...DEFAULT_CONFIG, memory: { dream: "nightly", dreamAgent: "fake" } });
       const both = {
         configFile,
-        db: openDb(":memory:"),
+        db: viewsDb(),
         agents: async () => [info("fake", true), info("claude-code", true)],
       };
       expect(await ionBrain(both, "_dream")).toMatchObject({ harness: "claude-code" });
@@ -69,9 +76,39 @@ describe("an ion's agent", () => {
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects });
     const d = {
       configFile,
-      db: openDb(":memory:"),
+      db: viewsDb(),
       agents: async () => [info("claude-code", false), info("opencode", false), info("grok-build", true)],
     };
     expect(await ionBrain(d, "app")).toEqual({ harness: "grok-build", model: null, effort: null });
+  });
+
+  // The user, 2026-11-22: an agent marked limited (by any chat's run or ion's turn) is skipped like one that isn't
+  // ready, and the turn knows which it skipped (its reply says why in one line).
+  it("a limited agent is skipped", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    const projects = [{ id: "app", path: "/x/app", starred: false, harness: "claude-code" }];
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects });
+    const db = openDb(":memory:");
+    const store = new EventStore(db, allViews);
+    const resetsAt = new Date(Date.now() + 3600_000).toISOString();
+    const data = {
+      code: "usage_limit",
+      retryable: false,
+      message: "x",
+      limit: { resetsAt },
+      harness: "claude-code",
+    };
+    store.append({ chatId: null, runId: "turn_1", origin: "adapter", type: "error", data } as NewEvent);
+    const d = {
+      configFile,
+      db,
+      agents: async () => [info("claude-code", true), info("grok-build", true)],
+    };
+    expect(await ionBrain(d, "app")).toEqual({
+      harness: "grok-build",
+      model: null,
+      effort: null,
+      skipped: ["claude-code"],
+    });
   });
 });

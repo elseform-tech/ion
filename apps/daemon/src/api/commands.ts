@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
+import type { AuthStatus } from "@ion/adapter-kit";
 import type { Dreams } from "../scheduler/index.js";
 import type { MemoryFiles } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
@@ -48,6 +49,8 @@ import { toolsImportHandlers } from "./tools-import.js";
 import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
 import { missesOf } from "../access/misses.js";
 import { readAgentRules, ruleCount } from "../access/agent-rules.js";
+import { usageView } from "../views/usage.js";
+import { agentUsages } from "./usage.js";
 
 export { UserError } from "./errors.js";
 
@@ -136,6 +139,12 @@ export const handlers: Handlers = {
     return (await harnessInfos.list())
       .filter((h) => listed.includes(h.id))
       .map((h) => ({ ...h, ...missesOf(h.id) }));
+  },
+  // The ready agents ion already knows (never waiting on an agent's CLI: `ion status` stays quick).
+  "usage.list": (_a, ctx) => {
+    const listed = listedHarnessIds();
+    const infos = harnessInfos.cached().filter((h) => listed.includes(h.id) && h.installed && h.signedIn);
+    return agentUsages(infos, usageView.agents(ctx.db, new Date()));
   },
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
@@ -312,7 +321,8 @@ function ownRulesOf(id: string): { ownRules?: number } {
 
 async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness>>): Promise<HarnessInfo> {
   const installed = (await h.adapter.detect()).installed;
-  const signedIn = installed && (await h.adapter.auth.status()).signedIn;
+  const auth = installed ? await h.adapter.auth.status() : null;
+  const signedIn = !!auth?.signedIn;
   const caps = signedIn ? await h.adapter.capabilities() : null;
   return {
     id,
@@ -327,5 +337,11 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     ...(h.adapter.ownTrust ? { ownTrust: true as const } : {}),
     ...(notSandboxed(h.adapter.sandbox, machineSandbox()) ? { notSandboxed: true as const } : {}),
     ...ownRulesOf(id),
+    ...billingOf(auth),
   };
+}
+
+/** How it bills, from its sign-in (only when signed in: a sign-in that isn't there bills nothing). */
+function billingOf(auth: AuthStatus | null): Pick<HarnessInfo, "billing"> {
+  return auth?.signedIn && auth.billing ? { billing: auth.billing } : {};
 }

@@ -540,3 +540,12 @@ describe("ion's judge on ACP agents", () => {
     expect(OPENCODE.bare?.effort).toBe("low");
   });
 });
+
+// The user, 2026-11-21: how an agent bills comes from its sign-in. opencode in ion runs its free model (Zen's,
+// signed in or not); Grok's sign-in is a Grok plan ("Sign in with Grok": its plan's usage limit, `grok usage`).
+describe("billing comes from the sign-in", () => {
+  it("opencode is free, Grok is a subscription", () => {
+    expect(OPENCODE.billing).toBe("free");
+    expect(GROK_BUILD.billing).toBe("subscription");
+  });
+});

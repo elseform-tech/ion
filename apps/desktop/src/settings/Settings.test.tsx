@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import type { HarnessInfo, IonInfo, ProjectInfo } from "@ion/schema";
+import type { AgentUsage, HarnessInfo, IonInfo, ProjectInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "./Settings.js";
@@ -87,11 +87,18 @@ const activity = {
 };
 
 function client(
-  o: { projects?: ProjectInfo[]; fail?: string[]; problem?: string; own?: Record<string, boolean> } = {},
+  o: {
+    projects?: ProjectInfo[];
+    fail?: string[];
+    problem?: string;
+    own?: Record<string, boolean>;
+    usage?: AgentUsage[];
+  } = {},
 ) {
   const call = vi.fn(async (cmd: string) => {
     if (o.fail?.includes(cmd)) throw new ApiCallError("invalid", "Fix your config first.");
     if (cmd === "harnesses.list") return [claude, grok];
+    if (cmd === "usage.list") return o.usage ?? [];
     if (cmd === "settings.get")
       return {
         quick: "grok-build",
@@ -186,6 +193,59 @@ describe("Settings", () => {
     const lines = screen.getAllByText(line);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.closest(".hrow")?.textContent).toContain(agent);
+  });
+
+  // The user, 2026-11-21: Settings → Agents shows each ready agent's usage in one quiet line, where the lab has its
+  // meter: its window ("62% of 5 h · resets 14:20") with a bar, "limited until 16:00", or "Learned from errors".
+  describe("an agent's usage line", () => {
+    const none = { tokens: 0, costUsd: 0 };
+    const grokUsage = (u: Partial<AgentUsage>): AgentUsage[] => [
+      {
+        harness: "grok-build",
+        label: "Grok Build",
+        billing: "subscription",
+        today: none,
+        week: none,
+        windows: [],
+        limitedUntil: null,
+        ...u,
+      },
+    ];
+    const meterOf = async (usage: AgentUsage[]) => {
+      render(<Settings client={client({ usage })} onOpenIon={() => {}} />);
+      await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
+      const row = screen.getByRole("switch", { name: "Grok Build: use its own tools" }).closest(".hrow")!;
+      return waitFor(() => {
+        const m = row.querySelector(".meter");
+        expect(m?.textContent).toBeTruthy();
+        return m as HTMLElement;
+      });
+    };
+
+    it("a Codex window snapshot is stored and shown", async () => {
+      const resetsAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      const m = await meterOf(grokUsage({ windows: [{ name: "5 h", usedPercent: 62, resetsAt }] }));
+      expect(m.textContent).toMatch(/^62% of 5 h · resets /);
+      expect(m.querySelector(".tr i")?.getAttribute("style")).toContain("62%");
+    });
+
+    it("a limit error marks the agent limited until its reset", async () => {
+      const limitedUntil = new Date(Date.now() + 60 * 60_000).toISOString();
+      const m = await meterOf(grokUsage({ limitedUntil }));
+      expect(m.textContent).toMatch(/^limited until /);
+      expect(m.className).toContain("hi");
+    });
+
+    it("a missing gauge shows Learned from errors", async () => {
+      const m = await meterOf(grokUsage({}));
+      expect(m.textContent).toBe("Learned from errors");
+      expect(m.querySelector(".tr")).toBeNull();
+    });
+
+    it("billing comes from the sign-in", async () => {
+      const m = await meterOf(grokUsage({ billing: "free" }));
+      expect(m.textContent).toBe("Free");
+    });
   });
 
   // The user, 2026-11-19: you choose how hard ion thinks.

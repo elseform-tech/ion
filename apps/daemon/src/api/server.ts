@@ -452,15 +452,15 @@ function openState(
   opts: { dataDir: string; configFile: string; secrets?: Secrets; net?: Net; home?: string },
   base: () => string,
 ): { ctx: Ctx; turns: IonTurns } {
-  const { db, store, memory } = openStore(opts.dataDir);
+  const { db, store, memory, record } = openStore(opts.dataDir);
   // Made after the run manager it needs; the judge, the gate and runs' questions reach it through this holder.
   const late: { decisions?: Decisions } = {};
   const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store, late);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
-  const quick = harnessRunner(opts);
+  const quick = harnessRunner({ ...opts, record });
   // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
-  const ionQuick = harnessRunner(opts, "quick");
+  const ionQuick = harnessRunner({ ...opts, record }, "quick");
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
   sweepNeeds(needs, ionQuestions);
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));

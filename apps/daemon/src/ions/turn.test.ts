@@ -12,6 +12,7 @@ import { MemoryFiles } from "../memory/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { ionsView } from "../views/ions.js";
+import { usageView } from "../views/usage.js";
 import { ionInstructions } from "./instructions.js";
 import { IonTurns, ionRules, NO_AGENT, STOPPED, TOO_LONG } from "./turn.js";
 
@@ -23,6 +24,8 @@ const starts = vi.hoisted(() => [] as StartOpts[]);
 const sent = vi.hoisted(() => [] as string[]);
 /** Spoils the next fake sessions: their reply is dropped and they end failed (after doing their work). */
 const spoil = vi.hoisted(() => ({ on: false }));
+/** Events the next fake sessions report just before they end (an agent's usage, its limit). */
+const inject = vi.hoisted(() => ({ events: [] as { type: string; data: Record<string, unknown> }[] }));
 vi.mock("@ion/adapter-fake", async (real) => {
   const m = await real<typeof import("@ion/adapter-fake")>();
   return {
@@ -38,6 +41,15 @@ vi.mock("@ion/adapter-fake", async (real) => {
           sent.push(m.text);
           return send(m);
         };
+        if (inject.events.length) {
+          const own = session.events.bind(session);
+          session.events = async function* () {
+            for await (const e of own()) {
+              if (e.type === EV.runFinished) for (const x of inject.events) yield x as typeof e;
+              yield e;
+            }
+          };
+        }
         if (!spoil.on) return session;
         const events = session.events.bind(session);
         session.events = async function* () {
@@ -144,6 +156,7 @@ beforeEach(async () => {
 // Task review, 2026-11-19: a turn still running when the server closed got ECONNRESET, unhandled, and failed the
 // run. Its turns end first.
 afterEach(async () => {
+  inject.events = [];
   await Promise.all(made.map((t) => t.shutdown()));
   made = [];
   http.closeAllConnections();
@@ -153,6 +166,25 @@ afterEach(async () => {
 const onIon = (ionId: string) => store.read({ chatId: `ion:${ionId}` });
 
 describe("an ion's turn", () => {
+  // The user, 2026-11-22: what ions spend on an agent counts in its usage line, and an ion's turn that hits the agent's
+  // limit marks it limited for everyone (chats and ions alike). Neither shows in the ion's chat.
+  it("an ion turn's usage and limit go in its agent's usage", async () => {
+    const resetsAt = new Date(Date.now() + 3600_000).toISOString();
+    inject.events = [
+      { type: EV.usageReported, data: { model: "m", inputTokens: 30, outputTokens: 4, costUsd: 0.02 } },
+      {
+        type: EV.error,
+        data: { code: "usage_limit", retryable: false, message: "Limit", limit: { resetsAt } },
+      },
+    ];
+    await turns().turn("chief", "hello");
+    expect(usageView.agents(db, new Date()).fake).toMatchObject({
+      week: { tokens: 34, costUsd: 0.02 },
+      limitedUntil: resetsAt,
+    });
+    expect(onIon("chief").filter((e) => e.type === EV.usageReported || e.type === EV.error)).toEqual([]);
+  });
+
   it("a turn's last message is the reply, and the threads it started come with it", async () => {
     const text = "please check storefront and payments-api";
     const r = await turns().turn("chief", text);

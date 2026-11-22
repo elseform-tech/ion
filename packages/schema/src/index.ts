@@ -7,3 +7,4 @@ export * from "./ion-tools.js";
 export * from "./tools.js";
 export * from "./tools-api.js";
 export * from "./memory.js";
+export * from "./agents.js";

@@ -10,6 +10,7 @@
 | [research/memory-evals.md](research/memory-evals.md) | ion's memory on real agents: recall, precision, updates not copies, to-dos, Mark done, privacy, memory text that gives orders, and 300 files; how to run them and the latest numbers. |
 | [research/judge-evals.md](research/judge-evals.md) | Auto's judge on real models: 59 labelled cases, how to run them, dangerous allowed / ordinary refused / unsure / latency. |
 | [research/sandbox.md](research/sandbox.md) | Agents in the OS sandbox, away from ion's own files: each agent's real behaviour (Claude Code, Codex, opencode, Grok), Seatbelt and bubblewrap, nesting, what's covered and what isn't. |
+| [research/usage-signals.md](research/usage-signals.md) | What each agent reports about its usage and limits (Codex's windows, Claude's rate-limit info, opencode's quota line, Grok's cost), with sources, and how ion uses it. |
 | [research/skills.md](research/skills.md) | Skills through the Agent SDK's `plugins`: the live probe, and what ion passes to Claude Code. |
 | [../scripts/tour.sh](../scripts/tour.sh) | The UX tour: a fresh ion with every chat and Tools state, a fake agents home for Import and Skills (`ION_TOUR_HOME`, `ION_TOUR_APP`). |
 | [../AGENTS.md](../AGENTS.md) | How to work in this repo: layout, walls, rules. |

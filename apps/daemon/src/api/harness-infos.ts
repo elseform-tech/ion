@@ -30,6 +30,16 @@ export class HarnessInfos {
     return Promise.all(this.idList().map((id) => this.get(id)));
   }
 
+  /** What's known now, without waiting for a first read (one read long ago is read again in the background). */
+  cached(): HarnessInfo[] {
+    const ids = this.idList();
+    for (const id of ids) {
+      const e = this.known.get(id);
+      if (!e || (this.now() - e.at > this.o.maxAgeMs && !e.reading)) void this.read(id);
+    }
+    return ids.map((id) => this.known.get(id)?.info).filter((i): i is HarnessInfo => !!i);
+  }
+
   /** One agent ion knows (read alone), or undefined. */
   async one(id: string): Promise<HarnessInfo | undefined> {
     return this.idList().includes(id) ? this.get(id) : undefined;

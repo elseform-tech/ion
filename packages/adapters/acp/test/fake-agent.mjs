@@ -37,6 +37,15 @@ const QUICK = {
   crash: () => process.exit(3),
   ratelimit: (id) => send({ id, error: { code: -32603, message: "Rate limit exceeded (429)" } }),
   badinput: (id) => send({ id, error: { code: -32602, message: "Invalid params" } }),
+  // Like Grok 1.0.92 (probed 2026-11-22): its usage and cost (in 1e-10 USD ticks) in the prompt result's _meta.
+  grokusage: (id) =>
+    send({
+      id,
+      result: {
+        stopReason: "end_turn",
+        _meta: { inputTokens: 28175, outputTokens: 28, usage: { costUsdTicks: 532540000 } },
+      },
+    }),
   // Like opencode with an expired key: takes the prompt and never says anything.
   silent: () => {},
 };

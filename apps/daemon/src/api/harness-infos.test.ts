@@ -27,6 +27,15 @@ describe("HarnessInfos", () => {
     expect((await infos.list())[0]!.label).toBe("a 2");
   });
 
+  // The user, 2026-11-21: `ion status` shows each agent's usage line, and never waits on an agent's CLI for it.
+  it("says what it knows now without waiting, and starts a first read", async () => {
+    const load = vi.fn(async (id: string) => info(id, 1));
+    const infos = new HarnessInfos(["a"], load);
+    expect(infos.cached()).toEqual([]);
+    await vi.waitFor(() => expect(infos.cached().map((h) => h.id)).toEqual(["a"]));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it("doesn't wait on a slow agent once it knows it", async () => {
     let slow: (v: HarnessInfo) => void = () => {};
     const load = vi.fn((id: string) =>

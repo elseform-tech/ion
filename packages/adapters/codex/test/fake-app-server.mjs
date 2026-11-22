@@ -272,6 +272,12 @@ const SCRIPTS = {
     notify("error", { ...T, error, willRetry: false });
     end("failed", error);
   },
+  async usagelimit() {
+    full = true;
+    const error = { message: "You've hit your usage limit", codexErrorInfo: "usageLimitExceeded" };
+    notify("error", { ...T, error, willRetry: false });
+    end("failed", error);
+  },
   crash: () => process.exit(3),
   async whoami() {
     const turn = { ...turnParams, input: undefined };
@@ -298,7 +304,28 @@ const threadOf = (id, p) => ({
   model: p.model ?? "fake-codex-1",
 });
 
+// Codex's rate-limit windows (account/rateLimits/read, codex-cli 0.153.2): unix seconds, minutes.
+let full = false;
+const at = (iso) => Date.parse(iso) / 1000;
+const rateLimits = () => ({
+  rateLimits: {
+    limitId: "codex",
+    limitName: null,
+    primary: { usedPercent: full ? 100 : 62, windowDurationMins: 300, resetsAt: at("2026-11-21T14:20:00Z") },
+    secondary: { usedPercent: 12, windowDurationMins: 10080, resetsAt: at("2026-11-25T09:00:00Z") },
+    credits: null,
+    planType: "plus",
+    rateLimitReachedType: full ? "rate_limit_reached" : null,
+  },
+  rateLimitsByLimitId: null,
+});
+
 const METHODS = {
+  "account/rateLimits/read": () => {
+    if (process.env.FAKE_CODEX_NO_LIMITS === "1")
+      throw { code: -32601, message: "unknown method account/rateLimits/read" };
+    return rateLimits();
+  },
   initialize: () => ({
     userAgent: "fake",
     codexHome: "/nowhere",

@@ -19,7 +19,7 @@ import { UserError } from "../api/errors.js";
 import type { GateAnswer } from "../gate/index.js";
 import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
-import { type IonBrain, ionBrain, nextBrain } from "./brain.js";
+import { type IonBrain, ionBrain, limitedUntil, nextBrain } from "./brain.js";
 import { forgetSession, type Kept, keepSession, resumeOf, startSession } from "./sessions.js";
 import { errLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, TOO_LONG, type Tried } from "./fallback.js";
 import { ionVerdict } from "./gate.js";
@@ -33,6 +33,7 @@ import { DREAM_ION } from "../memory/dream-rules.js";
 import { DREAM_SKIPPED, dreamVerdict } from "./dream.js";
 import type { DreamPass } from "../memory/dream-rules.js";
 import { CLOSE_MS, closing, type Ended, note } from "./turn-end.js";
+import { ledgerEvent } from "../views/usage.js";
 import type { Verdict } from "./web.js";
 
 /** A turn's hard limit: past it the agent is stopped and the ion says it couldn't finish. */
@@ -260,6 +261,7 @@ export class IonTurns {
     const r = await onReadyAgents(brain, {
       once: (b) => this.once(ionId, text, { ...o, cwd, turnId }, b),
       next: (not) => nextBrain(this.d, ionId, not),
+      limitedUntil: (h) => limitedUntil(this.d.db, h),
       stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,
     });
     return o.dream && noAgent(r.reply) ? { ...r, reply: NO_AGENT } : r;
@@ -494,12 +496,15 @@ export class IonTurns {
   }
 
   /** Keeps the turn's work on the ion's chat (until its limit), its last message, and its native session id. */
-  private async pump(session: Session, t: TurnRef, end: Ended): Promise<void> {
+  private async pump(session: Session, t: TurnRef & { adapter: HarnessAdapter }, end: Ended): Promise<void> {
     for await (const e of session.events()) {
       if (end.late) return;
       if (KEPT.has(e.type) && t.ionId !== DREAM_ION)
         this.d.store.append({ ...e, chatId: `ion:${t.ionId}`, runId: t.turnId, origin: "adapter" });
       this.live.get(t.turnId)?.web.note(e);
+      // What the turn spends, and a limit it hits, go in its agent's usage (never on the ion's chat).
+      const kept = ledgerEvent(t.adapter.id, e, t.turnId);
+      if (kept) this.d.store.append(kept);
       note(e, end);
     }
   }

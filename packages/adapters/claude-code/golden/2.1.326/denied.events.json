@@ -646,7 +646,19 @@
       "model": "claude-haiku-5-5",
       "inputTokens": 4,
       "outputTokens": 702,
-      "costUsd": 0.00673934
+      "costUsd": 0.00673934,
+      "windows": [
+        {
+          "name": "5 h",
+          "usedPercent": 49,
+          "resetsAt": "2026-11-17T19:40:00.000Z"
+        },
+        {
+          "name": "week",
+          "usedPercent": 40,
+          "resetsAt": "2026-11-21T03:00:00.000Z"
+        }
+      ]
     }
   },
   {

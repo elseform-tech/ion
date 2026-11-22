@@ -167,6 +167,49 @@ describe("mapSdkMessage", () => {
     });
   });
 
+  // The user, 2026-11-21: Claude's limit carries its reset (rate_limit_info.resetsAt), so ion marks it limited until then.
+  it("a limit error marks the agent limited until its reset", () => {
+    const s = state();
+    const resetsAt = Math.floor(Date.now() / 1000) + 3 * 3600;
+    mapSdkMessage(
+      { type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt } } as never,
+      s,
+    );
+    expect(errorOf(mapSdkMessage(result("error_during_execution"), s))).toMatchObject({
+      code: "usage_limit",
+      limit: { resetsAt: new Date(resetsAt * 1000).toISOString() },
+    });
+  });
+
+  // The user, 2026-11-21: a 5-hour or weekly limit that names no reset is still the limit (30 min, then one retry).
+  it("no reset → limited for 30 min, then one retry", () => {
+    const s = state();
+    const info = { status: "rejected", rateLimitType: "five_hour" };
+    mapSdkMessage({ type: "rate_limit_event", rate_limit_info: info } as never, s);
+    expect(errorOf(mapSdkMessage(result("error_during_execution"), s))).toMatchObject({
+      code: "usage_limit",
+      retryable: false,
+      limit: {},
+    });
+  });
+
+  // Probed on Claude Code 2.1.326 (docs/research/usage-signals.md): each request's rate_limit_info has its windows
+  // (unifiedWindows: utilization 0–1, resetsAt in unix seconds), reported with the run's usage.
+  it("a window snapshot is stored and shown", () => {
+    const s = state();
+    const unifiedWindows = {
+      five_hour: { utilization: 0.03, resetsAt: 1795393200, status: "allowed" },
+      seven_day: { utilization: 0.64, resetsAt: 1795834800, status: "allowed" },
+    };
+    const info = { status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.64, unifiedWindows };
+    mapSdkMessage({ type: "rate_limit_event", rate_limit_info: info } as never, s);
+    const usage = mapSdkMessage(result("success"), s)[0]?.data as { windows: unknown };
+    expect(usage.windows).toEqual([
+      { name: "5 h", usedPercent: 3, resetsAt: new Date(1795393200 * 1000).toISOString() },
+      { name: "week", usedPercent: 64, resetsAt: new Date(1795834800 * 1000).toISOString() },
+    ]);
+  });
+
   it("overloaded and server errors are retryable; account errors aren't", () => {
     const after = (error: string) => {
       const s = state();

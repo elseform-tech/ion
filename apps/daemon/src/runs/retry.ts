@@ -1,7 +1,14 @@
 import type { AdapterEvent } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
 export type Effort = "low" | "medium" | "high" | "max";
-export type RunError = { code: string; retryable: boolean; message: string; retryAfterS?: number };
+export type RunError = {
+  code: string;
+  retryable: boolean;
+  message: string;
+  retryAfterS?: number;
+  /** The agent's usage limit (and its reset, when it said). */
+  limit?: { resetsAt?: string };
+};
 export type RetryState = { tries: number; effortRetried: boolean; effort: Effort | null };
 export type Retry = { attempt: number; delayS: number; reason: string; effort: Effort | null };
 
@@ -40,10 +47,11 @@ export function nextEffort(e: Effort | null): Effort | null {
 
 /**
  * What to do after a failed try: transient errors back off (up to MAX_TRIES tries), a real failure gets one
- * retry at the next effort level, anything else stops (null).
+ * retry at the next effort level, anything else (an agent's usage limit among them) stops (null).
  */
 export function retryPlan(s: RetryState, err: RunError | null, random: () => number): Retry | null {
-  if (!err) return null;
+  // An agent at its limit isn't tried again in place: the usage view marks it limited until its reset.
+  if (!err || err.limit) return null;
   if (err.retryable) {
     if (s.tries >= MAX_TRIES) return null;
     return {

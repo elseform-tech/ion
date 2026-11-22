@@ -1,4 +1,4 @@
-import type { Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
+import type { Billing, Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
 import type { PickStyle } from "./picks.js";
 import type { EnvDrop } from "./run-env.js";
 import type { RunSandbox } from "./sandbox.js";
@@ -126,7 +126,8 @@ export interface Session {
   close(): Promise<void>;
 }
 
-export type AuthStatus = { signedIn: boolean; method: string };
+/** Signed in or not, how, and how that sign-in bills (absent: unknown, never taken as free). */
+export type AuthStatus = { signedIn: boolean; method: string; billing?: Billing };
 
 /** By kind: whether an agent's switch turns its own off in ion's chats. */
 type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };

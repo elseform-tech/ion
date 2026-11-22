@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanWhy } from "./fallback.js";
+import { cleanWhy, onReadyAgents } from "./fallback.js";
 
 // Security review, 2026-11-22: an agent's error went into the ion's reply and ion's log as it was. A key, a token or
 // a link with a query string in it would have been shown. Only a short, clean line is.
@@ -22,5 +22,42 @@ describe("an agent's reason", () => {
     const out = cleanWhy(`first line\nsecond ${"word ".repeat(100)}`);
     expect(out).not.toContain("\n");
     expect(out.length).toBeLessThanOrEqual(200);
+  });
+});
+
+// The user, 2026-11-22: an ion whose agent is limited goes on the next ready one, and its reply says why in one line:
+// "On Grok Build — Claude Code is limited until 16:00". One that hits its limit mid-turn says so the same way.
+describe("an ion's agent at its limit", () => {
+  const until = new Date(2026, 10, 21, 16, 0).toISOString();
+  const now = () => new Date(2026, 10, 21, 12, 0);
+  const brain = (harness: string) => ({ harness, model: null, effort: null });
+  it("skipped at the start: the reply names it and its reset", async () => {
+    const r = await onReadyAgents(
+      { ...brain("grok-build"), skipped: ["claude-code"] },
+      {
+        once: async () => ({ reply: "Done." }),
+        next: async () => null,
+        stay: () => false,
+        limitedUntil: (h) => (h === "claude-code" ? until : null),
+        now,
+      },
+    );
+    expect(r.reply).toBe("Done.\n\n*On Grok Build — Claude Code is limited until 16:00.*");
+  });
+
+  it("limited mid-turn: the next agent's reply says so", async () => {
+    let limited = false;
+    const r = await onReadyAgents(brain("claude-code"), {
+      once: async (b) => {
+        if (b.harness === "grok-build") return { reply: "Done." };
+        limited = true;
+        return { reply: "", failed: { why: "Claude usage limit reached", did: false } };
+      },
+      next: async () => brain("grok-build"),
+      stay: () => false,
+      limitedUntil: (h) => (limited && h === "claude-code" ? until : null),
+      now,
+    });
+    expect(r.reply).toBe("Done.\n\n*On Grok Build — Claude Code is limited until 16:00.*");
   });
 });

@@ -135,6 +135,13 @@ export type EventType = (typeof EVENT_TYPES)[number];
 const daemonOnly: ReadonlySet<string> = new Set(DAEMON_EVENT_TYPES);
 export const isDaemonOnly = (t: EventType): boolean => daemonOnly.has(t);
 
+/** One of an agent's rate-limit windows: its name ("5 h", "week"), how much is used, and when it resets. */
+const UsageWindowSchema = z.object({
+  name: z.string().min(1).max(40),
+  usedPercent: z.number().min(0).max(100),
+  resetsAt: z.iso.datetime().nullable(),
+});
+
 export const RUN_END_STATUSES = ["done", "failed", "interrupted", "capped"] as const;
 export type RunEndStatus = (typeof RUN_END_STATUSES)[number];
 
@@ -410,7 +417,14 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     model: z.string(),
     inputTokens: count,
     outputTokens: count,
-    costUsd: z.number().min(0).nullable(),
+    costUsd: z.number().min(0).nullable().optional(),
+    /**
+     * The agent's own rate-limit windows, as it reported them with this run (Codex's, Claude's): absent when it
+     * reports none, so a gauge it stopped reporting goes away (docs/research/usage-signals.md).
+     */
+    windows: z.array(UsageWindowSchema).max(8).optional(),
+    /** The agent, for usage outside a chat's run (an ion's turn, the judge): ion stamps it. */
+    harness: z.string().optional(),
   }),
   "run.finished": z.object({ status: z.enum(RUN_END_STATUSES) }),
   error: z.object({
@@ -419,6 +433,10 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     message: z.string(),
     /** Seconds the harness asked us to wait before trying again (rate limits). */
     retryAfterS: z.number().min(0).optional(),
+    /** The agent's usage limit: it won't go on until it resets (when it said when). */
+    limit: z.object({ resetsAt: z.iso.datetime().optional() }).optional(),
+    /** The agent, for a limit hit outside a chat's run (an ion's turn, the judge): ion stamps it. */
+    harness: z.string().optional(),
   }),
 };
 

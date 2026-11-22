@@ -1,4 +1,5 @@
 import { getHarness } from "../adapters/registry.js";
+import { clockOf } from "@ion/schema";
 import { looksLikeToken } from "../tools/shown.js";
 import type { IonBrain } from "./brain.js";
 
@@ -28,13 +29,31 @@ function couldNot(failed: Failed[]): string {
 
 const labelOf = (id: string) => getHarness(id)?.label ?? id;
 
-/** The reply, with one quiet line: which agent answered, and which didn't. */
-const onOther = (reply: string, harness: string, failed: Failed[]) =>
-  `${reply}\n\n*On ${labelOf(harness)}: ${failed.map((f) => labelOf(f.harness)).join(", ")} didn't answer.*`;
+/** Until when an agent is limited (ISO), or null; and the clock its reset is told by. */
+type Limits = { limitedUntil?: (harness: string) => string | null; now?: () => Date };
 
-/** A reply from this agent, with that line when others failed before it. */
-function answered<R extends { reply: string }>(r: R, harness: string, failed: Failed[]): R {
-  return failed.length && !ENDS.has(r.reply) ? { ...r, reply: onOther(r.reply, harness, failed) } : r;
+/** Why an agent was passed over, in a few words: "Claude Code is limited until 16:00", or that it didn't answer. */
+function whyNot(harnesses: string[], l: Limits): string {
+  const until = (h: string) => l.limitedUntil?.(h) ?? null;
+  const limited = harnesses
+    .filter(until)
+    .map((h) => `${labelOf(h)} is limited until ${clockOf(until(h)!, (l.now ?? (() => new Date()))())}`);
+  const quiet = harnesses.filter((h) => !until(h)).map(labelOf);
+  return [...limited, ...(quiet.length ? [`${quiet.join(", ")} didn't answer`] : [])].join("; ");
+}
+
+/**
+ * The reply, with one quiet line: which agent answered, and which didn't or were limited (the user, 2026-11-22: "On
+ * Grok Build — Claude Code is limited until 16:00").
+ */
+function onOther(reply: string, harness: string, passed: string[], l: Limits): string {
+  const sep = passed.some((h) => l.limitedUntil?.(h)) ? " —" : ":";
+  return `${reply}\n\n*On ${labelOf(harness)}${sep} ${whyNot(passed, l)}.*`;
+}
+
+/** A reply from this agent, with that line when others failed or were passed over before it. */
+function answered<R extends { reply: string }>(r: R, harness: string, passed: string[], l: Limits): R {
+  return passed.length && !ENDS.has(r.reply) ? { ...r, reply: onOther(r.reply, harness, passed, l) } : r;
 }
 
 const HIDDEN = "•••";
@@ -75,14 +94,15 @@ export async function onReadyAgents<R extends { reply: string }>(
     once: (b: IonBrain) => Promise<Tried<R>>;
     next: (not: string[]) => Promise<IonBrain | null>;
     stay: (r: R) => boolean;
-  },
+  } & Limits,
 ): Promise<R> {
   const failed: Failed[] = [];
   let brain = first;
   for (;;) {
     const { failed: f, ...rest } = await o.once(brain);
     const r = rest as unknown as R;
-    if (!f) return answered(r, brain.harness, failed);
+    const passed = [...(first.skipped ?? []), ...failed.map((x) => x.harness)];
+    if (!f) return answered(r, brain.harness, passed, o);
     failed.push({ harness: brain.harness, why: f.why });
     const next = f.did || o.stay(r) ? null : await o.next(failed.map((x) => x.harness)).catch(() => null);
     if (!next) return { ...r, reply: couldNot(failed) };

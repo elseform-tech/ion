@@ -2,7 +2,7 @@ import { closeSync, constants, mkdirSync, openSync, rmSync, writeFileSync } from
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { GateCall, SandboxPaths } from "@ion/adapter-kit";
-import type { EffortLevel } from "@ion/schema";
+import type { Billing, EffortLevel } from "@ion/schema";
 import { type GateEnv, grokGateEnv, grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
 import {
   carriedConfig,
@@ -83,6 +83,8 @@ export type AcpHarness = {
   };
   /** Its own command that deletes a session from its history (ion's judge sessions don't pile up among yours). */
   forgetArgs?: (sessionId: string) => string[];
+  /** How its sign-in bills, when ion knows (docs/research/usage-signals.md); absent: unknown, never free. */
+  billing?: Billing;
 };
 
 /** Grok's folder: `$GROK_HOME`, else `~/.grok`. */
@@ -123,6 +125,8 @@ export const GROK_BUILD: AcpHarness = {
   // ion's dream: a profile with no tool of its own (no web), ion's MCP server found with search_tool.
   noWeb: ({ dir }) => ({ args: grokDreamArgs(dir), read: [dir] }),
   forgetArgs: (id) => ["sessions", "delete", id],
+  // "Sign in with Grok" (its ACP auth method grok.com): a Grok plan, with its plan's usage limit (`grok usage`).
+  billing: "subscription",
 };
 
 /**
@@ -271,6 +275,8 @@ export const OPENCODE: AcpHarness = {
   bare: { effort: "low" },
   noWeb: ({ own }) => opencodeNoWeb(own),
   forgetArgs: (id) => ["session", "delete", id],
+  // ion runs its free model (opencode/big-pickle, Zen's: no sign-in needed), out of free usage at times.
+  billing: "free",
 };
 
 /**

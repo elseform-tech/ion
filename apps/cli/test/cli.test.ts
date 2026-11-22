@@ -112,7 +112,8 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("daemon", "start")).out).toBe("Started");
     const again = await ion("daemon", "start");
     expect(again).toMatchObject({ code: 0, out: "Already running" });
-    expect((await ion("status")).out).toBe("ion is running · 0 projects");
+    // Its first line; each ready agent's usage line follows (which agents are ready depends on the computer).
+    expect((await ion("status")).out.split("\n")[0]).toBe("ion is running · 0 projects");
   });
 
   // The user, 2026-11-19: rename and remove projects.

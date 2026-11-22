@@ -11,13 +11,13 @@ import {
   type Session,
   type StartOpts,
 } from "@ion/adapter-kit";
-import { EV } from "@ion/schema";
+import { EV, type UsageWindow } from "@ion/schema";
 import { type Connection, effortOf, SIGNED_OUT } from "./connection.js";
 import { unwrapShell } from "./gate.js";
-import { type CodexState, createCodexState, mapNotification, type TurnError } from "./map.js";
+import { type CodexState, createCodexState, mapNotification, type TurnError, windowsOf } from "./map.js";
 
 type Json = Record<string, unknown>;
-type Failure = { code: string; retryable: boolean; message: string };
+type Failure = { code: string; retryable: boolean; message: string; limit?: { resetsAt?: string } };
 const CRASH: Failure = { code: "crash", retryable: true, message: "Codex stopped" };
 
 const NOTIFICATIONS = [
@@ -26,17 +26,28 @@ const NOTIFICATIONS = [
   "item/started",
   "item/completed",
   "thread/tokenUsage/updated",
+  "account/rateLimits/updated",
   "error",
 ];
 
-/** Codex's error kinds: a rate limit or a dropped connection is worth retrying; a used-up plan isn't. */
-function failureOf(e: TurnError | null): Failure {
+/** The reset of the window that's full, when Codex said one is: when its used-up plan goes on again. */
+function limitOf(windows: UsageWindow[] | null): { resetsAt?: string } {
+  const full = (windows ?? []).filter((w) => w.usedPercent >= 100 && w.resetsAt).map((w) => w.resetsAt!);
+  return full.length ? { resetsAt: full.sort().at(-1)! } : {};
+}
+
+/**
+ * Codex's error kinds: a rate limit or a dropped connection is worth retrying; a used-up plan isn't, and is its
+ * limit (until the full window resets).
+ */
+function failureOf(e: TurnError | null, windows: UsageWindow[] | null = null): Failure {
   const message = e?.message || "Codex failed";
   const info = e?.codexErrorInfo;
   const kind = typeof info === "string" ? info : Object.keys((info ?? {}) as object)[0];
   if (kind === "rateLimitExceeded" || kind === "serverOverloaded")
     return { code: "rate_limit", retryable: true, message };
-  if (kind === "usageLimitExceeded") return { code: "quota", retryable: false, message };
+  if (kind === "usageLimitExceeded")
+    return { code: "quota", retryable: false, message, limit: limitOf(windows) };
   if (kind === "unauthorized") return { code: "auth", retryable: false, message: SIGNED_OUT };
   const network = /Connection|Disconnected|FailedAttempts|internalServerError/.test(String(kind));
   return { code: network ? "network" : "agent", retryable: network, message };
@@ -192,13 +203,36 @@ function createRun(c: Connection, opts: StartOpts, events: EventQueue<AdapterEve
     if (r.finished) return;
     if (failure) r.emit({ type: EV.error, data: failure });
     const usage = r.state.usage;
-    if (usage) r.emit({ type: EV.usageReported, data: { model: c.model, ...usage, costUsd: null } });
+    const windows = r.state.windows ? { windows: r.state.windows } : {};
+    if (usage)
+      r.emit({ type: EV.usageReported, data: { model: c.model, ...usage, costUsd: null, ...windows } });
     r.emit({ type: EV.runFinished, data: { status } });
     r.finished = true;
     events.end();
     setTimeout(() => c.child.kill(), 100).unref();
   };
   return r;
+}
+
+/** How long the turn's end waits for Codex's windows. */
+const WINDOWS_WAIT_MS = 3000;
+
+/**
+ * Codex's plan windows at the turn's end (`account/rateLimits/read`: no model call), into the run's state; nothing
+ * when it doesn't answer in time or doesn't know the method (then the run reports no gauge).
+ */
+async function readWindows(r: Run): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), WINDOWS_WAIT_MS);
+  });
+  const read = r.c.rpc.request("account/rateLimits/read", {}).then(
+    (res) => windowsOf((res as { rateLimits?: unknown }).rateLimits),
+    () => null,
+  );
+  const windows = await Promise.race([read, late]);
+  clearTimeout(timer);
+  if (windows) r.state.windows = windows;
 }
 
 /** Ends the run as stopped when ion asked for that, else as failed. */
@@ -213,9 +247,11 @@ function watch(r: Run): void {
     });
   c.rpc.onNotification("turn/completed", (p) => {
     const turn = (p.turn ?? {}) as { status?: unknown; error?: TurnError | null };
-    if (turn.status === "completed") return r.finish("done");
-    if (turn.status === "interrupted") return r.finish("interrupted");
-    r.finish("failed", failureOf(turn.error ?? state.error));
+    void readWindows(r).then(() => {
+      if (turn.status === "completed") return r.finish("done");
+      if (turn.status === "interrupted") return r.finish("interrupted");
+      r.finish("failed", failureOf(turn.error ?? state.error, state.windows));
+    });
   });
   answerRequests(c, r.opts, state, r.emit);
   c.child.on("exit", () => endWith(r, CRASH));

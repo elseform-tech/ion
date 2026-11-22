@@ -3,6 +3,7 @@ import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
 import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
 import type { MemorySee, MemoryType } from "./memory.js";
+import type { AgentUsage, HarnessInfo } from "./agents.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -345,30 +346,8 @@ export type Commands = ToolsCommands & {
   /** Pause all: no routine runs until you resume. */
   "routines.pause": { args: { paused: boolean }; result: { ok: true } };
   "activity.list": { args: Record<string, never>; result: ActivityInfo };
-};
-
-export type HarnessInfo = {
-  id: string;
-  label: string;
-  installed: boolean;
-  signedIn: boolean;
-  /** From the harness itself when it's signed in; empty otherwise. */
-  models: { id: string; label: string }[];
-  defaultModel: string | null;
-  /** With "Use its own tools" off, it still loads MCP servers, hooks or plugins of its own (no switch for them all). */
-  ownTools?: true;
-  /** Its own hooks run in ion's chats too (no switch for them). */
-  ownHooks?: true;
-  /** What "Use its own tools" off really turns off, by kind. Absent: all of it. */
-  ownOff?: { servers: boolean; skills: boolean; plugins: boolean };
-  /** It trusts a project's own tools by its own list. */
-  ownTrust?: true;
-  /** Its chats run without the OS sandbox here (no sandbox on this computer): ion's folders are only word-guarded. */
-  notSandboxed?: true;
-  /** How many of its own allow and deny rules (your settings for it) its chats go by: deny wins, in every mode. */
-  ownRules?: number;
-  /** How often its judge didn't answer (too slow, or failed) in the last 7 days; absent when it always did. */
-  judgeMisses?: number;
+  /** Each listed agent's usage: tokens and cost, its windows, its limit, how it bills. */
+  "usage.list": { args: Record<string, never>; result: AgentUsage[] };
 };
 
 export type NeedInfo = {
@@ -522,6 +501,7 @@ export const COMMANDS = [
   "routine.run",
   "routines.pause",
   "activity.list",
+  "usage.list",
   "tools.list",
   "tools.setOn",
   "tools.setKey",

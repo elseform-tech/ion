@@ -568,6 +568,24 @@ describe("harnessRunner for ion's own thinking", () => {
     );
   });
 
+  // The user, 2026-11-22: what the judge and ion's quick model spend counts in the agent's usage line, and a limit
+  // they hit marks the agent: each is handed to `record` with the agent's id.
+  it("hands the agent's usage and limit to record", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-quick-")), "config.toml");
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "fake" } });
+    const seen: [string, string][] = [];
+    const record = (harness: string, e: { type: string }) => void seen.push([harness, e.type]);
+    await harnessRunner({ ...runner(configFile), record }, "quick")("usage", new AbortController().signal);
+    await expect(
+      harnessRunner({ ...runner(configFile), record }, "quick")("limited", new AbortController().signal),
+    ).rejects.toThrow("Fake usage limit reached");
+    expect(seen.filter(([, t]) => t === "usage.reported" || t === "error")).toEqual([
+      ["fake", "usage.reported"],
+      ["fake", "error"],
+    ]);
+  });
+
   // Review, 2026-11-19: when [ion] quick's agent isn't ready, ion thinks on another one.
   it("thinks on the agent it's given instead of [ion] quick", async () => {
     process.env.ION_ALLOW_FAKE = "1";
