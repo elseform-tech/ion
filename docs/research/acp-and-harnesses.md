@@ -270,7 +270,8 @@ each goes to the judge.
 ## "/" and "@": how each agent takes a picked skill, command or server (2026-11-21, Plan 18 Task 10)
 
 What "/" lists for a chat (`tools.picks`): the agent's own commands (Claude Code: `~/.claude/commands/*.md` and its
-enabled plugins' `commands/` as `plugin:name`; opencode: `~/.config/opencode/command(s)/*.md` and its config's
+enabled plugins' `commands/` as `plugin:name`, and their `skills/<name>/SKILL.md` as `plugin:name`, sent as the skill's
+text (Task 11, 2026-11-22: they were missing from "/"; not run by name, unchecked live); opencode: `~/.config/opencode/command(s)/*.md` and its config's
 `command` table; Codex: custom prompts in `~/.codex/prompts` as `prompts:name`; Grok: none found that ion can read),
 then the skills that agent loads itself (Settings' `readers`), then ion's skills that are on. "@" lists the agent's own
 servers (its switch on; a repo's once it's on or asks in the chat) and your mcp.json servers that are on. Resources:
@@ -304,6 +305,12 @@ never lets on a call to an own server's name (or a name that could be one, by th
 shows your words with the picks as chips (`message.sent.skills/mentions`); the judge reads only your words. Not yet
 checked live on each agent: whether opencode's ACP runs `/name` from a prompt (its TUI does), and whether Codex's
 app-server expands `/prompts:` (it doesn't in our reading, so ion sends the text).
+
+Checked live, Task 11 (2026-11-22): on Claude Code (haiku), one of its own servers (`ownbox` in its `.claude.json`) was
+reached through ion's gateway: `mcp__ownbox__echo` was judged by name ("User asked to call ownbox echo…") and returned
+`Echo: own-hello`. On Grok, ion's skill picked with "/" was followed (the reply began with the skill's marker phrase).
+Grok's own servers come from its real `~/.grok` (ion doesn't pass them), and a worktree's `.grok/config.toml` wasn't
+loaded (the worktree isn't a folder Grok trusts), so an own-server call on Grok wasn't shown with test data.
 
 Ions: "/" lists every skill that's on (ion chief) or its project's (a project's ion); the turn is told to read a skill
 (`tools {skill}`, the body as data, never run) or pass it on (`start_thread`'s `skills`/`mentions`). A skill's body

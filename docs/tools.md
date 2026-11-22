@@ -91,7 +91,8 @@ hands. Settings → Tools shows all three (Connections, Hooks, Skills); `ion mcp
   when you open it or run `ion mcp import --list`. The Import icon ("Use on every agent") shows each server's command or
   host and the keys it needs first; they come in off, marked "Imported from <agent>", and then reach every agent. A
   server from a project's own file comes in only on its own. `ION_AGENTS_HOME` points this reading (and skills,
-  plugins) at another folder: the tour seeds a fake one so it never reads yours.
+  plugins, and the agents' own allow and deny rules) at another folder: the tour seeds a fake one so it never reads
+  yours. It counts only in the tour (`ION_TOUR=1`) and tests, is read once when ion starts and is never passed on.
 
 ## Hooks
 
@@ -158,8 +159,11 @@ things on, sign in or add keys.
     a link is taken to be where it points even if nothing is there yet, and a link that can't be resolved (a loop)
     counts as outside. Files in the worktree that make git, an agent or a package manager
     run code (`.git`, `.npmrc`, `.mcp.json`, `.envrc`, any dot-folder, …) still go to the judge.
-  - **Everything else goes to the judge:** writes elsewhere (`~/Documents`), other commands, the web, MCP tools,
-    pushes and publishing. It allows normal work.
+  - **Everything else goes to the judge:** writes elsewhere (`~/Documents`), other commands (a shell redirect into
+    `/tmp` too: only a write tool's temp paths are free), the web, MCP tools, pushes and publishing. It allows normal
+    work. The judge answers in JSON; an answer with words before its only JSON object is read too, but never as an
+    allow (that's "not sure": the object could be the action's own text). No answer in 30 s, or none ion can read,
+    asks you ("ion couldn't decide").
 - **Each agent's own allow and deny rules** count as your decisions in that agent's chats, deny winning. ion reads
   them from your own settings, never a project's (a repo writes those), and never changes them. Settings → Agents says
   "Uses its own allow/deny rules (N)" (Codex's trusted projects aren't counted: they aren't allow or deny rules).
@@ -178,9 +182,10 @@ things on, sign in or add keys.
     every tool of that server. A bare allow of a tool that only reads or fetches (`Read`, `WebFetch`, `WebSearch`) is
     honoured as written: your settings allow it everywhere, so Auto does too (your secrets still refused). A deny with
     a wildcard inside or at the end (`git push*`, `rm -rf *.tmp`) is read as "starts with" what comes before it (the
-    safe way). Left out: path patterns (`Read(./src/**)`), an allow with an inner wildcard, `ask`, and an allow of
-    every command or every edit (`Bash`, `Edit`, `Write`, opencode's `"bash": "allow"` or `"*"`): that's what Full
-    access is for.
+    safe way). A bare deny (`Bash`, `Bash(*)`, `Edit(*)`, `WebFetch(**)`, opencode's `"bash": "deny"`) refuses every
+    call of that tool. Left out: path patterns (`Read(./src/**)`), an allow with an inner wildcard, `ask`, and an
+    allow of every command or every edit (`Bash`, `Bash(*)`, `Edit`, `Write`, opencode's `"bash": "allow"` or `"*"`):
+    that's what Full access is for.
   - An allow is Auto's: it never lets through what the floor refuses, and ion's own guesses still go to the judge. A
     deny refuses in every mode, Full too: "Your Claude Code settings deny this". A denied command wrapped in another
     (`sh -c "git push"`) isn't matched, as in Claude Code itself; it goes to the judge in Auto like any command.

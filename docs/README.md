@@ -7,7 +7,7 @@
 | [tools.md](tools.md) | Tools (Plan 18): `mcp.json` and consent, keys in the keychain and tokens in the vault, OAuth sign-in, ion's gateway to your servers, only ion's tools in ion's chats, Import from your agents (`ION_AGENTS_HOME`), hooks (Auto-approval built in), skills, `ion mcp\|skills\|hooks` for agents (added off), and what ion refuses vs. only guesses ("ion is wary of this"). |
 | [routines.md](routines.md) | Routines: where they live, the schedule format, how the daemon runs them, Activity, the CLI. |
 | [research/acp-and-harnesses.md](research/acp-and-harnesses.md) | ACP protocol, Codex's app-server, how each coding agent is launched and signed in, quota policy for tests. |
-| [research/judge-evals.md](research/judge-evals.md) | Auto's judge on real models: 51 labelled cases, how to run them, dangerous allowed / ordinary refused / unsure / latency. |
+| [research/judge-evals.md](research/judge-evals.md) | Auto's judge on real models: 59 labelled cases, how to run them, dangerous allowed / ordinary refused / unsure / latency. |
 | [research/sandbox.md](research/sandbox.md) | Agents in the OS sandbox, away from ion's own files: each agent's real behaviour (Claude Code, Codex, opencode, Grok), Seatbelt and bubblewrap, nesting, what's covered and what isn't. |
 | [research/skills.md](research/skills.md) | Skills through the Agent SDK's `plugins`: the live probe, and what ion passes to Claude Code. |
 | [../scripts/tour.sh](../scripts/tour.sh) | The UX tour: a fresh ion with every chat and Tools state, a fake agents home for Import and Skills (`ION_TOUR_HOME`, `ION_TOUR_APP`). |
@@ -35,7 +35,7 @@
 | [15 Workspace artifacts and processes](superpowers/plans/2026-11-19-15-workspace-artifacts-processes.md): the panel lists a chat's artifacts and every process its tool calls left running, wherever | Planned |
 | [16 Prompt queue](superpowers/plans/2026-11-19-16-prompt-queue.md): queue your next messages while a chat's agent or an ion works (Enter queues, ⌘Enter sends now, Esc twice stops, ions too); Send now, Edit, Remove | Planned |
 | [17 Settings](superpowers/plans/2026-11-19-17-settings.md): General (chats at once), Notifications (how loud, daily briefing, quiet hours, each project's level) and Shortcuts; ion notifies you through the system and briefs you each morning | In progress |
-| [18 Tools](superpowers/plans/2026-11-20-18-tools.md): Settings → Tools: Connections (MCP servers from your mcp.json, signed in with OAuth, a key or their own login; ion is the gateway), Hooks (every ion event; Auto-approval built in) and Skills (your agents' own, Claude Code's on or off); General loses Default access. See [tools.md](tools.md) | PR A (Tasks 1–9) in review; Tasks 10–12 next |
+| [18 Tools](superpowers/plans/2026-11-20-18-tools.md): Settings → Tools: Connections (MCP servers from your mcp.json, signed in with OAuth, a key or their own login; ion is the gateway), Hooks (every ion event; Auto-approval built in) and Skills (your agents' own, Claude Code's on or off); General loses Default access. See [tools.md](tools.md) | PR A merged; PR B (Tasks 10–14: "/" and "@", agents' own tools, the OS sandbox, Auto like the agents, Remember) verified live in Task 11 |
 | [19 Memory as files](superpowers/plans/2026-11-21-19-memory-files.md): ion's memory becomes small Markdown files, one topic each, for you or a project (to-dos too); chats and ions find them through a quick index and read details on demand; you can read and fix every file | Planned |
 
 ## Packages
