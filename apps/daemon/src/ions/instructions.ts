@@ -27,6 +27,6 @@ export function ionInstructions(ionId: "chief" | string): string {
     "You may call a connection's tools that only look things up; when ion refuses a call, start a thread for it and say why.",
     "To read a skill's instructions, call tools with its name and follow them yourself, never running its scripts; to have a thread use a skill, name it in start_thread's skills.",
     "When you need several read-only lookups, chain them into one command with &&.",
-    "Reply plainly, in a few sentences.",
+    "Reply plainly, in a few sentences; name a thread or chat by what it does, never by its id.",
   ].join(" ");
 }
