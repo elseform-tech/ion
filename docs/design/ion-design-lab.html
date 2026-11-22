@@ -3133,7 +3133,6 @@ function renderIon(k,ph){
     const inner=m.link?`<div class="tls">${tlHTML(...m.link)}</div>`:`<div class="bi">${esc(m.t)}</div>`;
     const s2=m.meta==='deep'||m.meta==='reflect';
     const metaText=m.meta?`${m.meta==='deep'?'Briefing · Deep':m.meta==='reflect'?'Suggestions · Deep':'Quick'} · ${s2?IONBRAIN.deep[1]:IONBRAIN.fast[1]}${s2?' · '+effLabel(IONBRAIN.eff):''}`:'';
-    const meta=m.meta?`<div class="bmeta">${esc(metaText)}</div>`:'';
     const proof=m.proof==='none'?`<div class="proof warn"><i data-lucide="triangle-alert"></i>No tests run<span>·</span><button type="button">Ask for proof</button></div>`:'';
     h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div title="${esc(metaText)}">${m.work?workHTML(m.work):''}${inner}${proof}</div></div>`;
   });
