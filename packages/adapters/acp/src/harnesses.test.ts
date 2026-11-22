@@ -130,6 +130,22 @@ function started(
   return { env, file, config: JSON.parse(readFileSync(file, "utf8")) as Loose };
 }
 
+// PR #26 follow-up, 2026-11-22: an ion on opencode couldn't read a file outside its project although ion's gate allowed
+// the read. opencode's read tool then asks its own `external_directory` permission over ACP (kind "other", rawInput
+// `{filepath, parentDir}`), which ion can't tell from any other call, so an ion refused it; Grok has no second ask.
+describe("opencode outside the project", () => {
+  it("leaves reads outside to ion's gate when there is one, and asks itself when there isn't", () => {
+    const h = opencodeHome();
+    const { env } = started(h);
+    expect(JSON.parse(env.OPENCODE_PERMISSION ?? "{}")).toEqual({ external_directory: "allow" });
+    const none = withEnv(
+      { HOME: h.home, XDG_CONFIG_HOME: h.xdg, XDG_CACHE_HOME: h.cache },
+      () => OPENCODE.env?.() ?? {},
+    );
+    expect(none.OPENCODE_PERMISSION).toBe("");
+  });
+});
+
 // The user, 2026-11-21: "Only ion's, plus Import": in ion's chats every agent uses only the servers, hooks and skills
 // set up in ion. opencode's own config folder is swapped for one of ion's (XDG_CONFIG_HOME: checked on opencode 1.18.8,
 // `--pure` would drop ion's gate too), what else your config says is carried, and ion's plugin stays.
