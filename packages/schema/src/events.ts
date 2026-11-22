@@ -57,6 +57,7 @@ export const DAEMON_EVENT_TYPES = [
   "queue.failed",
   "notify",
   "briefing.posted",
+  "todo.reminded",
   "tool.signedIn",
   "tool.signedOut",
   "tool.needsSignIn",
@@ -116,6 +117,7 @@ export const EV = {
   queueFailed: "queue.failed",
   notify: "notify",
   briefingPosted: "briefing.posted",
+  todoReminded: "todo.reminded",
   toolSignedIn: "tool.signedIn",
   toolSignedOut: "tool.signedOut",
   toolNeedsSignIn: "tool.needsSignIn",
@@ -316,6 +318,11 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   }),
   /** ion chief's daily briefing went out for this local day (YYYY-MM-DD): never twice, also across a restart. */
   "briefing.posted": z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+  /** A to-do's one reminder on its due morning (in ion chief's briefing or its own line): never twice. */
+  "todo.reminded": z.strictObject({
+    path: z.string().min(1).max(200),
+    due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }),
   /** A connection (its name in mcp.json) signed in, signed out, or needs signing in again: never a token. */
   "tool.signedIn": z.strictObject({ id: z.string().min(1).max(40) }),
   "tool.signedOut": z.strictObject({ id: z.string().min(1).max(40) }),

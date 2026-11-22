@@ -77,10 +77,13 @@ export type ActivityInfo = {
   yesterday: RecentRun[];
 };
 
-/** One of ion chief's open suggestions: a routine for something you keep asking for, or a stalled chat to resume. */
+/**
+ * One of the ions' open suggestions: a routine for something you keep asking for, a stalled chat to resume, or a
+ * to-do a chat's work matches ("Mark done?").
+ */
 export type SuggestionInfo = {
   suggestionId: string;
-  kind: "routine" | "stalled";
+  kind: "routine" | "stalled" | "todo";
   projectId: string;
   /** What it asks: "Make Weekly PR summary a routine?", "Resume Tailwind 4 migration?". */
   title: string;
@@ -306,6 +309,10 @@ export type Commands = ToolsCommands & {
   "memory.keep": { args: { path: string }; result: { path: string } };
   /** Where the memory folder is. */
   "memory.folder": { args: Record<string, never>; result: { path: string } };
+  /** A new to-do: yours, or a project's; `due` a day (YYYY-MM-DD). */
+  "todo.add": { args: { text: string; projectId?: string; due?: string }; result: MemoryInfo };
+  /** Marks a to-do done, by its path, file name or name. */
+  "todo.done": { args: { name: string }; result: MemoryInfo };
   "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
   "routine.add": {
     args: { projectId: string; name: string; when: string; text: string; effort?: EffortLevel };
@@ -481,6 +488,8 @@ export const COMMANDS = [
   "memory.forget",
   "memory.keep",
   "memory.folder",
+  "todo.add",
+  "todo.done",
   "harnesses.list",
   "routine.add",
   "routine.update",

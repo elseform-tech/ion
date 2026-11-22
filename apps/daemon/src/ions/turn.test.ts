@@ -85,6 +85,7 @@ function turns(turnMs?: number, more: Partial<ConstructorParameters<typeof IonTu
 }
 
 let grants: ReturnType<typeof createGrants>;
+let memory: MemoryFiles;
 
 beforeEach(async () => {
   db = openDb(":memory:");
@@ -105,8 +106,9 @@ beforeEach(async () => {
   grants = createGrants();
   startThread = vi.fn(async (projectId: string) => ({ chatId: `t-${projectId}` }));
   const configFile = join(home, "config.toml");
+  memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
   const mcp = createMcpHandler({
-    ...{ store, db, grants, configFile },
+    ...{ store, db, grants, configFile, memory },
     startThread: (p, b, t) => current.startThread(p, b, t),
   });
   const gate = createGateHandler({
@@ -330,6 +332,21 @@ describe("an ion's turn", () => {
   it("an ion that doesn't exist is refused", async () => {
     await expect(turns().turn("default", "hello")).rejects.toThrow("Unknown ion: default");
     await expect(turns().turn("nope", "hello")).rejects.toThrow("Unknown ion: nope");
+  });
+
+  // The user, 2026-11-21: "does memory cover todo as well". An ion adds a to-do only when you clearly ask ("remind me
+  // to…"), with its date, and says so in one line. (The fake agent follows the instructions it's given.)
+  it("remind me to … becomes a to-do with its date", async () => {
+    const r = await turns().turn("chief", "remind me to update the README on 2026-11-27");
+    expect(r.reply).toBe("Added to your to-dos: update the README (2026-11-27)");
+    const f = memory.read("you/update-the-readme.md");
+    expect(f).toMatchObject({
+      ok: true,
+      file: { header: { type: "todo", status: "open", due: "2026-11-27" } },
+    });
+    // Nothing asked for, nothing added.
+    await turns().turn("chief", "the README needs work");
+    expect(memory.paths()).toEqual(["you/update-the-readme.md"]);
   });
 
   it("a turn is told it's an ion", () => {

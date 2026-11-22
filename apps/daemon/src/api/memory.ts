@@ -1,5 +1,7 @@
+import { loadUserConfig } from "@ion/config";
 import { MEMORY_TYPES, type MemoryInfo, type MemoryScope, type MemoryType } from "@ion/schema";
 import { ScopedMemory } from "../memory/scoped.js";
+import { addTodo, closeTodo } from "../memory/todos.js";
 import type { Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
 
@@ -61,4 +63,27 @@ export const memoryHandlers: Pick<
     path: new ScopedMemory(ctx.memory, { kind: "you" }).keep(String(a.path ?? "")),
   }),
   "memory.folder": (_a, ctx) => ({ path: ctx.memory.root }),
+};
+
+/** A file as listed, by its path. */
+const infoOf = (ctx: Parameters<Handlers["memory.list"]>[1], path: string): MemoryInfo => {
+  const m = ctx.memory.list(null, [...BOTH]).find((x) => x.memoryId === path);
+  if (!m) throw new UserError(`Unknown memory: ${path}`);
+  return m;
+};
+
+/** Your to-dos: add one (yours or a project's), or mark one done. */
+export const todoHandlers: Pick<Handlers, "todo.add" | "todo.done"> = {
+  "todo.add": (a, ctx) => {
+    const projectId = a.projectId ? String(a.projectId) : undefined;
+    if (projectId && !loadUserConfig(ctx.configFile).config.projects.some((p) => p.id === projectId))
+      throw new UserError(`Unknown project: ${projectId}`);
+    const f = addTodo(ctx.memory, {
+      text: String(a.text ?? ""),
+      ...(projectId ? { projectId } : {}),
+      ...(a.due ? { due: String(a.due) } : {}),
+    });
+    return infoOf(ctx, f.path);
+  },
+  "todo.done": (a, ctx) => infoOf(ctx, closeTodo(ctx.memory, String(a.name ?? "")).path),
 };

@@ -38,6 +38,7 @@ import { diffOfChat, handlers, harnessInfos, useAgentsHome } from "./commands.js
 import { PromptQueue } from "../queue/index.js";
 import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
+import { TodoOffers } from "../ions/todo-offers.js";
 import { chatsView } from "../views/chats.js";
 import { addRoutineTo } from "./routines.js";
 import { Notifier } from "../notify/index.js";
@@ -135,7 +136,7 @@ export async function startServer(
   // unfinished end (their ions report them). Then what starts runs: routines on their schedule (one missed while
   // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
   ctx.ions.watch();
-  const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile });
+  const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile, memory: ctx.memory });
   notifier.start();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
   const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop(), ctx.memory.watch()];
@@ -248,10 +249,15 @@ const followAsk = (chatId: string, m: { harness: string | null; text: string }) 
  * ion chief's suggestions: a routine is added the way you'd add it; a stalled chat gets its follow-up through the
  * normal ask, on the chat's own agent.
  */
-function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | "routines">): Suggestions {
+type ForSuggestions = Pick<Ctx, "store" | "db" | "configFile" | "runs" | "routines" | "memory">;
+function chiefSuggestions(c: ForSuggestions): Suggestions {
+  const base = { store: c.store, db: c.db, configFile: c.configFile };
+  const changed = async (chatId: string) => (await diffOfChat(c, chatId)).files.map((f) => f.path);
   return new Suggestions({
-    ...{ store: c.store, db: c.db, configFile: c.configFile },
-    changes: async (chatId) => (await diffOfChat(c, chatId)).files.length,
+    ...base,
+    // "Mark done?" when a chat's finished work matches an open to-do.
+    todos: new TodoOffers({ ...base, memory: c.memory, changed }),
+    changes: async (chatId) => (await changed(chatId)).length,
     addRoutine: (projectId, r) => void addRoutineTo(c, projectId, r),
     resume: async (chatId) => {
       const harness = chatsView.session(c.db, chatId)?.harness ?? null;
@@ -488,7 +494,7 @@ function openState(
     ...{ store, db, configFile: opts.configFile },
     start: (projectId, r, by) => ions.routine(projectId, r, by),
   });
-  const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
+  const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines, memory });
   const base0 = {
     ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
     ...{ tools, oauth, unsure, ionServers, memory },

@@ -1,6 +1,9 @@
 import { DEFAULT_PROJECT, type ProjectEntry, type UserConfig } from "@ion/config";
 import { EV, nextRun, stripControl, timeLabel } from "@ion/schema";
+import type { MemoryFiles } from "../memory/index.js";
+import { chiefTodos, dayLabel, markReminded, sharedIds, wasReminded } from "../memory/todos.js";
 import type { Db, EventStore } from "../store/index.js";
+import type { MemoryRow } from "../views/memory.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { dayOf, onDay } from "./clock.js";
@@ -87,26 +90,54 @@ function routinesToday(c: UserConfig, projects: Map<string, ProjectEntry>, now: 
   return [sentence(`Today: ${listed(named)}`)];
 }
 
-/** The briefing's words: plain sentences, no headings; "" when there's nothing to say. */
-function briefingText(d: { store: EventStore; db: Db }, c: UserConfig, since: string, now: Date): string {
+/** "Due today: “A” and “B”." */
+export const dueTodayLine = (todos: MemoryRow[]) =>
+  sentence(`Due today: ${listed(todos.map((t) => quoted(t.name)))}`);
+
+/** A to-do with its day: "“Rotate the keys” (Tue 17 Nov)". */
+const withDay = (t: MemoryRow) => (t.due ? `${quoted(t.name)} (${dayLabel(t.due)})` : quoted(t.name));
+const soonest = (a: MemoryRow, b: MemoryRow) => (a.due ?? "9").localeCompare(b.due ?? "9");
+
+/**
+ * Open to-dos, due today and overdue first, then the rest (those with a day first, soonest first); and the ones due
+ * today it names (their reminder).
+ */
+function todoLines(todos: MemoryRow[], today: string): { lines: string[]; dueToday: MemoryRow[] } {
+  const dueToday = todos.filter((t) => t.due === today);
+  const overdue = todos.filter((t) => t.due && t.due < today).sort(soonest);
+  const rest = todos.filter((t) => !t.due || t.due > today).sort(soonest);
+  const lines = [
+    ...(dueToday.length ? [dueTodayLine(dueToday)] : []),
+    ...(overdue.length ? [sentence(`Overdue: ${listed(overdue.map(withDay))}`)] : []),
+    ...(rest.length ? [sentence(`Still to do: ${listed(rest.map(withDay))}`)] : []),
+  ];
+  return { lines, dueToday };
+}
+
+type BriefingDeps = { store: EventStore; db: Db; memory?: MemoryFiles };
+
+/** The briefing's words: plain sentences, no headings; "" when there's nothing to say. To-dos lead. */
+function briefingText(d: BriefingDeps, c: UserConfig, since: string, now: Date) {
   const projects = shared(c);
-  return [
+  const todos = d.memory
+    ? todoLines(chiefTodos(d.memory, sharedIds(c)), dayOf(now))
+    : { lines: [], dueToday: [] };
+  const text = [
+    ...todos.lines,
     ...finished(d, projects, since),
     ...needing(d.db, projects),
     ...routinesToday(c, projects, now),
   ].join("\n");
+  return { text, dueToday: todos.dueToday };
 }
 
 /**
  * ion chief's daily briefing, once its time came today: "posted" (now, or earlier today: `briefing.posted` keeps
- * that across a restart), "nothing" to say today, or "waiting" (not yet its time, or it's off). It names what
- * finished since the last briefing (a day back at most), what needs you, and today's routines.
+ * that across a restart), "nothing" to say today, or "waiting" (not yet its time, or it's off). It names your open
+ * to-dos (due today and overdue first), what finished since the last briefing (a day back at most), what needs you,
+ * and today's routines.
  */
-export function briefIfDue(
-  d: { store: EventStore; db: Db },
-  c: UserConfig,
-  now: Date,
-): "posted" | "nothing" | "waiting" {
+export function briefIfDue(d: BriefingDeps, c: UserConfig, now: Date): "posted" | "nothing" | "waiting" {
   const b = c.notifications.briefing;
   if (!b.on || now < onDay(now, b.at)) return "waiting";
   const day = dayOf(now);
@@ -116,10 +147,15 @@ export function briefIfDue(
   const dayBack = new Date(now.getTime() - DAY_MS).toISOString();
   const last = posts.at(-1)?.ts;
   const since = last && last > dayBack ? last : dayBack;
-  const text = briefingText(d, c, since, now);
+  const { text, dueToday } = briefingText(d, c, since, now);
   if (!text) return "nothing";
-  // Recorded first: a crash between the two loses a briefing rather than posting it twice.
+  // Recorded first: a crash between the two loses a briefing rather than posting it twice. The to-dos due today it
+  // names are their reminder.
   d.store.append({ chatId: null, runId: null, origin: "daemon", type: EV.briefingPosted, data: { day } });
+  markReminded(
+    d.store,
+    dueToday.filter((t) => !wasReminded(d.store, t.path, day)),
+  );
   d.store.append({ chatId: CHIEF, runId: null, origin: "daemon", type: EV.ionSaid, data: { text } });
   return "posted";
 }

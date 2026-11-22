@@ -2,8 +2,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, type RoutineEntry, saveUserConfig } from "@ion/config";
-import { EV } from "@ion/schema";
+import { EV, type MemoryScope } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryFiles } from "../memory/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { Notifier } from "./index.js";
@@ -53,8 +54,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function boot(): void {
-  const x = new Notifier({ store, db, configFile });
+function boot(memory?: MemoryFiles): void {
+  const x = new Notifier({ store, db, configFile, ...(memory ? { memory } : {}) });
   x.start();
   stops.push(() => x.stop());
 }
@@ -200,5 +201,57 @@ describe("the briefing after a gap", () => {
     expect(briefings()).toHaveLength(2);
     expect(briefings()[1]).toContain("New work");
     expect(briefings()[1]).not.toContain("Old work");
+  });
+});
+
+// The user, 2026-11-21: "does memory cover todo as well". To-dos are memory files; ion chief's briefing starts with
+// what's due today or overdue, then the rest of what's open, in plain words. Done ones aren't named.
+describe("the briefing's to-dos", () => {
+  it("the briefing lists due and overdue first", async () => {
+    const memory = new MemoryFiles({
+      root: join(mkdtempSync(join(tmpdir(), "ion-brief-mem-")), "m"),
+      store,
+      db,
+    });
+    const todo = (scope: MemoryScope, name: string, more: { due?: string; status?: "done" } = {}) =>
+      memory.write({
+        scope,
+        header: { name, description: name, type: "todo", status: "open", ...more },
+        text: name,
+        by: "you",
+      });
+    todo("you", "Update the README", { due: "2026-11-19" });
+    todo("you", "Rotate the keys", { due: "2026-11-17" });
+    todo("you", "Write the changelog");
+    todo("you", "Old thing", { due: "2026-11-19", status: "done" });
+    todo({ projectId: "storefront" }, "Fix the cart badge", { due: "2026-11-30" });
+    chat("c1", "Fix the cart");
+    finished("c1");
+    boot(memory);
+    await until(at(19, 8, 30));
+    expect(briefings()).toHaveLength(1);
+    const lines = briefings()[0]!.split("\n");
+    expect(lines[0]).toBe("Due today: “Update the README”.");
+    expect(lines[1]).toBe("Overdue: “Rotate the keys” (Tue 17 Nov).");
+    expect(lines[2]).toBe("Still to do: “Fix the cart badge” (Mon 30 Nov) and “Write the changelog”.");
+    expect(lines[3]).toContain("Finished in Storefront");
+    expect(briefings()[0]).not.toContain("Old thing");
+  });
+
+  it("open to-dos alone are worth a briefing", async () => {
+    const memory = new MemoryFiles({
+      root: join(mkdtempSync(join(tmpdir(), "ion-brief-mem-")), "m"),
+      store,
+      db,
+    });
+    memory.write({
+      scope: "you",
+      header: { name: "Call the bank", description: "Call the bank", type: "todo", status: "open" },
+      text: "Call.",
+      by: "you",
+    });
+    boot(memory);
+    await until(at(19, 8, 30));
+    expect(briefings()).toEqual(["Still to do: “Call the bank”."]);
   });
 });

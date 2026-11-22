@@ -14,3 +14,16 @@ describe("what a run is told about memory", () => {
     expect(ION_INSTRUCTIONS).not.toContain("memory_list");
   });
 });
+
+// The user, 2026-11-21: "does memory cover todo as well". A chat adds a to-do for its project only when you clearly
+// ask, and says so in one line.
+describe("what a run is told about to-dos", () => {
+  it("to add one only when asked, for its project, and say it in one line", () => {
+    expect(ION_INSTRUCTIONS).toContain('"remind me to…"');
+    expect(ION_INSTRUCTIONS).toContain('type todo and scope "project"');
+    expect(ION_INSTRUCTIONS).toContain('"Added to your to-dos: <what> (<day>)"');
+    expect(ION_INSTRUCTIONS).toContain("never add one nobody asked for");
+    // Live (Grok), 2026-11-22: a chat closed the to-do it did; only the user does.
+    expect(ION_INSTRUCTIONS).toContain("never mark one done: the user does");
+  });
+});

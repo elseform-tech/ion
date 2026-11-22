@@ -44,24 +44,31 @@ export const asksView: View & { list(db: Db, projectId: string): Asked[] } = {
   },
 };
 
-/** ion chief's own suggestions: a routine, or a stalled chat. */
-export type ChiefCard = Extract<IonCard, { kind: "routine" | "stalled" }>;
+/** The ions' own suggestions: ion chief's routine or stalled chat, and an ion's "Mark done?" for a to-do. */
+export type ChiefCard = Extract<IonCard, { kind: "routine" | "stalled" | "todo" }>;
 type Answer = "took" | "dismissed" | "muted";
 export type SuggestionRow = { card: ChiefCard; at: string; answer: Answer | null };
 
 /** What makes two suggestions the same: a routine for the same words in a project; a chat, stalled since the same time. */
-export const sameAs = (c: ChiefCard): string =>
-  c.kind === "routine" ? `routine:${c.projectId}:${c.key}` : `stalled:${c.chatId}:${c.since}`;
+export const sameAs = (c: ChiefCard): string => {
+  if (c.kind === "routine") return `routine:${c.projectId}:${c.key}`;
+  // A to-do is offered once per chat: Not yet means not for this chat.
+  return c.kind === "todo" ? `todo:${c.path}:${c.chatId}` : `stalled:${c.chatId}:${c.since}`;
+};
+
+/** The ion thread a card is in: a project's to-do in its ion's, the rest in ion chief's. */
+export const cardThread = (c: ChiefCard): string =>
+  c.kind === "todo" && c.path.startsWith("projects/") ? `ion:${c.projectId}` : "ion:chief";
 
 const isChief = (card: IonCard | undefined): card is ChiefCard =>
-  card?.kind === "routine" || card?.kind === "stalled";
+  card?.kind === "routine" || card?.kind === "stalled" || card?.kind === "todo";
 
 const answerOf = (d: D): Answer => {
   if (d.keep === true) return "took";
   return d.mute === true ? "muted" : "dismissed";
 };
 
-/** ion chief's suggestions and your answers: so the same one never comes twice, across restarts. */
+/** The ions' suggestions and your answers: so the same one never comes twice, across restarts. */
 export const suggestionsView: View & {
   find(db: Db, suggestionId: string): SuggestionRow | null;
   offered(db: Db, same: string): boolean;
@@ -69,7 +76,7 @@ export const suggestionsView: View & {
   list(db: Db): SuggestionRow[];
 } = {
   name: "suggestions",
-  version: 1,
+  version: 2,
   tables: ["view_suggestions"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_suggestions (
@@ -80,10 +87,11 @@ export const suggestionsView: View & {
     db.exec("DELETE FROM view_suggestions");
   },
   apply(db, e: IonEvent) {
-    if (e.chatId !== "ion:chief") return;
+    if (!e.chatId?.startsWith("ion:")) return;
     const d = e.data as D;
     const card = d.card as IonCard | undefined;
-    if (e.type === EV.ionSaid && isChief(card))
+    // ion chief's own cards only in its thread; a project's "Mark done?" in its ion's.
+    if (e.type === EV.ionSaid && isChief(card) && cardThread(card) === e.chatId)
       db.prepare(
         "INSERT OR IGNORE INTO view_suggestions (suggestion_id, kind, project_id, same, card, at) VALUES (?, ?, ?, ?, ?, ?)",
       ).run(card.suggestionId, card.kind, card.projectId, sameAs(card), JSON.stringify(card), e.ts);

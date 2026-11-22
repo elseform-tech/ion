@@ -6,6 +6,8 @@ import {
   type UserConfig,
 } from "@ion/config";
 import { EV, type IonEvent, type NeedInfo, type NotifyKind } from "@ion/schema";
+import type { MemoryFiles } from "../memory/index.js";
+import { REMIND_AT, remindIfDue } from "../scheduler/reminders.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
@@ -141,7 +143,10 @@ export class Notifier {
   /** The settings last read without an error: kept while a hand edit leaves the file unreadable. */
   private good: UserConfig | null = null;
 
-  constructor(private readonly d: { store: EventStore; db: Db; configFile: string }) {}
+  /** The day to-dos due today are settled (reminded, or none): ticks don't look again that day. */
+  private reminded: string | null = null;
+
+  constructor(private readonly d: { store: EventStore; db: Db; configFile: string; memory?: MemoryFiles }) {}
 
   start(): void {
     this.started = Date.now();
@@ -188,15 +193,23 @@ export class Notifier {
       this.summarize(c, now);
       const day = dayOf(now);
       if (this.looked !== day && briefIfDue(this.d, c, now) !== "waiting") this.looked = day;
+      // After the briefing: the to-dos it named are reminded already.
+      const memory = this.d.memory;
+      if (
+        memory &&
+        this.reminded !== day &&
+        remindIfDue({ store: this.d.store, memory }, c, now) !== "waiting"
+      )
+        this.reminded = day;
     } catch (err) {
       console.warn(`ion couldn't notify: ${(err as Error).message}`);
     }
     this.arm(c, now);
   }
 
-  /** The next moment something is due: quiet hours' end, the briefing, or a look in a few minutes. */
+  /** The next moment something is due: quiet hours' end, the briefing, reminders, or a look in a few minutes. */
   private arm(c: UserConfig, now: Date): void {
-    const due = [c.notifications.quiet.to, c.notifications.briefing.at].map(
+    const due = [c.notifications.quiet.to, c.notifications.briefing.at, REMIND_AT].map(
       (clock) => nextAt(clock, now).getTime() - now.getTime(),
     );
     clearTimeout(this.timer);

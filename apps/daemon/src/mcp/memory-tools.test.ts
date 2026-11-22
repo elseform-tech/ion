@@ -338,6 +338,52 @@ describe("memory tools", () => {
     await c.close();
   });
 
+  // Task 2 re-review, 2026-11-22: a fact changed to a to-do had no status (not open, so no briefing, no reminder);
+  // a to-do changed to a fact kept its status and date.
+  it("a file that becomes a to-do is open; one that stops being one drops its status and date", async () => {
+    const c = await ion("chief");
+    const read = async () => hashOf(await call(c, "memory_read", { name: "test-runner" }));
+    const to = (type: string, more: Record<string, unknown> = {}) =>
+      read().then((expect) =>
+        call(c, "memory_write", { scope: "app", name: "Test runner", type, expect, ...more }),
+      );
+    await to("todo", { due: "2026-12-01" });
+    const header = () => {
+      const r = memory.read("projects/app/test-runner.md");
+      return r.ok ? r.file.header : null;
+    };
+    expect(header()).toMatchObject({ type: "todo", status: "open", due: "2026-12-01" });
+    await to("fact");
+    expect(header()?.type).toBe("fact");
+    expect(header()).not.toHaveProperty("status");
+    expect(header()).not.toHaveProperty("due");
+    await c.close();
+  });
+
+  // Live (Grok), 2026-11-22: a storefront chat that updated the README marked the to-do done itself, so ion never
+  // asked "Mark done?". Only you close a to-do; chats and ions may add and change one, never close it.
+  it("a chat or an ion can't mark a to-do done", async () => {
+    memory.write({
+      scope: { projectId: "app" },
+      header: { name: "Rotate keys", description: "Rotate the keys", type: "todo", status: "open" },
+      text: "Rotate them",
+      by: "you",
+    });
+    for (const c of [await chat(), await ion("chief")]) {
+      const hash = hashOf(await call(c, "memory_read", { name: "rotate-keys" }));
+      const done = { scope: "app", name: "Rotate keys", status: "done", expect: hash };
+      expect(await call(c, "memory_write", done)).toMatchObject({
+        isError: true,
+        content: [{ text: "Only the user marks a to-do done" }],
+      });
+      const fresh = { ...fact("Old chore"), scope: "app", type: "todo", status: "done" };
+      expect(text(await call(c, "memory_write", fresh))).toBe("Only the user marks a to-do done");
+      await c.close();
+    }
+    const r = memory.read("projects/app/rotate-keys.md");
+    expect(r.ok && r.file.header.status).toBe("open");
+  });
+
   // Security review, 2026-11-22: a chat in one project wrote a preference every other project's chats then read (an
   // injection that outlives the chat). A chat's preference is a suggestion, seen by its project's chats and the ions,
   // until you keep it.

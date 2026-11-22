@@ -4,6 +4,7 @@ import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryFiles } from "../memory/index.js";
+import { dayOf } from "../notify/clock.js";
 import { type Caller, lineOf, type MemoryWrite, ScopedMemory } from "../memory/scoped.js";
 import type { MemoryRow } from "../views/memory.js";
 import type { Grants } from "./grants.js";
@@ -21,6 +22,10 @@ const scopeHelp = (c: Caller) =>
   c.kind === "chat"
     ? '"project" (this project), or "you" for the user\'s preferences'
     : '"you" (the user), or a project\'s id';
+
+/** A to-do's day, with today's (local) so "Friday" can be worked out. */
+const dueHelp = (now: Date) =>
+  `A to-do's day, YYYY-MM-DD; today is ${dayOf(now)}, a ${now.toLocaleDateString("en-US", { weekday: "long" })}`;
 
 /**
  * ion's memory tools for a chat's run or an ion's turn: an index, search, reading a file, and writing or forgetting
@@ -56,7 +61,7 @@ export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, 
         text: z.string().min(1).max(MEMORY_TEXT_MAX).optional(),
         see: z.enum(MEMORY_SEE).optional(),
         status: z.enum(["open", "done"]).optional(),
-        due: z.string().max(10).optional(),
+        due: z.string().max(10).optional().describe(dueHelp(new Date())),
         expect: z.string().max(64).optional(),
         path: z.string().max(200).optional(),
       },

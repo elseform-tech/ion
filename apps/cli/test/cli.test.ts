@@ -231,6 +231,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["needs"],
         ["chats"],
         ["memory"],
+        ["todo"],
         ["harnesses"],
         ["routines"],
         ["routines", "add"],
@@ -497,6 +498,34 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect((await ion("memory", "ls", "--type", "preference")).out).toContain(
         "you/tabs.md  preference  Tabs: Use tabs",
       );
+    });
+
+    // The user, 2026-11-21: "does memory cover todo as well". To-dos are memory files; `ion todo` adds, lists and
+    // closes them, the same files ion keeps.
+    it("ion todo adds, lists and closes", async () => {
+      await setup();
+      expect((await ion("todo")).out).toBe("Nothing to do");
+      expect((await ion("todo", "add", "Update the README", "--due", "2026-12-04")).out).toBe(
+        "Added to your to-dos: Update the README (2026-12-04)",
+      );
+      expect((await ion("todo", "add", "Rotate keys", "-p", "app")).out).toBe(
+        "Added to app's to-dos: Rotate keys",
+      );
+      expect(await ion("todo", "add", "Call the bank", "--due", "friday")).toMatchObject({
+        code: 1,
+        err: "Give the date as YYYY-MM-DD",
+      });
+      const both =
+        "you/update-the-readme.md  due 2026-12-04  Update the README\nprojects/app/rotate-keys.md  Rotate keys";
+      expect((await ion("todo")).out).toBe(both);
+      expect((await ion("todo", "ls")).out).toBe(both);
+      const file = join(home, "data", "memory", "you", "update-the-readme.md");
+      for (const line of ["type: todo", "status: open", "due: 2026-12-04"])
+        expect(readFileSync(file, "utf8")).toContain(`\n${line}\n`);
+      expect((await ion("todo", "done", "update-the-readme")).out).toBe("Done: Update the README");
+      expect(readFileSync(file, "utf8")).toContain("status: done");
+      expect((await ion("todo")).out).toBe("projects/app/rotate-keys.md  Rotate keys");
+      expect(await ion("todo", "done", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
     });
 
     // Plan 09: ions from the CLI (messaging one starts real work, so only the list and a refusal here).

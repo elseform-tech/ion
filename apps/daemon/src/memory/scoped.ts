@@ -96,10 +96,34 @@ export function ionIndex(
 }
 type IonIndexOpts = { resumed: boolean; sent: Map<string, string> };
 
+/** A real day, written YYYY-MM-DD. */
+function isDay(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number) as [number, number, number];
+  const t = new Date(y, m - 1, d);
+  return t.getFullYear() === y && t.getMonth() === m - 1 && t.getDate() === d;
+}
+
 /** A to-do is open unless it says; other files keep a status only when given one. */
 function statusOf(type: MemoryType, status?: "open" | "done"): { status?: "open" | "done" } {
   if (type === "todo") return { status: status ?? "open" };
   return status ? { status } : {};
+}
+
+/**
+ * A file that becomes a to-do is open unless it says; one that stops being one drops its status and date (Task 2
+ * re-review, 2026-11-22).
+ */
+function asTodoOrNot<H extends { type: MemoryType; status?: "open" | "done"; due?: string }>(
+  was: H,
+  h: H,
+): H {
+  if (h.type === "todo") return h.status ? h : { ...h, status: "open" };
+  if (was.type !== "todo") return h;
+  const rest = { ...h };
+  delete rest.status;
+  delete rest.due;
+  return rest;
 }
 
 type Sight = { scopes: MemoryScope[] | "all"; see: MemorySee[]; suggestedFor?: string };
@@ -178,6 +202,10 @@ export class ScopedMemory {
 
   /** Makes a file, or updates one read at `expect`; refused unless this caller may write it there. */
   write(w: MemoryWrite): MemoryFile {
+    if (w.due !== undefined && !isDay(w.due)) throw new UserError("Give the date as YYYY-MM-DD");
+    // Only you close a to-do: chats and ions offer "Mark done?" (live, Grok, 2026-11-22).
+    if (w.status === "done" && this.caller.kind !== "you")
+      throw new UserError("Only the user marks a to-do done");
     const scope = this.scopeOf(w.scope);
     return w.expect === undefined ? this.create(scope, w) : this.update(scope, w, w.expect);
   }
@@ -229,7 +257,10 @@ export class ScopedMemory {
     if (!was) throw new UserError(NONE);
     const disk = this.read(was.path);
     const { name, description, type, see, status, due } = w;
-    const header = { ...disk.header, ...given({ name, description, type, see, status, due }) };
+    const header = asTodoOrNot(disk.header, {
+      ...disk.header,
+      ...given({ name, description, type, see, status, due }),
+    });
     this.mayWrite(scope, disk.header.type);
     this.mayWrite(scope, header.type);
     this.mayChange(scope, disk.header, header.see);

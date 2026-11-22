@@ -22,3 +22,19 @@ describe("what an ion is told about memory", () => {
     }
   });
 });
+
+// The user, 2026-11-21: "does memory cover todo as well". Ions add a to-do only when you clearly mean it ("remind
+// me to…", "later we need to…", a thread's last message listing what's left), with its date, and say so in one line.
+describe("what an ion is told about to-dos", () => {
+  it("to add one only when asked, with its date, and say it in one line", () => {
+    for (const id of ["chief", "shop"]) {
+      const told = ionInstructions(id);
+      expect(told).toContain('"remind me to…", "later we need to…"');
+      expect(told).toContain("a thread you started ends listing what's still to do");
+      expect(told).toContain("memory_write with type todo");
+      expect(told).toContain('"Added to your to-dos: <what> (<day>)"');
+      expect(told).toContain("never add one nobody asked for");
+      expect(told).toContain("never mark one done yourself");
+    }
+  });
+});

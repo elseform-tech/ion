@@ -33,7 +33,7 @@ import { changeConfig, settingsHandlers } from "./settings.js";
 import { workspaceHandlers } from "./workspace.js";
 import { routineHandlers } from "./routines.js";
 import { queueHandlers } from "./queue.js";
-import { memoryHandlers } from "./memory.js";
+import { memoryHandlers, todoHandlers } from "./memory.js";
 import type { PromptQueue } from "../queue/index.js";
 import type { Routines } from "../scheduler/index.js";
 import type { Suggestions } from "../ions/suggestions.js";
@@ -121,6 +121,7 @@ export const handlers: Handlers = {
   ...routineHandlers,
   ...queueHandlers,
   ...memoryHandlers,
+  ...todoHandlers,
   ...toolsHandlers,
   ...toolsCliHandlers,
   ...toolsImportHandlers,

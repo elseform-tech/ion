@@ -167,7 +167,8 @@ function Card(p: CardProps) {
       />
     );
   if (p.card.kind === "suggest") return <Suggest {...p} card={p.card} />;
-  if (p.card.kind === "routine" || p.card.kind === "stalled") return <SuggestionCard {...p} card={p.card} />;
+  if (p.card.kind === "routine" || p.card.kind === "stalled" || p.card.kind === "todo")
+    return <SuggestionCard {...p} card={p.card} />;
   return (
     <div className="note">
       <CircleAlert />
@@ -176,7 +177,7 @@ function Card(p: CardProps) {
   );
 }
 
-const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled";
+const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled" || c?.kind === "todo";
 const ions = (m: IonItem | undefined) => m !== undefined && m.kind !== "you";
 
 type LineProps = Omit<CardProps, "card"> & { m: Exclude<IonItem, { kind: "you" }>; last: boolean };
