@@ -11,3 +11,4 @@ coverage/
 .health/
 .playwright-mcp/
 .claude/worktrees/
+.ion-evals/

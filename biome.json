@@ -13,6 +13,7 @@
       "!**/golden",
       "!health",
       "!.health",
+      "!.ion-evals",
       "!**/src-tauri/target",
       "!**/src-tauri/gen",
       "!.playwright-mcp",

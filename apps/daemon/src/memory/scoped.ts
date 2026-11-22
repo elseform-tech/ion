@@ -217,7 +217,9 @@ export class ScopedMemory {
 
   /** Makes a file, or updates one read at `expect`; refused unless this caller may write it there. */
   write(given: MemoryWrite): MemoryFile {
-    const w = given.name ? { ...given, name: asWords(given.name) } : given;
+    // Only an agent's names: yours stay as you typed them (task review, 2026-11-22).
+    const agent = this.caller.kind !== "you" && given.name;
+    const w = agent ? { ...given, name: asWords(given.name!) } : given;
     if (w.due !== undefined && !isDay(w.due)) throw new UserError("Give the date as YYYY-MM-DD");
     const scope = this.scopeOf(w.scope);
     return w.expect === undefined ? this.create(scope, w) : this.update(scope, w, w.expect);

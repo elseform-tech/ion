@@ -168,7 +168,8 @@ const mem = openMemory(process.env.ION_HOME + "/data", store, db);
 const day = (d) => { const t = new Date(Date.now() + d * 864e5); return [t.getFullYear(), t.getMonth() + 1, t.getDate()].map((n) => String(n).padStart(2, "0")).join("-"); };
 const put = (scope, header, text, by) => mem.write({ scope, header, text, by });
 const pricing = db.prepare("SELECT chat_id AS id FROM view_chats WHERE title = ?").get("Pricing headline");
-const byChat = { chatId: pricing.id, runId: "tour-memory" };
+// Task review, 2026-11-22: if that chat couldn'"'"'t start, the "edit" chat writes instead (the tour goes on).
+const byChat = { chatId: (pricing ?? edit).id, runId: "tour-memory" };
 const tabs = put("you", { name: "Tabs, not spaces", description: "Indent with tabs in every project", type: "preference" }, "Indent with tabs.", "you");
 mem.write({ scope: "you", slug: tabs.slug, header: tabs.header, text: "Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.", expectHash: tabs.hash, by: byChat });
 put("you", { name: "Short replies", description: "Answers in a few lines, details on request", type: "preference", suggested: "storefront" }, "Keep answers short. Offer details instead of writing them.", byChat);

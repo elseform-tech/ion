@@ -363,6 +363,19 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("routines")).out).toBe("No routines");
   });
 
+  // Task review, 2026-11-22: every connected command waited out reach()'s 1 s timeout timer before exiting.
+  it("a connected command exits at once", async () => {
+    await ion("daemon", "start");
+    await ion("status");
+    const t0 = Date.now();
+    expect((await ion("status")).code).toBe(0);
+    const bare = Date.now() - t0;
+    const t1 = Date.now();
+    await ion("--version");
+    // Measured against a command that never connects, so a slow machine doesn't count against it.
+    expect(bare - (Date.now() - t1)).toBeLessThan(600);
+  });
+
   // Plan 11: ion chief's suggestions, from the command line.
   it("lists suggestions, and says so for one it doesn't know", async () => {
     await ion("daemon", "start");
@@ -501,7 +514,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect((await ion("memory", "ls", "--type", "preference")).out).toContain(
         "you/tabs.md  preference  Tabs: Use tabs",
       );
-    }, 60_000); // Task 5, 2026-11-22: a dozen CLI runs at ~1 s each went past 20 s under load
+    });
 
     // The user, 2026-11-21: "does memory cover todo as well". To-dos are memory files; `ion todo` adds, lists and
     // closes them, the same files ion keeps.
@@ -514,6 +527,9 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect((await ion("todo", "add", "Rotate keys", "-p", "app")).out).toBe(
         "Added to app's to-dos: Rotate keys",
       );
+      // Task review, 2026-11-22: a name you type stays as you typed it (only agents' file-name names become words).
+      expect((await ion("todo", "add", "e2e-tests")).out).toBe("Added to your to-dos: e2e-tests");
+      expect(await ion("todo", "done", "e2e-tests")).toMatchObject({ code: 0 });
       expect(await ion("todo", "add", "Call the bank", "--due", "friday")).toMatchObject({
         code: 1,
         err: "Give the date as YYYY-MM-DD",
