@@ -157,20 +157,25 @@ const OWN_LISTED = "own-servers:listed";
 /**
  * An agent's own server that appeared after ion first listed them is New until Settings has shown it once (final
  * review, 2026-11-22: a Claude run may write ~/.claude.json, where Claude keeps its state, so one can appear unasked).
- * A repo's server has its own New (off until you turn it on).
+ * Only a store where nothing was ever recorded counts what's there as already there; one that can't be read, or holds
+ * other keys but not that first listing, marks unseen ones New (and records nothing while unreadable). A repo's server
+ * has its own New (off until you turn it on).
  */
 function freshOwn(
   ctx: Pick<Ctx, "seen">,
   servers: ToolsInfo["own"]["servers"],
   shown: string[],
 ): ToolsInfo["own"]["servers"] {
-  const before = ctx.seen.has(OWN_LISTED);
-  if (!before) shown.push(OWN_LISTED);
+  const state = ctx.seen.state();
+  if (state === "unreadable")
+    return servers.map((s) => (s.repo || ctx.seen.has(ownKey(s)) ? s : { ...s, new: true as const }));
+  const first = state === "empty" && !ctx.seen.has(OWN_LISTED);
+  if (!ctx.seen.has(OWN_LISTED)) shown.push(OWN_LISTED);
   return servers.map((s) => {
-    if (s.repo) return s;
-    const key = `own:${s.agent}:${s.name}:${s.match}`;
-    if (ctx.seen.has(key)) return s;
-    shown.push(key);
-    return before ? { ...s, new: true as const } : s;
+    if (s.repo || ctx.seen.has(ownKey(s))) return s;
+    shown.push(ownKey(s));
+    return first ? s : { ...s, new: true as const };
   });
 }
+
+const ownKey = (s: { agent: string; name: string; match: string }) => `own:${s.agent}:${s.name}:${s.match}`;

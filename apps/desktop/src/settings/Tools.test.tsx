@@ -670,6 +670,20 @@ describe("Settings → Tools: each agent's own", () => {
     expect(within(row("fs")).queryByText("New")).toBeNull();
   });
 
+  // Automated review of M3, 2026-11-22: New must never hide Differs (both show, with Differs' title).
+  it("a new own server that also differs shows both New and Differs", async () => {
+    const c = withOwn({
+      servers: [
+        { ...stdio("claude-code", "sentry", "planted-sentry"), new: true },
+        stdio("codex", "sentry", "sentry-mcp"),
+      ],
+    });
+    await open(c);
+    await screen.findAllByText("sentry", { selector: ".tname" });
+    const fresh = rows("sentry").find((r) => within(r).queryByText("New"))!;
+    expect(within(fresh).getByText("Differs").getAttribute("title")).toBe("Runs something else");
+  });
+
   it("an agent whose own tools are off in ion shows its rows dimmed, Off in ion", async () => {
     const c = withOwn({
       agents: { "claude-code": true, codex: false, "grok-build": true, opencode: true },

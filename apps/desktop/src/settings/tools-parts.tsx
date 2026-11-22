@@ -91,6 +91,8 @@ export function ToolRow(p: {
   at?: boolean;
   /** What the chip means, on hover. */
   chipTitle?: string;
+  /** "New" before the chip (an agent's own server that appeared since ion last listed them). */
+  fresh?: boolean;
   /** Not in use in ion (an agent's own, with its own tools off). */
   dim?: boolean;
 }) {
@@ -106,6 +108,7 @@ export function ToolRow(p: {
       </span>
       <div>
         <span className="tname">{p.name}</span>
+        {p.fresh && <span className="chip">New</span>}
         {p.chip && (
           <span className="chip" {...(p.chipTitle ? { title: p.chipTitle } : {})}>
             {p.chip}

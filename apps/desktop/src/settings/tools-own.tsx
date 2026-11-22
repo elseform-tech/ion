@@ -115,20 +115,15 @@ export function OwnRow(p: {
     <ToolRow
       icon={p.icon}
       name={p.r.name}
-      chip={chipOf(p.r)}
-      {...(p.r.differs && !p.r.fresh ? { chipTitle: p.r.differs } : {})}
+      chip={p.r.differs ? "Differs" : null}
+      {...(p.r.differs ? { chipTitle: p.r.differs } : {})}
+      fresh={!!p.r.fresh}
       line={p.line}
       dim={p.off === "off"}
       mid={<Faces who={p.r.agents} agents={p.agents} />}
       end={p.off ? <span className="s">{STATE[p.off]}</span> : null}
     />
   );
-}
-
-/** New (it appeared since ion last listed them) before Differs. */
-function chipOf(r: Merged<unknown>): string | null {
-  if (r.fresh) return "New";
-  return r.differs ? "Differs" : null;
 }
 
 /** "4 skills, 1 server": what a plugin brings, in small words. */
