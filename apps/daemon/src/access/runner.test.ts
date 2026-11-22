@@ -17,9 +17,29 @@ import { describe, expect, it, vi } from "vitest";
 const started: StartOpts[] = [];
 const seen: { dirExists: boolean }[] = [];
 
+/** A run that fails without a message, saying why (an agent out of its quota). */
+const failing = {
+  label: "F",
+  loginHint: "f login",
+  adapter: {
+    start: async () => ({
+      id: "s",
+      nativeId: null,
+      send: async () => {},
+      async *events() {
+        yield { type: EV.error, data: { code: "agent", retryable: false, message: "F is out of quota" } };
+        yield { type: EV.runFinished, data: { status: "failed" } };
+      },
+      interrupt: async () => {},
+      close: async () => {},
+    }),
+  },
+};
+
 vi.mock("../adapters/registry.js", () => ({
   getHarness: (id: string) =>
-    id === "x"
+    (id === "f" ? failing : null) ??
+    (id === "x"
       ? {
           label: "X",
           loginHint: "x login",
@@ -40,7 +60,7 @@ vi.mock("../adapters/registry.js", () => ({
             },
           },
         }
-      : null,
+      : null),
 }));
 
 const { clearScratch, harnessRunner, sweepTmp } = await import("./runner.js");
@@ -104,6 +124,19 @@ describe("harnessRunner's sandbox and folder", () => {
     started.length = 0;
     await harnessRunner({ ...o, sandbox: "none" })("hi", new AbortController().signal);
     expect(started[0]?.sandbox).toBeUndefined();
+  });
+});
+
+describe("harnessRunner's answer", () => {
+  // Judge eval, 2026-11-22: a judge run that failed (opencode out of its free quota) came back as an empty answer, so
+  // the judge said only "ion couldn't decide" and never asked another agent. A failed run with no message is an error,
+  // with the agent's reason.
+  it("throws the agent's reason when its run fails without a message", async () => {
+    const o = setup();
+    saveUserConfig(o.configFile, { ...DEFAULT_CONFIG, access: { ...DEFAULT_CONFIG.access, judge: "f" } });
+    await expect(
+      harnessRunner({ ...o, sandbox: "none" })("hi", new AbortController().signal),
+    ).rejects.toThrow("F is out of quota");
   });
 });
 

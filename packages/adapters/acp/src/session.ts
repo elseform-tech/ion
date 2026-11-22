@@ -116,13 +116,18 @@ const PROGRESS = new Set([
 
 /**
  * The silence check (task review, 2026-11-21): rolling, reset by each bit of progress, paused while ion holds a
- * permission; past its time the turn fails with the agent's own logged reason when it gave one, else `why`.
+ * permission; past its time the turn fails with the agent's own logged reason when it gave one, else `why`. A log
+ * line saying the agent can't go on fails it at once.
  */
 export function silence(
   silent: { ms: number; why: string } | undefined,
   c: Connection,
   fail: (why: string) => void,
 ) {
+  // The agent's log says it can't go on (opencode out of quota, which then retries quietly): the turn fails now, with
+  // its reason, not at the check (Judge eval, 2026-11-22: every judge verdict on opencode waited its 30 s). The
+  // listener goes with the agent's process (a warm agent's session: when it ends).
+  c.giveUp?.(fail);
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** Why the check is paused: a call ion holds, a tool still running (re-review, 2026-11-21). */
   const paused = new Set<string>();
