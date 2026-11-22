@@ -5,7 +5,7 @@ import type { ApprovalRequest } from "@ion/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { Approvals, type AskingRun } from "../runs/approvals.js";
 import type { EventStore } from "../store/index.js";
-import { readAgentRules, ruleCount, theirSay } from "./agent-rules.js";
+import { readAgentRules, ruleCount, theirRulesOf, theirSay } from "./agent-rules.js";
 import { createAccess } from "./index.js";
 
 const store = { append: () => {} } as unknown as EventStore;
@@ -256,6 +256,17 @@ describe("reading agents' rules", () => {
     const later = new Date(mtime.getTime() + 5000);
     utimesSync(file, later, later);
     expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(2);
+  });
+});
+
+// Task 11, 2026-11-22 (tour): chats went by the rules in your real home even when ion reads your agents' configs from
+// ION_AGENTS_HOME (the tour's fake home), so the tour showed and used your own rules.
+describe("whose rules a run goes by", () => {
+  it("reads them from the agents' home ion was given", () => {
+    const home = claudeHome([], ["Bash(git push:*)"]);
+    const cfg = join(fakeHome({ "config.toml": "" }), "config.toml");
+    const r = theirRulesOf(cfg, home)({ harness: "claude-code", projectId: "p" });
+    expect(r ? theirSay(cmd("git push"), r)?.decision : null).toBe("deny");
   });
 });
 

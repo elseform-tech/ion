@@ -411,7 +411,7 @@ function runCtxOf(o: {
       return pickSource({ ...o.picks, configFile: opts.configFile }, agent, dir ? [dir] : []);
     },
     beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => o.hooks.beforeTool(r, c),
-    theirs: theirRulesOf(opts.configFile),
+    theirs: theirRulesOf(opts.configFile, agentsHome()),
     mcp: { grants: o.grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
     // `ion` inside a run reaches ion by this port and its run key (daemon.json is out of the run's reach).

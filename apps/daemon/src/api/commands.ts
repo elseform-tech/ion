@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { agentsHome } from "../env.js";
 import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
@@ -296,7 +296,7 @@ async function harnessInfo(id: string): Promise<HarnessInfo> {
 
 /** How many of its own allow and deny rules (your settings for it) ion goes by in its chats. */
 function ownRulesOf(id: string): { ownRules?: number } {
-  const n = ruleCount(readAgentRules(id, { home: homedir() }));
+  const n = ruleCount(readAgentRules(id, { home: agentsHome() }));
   return n ? { ownRules: n } : {};
 }
 

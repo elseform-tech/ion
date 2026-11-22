@@ -222,9 +222,10 @@ export function theirSay(
 
 /**
  * The rules of a run's agent, with Codex's trust for the run's project folder. Your config is read again only when it
- * changes (task review, 2026-11-22); the agents' files are cached the same way.
+ * changes (task review, 2026-11-22); the agents' files are cached the same way. `home`: where your agents' configs are
+ * (ION_AGENTS_HOME in the tour).
  */
-export function theirRulesOf(configFile: string) {
+export function theirRulesOf(configFile: string, home: string = homedir()) {
   let seen: { at: number; projects: { id: string; path: string }[] } | null = null;
   const projects = () => {
     const at = statSync(configFile, { throwIfNoEntry: false })?.mtimeMs ?? 0;
@@ -234,6 +235,6 @@ export function theirRulesOf(configFile: string) {
   return (r: { harness?: string; projectId: string }): TheirRules | null => {
     if (!r.harness) return null;
     const project = projects().find((p) => p.id === r.projectId)?.path;
-    return readAgentRules(r.harness, { home: homedir(), ...(project ? { project } : {}) });
+    return readAgentRules(r.harness, { home, ...(project ? { project } : {}) });
   };
 }
