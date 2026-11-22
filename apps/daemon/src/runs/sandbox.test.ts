@@ -39,7 +39,14 @@ describe("a run's sandbox", () => {
         deny: ["/h/.local/share/ion", "/h/.config/ion", "/h/.cache/ion"],
         read: ["/h/.local/share/ion/skills/r1", "/h/.local/share/ion/bin"],
         write: ["/h/.local/share/ion/worktrees/c1"],
-        noWrite: ["/h/.codex", "/h/.claude", "/h/.claude.json", "/h/.config/opencode", "/h/.opencode"],
+        noWrite: [
+          "/h/.codex",
+          "/h/.claude",
+          "/h/.claude.json",
+          "/h/.config/opencode",
+          "/h/.opencode",
+          "/h/.cache/opencode",
+        ],
       },
     });
   });
@@ -50,11 +57,21 @@ describe("a run's sandbox", () => {
   it("keeps every other agent's config read-only", () => {
     const env = { HOME: "/h", GROK_HOME: "/g" };
     const all = ["/h/.codex", "/h/.claude", "/h/.claude.json", "/h/.config/opencode", "/h/.opencode", "/g"];
-    expect(agentConfigs("grok-build", env)).toEqual(all.filter((p) => p !== "/g"));
-    expect(agentConfigs("claude-code", env)).toEqual(all.filter((p) => !p.startsWith("/h/.claude")));
-    expect(agentConfigs("fake", env)).toEqual(all);
+    const cache = "/h/.cache/opencode";
+    expect(agentConfigs("grok-build", env)).toEqual([...all.filter((p) => p !== "/g"), cache]);
+    expect(agentConfigs("claude-code", env)).toEqual([...all.filter((p) => !p.startsWith("/h/.claude")), cache]);
+    expect(agentConfigs("fake", env)).toEqual([...all, cache]);
     const sb = runSandbox("seatbelt", { ...o, cwd: "/w", harness: "opencode", env });
-    expect(sb?.paths.noWrite).toEqual(all.filter((p) => !p.includes("opencode")));
+    expect(sb?.paths.noWrite).toEqual([...all.filter((p) => !p.includes("opencode")), cache]);
+  });
+
+  // Final review, 2026-11-22: opencode's npm plugin cache (~/.cache/opencode) was writable from opencode's own runs:
+  // a run could plant plugin code that a later opencode start loads. Read-only to every run, opencode's too.
+  it("keeps opencode's plugin cache read-only to every run, opencode's own too", () => {
+    const env = { HOME: "/h", XDG_CACHE_HOME: "/c" };
+    expect(agentConfigs("opencode", env)).toContain("/c/opencode");
+    expect(agentConfigs("grok-build", env)).toContain("/c/opencode");
+    expect(agentConfigs("opencode", { HOME: "/h" })).toContain("/h/.cache/opencode");
   });
 
   // Task review, 2026-11-21: Codex's own process, its own stdio servers and notify run outside any sandbox, and its
@@ -93,8 +110,8 @@ describe("a run's sandbox", () => {
   it("keeps every agent's config read-only for ion's servers and git", () => {
     const env = { HOME: "/h", GROK_HOME: "/g" };
     const all = ["/h/.codex", "/h/.claude", "/h/.claude.json", "/h/.config/opencode", "/h/.opencode", "/g"];
-    expect(serverSandbox(o, "seatbelt", env)?.paths.noWrite).toEqual(all);
-    expect(gitSandbox(o, "seatbelt", env)?.paths.noWrite).toEqual(all);
+    expect(serverSandbox(o, "seatbelt", env)?.paths.noWrite).toEqual([...all, "/h/.cache/opencode"]);
+    expect(gitSandbox(o, "seatbelt", env)?.paths.noWrite).toEqual([...all, "/h/.cache/opencode"]);
   });
 
   // The user, 2026-11-21: "Neither available: the run still starts", Settings says "Not sandboxed", logged once.

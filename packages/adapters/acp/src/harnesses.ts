@@ -86,8 +86,11 @@ export const GROK_BUILD: AcpHarness = {
   ownOff: { servers: false, skills: false, plugins: false },
   // A project's own .grok config loads by its folder trust.
   ownTrust: true,
-  // Its hooks (ion's gate among them), config and skills: nothing a run does lasts into the next.
-  sandboxPaths: () => ({ noWrite: ["hooks", "config.toml", "skills"].map((f) => join(grokHome(), f)) }),
+  // Its hooks (ion's gate among them), config, skills and plugins (installed-plugins holds an enabled plugin's files and
+  // its registry; config.toml says which are on): nothing a run does lasts into the next (final review, 2026-11-22).
+  sandboxPaths: () => ({
+    noWrite: ["hooks", "config.toml", "skills", "installed-plugins", "plugins"].map((f) => join(grokHome(), f)),
+  }),
 };
 
 /**

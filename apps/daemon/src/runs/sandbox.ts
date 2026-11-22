@@ -44,8 +44,17 @@ const CONFIGS: Record<string, (env: NodeJS.ProcessEnv, home: string) => string[]
  */
 export function agentConfigs(harness: string, env: NodeJS.ProcessEnv = process.env): string[] {
   const home = env.HOME || homedir();
-  return Object.entries(CONFIGS).flatMap(([id, paths]) => (id === harness ? [] : paths(env, home)));
+  const others = Object.entries(CONFIGS).flatMap(([id, paths]) => (id === harness ? [] : paths(env, home)));
+  return [...others, ...ALWAYS(env, home)];
 }
+
+/**
+ * Read-only to every run, its own agent's too (final review, 2026-11-22): opencode's npm plugin cache, whose code a
+ * later opencode start loads. opencode runs without writing it (it only refreshes its models list there; checked live).
+ */
+const ALWAYS = (env: NodeJS.ProcessEnv, home: string) => [
+  join(env.XDG_CACHE_HOME || join(home, ".cache"), "opencode"),
+];
 
 /** `p` inside `dir` (or `dir` itself). */
 const within = (p: string, dir: string) => {

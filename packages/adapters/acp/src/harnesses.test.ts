@@ -420,8 +420,16 @@ describe("agents' own paths in a run's sandbox", () => {
     expect(paths?.read).toEqual([env.XDG_CONFIG_HOME]);
   });
 
-  it("Grok's hooks, config and skills aren't written", () => {
+  // Final review, 2026-11-22: a Grok run could plant code in ~/.grok/installed-plugins (an enabled plugin's files,
+  // its registry) or ~/.grok/plugins, which Grok loads in later starts, some outside the sandbox. Read-only too.
+  it("Grok's hooks, config, skills and plugins aren't written", () => {
     const p = GROK_BUILD.sandboxPaths?.();
-    expect(p?.noWrite?.map((x) => x.split("/").pop())).toEqual(["hooks", "config.toml", "skills"]);
+    expect(p?.noWrite?.map((x) => x.split("/").pop())).toEqual([
+      "hooks",
+      "config.toml",
+      "skills",
+      "installed-plugins",
+      "plugins",
+    ]);
   });
 });
