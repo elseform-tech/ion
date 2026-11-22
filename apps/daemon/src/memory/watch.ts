@@ -22,12 +22,13 @@ export function watchMemory(files: MemoryFiles, o: { debounceMs?: number } = {})
     const whole = all;
     pending.clear();
     all = false;
-    try {
-      if (whole) files.reindex();
-      else for (const p of paths) files.sync(p);
-    } catch (e) {
-      console.warn(`Memory: ${(e as Error).message}`);
-    }
+    // One file that fails never stops the others.
+    for (const job of whole ? [() => files.reindex()] : paths.map((p) => () => files.sync(p)))
+      try {
+        job();
+      } catch (e) {
+        console.warn(`Memory: ${(e as Error).message}`);
+      }
   };
   const noted = (name: string | null) => {
     const path = name?.split(sep).join("/");

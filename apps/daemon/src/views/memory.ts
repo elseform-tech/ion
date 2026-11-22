@@ -13,8 +13,7 @@ import type { Db, View } from "../store/index.js";
 /** A memory file in the index: what it is, who may see it, and its last change. */
 export type MemoryRow = {
   path: string;
-  /** "you", or the project it belongs to. */
-  scope: string;
+  scope: MemoryScope;
   slug: string;
   name: string;
   description: string;
@@ -39,7 +38,7 @@ export type MemoryChange = {
 
 export type MemoryQuery = {
   /** "you" and the projects asked about. */
-  scopes: string[];
+  scopes: MemoryScope[];
   /** Which files they may see. */
   see: MemorySee[];
   /** Words to find in the name, description or text (best match first). */
@@ -60,8 +59,16 @@ type Written = {
 
 const COLUMNS = `m.path, m.scope, m.slug, m.name, m.description, m.type, m.see, m.status, m.due, m.hash,
   m.updated_at AS updatedAt, m.by`;
-type Raw = Omit<MemoryRow, "by"> & { by: string };
-const rowOf = (r: Raw): MemoryRow => ({ ...r, by: JSON.parse(r.by) as MemoryBy });
+type Raw = Omit<MemoryRow, "by" | "scope"> & { by: string; scope: string };
+const rowOf = (r: Raw): MemoryRow => ({ ...r, scope: scopeOfKey(r.scope), by: JSON.parse(r.by) as MemoryBy });
+
+/**
+ * How a scope is kept in the index: "you", or "project:<id>" (task review, 2026-11-22: a project called "you" shared
+ * your scope when both were kept as a bare word).
+ */
+const scopeKey = (s: MemoryScope) => (s === "you" ? "you" : `project:${s.projectId}`);
+const scopeOfKey = (k: string): MemoryScope =>
+  k === "you" ? "you" : { projectId: k.slice("project:".length) };
 const ANY = (n: number) => Array.from({ length: n }, () => "?").join(", ");
 
 /** Who changed it, as the old list said: "you", a chat, or "ion:<id>". */
@@ -108,7 +115,7 @@ function applyWritten(db: Db, d: Written, ts: string): void {
        see = excluded.see, status = excluded.status, due = excluded.due, hash = excluded.hash,
        updated_at = excluded.updated_at, by = excluded.by`,
   ).run(
-    ...[d.path, d.scope === "you" ? "you" : d.scope.projectId, d.slug, h.name, h.description, h.type, h.see],
+    ...[d.path, scopeKey(d.scope), d.slug, h.name, h.description, h.type, h.see],
     ...[h.status ?? null, h.due ?? null, d.hash, ts, JSON.stringify(d.by)],
   );
   putFts(db, d.path);
@@ -116,7 +123,7 @@ function applyWritten(db: Db, d: Written, ts: string): void {
 
 function filtersOf(q: MemoryQuery): { where: string; params: unknown[] } {
   const where = [`m.scope IN (${ANY(q.scopes.length)})`, `m.see IN (${ANY(q.see.length)})`];
-  const params: unknown[] = [...q.scopes, ...q.see];
+  const params: unknown[] = [...q.scopes.map(scopeKey), ...q.see];
   if (q.type) {
     where.push("m.type = ?");
     params.push(q.type);
@@ -139,11 +146,11 @@ export const memoryView: View & {
   /** Puts a file's text in the index (read from the file; the events hold only its header). */
   index(db: Db, path: string, text: string): void;
   paths(db: Db): string[];
-  /** Every file, yours and one project's (or all), that `see` allows, oldest first, in the old list's shape. */
-  list(db: Db, projectId: string | null, see: MemorySee[]): MemoryInfo[];
+  /** Every file, yours and these projects' (null: all), that `see` allows, oldest first, in the old list's shape. */
+  list(db: Db, projects: string[] | null, see: MemorySee[]): MemoryInfo[];
 } = {
   name: "memory",
-  version: 2,
+  version: 3,
   tables: ["view_memory", "view_memory_fts"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_memory (
@@ -218,16 +225,17 @@ export const memoryView: View & {
   paths(db) {
     return (db.prepare("SELECT path FROM view_memory").all() as { path: string }[]).map((r) => r.path);
   },
-  list(db, projectId, see) {
+  list(db, projects, see) {
     if (!see.length) return [];
-    const scoped = projectId === null ? "" : "(m.scope = ? OR m.scope = 'you') AND";
+    const keys = ["you", ...(projects ?? []).map((id) => scopeKey({ projectId: id }))];
+    const scoped = projects === null ? "" : `m.scope IN (${ANY(keys.length)}) AND`;
     const where = `WHERE ${scoped} m.see IN (${ANY(see.length)})`;
     const rows = db
       .prepare(
         `SELECT m.path, m.scope, m.by, m.updated_at AS writtenAt, coalesce(f.text, '') AS text
          FROM view_memory m LEFT JOIN view_memory_fts f ON f.path = m.path ${where} ORDER BY m.rowid`,
       )
-      .all(...(projectId === null ? [] : [projectId]), ...see) as {
+      .all(...(projects === null ? [] : keys), ...see) as {
       path: string;
       scope: string;
       by: string;
@@ -236,7 +244,8 @@ export const memoryView: View & {
     }[];
     return rows.map((r) => ({
       memoryId: r.path,
-      scope: r.scope,
+      // Shown as before: "you", or the project's id (filters never go by this word).
+      scope: r.scope === "you" ? "you" : r.scope.slice("project:".length),
       text: r.text,
       source: sourceOf(JSON.parse(r.by) as MemoryBy),
       writtenAt: r.writtenAt,

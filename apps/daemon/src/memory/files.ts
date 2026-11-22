@@ -11,7 +11,7 @@ import {
   type MemorySee,
   type MemoryType,
 } from "@ion/schema";
-import { isMap, isScalar, parseDocument, type Scalar, stringify } from "yaml";
+import { isMap, isScalar, parseDocument, Scalar, stringify } from "yaml";
 import { UserError } from "../api/errors.js";
 import { openFile } from "../tools/read-file.js";
 
@@ -40,12 +40,16 @@ export type FileWrite = {
   text: string;
   /** The hash the writer read the file at: it's written only if the file is still that. */
   expectHash?: string;
+  /** Moving old notes only: a folder may go past its 500 files (said in the log). */
+  overCap?: true;
 };
 
 /** A file's text before a change (for undo). */
 export type Before = { hash: string; text: string };
 
 const PER_FOLDER = 500;
+/** "Plain scalars only": a bare value, or one quoted on one line (no block or folded values). */
+const ONE_LINE_TYPES = new Set<string>([Scalar.PLAIN, Scalar.QUOTE_DOUBLE, Scalar.QUOTE_SINGLE]);
 /** The header's room on top of the text. */
 const FILE_MAX = MEMORY_TEXT_MAX + 2048;
 const PROJECT_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -88,12 +92,17 @@ function partsOf(path: string): { scope: MemoryScope; slug: string } | null {
   return bits[0] === "you" ? { scope: "you", slug } : { scope: { projectId: bits[1]! }, slug };
 }
 
-/** A value written as it is: no anchor, alias, tag, list or map. */
-const plain = (n: unknown): n is Scalar => isScalar(n) && !n.anchor && !n.tag;
+/** A value written as it is, on one line of the header: no anchor, alias, tag, list, map or block. */
+const plain = (n: unknown, src: string): n is Scalar =>
+  isScalar(n) &&
+  !n.anchor &&
+  !n.tag &&
+  ONE_LINE_TYPES.has(n.type ?? "") &&
+  !src.slice(n.range?.[0] ?? 0, n.range?.[1] ?? src.length).includes("\n");
 
 /** A key: a plain word, never a merge key. */
-const plainKey = (n: unknown): n is Scalar<string> =>
-  plain(n) && typeof n.value === "string" && n.value !== "<<";
+const plainKey = (n: unknown, src: string): n is Scalar<string> =>
+  plain(n, src) && typeof n.value === "string" && n.value !== "<<";
 
 /** The header's keys, if it's a map of plain values: no anchors, aliases, tags, merge keys or nested values. */
 function plainMap(src: string): Record<string, string> | null {
@@ -103,7 +112,7 @@ function plainMap(src: string): Record<string, string> | null {
   if (map.anchor || map.tag) return null;
   const out: Record<string, string> = {};
   for (const { key, value } of map.items) {
-    if (!plainKey(key) || (value !== null && !plain(value))) return null;
+    if (!plainKey(key, src) || (value !== null && !plain(value, src))) return null;
     out[key.value] = value?.value == null ? "" : String(value.value);
   }
   return out;
@@ -185,10 +194,11 @@ function mdIn(dir: string): string[] {
 }
 
 /** A slug for a new file: its name's, or with -2, -3… when that's taken. */
-function freeSlug(dir: string, name: string): string {
+function freeSlug(dir: string, name: string, overCap?: true): string {
   const base = slugOf(name);
   const taken = new Set(mdIn(dir).map((n) => n.slice(0, -3)));
-  if (taken.size >= PER_FOLDER) throw new UserError(`A memory folder holds ${PER_FOLDER} files at most`);
+  if (taken.size >= PER_FOLDER && !overCap)
+    throw new UserError(`A memory folder holds ${PER_FOLDER} files at most`);
   for (let i = 1; ; i++) {
     const tail = i === 1 ? "" : `-${i}`;
     const slug = base.slice(0, 60 - tail.length).replace(/-$/, "") + tail;
@@ -220,7 +230,7 @@ function checked(w: FileWrite): { text: string; header: MemoryHeader } {
 function writeIn(root: string, w: FileWrite): { file: MemoryFile; before?: Before } {
   const { text, header } = checked(w);
   const dir = folderFor(root, w.scope);
-  const slug = w.slug ?? freeSlug(dir, header.name);
+  const slug = w.slug ?? freeSlug(dir, header.name, w.overCap);
   const path = `${folderOf(w.scope)}/${slug}.md`;
   const was = current(root, path, w.slug === undefined ? undefined : w.expectHash);
   const extra = was?.extra ?? {};
@@ -238,23 +248,33 @@ function writeIn(root: string, w: FileWrite): { file: MemoryFile; before?: Befor
   return was ? { file, before: { hash: was.hash, text: was.text } } : { file };
 }
 
-/** Deletes a file (a broken one too); what it was, if it could be read. */
-function removeIn(root: string, path: string): Before | null {
+/** Deletes a file (a broken one too; with `expectHash`, only as it was read); what it was, if it could be read. */
+function removeIn(root: string, path: string, expectHash?: string): Before | null {
   const parts = partsOf(path);
   const abs = parts && located(root, parts.scope, parts.slug);
   if (!abs) throw new UserError("Not a memory file");
   const now = readIn(root, path);
+  if (expectHash !== undefined && (!now.ok || now.file.hash !== expectHash)) throw new UserError(CHANGED);
   rmSync(abs, { force: true });
   return now.ok ? { hash: now.file.hash, text: now.file.text } : null;
 }
 
-/** Every memory file's path in the folder (not following links to folders). */
-function listIn(root: string): string[] {
+/** Every .md file's path in the folder (not following links to folders), well named or not. */
+function allMd(root: string): string[] {
   const out = mdIn(join(root, "you")).map((n) => `you/${n}`);
   const projects = realDirOrNone(join(root, "projects")) ? safeDirs(join(root, "projects")) : [];
   for (const p of projects) out.push(...mdIn(join(root, "projects", p)).map((n) => `projects/${p}/${n}`));
-  return out.filter((p) => MEMORY_PATH.test(p));
+  return out;
 }
+
+/** Every memory file's path in the folder. */
+const listIn = (root: string) => allMd(root).filter((p) => MEMORY_PATH.test(p));
+
+/** A line for each .md file ion can't take for a memory file by its name (task review, 2026-11-22). */
+const misnamedIn = (root: string) =>
+  allMd(root)
+    .filter((p) => !MEMORY_PATH.test(p))
+    .map((p) => `${shown(p)}: name must be lowercase-with-dashes.md`);
 
 /**
  * The memory folder on disk: `you/<slug>.md` and `projects/<id>/<slug>.md`, read without following links, written
@@ -265,8 +285,9 @@ export function memoryFolder(root: string) {
     root,
     read: (path: string) => readIn(root, path),
     write: (w: FileWrite) => writeIn(root, w),
-    remove: (path: string) => removeIn(root, path),
+    remove: (path: string, expectHash?: string) => removeIn(root, path, expectHash),
     list: () => listIn(root),
+    misnamed: () => misnamedIn(root),
   };
 }
 

@@ -253,8 +253,7 @@ export const handlers: Handlers = {
     ctx.queue.clear({ ionId: id });
     // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
     for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
-    for (const m of ctx.memory.list(id, ["chats", "ions"]))
-      if (m.scope === id) ctx.memory.forget(m.memoryId, "you");
+    ctx.memory.forgetProject(id, "you");
     return { ok: true as const };
   },
   "project.star": (a, ctx) => {

@@ -1,3 +1,4 @@
+import { chmodSync, lstatSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   EV,
@@ -24,8 +25,12 @@ import {
 
 export type { FileRead, MemoryFile } from "./files.js";
 
+/** A note's `from:` (the old note it was moved from) and `see`; `overCap`: moving old notes only. */
+type NoteOptions = { from?: string; see?: "chats" | "ions"; overCap?: true };
+
 const capped = (b: Before): Before => ({ hash: b.hash, text: b.text.slice(0, MEMORY_TEXT_MAX) });
-const scopeOf = (key: string): MemoryScope => (key === "you" ? "you" : { projectId: key });
+/** Each line with its control characters (a stray \r, a bell) as spaces. */
+const cleanLines = (t: string) => t.split("\n").map((l) => l.replace(/\p{Cc}/gu, " "));
 
 /**
  * ion's memory: a folder of small Markdown files, yours and each project's. The files are the truth; every change
@@ -35,6 +40,8 @@ export class MemoryFiles {
   private readonly folder: MemoryFolder;
   /** Files that can't be read now, each with its one plain line (their last good version stays indexed). */
   private readonly broken = new Map<string, string>();
+  /** Files ion can't take for memory files by their names, one line each (found by `reindex`). */
+  private misnamed: string[] = [];
 
   constructor(private readonly o: { root: string; store: EventStore; db: Db }) {
     this.folder = memoryFolder(o.root);
@@ -56,10 +63,10 @@ export class MemoryFiles {
   }
 
   /** Deletes a file and logs it, with its text before. */
-  forget(path: string, by: MemoryBy): void {
+  forget(path: string, by: MemoryBy, expectHash?: string): void {
     if (!MEMORY_PATH.test(path)) throw new UserError(`Unknown memory: ${path}`);
     const row = memoryView.get(this.o.db, path);
-    const gone = this.folder.remove(path);
+    const gone = this.folder.remove(path, expectHash);
     if (!row && !gone) throw new UserError(`Unknown memory: ${path}`);
     this.broken.delete(path);
     const before = gone ?? { hash: row!.hash, text: row!.text };
@@ -89,6 +96,14 @@ export class MemoryFiles {
   /** Every file on disk and in the index, synced (at start, and when the watch can't say what changed). */
   reindex(): void {
     for (const path of new Set([...this.folder.list(), ...memoryView.paths(this.o.db)])) this.sync(path);
+    this.misnamed = this.folder.misnamed();
+  }
+
+  /** Forgets a project's files (it was removed), never yours. */
+  forgetProject(projectId: string, by: MemoryBy): void {
+    const both = ["chats", "ions"] as const;
+    for (const r of memoryView.search(this.o.db, { scopes: [{ projectId }], see: [...both] }))
+      this.forget(r.path, by);
   }
 
   /** Every file's path on disk. */
@@ -108,30 +123,33 @@ export class MemoryFiles {
 
   /** Files that can't be read, one plain line each. */
   problems(): string[] {
-    return [...this.broken.values()].sort();
+    return [...this.broken.values(), ...this.misnamed].sort();
   }
 
-  /** Yours and one project's (or all), with each broken file's line. */
-  list(projectId: string | null, see: MemorySee[]): MemoryInfo[] {
-    return memoryView.list(this.o.db, projectId, see).map((m) => {
+  /** Yours and one project's or several (null: all), with each broken file's line. */
+  list(projects: string | string[] | null, see: MemorySee[]): MemoryInfo[] {
+    const ids = typeof projects === "string" ? [projects] : projects;
+    return memoryView.list(this.o.db, ids, see).map((m) => {
       const problem = this.broken.get(m.memoryId);
       return problem ? { ...m, problem } : m;
     });
   }
 
   /** A short note as its own file (the name is its start, the description its first line). */
-  note(
-    scope: MemoryScope | string,
-    text: string,
-    by: MemoryBy,
-    extra: { from?: string; see?: "chats" | "ions" } = {},
-  ): string {
-    const s = typeof scope === "string" ? scopeOf(scope) : scope;
+  note(scope: MemoryScope, text: string, by: MemoryBy, o: NoteOptions = {}): string {
     const t = text.trim();
     if (!t) throw new UserError("A memory can't be empty");
-    const name = t.replace(/\s+/g, " ").slice(0, 60).trimEnd();
-    const description = t.split("\n")[0]!.trim().slice(0, 160).trimEnd();
-    return this.write({ scope: s, header: { name, description, type: "fact", ...extra }, text: t, by }).path;
+    const lines = cleanLines(t);
+    const name = lines.join(" ").replace(/\s+/g, " ").trim().slice(0, 60).trimEnd();
+    const description = lines[0]!.trim().slice(0, 160).trimEnd();
+    const header = {
+      name,
+      description,
+      type: "fact" as const,
+      ...(o.from ? { from: o.from } : {}),
+      ...(o.see ? { see: o.see } : {}),
+    };
+    return this.write({ scope, header, text: t, by, ...(o.overCap ? { overCap: true } : {}) }).path;
   }
 
   private log(file: MemoryFile, by: MemoryBy, before?: Before): void {
@@ -154,8 +172,21 @@ export class MemoryFiles {
  * the index brought up to date with the files (your edits while ion was stopped are logged as yours).
  */
 export function openMemory(dataDir: string, store: EventStore, db: Db): MemoryFiles {
-  const memory = new MemoryFiles({ root: join(dataDir, "memory"), store, db });
+  const root = join(dataDir, "memory");
+  ownedFolder(root);
+  ownedFolder(join(root, "projects"));
+  const memory = new MemoryFiles({ root, store, db });
   moveNotes(memory, store);
   memory.reindex();
   return memory;
+}
+
+/** A folder only you can open (made so, or set so: mkdir's mode doesn't touch one that's there). */
+function ownedFolder(dir: string): void {
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (lstatSync(dir).isDirectory()) chmodSync(dir, 0o700);
+  } catch (e) {
+    console.warn(`Memory: ${dir} isn't a folder ion can use (${(e as Error).message})`);
+  }
 }

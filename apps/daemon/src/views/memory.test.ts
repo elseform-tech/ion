@@ -53,7 +53,7 @@ describe("the memory index", () => {
       text: "Lives in Lisbon",
       by: "you",
     });
-    const scopes = { scopes: ["you", "shop"], ...all };
+    const scopes = { scopes: ["you", { projectId: "shop" }], ...all };
     const started = performance.now();
     expect(paths(memoryView.search(db, { ...scopes, q: "stripe" }))).toEqual([byName.path]);
     expect(paths(memoryView.search(db, { ...scopes, q: "rotate" }))).toEqual([byDesc.path]);
@@ -61,7 +61,7 @@ describe("the memory index", () => {
     expect(memoryView.search(db, scopes)).toHaveLength(500);
     expect(performance.now() - started).toBeLessThan(50);
     // Only the scopes and the `see` asked for; FTS syntax in a query is plain words.
-    expect(memoryView.search(db, { scopes: ["shop"], ...all, q: "lisbon" })).toEqual([]);
+    expect(memoryView.search(db, { scopes: [{ projectId: "shop" }], ...all, q: "lisbon" })).toEqual([]);
     expect(memoryView.search(db, { scopes: ["you"], see: ["chats"], q: "lisbon" })).toEqual([]);
     expect(memoryView.search(db, { ...scopes, q: 'NEAR(") *' })).toEqual([]);
     expect(paths(memoryView.search(db, { ...scopes, type: "person" }))).toEqual([byText.path]);
@@ -84,12 +84,12 @@ describe("the memory index", () => {
   it("the index is rebuilt from the files", () => {
     const a = files.write({ scope: "you", header: fact("Tea", "Drinks"), text: "Green tea", by: "you" });
     files.write({ scope: { projectId: "shop" }, header: fact("Ship", "s"), text: "Fridays", by: "you" });
-    const before = memoryView.search(db, { scopes: ["you", "shop"], ...all });
+    const before = memoryView.search(db, { scopes: ["you", { projectId: "shop" }], ...all });
     const events = store.read({}).length;
     // The index goes (a view upgrade, or the tables dropped): rebuilt from the log and the files, nothing logged.
     store.rebuildViews();
     files.reindex();
-    expect(memoryView.search(db, { scopes: ["you", "shop"], ...all })).toEqual(before);
+    expect(memoryView.search(db, { scopes: ["you", { projectId: "shop" }], ...all })).toEqual(before);
     expect(paths(memoryView.search(db, { scopes: ["you"], ...all, q: "green" }))).toEqual([a.path]);
     expect(store.read({})).toHaveLength(events);
     // A new database: every file is indexed again (logged as yours, since ion never saw it).
@@ -100,9 +100,9 @@ describe("the memory index", () => {
       db: db2,
     });
     files2.reindex();
-    expect(paths(memoryView.search(db2, { scopes: ["you", "shop"], ...all, q: "fridays" }))).toEqual([
-      "projects/shop/ship.md",
-    ]);
+    expect(
+      paths(memoryView.search(db2, { scopes: ["you", { projectId: "shop" }], ...all, q: "fridays" })),
+    ).toEqual(["projects/shop/ship.md"]);
   });
 
   // The user, 2026-11-21: "sqlite for indexes and history": who changed what, when, and the text before.

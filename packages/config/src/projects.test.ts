@@ -71,6 +71,12 @@ describe("reserved names", () => {
     const { projectNameError } = await import("./projects.js");
     expect(projectNameError("chief")).toBe("That name is ion's own");
   });
+
+  // Task review, 2026-11-22: a project called "you" shared your memory's scope (its files reached every chat).
+  it("never names a project you", () => {
+    expect(projectNameError("you")).toBe("That name is ion's own");
+    expect(addProject(DEFAULT_CONFIG, repo("you")).projects[0]!.id).toBe("you-2");
+  });
 });
 
 // The user, 2026-11-19: rename and remove projects. A rename is the name ion shows (its id stays: every event,

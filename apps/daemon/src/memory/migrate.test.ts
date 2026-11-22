@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { memoryView } from "../views/memory.js";
-import { MemoryFiles } from "./index.js";
+import { MemoryFiles, openMemory } from "./index.js";
 import { moveNotes } from "./migrate.js";
 
 let dir: string;
@@ -78,14 +78,17 @@ describe("moving old notes to files", () => {
       type: EV.memoryForgotten,
       data: { memoryId: "mc00003" },
     });
-    // Stopped after the first file.
+    // Stopped after the first file (every write after it fails, as if ion were killed).
     const write = files.write.bind(files);
     let calls = 0;
     const spy = vi.spyOn(files, "write").mockImplementation((w) => {
-      if (++calls === 2) throw new Error("killed");
+      if (++calls >= 2) throw new Error("killed");
       return write(w);
     });
-    expect(() => moveNotes(files, store)).toThrow("killed");
+    // A note that fails is said and stays (tried again next time); the rest go on.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    moveNotes(files, store);
+    warn.mockRestore();
     spy.mockRestore();
     // Stopped between a file and its event: the file is there, with its note's id.
     mkdirSync(join(dir, "memory", "you"), { recursive: true });
@@ -110,10 +113,10 @@ describe("moving old notes to files", () => {
         text: "Prefers short answers.\nAnd plain words.",
       },
     });
-    const shop = memoryView.search(db, { scopes: ["shop"], see: ["chats"] });
+    const shop = memoryView.search(db, { scopes: [{ projectId: "shop" }], see: ["chats"] });
     expect(shop).toMatchObject([
       {
-        scope: "shop",
+        scope: { projectId: "shop" },
         name: "Deploys go out on Fridays after the checks pass, never on we",
         see: "chats",
         type: "fact",
@@ -131,5 +134,37 @@ describe("moving old notes to files", () => {
     files.reindex();
     moveNotes(files, store);
     expect(froms()).toEqual(["ma00001", "md00004"]);
+  });
+
+  // Task review, 2026-11-22: one bad old note stopped the move, and with it the daemon's start.
+  it("one bad note can't stop the move, and the daemon still starts", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    note("ma00001", { projectId: "Old Shop" }, "From a project id ion can't use");
+    note("mb00002", "you", "Breaks on write");
+    note("mc00003", "you", "First\rline\u0007 here\nmore");
+    note("md00004", { projectId: "shop" }, "From ion chief", { chatId: "ion:chief", runId: "t1" });
+    const write = files.write.bind(files);
+    const spy = vi.spyOn(files, "write").mockImplementation((w) => {
+      if (w.text === "Breaks on write") throw new Error("disk full");
+      return write(w);
+    });
+    expect(moveNotes(files, store)).toBe(2);
+    spy.mockRestore();
+    expect(froms()).toEqual(["mc00003", "md00004"]);
+    expect(warn.mock.calls.map((c) => String(c[0]))).toEqual(
+      expect.arrayContaining([
+        "Memory: an old note (ma00001) is for a project ion can't name (Old Shop); left as it was",
+        "Memory: an old note (mb00002) couldn't move to a file (disk full); trying again next start",
+      ]),
+    );
+    const [moved] = memoryView.search(db, { scopes: ["you"], see: ["ions"] });
+    expect(moved).toMatchObject({ description: "First line  here", name: "First line here more" });
+    expect(memoryView.search(db, { scopes: [{ projectId: "shop" }], see: ["chats"] })[0]).toMatchObject({
+      by: { ion: "chief" },
+    });
+    // The next start: the daemon opens its memory (the bad note doesn't stop it), and the one that broke moves.
+    expect(() => openMemory(dir, store, db)).not.toThrow();
+    expect(froms()).toEqual(["mb00002", "mc00003", "md00004"]);
+    warn.mockRestore();
   });
 });

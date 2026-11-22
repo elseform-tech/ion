@@ -195,10 +195,7 @@ function memoryTools(server: McpServer, ion: Ion): void {
       inputSchema: { projectId: z.string().optional() },
     },
     guard(({ projectId }: { projectId?: string }) => {
-      const mine = new Set(idsOf(ion, projectId));
-      return memoryData(
-        d.memory.list(null, ["chats", "ions"]).filter((m) => m.scope === "you" || mine.has(m.scope)),
-      );
+      return memoryData(d.memory.list(idsOf(ion, projectId), ["chats", "ions"]));
     }),
   );
   const chief = scope.ionId === "chief";

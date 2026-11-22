@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EV } from "@ion/schema";
@@ -7,7 +16,7 @@ import { UserError } from "../api/errors.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { memoryView } from "../views/memory.js";
-import { MemoryFiles } from "./index.js";
+import { MemoryFiles, openMemory } from "./index.js";
 
 let dir: string;
 let root: string;
@@ -28,6 +37,18 @@ const likes = { name: "Short answers", description: "How I like replies", type: 
 const memoryEvents = () => store.read({ types: [EV.memoryWritten, EV.memoryForgotten] });
 
 describe("memory files", () => {
+  // Task review, 2026-11-22: a file ion can't place is said in one line, and only you can open the folder.
+  it("says which file is badly named, and keeps the folder yours", () => {
+    mkdirSync(join(root, "projects", "shop"), { recursive: true, mode: 0o755 });
+    chmodSync(root, 0o755);
+    chmodSync(join(root, "projects"), 0o755);
+    writeFileSync(join(root, "projects", "shop", "My Note.md"), "---\nname: x\ndescription: y\n---\nz\n");
+    const opened = openMemory(dir, store, db);
+    expect(opened.problems()).toEqual(["shop/My Note.md: name must be lowercase-with-dashes.md"]);
+    expect(statSync(root).mode & 0o777).toBe(0o700);
+    expect(statSync(join(root, "projects")).mode & 0o777).toBe(0o700);
+  });
+
   // The user, 2026-11-21: "repurpose memory into multiple memory files": a YAML header, then the text.
   it("a file is parsed into its header and text", () => {
     mkdirSync(join(root, "projects", "shop"), { recursive: true });
@@ -77,6 +98,9 @@ describe("memory files", () => {
       "---\ndescription: no name\n---\ntext",
       "---\nname: x\ndescription: y\ntype: secret\n---\ntext",
       "---\nname: x\ndescription: y\n",
+      // Task review, 2026-11-22: plain scalars only, or quoted on one line; no block or multi-line values.
+      "---\nname: x\ndescription: |\n  y\n---\ntext",
+      '---\nname: x\ndescription: "y\n  z"\n---\ntext',
     ];
     for (const raw of broken) {
       writeFileSync(join(root, good.path), raw);
@@ -125,7 +149,9 @@ describe("memory files", () => {
       UserError,
     );
     files.reindex();
-    expect(memoryView.search(db, { scopes: ["you", "evil"], see: ["chats", "ions"] })).toEqual([]);
+    expect(memoryView.search(db, { scopes: ["you", { projectId: "evil" }], see: ["chats", "ions"] })).toEqual(
+      [],
+    );
   });
 
   // Plan 19, Review Focus 1: you edit a file while a chat writes to it; ion writes only if it's unchanged.

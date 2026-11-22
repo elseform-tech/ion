@@ -46,6 +46,17 @@ describe("loadUserConfig", () => {
     expect(r.config).toEqual(DEFAULT_CONFIG);
     expect(r.error).toBe("config.toml: ion.deepEffort must be one of low, medium, high, max");
   });
+  // Task review, 2026-11-22: a project called "you" or "chief" collides with your memory and ion chief.
+  it("leaves out a project called you or chief, and says so", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(
+      f,
+      '[[projects]]\nid = "you"\npath = "/p/you"\n\n[[projects]]\nid = "shop"\npath = "/p/shop"\n',
+    );
+    const r = loadUserConfig(f);
+    expect(r.config.projects.map((p) => p.id)).toEqual(["shop"]);
+    expect(r.warning).toBe("config.toml: a project can't be called you; rename it (it's left out)");
+  });
   it("returns defaults and an error for broken TOML", () => {
     const f = join(tmp(), "config.toml");
     writeFileSync(f, "[ion\n");

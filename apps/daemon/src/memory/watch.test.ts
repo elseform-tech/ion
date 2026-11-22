@@ -49,7 +49,7 @@ describe("watching the memory folder", () => {
       "---\nname: Deploys\ndescription: How we ship now\ntype: fact\n---\nMondays, via CI\n",
     );
     await until(() => memoryView.get(db, w.path)?.description === "How we ship now");
-    const scopes = { scopes: ["shop"], see: ["chats" as const] };
+    const scopes = { scopes: [{ projectId: "shop" }], see: ["chats" as const] };
     expect(memoryView.search(db, { ...scopes, q: "CI" }).map((r) => r.path)).toEqual([w.path]);
     const events = store.read({ types: [EV.memoryWritten] });
     expect(events).toHaveLength(2);

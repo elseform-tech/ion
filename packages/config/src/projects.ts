@@ -7,7 +7,7 @@ export const DEFAULT_PROJECT = "default";
 
 /** Why a project name can't be used, or null when it can. */
 export function projectNameError(name: string): string | null {
-  if (name === ION_CHIEF) return "That name is ion's own";
+  if (RESERVED_IDS.includes(name)) return "That name is ion's own";
   return /^[a-z0-9][a-z0-9._-]{0,63}$/.test(name) ? null : "Use lowercase letters, numbers, - . _";
 }
 
@@ -25,8 +25,11 @@ export function projectIdOf(name: string): string {
   return id.slice(0, 64);
 }
 
-/** ion chief's own id: no project takes it (its chat is "ion:chief"). */
-const ION_CHIEF = "chief";
+/**
+ * Ids no project takes: ion chief's ("ion:chief" is its chat), and "you", your own memory's scope (task review,
+ * 2026-11-22: a project called you shared it).
+ */
+export const RESERVED_IDS = ["chief", "you"];
 
 /** Returns a new config with the git repo at `path` added. Throws a user-facing message otherwise. */
 export function addProject(c: UserConfig, path: string): UserConfig {
@@ -35,7 +38,7 @@ export function addProject(c: UserConfig, path: string): UserConfig {
   const dup = c.projects.find((p) => p.path === abs);
   if (dup) throw new Error(`Already added: ${dup.id}`);
   const base = basename(abs);
-  const taken = new Set([ION_CHIEF, ...c.projects.map((p) => p.id)]);
+  const taken = new Set([...RESERVED_IDS, ...c.projects.map((p) => p.id)]);
   let id = base;
   let n = 1;
   while (taken.has(id)) id = `${base}-${++n}`;

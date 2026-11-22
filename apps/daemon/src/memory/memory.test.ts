@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { UserError } from "../api/errors.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
+import { memoryView } from "../views/memory.js";
 import { MemoryFiles } from "./index.js";
 
 let dir: string;
@@ -50,6 +51,36 @@ describe("memory", () => {
     expect(() => memory.forget("you/nope.md", "you")).toThrow(new UserError("Unknown memory: you/nope.md"));
     // CLI test, 2026-11-22: `ion memory forget nope` said "Not a memory file" instead.
     expect(() => memory.forget("nope", "you")).toThrow(new UserError("Unknown memory: nope"));
+  });
+
+  // Task review, 2026-11-22: a project with id "you" shared your scope: its files reached every chat, and removing
+  // it forgot your own files.
+  it("keeps a project called you apart from your own files", () => {
+    memory.note("you", "Mine", "you");
+    memory.note({ projectId: "you" }, "Theirs", "you");
+    memory.note({ projectId: "app" }, "App's", "you");
+    const both = ["chats", "ions"] as const;
+    expect(memory.list("app", [...both]).map((m) => m.text)).toEqual(["Mine", "App's"]);
+    expect(memory.list(["app"], [...both]).map((m) => m.text)).toEqual(["Mine", "App's"]);
+    expect(memory.list("you", [...both]).map((m) => m.text)).toEqual(["Mine", "Theirs"]);
+    const scopes = [{ projectId: "app" }, "you" as const];
+    expect(memoryView.search(db, { scopes, see: [...both] }).map((r) => r.path)).not.toContain(
+      "projects/you/theirs.md",
+    );
+    expect(memoryView.search(db, { scopes: [{ projectId: "you" }], see: [...both] })).toMatchObject([
+      { path: "projects/you/theirs.md", scope: { projectId: "you" } },
+    ]);
+    memory.forgetProject("you", "you");
+    expect(memory.list(null, [...both]).map((m) => m.text)).toEqual(["Mine", "App's"]);
+  });
+
+  // Task review, 2026-11-22: Task 2's tools forget a file only as it was read.
+  it("forgets a file only as it was read, when asked to", () => {
+    const path = memory.note("you", "x", "you");
+    expect(() => memory.forget(path, "you", "stale")).toThrow(new UserError("Changed since you read it"));
+    const r = memory.read(path);
+    memory.forget(path, "you", r.ok ? r.file.hash : "");
+    expect(memory.list(null, ["chats", "ions"])).toEqual([]);
   });
 
   it("refuses an empty memory", () => {
