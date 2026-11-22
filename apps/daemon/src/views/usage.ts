@@ -8,6 +8,8 @@ export type AgentUsageRow = {
   week: { tokens: number; costUsd: number };
   windows: UsageWindow[];
   limitedUntil: string | null;
+  /** The models it ran in the last 7 days (how it bills follows them). */
+  models: string[];
   /** The limit didn't say when it resets: limitedUntil is ion's guess (it may be free sooner; trying tells). */
   limitGuessed?: true;
 };
@@ -29,13 +31,10 @@ const harnessOf = (db: Db, runId: string): string | null =>
 function reported(db: Db, e: IonEvent, harness: string, d: Data): void {
   const tokens = Number(d.inputTokens ?? 0) + Number(d.outputTokens ?? 0);
   const cost = typeof d.costUsd === "number" ? d.costUsd : 0;
-  db.prepare("INSERT INTO view_usage (run_id, harness, at, tokens, cost) VALUES (?, ?, ?, ?, ?)").run(
-    e.runId,
-    harness,
-    e.ts,
-    tokens,
-    cost,
-  );
+  const model = typeof d.model === "string" ? d.model : null;
+  db.prepare(
+    "INSERT INTO view_usage (run_id, harness, at, tokens, cost, model) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(e.runId, harness, e.ts, tokens, cost, model);
   // Its windows as this run reported them: none (it stopped reporting) clears the last ones, never keeps them.
   db.prepare(
     `INSERT INTO view_usage_agents (harness, windows) VALUES (?, ?)
@@ -98,10 +97,17 @@ function agents(db: Db, now: Date): Record<string, AgentUsageRow> {
       week: { tokens: 0, costUsd: 0 },
       windows: [],
       limitedUntil: null,
+      models: [],
     });
   for (const s of sums(db, new Date(now.getTime() - WEEK_MS).toISOString()))
     row(s.harness).week = { tokens: s.tokens, costUsd: money(s.cost) };
   for (const s of sums(db, midnight)) row(s.harness).today = { tokens: s.tokens, costUsd: money(s.cost) };
+  const ran = db
+    .prepare(
+      "SELECT DISTINCT harness, model FROM view_usage WHERE at >= ? AND model IS NOT NULL ORDER BY harness, model",
+    )
+    .all(new Date(now.getTime() - WEEK_MS).toISOString()) as { harness: string; model: string }[];
+  for (const r of ran) row(r.harness).models.push(r.model);
   const marks = db
     .prepare("SELECT harness, windows, limited_until AS until, guessed FROM view_usage_agents")
     .all() as { harness: string; windows: string | null; until: string | null; guessed: number | null }[];
@@ -143,12 +149,12 @@ export const recordTo =
 /** Each agent's usage ledger (tokens, cost, windows) and its limit, from its runs' events. */
 export const usageView: View & { agents(db: Db, now: Date): Record<string, AgentUsageRow> } = {
   name: "usage",
-  // 2: a limit's mark says whether its reset was guessed.
-  version: 2,
+  // 2: a limit's mark says whether its reset was guessed. 3: each usage row's model.
+  version: 3,
   tables: ["view_usage", "view_usage_agents"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_usage (
-      run_id TEXT, harness TEXT NOT NULL, at TEXT NOT NULL, tokens INTEGER NOT NULL, cost REAL NOT NULL)`);
+      run_id TEXT, harness TEXT NOT NULL, at TEXT NOT NULL, tokens INTEGER NOT NULL, cost REAL NOT NULL, model TEXT)`);
     db.exec("CREATE INDEX IF NOT EXISTS view_usage_at ON view_usage (at)");
     db.exec(`CREATE TABLE IF NOT EXISTS view_usage_agents (
       harness TEXT PRIMARY KEY, windows TEXT, limited_until TEXT, limited_at TEXT, guessed INTEGER)`);

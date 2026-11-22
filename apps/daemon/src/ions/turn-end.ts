@@ -1,6 +1,7 @@
 import type { AdapterEvent, Session } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
-import { cleanWhy } from "./fallback.js";
+import { cleanWhy, type IonLine, NO_AGENT, STOPPED, TOO_LONG } from "./fallback.js";
+import { forgetSession, type Kept, keepSession } from "./sessions.js";
 
 /**
  * How a turn's session ended: its last message, its native id, whether it ran past its limit, and `stuck`: it
@@ -53,4 +54,33 @@ export function note(e: AdapterEvent, end: Ended): void {
   if (e.type === EV.messageCompleted) end.last = String((e.data as { text?: unknown }).text ?? "");
   const id = e.type === EV.runStarted ? (e.data as { sessionId?: unknown }).sessionId : undefined;
   if (typeof id === "string" && id) end.nativeId = id;
+}
+
+/** A turn's reply, and whether it's ion's own line (no agent, too long, stopped, a dream skipped). */
+export type Said = { reply: string; ionLine?: IonLine };
+
+/** ion's line for a turn that found no agent. */
+export const NONE = { reply: NO_AGENT, ionLine: "no-agent" as const };
+
+type SessionDeps = Parameters<typeof forgetSession>[0];
+
+/** A turn's reply from how its session ended; its session kept for the next turn, or forgotten when broken. */
+export function settle(d: SessionDeps, ionId: string, kept: Omit<Kept, "nativeId">, end: Ended): Said {
+  const keep = () => end.nativeId && keepSession(d, ionId, { ...kept, nativeId: end.nativeId });
+  // You stopped it: its session kept if it closed (resuming it is fine), else forgotten.
+  if (end.stopped) {
+    if (end.stuck) forgetSession(d, ionId);
+    else keep();
+    return { reply: STOPPED, ionLine: "stopped" };
+  }
+  const last = end.last.trim();
+  let said: Said = { reply: last };
+  if (end.late) said = { reply: TOO_LONG, ionLine: "late" };
+  else if (!last) said = NONE;
+  // A session that failed or said nothing is forgotten: resuming it would likely fail again (its context too long).
+  // One that didn't close is too: the agent may still hold it, and two sessions would resume one id.
+  const broken = end.stuck || (!end.late && (end.failed || !last));
+  if (broken) forgetSession(d, ionId);
+  else keep();
+  return said;
 }

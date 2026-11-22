@@ -479,23 +479,24 @@ describe("a thread's end", () => {
     expect(said("chief")).toEqual([]);
   });
 
-  it.each([NO_AGENT, TOO_LONG])(
-    "without an agent, the report is the agent's own reply (%s)",
-    async (reply) => {
-      const i = ions();
-      await started(i, "storefront");
-      turn.mockResolvedValueOnce({ reply, threads: [] });
-      end("done", "Fixed the cart total.");
-      await vi.waitFor(() => expect(last()).toEqual({ text: "Fixed the cart total." }));
-    },
-  );
+  // ion marks its own lines (security scan, 2026-11-22): the report goes by the mark, not the words.
+  it.each([
+    [NO_AGENT, "no-agent"],
+    [TOO_LONG, "late"],
+  ] as const)("without an agent, the report is the agent's own reply (%s)", async (reply, ionLine) => {
+    const i = ions();
+    await started(i, "storefront");
+    turn.mockResolvedValueOnce({ reply, ionLine, threads: [] });
+    end("done", "Fixed the cart total.");
+    await vi.waitFor(() => expect(last()).toEqual({ text: "Fixed the cart total." }));
+  });
 
   // Final review, 2026-11-19: a report turn that was stopped replaced the thread's report with "Stopped.". It's
   // the agent's own reply instead.
   it("a stopped report is the agent's own reply", async () => {
     const i = ions();
     await started(i, "storefront");
-    turn.mockResolvedValueOnce({ reply: STOPPED, threads: [] });
+    turn.mockResolvedValueOnce({ reply: STOPPED, ionLine: "stopped", threads: [] });
     end("done", "Fixed the cart total.");
     await vi.waitFor(() => expect(last()).toEqual({ text: "Fixed the cart total." }));
   });

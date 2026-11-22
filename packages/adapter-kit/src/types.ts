@@ -166,6 +166,11 @@ export interface HarnessAdapter {
    * (Codex); "ion", ion's wrapper around its process (the rest). Absent: never (the fake agent starts no process).
    */
   sandbox?: "own" | "ion";
+  /**
+   * How it bills for these models (null: its default), asked of the agent itself (opencode: its own price list);
+   * undefined when it can't tell. Absent: its sign-in says (`auth.status`).
+   */
+  billingOf?(models: (string | null)[]): Promise<Billing | undefined>;
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

@@ -50,7 +50,7 @@ import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
 import { missesOf } from "../access/misses.js";
 import { readAgentRules, ruleCount } from "../access/agent-rules.js";
 import { usageView } from "../views/usage.js";
-import { agentUsages } from "./usage.js";
+import { agentUsages, billings, configuredModels } from "./usage.js";
 import type { Handoffs } from "../runs/limit-handoff.js";
 
 export { UserError } from "./errors.js";
@@ -152,7 +152,11 @@ export const handlers: Handlers = {
     // A fresh daemon's agents are still being read: a few seconds for them, never longer (review, 2026-11-22).
     const known = await harnessInfos.settled(USAGE_WAIT_MS);
     const infos = known.filter((h) => listed.includes(h.id) && h.installed && h.signedIn);
-    return agentUsages(infos, usageView.agents(ctx.db, new Date()));
+    const rows = usageView.agents(ctx.db, new Date());
+    const c = loadUserConfig(ctx.configFile).config;
+    const ran = Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, r.models]));
+    const agents = infos.map((h) => getHarness(h.id)?.adapter).filter((a) => !!a);
+    return agentUsages(infos, rows, await billings(agents, ran, (h) => configuredModels(c, h)));
   },
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {

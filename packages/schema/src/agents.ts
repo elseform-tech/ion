@@ -81,13 +81,16 @@ function noGauge(u: AgentUsage): string {
 
 /**
  * One agent's usage in a few words, the same in Settings → Agents and `ion status`: "62% of 5 h · resets 14:20",
- * "limited until 16:00", "Free", "Learned from errors"; this week's cost too for an agent paid per token.
+ * "limited until 16:00", "Free", "Learned from errors"; this week's cost too for an agent paid per token, or one whose
+ * billing ion can't tell but that reported a cost.
  */
 export function usageLine(
   u: AgentUsage,
   now: Date,
 ): { text: string; percent: number | null; limited: boolean } {
-  const cost = u.billing === "api" && u.week.costUsd > 0 ? `this week $${u.week.costUsd.toFixed(2)}` : "";
+  // Paid per token, or billing unknown with a cost the agent reported (a paid opencode model): this week's cost.
+  const paid = u.billing === "api" || u.billing === null;
+  const cost = paid && u.week.costUsd > 0 ? `this week $${u.week.costUsd.toFixed(2)}` : "";
   const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
   if (u.limitedUntil && Date.parse(u.limitedUntil) > now.getTime())
     return {

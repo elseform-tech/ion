@@ -68,9 +68,11 @@ names, units and the kind of sign-in.
   ACP version has it. No windows.
 - **Billing:** `opencode models <provider> --verbose` lists each model with `cost.input` and `cost.output` (per million
   tokens). Zen's free models (`opencode/big-pickle`, `opencode/*-free`) are priced at 0; OpenCode Go's and provider
-  models list a price. ion asks it for the model it runs (`opencode/big-pickle` unless picked): `free` at 0/0, else
-  unknown (a Go plan and a provider key both list a price, and ion can't tell which bills), shown as "Learned from
-  errors", never as free.
+  models list a price. ion asks it about the models it really ran on opencode this week (each run's `model`), else the
+  ones ion is set to run there (its default `opencode/big-pickle`, ion's quick/deep/judge models and projects' on
+  opencode): `free` only when every one is priced 0/0, else unknown (a Go plan and a provider key both list a price,
+  and ion can't tell which bills), shown as "Learned from errors" with this week's cost when opencode reported one,
+  never as free.
 - **Limit as an error:** when opencode's prompt fails with "… usage limit reached" (its own wording above), the
   turn's error is the limit (`usage_limit`, no reset), not a retried rate limit; a bare 429 is still a rate limit.
 

@@ -10,8 +10,7 @@ import {
   runDream,
   servedPeriods,
 } from "../memory/dream.js";
-import { DREAM_SKIPPED } from "../ions/dream.js";
-import { type IonTurns, noAgent, TOO_LONG } from "../ions/turn.js";
+import { type IonTurns, noAgent } from "../ions/turn.js";
 
 /** How often ion looks whether it's time to dream. */
 const LOOK_MS = 60_000;
@@ -55,10 +54,12 @@ export class Dreams {
 /** A dream's turn as one of ion's turns: memory's tools only, no threads; how it ended, from its reply. */
 export function dreamThink(turns: Pick<IonTurns, "turn">): DreamDeps["think"] {
   return async (prompt, dream) => {
-    const { reply } = await turns.turn(DREAM_ION, prompt, { noThreads: true, dream });
+    const r = await turns.turn(DREAM_ION, prompt, { noThreads: true, dream });
+    const { reply } = r;
+    // ion's own mark says how it ended (security scan, 2026-11-22: never the reply's words).
     let status: DreamTurn["status"] = "done";
-    if (reply === TOO_LONG) status = "late";
-    else if (noAgent(reply) || reply.startsWith(DREAM_SKIPPED)) status = "failed";
+    if (r.ionLine === "late") status = "late";
+    else if (noAgent(r) || r.ionLine === "skipped") status = "failed";
     return { reply, status };
   };
 }

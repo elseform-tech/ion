@@ -1,6 +1,6 @@
 import type { HarnessInfo } from "@ion/schema";
 import { describe, expect, it } from "vitest";
-import { agentUsages } from "./usage.js";
+import { agentUsages, billings } from "./usage.js";
 
 const info = (id: string, more: Partial<HarnessInfo> = {}): HarnessInfo => ({
   id,
@@ -42,5 +42,31 @@ describe("agentUsages", () => {
       windows: [],
       limitedUntil: null,
     });
+  });
+});
+
+// Re-review, 2026-11-22: opencode showed Free from ion's default model, even after ion ran a paid opencode model
+// (its quick model, a project's, a chat's). How it bills comes from the models it really ran this week, else the ones
+// ion is set to run on it (null: its default), asked of the agent itself.
+describe("billings", () => {
+  const priced = async (models: (string | null)[]) =>
+    models.every((m) => m === null || m.endsWith("-free")) ? ("free" as const) : undefined;
+  const opencode = { id: "opencode", billingOf: priced };
+  it("a paid model over a free default isn't Free", async () => {
+    expect(await billings([opencode], { opencode: ["opencode/x-free"] }, () => [null])).toEqual({
+      opencode: "free",
+    });
+    expect(
+      await billings([opencode], { opencode: ["opencode/x-free", "opencode-go/paid"] }, () => [null]),
+    ).toEqual({
+      opencode: null,
+    });
+  });
+  it("with nothing run, the models ion is set to run on it", async () => {
+    expect(await billings([opencode], {}, () => [null, "opencode-go/paid"])).toEqual({ opencode: null });
+    expect(await billings([opencode], {}, () => [null])).toEqual({ opencode: "free" });
+  });
+  it("an agent that can't say keeps its sign-in's", async () => {
+    expect(await billings([{ id: "codex" }], {}, () => [null])).toEqual({});
   });
 });

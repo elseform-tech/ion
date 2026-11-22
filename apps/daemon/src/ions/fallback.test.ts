@@ -79,11 +79,23 @@ describe("all agents limited", () => {
   });
 });
 
-// Live check, 2026-11-22: "Codex is limited until 00:34" is a turn that found no agent: a dream counts it failed, a
-// thread's report falls back to its plain line. A reply that only mentions a limit in its note is an answer.
-describe("a limited reply is no agent", () => {
-  it("is told from an answer", () => {
-    expect(noAgent("Codex is limited until Mon 00:34")).toBe(true);
-    expect(noAgent("Done.\n\n*On Grok Build — Claude Code is limited until 16:00.*")).toBe(false);
+// Security scan, 2026-11-22: whether a turn found no agent is ion's own mark on it, never read from its words.
+describe("no agent is ion's mark, not the reply's words", () => {
+  it("is told from an answer by the mark alone", () => {
+    expect(noAgent({ reply: "Codex is limited until Mon 00:34" })).toBe(false);
+    expect(noAgent({ reply: "I couldn't reach my agent: x" })).toBe(false);
+    expect(noAgent({ reply: "anything", ionLine: "no-agent" })).toBe(true);
+  });
+
+  it("a turn whose agents all failed is marked", async () => {
+    const r = await onReadyAgents(
+      { harness: "claude-code", model: null, effort: null },
+      {
+        once: async () => ({ reply: "", failed: { why: "nope", did: false } }),
+        next: async () => null,
+        stay: () => false,
+      },
+    );
+    expect(r).toMatchObject({ reply: "I couldn't reach my agent: nope", ionLine: "no-agent" });
   });
 });

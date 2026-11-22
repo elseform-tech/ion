@@ -131,4 +131,14 @@ describe("usageView", () => {
     });
     expect(agent("grok-build")?.limitedUntil).toBeNull();
   });
+
+  // Re-review, 2026-11-22: how an agent bills follows the models it really ran this week.
+  it("keeps the models each agent ran this week", () => {
+    start("r1", "opencode");
+    append("r1", "usage.reported", { model: "opencode/big-pickle", inputTokens: 1, outputTokens: 1 });
+    start("r2", "opencode");
+    append("r2", "usage.reported", { model: "opencode-go/glm-5.3", inputTokens: 1, outputTokens: 1 });
+    append("r2", "usage.reported", { model: "opencode-go/glm-5.3", inputTokens: 1, outputTokens: 1 });
+    expect(agent("opencode")?.models).toEqual(["opencode-go/glm-5.3", "opencode/big-pickle"]);
+  });
 });

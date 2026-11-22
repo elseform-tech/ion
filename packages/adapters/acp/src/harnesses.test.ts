@@ -12,7 +12,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OPENCODE_PLUGIN } from "./gate.js";
-import { GROK_BUILD, OPENCODE, opencodeBilling, opencodeFailure, opencodeGiveUp } from "./harnesses.js";
+import {
+  GROK_BUILD,
+  OPENCODE,
+  opencodeBilling,
+  opencodeFailure,
+  opencodeGiveUp,
+  opencodeModelsBilling,
+} from "./harnesses.js";
 
 // Regression (final review I8): a repo's opencode.json could set permissions back to "allow".
 describe("opencode environment", () => {
@@ -573,5 +580,14 @@ describe("billing comes from the sign-in", () => {
     expect(opencodeBilling("not json", "opencode/big-pickle")).toBeUndefined();
     expect(OPENCODE.billing).toBeUndefined();
     expect(OPENCODE.billingOf).toBeTypeOf("function");
+  });
+
+  // Re-review, 2026-11-22: "Free" followed ion's default model only; a paid model ion ran (its quick model, a project's,
+  // a chat's) still showed Free. Free only when every model it ran is free-priced.
+  it("a paid model over a free default isn't Free", async () => {
+    const ask = async () => listing;
+    expect(await opencodeModelsBilling(["opencode/big-pickle"], ask)).toBe("free");
+    expect(await opencodeModelsBilling(["opencode/big-pickle", "opencode-go/glm-5.3"], ask)).toBeUndefined();
+    expect(await opencodeModelsBilling([], ask)).toBeUndefined();
   });
 });

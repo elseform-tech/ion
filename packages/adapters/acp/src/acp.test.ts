@@ -478,17 +478,20 @@ describe("acp adapter", () => {
       await createAcpAdapter({ ...fake, billing: "free" }, { which: () => process.execPath }).auth.status(),
     ).toEqual({ signedIn: true, method: "Signed in", billing: "free" });
     expect(await make().auth.status()).not.toHaveProperty("billing");
-    // A harness that asks its agent (opencode: what its model costs) goes by that answer.
+    // A harness that asks its agent how the models ion ran bill (opencode: their price) is asked with them; a model
+    // not named is the agent's default (re-review, 2026-11-22).
+    const seen: string[][] = [];
+    const billingOf = async (_bin: string, models: string[]) => {
+      seen.push(models);
+      return models.includes("paid") ? undefined : ("free" as const);
+    };
     const asked = createAcpAdapter(
-      { ...fake, billingOf: async () => "free" },
+      { ...fake, defaultModel: "free-1", billingOf },
       { which: () => process.execPath },
     );
-    expect(await asked.auth.status()).toMatchObject({ billing: "free" });
-    const unknown = createAcpAdapter(
-      { ...fake, billingOf: async () => undefined },
-      { which: () => process.execPath },
-    );
-    expect(await unknown.auth.status()).not.toHaveProperty("billing");
+    expect(await asked.billingOf?.([null])).toBe("free");
+    expect(await asked.billingOf?.([null, "paid"])).toBeUndefined();
+    expect(seen).toEqual([["free-1"], ["free-1", "paid"]]);
   });
 
   // Re-review, 2026-11-21: a long tool run, or ion holding a call for your answer through its gate (not only a

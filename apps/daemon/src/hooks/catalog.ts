@@ -33,7 +33,8 @@ const field = (e: IonEvent, k: string): unknown => (e.data as Record<string, unk
 const chatRun =
   (of: Of): Of =>
   (e) =>
-    e.chatId?.startsWith("ion:") ? null : of(e);
+    // Only a chat's run: an ion's turn ("ion:…") or one kept off any chat (its agent's usage) isn't.
+    !e.chatId || e.chatId.startsWith("ion:") ? null : of(e);
 
 /** Each stored event a hook can run on, and what it is to your hooks (null: not this one). */
 const OF: Partial<Record<string, Of>> = {

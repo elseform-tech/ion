@@ -7,16 +7,19 @@ export const NO_AGENT = "I couldn't reach my agent; try again.";
 /** NO_AGENT with the agent's own reason, when it gave one. */
 const NO_AGENT_WHY = "I couldn't reach my agent: ";
 /** The turn found no agent, or its agents failed (with or without their reason). */
-export const noAgent = (reply: string): boolean =>
-  reply === NO_AGENT || reply.startsWith(NO_AGENT_WHY) || LIMITED.test(reply);
+/**
+ * A turn's reply that is ion's own line, not its agent's words: it found no agent (or its agents failed), ran past its
+ * limit, you stopped it, or a dream was skipped. Only ion sets it (security scan, 2026-11-22: it was read from the reply's words, so a model
+ * could word an answer as ion's).
+ */
+export type IonLine = "no-agent" | "late" | "stopped" | "skipped";
+/** The turn found no agent, or its agents failed (with or without their reason): ion's mark, never its words. */
+export const noAgent = (r: { ionLine?: IonLine }): boolean => r.ionLine === "no-agent";
 /** Every ready agent is limited: which frees up first ("Claude Code is limited until 16:00"), the whole reply. */
 export const limitedLine = (label: string, clock: string): string => `${label} is limited until ${clock}`;
-const LIMITED = /^[^\n*]+ is limited until [^\n*]+$/;
 export const TOO_LONG = "I couldn't finish that in time.";
 /** What an ion says when you stopped its turn (Esc twice). */
 export const STOPPED = "Stopped.";
-/** Replies that end a turn without the agent's own words. */
-const ENDS: ReadonlySet<string> = new Set([NO_AGENT, TOO_LONG, STOPPED]);
 
 /**
  * A turn's reply and what came with it; `failed` when its agent said nothing (why: its own words, when it said;
@@ -56,8 +59,13 @@ function onOther(reply: string, harness: string, passed: string[], l: Limits): s
 }
 
 /** A reply from this agent, with that line when others failed or were passed over before it. */
-function answered<R extends { reply: string }>(r: R, harness: string, passed: string[], l: Limits): R {
-  return passed.length && !ENDS.has(r.reply) ? { ...r, reply: onOther(r.reply, harness, passed, l) } : r;
+function answered<R extends { reply: string; ionLine?: IonLine }>(
+  r: R,
+  harness: string,
+  passed: string[],
+  l: Limits,
+): R {
+  return passed.length && !r.ionLine ? { ...r, reply: onOther(r.reply, harness, passed, l) } : r;
 }
 
 const HIDDEN = "•••";
@@ -92,7 +100,7 @@ export const errLine = (e: unknown): string =>
  * (it started threads, ion is stopping, a dream), and its reply says so in one line (Plan 19's checks, 2026-11-22: a
  * project's ion failed on its agent and said only "I couldn't reach my agent").
  */
-export async function onReadyAgents<R extends { reply: string }>(
+export async function onReadyAgents<R extends { reply: string; ionLine?: IonLine }>(
   first: IonBrain,
   o: {
     once: (b: IonBrain) => Promise<Tried<R>>;
@@ -111,7 +119,10 @@ export async function onReadyAgents<R extends { reply: string }>(
     if (!f) return answered(r, brain.harness, passed, o);
     failed.push({ harness: brain.harness, why: f.why });
     const next = f.did || o.stay(r) ? null : await o.next(failed.map((x) => x.harness)).catch(() => null);
-    if (!next) return { ...r, reply: (await o.none?.().catch(() => null)) ?? couldNot(failed) };
+    if (!next) {
+      const reply = (await o.none?.().catch(() => null)) ?? couldNot(failed);
+      return { ...r, reply, ionLine: "no-agent" };
+    }
     brain = next;
   }
 }

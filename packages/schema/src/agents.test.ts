@@ -96,6 +96,16 @@ describe("usageLine", () => {
     expect(usageLine(usage({ windows }), local(12)).text).toBe("0% of 5 h · resets 14:20");
   });
 
+  // Re-review, 2026-11-22: an agent whose billing isn't known (a paid opencode model) says this week's cost when the
+  // agent reported one; a subscription's notional cost isn't shown.
+  it("unknown billing with a reported cost says it", () => {
+    const week = { tokens: 9000, costUsd: 0.4 };
+    expect(usageLine(usage({ billing: null, week }), local(12)).text).toBe(
+      "Learned from errors · this week $0.40",
+    );
+    expect(usageLine(usage({ billing: "subscription", week }), local(12)).text).toBe("Learned from errors");
+  });
+
   it("a reset on another day says the day", () => {
     const windows = [{ name: "week", usedPercent: 81, resetsAt: local(9, 5, 25).toISOString() }];
     expect(usageLine(usage({ windows }), local(12)).text).toBe("81% of week · resets Wed 09:05");

@@ -88,8 +88,8 @@ export type AcpHarness = {
   forgetArgs?: (sessionId: string) => string[];
   /** How its sign-in bills, when ion knows (docs/research/usage-signals.md); absent: unknown, never free. */
   billing?: Billing;
-  /** Asks the agent how the model ion runs on it bills (opencode: its own price for it); undefined: unknown. */
-  billingOf?: (bin: string) => Promise<Billing | undefined>;
+  /** Asks the agent how these models bill (opencode: its own price for each); undefined: unknown. */
+  billingOf?: (bin: string, models: string[]) => Promise<Billing | undefined>;
 };
 
 /** Grok's folder: `$GROK_HOME`, else `~/.grok`. */
@@ -265,15 +265,39 @@ export function opencodeBilling(listing: string, model: string): Billing | undef
   }
 }
 
-/** Asks opencode how `model` bills (its own listing); undefined when it doesn't say in 10 s. */
-function opencodeModelBilling(bin: string, model: string): Promise<Billing | undefined> {
-  const provider = model.split("/")[0]!;
+/**
+ * How these models bill together: free only when opencode prices every one at 0 (re-review, 2026-11-22: a paid model
+ * ion ran beside a free default isn't free); undefined otherwise, or with none.
+ */
+export async function opencodeModelsBilling(
+  models: string[],
+  listing: (provider: string) => Promise<string>,
+): Promise<Billing | undefined> {
+  const distinct = [...new Set(models)];
+  if (!distinct.length) return undefined;
+  const lists = new Map<string, Promise<string>>();
+  for (const m of distinct) {
+    const provider = m.split("/")[0]!;
+    if (!lists.has(provider))
+      lists.set(
+        provider,
+        listing(provider).catch(() => ""),
+      );
+  }
+  const each = await Promise.all(
+    distinct.map(async (m) => opencodeBilling(await lists.get(m.split("/")[0]!)!, m)),
+  );
+  return each.every((b) => b === "free") ? "free" : undefined;
+}
+
+/** A provider's models as opencode lists them (`opencode models <provider> --verbose`); "" when it doesn't say in 10 s. */
+function opencodeListing(bin: string, provider: string): Promise<string> {
   return new Promise((resolve) =>
     execFile(
       bin,
       ["models", provider, "--verbose"],
       { timeout: 10_000, env: agentEnv(), maxBuffer: 8 << 20 },
-      (e, out) => resolve(e ? undefined : opencodeBilling(String(out), model)),
+      (e, out) => resolve(e ? "" : String(out)),
     ),
   );
 }
@@ -321,7 +345,7 @@ export const OPENCODE: AcpHarness = {
   noWeb: ({ own }) => opencodeNoWeb(own),
   forgetArgs: (id) => ["session", "delete", id],
   // Free only when opencode prices the model ion runs at 0 (its Zen free models; review, 2026-11-22: not assumed).
-  billingOf: (bin) => opencodeModelBilling(bin, OPENCODE_MODEL),
+  billingOf: (bin, models) => opencodeModelsBilling(models, (provider) => opencodeListing(bin, provider)),
 };
 
 /**
