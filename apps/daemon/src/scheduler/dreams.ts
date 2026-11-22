@@ -11,7 +11,7 @@ import {
   servedPeriods,
 } from "../memory/dream.js";
 import { DREAM_SKIPPED } from "../ions/dream.js";
-import { type IonTurns, NO_AGENT, TOO_LONG } from "../ions/turn.js";
+import { type IonTurns, noAgent, TOO_LONG } from "../ions/turn.js";
 
 /** How often ion looks whether it's time to dream. */
 const LOOK_MS = 60_000;
@@ -58,7 +58,7 @@ export function dreamThink(turns: Pick<IonTurns, "turn">): DreamDeps["think"] {
     const { reply } = await turns.turn(DREAM_ION, prompt, { noThreads: true, dream });
     let status: DreamTurn["status"] = "done";
     if (reply === TOO_LONG) status = "late";
-    else if (reply === NO_AGENT || reply.startsWith(DREAM_SKIPPED)) status = "failed";
+    else if (noAgent(reply) || reply.startsWith(DREAM_SKIPPED)) status = "failed";
     return { reply, status };
   };
 }

@@ -7,7 +7,6 @@ import {
   type HarnessAdapter,
   ION_SERVER,
   projectRoots,
-  ResumeFailed,
   type Session,
   type StartOpts,
 } from "@ion/adapter-kit";
@@ -20,8 +19,9 @@ import { UserError } from "../api/errors.js";
 import type { GateAnswer } from "../gate/index.js";
 import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
-import { ionsView } from "../views/ions.js";
-import { type IonBrain, ionBrain } from "./brain.js";
+import { type IonBrain, ionBrain, nextBrain } from "./brain.js";
+import { forgetSession, type Kept, keepSession, resumeOf, startSession } from "./sessions.js";
+import { errLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, TOO_LONG, type Tried } from "./fallback.js";
 import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
 import { ionIndex, type MemoryFiles } from "../memory/index.js";
@@ -39,10 +39,7 @@ import type { Verdict } from "./web.js";
 const ION_TURN_MS = 300_000;
 /** What one turn may do at most: write memory, start threads (ion's tools and the ions both count). */
 export const PER_TURN = 5;
-export const NO_AGENT = "I couldn't reach my agent; try again.";
-export const TOO_LONG = "I couldn't finish that in time.";
-/** What an ion says when you stopped its turn (Esc twice). */
-export const STOPPED = "Stopped.";
+export { NO_AGENT, noAgent, STOPPED, TOO_LONG } from "./fallback.js";
 
 /** What of a turn's session is kept on the ion's chat, so the app can draw its work. */
 const KEPT: ReadonlySet<string> = new Set([EV.toolStarted, EV.toolFinished, EV.thinkingDelta]);
@@ -51,8 +48,6 @@ type Thread = { chatId: string; projectId: string };
 /** Skills and servers a thread starts with, by name ("/" and "@"; the user, 2026-11-21). */
 type Picks = { skills?: string[]; mentions?: string[] };
 type TurnRef = { ionId: string; turnId: string };
-/** An ion's session as kept between its turns: its agent, its native id, and the projects its tools saw. */
-type Kept = { harness: string; nativeId: string; projects: string[] };
 
 /**
  * Starts a thread for an ion's turn: its chat, or why it couldn't. `turn.request` is your own message (what the
@@ -250,33 +245,60 @@ export class IonTurns {
     }
   }
 
+  /**
+   * A turn on the ion's agent; one that fails before it says or starts anything goes on to the next ready agent (the
+   * order ion picks in), and its reply says so in one line (Plan 19's checks, 2026-11-22: a project's ion failed on
+   * its agent and said only "I couldn't reach my agent"). A dream keeps its own agent.
+   */
   private async think(ionId: string, text: string, o: Pick<Live, "request" | "dream">): Promise<TurnResult> {
-    const { request } = o;
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, threads: [] };
-    const h = brain && getHarness(brain.harness);
-    if (!brain || !h || this.stopping) return { reply: NO_AGENT, threads: [] };
+    if (!brain) return { reply: NO_AGENT, threads: [] };
+    const r = await onReadyAgents(brain, {
+      once: (b) => this.once(ionId, text, { ...o, cwd }, b),
+      next: (not) => nextBrain(this.d, ionId, not),
+      stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,
+    });
+    return o.dream && noAgent(r.reply) ? { ...r, reply: NO_AGENT } : r;
+  }
+
+  /** One try of a turn on this agent; `failed` when it said nothing (why: its agent's own words, when it said). */
+  private async once(
+    ionId: string,
+    text: string,
+    o: Pick<Live, "request" | "dream"> & { cwd: string },
+    brain: IonBrain,
+  ): Promise<Tried<TurnResult>> {
+    const { request, cwd } = o;
+    const h = getHarness(brain.harness);
+    if (!h || this.stopping) return { reply: NO_AGENT, threads: [] };
     // A dream never searches the web (task review, 2026-11-22): on an agent that can't turn its web off, none.
     if (o.dream && !h.adapter.noWeb)
       return { reply: `${DREAM_SKIPPED} ${h.label} can't turn its web off`, threads: [] };
     const turnId = `turn_${randomUUID()}`;
     const rules = this.rulesFor(cwd);
     // Only your own words seed what it may read: a report's prompt is an agent's.
-    const live: Live = { ionId, ...o, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
+    const live: Live = { ionId, request, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
+    if (o.dream) live.dream = o.dream;
     this.live.set(turnId, live);
     try {
       const t = { ionId, turnId, text, cwd, rules, report: request === null, dream: o.dream };
       const { end, projects } = await this.session(t, brain, h.adapter);
+      const reply = this.settle(ionId, { harness: brain.harness, projects }, end);
+      if (reply !== NO_AGENT || this.stopping) return { reply, threads: live.threads, turnId };
+      // Said once in ion's log: why the agent failed (Plan 19's checks, 2026-11-22: nothing was).
+      console.error(`ion's agent (${brain.harness}): ${end.error ?? "it said nothing"}`);
+      return { reply, threads: live.threads, turnId, failed: { why: end.error ?? null } };
+    } catch (e) {
+      console.error(`ion's agent (${brain.harness}): ${errLine(e)}`);
+      if (!this.stopping) forgetSession(this.d, ionId);
       return {
-        reply: this.settle(ionId, { harness: brain.harness, projects }, end),
+        reply: NO_AGENT,
         threads: live.threads,
         turnId,
+        ...(this.stopping ? {} : { failed: { why: null } }),
       };
-    } catch (e) {
-      console.error(`ion's agent (${brain.harness}): ${e instanceof Error ? e.name : "an error"}`);
-      if (!this.stopping) this.forgetSession(ionId);
-      return { reply: NO_AGENT, threads: live.threads, turnId };
     } finally {
       this.live.delete(turnId);
       this.d.grants.revoke(turnId);
@@ -292,15 +314,15 @@ export class IonTurns {
     // A session that failed or said nothing is forgotten: resuming it would likely fail again (its context too long).
     // One that didn't close is too: the agent may still hold it, and two sessions would resume one id.
     const broken = end.stuck || (!end.late && (end.failed || reply === NO_AGENT));
-    if (broken) this.forgetSession(ionId);
-    else if (end.nativeId) this.keepSession(ionId, { ...kept, nativeId: end.nativeId });
+    if (broken) forgetSession(this.d, ionId);
+    else if (end.nativeId) keepSession(this.d, ionId, { ...kept, nativeId: end.nativeId });
     return reply;
   }
 
   /** A turn you stopped: its session kept if it closed (resuming it is fine), else forgotten. */
   private stoppedReply(ionId: string, kept: Omit<Kept, "nativeId">, end: Ended): string {
-    if (end.stuck) this.forgetSession(ionId);
-    else if (end.nativeId) this.keepSession(ionId, { ...kept, nativeId: end.nativeId });
+    if (end.stuck) forgetSession(this.d, ionId);
+    else if (end.nativeId) keepSession(this.d, ionId, { ...kept, nativeId: end.nativeId });
     return STOPPED;
   }
 
@@ -377,7 +399,7 @@ export class IonTurns {
         return live ? (await this.verdict(live, req, t.turnId)).decision : "deny";
       },
     };
-    const resume = this.resumeOf(t.ionId, brain.harness, scope.projects);
+    const resume = resumeOf(this.d.db, t.ionId, brain.harness, scope.projects);
     const end = await this.within(abort, t.turnId, (e, hold) =>
       this.drive({ ...t, scope, adapter, opts, resume }, e, hold),
     );
@@ -449,7 +471,7 @@ export class IonTurns {
     end: Ended,
     hold: (s: Session) => void,
   ): Promise<void> {
-    const { session, resumed } = await this.start(t.adapter, t.opts, t.resume);
+    const { session, resumed } = await startSession(t.adapter, t.opts, t.resume);
     hold(session);
     end.nativeId = session.nativeId;
     if (end.late) return;
@@ -458,33 +480,6 @@ export class IonTurns {
       t.ionId === DREAM_ION ? "" : ionIndex(this.d.memory, t.scope, { resumed, sent: this.sentIndex });
     await session.send({ text: index + t.text });
     await this.pump(session, t, end);
-  }
-
-  /**
-   * The ion's session to resume: only on the agent it was made on, and while it may see the same projects (a project
-   * kept from ion chief or removed is forgotten with the session that knew it).
-   */
-  private resumeOf(ionId: string, harness: string, projects: string[]): string | undefined {
-    // Each dream starts afresh, and keeps no session.
-    if (ionId === DREAM_ION) return undefined;
-    const s = ionsView.session(this.d.db, ionId);
-    const same = s?.projects?.join("\n") === projects.join("\n");
-    return s?.harness === harness && same ? s.nativeId : undefined;
-  }
-
-  /** A session the agent can't resume (gone, expired) is started anew. */
-  private async start(
-    adapter: HarnessAdapter,
-    opts: StartOpts,
-    resume: string | undefined,
-  ): Promise<{ session: Session; resumed: boolean }> {
-    if (!resume) return { session: await adapter.start(opts), resumed: false };
-    try {
-      return { session: await adapter.start({ ...opts, resume }), resumed: true };
-    } catch (e) {
-      if (e instanceof ResumeFailed) return { session: await adapter.start(opts), resumed: false };
-      throw e;
-    }
   }
 
   /** Keeps the turn's work on the ion's chat (until its limit), its last message, and its native session id. */
@@ -496,33 +491,6 @@ export class IonTurns {
       this.live.get(t.turnId)?.web.note(e);
       note(e, end);
     }
-  }
-
-  /** Forgets the ion's session (when it has one), so its next turn starts a fresh one. */
-  private forgetSession(ionId: string): void {
-    if (!ionsView.session(this.d.db, ionId)) return;
-    this.d.store.append({
-      chatId: `ion:${ionId}`,
-      runId: null,
-      origin: "daemon",
-      type: EV.ionSession,
-      data: { ionId, harness: null, nativeId: null },
-    });
-  }
-
-  /** Records the ion's session when it's new (another agent, a session it couldn't resume, other projects). */
-  private keepSession(ionId: string, k: Kept): void {
-    if (ionId === DREAM_ION) return;
-    const s = ionsView.session(this.d.db, ionId);
-    const same = s?.projects?.join("\n") === k.projects.join("\n");
-    if (s?.harness === k.harness && s.nativeId === k.nativeId && same) return;
-    this.d.store.append({
-      chatId: `ion:${ionId}`,
-      runId: null,
-      origin: "daemon",
-      type: EV.ionSession,
-      data: { ionId, ...k },
-    });
   }
 }
 

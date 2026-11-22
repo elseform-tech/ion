@@ -10,6 +10,8 @@ export type Ended = {
   nativeId: string | null;
   late: boolean;
   failed: boolean;
+  /** The agent's own words for why it failed (its first error), on one line. */
+  error?: string;
   stuck?: true;
   /** You stopped it (it ended as `late` does, but says so). */
   stopped?: true;
@@ -39,7 +41,13 @@ export async function closing(session: Session): Promise<boolean> {
 
 /** Notes the session's last message, and its native id once the agent says it (some only say it when it starts). */
 export function note(e: AdapterEvent, end: Ended): void {
-  if (e.type === EV.error) end.failed = true;
+  if (e.type === EV.error) {
+    end.failed = true;
+    const why = String((e.data as { message?: unknown }).message ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (why && !end.error) end.error = why.slice(0, 300);
+  }
   if (e.type === EV.runFinished && (e.data as { status?: unknown }).status !== "done") end.failed = true;
   if (e.type === EV.messageCompleted) end.last = String((e.data as { text?: unknown }).text ?? "");
   const id = e.type === EV.runStarted ? (e.data as { sessionId?: unknown }).sessionId : undefined;

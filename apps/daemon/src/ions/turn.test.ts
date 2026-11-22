@@ -326,13 +326,18 @@ describe("an ion's turn", () => {
     await t.turn("storefront", "hello");
     const first = ionsView.session(db, "storefront")!.nativeId;
     process.env.ION_FAKE_RESUMED_FAILS = "1";
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      expect((await t.turn("storefront", "hello")).reply).toBe(NO_AGENT);
+      // Plan 19's checks, 2026-11-22: the agent's reason was dropped (a bare NO_AGENT, nothing in ion's log). It's
+      // said once in the log, and in the reply.
+      expect((await t.turn("storefront", "hello")).reply).toBe("I couldn't reach my agent: Prompt too long");
+      expect(log.mock.calls.filter((c) => String(c[0]).includes("Prompt too long"))).toHaveLength(1);
       expect(ionsView.session(db, "storefront")).toBeNull();
       // Fresh: a resumed session would fail again under this switch.
       expect((await t.turn("storefront", "hello")).reply).toBe("This is storefront.");
       expect(ionsView.session(db, "storefront")!.nativeId).not.toBe(first);
     } finally {
+      log.mockRestore();
       delete process.env.ION_FAKE_RESUMED_FAILS;
     }
   });
@@ -520,6 +525,31 @@ describe("an ion's turn", () => {
       delete process.env.ION_FAKE_CLOSE_HANGS;
     }
   }, 15_000);
+
+  // Plan 19's checks, 2026-11-22: a project with no agent of its own and no chats took the first ready agent; when
+  // that one failed, its ion said only "I couldn't reach my agent" and ion's log said nothing. The failure is logged
+  // once, and the turn goes on the next ready agent, which its reply names in one line.
+  it("a turn whose agent fails goes on the next ready agent", async () => {
+    const configFile = join(home, "config.toml");
+    const c = loadUserConfig(configFile).config;
+    const projects = c.projects.map((p) => (p.id === "storefront" ? { ...p, harness: undefined } : p));
+    saveUserConfig(configFile, { ...c, projects });
+    const both = async (): Promise<HarnessInfo[]> => [
+      ...(await agents()),
+      { id: "opencode", label: "opencode", installed: true, signedIn: true, models: [], defaultModel: null },
+    ];
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // opencode first (it's first in ion's order); it can't start here (real agents are off in tests).
+      const r = await turns(undefined, { agents: both }).turn("storefront", "hello");
+      expect(r.reply).toBe("This is storefront.\n\n*On Fake: opencode didn't answer.*");
+      expect(log.mock.calls.map((x) => String(x[0]))).toEqual([
+        "ion's agent (opencode): Error: real agents are off in tests",
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
 
   // Task review, 2026-11-19: closing ion left an ion's turn running; its late writes hit a closed store.
   it("shutdown ends a running turn, and nothing is written after", async () => {
