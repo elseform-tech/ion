@@ -418,6 +418,27 @@ describe("memory tools", () => {
     }
   });
 
+  // Task 5, 2026-11-22 (live, Grok): agents named files like file names ("tidy-the-shop-readme"), and the reminder
+  // and "Mark done?" then read Mark “tidy-the-shop-readme” done?. A name is words; the tool says so, and a name
+  // written as a file name becomes words.
+  it("a name is words, not a file name", async () => {
+    const c = await chat();
+    const { tools } = await c.listTools();
+    const props = tools.find((t) => t.name === "memory_write")!.inputSchema.properties as Record<
+      string,
+      { description?: string }
+    >;
+    expect(props.name?.description).toBe(
+      'A few words, as you\'d say them ("Release branch"), not a file name',
+    );
+    expect(text(await call(c, "memory_write", fact("release-branch-is-ship-it")))).toBe(
+      "Saved projects/app/release-branch-is-ship-it.md",
+    );
+    await c.close();
+    const r = memory.read("projects/app/release-branch-is-ship-it.md");
+    expect(r.ok && r.file.header.name).toBe("Release branch is ship it");
+  });
+
   // Security review, 2026-11-22: a chat in one project wrote a preference every other project's chats then read (an
   // injection that outlives the chat). A chat's preference is a suggestion, seen by its project's chats and the ions,
   // until you keep it.

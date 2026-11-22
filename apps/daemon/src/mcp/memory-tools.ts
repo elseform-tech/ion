@@ -58,7 +58,12 @@ export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, 
         "Keep something for later as a small file, one topic each: a new one needs name, description, type and text. To update one, memory_read it, pass its hash as expect, and give only what changes.",
       inputSchema: {
         scope: z.string().min(1).max(64).describe(scopeHelp(caller)),
-        name: z.string().min(1).max(80).optional(),
+        name: z
+          .string()
+          .min(1)
+          .max(80)
+          .optional()
+          .describe('A few words, as you\'d say them ("Release branch"), not a file name'),
         description: z.string().min(1).max(160).optional().describe("One line: what the index shows"),
         type: z.enum(MEMORY_TYPES).optional(),
         text: z.string().min(1).max(MEMORY_TEXT_MAX).optional(),

@@ -98,6 +98,15 @@ export function ionIndex(
 }
 type IonIndexOpts = { resumed: boolean; sent: Map<string, string> };
 
+/**
+ * A name written as a file name ("tidy-the-shop-readme") as words ("Tidy the shop readme"): reminders and "Mark
+ * done?" say a file's name (Task 5, 2026-11-22: agents named files like file names).
+ */
+const asWords = (name: string) =>
+  /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/.test(name)
+    ? name.replace(/[-_]/g, " ").replace(/^./, (c) => c.toUpperCase())
+    : name;
+
 /** A real day, written YYYY-MM-DD. */
 function isDay(s: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -203,7 +212,8 @@ export class ScopedMemory {
   }
 
   /** Makes a file, or updates one read at `expect`; refused unless this caller may write it there. */
-  write(w: MemoryWrite): MemoryFile {
+  write(given: MemoryWrite): MemoryFile {
+    const w = given.name ? { ...given, name: asWords(given.name) } : given;
     if (w.due !== undefined && !isDay(w.due)) throw new UserError("Give the date as YYYY-MM-DD");
     const scope = this.scopeOf(w.scope);
     return w.expect === undefined ? this.create(scope, w) : this.update(scope, w, w.expect);
