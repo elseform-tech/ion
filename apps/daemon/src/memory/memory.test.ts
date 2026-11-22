@@ -1,65 +1,66 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EV } from "@ion/schema";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { UserError } from "../api/errors.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
-import { memoryView } from "../views/memory.js";
-import { forgetMemory, writeMemory } from "./index.js";
+import { MemoryFiles } from "./index.js";
 
+let dir: string;
 let db: Db;
 let store: EventStore;
+let memory: MemoryFiles;
 
 beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "ion-memory-"));
   db = openDb(":memory:");
   store = new EventStore(db, allViews);
+  memory = new MemoryFiles({ root: join(dir, "memory"), store, db });
 });
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("memory", () => {
   it("keeps each project's memory to itself, and yours shows everywhere", () => {
-    writeMemory(store, db, {
-      scope: { projectId: "app" },
-      text: "Tests use vitest",
-      source: { chatId: "c1", runId: "r1" },
-    });
-    writeMemory(store, db, { scope: { projectId: "shop" }, text: "Deploys on Fridays", source: "you" });
-    writeMemory(store, db, { scope: "you", text: "Prefer short answers", source: "you" });
-    expect(memoryView.list(db, "app").map((m) => m.text)).toEqual([
+    memory.note({ projectId: "app" }, "Tests use vitest", { chatId: "c1", runId: "r1" });
+    memory.note({ projectId: "shop" }, "Deploys on Fridays", "you");
+    memory.note("you", "Prefer short answers", "you");
+    expect(memory.list("app", ["chats", "ions"]).map((m) => m.text)).toEqual([
       "Tests use vitest",
       "Prefer short answers",
     ]);
-    expect(memoryView.list(db, null)).toHaveLength(3);
-    expect(memoryView.list(db, "app")[0]).toMatchObject({ scope: "app", source: "c1" });
+    expect(memory.list(null, ["chats", "ions"])).toHaveLength(3);
+    expect(memory.list("app", ["chats", "ions"])[0]).toMatchObject({
+      memoryId: "projects/app/tests-use-vitest.md",
+      scope: "app",
+      source: "c1",
+    });
   });
 
   it("forgets a memory, and says so for one it doesn't know", () => {
-    const id = writeMemory(store, db, { scope: "you", text: "x", source: "you" });
-    expect(id).toMatch(/^m[0-9a-f]{6}$/);
-    forgetMemory(store, db, id);
-    expect(memoryView.list(db, null)).toEqual([]);
-    expect(store.read({}).at(-1)).toMatchObject({ type: EV.memoryForgotten, data: { memoryId: id } });
-    expect(() => forgetMemory(store, db, "nope")).toThrow(new UserError("Unknown memory: nope"));
+    const path = memory.note("you", "x", "you");
+    memory.forget(path, "you");
+    expect(memory.list(null, ["chats", "ions"])).toEqual([]);
+    expect(existsSync(join(dir, "memory", path))).toBe(false);
+    expect(store.read({}).at(-1)).toMatchObject({
+      type: EV.memoryForgotten,
+      data: { path, by: "you", before: { text: "x" } },
+    });
+    expect(() => memory.forget("you/nope.md", "you")).toThrow(new UserError("Unknown memory: you/nope.md"));
+    // CLI test, 2026-11-22: `ion memory forget nope` said "Not a memory file" instead.
+    expect(() => memory.forget("nope", "you")).toThrow(new UserError("Unknown memory: nope"));
   });
 
-  it("refuses an empty memory or one over 2000 characters", () => {
-    expect(() => writeMemory(store, db, { scope: "you", text: "x".repeat(2001), source: "you" })).toThrow(
-      new UserError("A memory can be 2000 characters at most"),
-    );
-    expect(() => writeMemory(store, db, { scope: "you", text: "  ", source: "you" })).toThrow(UserError);
+  it("refuses an empty memory", () => {
+    expect(() => memory.note("you", "  ", "you")).toThrow(UserError);
   });
 
-  it("rebuilds the same list from the log", () => {
-    writeMemory(store, db, { scope: "you", text: "a", source: "you" });
-    const before = memoryView.list(db, null);
-    store.rebuildViews();
-    expect(memoryView.list(db, null)).toEqual(before);
-  });
-
-  // Final review minor 7: an id that's already taken is drawn again, never overwritten.
-  it("never reuses a memory id", () => {
-    const ids = ["mabc123", "mabc123", "mdef456"];
-    const first = writeMemory(store, db, { scope: "you", text: "one", source: "you" }, () => ids.shift()!);
-    const second = writeMemory(store, db, { scope: "you", text: "two", source: "you" }, () => ids.shift()!);
-    expect([first, second]).toEqual(["mabc123", "mdef456"]);
-    expect(memoryView.list(db, null).map((m) => m.text)).toEqual(["one", "two"]);
+  // Final review minor 7: a name that's already taken gets its own file, never overwriting another.
+  it("never overwrites another memory with the same name", () => {
+    const first = memory.note("you", "one", "you");
+    const second = memory.note("you", "one", "you");
+    expect([first, second]).toEqual(["you/one.md", "you/one-2.md"]);
+    expect(memory.list(null, ["chats", "ions"]).map((m) => m.text)).toEqual(["one", "one"]);
   });
 });

@@ -1,52 +1,245 @@
-import { EV, type IonEvent, type MemoryInfo } from "@ion/schema";
+import {
+  EV,
+  type IonEvent,
+  type MemoryBy,
+  type MemoryHeader,
+  type MemoryInfo,
+  type MemoryScope,
+  type MemorySee,
+  type MemoryType,
+} from "@ion/schema";
 import type { Db, View } from "../store/index.js";
 
-type Written = {
-  memoryId: string;
-  scope: "you" | { projectId: string };
-  text: string;
-  source: "you" | { chatId: string; runId: string };
+/** A memory file in the index: what it is, who may see it, and its last change. */
+export type MemoryRow = {
+  path: string;
+  /** "you", or the project it belongs to. */
+  scope: string;
+  slug: string;
+  name: string;
+  description: string;
+  type: MemoryType;
+  see: MemorySee;
+  status: "open" | "done" | null;
+  due: string | null;
+  hash: string;
+  updatedAt: string;
+  by: MemoryBy;
 };
 
-/** What ion remembers: yours ("you") and each project's, minus what you've forgotten. */
+/** One change to a memory file, from ion's events. */
+export type MemoryChange = {
+  at: string;
+  kind: "written" | "forgotten";
+  by: MemoryBy;
+  hash?: string;
+  header?: MemoryHeader;
+  before?: { hash: string; text: string };
+};
+
+export type MemoryQuery = {
+  /** "you" and the projects asked about. */
+  scopes: string[];
+  /** Which files they may see. */
+  see: MemorySee[];
+  /** Words to find in the name, description or text (best match first). */
+  q?: string;
+  type?: MemoryType;
+  status?: "open" | "done";
+  limit?: number;
+};
+
+type Written = {
+  path: string;
+  scope: MemoryScope;
+  slug: string;
+  header: MemoryHeader;
+  hash: string;
+  by: MemoryBy;
+};
+
+const COLUMNS = `m.path, m.scope, m.slug, m.name, m.description, m.type, m.see, m.status, m.due, m.hash,
+  m.updated_at AS updatedAt, m.by`;
+type Raw = Omit<MemoryRow, "by"> & { by: string };
+const rowOf = (r: Raw): MemoryRow => ({ ...r, by: JSON.parse(r.by) as MemoryBy });
+const ANY = (n: number) => Array.from({ length: n }, () => "?").join(", ");
+
+/** Who changed it, as the old list said: "you", a chat, or "ion:<id>". */
+const sourceOf = (by: MemoryBy) => {
+  if (by === "you") return "you";
+  return "ion" in by ? `ion:${by.ion}` : by.chatId;
+};
+
+/** The words of a query, each quoted (a prefix), so it's plain words, never FTS syntax. */
+function matchOf(q: string): string | null {
+  const words = q.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return words.length ? words.map((w) => `"${w}"*`).join(" ") : null;
+}
+
+function textOf(db: Db, path: string): string {
+  const r = db.prepare("SELECT text FROM view_memory_fts WHERE path = ?").get(path) as
+    | { text: string }
+    | undefined;
+  return r?.text ?? "";
+}
+
+/** Puts a file's searchable words in: its name and description, and its text (kept when not given). */
+function putFts(db: Db, path: string, text?: string): void {
+  const m = db.prepare("SELECT name, description FROM view_memory WHERE path = ?").get(path) as
+    | { name: string; description: string }
+    | undefined;
+  const keep = text ?? textOf(db, path);
+  db.prepare("DELETE FROM view_memory_fts WHERE path = ?").run(path);
+  if (m)
+    db.prepare("INSERT INTO view_memory_fts (path, name, description, text) VALUES (?, ?, ?, ?)").run(
+      path,
+      m.name,
+      m.description,
+      keep,
+    );
+}
+
+function applyWritten(db: Db, d: Written, ts: string): void {
+  const h = d.header;
+  db.prepare(
+    `INSERT INTO view_memory (path, scope, slug, name, description, type, see, status, due, hash, updated_at, by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (path) DO UPDATE SET name = excluded.name, description = excluded.description, type = excluded.type,
+       see = excluded.see, status = excluded.status, due = excluded.due, hash = excluded.hash,
+       updated_at = excluded.updated_at, by = excluded.by`,
+  ).run(
+    ...[d.path, d.scope === "you" ? "you" : d.scope.projectId, d.slug, h.name, h.description, h.type, h.see],
+    ...[h.status ?? null, h.due ?? null, d.hash, ts, JSON.stringify(d.by)],
+  );
+  putFts(db, d.path);
+}
+
+function filtersOf(q: MemoryQuery): { where: string; params: unknown[] } {
+  const where = [`m.scope IN (${ANY(q.scopes.length)})`, `m.see IN (${ANY(q.see.length)})`];
+  const params: unknown[] = [...q.scopes, ...q.see];
+  if (q.type) {
+    where.push("m.type = ?");
+    params.push(q.type);
+  }
+  if (q.status) {
+    where.push("m.status = ?");
+    params.push(q.status);
+  }
+  return { where: where.join(" AND "), params };
+}
+
+/**
+ * The memory index: each file's header (from ion's events) and its words (from the file, for FTS5). The files are
+ * the truth; this is rebuilt from the log and the folder. History is the log itself.
+ */
 export const memoryView: View & {
-  list(db: Db, projectId: string | null): MemoryInfo[];
-  has(db: Db, memoryId: string): boolean;
+  search(db: Db, q: MemoryQuery): MemoryRow[];
+  get(db: Db, path: string): (MemoryRow & { text: string }) | undefined;
+  history(db: Db, path: string): MemoryChange[];
+  /** Puts a file's text in the index (read from the file; the events hold only its header). */
+  index(db: Db, path: string, text: string): void;
+  paths(db: Db): string[];
+  /** Every file, yours and one project's (or all), that `see` allows, oldest first, in the old list's shape. */
+  list(db: Db, projectId: string | null, see: MemorySee[]): MemoryInfo[];
 } = {
   name: "memory",
-  version: 1,
-  tables: ["view_memory"],
+  version: 2,
+  tables: ["view_memory", "view_memory_fts"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_memory (
-      memory_id TEXT PRIMARY KEY, scope TEXT NOT NULL, text TEXT NOT NULL, source TEXT NOT NULL, written_at TEXT NOT NULL)`);
+      path TEXT PRIMARY KEY, scope TEXT NOT NULL, slug TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL,
+      type TEXT NOT NULL, see TEXT NOT NULL, status TEXT, due TEXT, hash TEXT NOT NULL, updated_at TEXT NOT NULL,
+      by TEXT NOT NULL);
+      CREATE VIRTUAL TABLE IF NOT EXISTS view_memory_fts USING fts5 (path UNINDEXED, name, description, text);`);
   },
   reset(db) {
-    db.exec("DELETE FROM view_memory");
+    db.exec("DELETE FROM view_memory; DELETE FROM view_memory_fts;");
   },
   apply(db, e: IonEvent) {
-    if (e.type === EV.memoryWritten) {
-      const d = e.data as Written;
-      const scope = d.scope === "you" ? "you" : d.scope.projectId;
-      const source = d.source === "you" ? "you" : d.source.chatId;
-      db.prepare(
-        "INSERT OR REPLACE INTO view_memory (memory_id, scope, text, source, written_at) VALUES (?, ?, ?, ?, ?)",
-      ).run(d.memoryId, scope, d.text, source, e.ts);
-    } else if (e.type === EV.memoryForgotten) {
-      db.prepare("DELETE FROM view_memory WHERE memory_id = ?").run(
-        String((e.data as { memoryId: string }).memoryId),
-      );
+    // A note from before memory was files has no path: it's moved to a file once (memory/migrate.ts).
+    const data = e.data as { path?: string };
+    if (typeof data.path !== "string") return;
+    if (e.type === EV.memoryWritten) applyWritten(db, e.data as Written, e.ts);
+    else if (e.type === EV.memoryForgotten) {
+      db.prepare("DELETE FROM view_memory WHERE path = ?").run(data.path);
+      db.prepare("DELETE FROM view_memory_fts WHERE path = ?").run(data.path);
     }
   },
-  list(db, projectId) {
-    const where = projectId === null ? "" : "WHERE scope = ? OR scope = 'you'";
-    return db
-      .prepare(
-        `SELECT memory_id AS memoryId, scope, text, source, written_at AS writtenAt FROM view_memory ${where}
-         ORDER BY rowid`,
-      )
-      .all(...(projectId === null ? [] : [projectId])) as MemoryInfo[];
+  search(db, q) {
+    if (!q.scopes.length || !q.see.length) return [];
+    const { where, params } = filtersOf(q);
+    const limit = q.limit ?? 1000;
+    if (q.q === undefined) {
+      const order = "ORDER BY (m.type = 'todo' AND m.status = 'open') DESC, m.updated_at DESC, m.rowid DESC";
+      return (
+        db
+          .prepare(`SELECT ${COLUMNS} FROM view_memory m WHERE ${where} ${order} LIMIT ?`)
+          .all(...params, limit) as Raw[]
+      ).map(rowOf);
+    }
+    const match = matchOf(q.q);
+    if (!match) return [];
+    return (
+      db
+        .prepare(
+          `SELECT ${COLUMNS} FROM view_memory_fts f JOIN view_memory m ON m.path = f.path
+           WHERE view_memory_fts MATCH ? AND ${where} ORDER BY bm25(view_memory_fts) LIMIT ?`,
+        )
+        .all(match, ...params, limit) as Raw[]
+    ).map(rowOf);
   },
-  has(db, memoryId) {
-    return db.prepare("SELECT 1 FROM view_memory WHERE memory_id = ?").get(memoryId) !== undefined;
+  get(db, path) {
+    const r = db.prepare(`SELECT ${COLUMNS} FROM view_memory m WHERE m.path = ?`).get(path) as
+      | Raw
+      | undefined;
+    return r && { ...rowOf(r), text: textOf(db, path) };
+  },
+  history(db, path) {
+    const rows = db
+      .prepare(
+        `SELECT ts, type, data FROM events WHERE type IN (?, ?) AND json_extract(data, '$.path') = ? ORDER BY rowid`,
+      )
+      .all(EV.memoryWritten, EV.memoryForgotten, path) as { ts: string; type: string; data: string }[];
+    return rows.map((r) => {
+      const d = JSON.parse(r.data) as Partial<Written> & { by: MemoryBy; before?: MemoryChange["before"] };
+      return {
+        at: r.ts,
+        kind: r.type === EV.memoryWritten ? "written" : "forgotten",
+        by: d.by,
+        ...(d.hash ? { hash: d.hash } : {}),
+        ...(d.header ? { header: d.header } : {}),
+        ...(d.before ? { before: d.before } : {}),
+      };
+    });
+  },
+  index(db, path, text) {
+    putFts(db, path, text);
+  },
+  paths(db) {
+    return (db.prepare("SELECT path FROM view_memory").all() as { path: string }[]).map((r) => r.path);
+  },
+  list(db, projectId, see) {
+    if (!see.length) return [];
+    const scoped = projectId === null ? "" : "(m.scope = ? OR m.scope = 'you') AND";
+    const where = `WHERE ${scoped} m.see IN (${ANY(see.length)})`;
+    const rows = db
+      .prepare(
+        `SELECT m.path, m.scope, m.by, m.updated_at AS writtenAt, coalesce(f.text, '') AS text
+         FROM view_memory m LEFT JOIN view_memory_fts f ON f.path = m.path ${where} ORDER BY m.rowid`,
+      )
+      .all(...(projectId === null ? [] : [projectId]), ...see) as {
+      path: string;
+      scope: string;
+      by: string;
+      writtenAt: string;
+      text: string;
+    }[];
+    return rows.map((r) => ({
+      memoryId: r.path,
+      scope: r.scope,
+      text: r.text,
+      source: sourceOf(JSON.parse(r.by) as MemoryBy),
+      writtenAt: r.writtenAt,
+    }));
   },
 };

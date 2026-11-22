@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IonCardSchema, PICKED } from "./ion-cards.js";
+import { memoryEventSchemas } from "./memory.js";
 
 export const SCHEMA_VERSION = 1;
 
@@ -196,14 +197,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     /** What you picked with "/" and "@" (shown as chips; the agent got them its way). */
     ...PICKED,
   }),
-  /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
-  "memory.written": z.object({
-    memoryId: z.string(),
-    scope: z.union([z.literal("you"), z.object({ projectId: z.string() })]),
-    text: z.string().min(1).max(2000),
-    source: z.union([z.literal("you"), z.object({ chatId: z.string(), runId: z.string() })]),
-  }),
-  "memory.forgotten": z.object({ memoryId: z.string() }),
+  /** A memory file made or changed, or a note from before memory was files; and one forgotten. */
+  ...memoryEventSchemas,
   "need.raised": z.object({
     needId: z.string(),
     requestId: z.string(),

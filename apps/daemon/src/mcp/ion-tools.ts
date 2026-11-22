@@ -13,10 +13,8 @@ import { wrapData } from "../context/index.js";
 import { contextOf } from "../ions/route.js";
 import { cleanProfile, profileOf, rankProjects } from "../ions/profiles.js";
 import { PER_TURN } from "../ions/turn.js";
-import { writeMemory } from "../memory/index.js";
 import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
-import { memoryView } from "../views/memory.js";
 import { messagesView } from "../views/messages.js";
 import { needsView } from "../views/needs.js";
 import { decisionLine } from "./ask.js";
@@ -198,7 +196,9 @@ function memoryTools(server: McpServer, ion: Ion): void {
     },
     guard(({ projectId }: { projectId?: string }) => {
       const mine = new Set(idsOf(ion, projectId));
-      return memoryData(memoryView.list(d.db, null).filter((m) => m.scope === "you" || mine.has(m.scope)));
+      return memoryData(
+        d.memory.list(null, ["chats", "ions"]).filter((m) => m.scope === "you" || mine.has(m.scope)),
+      );
     }),
   );
   const chief = scope.ionId === "chief";
@@ -215,8 +215,7 @@ function memoryTools(server: McpServer, ion: Ion): void {
       const where = chief ? ("you" as const) : { projectId: ion.need(scope.ionId).id };
       if (d.grants.noteWrite(scope.turnId) > PER_TURN)
         throw new UserError("That's enough memory for one turn");
-      const source = { chatId: `ion:${scope.ionId}`, runId: scope.turnId };
-      return ok(`Saved ${writeMemory(d.store, d.db, { scope: where, text, source })}`);
+      return ok(`Saved ${d.memory.note(where, text, { ion: scope.ionId })}`);
     }),
   );
 }

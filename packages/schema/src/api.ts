@@ -338,9 +338,11 @@ export type MemoryInfo = {
   /** "you", or the project it belongs to. */
   scope: string;
   text: string;
-  /** "you", or the chat it came from. */
+  /** "you", the chat it came from, or "ion:<id>". */
   source: string;
   writtenAt: string;
+  /** The file can't be read now (its last good version is shown): one plain line. */
+  problem?: string;
 };
 
 export type NeedInfo = {

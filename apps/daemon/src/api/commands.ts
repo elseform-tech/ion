@@ -2,9 +2,8 @@ import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
-import { forgetMemory } from "../memory/index.js";
+import type { MemoryFiles } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
-import { memoryView } from "../views/memory.js";
 import {
   addProject,
   loadUserConfig,
@@ -81,6 +80,8 @@ export type Ctx = {
   routines: Routines;
   suggestions: Suggestions;
   queue: PromptQueue;
+  /** Your memory and each project's: a folder of files, indexed. */
+  memory: MemoryFiles;
   /** Your connections (mcp.json) and the keychain their keys and tokens are in. */
   tools: Tools;
   /** Signing in to remote servers (OAuth); their tokens are in the keychain. */
@@ -130,9 +131,9 @@ export const handlers: Handlers = {
       .filter((h) => listed.includes(h.id))
       .map((h) => ({ ...h, ...missesOf(h.id) }));
   },
-  "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
+  "memory.list": (a, ctx) => ctx.memory.list(a.projectId ?? null, ["chats", "ions"]),
   "memory.forget": (a, ctx) => {
-    forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
+    ctx.memory.forget(String(a.memoryId ?? ""), "you");
     return { ok: true as const };
   },
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
@@ -252,8 +253,8 @@ export const handlers: Handlers = {
     ctx.queue.clear({ ionId: id });
     // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
     for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
-    for (const m of memoryView.list(ctx.db, id))
-      if (m.scope === id) forgetMemory(ctx.store, ctx.db, m.memoryId);
+    for (const m of ctx.memory.list(id, ["chats", "ions"]))
+      if (m.scope === id) ctx.memory.forget(m.memoryId, "you");
     return { ok: true as const };
   },
   "project.star": (a, ctx) => {

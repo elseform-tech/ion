@@ -3,11 +3,10 @@ import type { MemoryInfo, NeedInfo } from "@ion/schema";
 import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
-import { writeMemory } from "../memory/index.js";
+import type { MemoryFiles } from "../memory/index.js";
 import { HISTORY_CHARS } from "../runs/history.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
-import { memoryView } from "../views/memory.js";
 import { messagesView, type SearchHit } from "../views/messages.js";
 import { needsView } from "../views/needs.js";
 import type { Decisions } from "../decisions/index.js";
@@ -15,7 +14,7 @@ import { askTools } from "./ask.js";
 import { guard, ok, q } from "./result.js";
 import type { Grants, RunScope } from "./grants.js";
 
-export type Deps = { store: EventStore; db: Db; grants: Grants; decisions?: Decisions };
+export type Deps = { store: EventStore; db: Db; grants: Grants; memory: MemoryFiles; decisions?: Decisions };
 
 const WRITES_PER_RUN = 5;
 export const SEARCH_MAX = 20;
@@ -89,7 +88,8 @@ function memoryTools(server: McpServer, scope: RunScope, d: Deps): void {
     "memory_list",
     { description: "What ion remembers for this project, and for the user.", inputSchema: {} },
     guard(() => {
-      return memoryData(memoryView.list(d.db, scope.projectId));
+      // A chat sees its project's files and your files shared with chats, never your ions-only ones.
+      return memoryData(d.memory.list(scope.projectId, ["chats"]));
     }),
   );
   server.registerTool(
@@ -102,10 +102,8 @@ function memoryTools(server: McpServer, scope: RunScope, d: Deps): void {
       // An agent can't flood a project's memory.
       if (d.grants.noteWrite(scope.runId) > WRITES_PER_RUN)
         throw new UserError("That's enough memory for one run");
-      const source = { chatId: scope.chatId, runId: scope.runId };
-      return ok(
-        `Saved ${writeMemory(d.store, d.db, { scope: { projectId: scope.projectId }, text, source })}`,
-      );
+      const by = { chatId: scope.chatId, runId: scope.runId };
+      return ok(`Saved ${d.memory.note({ projectId: scope.projectId }, text, by)}`);
     }),
   );
 }

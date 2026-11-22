@@ -2,13 +2,11 @@ import type { GateCall } from "@ion/adapter-kit";
 import { randomUUID } from "node:crypto";
 import { loadUserConfig } from "@ion/config";
 import { agentsHome, dropInheritedMarkers } from "../env.js";
-import { chmodSync, mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer } from "ws";
-import { EventStore, openDb } from "../store/index.js";
-import { allViews } from "../views/index.js";
+import type { EventStore } from "../store/index.js";
 import { runsView } from "../views/runs.js";
 import { createAuth } from "./auth.js";
 import { cliOf, wsAccess } from "./run-calls.js";
@@ -55,6 +53,7 @@ import { createSkills, ionSkillsDir, type Skills } from "../skills/index.js";
 import { runSkillsOf } from "../skills/run.js";
 import { type AskInChat, runOwnOf } from "../tools/own-run.js";
 import { skillReaders } from "../adapters/registry.js";
+import { openStore } from "./open-store.js";
 
 /** The scope of a run that ion asks you about. */
 const runScopeOf = (r: AskingRun): RunScope => ({
@@ -138,7 +137,7 @@ export async function startServer(
   const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile });
   notifier.start();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
-  const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop()];
+  const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop(), ctx.memory.watch()];
   // Your answers still waiting go in first; then what you queued while ion was stopped, to each chat or ion that
   // isn't working.
   void ctx.decisions
@@ -167,10 +166,10 @@ export async function startServer(
  * ions' turns (with their own keys), and ion's gateway to your remote MCP servers at /mcp/s/<name> (runs only).
  */
 function httpServer(ctx: Ctx, turns: IonTurns) {
-  const { store, db, grants, decisions, configFile } = ctx;
+  const { store, db, grants, decisions, configFile, memory } = ctx;
   // An ion's turn starts threads with its start_thread tool.
   const mcp = createMcpHandler({
-    ...{ store, db, grants, decisions, configFile },
+    ...{ store, db, grants, decisions, configFile, memory },
     startThread: turns.startThread,
     // ion's own tools tell an ion your connections and skills by name; it never gets them itself.
     yourTools: yourToolsOf(ctx),
@@ -325,14 +324,6 @@ function sweepNeeds(needs: NeedsService, ionQuestions: IonQuestions): void {
   ionQuestions.sweep();
 }
 
-/** The data folder (only you can read it) and the event store in it. */
-function openStore(dataDir: string): { db: ReturnType<typeof openDb>; store: EventStore } {
-  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  chmodSync(dataDir, 0o700); // mkdir's mode doesn't touch a folder that already exists
-  const db = openDb(join(dataDir, "ion.db"));
-  return { db, store: new EventStore(db, allViews) };
-}
-
 /** Signing in to your remote servers: your browser comes back to ion's callback port, tokens go to the vault. */
 const oauthOf = (tools: Tools, store: EventStore, net?: Net): OAuth =>
   createOAuth({
@@ -451,7 +442,7 @@ function openState(
   opts: { dataDir: string; configFile: string; secrets?: Secrets; net?: Net; home?: string },
   base: () => string,
 ): { ctx: Ctx; turns: IonTurns } {
-  const { db, store } = openStore(opts.dataDir);
+  const { db, store, memory } = openStore(opts.dataDir);
   // Made after the run manager it needs; the judge, the gate and runs' questions reach it through this holder.
   const late: { decisions?: Decisions } = {};
   const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store, late);
@@ -497,7 +488,7 @@ function openState(
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines });
   const base0 = {
     ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
-    ...{ tools, oauth, unsure, ionServers },
+    ...{ tools, oauth, unsure, ionServers, memory },
   };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };
