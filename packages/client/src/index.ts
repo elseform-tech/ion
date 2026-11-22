@@ -28,8 +28,10 @@ export function readDaemonInfo(dataDir: string): DaemonInfo | null {
 /**
  * The daemon's address on this computer, only: ion's token never leaves it (CodeQL on main, 2026-11-22,
  * js/file-access-to-http: the token read from ion's file went to whatever host was asked). Another host throws.
+ * "localhost" goes to 127.0.0.1 (review, 2026-11-22: a hosts-file entry can send that name elsewhere): only the numeric
+ * loopback addresses are ever connected to.
  */
-const LOOPBACK: Record<string, string> = { "127.0.0.1": "127.0.0.1", "::1": "[::1]", localhost: "localhost" };
+const LOOPBACK: Record<string, string> = { "127.0.0.1": "127.0.0.1", "::1": "[::1]", localhost: "127.0.0.1" };
 
 export function daemonUrl(port: number, host = "127.0.0.1"): string {
   const h = Object.hasOwn(LOOPBACK, host) ? LOOPBACK[host] : undefined;

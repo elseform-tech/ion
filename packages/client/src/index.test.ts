@@ -33,7 +33,8 @@ describe("daemonUrl", () => {
   it("is this computer only", () => {
     expect(daemonUrl(4000)).toBe("ws://127.0.0.1:4000/");
     expect(daemonUrl(4000, "::1")).toBe("ws://[::1]:4000/");
-    expect(daemonUrl(4000, "localhost")).toBe("ws://localhost:4000/");
+    // Review, 2026-11-22: "localhost" can resolve elsewhere; only numeric loopback is connected to.
+    expect(daemonUrl(4000, "localhost")).toBe("ws://127.0.0.1:4000/");
     for (const h of [
       "example.com",
       "ion.example.org",
