@@ -2,6 +2,7 @@ import {
   Blocks,
   BookOpen,
   Info,
+  ListTodo,
   type LucideIcon,
   MessageCircleQuestion,
   PlugZap,
@@ -10,7 +11,7 @@ import {
 } from "@ion/design-system";
 import type { ToolType } from "@ion/schema";
 import { useState } from "react";
-import { openTools } from "../goto.js";
+import { openTodos, openTools } from "../goto.js";
 import type { Item, Keep } from "./timeline.js";
 
 /** A quiet line: an icon and one muted line in the conversation, never a banner. */
@@ -69,6 +70,20 @@ export const Reply = ({ text, always }: { text: string; always: Keep | undefined
 );
 
 const ICON: Record<ToolType, LucideIcon> = { mcp: PlugZap, skill: BookOpen, hook: Webhook };
+
+/** A chat added a to-do: "Added to your to-dos: …", and a link to them in Settings → Memory. */
+export function AddedTodo({ item }: { item: Extract<Item, { kind: "todo" }> }) {
+  return (
+    <div className="quiet">
+      <ListTodo />
+      {`Added to your to-dos: ${item.name}`}
+      <button className="lnk" type="button" title="Open in Settings" onClick={openTodos}>
+        <ListTodo />
+        To-dos
+      </button>
+    </div>
+  );
+}
 
 /** A chat's agent added a tool: "github added, off", and a link to its row in Settings → Tools. */
 export function Added({ item }: { item: Extract<Item, { kind: "added" }> }) {

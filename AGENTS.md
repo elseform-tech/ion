@@ -53,7 +53,8 @@ child processes only in `apps/daemon/src/workspace`, `apps/daemon/src/secrets` (
     blocks and their steps, the brain popover, access, the question panel (open and collapsed), the side panel and
     its tabs, the sidebar's project menu, the drag handles, the rail, the Ions screen (each ion, stars, the
     project picker, the chats an ion started), a run's changed files, Settings → Tools (each tab, Import's preview, a
-    hook added and removed, a server turned on: Sign in / Add key), Agents;
+    hook added and removed, a server turned on: Sign in / Add key), Settings → Memory (each scope, search, a file's
+    text, History and Restore, Forget, a broken file's line, the To-dos tab; ion chief's to-do count), Agents;
   - send a real message from a new chat, and a follow-up, with opencode's free model, and watch it run; message
     ion chief and a project's ion, and answer a question an agent asks;
   - run the CLI's main commands (`ion --help`, `status`, `projects`, `chats`, `needs`);

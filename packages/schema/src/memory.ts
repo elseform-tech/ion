@@ -110,6 +110,8 @@ export type MemoryInfo = {
   text: string;
   /** "you", the chat it came from, or "ion:<id>". */
   source: string;
+  /** That chat's title, when a chat changed it last. */
+  sourceTitle?: string;
   writtenAt: string;
   /** The file can't be read now (its last good version is shown): one plain line. */
   problem?: string;
@@ -129,4 +131,16 @@ export type MemoryFileInfo = {
   suggested?: string;
   text: string;
   hash: string;
+};
+
+/** One change to a memory file, as Settings shows its history. */
+export type MemoryChangeInfo = {
+  at: string;
+  kind: "written" | "forgotten";
+  /** "you", the chat that made it, or "ion:<id>". */
+  source: string;
+  /** That chat's title. */
+  sourceTitle?: string;
+  /** The text this change left (unknown for a change ion no longer has the text of). */
+  text?: string;
 };

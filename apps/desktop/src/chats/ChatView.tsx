@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Added, Answered, Quiet, Reply } from "./Asked.js";
+import { Added, AddedTodo, Answered, Quiet, Reply } from "./Asked.js";
 import { Markdown } from "./Message.js";
 import { empty, type FileChange, type Item, reduce, type Timeline } from "./timeline.js";
 import { WorkBlock } from "./Work.js";
@@ -102,6 +102,8 @@ function show(item: Item, onFile?: (path: string) => void): ReactNode {
       return item.resolved ? <Answered q={item} /> : null;
     case "added":
       return <Added item={item} />;
+    case "todo":
+      return <AddedTodo item={item} />;
     case "end":
       return (
         <>

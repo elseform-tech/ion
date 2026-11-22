@@ -101,6 +101,12 @@ function namedIn(message: string): string[] {
     .filter(Boolean);
 }
 
+/** Where a block ion put before your message (history, the memory index) ends. */
+const BLOCK_END = /<\/ion-data id="\w+">\n\n/;
+
+/** Your own message: what follows any block ion put before it. */
+export const ownText = (text: string) => text.split(BLOCK_END).at(-1) ?? text;
+
 /** An ion's turn on your message (see SCENARIOS.ion). */
 async function ionTurn(s: Script): Promise<"done" | "failed" | "interrupted"> {
   const server = ionServer(s);
@@ -112,7 +118,7 @@ async function ionTurn(s: Script): Promise<"done" | "failed" | "interrupted"> {
   if (message.includes("take-your-time") && (await s.wait(30_000)) === "interrupted") return "interrupted";
   let started = 0;
   for (const projectId of namedIn(message))
-    if (await ionTool(s, server, "start_thread", { projectId, brief: message })) started++;
+    if (await ionTool(s, server, "start_thread", { projectId, brief: ownText(message) })) started++;
   const asked = `Asked ${started} project${started === 1 ? "" : "s"}.`;
   const added = await remindMe(s, server, message);
   say(s, added ?? edit + (started ? asked : `This is ${first}.`));
@@ -322,7 +328,7 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   },
   /** "gated <command>": reports the command at the gate, then asks permission as a harness would, then says. */
   async gated(s) {
-    const command = s.text().trim().split(/\s+/).slice(1).join(" ");
+    const command = ownText(s.text()).trim().split(/\s+/).slice(1).join(" ");
     const req = { kind: "command", toolName: "Bash", input: { command } };
     tool(s, { toolId: "t1", name: "Bash", kind: "command", summary: command });
     const g = await s.gate({ ...req, summary: command });

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describeAdapterContract } from "@ion/adapter-kit/contract";
 import { describe, expect, it } from "vitest";
 import { createFakeAdapter } from "./index.js";
+import { ownText } from "./scenarios.js";
 
 const cwd = mkdtempSync(join(tmpdir(), "ion-fake-"));
 describeAdapterContract("fake", () => createFakeAdapter({ delayMs: 0 }), {
@@ -59,5 +60,18 @@ describe("fake adapter scenarios", () => {
     // An ion's turn whose tool can't reach ion: the step failed, the turn still ends.
     const ion = await turn("please check storefront", "allow", { mcpUrl: gone, instructions: "You are ion" });
     expect(ion.at(-1)).toMatch(/^run\.finished:/);
+  });
+});
+
+// Tour, 2026-11-22: a fake ion's thread was briefed with its whole prompt, ion's memory index first, so the thread's
+// title read "<ion-data id=… source="ion's memory index">".
+describe("ownText", () => {
+  it("is your message after the blocks ion put before it", () => {
+    const index =
+      '<ion-data id="ab12" source="ion\'s memory index">\nyou/a.md "A": "a"\n</ion-data id="ab12">\n\n';
+    expect(ownText(`${index}please check storefront for the typo`)).toBe(
+      "please check storefront for the typo",
+    );
+    expect(ownText("hello")).toBe("hello");
   });
 });

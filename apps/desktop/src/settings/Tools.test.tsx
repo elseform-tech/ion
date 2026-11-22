@@ -494,7 +494,7 @@ describe("Settings → Tools: what a chat's agent added", () => {
 
   it("a chat's link opens Settings → Tools at its row", async () => {
     const c = toolsClient(added);
-    render(<Settings client={c.client} onOpenIon={() => {}} toolsAt={{ kind: "mcp", name: "github" }} />);
+    render(<Settings client={c.client} onOpenIon={() => {}} at={{ kind: "mcp", name: "github" }} />);
     const gh = await findRow("github");
     expect(gh.className).toBe("trow at");
     expect(row("files").className).toBe("trow");

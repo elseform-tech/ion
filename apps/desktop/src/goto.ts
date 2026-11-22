@@ -3,32 +3,45 @@ import { useCallback, useEffect, useState } from "react";
 
 /** A row in Settings → Tools: which tab, and its name. */
 export type ToolsAt = { kind: ToolType; name: string };
+/** Where Settings opens from a link elsewhere: a row in Tools, or your to-dos in Memory. */
+export type SettingsAt = ToolsAt | { kind: "todos" };
 
-const OPEN_TOOLS = "ion:open-tools";
+const OPEN_SETTINGS = "ion:open-settings";
 
-/** Opens Settings → Tools at a row, from anywhere in the window (a chat's "added" line). */
-export const openTools = (at: ToolsAt): void => {
-  window.dispatchEvent(new CustomEvent<ToolsAt>(OPEN_TOOLS, { detail: at }));
+const openAt = (at: SettingsAt): void => {
+  window.dispatchEvent(new CustomEvent<SettingsAt>(OPEN_SETTINGS, { detail: at }));
 };
 
-/** Hears each "open Settings → Tools at this row" (the window does: it switches to Settings). */
-function useOpenTools(fn: (at: ToolsAt) => void): void {
+/** Opens Settings → Tools at a row, from anywhere in the window (a chat's "added" line). */
+export const openTools = (at: ToolsAt): void => openAt(at);
+
+/** Opens Settings → Memory at your to-dos (ion chief's count, a chat's "Added to your to-dos"). */
+export const openTodos = (): void => openAt({ kind: "todos" });
+
+/** Hears each "open Settings here" (the window does: it switches to Settings). */
+function useOpenSettings(fn: (at: SettingsAt) => void): void {
   useEffect(() => {
-    const heard = (e: Event) => fn((e as CustomEvent<ToolsAt>).detail);
-    window.addEventListener(OPEN_TOOLS, heard);
-    return () => window.removeEventListener(OPEN_TOOLS, heard);
+    const heard = (e: Event) => fn((e as CustomEvent<SettingsAt>).detail);
+    window.addEventListener(OPEN_SETTINGS, heard);
+    return () => window.removeEventListener(OPEN_SETTINGS, heard);
   }, [fn]);
 }
 
+/** A key for where Settings opened (a new place opens it anew). */
+export function atKey(at: SettingsAt | null): string {
+  if (!at) return "settings";
+  return "name" in at ? `${at.kind}:${at.name}` : at.kind;
+}
+
 /**
- * The row a chat's "added" line opened: hearing one switches the window to Settings (`go`); leaving Settings forgets
- * it, so Settings opens as usual next time.
+ * Where a link opened Settings: hearing one switches the window to Settings (`go`); leaving Settings forgets it, so
+ * Settings opens as usual next time.
  */
-export function useToolsAt<M extends string>(mode: M, go: (m: M) => void): ToolsAt | null {
-  const [at, setAt] = useState<ToolsAt | null>(null);
-  useOpenTools(
+export function useSettingsAt<M extends string>(mode: M, go: (m: M) => void): SettingsAt | null {
+  const [at, setAt] = useState<SettingsAt | null>(null);
+  useOpenSettings(
     useCallback(
-      (a: ToolsAt) => {
+      (a: SettingsAt) => {
         setAt(a);
         go("settings" as M);
       },

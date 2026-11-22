@@ -89,6 +89,14 @@ export {
   Puzzle,
   MessageCircleQuestion,
   Link,
+  NotebookText,
+  ListTodo,
+  Heart,
+  Lightbulb,
+  User,
+  Bookmark,
+  Circle,
+  History,
 } from "lucide-react";
 export { Avatar, type BotState } from "./Avatar.js";
 export { botFor } from "./bots.js";

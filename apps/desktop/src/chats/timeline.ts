@@ -58,6 +58,8 @@ export type Item =
     }
   /** A chat's agent added a connection, skill or hook with ion's commands: it's off until you turn it on. */
   | { kind: "added"; tool: ToolType; name: string }
+  /** The chat added a to-do (yours or its project's). */
+  | { kind: "todo"; name: string }
   | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string; files?: FileChange[] }
   /** gone: its run ended (done, or failed with it as the reason), so it's not shown on its own. */
   | { kind: "error"; text: string; runId: string; gone?: boolean };
@@ -383,9 +385,12 @@ const HANDLERS: Record<string, Handler> = {
   [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
   // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once.
+  // A to-do it added: one quiet line with a link to your to-dos.
   [EV.memoryWritten]: (t, d) => {
-    const h = (d.header ?? {}) as { name?: unknown; suggested?: unknown };
-    if (!h.suggested || d.before) return t;
+    const h = (d.header ?? {}) as { name?: unknown; suggested?: unknown; type?: unknown };
+    if (d.before) return t;
+    if (h.type === "todo") return push(t, { kind: "todo", name: str(h.name) });
+    if (!h.suggested) return t;
     return push(t, {
       kind: "ion",
       tone: "note",

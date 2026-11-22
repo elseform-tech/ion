@@ -158,7 +158,8 @@ export class TodoOffers {
         path: t.path,
         name: t.name,
       };
-      const offered = suggestionsView.offered(this.d.db, sameAs(card)) || waiting(this.d.db, this.d.memory, t.path);
+      const offered =
+        suggestionsView.offered(this.d.db, sameAs(card)) || waiting(this.d.db, this.d.memory, t.path);
       if (offered || !this.open(t.path)) continue;
       const thread = cardThread(card);
       this.d.store.append({

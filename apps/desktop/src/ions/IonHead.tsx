@@ -1,8 +1,11 @@
-import { List, PanelRight } from "@ion/design-system";
+import type { IonClient } from "@ion/client/browser";
+import { List, ListTodo, PanelRight } from "@ion/design-system";
 import type { ChatInfo, IonInfo } from "@ion/schema";
 import { useRef, useState } from "react";
 import { useDismiss } from "../chats/dismiss.js";
 import { relTime } from "../chats/live.js";
+import { openTodos } from "../goto.js";
+import { useOpenTodos } from "../settings/memory-data.js";
 import { IonAvatar, IonName } from "./IonAvatar.js";
 
 /** The chats an ion started (ion chief: every ion's), newest first. */
@@ -69,8 +72,22 @@ function PanelToggle({ open, toggle }: { open: boolean; toggle: () => void }) {
   );
 }
 
-/** The lab's ion header: its avatar and name, the chats it started, and its threads' panel. */
+/** ion chief's open to-dos, a quiet count that opens them in Settings → Memory. */
+function Todos({ client }: { client: IonClient }) {
+  const n = useOpenTodos(client);
+  if (!n) return null;
+  const label = `${n} to-do${n === 1 ? "" : "s"}`;
+  return (
+    <button className="ib todos" type="button" title={label} aria-label={label} onClick={openTodos}>
+      <ListTodo />
+      <span className="ct">{n}</span>
+    </button>
+  );
+}
+
+/** The lab's ion header: its avatar and name (ion chief: your open to-dos), the chats it started, its threads' panel. */
 export function IonHead(p: {
+  client: IonClient;
   ion: IonInfo;
   chats: ChatInfo[];
   onOpenChat: (chatId: string) => void;
@@ -82,6 +99,7 @@ export function IonHead(p: {
       <IonAvatar ion={p.ion} />
       <IonName ion={p.ion} className="title" />
       <span className="sp" />
+      {p.ion.ionId === "chief" && <Todos client={p.client} />}
       <Started ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} />
       {p.panel && <PanelToggle {...p.panel} />}
     </header>

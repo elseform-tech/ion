@@ -1,10 +1,12 @@
 import type { IonClient } from "@ion/client/browser";
-import { BookOpen, Check, FileCog, type LucideIcon, PlugZap, Puzzle, Webhook } from "@ion/design-system";
+import { BookOpen, FileCog, type LucideIcon, PlugZap, Puzzle, Webhook } from "@ion/design-system";
 import { useState } from "react";
 import type { ToolsAt } from "../goto.js";
 import type { ToolsInfo } from "@ion/schema";
 import { type Run, useCallError } from "../callError.js";
-import { CANT_OPEN, openFile } from "../opener.js";
+import { CANT_OPEN } from "../opener.js";
+import { IconTabs } from "./IconTabs.js";
+import { OpenPath } from "./OpenPath.js";
 import type { SettingsData } from "./data.js";
 import { Plugins, type Whose, WhoseChips } from "./tools-own.js";
 import { type ImportData, useImports, useTools } from "./tools-data.js";
@@ -21,30 +23,6 @@ const TABS: [Tab, string, LucideIcon][] = [
   ["plugins", "Plugins", Puzzle],
   ["hooks", "Hooks", Webhook],
 ];
-
-/** Opens mcp.json in your editor; outside the app it copies the path (and says so with a check). */
-function OpenFile({ path, onFail }: { path: string; onFail: (failed: boolean) => void }) {
-  const [copied, setCopied] = useState(false);
-  const name = copied ? "Path copied" : "Open config file";
-  return (
-    <button
-      className="ib"
-      type="button"
-      title={name}
-      aria-label={name}
-      onClick={() =>
-        void openFile(path).then((r) => {
-          onFail(r === "failed");
-          if (r !== "copied") return;
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        })
-      }
-    >
-      {copied ? <Check /> : <FileCog />}
-    </button>
-  );
-}
 
 /** Connections: what Import would bring in, a call that failed, then the servers. */
 function McpTab(p: {
@@ -78,26 +56,6 @@ function McpTab(p: {
 
 const TAB_OF: Record<ToolsAt["kind"], Tab> = { mcp: "mcp", hook: "hooks", skill: "skills" };
 
-/** The tabs, each an icon named on hover. */
-function TabIcons({ tab, onPick }: { tab: Tab; onPick: (t: Tab) => void }) {
-  return (
-    <span className="seg sm" role="group" aria-label="Tools">
-      {TABS.map(([id, name, Icon]) => (
-        <button
-          key={id}
-          type="button"
-          className={tab === id ? "on" : ""}
-          title={name}
-          aria-label={name}
-          onClick={() => onPick(id)}
-        >
-          <Icon />
-        </button>
-      ))}
-    </span>
-  );
-}
-
 /**
  * Settings → Tools, as the lab's renderTools: Connections, Skills, Plugins and Hooks; under them (Hooks are ion's) chips
  * for whose. `at`: the
@@ -114,11 +72,11 @@ export function Tools({ client, data, at }: { client: IonClient; data: SettingsD
   return (
     <div>
       <div className="tabs2">
-        <TabIcons tab={tab} onPick={setTab} />
+        <IconTabs label="Tools" tabs={TABS} tab={tab} onPick={setTab} />
         {tab === "mcp" && info && (
           <>
             <ImportAll data={imports} />
-            <OpenFile path={info.mcpFile} onFail={setCantOpen} />
+            <OpenPath path={info.mcpFile} name="Open config file" icon={FileCog} onFail={setCantOpen} />
           </>
         )}
       </div>

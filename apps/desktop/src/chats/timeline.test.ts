@@ -66,6 +66,29 @@ describe("timeline", () => {
     expect(play(ev("memory.written", fact)).items).toEqual([]);
   });
 
+  // The user, 2026-11-21: "does memory cover todo as well". A chat that adds a to-do says so in one quiet line, with
+  // a link to your to-dos; changing one says nothing.
+  it("says a chat added a to-do", () => {
+    const written = {
+      path: "projects/app/check-mobile.md",
+      scope: { projectId: "app" },
+      slug: "check-mobile",
+      header: {
+        name: "Check the headline on mobile",
+        description: "d",
+        type: "todo",
+        see: "chats",
+        status: "open",
+      },
+      hash: "h",
+      by: { chatId: "c1", runId: "r1" },
+    };
+    const t = play(ev("message.sent", { text: "Hi" }), ev("memory.written", written));
+    expect(t.items.at(-1)).toEqual({ kind: "todo", name: "Check the headline on mobile" });
+    const changed = { ...written, before: { hash: "g", text: "x" } };
+    expect(play(ev("memory.written", changed)).items).toEqual([]);
+  });
+
   // Review Focus 2: a long chat stays one item per message.
   it("folds 5,000 deltas into one message", () => {
     const events = Array.from({ length: 5000 }, () => ev("message.delta", { text: "x" }));

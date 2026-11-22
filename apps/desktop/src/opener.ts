@@ -6,7 +6,8 @@ const inTauri = () => "__TAURI_INTERNALS__" in window;
 export const CANT_OPEN = "Couldn't open it";
 
 /**
- * Opens a file in your editor (the system's app for it). The window may open only ion's mcp.json (its capability).
+ * Opens a file or folder in the system's app for it. The window may open only ion's mcp.json and its memory folder
+ * and files (its capability).
  * Outside the app (a browser, for the tour) there's no opener: the path is copied instead.
  */
 export async function openFile(path: string): Promise<"opened" | "copied" | "failed"> {

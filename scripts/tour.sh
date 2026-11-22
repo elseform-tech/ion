@@ -158,6 +158,23 @@ step("tool.output", { toolId: "e1", text: "Echo: hello" }, 4);
 step("tool.finished", { toolId: "e1", ok: true, summary: null }, 4);
 step("message.completed", { text: "The everything server echoed: hello" }, 5);
 step("run.finished", { status: "done" }, 6);
+// Plan 19: memory files (made up): yours (a preference a chat changed, a chat suggestion, a person, to-dos, one due
+// today and one done), a project file, a to-do the "edit" chat added (its line in the chat), and a file that
+// cannot be read (its line in Settings).
+const { openMemory } = await import("./apps/daemon/dist/memory/index.js");
+const mem = openMemory(process.env.ION_HOME + "/data", store, db);
+const day = (d) => { const t = new Date(Date.now() + d * 864e5); return [t.getFullYear(), t.getMonth() + 1, t.getDate()].map((n) => String(n).padStart(2, "0")).join("-"); };
+const put = (scope, header, text, by) => mem.write({ scope, header, text, by });
+const byChat = { chatId: edit.id, runId: "tour-memory" };
+const tabs = put("you", { name: "Tabs, not spaces", description: "Indent with tabs in every project", type: "preference" }, "Indent with tabs.", "you");
+mem.write({ scope: "you", slug: tabs.slug, header: tabs.header, text: "Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.", expectHash: tabs.hash, by: byChat });
+put("you", { name: "Short replies", description: "Answers in a few lines, details on request", type: "preference", suggested: "storefront" }, "Keep answers short. Offer details instead of writing them.", byChat);
+put("you", { name: "Sam", description: "Designer on the storefront; reviews UI changes", type: "person" }, "Sam reviews UI changes on storefront and likes screenshots in the PR.", { ion: "chief" });
+put("you", { name: "Renew the passport", description: "Renew the passport", type: "todo", status: "open", due: day(0) }, "Renew the passport.", "you");
+put("you", { name: "Book the dentist", description: "Book the dentist", type: "todo", status: "done" }, "Book the dentist.", "you");
+put({ projectId: "storefront" }, { name: "Deploy", description: "pnpm deploy from main; staging first", type: "reference" }, "Deploy with `pnpm deploy` from main. Staging first, then production.", { ion: "storefront" });
+put({ projectId: "storefront" }, { name: "Check the headline on mobile", description: "Check the headline on mobile", type: "todo", status: "open", due: day(3) }, "Check the headline on mobile.", byChat);
+fs.writeFileSync(process.env.ION_HOME + "/data/memory/projects/storefront/notes.md", "no header here\n");
 db.close();'
 ion daemon start >/dev/null
 # Plan 09, 14: a thread storefront's ion started, and ion chief routing a message to two projects (each a turn of

@@ -327,7 +327,13 @@ export function IonChat(p: Omit<CardProps, "card" | "peek" | "onPeek">) {
   const panel = again ? { open: Boolean(open), toggle: () => show(open ? null : again) } : undefined;
   return (
     <section className={`ichat${open ? " peek" : ""}`}>
-      <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} {...(panel ? { panel } : {})} />
+      <IonHead
+        client={p.client}
+        ion={p.ion}
+        chats={p.chats}
+        onOpenChat={p.onOpenChat}
+        {...(panel ? { panel } : {})}
+      />
       <Bubbles items={items} {...p} peek={open ? peek : null} onPeek={toggle} />
       <IonBox client={p.client} ion={p.ion} />
       {open && (

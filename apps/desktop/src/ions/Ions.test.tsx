@@ -79,6 +79,7 @@ function client(events: IonEvent[] = []) {
         { id: "payments-api", path: "/p/p", starred: false },
       ];
     if (cmd === "chats.list") return [thread];
+    if (cmd === "memory.list") return [{ memoryId: "you/a.md" }, { memoryId: "you/b.md" }];
     if (cmd === "activity.list") return { paused: false, upcoming: [], today: [], yesterday: [] };
     if (cmd === "needs.list")
       return [
@@ -323,6 +324,23 @@ describe("Ions", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Fix the cart/ }));
     expect(onOpenChat).toHaveBeenCalledWith("t1");
   });
+  // The user, 2026-11-21: "does memory cover todo as well". ion chief's screen shows how many to-dos are open, quietly,
+  // and opens them in Settings → Memory; a project's ion doesn't.
+  it("shows ion chief's open to-dos and opens them", async () => {
+    const c = client();
+    const opened = vi.fn();
+    window.addEventListener("ion:open-settings", (e) => opened((e as CustomEvent).detail));
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    const todos = await screen.findByRole("button", { name: "2 to-dos" });
+    expect(c.call).toHaveBeenCalledWith("memory.list", { type: "todo", open: true });
+    expect(todos.textContent).toBe("2");
+    fireEvent.click(todos);
+    expect(opened).toHaveBeenCalledWith({ kind: "todos" });
+    fireEvent.click(container.querySelector(".pmain")!);
+    await screen.findByRole("button", { name: "Chats started by storefront" });
+    expect(screen.queryByRole("button", { name: "2 to-dos" })).toBeNull();
+  });
+
   // The user, 2026-11-19: "ions are not thinking". While an ion decides, its chat shows it's thinking; its reply
   // takes the place.
   it("shows an ion thinking until it replies", async () => {

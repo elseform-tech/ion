@@ -1,7 +1,7 @@
 import type { EffortLevel } from "./capabilities.js";
 import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
-import type { MemoryFileInfo, MemoryInfo, MemoryType } from "./memory.js";
+import type { MemoryChangeInfo, MemoryFileInfo, MemoryInfo, MemorySee, MemoryType } from "./memory.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -307,8 +307,15 @@ export type Commands = ToolsCommands & {
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
   /** Keeps a chat's suggested preference for every project (by its path or name). */
   "memory.keep": { args: { path: string }; result: { path: string } };
-  /** Where the memory folder is. */
-  "memory.folder": { args: Record<string, never>; result: { path: string } };
+  /** Each change to a file, newest first: who, when, and the text it left. */
+  "memory.history": { args: { path: string }; result: MemoryChangeInfo[] };
+  /** Changes a file's text or who sees it, as you, only over the version read (`expect`: its hash). */
+  "memory.write": {
+    args: { path: string; text?: string; see?: MemorySee; expect: string };
+    result: MemoryInfo;
+  };
+  /** Where the memory folder is, and each file in it that can't be read (one plain line). */
+  "memory.folder": { args: Record<string, never>; result: { path: string; problems: string[] } };
   /** A new to-do: yours, or a project's; `due` a day (YYYY-MM-DD). */
   "todo.add": { args: { text: string; projectId?: string; due?: string }; result: MemoryInfo };
   /** Marks a to-do done, by its path, file name or name. */
@@ -487,6 +494,8 @@ export const COMMANDS = [
   "memory.search",
   "memory.forget",
   "memory.keep",
+  "memory.history",
+  "memory.write",
   "memory.folder",
   "todo.add",
   "todo.done",

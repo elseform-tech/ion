@@ -102,6 +102,8 @@
     "memory.search",
     "memory.forget",
     "memory.keep",
+    "memory.history",
+    "memory.write",
     "memory.folder",
     "todo.add",
     "todo.done",

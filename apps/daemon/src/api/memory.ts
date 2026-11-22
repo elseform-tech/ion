@@ -1,7 +1,18 @@
 import { loadUserConfig } from "@ion/config";
-import { MEMORY_TYPES, type MemoryInfo, type MemoryScope, type MemoryType } from "@ion/schema";
+import {
+  MEMORY_SEE,
+  MEMORY_TYPES,
+  type MemoryBy,
+  type MemoryChangeInfo,
+  type MemoryInfo,
+  type MemoryScope,
+  type MemorySee,
+  type MemoryType,
+} from "@ion/schema";
 import { ScopedMemory } from "../memory/scoped.js";
 import { addTodo, closeTodo } from "../memory/todos.js";
+import type { Db } from "../store/index.js";
+import { chatsView } from "../views/chats.js";
 import type { Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
 
@@ -18,17 +29,62 @@ function typeOf(t: unknown): MemoryType | undefined {
   return t as MemoryType;
 }
 
+/** Who changed it, as the list says: "you", a chat's id, or "ion:<id>". */
+const sourceOf = (by: MemoryBy) => {
+  if (by === "you") return "you";
+  return "ion" in by ? `ion:${by.ion}` : by.chatId;
+};
+
+/** Each chat's title by its id (for "changed by" a chat). */
+const titles = (db: Db) => new Map(chatsView.list(db).map((c) => [c.chatId, c.title]));
+
+/** A file as listed, with the title of the chat that changed it last. */
+function titled<T extends { source: string }>(m: T, t: Map<string, string>): T & { sourceTitle?: string } {
+  const title = t.get(m.source);
+  return title ? { ...m, sourceTitle: title } : m;
+}
+
+function seeOf(s: unknown): MemorySee | undefined {
+  if (s === undefined) return undefined;
+  if (!MEMORY_SEE.includes(s as MemorySee)) throw new UserError(`Pick who sees it: ${MEMORY_SEE.join(", ")}`);
+  return s as MemorySee;
+}
+
+/** Each change to a file, newest first, with the text it left (the next change's text before, or the file now). */
+function historyOf(ctx: Parameters<Handlers["memory.history"]>[1], path: string): MemoryChangeInfo[] {
+  const changes = ctx.memory.history(path);
+  const now = ctx.memory.read(path);
+  const t = titles(ctx.db);
+  const nowText = now.ok ? now.file.text : undefined;
+  const out = changes.map((c, i): MemoryChangeInfo => {
+    const next = changes[i + 1];
+    const left = next ? next.before?.text : nowText;
+    const text = c.kind === "written" && left !== undefined ? { text: left } : {};
+    return titled({ at: c.at, kind: c.kind, source: sourceOf(c.by), ...text }, t);
+  });
+  return out.reverse();
+}
+
 /** Your memory files: list, read, search, forget, and where the folder is (you see and change everything). */
 export const memoryHandlers: Pick<
   Handlers,
-  "memory.list" | "memory.read" | "memory.search" | "memory.forget" | "memory.keep" | "memory.folder"
+  | "memory.list"
+  | "memory.read"
+  | "memory.search"
+  | "memory.forget"
+  | "memory.keep"
+  | "memory.history"
+  | "memory.write"
+  | "memory.folder"
 > = {
   "memory.list": (a, ctx) => {
     const type = typeOf(a.type);
+    const t = titles(ctx.db);
     return ctx.memory
       .list(a.projectId ?? null, [...BOTH])
       .filter((m) => (!type || m.type === type) && (!a.open || openTodo(m)))
-      .sort(byOrder);
+      .sort(byOrder)
+      .map((m) => titled(m, t));
   },
   "memory.read": (a, ctx) => {
     const f = new ScopedMemory(ctx.memory, { kind: "you" }).read(String(a.name ?? ""));
@@ -53,7 +109,11 @@ export const memoryHandlers: Pick<
   "memory.search": (a, ctx) => {
     const byPath = new Map(ctx.memory.list(a.projectId ?? null, [...BOTH]).map((m) => [m.memoryId, m]));
     const found = new ScopedMemory(ctx.memory, { kind: "you" }).search(String(a.q ?? ""), 1000);
-    return found.flatMap((r) => byPath.get(r.path) ?? []).slice(0, 20);
+    const t = titles(ctx.db);
+    return found
+      .flatMap((r) => byPath.get(r.path) ?? [])
+      .slice(0, 20)
+      .map((m) => titled(m, t));
   },
   "memory.forget": (a, ctx) => {
     new ScopedMemory(ctx.memory, { kind: "you" }).forget(String(a.memoryId ?? ""));
@@ -62,7 +122,23 @@ export const memoryHandlers: Pick<
   "memory.keep": (a, ctx) => ({
     path: new ScopedMemory(ctx.memory, { kind: "you" }).keep(String(a.path ?? "")),
   }),
-  "memory.folder": (_a, ctx) => ({ path: ctx.memory.root }),
+  "memory.history": (a, ctx) => historyOf(ctx, String(a.path ?? "")),
+  "memory.write": (a, ctx) => {
+    const m = new ScopedMemory(ctx.memory, { kind: "you" });
+    const f = m.read(String(a.path ?? ""));
+    const see = seeOf(a.see);
+    const text = a.text === undefined ? {} : { text: String(a.text) };
+    const scope = f.scope === "you" ? "you" : f.scope.projectId;
+    const w = m.write({
+      scope,
+      path: f.path,
+      expect: String(a.expect ?? ""),
+      ...text,
+      ...(see ? { see } : {}),
+    });
+    return titled(infoOf(ctx, w.path), titles(ctx.db));
+  },
+  "memory.folder": (_a, ctx) => ({ path: ctx.memory.root, problems: ctx.memory.problems() }),
 };
 
 /** A file as listed, by its path. */

@@ -1,6 +1,6 @@
-//! ion's desktop shell. It tells the UI where the daemon is (port and token from `daemon.json`) and opens two
-//! things for it: your mcp.json in your editor (that one file, nothing else) and sign-in pages in your browser;
-//! everything else goes through the daemon's WebSocket API.
+//! ion's desktop shell. It tells the UI where the daemon is (port and token from `daemon.json`) and opens a few
+//! things for it: your mcp.json in your editor (that one file), ion's memory folder and its files (nothing else in the
+//! data folder), and sign-in pages in your browser; everything else goes through the daemon's WebSocket API.
 
 use std::path::PathBuf;
 
@@ -36,6 +36,12 @@ pub fn mcp_file(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
     Some(config.join("ion").join("mcp.json"))
 }
 
+/// ion's memory folder (Settings → Memory → Open memory folder), and each file in it (a row's Open): `<data>/memory`.
+pub fn memory_paths(env: impl Fn(&str) -> Option<String>) -> Option<[PathBuf; 2]> {
+    let dir = data_dir(env)?.join("memory");
+    Some([dir.clone(), dir.join("**")])
+}
+
 /// The running daemon's port and token, or None when ion isn't running (no file, or one ion can't read).
 pub fn read_daemon_info(dir: &std::path::Path) -> Option<DaemonInfo> {
     let text = std::fs::read_to_string(dir.join("daemon.json")).ok()?;
@@ -65,17 +71,18 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // The window may open one file: your mcp.json (Settings → Tools → Open config file).
-            if let Some(file) = mcp_file(|k| std::env::var(k).ok()) {
+            // The window may open your mcp.json (Settings → Tools → Open config file) and ion's memory folder and
+            // its files (Settings → Memory), nothing else.
+            let env = |k: &str| std::env::var(k).ok();
+            let mut paths: Vec<PathBuf> = mcp_file(env).into_iter().collect();
+            paths.extend(memory_paths(env).into_iter().flatten());
+            if !paths.is_empty() {
                 use tauri::Manager;
+                let allow = paths.iter().map(|p| serde_json::json!({ "path": p })).collect();
                 app.add_capability(
-                    tauri::ipc::CapabilityBuilder::new("mcp-file")
+                    tauri::ipc::CapabilityBuilder::new("ion-files")
                         .window("main")
-                        .permission_scoped(
-                            "opener:allow-open-path",
-                            vec![serde_json::json!({ "path": file })],
-                            vec![],
-                        ),
+                        .permission_scoped("opener:allow-open-path", allow, vec![]),
                 )?;
             }
             Ok(())
@@ -111,6 +118,14 @@ mod tests {
         assert_eq!(mcp_file(env(&[("XDG_CONFIG_HOME", "/x"), ("HOME", "/h")])), Some(PathBuf::from("/x/ion/mcp.json")));
         assert_eq!(mcp_file(env(&[("HOME", "/h")])), Some(PathBuf::from("/h/.config/ion/mcp.json")));
         assert_eq!(mcp_file(env(&[])), None);
+    }
+
+    #[test]
+    fn memory_is_the_data_folders_memory_and_its_files() {
+        let [dir, files] = memory_paths(env(&[("ION_HOME", "/i")])).unwrap();
+        assert_eq!(dir, PathBuf::from("/i/data/memory"));
+        assert_eq!(files, PathBuf::from("/i/data/memory/**"));
+        assert_eq!(memory_paths(env(&[])), None);
     }
 
     #[test]
