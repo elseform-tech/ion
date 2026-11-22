@@ -100,12 +100,11 @@
 - **Two settings in Settings → Agents (the user, 2026-11-22: "sure"):**
   - **Agent order:** a drag list (default opencode, Grok Build, Codex, Claude Code). It is the one preference list used by handoff targets, Pick by usage, and an ion's chats when the project names no agent. It replaces the order fixed in code.
   - **"When an agent hits its limit":** Ask (default) / Continue on the next agent / Wait. "Always continue on X here" decisions still win for their project.
-- **Chats at once, made clear (the user asked what it covers, 2026-11-22):**
-  - It counts your chats (plain and coding), the chats ions start, and routines. It doesn't count ions' own replies, the judge or Dream.
-  - The row is renamed "Chats at once" with a second row, "Of those, ions may use" (Auto = half, or a number), so ion-started chats never take every slot.
-  - When a slot frees up, a chat you sent goes before ion-started and routine ones.
-  - A queued chat says why: "Waiting — 4 chats running".
-  - The setting itself (resources.max_runs) is kept; the new one is resources.ion_runs.
+- **Your chats never wait (the user, 2026-11-22: the limit shouldn't stop you working in more chats, especially plain ones):**
+  - Chats you send, plain or coding, start right away and never count toward a limit.
+  - The limit applies only to work ion starts on its own: chats ions start and routines. The setting is renamed "Chats ion runs at once" (Auto = half the cores, or 1–32; still resources.max_runs).
+  - A queued ion chat says why: "Waiting — 4 ion chats running".
+  - Tests: "your chat starts even when ion's slots are full"; "ion-started chats and routines wait for a slot".
 - [ ] Tests (pure policy):
   - "a limited agent is never picked";
   - "Claude is saved unless deep work needs it";
@@ -113,8 +112,7 @@
   - "api-billed comes after subscription and free";
   - "your pick always wins";
   - "the agent order decides handoff targets and routing";
-  - "ion-started chats never take every slot";
-  - "your chat goes first when a slot frees".
+  - "your chat starts even when ion's slots are full".
 - [ ] FAIL → implement → PASS → live → commit `feat: ion picks a thread's agent by usage and cost, and says why`.
 
 ### Task 4: Estimates from history
