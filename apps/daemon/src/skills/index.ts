@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { SkillInfo, SkillWhose } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import { type Sign, sameMark } from "../secrets/consent-key.js";
 import { CANT_READ_KEYCHAIN } from "../secrets/index.js";
-import { type FoundSkill, findSkills } from "./find.js";
+import { type AgentsEnv, type FoundSkill, findSkills } from "./find.js";
 import { pluginDirOf, writePlugin } from "./plugin.js";
 
 /** By agent id: whether it takes skills from ion (Claude Code), and whose folders it reads itself. */
@@ -18,6 +19,7 @@ const OWNER: Record<SkillWhose, string> = {
   claude: "Claude Code",
   codex: "Codex",
   opencode: "opencode",
+  grok: "Grok Build",
   shared: "Every agent",
   ion: "ion",
 };
@@ -44,20 +46,25 @@ export type OwnSwitches = Record<string, boolean>;
 const BY_CONSENT: OwnSwitches = { "claude-code": false };
 
 /**
- * The agent whose own a skill is: Codex's and opencode's always (they read them themselves); Claude Code's in your home
- * while it brings its own. A project's .claude/skills is the repo's (security review, 2026-11-21): ion passes it only
- * once you turn it on.
+ * The agent whose own a skill is: Codex's and opencode's always (they read them themselves); Grok's in your home (the
+ * user, 2026-11-22); Claude Code's in your home while it brings its own. A project's .claude/skills or .grok/skills is
+ * the repo's (security review, 2026-11-21): ion passes it only once you turn it on.
  */
 function ownerOf(s: Pick<FoundSkill, "whose" | "project">, own: OwnSwitches): string | undefined {
   if (s.whose === "claude") return own["claude-code"] !== false && !s.project ? "claude-code" : undefined;
+  if (s.whose === "grok") return s.project ? undefined : "grok-build";
   return s.whose === "codex" || s.whose === "opencode" ? s.whose : undefined;
 }
+
+/** Turned on in ion, by your consent: what ion passes Claude Code, and a repo's Grok skills (Grok gets its text). */
+const byConsent = (s: Pick<FoundSkill, "whose" | "project">) =>
+  FOR_CLAUDE.includes(s.whose) || (s.whose === "grok" && s.project !== undefined);
 
 /** On only while it's exactly what you turned on (its record verifies with ion's key); changed since: off. */
 function stateOf(s: FoundSkill, was: string | undefined, now: string | undefined, own: OwnSwitches): State {
   // Claude Code's own, while it brings its own: on, as it is (the user, 2026-11-21).
   if (s.whose === "claude" && ownerOf(s, own)) return { on: true };
-  if (!FOR_CLAUDE.includes(s.whose)) return { on: false };
+  if (!byConsent(s)) return { on: false };
   if (was === undefined) return { on: false, new: true };
   if (!now || !sameMark(was, now)) return { on: false, changed: true };
   return { on: true };
@@ -137,7 +144,7 @@ async function turnSkill(
   if (s && ownerOf(s, t.own)) throw new UserError(`${OWNER[s.whose]} uses its own`);
   if (!t.turnOn) return kept;
   if (!s) throw new UserError("Unknown skill");
-  if (!FOR_CLAUDE.includes(s.whose)) throw new UserError(`${OWNER[s.whose]} uses its own`);
+  if (!byConsent(s)) throw new UserError(`${OWNER[s.whose]} uses its own`);
   const m = await mark(s);
   if (!m) throw new UserError(CANT_READ_KEYCHAIN);
   return [...kept, `${t.id}@${m}`];
@@ -155,8 +162,12 @@ export function createSkills(o: {
   readers: SkillReaders;
   /** ion's own skills folder (beside mcp.json), where `ion skills add` copies one. */
   ionDir?: string;
+  /** `CODEX_HOME`, `GROK_HOME`: yours for your own home, none for another (the tour's, tests'). */
+  env?: AgentsEnv;
 }) {
-  const find = (projects: string[]) => findSkills(o.home, projects, o.ionDir);
+  const env = o.env ?? (o.home === homedir() ? process.env : {});
+  const find = (projects: string[]) =>
+    findSkills(o.home, projects, { ...(o.ionDir ? { ionDir: o.ionDir } : {}), env });
   const mark = (s: FoundSkill) => o.sign(material(s)).catch(() => undefined);
   /** The skills on; a run whose skills couldn't be checked (the keychain can't be read) is said in the log. */
   const turnedOn = async (found: FoundSkill[], on: string[]) => {
@@ -185,7 +196,7 @@ export function createSkills(o: {
       // Claude Code's own skills come as they are while it brings its own (its settings files never load).
       const own = r.own ? found.filter((s) => ownerOf(s, { "claude-code": true }) === "claude-code") : [];
       const yours = await turnedOn(
-        found.filter((s) => !own.includes(s)),
+        found.filter((s) => !own.includes(s) && FOR_CLAUDE.includes(s.whose)),
         r.on,
       );
       const given = [...own, ...yours];

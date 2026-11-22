@@ -109,6 +109,11 @@ skipped); at most 4 hook processes at once per run. Each runs in its own process
 Your agents' own skills (Claude Code's `~/.claude/skills`, a project's, and the other agents' where they keep them),
 on or off per skill. A Claude Code run gets a plugin folder of the ones on (only `name` and `description` copied; removed at
 run end). A skill's files may be read and its scripts run, never written; in Auto each script run goes to the judge.
+Where each agent keeps them (the user, 2026-11-22: "/" lists each agent's own): Claude Code `~/.claude/skills`, Codex
+`$CODEX_HOME/skills` (else `~/.codex/skills`), opencode `~/.config/opencode/skills`, Grok `$GROK_HOME/skills` (else
+`~/.grok/skills`; it reads Claude's and `~/.agents/skills` too), and in a project `.claude/skills`, `.opencode/skills`,
+`.grok/skills`, `.agents/skills`. A Grok chat's "/" lists Grok's own, then ion's that are on; a project's
+`.grok/skills` is the repo's, off until you turn it on, and then given to Grok as its text.
 
 ## ion's commands for agents
 

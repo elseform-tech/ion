@@ -86,11 +86,13 @@ const SKILLS = new Set(["claude-code"]);
 
 /**
  * Whose skill folders each agent reads itself (ion passes them nothing): Codex reads `~/.codex/skills` and
- * `.agents/skills`; opencode its own, Claude's and `.agents/skills`.
+ * `.agents/skills`; opencode its own, Claude's and `.agents/skills`; Grok its own, Claude's and `.agents/skills`
+ * (`grok inspect`, Grok 1.0.92; the user, 2026-11-22).
  */
 const OWN_SKILLS: Record<string, SkillWhose[]> = {
   codex: ["codex", "shared"],
   opencode: ["opencode", "claude", "shared"],
+  "grok-build": ["grok", "claude", "shared"],
 };
 
 /** By agent id, for the agents the app lists: whether it takes skills from ion, and whose folders it reads itself. */

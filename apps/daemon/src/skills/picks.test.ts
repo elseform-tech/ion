@@ -45,6 +45,16 @@ describe("/ lists the chat's skills and filters", () => {
     expect(chatPicks("codex", { ...at, commands: [] }).skills.map((s) => s.name)).toEqual(["deploy", "pdf"]);
   });
 
+  // The user, 2026-11-22: "/" inherits each agent's own skills; Grok's own come first in a Grok chat, then ion's.
+  it("a Grok chat lists Grok's own skills, then ion's", () => {
+    const ship = skill("ship", { whose: "grok", readers: ["grok-build"], own: "grok-build" });
+    const p = chatPicks("grok-build", { ...at, skills: [...SKILLS, ship], commands: [] });
+    expect(p.skills.map((s) => [s.name, s.from])).toEqual([
+      ["ship", "own"],
+      ["pdf", "ion"],
+    ]);
+  });
+
   it("an ion's chat lists every skill that's on, and the servers that are on", () => {
     const p = ionPicks({ skills: SKILLS, servers: at.servers });
     expect(p.skills.map((s) => s.name)).toEqual(["brainstorm", "pdf"]);

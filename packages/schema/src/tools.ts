@@ -97,10 +97,10 @@ export type McpToolInfo = McpTool & {
 export type ToolSupport = { http: boolean; stdio: boolean; skills: boolean };
 
 /**
- * Whose folder a skill is in: Claude Code's, Codex's, opencode's, the shared `.agents/skills`, or ion's own (beside
+ * Whose folder a skill is in: Claude Code's, Codex's, opencode's, Grok Build's, the shared `.agents/skills`, or ion's own (beside
  * mcp.json: where `ion skills add` copies one).
  */
-export type SkillWhose = "claude" | "codex" | "opencode" | "shared" | "ion";
+export type SkillWhose = "claude" | "codex" | "opencode" | "grok" | "shared" | "ion";
 
 /**
  * A skill found in an agent's folder (a folder with SKILL.md). `id` is its folder, home-shortened (as `where`).
