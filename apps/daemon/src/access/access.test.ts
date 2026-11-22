@@ -532,6 +532,25 @@ describe("harnessRunner", () => {
   });
 });
 
+// pnpm check, 2026-11-22: another test's daemon swept this test's config away and the judge fell back to its default,
+// claude-code:haiku: a real model call in a test (AGENTS.md: none). Under tests, without ION_LIVE*, no real agent
+// starts: a judge with no config fails closed, saying so.
+describe("a judge with no config, in tests", () => {
+  it("fails closed without starting Claude", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "gone", "config.toml");
+    const v = await createJudge(harnessRunner(runner(configFile)))({
+      projectId: "app",
+      text: "x",
+      req: cmd("ls"),
+    });
+    expect(v).toEqual({
+      verdict: "deny",
+      reason: "ion couldn't decide: real agents are off in tests",
+      decided: false,
+    });
+  });
+});
+
 // The user, 2026-11-19 (Settings): ion thinks with its own quick model ([ion] quick), set apart from the judge.
 describe("harnessRunner for ion's own thinking", () => {
   it("uses [ion] quick, not the judge", async () => {

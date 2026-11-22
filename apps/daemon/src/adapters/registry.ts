@@ -55,8 +55,22 @@ export function getHarness(id: string): HarnessEntry | null {
       label: "Fake",
       loginHint: "ion fake login",
     };
-  return ENTRIES[id]?.() ?? null;
+  const e = ENTRIES[id]?.() ?? null;
+  return e && realAgentsOff() ? { ...e, adapter: { ...e.adapter, start: refuseInTests } } : e;
 }
+
+/**
+ * Under tests (VITEST) without a live flag (ION_LIVE, ION_LIVE_GROK, ION_LIVE_CLAUDE, ION_LIVE_CODEX), no real agent
+ * starts a session (pnpm check, 2026-11-22: a test's judge fell back to claude-code:haiku and called it; AGENTS.md: no
+ * real model calls in tests).
+ */
+const realAgentsOff = () =>
+  !!process.env.VITEST &&
+  !Object.keys(process.env).some((k) => /^ION_LIVE(_\w+)?$/.test(k) && process.env[k] === "1");
+
+const refuseInTests = (): never => {
+  throw new Error("real agents are off in tests");
+};
 
 /** Without one chosen: the first ready of these (quota-friendly first), else any ready one. */
 const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
