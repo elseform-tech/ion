@@ -187,3 +187,14 @@ it("finishes an interrupted view upgrade on the next start", () => {
   expect(new EventStore(db, [v(2)])).toBeInstanceOf(EventStore);
   expect(db.prepare("SELECT chat_id FROM view_demo").all()).toEqual([{ chat_id: "c1" }]);
 });
+
+// Task review, 2026-11-22: a memory file's history scanned every event for its path; an index on the path finds them.
+it("finds a memory file's events by its path through an index", () => {
+  const db = openDb(":memory:");
+  const plan = db
+    .prepare(
+      "EXPLAIN QUERY PLAN SELECT ts FROM events WHERE type IN (?, ?) AND json_extract(data, '$.path') = ? ORDER BY rowid",
+    )
+    .all("a", "b", "you/x.md") as { detail: string }[];
+  expect(plan.map((p) => p.detail).join(" ")).toContain("events_path");
+});

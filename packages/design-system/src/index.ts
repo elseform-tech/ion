@@ -97,6 +97,7 @@ export {
   Bookmark,
   Circle,
   History,
+  MessagesSquare,
 } from "lucide-react";
 export { Avatar, type BotState } from "./Avatar.js";
 export { botFor } from "./bots.js";

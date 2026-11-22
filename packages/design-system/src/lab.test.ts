@@ -93,6 +93,8 @@ describe("lab.css", () => {
       ".srow .when{",
       ".mfold{",
       ".head .todos{",
+      // Task review, 2026-11-22: the switch's icon, named on hover.
+      ".msee{",
     ])
       expect(lab.includes(sel), sel).toBe(true);
     expect(page).toContain("function renderMemory(){");

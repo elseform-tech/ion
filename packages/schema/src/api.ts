@@ -301,8 +301,11 @@ export type Commands = ToolsCommands & {
   "memory.list": { args: { projectId?: string; type?: MemoryType; open?: boolean }; result: MemoryInfo[] };
   /** One file, by its path, file name or name. */
   "memory.read": { args: { name: string }; result: MemoryFileInfo };
-  /** The best matches for some words (at most 20), yours and a project's (or all). */
-  "memory.search": { args: { q: string; projectId?: string }; result: MemoryInfo[] };
+  /**
+   * The best matches for some words (at most 20), yours and a project's (or all); `scope` ("you" or a project's id):
+   * only that scope's files.
+   */
+  "memory.search": { args: { q: string; projectId?: string; scope?: string }; result: MemoryInfo[] };
   /** Deletes a file, by its path, file name or name. */
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
   /** Keeps a chat's suggested preference for every project (by its path or name). */

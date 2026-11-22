@@ -36,10 +36,11 @@ pub fn mcp_file(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
     Some(config.join("ion").join("mcp.json"))
 }
 
-/// ion's memory folder (Settings → Memory → Open memory folder), and each file in it (a row's Open): `<data>/memory`.
+/// ion's memory folder (Settings → Memory → Open memory folder), and each Markdown file in it (a row's Open):
+/// `<data>/memory` and `<data>/memory/**/*.md`, nothing else there.
 pub fn memory_paths(env: impl Fn(&str) -> Option<String>) -> Option<[PathBuf; 2]> {
     let dir = data_dir(env)?.join("memory");
-    Some([dir.clone(), dir.join("**")])
+    Some([dir.clone(), dir.join("**").join("*.md")])
 }
 
 /// The running daemon's port and token, or None when ion isn't running (no file, or one ion can't read).
@@ -124,7 +125,8 @@ mod tests {
     fn memory_is_the_data_folders_memory_and_its_files() {
         let [dir, files] = memory_paths(env(&[("ION_HOME", "/i")])).unwrap();
         assert_eq!(dir, PathBuf::from("/i/data/memory"));
-        assert_eq!(files, PathBuf::from("/i/data/memory/**"));
+        // Task review, 2026-11-22: Markdown files only, not anything else in the folder.
+        assert_eq!(files, PathBuf::from("/i/data/memory/**/*.md"));
         assert_eq!(memory_paths(env(&[])), None);
     }
 

@@ -52,8 +52,19 @@ export function useMemory(client: IonClient): MemoryData {
   return { files, folder, reload };
 }
 
-/** The index's best matches for some words (null: no words). */
-export function useSearch(client: IonClient, q: string, files: MemoryInfo[]): MemoryInfo[] | null {
+/** How long typing pauses before a search goes out. */
+const SEARCH_WAIT_MS = 150;
+
+/**
+ * The index's best matches for some words in one scope ("you" or a project's id), asked once typing pauses (null: no
+ * words). The daemon keeps that scope's best 20 (task review, 2026-11-22).
+ */
+export function useSearch(
+  client: IonClient,
+  q: string,
+  scope: string,
+  files: MemoryInfo[],
+): MemoryInfo[] | null {
   const [found, setFound] = useState<MemoryInfo[] | null>(null);
   const words = q.trim();
   useEffect(() => {
@@ -62,14 +73,17 @@ export function useSearch(client: IonClient, q: string, files: MemoryInfo[]): Me
       return;
     }
     let gone = false;
-    void client.call("memory.search", { q: words }).then(
-      (r) => !gone && setFound(r),
-      () => !gone && setFound([]),
-    );
+    const timer = setTimeout(() => {
+      void client.call("memory.search", { q: words, scope }).then(
+        (r) => !gone && setFound(r),
+        () => !gone && setFound([]),
+      );
+    }, SEARCH_WAIT_MS);
     return () => {
       gone = true;
+      clearTimeout(timer);
     };
-  }, [client, words, files]);
+  }, [client, words, scope, files]);
   return found;
 }
 

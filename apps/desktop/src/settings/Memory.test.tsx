@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { IonClient } from "@ion/client/browser";
+import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "@ion/schema";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -103,8 +103,8 @@ const HISTORY: MemoryChangeInfo[] = [
 ];
 
 /** A daemon with memory: each call answers from FILES; `memory.search` finds by name. */
-function memoryClient() {
-  const call = vi.fn(async (cmd: string, a: Record<string, unknown>) => {
+function memoryClient(o: { text?: string; refuse?: string } = {}) {
+  const answer = async (cmd: string, a: Record<string, unknown>) => {
     if (cmd === "projects.list") return [{ id: "shop", name: "Shop", path: "/p/shop", starred: true }];
     if (cmd === "ions.list")
       return [{ ionId: "chief", name: "ion", color: null, harness: null, last: null, needs: 0 }];
@@ -115,11 +115,15 @@ function memoryClient() {
     if (cmd === "memory.folder") return { path: "/d/memory", problems: ["shop/notes.md can't be read"] };
     if (cmd === "memory.read") {
       const m = FILES.find((f) => f.memoryId === a.name)!;
-      return read(m, m.memoryId === "you/tabs.md" ? "Tabs, width 2" : m.text);
+      return read(m, m.memoryId === "you/tabs.md" ? (o.text ?? "Tabs, width 2") : m.text);
     }
     if (cmd === "memory.history") return HISTORY;
     if (cmd === "memory.write" || cmd === "todo.done") return FILES[0];
     return [];
+  };
+  const call = vi.fn(async (cmd: string, a: Record<string, unknown>) => {
+    if (cmd === "memory.write" && o.refuse) throw new ApiCallError("invalid", o.refuse);
+    return answer(cmd, a);
   });
   return { call, subscribe: vi.fn(async () => () => {}) } as unknown as IonClient & { call: typeof call };
 }
@@ -150,9 +154,13 @@ describe("Settings → Memory", () => {
     expect(screen.queryByText("Sam")).toBeNull();
     // Search: the index's best matches, in the scope picked.
     fireEvent.click(screen.getByRole("button", { name: "You" }));
+    // Task review, 2026-11-22: search asks for the scope picked (the daemon keeps its best 20), once typing pauses.
+    fireEvent.change(screen.getByLabelText("Search memory"), { target: { value: "sa" } });
     fireEvent.change(screen.getByLabelText("Search memory"), { target: { value: "sam" } });
+    expect(c.call.mock.calls.some(([cmd]) => cmd === "memory.search")).toBe(false);
     await waitFor(() => expect(screen.queryByText("Tabs, not spaces")).toBeNull());
-    expect(c.call).toHaveBeenCalledWith("memory.search", { q: "sam" });
+    expect(c.call).toHaveBeenCalledWith("memory.search", { q: "sam", scope: "you" });
+    expect(c.call.mock.calls.filter(([cmd]) => cmd === "memory.search")).toHaveLength(1);
     expect(screen.getByText("Sam")).toBeTruthy();
   });
 
@@ -168,6 +176,9 @@ describe("Settings → Memory", () => {
     const c = await openMemory();
     const sw = within(rowOf("Sam")).getByRole("switch", { name: "Shared with chats" });
     expect(sw.getAttribute("aria-checked")).toBe("false");
+    // Task review, 2026-11-22: a bare switch said nothing of what it shares; an icon named on hover comes before it.
+    expect(sw.closest(".msee")?.getAttribute("title")).toBe("Shared with chats");
+    expect(sw.closest(".msee")?.querySelector("svg")).not.toBeNull();
     fireEvent.click(sw);
     await waitFor(() =>
       expect(c.call).toHaveBeenCalledWith("memory.write", {
@@ -237,5 +248,27 @@ describe("Settings → Memory", () => {
     render(<Settings client={memoryClient()} onOpenIon={() => {}} at={{ kind: "todos" }} />);
     expect(await screen.findByText("Renew the passport")).toBeTruthy();
     expect(screen.getByRole("button", { name: "To-dos" }).className).toBe("on");
+  });
+
+  // Task review, 2026-11-22: an image in a memory file is never fetched (it could be a tracker): its words only.
+  it("shows an image in a file as its words, never loads it", async () => {
+    await openMemory(memoryClient({ text: "Tabs ![a tracker](http://t.example/p.png)" }));
+    fireEvent.click(screen.getByText("Tabs, not spaces"));
+    expect(await screen.findByText("a tracker")).toBeTruthy();
+    expect(document.querySelector(".mtext img")).toBeNull();
+  });
+
+  // Task review, 2026-11-22: a Restore refused because the file changed meanwhile left the old text and history up.
+  it("reads the file and its history again when Restore is refused", async () => {
+    const c = await openMemory(memoryClient({ refuse: "Changed since you read it" }));
+    fireEvent.click(screen.getByText("Tabs, not spaces"));
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    const older = (await screen.findByText("You")).closest(".srow") as HTMLElement;
+    const reads = () => c.call.mock.calls.filter(([cmd]) => cmd === "memory.read").length;
+    const before = reads();
+    fireEvent.click(within(older).getByRole("button", { name: "Restore" }));
+    expect(await screen.findByText("Changed since you read it")).toBeTruthy();
+    await waitFor(() => expect(reads()).toBe(before + 1));
+    expect(c.call.mock.calls.filter(([cmd]) => cmd === "memory.history")).toHaveLength(2);
   });
 });

@@ -19,6 +19,8 @@ const MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS events_chat ON events (chat_id, id)`,
   // Reads of one kind of event over a time window (the notifier's summary, the briefing).
   `CREATE INDEX IF NOT EXISTS events_type_ts ON events (type, ts)`,
+  // A memory file's history: its events by path (task review, 2026-11-22). Events without a path index as NULL.
+  `CREATE INDEX IF NOT EXISTS events_path ON events (json_extract(data, '$.path'))`,
 ];
 
 /** Opens (or creates) the database in WAL mode and applies migrations. ":memory:" is allowed. */

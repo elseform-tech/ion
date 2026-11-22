@@ -18,6 +18,8 @@ import { UserError } from "./errors.js";
 
 const BOTH = ["chats", "ions"] as const;
 const scopeKey = (s: MemoryScope) => (s === "you" ? "you" : `project:${s.projectId}`);
+/** A scope's key in the list ("you", or "project:<id>"), from "you" or a project's id. */
+const keyOf = (s: string) => scopeKey(s === "you" ? "you" : { projectId: s });
 const openTodo = (m: MemoryInfo) => m.type === "todo" && m.status === "open";
 /** Open to-dos first, then the latest. */
 const byOrder = (a: MemoryInfo, b: MemoryInfo) =>
@@ -110,8 +112,11 @@ export const memoryHandlers: Pick<
     const byPath = new Map(ctx.memory.list(a.projectId ?? null, [...BOTH]).map((m) => [m.memoryId, m]));
     const found = new ScopedMemory(ctx.memory, { kind: "you" }).search(String(a.q ?? ""), 1000);
     const t = titles(ctx.db);
+    // One scope's files, before the best 20 are taken (task review, 2026-11-22).
+    const key = a.scope === undefined ? null : keyOf(a.scope);
     return found
       .flatMap((r) => byPath.get(r.path) ?? [])
+      .filter((m) => key === null || m.scope === key)
       .slice(0, 20)
       .map((m) => titled(m, t));
   },

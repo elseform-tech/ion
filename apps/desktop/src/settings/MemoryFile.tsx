@@ -103,8 +103,11 @@ export function MemoryFile({ client, path, folder, ions, onBack }: Props) {
     [client, path, run],
   );
   useEffect(() => load(false), [load]);
+  // Restore reads the file and its history again either way: refused (changed meanwhile), you see what's there now.
+  const [refused, runRestore] = useCallError();
   const restore = (text: string) =>
-    file && run(client.call("memory.write", { path, text, expect: file.hash }), () => load(true));
+    file &&
+    runRestore(client.call("memory.write", { path, text, expect: file.hash }).finally(() => load(true)));
   return (
     <>
       <Back onBack={onBack} />
@@ -118,7 +121,7 @@ export function MemoryFile({ client, path, folder, ions, onBack }: Props) {
           onCantOpen={setCantOpen}
         />
       )}
-      {(error || cantOpen) && <div className="perr">{error ?? CANT_OPEN}</div>}
+      {(error || refused || cantOpen) && <div className="perr">{error ?? refused ?? CANT_OPEN}</div>}
       {asking && file && (
         <div className="group">
           <ForgetAsk

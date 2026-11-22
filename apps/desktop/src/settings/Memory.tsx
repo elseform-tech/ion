@@ -1,5 +1,5 @@
 import type { IonClient } from "@ion/client/browser";
-import { FolderOpen, ListTodo, type LucideIcon, NotebookText } from "@ion/design-system";
+import { FolderOpen, ListTodo, type LucideIcon, MessagesSquare, NotebookText } from "@ion/design-system";
 import type { IonInfo, MemoryInfo } from "@ion/schema";
 import { useState } from "react";
 import { type Run, useCallError } from "../callError.js";
@@ -36,7 +36,8 @@ function MemoryRow({ m, ions, client, run, onOpen }: RowProps) {
     <div className="trow mrow2" onClick={onOpen}>
       <TypeIcon m={m} />
       <div>
-        <button type="button" className="tname lnk" onClick={onOpen}>
+        {/* A click (or Enter) here reaches the row, which opens it: once. */}
+        <button type="button" className="tname lnk">
           {m.name}
         </button>
         {m.suggested && <span className="chip">Suggested</span>}
@@ -59,7 +60,11 @@ function MemoryRow({ m, ions, client, run, onOpen }: RowProps) {
           </button>
         )}
         {sharable(m) && (
-          <Switch label="Shared with chats" title="Shared with chats" on={m.see === "chats"} onPick={share} />
+          // What the switch shares, as an icon named on hover (task review, 2026-11-22).
+          <span className="msee" title="Shared with chats">
+            <MessagesSquare />
+            <Switch label="Shared with chats" on={m.see === "chats"} onPick={share} />
+          </span>
         )}
       </div>
     </div>
@@ -103,7 +108,7 @@ function MemoryList(p: ListProps) {
   const { scope, q } = p.filter;
   const setScope = (s: string) => p.setFilter({ ...p.filter, scope: s });
   const setQ = (w: string) => p.setFilter({ ...p.filter, q: w });
-  const found = useSearch(p.client, q, p.mem.files);
+  const found = useSearch(p.client, q, scope, p.mem.files);
   const shown = (found ?? p.mem.files).filter((m) => scopeOf(m) === scope);
   return (
     <>

@@ -331,14 +331,14 @@ describe("Ions", () => {
     const opened = vi.fn();
     window.addEventListener("ion:open-settings", (e) => opened((e as CustomEvent).detail));
     const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
-    const todos = await screen.findByRole("button", { name: "2 to-dos" });
+    const todos = await screen.findByRole("button", { name: "2 open to-dos" });
     expect(c.call).toHaveBeenCalledWith("memory.list", { type: "todo", open: true });
     expect(todos.textContent).toBe("2");
     fireEvent.click(todos);
     expect(opened).toHaveBeenCalledWith({ kind: "todos" });
     fireEvent.click(container.querySelector(".pmain")!);
     await screen.findByRole("button", { name: "Chats started by storefront" });
-    expect(screen.queryByRole("button", { name: "2 to-dos" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "2 open to-dos" })).toBeNull();
   });
 
   // The user, 2026-11-19: "ions are not thinking". While an ion decides, its chat shows it's thinking; its reply

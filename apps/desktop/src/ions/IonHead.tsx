@@ -76,7 +76,7 @@ function PanelToggle({ open, toggle }: { open: boolean; toggle: () => void }) {
 function Todos({ client }: { client: IonClient }) {
   const n = useOpenTodos(client);
   if (!n) return null;
-  const label = `${n} to-do${n === 1 ? "" : "s"}`;
+  const label = `${n} open to-do${n === 1 ? "" : "s"}`;
   return (
     <button className="ib todos" type="button" title={label} aria-label={label} onClick={openTodos}>
       <ListTodo />

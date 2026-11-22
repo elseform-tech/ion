@@ -84,4 +84,25 @@ describe("memory in Settings", () => {
     memory.reindex();
     expect((await client.call("memory.folder", {})).problems).toEqual(["you/broken.md can't be read"]);
   });
+
+  // Task review, 2026-11-22: search took the top 20 of every scope, then the app kept the chosen scope's: a project's
+  // match below 20 of yours showed nothing.
+  it("searches one scope before it takes the best 20", async () => {
+    for (let i = 0; i < 25; i++)
+      memory.write({
+        scope: "you",
+        header: { name: `Deploy note ${i}`, description: "deploy deploy deploy", type: "fact" },
+        text: "deploy deploy deploy",
+        by: "you",
+      });
+    memory.write({
+      scope: { projectId: "shop" },
+      header: { name: "Shop", description: "how to deploy", type: "reference" },
+      text: "Ship it with the script.",
+      by: "you",
+    });
+    const found = await client.call("memory.search", { q: "deploy", scope: "shop" });
+    expect(found.map((m) => m.name)).toEqual(["Shop"]);
+    expect(await client.call("memory.search", { q: "deploy", scope: "you" })).toHaveLength(20);
+  });
 });

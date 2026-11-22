@@ -1119,7 +1119,7 @@ button.arow:hover{background:var(--hover)}
 .stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}.stools .trow .s{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 /* settings: Memory: whose (you, each project), search, rows with who changed each and when; a file's text, its history; your to-dos, done ones folded; ion chief's open to-dos */
 .mscope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.mscope .chip{border:0;cursor:pointer}.msearch{margin:0 0 10px}
-.trow .mby{display:block;color:var(--faint);font-size:12px;margin-top:2px}.trow .mby .late{color:var(--del-ink)}.trow.done .tname{color:var(--faint);text-decoration:line-through}.trow.mrow2{cursor:pointer}.trow.mrow2:hover{background:var(--hover)}.trow button.tname{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.trow .mby{display:block;color:var(--faint);font-size:12px;margin-top:2px}.trow .mby .late{color:var(--del-ink)}.trow.done .tname{color:var(--faint);text-decoration:line-through}.trow.mrow2{cursor:pointer}.trow.mrow2:hover{background:var(--hover)}.trow button.tname{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}.msee{display:inline-flex;align-items:center;gap:8px;color:var(--faint)}.msee .lucide{width:15px;height:15px}
 .mhead{display:flex;align-items:center;gap:10px}.mhead .ti{width:30px;height:30px;border-radius:8px;background:var(--hover);display:grid;place-items:center;color:var(--muted)}.mhead .ti .lucide{width:16px;height:16px}.mhead h3{margin:0;flex:1;min-width:0;font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mhead+.s{color:var(--muted);font-size:13px;margin-top:-18px}
 .mtext{padding:12px 16px;font-size:13.5px;line-height:1.55;overflow-wrap:anywhere}.mtext>.md>:first-child{margin-top:0}.mtext>.md>:last-child{margin-bottom:0}
 .srow .when{color:var(--faint);font-size:12px;white-space:nowrap}.srow.ask .g{font-size:13px}.mfold{width:100%;border:0;background:transparent;font:inherit;color:var(--muted);cursor:pointer;text-align:left}.mfold:hover{color:var(--ink)}.mfold .lucide{width:14px;height:14px}
@@ -3014,7 +3014,7 @@ document.addEventListener('click',e=>{
    ones first with their dates, done ones folded. */
 const MTYPE={preference:['heart','Preference'],fact:['lightbulb','Fact'],person:['user','Person'],todo:['circle','To-do'],reference:['bookmark','Reference']};
 const MEMF=[
-  {p:'you/tabs-not-spaces.md',sc:'you',t:'preference',n:'Tabs, not spaces',d:'Indent with tabs in every project',by:'You',at:'2h',see:'chats',text:'Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.',hist:[['You','2h'],['Docs pass','Mon']]},
+  {p:'you/tabs-not-spaces.md',sc:'you',t:'preference',n:'Tabs, not spaces',d:'Indent with tabs in every project',by:'You',at:'2h',see:'chats',text:'Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.',hist:[['You','2h'],['Docs pass','Mon'],['You','Sun',1],['You','Sat']]},
   {p:'you/short-replies.md',sc:'you',t:'preference',n:'Short replies',d:'Answers in a few lines, details on request',by:'Cart badge fix',at:'1h',see:'chats',sugg:'storefront',text:'Keep answers short. Offer details instead of writing them.',hist:[['Cart badge fix','1h']]},
   {p:'you/sam.md',sc:'you',t:'person',n:'Sam',d:'Designer on the storefront; reviews UI changes',by:'ion chief',at:'Tue',see:'ions',text:'Sam reviews UI changes on storefront. Prefers screenshots in the PR.',hist:[['ion chief','Tue']]},
   {p:'you/renew-passport.md',sc:'you',t:'todo',n:'Renew the passport',d:'Renew the passport',by:'You',at:'Mon',see:'ions',st:'open',due:'Due today',text:'Renew the passport.',hist:[['You','Mon']]},
@@ -3028,7 +3028,7 @@ const mib=(ic,l,a)=>`<button class="ib" type="button" title="${l}" aria-label="$
 function memRow(f){
   const [ic,tn]=MTYPE[f.t], mine=f.sc==='you';
   const end=f.sugg?`<button class="btn" type="button" data-mkeep="${f.p}">Keep</button>`
-    :mine&&f.t!=='todo'?`<button type="button" class="sw${f.see==='chats'?' on':''}" role="switch" aria-checked="${f.see==='chats'}" aria-label="Shared with chats" title="Shared with chats" data-msee="${f.p}"></button>`:'';
+    :mine&&f.t!=='todo'?`<span class="msee" title="Shared with chats"><i data-lucide="messages-square"></i><button type="button" class="sw${f.see==='chats'?' on':''}" role="switch" aria-checked="${f.see==='chats'}" aria-label="Shared with chats" data-msee="${f.p}"></button></span>`:'';
   /* a done to-do shows its check; a description that only repeats the name is said once */
   return `<div class="trow mrow2" data-mopen="${f.p}"><span class="ti" title="${tn}"><i data-lucide="${f.st==='done'?'circle-check':ic}"></i></span><div><button type="button" class="tname">${esc(f.n)}</button>${f.sugg?'<span class="chip">Suggested</span>':''}<div class="s">${f.d!==f.n?`<span class="clamp">${esc(f.d)}</span>`:''}<span class="mby">${esc(f.by)} · ${f.at}</span></div></div><span class="hsup"></span><div class="acts2">${end}</div></div>`;
 }
@@ -3040,7 +3040,7 @@ function todoRow(f){
 function memFile(f){
   const [ic,tn]=MTYPE[f.t];
   const ask=memAsk===f.p?`<div class="group"><div class="srow ask"><div class="g">Forget “${esc(f.n)}”?</div><button class="btn" type="button" data-mask="">Cancel</button><button class="btn bad" type="button" data-mforget="${f.p}">Forget</button></div></div>`:'';
-  const hist=memHist?`<div><h4>History</h4><div class="group">${f.hist.map(([by,at],i)=>`<div class="srow"><div class="g">${esc(by)}</div><span class="when">${at}</span>${i?'<button class="btn" type="button">Restore</button>':''}</div>`).join('')}</div></div>`:'';
+  const hist=memHist?`<div><h4>History</h4><div class="group">${f.hist.map(([by,at,gone],i)=>`<div class="srow"><div class="g">${esc(by)}${gone?'<span class="chip">Forgotten</span>':''}</div><span class="when">${at}</span>${i?'<button class="btn" type="button">Restore</button>':''}</div>`).join('')}</div></div>`:'';
   return `<button class="back" type="button" data-mopen=""><i data-lucide="chevron-left"></i>Memory</button>
     <div class="mhead"><span class="ti" title="${tn}"><i data-lucide="${ic}"></i></span><h3>${esc(f.n)}</h3>${mib('file-pen','Open','')}${mib('history',memHist?'Hide history':'History','data-mhist')}${mib('trash-2','Forget',`data-mask="${f.p}"`)}</div>
     <div class="s">${esc(f.d)}</div>${ask}
@@ -3054,11 +3054,11 @@ function renderMemory(){
   const broken=MBROKEN.map(l=>`<div class="perr">${esc(l)}</div>`).join('');
   if(memTab==='todos'){
     const open=openTodos(), done=MEMF.filter(x=>x.t==='todo'&&x.st==='done');
-    el.innerHTML=`<div>${tabs}<div class="group">${open.map(todoRow).join('')}${done.length?`<div class="srow"><button class="mfold" type="button" data-mfold aria-expanded="${memDoneOpen}"><i data-lucide="${memDoneOpen?'chevron-down':'chevron-right'}"></i> Done · ${done.length}</button></div>`:''}${memDoneOpen?done.map(todoRow).join(''):''}</div></div>`;
+    el.innerHTML=`<div>${tabs}${broken}<div class="group">${open.map(todoRow).join('')}${done.length?`<div class="srow"><button class="mfold" type="button" data-mfold aria-expanded="${memDoneOpen}"><i data-lucide="${memDoneOpen?'chevron-down':'chevron-right'}"></i> Done · ${done.length}</button></div>`:''}${memDoneOpen?done.map(todoRow).join(''):''}</div></div>`;
     icons(el); return;
   }
   const scopes=[['you','You'],...PROJECTS.map(p=>[p,p])];
-  el.innerHTML=`<div>${tabs}${broken}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div><input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
+  el.innerHTML=`<div>${tabs}${broken}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div><input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
   icons(el);
 }
 document.addEventListener('click',e=>{
@@ -3190,7 +3190,7 @@ function renderIon(k,ph){
   curIon=k; const v=IONS[k]; actBtn.classList.remove('on'); chatEl.classList.remove('peek'); delete chatEl.dataset.peeked;
   document.querySelectorAll('[data-ionsel]').forEach(b=>b.classList.toggle('on',b.dataset.ionsel===k));
   let h=`<div class="head"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>${k==='lead'?'<span class="title brand hname" aria-label="ion">i<i>o</i>n</span>':`<span class="title">${esc(v.name)}</span>`}<span class="sp"></span>
-    ${k==='lead'&&openTodos().length?`<button class="ib todos" type="button" title="${openTodos().length} to-dos" aria-label="${openTodos().length} to-dos" data-gotodos><i data-lucide="list-todo"></i><span class="ct">${openTodos().length}</span></button>`:''}<button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${k}"><i data-lucide="sliders-horizontal"></i></button></div>
+    ${k==='lead'&&openTodos().length?`<button class="ib todos" type="button" title="${openTodos().length} open to-dos" aria-label="${openTodos().length} open to-dos" data-gotodos><i data-lucide="list-todo"></i><span class="ct">${openTodos().length}</span></button>`:''}<button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${k}"><i data-lucide="sliders-horizontal"></i></button></div>
     <div class="bubbles">${k==='lead'?pinStrip():''}<div class="bcol">`;
   v.msgs.forEach((m,i)=>{
     const isI=x=>x&&(x.f==='i'||x.newIon||x.route||x.fanout||x.routineAdded||x.sugg);
