@@ -468,12 +468,13 @@ describe("ion cli", { timeout: 20_000 }, () => {
       const todo =
         "name: Rotate keys\ndescription: Rotate the API keys\ntype: todo\nstatus: open\ndue: 2026-12-01";
       file("projects/app/rotate-keys.md", todo, "Rotate them.");
+      file("you/call-sam.md", "name: Call Sam\ndescription: Call Sam\ntype: fact", "Call Sam.");
       await setup();
       const todoLine = "projects/app/rotate-keys.md  todo open 2026-12-01  Rotate keys: Rotate the API keys";
       const ls = (await ion("memory", "ls", "-p", "app")).out.split("\n");
       expect(ls[0]).toBe(todoLine);
       expect(ls).toContain("you/short-replies.md  preference  Short replies: Keep replies short");
-      expect(ls).toHaveLength(3);
+      expect(ls).toHaveLength(4);
       expect((await ion("memory", "ls", "--open")).out).toBe(todoLine);
       expect((await ion("memory", "ls", "--type", "preference")).out).toBe(
         "you/short-replies.md  preference  Short replies: Keep replies short",
@@ -488,6 +489,8 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(existsSync(join(mem, "projects/app/test-runner.md"))).toBe(false);
       expect((await ion("memory", "search", "vitest")).out).toBe("Nothing found");
       expect((await ion("memory", "open")).out).toBe(mem);
+      // Task 5, 2026-11-22 (tour): a file whose description is its name read "Call Sam: Call Sam".
+      expect((await ion("memory", "search", "Sam")).out).toBe("you/call-sam.md  fact  Call Sam");
       // Security review, 2026-11-22: a chat's preference waits for you; keep makes it every project's.
       file("you/tabs.md", "name: Tabs\ndescription: Use tabs\ntype: preference\nsuggested: app", "Tabs.");
       const prefs = () => ion("memory", "ls", "--type", "preference");
@@ -498,7 +501,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect((await ion("memory", "ls", "--type", "preference")).out).toContain(
         "you/tabs.md  preference  Tabs: Use tabs",
       );
-    });
+    }, 60_000); // Task 5, 2026-11-22: a dozen CLI runs at ~1 s each went past 20 s under load
 
     // The user, 2026-11-21: "does memory cover todo as well". To-dos are memory files; `ion todo` adds, lists and
     // closes them, the same files ion keeps.

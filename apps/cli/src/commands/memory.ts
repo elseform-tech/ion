@@ -5,11 +5,12 @@ import { openFolder } from "../daemon-control.js";
 import { type Out, print } from "../output.js";
 import { clean, text } from "../sanitize.js";
 
-/** A file in one line: where it is, its type (a to-do's state and date), its name and description. */
+/** A file in one line: where it is, its type (a to-do's state and date), its name and description (once, if alike). */
 const lineOf = (m: MemoryInfo) => {
   const todo = m.type === "todo" ? [m.status ?? "open", m.due ?? ""] : [];
   const kind = [m.type, ...todo, m.suggested ? "suggested" : ""].filter(Boolean);
-  return [m.memoryId, kind.join(" "), `${m.name}: ${m.description}`].map(clean).join("  ");
+  const words = m.description === m.name ? m.name : `${m.name}: ${m.description}`;
+  return [m.memoryId, kind.join(" "), words].map(clean).join("  ");
 };
 
 export function memoryCommands(program: Command, out: () => Out) {
