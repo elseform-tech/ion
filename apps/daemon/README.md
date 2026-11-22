@@ -47,8 +47,8 @@ The always-on service that owns all state.
 - Continuing a chat: a run resumes the chat's last harness session; when the harness can't, a new session gets the
   chat's earlier messages (newest 24,000 characters) as a labelled data block before your message.
 - `src/mcp`: ion's MCP server at `/mcp` on the daemon's port. Each run gets its own key (kept only as a hash,
-  revoked when the run ends) that sees its own project: `chat_history`, `search_chats`, `open_needs`, `memory_list`,
-  `memory_write` (5 per run), `ask`, `decisions`, `report_outcome`. Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
+  revoked when the run ends) that sees its own project: `chat_history`, `search_chats`, `open_needs`, `memory_index`,
+  `memory_search`, `memory_read`, `memory_write` and `memory_forget` (20 changes per run), `ask`, `decisions`, `report_outcome`. Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
   tools ask.
 - `src/memory`: memory is yours ("you", shown in every project) or one project's, never shared between projects.
 - `src/api`: the WebSocket API (see `@ion/schema` `api.ts` for the protocol).

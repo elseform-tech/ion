@@ -84,3 +84,38 @@ export const memoryEventSchemas = {
     z.object({ memoryId: z.string() }),
   ]),
 };
+
+/** A memory file as the app and the CLI list it. */
+export type MemoryInfo = {
+  memoryId: string;
+  /** "you", or "project:<id>" for a project's files. */
+  scope: string;
+  name: string;
+  description: string;
+  type: MemoryType;
+  see: MemorySee;
+  /** A to-do's state and date. */
+  status?: "open" | "done";
+  due?: string;
+  text: string;
+  /** "you", the chat it came from, or "ion:<id>". */
+  source: string;
+  writtenAt: string;
+  /** The file can't be read now (its last good version is shown): one plain line. */
+  problem?: string;
+};
+
+/** A memory file as read: its header, text and hash. */
+export type MemoryFileInfo = {
+  path: string;
+  /** "you", or "project:<id>". */
+  scope: string;
+  name: string;
+  description: string;
+  type: MemoryType;
+  see: MemorySee;
+  status?: "open" | "done";
+  due?: string;
+  text: string;
+  hash: string;
+};

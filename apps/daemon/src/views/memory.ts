@@ -37,8 +37,8 @@ export type MemoryChange = {
 };
 
 export type MemoryQuery = {
-  /** "you" and the projects asked about. */
-  scopes: MemoryScope[];
+  /** "you" and the projects asked about; "all": every scope (only you see everything). */
+  scopes: MemoryScope[] | "all";
   /** Which files they may see. */
   see: MemorySee[];
   /** Words to find in the name, description or text (best match first). */
@@ -122,8 +122,10 @@ function applyWritten(db: Db, d: Written, ts: string): void {
 }
 
 function filtersOf(q: MemoryQuery): { where: string; params: unknown[] } {
-  const where = [`m.scope IN (${ANY(q.scopes.length)})`, `m.see IN (${ANY(q.see.length)})`];
-  const params: unknown[] = [...q.scopes.map(scopeKey), ...q.see];
+  const scoped = q.scopes === "all" ? [] : q.scopes;
+  const where = [`m.see IN (${ANY(q.see.length)})`];
+  if (q.scopes !== "all") where.push(`m.scope IN (${ANY(scoped.length)})`);
+  const params: unknown[] = [...q.see, ...scoped.map(scopeKey)];
   if (q.type) {
     where.push("m.type = ?");
     params.push(q.type);
@@ -232,20 +234,29 @@ export const memoryView: View & {
     const where = `WHERE ${scoped} m.see IN (${ANY(see.length)})`;
     const rows = db
       .prepare(
-        `SELECT m.path, m.scope, m.by, m.updated_at AS writtenAt, coalesce(f.text, '') AS text
+        `SELECT m.path, m.scope, m.by, m.updated_at AS writtenAt, coalesce(f.text, '') AS text, m.name,
+           m.description, m.type, m.see, m.status, m.due
          FROM view_memory m LEFT JOIN view_memory_fts f ON f.path = m.path ${where} ORDER BY m.rowid`,
       )
-      .all(...(projects === null ? [] : keys), ...see) as {
+      .all(...(projects === null ? [] : keys), ...see) as (Pick<
+      MemoryRow,
+      "name" | "description" | "type" | "see"
+    > & {
       path: string;
       scope: string;
       by: string;
       writtenAt: string;
       text: string;
-    }[];
+      status: "open" | "done" | null;
+      due: string | null;
+    })[];
     return rows.map((r) => ({
       memoryId: r.path,
-      // Shown as before: "you", or the project's id (filters never go by this word).
-      scope: r.scope === "you" ? "you" : r.scope.slice("project:".length),
+      // "you", or "project:<id>": a legacy folder called you never reads as yours (task re-review, 2026-11-22).
+      scope: r.scope,
+      ...{ name: r.name, description: r.description, type: r.type, see: r.see },
+      ...(r.status ? { status: r.status } : {}),
+      ...(r.due ? { due: r.due } : {}),
       text: r.text,
       source: sourceOf(JSON.parse(r.by) as MemoryBy),
       writtenAt: r.writtenAt,

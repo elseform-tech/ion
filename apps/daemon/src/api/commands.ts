@@ -33,6 +33,7 @@ import { changeConfig, settingsHandlers } from "./settings.js";
 import { workspaceHandlers } from "./workspace.js";
 import { routineHandlers } from "./routines.js";
 import { queueHandlers } from "./queue.js";
+import { memoryHandlers } from "./memory.js";
 import type { PromptQueue } from "../queue/index.js";
 import type { Routines } from "../scheduler/index.js";
 import type { Suggestions } from "../ions/suggestions.js";
@@ -119,6 +120,7 @@ export const handlers: Handlers = {
   ...workspaceHandlers,
   ...routineHandlers,
   ...queueHandlers,
+  ...memoryHandlers,
   ...toolsHandlers,
   ...toolsCliHandlers,
   ...toolsImportHandlers,
@@ -130,11 +132,6 @@ export const handlers: Handlers = {
     return (await harnessInfos.list())
       .filter((h) => listed.includes(h.id))
       .map((h) => ({ ...h, ...missesOf(h.id) }));
-  },
-  "memory.list": (a, ctx) => ctx.memory.list(a.projectId ?? null, ["chats", "ions"]),
-  "memory.forget": (a, ctx) => {
-    ctx.memory.forget(String(a.memoryId ?? ""), "you");
-    return { ok: true as const };
   },
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {

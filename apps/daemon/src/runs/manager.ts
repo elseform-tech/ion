@@ -19,7 +19,7 @@ import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
 import { chatsView } from "../views/chats.js";
 import { type HistoryMessage, messagesView } from "../views/messages.js";
-import { HISTORY_CHARS, withHistory } from "./history.js";
+import { freshText, HISTORY_CHARS, type MemoryFiles } from "./history.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import type { GateAnswer } from "../gate/index.js";
 import { type AskBlocked, type AskingRun, Approvals, type BeforeTool } from "./approvals.js";
@@ -102,8 +102,11 @@ export class RunManager {
       random?: () => number;
       /** Auto access: rules, then the judge (a quick model). Without it, Auto denies. */
       access?: Access;
-      /** ion's MCP server: each run gets a key for its own project, revoked when the run ends. */
-      mcp?: { grants: Grants; url: () => string };
+      /**
+       * ion's MCP server: each run gets a key for its own project, revoked when the run ends; and ion's memory: a new
+       * session starts with the index of what its chat may see.
+       */
+      mcp?: { grants: Grants; url: () => string; memory?: MemoryFiles };
       ionBin?: string; // ion's own `ion` launcher's folder, first on every run's PATH
 
       /** ion's gate (`<base>/<key>`): harnesses with a hook report every tool call there before it runs. */
@@ -333,7 +336,7 @@ export class RunManager {
   private async tryInContext(l: Launch, b: Between): Promise<TryEnd> {
     const s = chatsView.session(this.db, l.chatId);
     const resume = !b.noResume && s && s.harness === l.h.adapter.id ? s.sessionId : null;
-    const fresh = { ...l, resume: null, args: { ...l.args, text: withHistory(l.history, l.args.text) } };
+    const fresh = { ...l, resume: null, args: { ...l.args, text: freshText(l, this.ctx.mcp?.memory) } };
     if (!resume) return this.tryOnce(fresh, b);
     const end = await this.tryOnce({ ...l, resume }, b);
     if (end.error?.code !== "resume_failed") {

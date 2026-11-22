@@ -98,3 +98,18 @@ export async function stopDaemon(dataDir: string): Promise<"stopped" | "not-runn
   rmSync(join(dataDir, "daemon.json"), { force: true });
   return "stopped";
 }
+
+const OPENERS: Partial<Record<NodeJS.Platform, string>> = { darwin: "open", win32: "explorer" };
+
+/** Opens a folder in the system's file manager (Finder, Explorer, xdg-open); false when it can't be started. */
+export function openFolder(path: string): boolean {
+  const cmd = OPENERS[process.platform] ?? "xdg-open";
+  try {
+    const child = spawn(cmd, [path], { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}

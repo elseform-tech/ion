@@ -150,7 +150,7 @@ describe("ion tools", () => {
     expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c3" } })).toMatchObject(
       NOT_ALLOWED,
     );
-    expect(text(await c.callTool({ name: "memory_list", arguments: {} }))).not.toContain("Private note");
+    expect(text(await c.callTool({ name: "memory_index", arguments: {} }))).not.toContain("private");
     await c.close();
   });
 
@@ -235,30 +235,18 @@ describe("ion tools", () => {
     await c.close();
   });
 
-  it("memory_write writes you-memory for ion chief and project memory for a project's ion", async () => {
-    const c = await chief();
-    await c.callTool({ name: "memory_write", arguments: { text: "Likes short replies" } });
-    expect(memory.list(null, ["chats", "ions"]).find((m) => m.text === "Likes short replies")?.scope).toBe(
-      "you",
-    );
-    await c.close();
-    const s = await shopIon();
-    await s.callTool({ name: "memory_write", arguments: { text: "Uses Stripe" } });
-    expect(memory.list(null, ["chats", "ions"]).find((m) => m.text === "Uses Stripe")?.scope).toBe("shop");
-    for (let i = 0; i < 4; i++) await s.callTool({ name: "memory_write", arguments: { text: `note ${i}` } });
-    const sixth = await s.callTool({ name: "memory_write", arguments: { text: "one more" } });
-    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough memory for one turn" }] });
-    await s.close();
-  });
-
   // Final review, 2026-11-19: a report turn (its prompt holds a thread agent's words) could still write memory and
   // suggest a profile from them. In a report, they refuse like start_thread.
   it("refuses memory_write and set_profile in a report", async () => {
     const s = await client(
       grants.create({ kind: "ion", ionId: "shop", projects: ["shop"], turnId: "t3", report: true }),
     );
+    const note = { scope: "project", name: "Stripe", description: "Payments", type: "fact" };
     for (const name of ["memory_write", "set_profile"]) {
-      const r = await s.callTool({ name, arguments: { text: "Uses Stripe" } });
+      const r = await s.callTool({
+        name,
+        arguments: { text: "Uses Stripe", ...(name === "set_profile" ? {} : note) },
+      });
       expect(r).toMatchObject({ isError: true, content: [{ text: "Not in a report" }] });
     }
     expect(memory.list(null, ["chats", "ions"]).map((m) => m.text)).toEqual(["Private note"]);
@@ -278,7 +266,10 @@ describe("ion tools", () => {
     expect(names).toEqual([
       "chat_history",
       "decisions",
-      "memory_list",
+      "memory_forget",
+      "memory_index",
+      "memory_read",
+      "memory_search",
       "memory_write",
       "open_needs",
       "projects",

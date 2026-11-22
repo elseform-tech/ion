@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { MemoryInfo, NeedInfo } from "@ion/schema";
+import type { NeedInfo } from "@ion/schema";
 import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
@@ -11,12 +11,12 @@ import { messagesView, type SearchHit } from "../views/messages.js";
 import { needsView } from "../views/needs.js";
 import type { Decisions } from "../decisions/index.js";
 import { askTools } from "./ask.js";
+import { registerMemoryTools } from "./memory-tools.js";
 import { guard, ok, q } from "./result.js";
 import type { Grants, RunScope } from "./grants.js";
 
 export type Deps = { store: EventStore; db: Db; grants: Grants; memory: MemoryFiles; decisions?: Decisions };
 
-const WRITES_PER_RUN = 5;
 export const SEARCH_MAX = 20;
 const HIT_CHARS = 500;
 
@@ -34,8 +34,6 @@ export const searchData = (hits: SearchHit[]) =>
   );
 export const needsData = (needs: NeedInfo[]) =>
   ok(wrapData("open needs", needs.map((n) => `${n.needId} ${n.chatId}: ${q(n.summary)}`).join("\n")));
-export const memoryData = (list: MemoryInfo[]) =>
-  ok(wrapData("memory", list.map((m) => `${m.memoryId} (${m.scope}): ${q(m.text)}`).join("\n")));
 
 /** The tools a run gets, all limited to its own project. Everything they return is labelled as data. */
 export function registerTools(server: McpServer, scope: RunScope, d: Deps): void {
@@ -83,27 +81,15 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
   );
 }
 
+/** A chat writes at most this many memory files in one run. */
+const WRITES_PER_RUN = 20;
+
 function memoryTools(server: McpServer, scope: RunScope, d: Deps): void {
-  server.registerTool(
-    "memory_list",
-    { description: "What ion remembers for this project, and for the user.", inputSchema: {} },
-    guard(() => {
-      // A chat sees its project's files and your files shared with chats, never your ions-only ones.
-      return memoryData(d.memory.list(scope.projectId, ["chats"]));
-    }),
-  );
-  server.registerTool(
-    "memory_write",
-    {
-      description: "Remember something about this project for later chats. Keep it short and lasting.",
-      inputSchema: { text: z.string().min(1).max(2000) },
-    },
-    guard(({ text }: { text: string }) => {
-      // An agent can't flood a project's memory.
-      if (d.grants.noteWrite(scope.runId) > WRITES_PER_RUN)
-        throw new UserError("That's enough memory for one run");
-      const by = { chatId: scope.chatId, runId: scope.runId };
-      return ok(`Saved ${d.memory.note({ projectId: scope.projectId }, text, by)}`);
-    }),
-  );
+  const caller = {
+    kind: "chat" as const,
+    ...{ projectId: scope.projectId, chatId: scope.chatId, runId: scope.runId },
+  };
+  // An agent can't flood a project's memory.
+  const limit = { id: scope.runId, max: WRITES_PER_RUN, tooMany: "That's enough memory for one run" };
+  registerMemoryTools(server, caller, d, limit);
 }

@@ -446,6 +446,49 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(await ion("memory", "forget", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
     });
 
+    // The user, 2026-11-21: memory is a folder of small files you can read and fix yourself; the CLI lists, shows,
+    // searches and forgets them, and opens the folder.
+    it("the CLI lists, shows, searches and forgets", async () => {
+      const mem = join(home, "data", "memory");
+      const file = (path: string, head: string, text: string) => {
+        mkdirSync(join(mem, path, ".."), { recursive: true });
+        writeFileSync(join(mem, path), `---\n${head}\n---\n\n${text}\n`);
+      };
+      file(
+        "you/short-replies.md",
+        "name: Short replies\ndescription: Keep replies short\ntype: preference",
+        "Short.",
+      );
+      file(
+        "projects/app/test-runner.md",
+        "name: Test runner\ndescription: Which tests\ntype: fact",
+        "Tests use vitest.",
+      );
+      const todo =
+        "name: Rotate keys\ndescription: Rotate the API keys\ntype: todo\nstatus: open\ndue: 2026-12-01";
+      file("projects/app/rotate-keys.md", todo, "Rotate them.");
+      await setup();
+      const todoLine = "projects/app/rotate-keys.md  todo open 2026-12-01  Rotate keys: Rotate the API keys";
+      const ls = (await ion("memory", "ls", "-p", "app")).out.split("\n");
+      expect(ls[0]).toBe(todoLine);
+      expect(ls).toContain("you/short-replies.md  preference  Short replies: Keep replies short");
+      expect(ls).toHaveLength(3);
+      expect((await ion("memory", "ls", "--open")).out).toBe(todoLine);
+      expect((await ion("memory", "ls", "--type", "preference")).out).toBe(
+        "you/short-replies.md  preference  Short replies: Keep replies short",
+      );
+      expect((await ion("memory", "show", "test-runner")).out).toBe(
+        "Test runner\nWhich tests\nfact  projects/app/test-runner.md\n\nTests use vitest.",
+      );
+      expect((await ion("memory", "search", "vitest")).out).toBe(
+        "projects/app/test-runner.md  fact  Test runner: Which tests",
+      );
+      expect((await ion("memory", "forget", "test-runner")).out).toBe("Forgotten");
+      expect(existsSync(join(mem, "projects/app/test-runner.md"))).toBe(false);
+      expect((await ion("memory", "search", "vitest")).out).toBe("Nothing found");
+      expect((await ion("memory", "open")).out).toBe(mem);
+    });
+
     // Plan 09: ions from the CLI (messaging one starts real work, so only the list and a refusal here).
     it("lists ion chief and each project's ion, and refuses an ion it doesn't know", async () => {
       await setup();

@@ -108,7 +108,10 @@ Options:
 
 Commands:
   ls [options]    List it
-  forget <id>     Forget it
+  show <name>     Show one
+  search <words>  Find by words
+  forget <name>   Forget it
+  open            Open the folder
   help [command]  display help for command
 
 ---

@@ -1,6 +1,7 @@
 import type { EffortLevel } from "./capabilities.js";
 import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
+import type { MemoryFileInfo, MemoryInfo, MemoryType } from "./memory.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -293,8 +294,16 @@ export type Commands = ToolsCommands & {
   "suggestions.list": { args: Record<string, never>; result: SuggestionInfo[] };
   /** What a chat changed in its worktree since it started (empty once archived); omitted: files past the cap. */
   "chat.diff": { args: { chatId: string }; result: { files: FileDiff[]; omitted?: number } };
-  "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
+  /** Yours and a project's files (or all), open to-dos first, then the latest; `open`: open to-dos only. */
+  "memory.list": { args: { projectId?: string; type?: MemoryType; open?: boolean }; result: MemoryInfo[] };
+  /** One file, by its path, file name or name. */
+  "memory.read": { args: { name: string }; result: MemoryFileInfo };
+  /** The best matches for some words (at most 20), yours and a project's (or all). */
+  "memory.search": { args: { q: string; projectId?: string }; result: MemoryInfo[] };
+  /** Deletes a file, by its path, file name or name. */
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
+  /** Where the memory folder is. */
+  "memory.folder": { args: Record<string, never>; result: { path: string } };
   "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
   "routine.add": {
     args: { projectId: string; name: string; when: string; text: string; effort?: EffortLevel };
@@ -331,18 +340,6 @@ export type HarnessInfo = {
   ownRules?: number;
   /** How often its judge didn't answer (too slow, or failed) in the last 7 days; absent when it always did. */
   judgeMisses?: number;
-};
-
-export type MemoryInfo = {
-  memoryId: string;
-  /** "you", or the project it belongs to. */
-  scope: string;
-  text: string;
-  /** "you", the chat it came from, or "ion:<id>". */
-  source: string;
-  writtenAt: string;
-  /** The file can't be read now (its last good version is shown): one plain line. */
-  problem?: string;
 };
 
 export type NeedInfo = {
@@ -477,7 +474,10 @@ export const COMMANDS = [
   "suggestions.list",
   "chat.diff",
   "memory.list",
+  "memory.read",
+  "memory.search",
   "memory.forget",
+  "memory.folder",
   "harnesses.list",
   "routine.add",
   "routine.update",

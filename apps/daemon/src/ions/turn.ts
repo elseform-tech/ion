@@ -25,6 +25,7 @@ import { ionsView } from "../views/ions.js";
 import { type IonBrain, ionBrain } from "./brain.js";
 import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
+import { type MemoryFiles, upFront } from "../memory/index.js";
 import { ownAgentStart } from "../access/runner.js";
 import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
@@ -92,6 +93,8 @@ export type IonTurnsDeps = {
   dns?: Net["dns"];
   /** Your servers for ions' turns, through ion's gateway (only what reads; the user, 2026-11-21). */
   servers?: IonServers;
+  /** ion's memory: each turn starts with the index of what that ion may see. */
+  memory?: MemoryFiles;
 };
 
 /** A turn while it runs: what its tools and its gate need, and how to stop it (set once its session starts). */
@@ -121,6 +124,10 @@ type Ended = {
   /** You stopped it (it ended as `late` does, but says so). */
   stopped?: true;
 };
+
+/** ion's own server for a turn, with the turn's key. */
+const ionSpec = ({ url, key }: { url: string; key: string }) =>
+  ({ name: ION_SERVER, transport: "http", url, headers: { Authorization: `Bearer ${key}` } }) as const;
 
 /** How long ion waits for a session to close: an agent that never does can't hold the turn, nor the ion's next. */
 const CLOSE_MS = 2000;
@@ -374,15 +381,7 @@ export class IonTurns {
       effort: brain.effort,
       instructions: ionInstructions(t.ionId),
       // ion's server first, then yours through ion's gateway (ion decides each call there: only what reads).
-      mcpServers: [
-        {
-          name: ION_SERVER,
-          transport: "http",
-          url: this.d.mcpUrl(),
-          headers: { Authorization: `Bearer ${mcpKey}` },
-        },
-        ...yours,
-      ],
+      mcpServers: [ionSpec(ion), ...yours],
       ...(gateKey ? { gate: { url: `${this.d.gateUrl()}/${gateKey}` } } : {}),
       // ion's own agents don't inherit your keys either, and start in a run's sandbox (final review, 2026-11-22).
       ...(await ownAgentStart(this.d, t.cwd, brain.harness)),
@@ -394,8 +393,9 @@ export class IonTurns {
       },
     };
     const resume = this.resumeOf(t.ionId, brain.harness, scope.projects);
+    const text = upFront(this.d.memory, scope) + t.text;
     const end = await this.within(abort, t.turnId, (e, hold) =>
-      this.drive({ ...t, adapter, opts, resume }, e, hold),
+      this.drive({ ...t, text, adapter, opts, resume }, e, hold),
     );
     return { end, projects: scope.projects };
   }

@@ -4,10 +4,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentEnv, sandboxKind, type StartOpts } from "@ion/adapter-kit";
 import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
-import { EV, type HarnessInfo, type IonEvent } from "@ion/schema";
+import { EV, type HarnessInfo, type IonEvent, type MemoryScope, type MemoryType } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
+import { MemoryFiles } from "../memory/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { ionsView } from "../views/ions.js";
@@ -18,6 +19,8 @@ process.env.ION_ALLOW_FAKE = "1";
 
 /** What each fake session was started with. */
 const starts = vi.hoisted(() => [] as StartOpts[]);
+/** What each fake session was sent. */
+const sent = vi.hoisted(() => [] as string[]);
 vi.mock("@ion/adapter-fake", async (real) => {
   const m = await real<typeof import("@ion/adapter-fake")>();
   return {
@@ -25,9 +28,15 @@ vi.mock("@ion/adapter-fake", async (real) => {
     createFakeAdapter: (...a: Parameters<typeof m.createFakeAdapter>) => {
       const adapter = m.createFakeAdapter(...a);
       const start = adapter.start.bind(adapter);
-      adapter.start = (o) => {
+      adapter.start = async (o) => {
         starts.push(o);
-        return start(o);
+        const session = await start(o);
+        const send = session.send.bind(session);
+        session.send = (m) => {
+          sent.push(m.text);
+          return send(m);
+        };
+        return session;
       };
       return adapter;
     },
@@ -57,7 +66,7 @@ const agents = async (): Promise<HarnessInfo[]> => [
 /** A public address (a CDN's), built rather than written out. */
 const PUBLIC_IP = [104, 20, 22, 46].join(".");
 
-function turns(turnMs?: number): IonTurns {
+function turns(turnMs?: number, more: Partial<ConstructorParameters<typeof IonTurns>[0]> = {}): IonTurns {
   current = new IonTurns({
     ...{ store, db, configFile: join(home, "config.toml"), dataDir: join(home, "data") },
     grants,
@@ -69,6 +78,7 @@ function turns(turnMs?: number): IonTurns {
     // Every name is a public address here (no real DNS in tests).
     dns: async () => [{ address: PUBLIC_IP, family: 4 }],
     ...(turnMs ? { turnMs } : {}),
+    ...more,
   });
   made.push(current);
   return current;
@@ -157,6 +167,25 @@ describe("an ion's turn", () => {
   });
 
   // The user, 2026-11-20: your MCP servers reach chats' agents only; an ion's own turn has ion's server alone.
+  // The user, 2026-11-21: ions find memory through a quick index and read the details on demand. Each turn starts
+  // with the index of what that ion may see.
+  it("an ion's turn starts with its index", async () => {
+    const memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
+    const w = (scope: MemoryScope, name: string, type: MemoryType) =>
+      memory.write({ scope, header: { name, description: name, type }, text: name, by: "you" });
+    w("you", "Home city", "person");
+    w({ projectId: "storefront" }, "Deploy day", "fact");
+    w({ projectId: "payments-api" }, "Rate limits", "fact");
+    sent.length = 0;
+    await turns(undefined, { memory }).turn("storefront", "hello");
+    const text = sent.at(-1) ?? "";
+    expect(text).toMatch(/^<ion-data id="\w+" source="ion's memory index">\n/);
+    expect(text).toContain("you/home-city.md");
+    expect(text).toContain("projects/storefront/deploy-day.md");
+    expect(text).not.toContain("payments-api");
+    expect(text.endsWith("\n\nhello")).toBe(true);
+  });
+
   it("an ion's turn gets only ion's server, never yours", async () => {
     writeFileSync(join(home, "mcp.json"), JSON.stringify({ mcpServers: { docs: { command: "docs-mcp" } } }));
     const c = loadUserConfig(join(home, "config.toml")).config;

@@ -21,7 +21,8 @@ import { decisionLine } from "./ask.js";
 import type { IonScope } from "./grants.js";
 import { registerYourTools, type YourTools } from "./ion-your-tools.js";
 import { guard, ok, q } from "./result.js";
-import { type Deps, historyData, memoryData, needsData, SEARCH_MAX, searchData } from "./tools.js";
+import { registerMemoryTools } from "./memory-tools.js";
+import { type Deps, historyData, needsData, SEARCH_MAX, searchData } from "./tools.js";
 
 /** Skills and servers a thread starts with, by name (the user, 2026-11-21: "/" and "@" for ions too). */
 export type ThreadPicks = { skills?: string[]; mentions?: string[] };
@@ -188,33 +189,12 @@ function needsTools(server: McpServer, ion: Ion): void {
 
 function memoryTools(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;
-  server.registerTool(
-    "memory_list",
-    {
-      description: "What ion remembers for the user, and for one project or all yours.",
-      inputSchema: { projectId: z.string().optional() },
-    },
-    guard(({ projectId }: { projectId?: string }) => {
-      return memoryData(d.memory.list(idsOf(ion, projectId), ["chats", "ions"]));
-    }),
-  );
-  const chief = scope.ionId === "chief";
-  server.registerTool(
-    "memory_write",
-    {
-      description: chief
-        ? "Remember something about the user for later. Keep it short and lasting."
-        : "Remember something about your project for later. Keep it short and lasting.",
-      inputSchema: { text: z.string().min(1).max(2000) },
-    },
-    guard(({ text }: { text: string }) => {
-      notInReport(scope);
-      const where = chief ? ("you" as const) : { projectId: ion.need(scope.ionId).id };
-      if (d.grants.noteWrite(scope.turnId) > PER_TURN)
-        throw new UserError("That's enough memory for one turn");
-      return ok(`Saved ${d.memory.note(where, text, { ion: scope.ionId })}`);
-    }),
-  );
+  const caller = { kind: "ion" as const, ionId: scope.ionId, projects: ion.projects().map((p) => p.id) };
+  const limit = {
+    ...{ id: scope.turnId, max: PER_TURN, tooMany: "That's enough memory for one turn" },
+    refuse: () => notInReport(scope),
+  };
+  registerMemoryTools(server, caller, d, limit);
 }
 
 /** A report turn (its prompt holds a thread agent's words) writes nothing: no memory, no profile, no thread. */

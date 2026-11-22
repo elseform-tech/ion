@@ -73,7 +73,7 @@ function defaultSee(scope: MemoryScope, type: MemoryType): MemorySee {
 }
 
 /** A file name from a name: lowercase letters, digits and "-", at most 60. */
-function slugOf(name: string): string {
+export function slugOf(name: string): string {
   const s = name
     .toLowerCase()
     .normalize("NFKD")

@@ -34,7 +34,7 @@ describe("memory", () => {
     expect(memory.list(null, ["chats", "ions"])).toHaveLength(3);
     expect(memory.list("app", ["chats", "ions"])[0]).toMatchObject({
       memoryId: "projects/app/tests-use-vitest.md",
-      scope: "app",
+      scope: "project:app",
       source: "c1",
     });
   });
@@ -70,9 +70,19 @@ describe("memory", () => {
     expect(memoryView.search(db, { scopes: [{ projectId: "you" }], see: [...both] })).toMatchObject([
       { path: "projects/you/theirs.md", scope: { projectId: "you" } },
     ]);
+    // Task 1 re-review, 2026-11-22: the list showed a legacy folder called you as "you", like your own files.
+    expect(memory.list("you", [...both]).map((m) => m.scope)).toEqual(["you", "project:you"]);
     memory.forgetProject("you", "you");
     expect(memory.list(null, [...both]).map((m) => m.text)).toEqual(["Mine", "App's"]);
   });
+
+  // Task 1 re-review, 2026-11-22: removing a project forgot its first 1000 files only (search's default limit);
+  // moving old notes may put more than that in one folder.
+  it("forgets every file of a removed project, however many", () => {
+    for (let i = 0; i < 1003; i++) memory.note({ projectId: "big" }, `note ${i}`, "you", { overCap: true });
+    memory.forgetProject("big", "you");
+    expect(memory.list("big", ["chats", "ions"])).toEqual([]);
+  }, 60_000);
 
   // Task review, 2026-11-22: Task 2's tools forget a file only as it was read.
   it("forgets a file only as it was read, when asked to", () => {

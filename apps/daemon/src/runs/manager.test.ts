@@ -571,8 +571,7 @@ describe("RunManager", () => {
     expect(told).toContain("ask tool");
     expect(told).toContain("never");
     // Memory test on Grok, 2026-11-19: ion's memory worked, but only because Grok found its tools; every run is told.
-    expect(told).toContain("memory_list");
-    expect(told).toContain("memory_write");
+    expect(told).toContain("memory_search"); // what it says: instructions.test.ts
     // User, 2026-11-19: chain read-only lookups into one command to scale tools and save cost.
     expect(told).toContain("When you need several read-only lookups, chain them into one command with &&");
   });

@@ -54,6 +54,7 @@ import { runSkillsOf } from "../skills/run.js";
 import { type AskInChat, runOwnOf } from "../tools/own-run.js";
 import { skillReaders } from "../adapters/registry.js";
 import { openStore } from "./open-store.js";
+import type { MemoryFiles } from "../memory/index.js";
 
 /** The scope of a run that ion asks you about. */
 const runScopeOf = (r: AskingRun): RunScope => ({
@@ -269,15 +270,16 @@ function startIons(
     grants: Grants;
     base: () => string;
     ionServers: IonServers;
+    memory: MemoryFiles;
   },
 ): { ions: Ions; turns: IonTurns } {
-  const { dataDir, grants, base, ionServers, ...deps } = d;
+  const { dataDir, grants, base, ionServers, memory, ...deps } = d;
   const agents = () => harnessInfos.list();
   const agent = (id: string) => harnessInfos.one(id);
   // Turns start threads through the ions, and the ions think through turns: the ions are made just below.
   const late: { ions?: Ions } = {};
   const turns = new IonTurns({
-    ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents, agent },
+    ...{ store: d.store, db: d.db, configFile: d.configFile, dataDir, grants, agents, agent, memory },
     mcpUrl: () => `${base()}/mcp`,
     gateUrl: () => `${base()}/gate`,
     servers: ionServers,
@@ -411,6 +413,7 @@ function runCtxOf(o: {
   grants: Grants;
   hooks: Hooks;
   picks: { tools: Tools; skills: Skills; ionServers: IonServers };
+  memory: MemoryFiles;
 }) {
   const { opts, base, late } = o;
   return {
@@ -422,7 +425,7 @@ function runCtxOf(o: {
     },
     beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => o.hooks.beforeTool(r, c),
     theirs: theirRulesOf(opts.configFile, opts.home ?? agentsHome()),
-    mcp: { grants: o.grants, url: () => `${base()}/mcp` },
+    mcp: { grants: o.grants, url: () => `${base()}/mcp`, memory: o.memory },
     gate: { url: () => `${base()}/gate` },
     // `ion` inside a run reaches ion by this port and its run key (daemon.json is out of the run's reach).
     port: () => Number(new URL(base()).port),
@@ -464,7 +467,7 @@ function openState(
     if (note) console.warn(note);
   };
   const ionServers = new IonServers({ ...opts, servers, judge: judgeOn(opts, quick), ownNames, onUnsure });
-  const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers } });
+  const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers }, memory });
   // Said once in the daemon's log when this computer can't sandbox chats' agents; ion's own git runs sandboxed too.
   const sandbox = startOwnAgents(opts, startSandbox(opts));
   const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
@@ -479,7 +482,7 @@ function openState(
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base, ionServers });
+  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base, ionServers, memory });
   // A routine's time came (or you ran it now): its ion starts its thread.
   const routines = new Routines({
     ...{ store, db, configFile: opts.configFile },

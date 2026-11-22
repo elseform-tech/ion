@@ -25,8 +25,8 @@ export type Grants = {
   revoke(id: string): void;
   /** The key's scope, only when it's a live key of this kind. */
   check(key: string, kind?: KeyKind): Scope | null;
-  /** Counts one memory write for the run or turn; the count goes away when its grants are revoked. */
-  noteWrite(id: string): number;
+  /** Counts one memory write for the run or turn (-1 gives one back); the count goes away with its grants. */
+  noteWrite(id: string, by?: 1 | -1): number;
   /** Counts one thread started in the turn (-1 gives a slot back); the count goes away with its grants. */
   noteThread(id: string, by?: 1 | -1): number;
 };
@@ -54,7 +54,7 @@ export function createGrants(): Grants {
       counts.delete(`write:${id}`);
       counts.delete(`thread:${id}`);
     },
-    noteWrite: (id) => note(id, "write"),
+    noteWrite: (id, by = 1) => note(id, "write", by),
     noteThread: (id, by = 1) => note(id, "thread", by),
     check(key, kind = "mcp") {
       const s = byHash.get(hash(key));

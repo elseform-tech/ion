@@ -11,7 +11,7 @@ import {
 } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
-import { memoryView } from "../views/memory.js";
+import { type MemoryQuery, type MemoryRow, memoryView } from "../views/memory.js";
 import { moveNotes } from "./migrate.js";
 import { watchMemory } from "./watch.js";
 import {
@@ -24,6 +24,7 @@ import {
 } from "./files.js";
 
 export type { FileRead, MemoryFile } from "./files.js";
+export { upFront } from "./scoped.js";
 
 /** A note's `from:` (the old note it was moved from) and `see`; `overCap`: moving old notes only. */
 type NoteOptions = { from?: string; see?: "chats" | "ions"; overCap?: true };
@@ -101,9 +102,19 @@ export class MemoryFiles {
 
   /** Forgets a project's files (it was removed), never yours. */
   forgetProject(projectId: string, by: MemoryBy): void {
-    const both = ["chats", "ions"] as const;
-    for (const r of memoryView.search(this.o.db, { scopes: [{ projectId }], see: [...both] }))
-      this.forget(r.path, by);
+    // Every one, by its folder (task re-review, 2026-11-22: a search's limit left all past the first 1000).
+    const folder = `projects/${projectId}/`;
+    for (const path of memoryView.paths(this.o.db)) if (path.startsWith(folder)) this.forget(path, by);
+  }
+
+  /** The index's files a query finds (scope, who may see them, type, status, words). */
+  find(q: MemoryQuery): MemoryRow[] {
+    return memoryView.search(this.o.db, q);
+  }
+
+  /** One file in the index, or nothing. */
+  row(path: string): MemoryRow | undefined {
+    return memoryView.get(this.o.db, path);
   }
 
   /** Every file's path on disk. */
