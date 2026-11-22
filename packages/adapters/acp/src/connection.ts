@@ -1,6 +1,6 @@
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,6 +11,7 @@ import {
   ResumeFailed,
   type Rpc,
   RpcError,
+  type RunSandbox,
   sandboxed,
   type StartOpts,
   withPaths,
@@ -194,31 +195,56 @@ export async function setUpOutside(
   }
 }
 
-/** Opens a session without sending a prompt: signed in, signed out, or not responding. Cleans up after itself. */
-export async function probeSignedIn(
+/**
+ * Where and how ion's checks of an agent (sign-in, models) open it: a folder under `root` (ion's data folder, denied to
+ * every run) and the sandbox the daemon gives for that folder (final review, 2026-11-22: they ran outside it, in
+ * $TMPDIR, where a plugin a run had planted ran unsandboxed). Only opencode's first setup stays outside.
+ */
+export type ProbePlace = { root?: string; sandbox?: (cwd: string, harness: string) => RunSandbox | undefined };
+
+/** Opens the agent for a check (no prompt) where `place` says, hands the connection to `use`, and cleans up. */
+async function probing<T>(
   h: AcpHarness,
   bin: string,
-  timeoutMs?: number,
-): Promise<"yes" | "no" | "not-responding"> {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ion-probe-")));
+  o: { timeoutMs?: number; place?: ProbePlace },
+  use: (c: Connection) => T,
+): Promise<T> {
+  const root = o.place?.root ?? tmpdir();
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const dir = realpathSync(mkdtempSync(join(root, "ion-probe-")));
   try {
-    const c = await connect(h, bin, { cwd: dir, timeoutMs });
+    const sandbox = o.place?.sandbox?.(dir, h.id);
+    // Not set up yet (opencode's plugin package): once outside the sandbox first, as a run's start does.
+    if (sandbox && h.prepare && !h.prepare()) await setUpOutside(h, bin, { timeoutMs: o.timeoutMs });
+    const c = await connect(h, bin, { cwd: dir, timeoutMs: o.timeoutMs, ...(sandbox ? { sandbox } : {}) });
     c.child.kill();
-    return "yes";
-  } catch (e) {
-    return e instanceof NotResponding ? "not-responding" : "no";
+    return use(c);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-/** The agent's models: the choices of its model option (groups flattened), from a session opened without a prompt. */
-export async function probeModels(h: AcpHarness, bin: string, timeoutMs?: number): Promise<Catalog> {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ion-probe-")));
+/** Opens a session without sending a prompt: signed in, signed out, or not responding. Cleans up after itself. */
+export async function probeSignedIn(
+  h: AcpHarness,
+  bin: string,
+  o: { timeoutMs?: number; place?: ProbePlace } = {},
+): Promise<"yes" | "no" | "not-responding"> {
   try {
-    const c = await connect(h, bin, { cwd: dir, timeoutMs });
-    c.child.kill();
-    const opt = c.options.find((o) => o.category === "model");
+    return await probing(h, bin, o, () => "yes" as const);
+  } catch (e) {
+    return e instanceof NotResponding ? "not-responding" : "no";
+  }
+}
+
+/** The agent's models: the choices of its model option (groups flattened), from a session opened without a prompt. */
+export async function probeModels(
+  h: AcpHarness,
+  bin: string,
+  o: { timeoutMs?: number; place?: ProbePlace } = {},
+): Promise<Catalog> {
+  return probing(h, bin, o, (c) => {
+    const opt = c.options.find((x) => x.category === "model");
     const flat = (cs: Choice[]): Choice[] =>
       cs.flatMap((x) => (Array.isArray(x.options) ? flat(x.options) : [x]));
     const models = flat(opt?.options ?? [])
@@ -226,9 +252,7 @@ export async function probeModels(h: AcpHarness, bin: string, timeoutMs?: number
       .map((x) => ({ id: String(x.value), label: typeof x.name === "string" ? x.name : String(x.value) }));
     const current = typeof opt?.currentValue === "string" ? opt.currentValue : null;
     return { models, defaultModel: h.defaultModel ?? current };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  });
 }
 
 /** Sets a session config option of the given category (model, thought_level) when the agent offers one. */

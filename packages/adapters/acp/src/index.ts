@@ -8,7 +8,14 @@ import {
   whichOnPath,
 } from "@ion/adapter-kit";
 import type { Capabilities } from "@ion/schema";
-import { connect, probeModels, probeSignedIn, setOption, setUpOutside } from "./connection.js";
+import {
+  connect,
+  type ProbePlace,
+  probeModels,
+  probeSignedIn,
+  setOption,
+  setUpOutside,
+} from "./connection.js";
 import type { AcpHarness } from "./harnesses.js";
 import { startAcpSession } from "./session.js";
 
@@ -21,6 +28,15 @@ const silenceOf = (h: AcpHarness) => ({
 });
 
 export { type AcpHarness, GROK_BUILD, OPENCODE } from "./harnesses.js";
+export type { ProbePlace } from "./connection.js";
+
+/** What the adapter is given: how to find the agent, how long a start may take, where its checks open it. */
+export type AcpDeps = {
+  which?: (bin: string) => string | null;
+  startTimeoutMs?: number;
+  /** Where and how its sign-in and model checks open the agent (the daemon's sandbox, in ion's data folder). */
+  probes?: () => ProbePlace;
+};
 
 /** Everything but the model list, which comes from the agent itself. */
 const CAPABILITIES: Omit<Capabilities, "models" | "defaultModel" | "modelsLive"> = {
@@ -47,7 +63,7 @@ const ownOf = (h: AcpHarness) => ({
 /** One adapter for any agent that speaks ACP over stdio (Grok Build, opencode, …). */
 export function createAcpAdapter(
   h: AcpHarness,
-  deps: { which?: (bin: string) => string | null; startTimeoutMs?: number } = {},
+  deps: AcpDeps = {},
 ): HarnessAdapter {
   const which = deps.which ?? whichOnPath;
   const binary = () => which(h.bin);
@@ -65,7 +81,7 @@ export function createAcpAdapter(
       async status() {
         const path = binary();
         if (!path) return { signedIn: false, method: "Not installed" };
-        const probe = await probeSignedIn(h, path, deps.startTimeoutMs);
+        const probe = await probeSignedIn(h, path, { timeoutMs: deps.startTimeoutMs, place: deps.probes?.() });
         const slow = h.notResponding?.() ?? "Not responding";
         const method = { yes: "Signed in", no: "Not signed in", "not-responding": slow }[probe];
         return { signedIn: probe === "yes", method };
@@ -80,7 +96,7 @@ export function createAcpAdapter(
         }),
     },
     ...(h.toCall ? { gateCall: h.toCall } : {}),
-    capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps.startTimeoutMs)),
+    capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps)),
     mcpTransports: { http: h.mcpHttp ?? true },
     ...ownOf(h),
     async start(opts) {
@@ -100,12 +116,12 @@ export function createAcpAdapter(
 }
 
 /** The agent's models (from a session opened without a prompt), kept for 10 minutes. */
-function acpCatalog(h: AcpHarness, binary: () => string | null, timeoutMs?: number) {
+function acpCatalog(h: AcpHarness, binary: () => string | null, deps: AcpDeps) {
   return cachedCatalog(
     async () => {
       const path = binary();
       if (!path) throw new Error(`${h.label} isn't installed`);
-      return probeModels(h, path, timeoutMs);
+      return probeModels(h, path, { timeoutMs: deps.startTimeoutMs, place: deps.probes?.() });
     },
     { fallback: { models: [], defaultModel: h.defaultModel } },
   );

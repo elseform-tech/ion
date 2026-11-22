@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // A tiny ACP agent for tests. Prompt's first word: hello | approve | slow. FAKE_ACP_SIGNED_OUT=1 → -32000.
 import { execFileSync } from "node:child_process";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const send = (m) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);
@@ -234,9 +235,25 @@ function continueSession(m) {
   send({ id: m.id, result: { configOptions: [] } });
 }
 
+// FAKE_ACP_RECORD=<file>: each new session appends its folder and whether it could write FAKE_ACP_TOUCH (a sandbox
+// that denies that path stops it).
+function record(cwd) {
+  if (!process.env.FAKE_ACP_RECORD) return;
+  let wrote = "no-touch";
+  if (process.env.FAKE_ACP_TOUCH)
+    try {
+      writeFileSync(process.env.FAKE_ACP_TOUCH, "x");
+      wrote = "wrote";
+    } catch {
+      wrote = "blocked";
+    }
+  appendFileSync(process.env.FAKE_ACP_RECORD, `${JSON.stringify({ cwd, wrote, args: process.argv.slice(2) })}\n`);
+}
+
 function newSession(m) {
   if (process.env.FAKE_ACP_SIGNED_OUT === "1")
     return send({ id: m.id, error: { code: -32000, message: "Authentication required" } });
+  record(m.params.cwd);
   sessions.set("s1", m.params.cwd);
   metas.set("s1", m.params._meta ?? null);
   mcps.set("s1", m.params.mcpServers ?? null);

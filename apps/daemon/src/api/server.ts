@@ -17,10 +17,11 @@ import { Connection } from "./connection.js";
 import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
 import { RunManager } from "../runs/manager.js";
-import { startSandbox } from "../runs/sandbox.js";
+import { runSandbox, startSandbox } from "../runs/sandbox.js";
 import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
+import { scratchOf, sweepTmp } from "../access/runner.js";
 import { theirRulesOf } from "../access/agent-rules.js";
 import { UnsureLog } from "../access/unsure.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
@@ -53,7 +54,7 @@ import { Hooks } from "../hooks/index.js";
 import { createSkills, ionSkillsDir, type Skills } from "../skills/index.js";
 import { runSkillsOf } from "../skills/run.js";
 import { type AskInChat, runOwnOf } from "../tools/own-run.js";
-import { skillReaders } from "../adapters/registry.js";
+import { placeProbes, skillReaders } from "../adapters/registry.js";
 
 /** The scope of a run that ion asks you about. */
 const runScopeOf = (r: AskingRun): RunScope => ({
@@ -448,9 +449,9 @@ function openState(
   const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store, late);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
-  const quick = harnessRunner(opts.configFile);
+  const quick = harnessRunner(opts);
   // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
-  const ionQuick = harnessRunner(opts.configFile, "quick");
+  const ionQuick = harnessRunner(opts, "quick");
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
   sweepNeeds(needs, ionQuestions);
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
@@ -467,6 +468,12 @@ function openState(
   const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers } });
   // Said once in the daemon's log when this computer can't sandbox chats' agents; ion's own git runs sandboxed too.
   const sandbox = startSandbox(opts);
+  // ion's checks of an agent open it in ion's data folder, sandboxed; what they left in the temp folder goes.
+  placeProbes({
+    root: scratchOf(opts.dataDir),
+    sandbox: (cwd, harness) => runSandbox(sandbox, { ...opts, cwd, harness }),
+  });
+  sweepTmp();
   const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
   // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
   const decisions = new Decisions({

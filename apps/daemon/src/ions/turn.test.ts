@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentEnv, type StartOpts } from "@ion/adapter-kit";
+import { agentEnv, sandboxKind, type StartOpts } from "@ion/adapter-kit";
 import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
 import { EV, type HarnessInfo, type IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -170,6 +170,17 @@ describe("an ion's turn", () => {
         headers: { Authorization: expect.stringMatching(/^Bearer [0-9a-f]{64}$/) },
       },
     ]);
+  });
+
+  // Final review, 2026-11-22: ion's own agent processes started outside the OS sandbox; on Grok and opencode they keep
+  // their tools and load their plugins. An ion's turn starts in a run's sandbox: ion's data folder denied (its own
+  // folder there let through), agents' configs read-only.
+  it.skipIf(sandboxKind() === "none")("an ion's turn starts in a run's sandbox", async () => {
+    await turns().turn("chief", "hello");
+    const s = starts.at(-1)!;
+    expect(s.sandbox?.paths.deny).toContain(join(home, "data"));
+    expect(s.sandbox?.paths.write).toEqual([s.cwd]);
+    expect(s.sandbox?.paths.noWrite.length).toBeGreaterThan(0);
   });
 
   // Task review, 2026-11-20: ion's own agents (an ion's turn, the judge, the probes) inherited ion's environment, and

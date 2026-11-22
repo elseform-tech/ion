@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -556,5 +556,43 @@ describe("an agent that sets itself up first", () => {
     ready = true;
     await go();
     expect(starts).toHaveLength(3);
+  });
+});
+
+// Final review, 2026-11-22: ion's sign-in and model checks started the agent outside the OS sandbox, in $TMPDIR, so a
+// plugin a run had planted (Grok's installed-plugins, opencode's plugin cache) ran unsandboxed. They now start in the
+// sandbox the daemon gives (ion's folders denied), in a folder under the root it gives (ion's data folder).
+describe.skipIf(sandboxKind() !== "seatbelt")("ion's checks of an agent", () => {
+  it("open the agent in the daemon's sandbox, in a folder under its root, removed after", async () => {
+    const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-acp-probe-")));
+    const root = join(data, "scratch");
+    const log = join(mkdtempSync(join(tmpdir(), "ion-acp-log-")), "log");
+    const deny = join(data, "secret");
+    mkdirSync(deny);
+    process.env.FAKE_ACP_RECORD = log;
+    process.env.FAKE_ACP_TOUCH = join(deny, "planted");
+    try {
+      const probes = () => ({
+        root,
+        sandbox: (dir: string) => ({
+          kind: "seatbelt" as const,
+          paths: { deny: [deny], read: [], write: [dir], noWrite: [] },
+        }),
+      });
+      const a = createAcpAdapter({ ...fake, id: "fake-probed" }, { which: () => process.execPath, probes });
+      expect(await a.auth.status()).toEqual({ signedIn: true, method: "Signed in" });
+      expect((await a.capabilities()).models.map((m) => m.id)).toEqual(["fake-1", "fake-2"]);
+      const rows = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      expect(rows).toHaveLength(2);
+      for (const r of rows) {
+        expect(r.cwd.startsWith(join(root, "ion-probe-"))).toBe(true);
+        expect(r.wrote).toBe("blocked");
+        expect(existsSync(r.cwd)).toBe(false);
+      }
+    } finally {
+      delete process.env.FAKE_ACP_RECORD;
+      delete process.env.FAKE_ACP_TOUCH;
+      rmSync(data, { recursive: true, force: true });
+    }
   });
 });

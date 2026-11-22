@@ -1,5 +1,5 @@
 // The only place the daemon loads harness adapters (lint: ion/walls).
-import { createAcpAdapter, GROK_BUILD, OPENCODE } from "@ion/adapter-acp";
+import { createAcpAdapter, GROK_BUILD, OPENCODE, type ProbePlace } from "@ion/adapter-acp";
 import { createClaudeCodeAdapter } from "@ion/adapter-claude-code";
 import { createCodexAdapter } from "@ion/adapter-codex";
 import { createFakeAdapter } from "@ion/adapter-fake";
@@ -7,6 +7,16 @@ import type { HarnessAdapter, PickStyle } from "@ion/adapter-kit";
 import type { SkillWhose } from "@ion/schema";
 
 export type HarnessEntry = { adapter: HarnessAdapter; label: string; loginHint: string };
+
+/** Where and how ion's checks of an agent open it; set once at the daemon's start (none: the temp folder, unsandboxed). */
+let probePlace: ProbePlace = {};
+
+/** Sets where ion's sign-in and model checks open an agent: ion's data folder, in the daemon's sandbox. */
+export function placeProbes(p: ProbePlace): void {
+  probePlace = p;
+}
+
+const probes = () => probePlace;
 
 const ENTRIES: Record<string, () => HarnessEntry> = {
   "claude-code": () => ({
@@ -16,12 +26,12 @@ const ENTRIES: Record<string, () => HarnessEntry> = {
   }),
   codex: () => ({ adapter: createCodexAdapter(), label: "Codex", loginHint: "codex login" }),
   "grok-build": () => ({
-    adapter: createAcpAdapter(GROK_BUILD),
+    adapter: createAcpAdapter(GROK_BUILD, { probes }),
     label: GROK_BUILD.label,
     loginHint: GROK_BUILD.loginHint,
   }),
   opencode: () => ({
-    adapter: createAcpAdapter(OPENCODE),
+    adapter: createAcpAdapter(OPENCODE, { probes }),
     label: OPENCODE.label,
     loginHint: OPENCODE.loginHint,
   }),

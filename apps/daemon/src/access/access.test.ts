@@ -8,6 +8,7 @@ import { createAccess, createJudge, harnessRunner, judgePrompt, parseVerdict, ru
 import { startOf } from "./runner.js";
 
 const home = "/Users/me";
+const runner = (configFile: string) => ({ configFile, dataDir: join(configFile, "..", "data") });
 const wt = "/data/worktrees/c1";
 const ctx = { roots: [wt], home, ionDirs: ["/data", "/Users/me/.config/ion"] };
 const cmd = (command: string): ApprovalRequest => ({
@@ -455,7 +456,7 @@ describe("harnessRunner", () => {
     process.env.ION_ALLOW_FAKE = "1";
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-judge-")), "config.toml");
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, access: { ...DEFAULT_CONFIG.access, judge: "fake" } });
-    const judge = createJudge(harnessRunner(configFile));
+    const judge = createJudge(harnessRunner(runner(configFile)));
     expect(await judge({ projectId: "app", text: "x", req: cmd("pnpm test") })).toEqual({
       verdict: "allow",
       reason: "Part of the task",
@@ -479,7 +480,7 @@ describe("harnessRunner", () => {
       access: { ...DEFAULT_CONFIG.access, judge: "fake" },
       tools: { ...DEFAULT_CONFIG.tools, mcpOn: ["docs@any"] },
     });
-    expect(await harnessRunner(configFile)("mcplist", new AbortController().signal)).toBe("[]");
+    expect(await harnessRunner(runner(configFile))("mcplist", new AbortController().signal)).toBe("[]");
   });
 });
 
@@ -493,9 +494,9 @@ describe("harnessRunner for ion's own thinking", () => {
       ion: { ...DEFAULT_CONFIG.ion, quick: "fake" },
       access: { ...DEFAULT_CONFIG.access, judge: "nope" },
     });
-    const said = await harnessRunner(configFile, "quick")("hello", new AbortController().signal);
+    const said = await harnessRunner(runner(configFile), "quick")("hello", new AbortController().signal);
     expect(said).toBe("Hi from the fake harness.");
-    await expect(harnessRunner(configFile)("hello", new AbortController().signal)).rejects.toThrow(
+    await expect(harnessRunner(runner(configFile))("hello", new AbortController().signal)).rejects.toThrow(
       "Unknown harness: nope",
     );
   });
@@ -505,7 +506,7 @@ describe("harnessRunner for ion's own thinking", () => {
     process.env.ION_ALLOW_FAKE = "1";
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-quick-")), "config.toml");
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "nope" } });
-    const said = await harnessRunner(configFile, "quick")("hello", new AbortController().signal, "fake");
+    const said = await harnessRunner(runner(configFile), "quick")("hello", new AbortController().signal, "fake");
     expect(said).toBe("Hi from the fake harness.");
   });
 });
