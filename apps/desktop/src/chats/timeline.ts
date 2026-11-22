@@ -3,6 +3,9 @@ import { type Step, thinking, toolFinished, toolOutput, toolStarted, workEnded }
 
 type Choice = { label: string; consequence: string; recommended?: boolean };
 
+/** How an answer that reaches past the chat is named: the word on the box you ticked. */
+export type Keep = "Always" | "Remember";
+
 /** One thing the chat shows, in order. */
 export type Item =
   /**
@@ -15,7 +18,8 @@ export type Item =
       gone?: true;
       legacy?: true;
       answers?: string;
-      always?: true;
+      /** Your answer reaches past the chat: "Always" (an agent's question), "Remember" (a call ion stopped). */
+      always?: Keep;
       /** What you picked with "/" and "@" (chips). */
       picked?: { skills: string[]; mentions: string[] };
     }
@@ -48,7 +52,7 @@ export type Item =
        * answer from your decision, or its run stopping first.
        */
       outcome?:
-        | { by: "you"; choice: string; always?: true }
+        | { by: "you"; choice: string; always?: Keep }
         | { by: "ion"; text: string }
         | { by: "stopped"; why?: "stopped" | "archived" | "restarted" };
     }
@@ -174,9 +178,10 @@ type Question = Extract<Item, { kind: "question" }>;
 type Outcome = NonNullable<Extract<Item, { kind: "question" }>["outcome"]>;
 
 /** Your answer as the chat shows it under the question: the choice, and "Always" when it reaches past the chat. */
-function yours(d: D): Outcome {
+function yours(d: D, blocked?: boolean): Outcome {
   const always = d.scope === "project" || d.scope === "everywhere";
-  return { by: "you", choice: str(d.choice), ...(always ? { always: true as const } : {}) };
+  const word: Keep = blocked ? "Remember" : "Always";
+  return { by: "you", choice: str(d.choice), ...(always ? { always: word } : {}) };
 }
 
 const STOPPED_WHY = new Set(["stopped", "archived", "restarted"]);
@@ -199,20 +204,20 @@ function answered(t: Timeline, d: D): Timeline {
   // your answer elsewhere: ion's, from that decision.
   if (d.decision !== "answered") return closed(t, i!, q, d);
   const choice = str(d.choice);
-  const outcome: Outcome = q.held ? { by: "ion", text: fromYourDecision(choice) } : yours(d);
+  const outcome: Outcome = q.held ? { by: "ion", text: fromYourDecision(choice) } : yours(d, q.blocked);
   const done = {
     ...replace(t, i!, { ...q, resolved: true, answered: choice, outcome }),
     streaming: t.streaming,
   };
   if (!t.named.includes(str(d.needId))) return withLegacy(done, i!, choice);
-  return outcome.by === "you" && outcome.always ? alwaysOnReply(done, str(d.needId)) : done;
+  return outcome.by === "you" && outcome.always ? alwaysOnReply(done, str(d.needId), outcome.always) : done;
 }
 
 /** Your answer's message came first: it says "Always" too, once the answer reaches past the chat. */
-function alwaysOnReply(t: Timeline, needId: string): Timeline {
+function alwaysOnReply(t: Timeline, needId: string, always: Keep): Timeline {
   const at = t.items.findLastIndex((x) => x.kind === "you" && x.answers === needId);
   const reply = t.items[at];
-  return reply?.kind === "you" ? replace(t, at, { ...reply, always: true }) : t;
+  return reply?.kind === "you" ? replace(t, at, { ...reply, always }) : t;
 }
 
 /**
@@ -260,9 +265,9 @@ function answerSent(t0: Timeline, needId: string, text: string): Timeline {
   const here = needId in t0.questions;
   const asked = here ? t0.items[t0.questions[needId]!] : undefined;
   const t = asked?.kind === "question" ? replace(t0, t0.questions[needId]!, { ...asked, replied: true }) : t0;
-  const always = asked?.kind === "question" && asked.outcome?.by === "you" && asked.outcome.always;
+  const always = asked?.kind === "question" && asked.outcome?.by === "you" ? asked.outcome.always : undefined;
   const reply = { kind: "you" as const, text, ...(here ? { gone: true as const, answers: needId } : {}) };
-  const pushed = push(t, always ? { ...reply, always: true as const } : reply);
+  const pushed = push(t, always ? { ...reply, always } : reply);
   const q = here ? t.items[t.questions[needId]!] : undefined;
   const label = q?.kind === "question" ? q.answered : undefined;
   const at = label === undefined ? -1 : t.legacy.indexOf(label);

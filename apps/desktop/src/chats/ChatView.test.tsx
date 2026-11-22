@@ -258,7 +258,7 @@ describe("answered questions and added tools in the chat", () => {
   });
 
   it("an answered question shows in the chat with your answer", () => {
-    const { container, getByText } = view([q({ outcome: { by: "you", choice: "Keep xs", always: true } })]);
+    const { container, getByText } = view([q({ outcome: { by: "you", choice: "Keep xs", always: "Always" } })]);
     const asked = container.querySelector(".qa .qq") as HTMLButtonElement;
     expect(asked.textContent).toBe("Should I keep your custom xs breakpoint when moving to Tailwind 4?");
     expect(asked.className).toBe("qq");
@@ -271,9 +271,9 @@ describe("answered questions and added tools in the chat", () => {
   // Tour, 2026-11-21: the agent's "Asked." showed after your answer; the answer now shows where you sent it.
   it("your answer shows where you sent it, not under the question", () => {
     const { container } = view([
-      q({ replied: true, outcome: { by: "you", choice: "Keep xs", always: true } }),
+      q({ replied: true, outcome: { by: "you", choice: "Keep xs", always: "Always" } }),
       { kind: "agent", text: "Asked.", done: true },
-      { kind: "you", text: "Keep xs", gone: true, answers: "n1", always: true },
+      { kind: "you", text: "Keep xs", gone: true, answers: "n1", always: "Always" },
     ]);
     expect([...container.children[0]!.querySelectorAll(".qa, .a, .u")].map((e) => e.className)).toEqual([
       "qa",
@@ -281,6 +281,12 @@ describe("answered questions and added tools in the chat", () => {
       "u",
     ]);
     expect(container.querySelector(".u")?.textContent).toBe("Keep xsAlways");
+  });
+
+  // Task 11, 2026-11-22 (live): a remembered answer to a stopped call says Remember.
+  it("a remembered answer says Remember", () => {
+    const { getByText } = view([q({ blocked: true, outcome: { by: "you", choice: "Don't allow", always: "Remember" } })]);
+    expect(getByText("Remember").className).toBe("chip");
   });
 
   it("a question that ended without you shows what happened", () => {
