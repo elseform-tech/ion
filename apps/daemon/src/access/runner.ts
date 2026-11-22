@@ -104,7 +104,10 @@ export function clearScratch(dataDir: string): void {
   rmSync(scratchOf(dataDir), { recursive: true, force: true });
 }
 
-/** Sends the prompt and returns the session's last message; closes the session (also when the judge gives up). */
+/**
+ * Sends the prompt and returns the session's last message (throws the agent's error when its run failed without one);
+ * closes the session (also when the judge gives up).
+ */
 async function lastMessage(session: Session, prompt: string, signal: AbortSignal): Promise<string> {
   const stop = () => void session.close().catch(() => {});
   if (signal.aborted) stop();
@@ -112,8 +115,14 @@ async function lastMessage(session: Session, prompt: string, signal: AbortSignal
   try {
     await session.send({ text: prompt });
     let last = "";
-    for await (const e of session.events())
+    let failed = "";
+    for await (const e of session.events()) {
       if (e.type === EV.messageCompleted) last = String((e.data as { text: unknown }).text);
+      if (e.type === EV.error) failed = String((e.data as { message?: unknown }).message ?? "");
+    }
+    // A run that failed with nothing said is the agent's error (Judge eval, 2026-11-22: opencode out of quota came
+    // back as an empty answer, so the judge never said why nor asked another agent).
+    if (!last && failed) throw new Error(failed);
     return last;
   } finally {
     await session.close().catch(() => {});

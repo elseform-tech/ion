@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OPENCODE_PLUGIN } from "./gate.js";
-import { GROK_BUILD, OPENCODE, opencodeFailure } from "./harnesses.js";
+import { GROK_BUILD, OPENCODE, opencodeFailure, opencodeGiveUp } from "./harnesses.js";
 
 // Regression (final review I8): a repo's opencode.json could set permissions back to "allow".
 describe("opencode environment", () => {
@@ -398,6 +398,23 @@ describe("opencode's log", () => {
     ).toBeLessThanOrEqual(200);
     expect(opencodeFailure('level=INFO message="init"')).toBeNull();
     expect(OPENCODE.args).toEqual(["acp", "--print-logs", "--log-level", "WARN"]);
+  });
+
+  // Judge eval, 2026-11-22: out of its free quota (opencode 1.18.8 logs it per session, then retries quietly) every
+  // judge verdict waited 30 s. That line ends the turn at once, for the session it names; a failure it may retry
+  // past doesn't.
+  it("says when it won't get past a failure, and for which session", () => {
+    const quota =
+      'level=ERROR message="stream error" providerID=opencode modelID=big-pickle session.id=ses_abc small=false agent=build error.error="AI_APICallError: Free usage limit reached. Free models work in OpenCode"';
+    expect(opencodeGiveUp(quota)).toEqual({
+      why: "opencode's free usage is used up — try again later or pick another model",
+      sessionId: "ses_abc",
+    });
+    expect(OPENCODE.logGiveUp).toBe(opencodeGiveUp);
+    expect(
+      opencodeGiveUp('level=ERROR message="stream error" error.error="AI_APICallError: Overloaded"'),
+    ).toBeNull();
+    expect(opencodeGiveUp('level=INFO message="init"')).toBeNull();
   });
 });
 

@@ -35,7 +35,15 @@ const rows = (log: string): Row[] =>
     .split("\n")
     .map((l) => JSON.parse(l) as Row);
 
-async function verdict(h: AcpHarness, cwd: string, extra: Partial<StartOpts> = {}): Promise<AdapterEvent[]> {
+const verdict = (h: AcpHarness, cwd: string, extra: Partial<StartOpts> = {}) =>
+  verdictOf(h, cwd, "hello", extra);
+
+async function verdictOf(
+  h: AcpHarness,
+  cwd: string,
+  text: string,
+  extra: Partial<StartOpts> = {},
+): Promise<AdapterEvent[]> {
   const s = await createAcpAdapter(h, { which: () => process.execPath }).start({
     cwd,
     model: null,
@@ -45,7 +53,7 @@ async function verdict(h: AcpHarness, cwd: string, extra: Partial<StartOpts> = {
     decide: async () => "deny",
     ...extra,
   });
-  await s.send({ text: "hello" });
+  await s.send({ text });
   const out: AdapterEvent[] = [];
   for await (const e of s.events()) out.push(e);
   await s.close();
@@ -135,5 +143,27 @@ describe("a bare start (ion's judge) on an ACP agent", () => {
     const opened = rows(log).filter((r) => r.cwd);
     expect(opened[0]!.pid).not.toBe(opened[1]!.pid);
     expect(opened[0]!.args).toEqual([]);
+  });
+
+  // Judge eval, 2026-11-22: on opencode out of its free quota every verdict waited the judge's whole 30 s; the warm
+  // agent's log said why at once, but only the silence check (60 s) ended the turn. A verdict now fails as soon as the
+  // log says the agent can't go on, with its reason, and the next verdict's session hears its own log line too.
+  it("fails a verdict at once when the warm agent's log says it can't go on", {
+    timeout: 30_000,
+  }, async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ion-bare-")));
+    const h: AcpHarness = {
+      ...judge,
+      silenceMs: 60_000,
+      logFailure: (line) => (line.includes("Free usage") ? "Fake ACP is out of quota" : null),
+      logGiveUp: (line) => (line.includes("Free usage") ? { why: "Fake ACP is out of quota" } : null),
+    };
+    for (let i = 0; i < 2; i++) {
+      const t0 = Date.now();
+      const out = await verdictOf(h, cwd, "quota");
+      expect(Date.now() - t0).toBeLessThan(10_000);
+      expect(out.at(-2)).toMatchObject({ type: "error", data: { message: "Fake ACP is out of quota" } });
+      expect(out.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
+    }
   });
 });
