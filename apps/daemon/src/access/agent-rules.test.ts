@@ -1,4 +1,14 @@
-import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  ftruncateSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  utimesSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
@@ -249,7 +259,12 @@ describe("reading agents' rules", () => {
     expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(1);
     // Two rules now, the file the same size (so only the mtime tells).
     const next = JSON.stringify({ permissions: { deny: ["Bash", "WebFetch"] } });
-    writeFileSync(file, next.padEnd(statSync(file).size, " "));
+    // Rewritten through one open file (CodeQL, PR #25: no stat by path, then a write by path).
+    const fd = openSync(file, "r+");
+    const size = fstatSync(fd).size;
+    ftruncateSync(fd, 0);
+    writeSync(fd, next.padEnd(size, " "), 0);
+    closeSync(fd);
     utimesSync(file, mtime, mtime);
     // Same mtime: the rules ion read stand (the file isn't read again).
     expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(1);

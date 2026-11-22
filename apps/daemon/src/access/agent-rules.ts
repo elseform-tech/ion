@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
+import { openFile } from "../tools/read-file.js";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { loadUserConfig } from "@ion/config";
@@ -41,18 +42,13 @@ const read = new Map<string, { at: string; text: string | null }>();
 
 /** A file's text: missing, too big or unreadable is nothing. */
 function textOf(path: string): string | null {
-  try {
-    if (!existsSync(path)) return null;
-    const st = statSync(path);
-    const at = `${st.mtimeMs}:${st.size}`;
-    const known = read.get(path);
-    if (known?.at === at) return known.text;
-    const text = st.size <= MAX ? readFileSync(path, "utf8") : null;
-    read.set(path, { at, text });
-    return text;
-  } catch {
-    return null;
-  }
+  const known = read.get(path);
+  // Checked and read through one open file (CodeQL, PR #25).
+  const f = openFile(path, MAX, known?.at);
+  if (!f || f.kind !== "file") return null;
+  if (known?.at === f.at) return known.text;
+  read.set(path, { at: f.at, text: f.text });
+  return f.text;
 }
 function jsonOf(path: string): Record<string, unknown> {
   const text = textOf(path);

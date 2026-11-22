@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { stripControl } from "@ion/schema";
 import { readFile } from "../tools/import.js";
 import { readPlugins } from "../tools/plugins.js";
+import { openFile } from "../tools/read-file.js";
 
 /**
  * Each agent's own commands, as "/" lists them (the user, 2026-11-21, after Task 13: the agent's own come first):
@@ -58,13 +59,10 @@ function folder(dir: string, runs: boolean, prefix = ""): OwnCommand[] {
   }
   return names.flatMap((n) => {
     const name = `${prefix}${n.slice(0, -3)}`;
-    try {
-      const file = join(dir, n);
-      if (!NAME.test(name) || !statSync(file).isFile() || statSync(file).size > MAX_FILE) return [];
-      return [{ name, ...parse(readFileSync(file, "utf8")), runs }];
-    } catch {
-      return [];
-    }
+    if (!NAME.test(name)) return [];
+    // Checked and read through one open file (CodeQL, PR #25).
+    const f = openFile(join(dir, n), MAX_FILE);
+    return f?.kind === "file" && f.text !== null ? [{ name, ...parse(f.text), runs }] : [];
   });
 }
 
@@ -77,14 +75,11 @@ function pluginSkills(dir: string, prefix: string): OwnCommand[] {
     return [];
   }
   return names.flatMap((n) => {
-    const file = join(dir, n, "SKILL.md");
-    try {
-      const st = statSync(file);
-      if (!NAME.test(`${prefix}${n}`) || !st.isFile() || st.size > MAX_FILE) return [];
-      return [{ name: `${prefix}${n}`, ...parse(readFileSync(file, "utf8")), runs: false }];
-    } catch {
-      return [];
-    }
+    if (!NAME.test(`${prefix}${n}`)) return [];
+    const f = openFile(join(dir, n, "SKILL.md"), MAX_FILE);
+    return f?.kind === "file" && f.text !== null
+      ? [{ name: `${prefix}${n}`, ...parse(f.text), runs: false }]
+      : [];
   });
 }
 

@@ -1,5 +1,14 @@
-import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { isMap, isScalar, parseDocument, Scalar, stringify, visit } from "yaml";
 
@@ -88,19 +97,38 @@ async function walk(w: Walk, src: string, dst: string, depth: number): Promise<v
   };
   const real = inside(w.root, src);
   if (!real) return say("it links outside the plugin");
-  const st = statSync(real);
-  if (st.isDirectory()) {
+  // What it is and what it holds, through one open file (CodeQL, PR #25: no stat by path, then a read by path).
+  const got = contentOf(real);
+  if (got === "dir") {
     if (depth > MAX_DEPTH) return say("too deep");
     await mkdir(dst, { recursive: true, mode: 0o700 });
     for (const n of await readdir(real)) await walk(w, join(src, n), join(dst, n), depth + 1);
     return;
   }
-  if (!st.isFile()) return;
+  if (!got) return;
   await mkdir(dirname(dst), { recursive: true, mode: 0o700 });
-  if (!MARKDOWN.test(src)) return copyFile(real, dst);
-  const text = withoutHooksKey(readFileSync(real, "utf8"));
+  // Its own bits kept (a skill's script stays runnable), never more than yours.
+  if (!MARKDOWN.test(src)) return writeFile(dst, got.bytes, { mode: got.mode & 0o700 });
+  const text = withoutHooksKey(got.bytes.toString("utf8"));
   if (text === null) return say("its front matter can't be read");
   await writeFile(dst, text, { mode: 0o600 });
+}
+
+/** A path opened once: "dir" for a folder, a file's bytes and mode, or null (anything else, or it can't be opened). */
+function contentOf(path: string): "dir" | { bytes: Buffer; mode: number } | null {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY);
+  } catch {
+    return null;
+  }
+  try {
+    const st = fstatSync(fd);
+    if (st.isDirectory()) return "dir";
+    return st.isFile() ? { bytes: readFileSync(fd), mode: st.mode } : null;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** The plugin's manifest (any case of its folder and file), or an empty one. */
