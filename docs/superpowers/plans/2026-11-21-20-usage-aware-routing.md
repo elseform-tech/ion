@@ -74,6 +74,7 @@
   - "check git status and the tests before continuing".
   
   The chat shows one line: "Continued on Codex — Claude hit its limit".
+- **The same brief for long chats starting fresh (the user, 2026-11-22: "sure").** Whenever ion has to start a new session for a chat — another agent, a session that can't resume, or one that failed because its context got too long (apps/daemon/src/runs/manager.ts freshText) — and the chat's history is too long for the new agent's context (a budget per agent, e.g. about 50% of its window, measured in characters/4 until tokens are known), ion sends the handoff brief plus the last few messages verbatim instead of the whole transcript. Short chats keep the full history as today. The chat shows "Started fresh with a summary" once.
 - **Wait** re-queues the chat for the reset time, using the scheduler.
 - [ ] Tests:
   - "a limit asks Continue or Wait";
@@ -81,7 +82,9 @@
   - "Always continues without asking next time";
   - "a limited target isn't offered";
   - "Wait resumes at the reset";
-  - "two threads on one limit ask once each".
+  - "two threads on one limit ask once each";
+  - "a long chat starting fresh gets the brief and its last messages, not the whole transcript";
+  - "a short chat still gets its full history".
 - [ ] FAIL → implement → PASS → live (force a limit with a fake agent's limit error, then a real hand-over from opencode to Grok) → commit `feat: when an agent hits its limit, ion offers to hand the work to another`.
 
 ### Task 3: Pick the agent by usage and cost
