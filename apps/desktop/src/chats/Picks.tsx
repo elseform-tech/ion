@@ -13,7 +13,7 @@ import {
   useState,
 } from "react";
 import { ICON, KIND, Pieces } from "./PickChips.js";
-import { chipKey, type InlinePick, inOrder, outOfChip, spansOf } from "./pickText.js";
+import { chipKey, type InlinePick, inOrder, outOfChip, type Span, spansOf } from "./pickText.js";
 
 /**
  * "/" and "@" in a message box (the user, 2026-11-21): "/" lists the agent's own skills and commands and ion's, "@" its
@@ -107,26 +107,48 @@ function placed(text: string, word: { start: number }, caret: number, token: str
   return { text: next, caret: word.start + token.length + 1 };
 }
 
-/**
- * The picker for one box: what's picked (the picks its text holds), the menu (its word, its matches, the one Enter
- * picks), and the box's key handler (the menu's keys while it's open, then a chip's: Backspace, Delete, arrows).
- */
-export function usePicker(o: {
-  client: IonClient;
-  args: Commands["tools.picks"]["args"];
-  text: string;
-  setText: (t: string) => void;
-}) {
-  const [chosen, setChosen] = useState<InlinePick[]>([]);
+/** The caret the picker reads, and where it moves it once the box shows its new text (after a pick or a chip's key). */
+function useCaretMove(text: string, setText: (t: string) => void) {
   const [caret, setCaret] = useState(0);
-  /** Where the caret goes once the box shows its new text (after a pick or a chip's key). */
   const [want, setWant] = useState<{ at: number; n: number } | null>(null);
+  const moveTo = (next: string, at: number) => {
+    if (next !== text) setText(next);
+    setCaret(at);
+    setWant((w) => ({ at, n: (w?.n ?? 0) + 1 }));
+  };
+  return { caret, setCaret, want, moveTo };
+}
+
+/** A chip's keys (Backspace, Delete, arrows, without modifiers): handled when one is at the caret. */
+function chipKeys(
+  e: KeyboardEvent<HTMLTextAreaElement>,
+  text: string,
+  spans: Span[],
+  moveTo: MoveTo,
+): boolean {
+  if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false;
+  const el = e.currentTarget;
+  const did = chipKey(e.key, text, { start: el.selectionStart, end: el.selectionEnd }, spans);
+  if (!did) return false;
+  e.preventDefault();
+  moveTo(did.text, did.caret);
+  return true;
+}
+type MoveTo = (text: string, at: number) => void;
+
+/** The caret moved (typing, a click): a click into a chip goes to its end. */
+function tracked(el: HTMLTextAreaElement, spans: Span[]): number {
+  const at = el.selectionStart ?? el.value.length;
+  const out = el.selectionStart === el.selectionEnd ? outOfChip(at, spans) : at;
+  if (out !== at) el.setSelectionRange(out, out);
+  return out;
+}
+
+/** The menu's word at the caret (not a chip's own token, not one you closed), its matches and the one Enter picks. */
+function useMenu(o: PickerOpts, caret: number, spans: Span[]) {
   const [active, setActive] = useState(0);
   const [closed, setClosed] = useState<string | null>(null);
-  const id = useId();
-  const spans = spansOf(o.text, chosen);
   const typed = wordAt(o.text, caret);
-  // A chip's own token at the caret isn't a word being typed.
   const word = typed && !spans.some((s) => s.start === typed.start) ? typed : null;
   const open = word && closed !== `${word.start}${word.mark}` ? word : null;
   const list = usePickList(o.client, o.args, Boolean(open));
@@ -135,19 +157,8 @@ export function usePicker(o: {
   const ref = useRef(shown);
   ref.current = shown;
   useEffect(() => setActive(0), [open?.mark, open?.query]);
-  const moveTo = (text: string, at: number) => {
-    if (text !== o.text) o.setText(text);
-    setCaret(at);
-    setWant((w) => ({ at, n: (w?.n ?? 0) + 1 }));
-  };
-  const pick = (item: PickInfo) => {
-    if (!open) return;
-    const p = inlineOf(item);
-    setChosen((c) => [...c.filter((x) => x.token !== p.token), p]);
-    const next = placed(o.text, open, caret, p.token);
-    moveTo(next.text, next.caret);
-  };
-  const menuKeys = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+  /** The menu's keys while it's open; `pick` takes the item Enter or Tab chose. */
+  const keys = (e: KeyboardEvent<HTMLTextAreaElement>, pick: (item: PickInfo) => void): boolean => {
     if (!open) return false;
     // The list is still coming: Enter waits for it, never sending the "/word" as text.
     const did = !list && e.key === "Enter" ? "wait" : menuKey(e.key, e.shiftKey, ref.current.length);
@@ -157,14 +168,32 @@ export function usePicker(o: {
     if (did !== null) e.preventDefault();
     return did !== null;
   };
-  const chipKeys = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
-    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false;
-    const el = e.currentTarget;
-    const did = chipKey(e.key, o.text, { start: el.selectionStart, end: el.selectionEnd }, spans);
-    if (!did) return false;
-    e.preventDefault();
-    moveTo(did.text, did.caret);
-    return true;
+  return { open, shown, active, loading: !list, keys };
+}
+
+type PickerOpts = {
+  client: IonClient;
+  args: Commands["tools.picks"]["args"];
+  text: string;
+  setText: (t: string) => void;
+};
+
+/**
+ * The picker for one box: what's picked (the picks its text holds), the menu (its word, its matches, the one Enter
+ * picks), and the box's key handler (the menu's keys while it's open, then a chip's: Backspace, Delete, arrows).
+ */
+export function usePicker(o: PickerOpts) {
+  const [chosen, setChosen] = useState<InlinePick[]>([]);
+  const { caret, setCaret, want, moveTo } = useCaretMove(o.text, o.setText);
+  const id = useId();
+  const spans = spansOf(o.text, chosen);
+  const m = useMenu(o, caret, spans);
+  const pick = (item: PickInfo) => {
+    if (!m.open) return;
+    const p = inlineOf(item);
+    setChosen((c) => [...c.filter((x) => x.token !== p.token), p]);
+    const next = placed(o.text, m.open, caret, p.token);
+    moveTo(next.text, next.caret);
   };
   const picked = pickedOf(inOrder(spans));
   return {
@@ -177,15 +206,11 @@ export function usePicker(o: {
       setChosen([]);
       return { ...a, ...pickArgs(picked) };
     },
-    /** The caret moved (typing, a click): the word at it may have changed; a click into a chip goes to its end. */
-    track: (el: HTMLTextAreaElement) => {
-      const at = el.selectionStart ?? el.value.length;
-      const out = el.selectionStart === el.selectionEnd ? outOfChip(at, spans) : at;
-      if (out !== at) el.setSelectionRange(out, out);
-      setCaret(out);
-    },
-    onKey: (e: KeyboardEvent<HTMLTextAreaElement>) => menuKeys(e) || chipKeys(e),
-    menu: open ? { mark: open.mark, items: shown, active, loading: !list, pick, id } : null,
+    track: (el: HTMLTextAreaElement) => setCaret(tracked(el, spans)),
+    onKey: (e: KeyboardEvent<HTMLTextAreaElement>) => m.keys(e, pick) || chipKeys(e, o.text, spans, moveTo),
+    menu: m.open
+      ? { mark: m.open.mark, items: m.shown, active: m.active, loading: m.loading, pick, id }
+      : null,
   };
 }
 
@@ -275,12 +300,7 @@ export function PickedBox(p: {
     <>
       {pk.menu && <PickMenu menu={pk.menu} />}
       <div className={`cfield${chips ? " inl" : ""}`}>
-        {chips && (
-          <div className="cmirror" aria-hidden="true" ref={copy}>
-            <Pieces text={text} spans={pk.spans} />
-            {"\u200b"}
-          </div>
-        )}
+        {chips && <Mirror text={text} spans={pk.spans} copy={copy} />}
         <textarea
           {...p.box}
           ref={(el) => {
@@ -299,15 +319,26 @@ export function PickedBox(p: {
           }}
           onKeyDown={(e) => pk.onKey(e) || p.onKey(e)}
         />
-        {chips && (
-          <span id={`${pk.id}-picks`} hidden>
-            {pk.spans.map((s) => `${KIND[s.pick.kind]}: ${s.pick.token.slice(1)}`).join(", ")}
-          </span>
-        )}
+        {chips && <Named id={`${pk.id}-picks`} spans={pk.spans} />}
       </div>
     </>
   );
 }
+
+/** The box's text drawn again under it, each pick a chip in place (a last character keeps a trailing new line). */
+const Mirror = (p: { text: string; spans: Span[]; copy: RefObject<HTMLDivElement | null> }) => (
+  <div className="cmirror" aria-hidden="true" ref={p.copy}>
+    <Pieces text={p.text} spans={p.spans} />
+    {"\u200b"}
+  </div>
+);
+
+/** The box's picks in words, for screen readers. */
+const Named = (p: { id: string; spans: Span[] }) => (
+  <span id={p.id} hidden>
+    {p.spans.map((s) => `${KIND[s.pick.kind]}: ${s.pick.token.slice(1)}`).join(", ")}
+  </span>
+);
 
 /** The caret where a pick or a chip's key put it, once the box shows its new text. */
 function useCaret(el: RefObject<HTMLTextAreaElement | null>, pk: ReturnType<typeof usePicker>) {

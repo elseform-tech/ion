@@ -118,6 +118,13 @@ function infoOf(s: FoundSkill, state: State, readers: SkillReaders, own: OwnSwit
 
 export type Skills = ReturnType<typeof createSkills>;
 
+/** Finds skills in your home's agents' folders (`CODEX_HOME`, `GROK_HOME`: yours for your own home only) and these projects'. */
+function finder(o: { home: string; ionDir?: string; env?: AgentsEnv }) {
+  const env = o.env ?? (o.home === homedir() ? process.env : {});
+  return (projects: string[]) =>
+    findSkills(o.home, projects, { ...(o.ionDir ? { ionDir: o.ionDir } : {}), env });
+}
+
 type Listed = Pick<SkillInfo, "id" | "hash" | "on" | "own">;
 
 /** A listed skill's text, from the skills found: that exact one (folder and contents), while it's on or own. */
@@ -165,9 +172,7 @@ export function createSkills(o: {
   /** `CODEX_HOME`, `GROK_HOME`: yours for your own home, none for another (the tour's, tests'). */
   env?: AgentsEnv;
 }) {
-  const env = o.env ?? (o.home === homedir() ? process.env : {});
-  const find = (projects: string[]) =>
-    findSkills(o.home, projects, { ...(o.ionDir ? { ionDir: o.ionDir } : {}), env });
+  const find = finder(o);
   const mark = (s: FoundSkill) => o.sign(material(s)).catch(() => undefined);
   /** The skills on; a run whose skills couldn't be checked (the keychain can't be read) is said in the log. */
   const turnedOn = async (found: FoundSkill[], on: string[]) => {
