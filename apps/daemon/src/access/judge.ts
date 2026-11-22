@@ -79,21 +79,52 @@ function verdictOf(v: { allow?: unknown; verdict?: unknown }): JudgeVerdict | nu
   return null;
 }
 
+/** The verdict in one JSON text, or null. */
+function verdictIn(body: string): { verdict: JudgeVerdict; reason: string } | null {
+  try {
+    const v = JSON.parse(body) as { allow?: unknown; verdict?: unknown; reason?: unknown };
+    const verdict = v && typeof v.reason === "string" ? verdictOf(v) : null;
+    return verdict ? { verdict, reason: (v.reason as string).slice(0, 200) } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Where each top-level `{…}` starts and ends (strings respected); null when the braces don't balance. */
+function objectsIn(text: string): [number, number][] | null {
+  const found: [number, number][] = [];
+  let depth = 0;
+  let start = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (c === "\\") i++;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = depth > 0;
+    else if (c === "{" && depth++ === 0) start = i;
+    else if (c === "}" && depth > 0 && --depth === 0) found.push([start, i + 1]);
+  }
+  return depth === 0 ? found : null;
+}
+
 /**
- * The verdict, when the whole answer is one JSON object (a json code fence is fine); anything else is null.
- * `{"verdict": …}`, or the older `{"allow": true | false}`.
+ * The verdict, when the whole answer is one JSON object (a json code fence is fine). `{"verdict": …}`, or the older
+ * `{"allow": true | false}`. Task 11, 2026-11-22: an answer with prose before its only JSON object (and nothing but a
+ * fence after it) is read too, but never as an allow (an echoed verdict could be the action's text): that's unsure.
+ * Anything else is null.
  */
 export function parseVerdict(text: string): { verdict: JudgeVerdict; reason: string } | null {
   let body = text.trim();
   if (body.startsWith("```") && body.endsWith("```")) body = body.slice(body.indexOf("\n") + 1, -3).trim();
-  try {
-    const v = JSON.parse(body) as { allow?: unknown; verdict?: unknown; reason?: unknown };
-    const verdict = v && typeof v.reason === "string" ? verdictOf(v) : null;
-    if (verdict) return { verdict, reason: (v.reason as string).slice(0, 200) };
-  } catch {
-    // not a verdict
-  }
-  return null;
+  const whole = verdictIn(body);
+  if (whole) return whole;
+  const objects = objectsIn(body);
+  if (objects?.length !== 1) return null;
+  const [from, to] = objects[0]!;
+  if (body.slice(to).replace(/`/g, "").trim()) return null;
+  const v = verdictIn(body.slice(from, to));
+  return v && v.verdict === "allow" ? { ...v, verdict: "unsure" } : v;
 }
 
 /** A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. */

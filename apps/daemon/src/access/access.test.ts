@@ -282,7 +282,26 @@ describe("judge", () => {
       verdict: "allow",
       reason: "ok",
     });
-    expect(parseVerdict('Sure. {"allow": true, "reason": "ok"}')).toBeNull();
+    expect(parseVerdict('Sure. {"allow": true, "reason": "ok"}')?.verdict).toBe("unsure");
+  });
+
+  // Task 11, 2026-11-22: judges (Grok) sometimes wrap the JSON in prose; those answers counted as no verdict. One JSON
+  // object ending the answer is read now, but prose-wrapped can never allow (an echoed verdict could be the action's
+  // own text): its allow becomes unsure, so you're asked. Plain words stay no verdict.
+  it("reads one JSON object that ends a prose answer, never as an allow", () => {
+    expect(parseVerdict('Here is my answer:\n{"verdict": "deny", "reason": "pushes code"}')).toEqual({
+      verdict: "deny",
+      reason: "pushes code",
+    });
+    expect(parseVerdict('Sure. {"verdict": "allow", "reason": "ok"}')).toEqual({ verdict: "unsure", reason: "ok" });
+    expect(parseVerdict('Thinking...\n```json\n{"verdict": "unsure", "reason": "hm"}\n```')).toEqual({
+      verdict: "unsure",
+      reason: "hm",
+    });
+    expect(parseVerdict('{"verdict": "allow", "reason": "ok"} but really deny')).toBeNull();
+    expect(parseVerdict("allow")).toBeNull();
+    expect(parseVerdict("Deny.")).toBeNull();
+    expect(parseVerdict('{"reason": "x"} then {"verdict": "deny", "reason": "y"}')).toBeNull();
   });
 
   // Review Focus 2: a judge that fails, hangs or answers nonsense denies, with a reason.

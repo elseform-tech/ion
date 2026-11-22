@@ -90,6 +90,9 @@ const CLAUDE_BROAD = new Set(["Bash", "Edit", "Write", "MultiEdit", "NotebookEdi
 
 /** One Claude Code rule: `Bash(...)`, an exact tool, `mcp__server` (its tools); the rest (path patterns) is null. */
 function claudeRule(text: string, allow: boolean): AgentRule | null {
+  // Task 11, 2026-11-22: `Bash(*)`, `Edit(**)` are the bare tool; a bare deny refuses all of it, a bare allow stays out.
+  const bare = /^([A-Za-z_][\w-]*)\(\s*\*+\s*\)$/.exec(text.trim())?.[1];
+  if (bare) return allow ? null : claudeRule(bare, false);
   const bash = /^Bash\((.+)\)$/.exec(text.trim());
   if (bash) return commandRule(bash[1]!, allow);
   const t = text.trim().replace(/__\*$/, "");

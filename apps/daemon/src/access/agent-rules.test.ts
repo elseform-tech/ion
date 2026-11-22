@@ -299,4 +299,22 @@ describe("matching a deny", () => {
     });
     expect(open ? theirSay({ ...cmd("git push"), toolName: "bash" }, open)?.decision : null).toBe("deny");
   });
+
+  // Task 11, 2026-11-22 (Task 14 re-review): a bare deny (`Bash(*)`, `Edit(*)`, `WebFetch(**)`) was dropped because its
+  // literal part is empty; a deny widens safely, so it refuses every call of that tool.
+  it("a bare deny refuses every call of that tool", () => {
+    const r = readAgentRules("claude-code", {
+      home: claudeHome([], ["Bash(*)", "Edit(*)", "WebFetch(**)", "Write"]),
+      env: {},
+    });
+    const tool = (toolName: string): ApprovalRequest => ({ ...cmd("x"), toolName, kind: "edit" });
+    expect(r ? theirSay(cmd("ls"), r)?.decision : null).toBe("deny");
+    expect(r ? theirSay(tool("Edit"), r)?.decision : null).toBe("deny");
+    expect(r ? theirSay(tool("WebFetch"), r)?.decision : null).toBe("deny");
+    expect(r ? theirSay(tool("Write"), r)?.decision : null).toBe("deny");
+    expect(r ? theirSay(tool("Read"), r)?.decision : null).toBeUndefined();
+    // Bare allows stay left out (Full is that switch).
+    const allow = readAgentRules("claude-code", { home: claudeHome(["Bash(*)", "Edit(*)"]), env: {} });
+    expect(allow?.allow).toEqual([]);
+  });
 });
