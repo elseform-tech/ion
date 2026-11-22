@@ -53,7 +53,7 @@ const ONE_LINE_TYPES = new Set<string>([Scalar.PLAIN, Scalar.QUOTE_DOUBLE, Scala
 /** The header's room on top of the text. */
 const FILE_MAX = MEMORY_TEXT_MAX + 2048;
 const PROJECT_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-const KNOWN = new Set(["name", "description", "type", "see", "status", "due", "from"]);
+const KNOWN = new Set(["name", "description", "type", "see", "status", "due", "from", "suggested"]);
 const CHANGED = "Changed since you read it";
 
 const hashOf = (raw: string) => createHash("sha256").update(raw).digest("hex").slice(0, 16);

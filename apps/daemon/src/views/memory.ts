@@ -21,6 +21,8 @@ export type MemoryRow = {
   see: MemorySee;
   status: "open" | "done" | null;
   due: string | null;
+  /** A chat's preference waiting for you: the project whose chat wrote it. */
+  suggested: string | null;
   hash: string;
   updatedAt: string;
   by: MemoryBy;
@@ -45,6 +47,8 @@ export type MemoryQuery = {
   q?: string;
   type?: MemoryType;
   status?: "open" | "done";
+  /** A chat's project: your files suggested by another project's chat are left out. */
+  suggestedFor?: string;
   limit?: number;
 };
 
@@ -57,7 +61,7 @@ type Written = {
   by: MemoryBy;
 };
 
-const COLUMNS = `m.path, m.scope, m.slug, m.name, m.description, m.type, m.see, m.status, m.due, m.hash,
+const COLUMNS = `m.path, m.scope, m.slug, m.name, m.description, m.type, m.see, m.status, m.due, m.suggested, m.hash,
   m.updated_at AS updatedAt, m.by`;
 type Raw = Omit<MemoryRow, "by" | "scope"> & { by: string; scope: string };
 const rowOf = (r: Raw): MemoryRow => ({ ...r, scope: scopeOfKey(r.scope), by: JSON.parse(r.by) as MemoryBy });
@@ -109,14 +113,14 @@ function putFts(db: Db, path: string, text?: string): void {
 function applyWritten(db: Db, d: Written, ts: string): void {
   const h = d.header;
   db.prepare(
-    `INSERT INTO view_memory (path, scope, slug, name, description, type, see, status, due, hash, updated_at, by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO view_memory (path, scope, slug, name, description, type, see, status, due, suggested, hash, updated_at,
+       by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (path) DO UPDATE SET name = excluded.name, description = excluded.description, type = excluded.type,
-       see = excluded.see, status = excluded.status, due = excluded.due, hash = excluded.hash,
+       see = excluded.see, status = excluded.status, due = excluded.due, suggested = excluded.suggested, hash = excluded.hash,
        updated_at = excluded.updated_at, by = excluded.by`,
   ).run(
     ...[d.path, scopeKey(d.scope), d.slug, h.name, h.description, h.type, h.see],
-    ...[h.status ?? null, h.due ?? null, d.hash, ts, JSON.stringify(d.by)],
+    ...[h.status ?? null, h.due ?? null, h.suggested ?? null, d.hash, ts, JSON.stringify(d.by)],
   );
   putFts(db, d.path);
 }
@@ -133,6 +137,10 @@ function filtersOf(q: MemoryQuery): { where: string; params: unknown[] } {
   if (q.status) {
     where.push("m.status = ?");
     params.push(q.status);
+  }
+  if (q.suggestedFor !== undefined) {
+    where.push("(m.suggested IS NULL OR m.suggested = ?)");
+    params.push(q.suggestedFor);
   }
   return { where: where.join(" AND "), params };
 }
@@ -152,12 +160,12 @@ export const memoryView: View & {
   list(db: Db, projects: string[] | null, see: MemorySee[]): MemoryInfo[];
 } = {
   name: "memory",
-  version: 3,
+  version: 4,
   tables: ["view_memory", "view_memory_fts"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_memory (
       path TEXT PRIMARY KEY, scope TEXT NOT NULL, slug TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL,
-      type TEXT NOT NULL, see TEXT NOT NULL, status TEXT, due TEXT, hash TEXT NOT NULL, updated_at TEXT NOT NULL,
+      type TEXT NOT NULL, see TEXT NOT NULL, status TEXT, due TEXT, suggested TEXT, hash TEXT NOT NULL, updated_at TEXT NOT NULL,
       by TEXT NOT NULL);
       CREATE VIRTUAL TABLE IF NOT EXISTS view_memory_fts USING fts5 (path UNINDEXED, name, description, text);`);
   },
@@ -175,7 +183,7 @@ export const memoryView: View & {
     }
   },
   search(db, q) {
-    if (!q.scopes.length || !q.see.length) return [];
+    if ((q.scopes !== "all" && !q.scopes.length) || !q.see.length) return [];
     const { where, params } = filtersOf(q);
     const limit = q.limit ?? 1000;
     if (q.q === undefined) {
@@ -235,7 +243,7 @@ export const memoryView: View & {
     const rows = db
       .prepare(
         `SELECT m.path, m.scope, m.by, m.updated_at AS writtenAt, coalesce(f.text, '') AS text, m.name,
-           m.description, m.type, m.see, m.status, m.due
+           m.description, m.type, m.see, m.status, m.due, m.suggested
          FROM view_memory m LEFT JOIN view_memory_fts f ON f.path = m.path ${where} ORDER BY m.rowid`,
       )
       .all(...(projects === null ? [] : keys), ...see) as (Pick<
@@ -249,6 +257,7 @@ export const memoryView: View & {
       text: string;
       status: "open" | "done" | null;
       due: string | null;
+      suggested: string | null;
     })[];
     return rows.map((r) => ({
       memoryId: r.path,
@@ -257,6 +266,7 @@ export const memoryView: View & {
       ...{ name: r.name, description: r.description, type: r.type, see: r.see },
       ...(r.status ? { status: r.status } : {}),
       ...(r.due ? { due: r.due } : {}),
+      ...(r.suggested ? { suggested: r.suggested } : {}),
       text: r.text,
       source: sourceOf(JSON.parse(r.by) as MemoryBy),
       writtenAt: r.writtenAt,

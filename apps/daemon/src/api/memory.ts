@@ -19,7 +19,7 @@ function typeOf(t: unknown): MemoryType | undefined {
 /** Your memory files: list, read, search, forget, and where the folder is (you see and change everything). */
 export const memoryHandlers: Pick<
   Handlers,
-  "memory.list" | "memory.read" | "memory.search" | "memory.forget" | "memory.folder"
+  "memory.list" | "memory.read" | "memory.search" | "memory.forget" | "memory.keep" | "memory.folder"
 > = {
   "memory.list": (a, ctx) => {
     const type = typeOf(a.type);
@@ -30,8 +30,12 @@ export const memoryHandlers: Pick<
   },
   "memory.read": (a, ctx) => {
     const f = new ScopedMemory(ctx.memory, { kind: "you" }).read(String(a.name ?? ""));
-    const { name, description, type, see, status, due } = f.header;
-    const todo = { ...(status ? { status } : {}), ...(due ? { due } : {}) };
+    const { name, description, type, see, status, due, suggested } = f.header;
+    const todo = {
+      ...(status ? { status } : {}),
+      ...(due ? { due } : {}),
+      ...(suggested ? { suggested } : {}),
+    };
     return {
       path: f.path,
       scope: scopeKey(f.scope),
@@ -53,5 +57,8 @@ export const memoryHandlers: Pick<
     new ScopedMemory(ctx.memory, { kind: "you" }).forget(String(a.memoryId ?? ""));
     return { ok: true as const };
   },
+  "memory.keep": (a, ctx) => ({
+    path: new ScopedMemory(ctx.memory, { kind: "you" }).keep(String(a.path ?? "")),
+  }),
   "memory.folder": (_a, ctx) => ({ path: ctx.memory.root }),
 };

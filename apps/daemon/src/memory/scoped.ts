@@ -17,10 +17,11 @@ export type Caller =
 /** What a write gives: where ("you", "project": the caller's own, or a project's id), the header and the text. */
 export type MemoryWrite = {
   scope: string;
-  name: string;
-  description: string;
-  type: MemoryType;
-  text: string;
+  /** A new file needs all four; an update changes only what it gives. */
+  name?: string;
+  description?: string;
+  type?: MemoryType;
+  text?: string;
   see?: MemorySee;
   status?: "open" | "done";
   due?: string;
@@ -38,18 +39,29 @@ const UP_FRONT = 40;
 /** One answer for a file that isn't there and one the caller may not see: it doesn't exist for it. */
 const NONE = "No such memory";
 const CHAT_WRITES = "A chat writes this project's files and your preferences only";
+const NEW_NEEDS = "A new memory needs a name, a description, a type and a text";
 /** Each line with its control characters (a bell, a stray escape) gone; line breaks and tabs kept. */
 const clean = (t: string) => t.replace(/[^\P{Cc}\n\t]/gu, "");
 const quoted = (s: string) => JSON.stringify(clean(s));
 const scopeName = (s: MemoryScope) => (s === "you" ? "yours" : s.projectId);
 const sameScope = (a: MemoryScope, b: MemoryScope) =>
   a === "you" || b === "you" ? a === b : a.projectId === b.projectId;
+const folderOf = (s: MemoryScope) => (s === "you" ? "you" : `projects/${s.projectId}`);
+/** Who made the last change, in a word. */
+const byWord = (by: MemoryBy) => {
+  if (by === "you") return "by you";
+  return "ion" in by ? "by ion" : "by chat";
+};
+/** The fields an update gives (the rest stay as the file has them). */
+const given = <T extends object>(o: T): Partial<T> =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
 
 /** A file as one index line: path, name, description, type (a to-do's status and date), whose. */
 export function lineOf(r: MemoryRow): string {
   const kind: string[] = [r.type];
   if (r.type === "todo") kind.push(r.status ?? "open", ...(r.due ? [`due ${r.due}`] : []));
-  kind.push(scopeName(r.scope));
+  if (r.suggested) kind.push("suggested");
+  kind.push(scopeName(r.scope), byWord(r.by));
   return `${r.path} ${quoted(r.name)}: ${quoted(r.description)} (${kind.join(", ")})`;
 }
 
@@ -67,16 +79,36 @@ function ionProject(c: { ionId: string; projects: string[] }, s: string): string
 export const upFront = (memory: MemoryFiles | undefined, caller: Caller) =>
   memory ? new ScopedMemory(memory, caller).upFront() : "";
 
+/**
+ * An ion's index for a turn: always in a new session; in a resumed one only when it changed since that ion's session
+ * was last given it (`sent`, by ion).
+ */
+export function ionIndex(
+  memory: MemoryFiles | undefined,
+  caller: Caller & { kind: "ion" },
+  o: IonIndexOpts,
+): string {
+  const i = memory && new ScopedMemory(memory, caller).indexBlock();
+  const key = i ? `${i.source}\n${i.body}` : "";
+  if (o.resumed && o.sent.get(caller.ionId) === key) return "";
+  o.sent.set(caller.ionId, key);
+  return i ? wrapData(i.source, i.body) + "\n\n" : "";
+}
+type IonIndexOpts = { resumed: boolean; sent: Map<string, string> };
+
 /** A to-do is open unless it says; other files keep a status only when given one. */
-function statusOf(w: MemoryWrite): { status?: "open" | "done" } {
-  if (w.type === "todo") return { status: w.status ?? "open" };
-  return w.status ? { status: w.status } : {};
+function statusOf(type: MemoryType, status?: "open" | "done"): { status?: "open" | "done" } {
+  if (type === "todo") return { status: status ?? "open" };
+  return status ? { status } : {};
 }
 
-/** What a caller may see: which scopes, and which files there (`see`). */
-function sightOf(c: Caller): { scopes: MemoryScope[] | "all"; see: MemorySee[] } {
+type Sight = { scopes: MemoryScope[] | "all"; see: MemorySee[]; suggestedFor?: string };
+
+/** What a caller may see: which scopes, which files there (`see`), and (a chat) only its own project's suggestions. */
+function sightOf(c: Caller): Sight {
   if (c.kind === "you") return { scopes: "all", see: ["chats", "ions"] };
-  if (c.kind === "chat") return { scopes: ["you", { projectId: c.projectId }], see: ["chats"] };
+  if (c.kind === "chat")
+    return { scopes: ["you", { projectId: c.projectId }], see: ["chats"], suggestedFor: c.projectId };
   return { scopes: ["you", ...c.projects.map((projectId) => ({ projectId }))], see: ["chats", "ions"] };
 }
 
@@ -85,7 +117,7 @@ function sightOf(c: Caller): { scopes: MemoryScope[] | "all"; see: MemorySee[] }
  * and only the writes it may make. Every MCP tool and the up-front index go through this.
  */
 export class ScopedMemory {
-  private readonly sight: ReturnType<typeof sightOf>;
+  private readonly sight: Sight;
 
   constructor(
     private readonly memory: MemoryFiles,
@@ -106,11 +138,16 @@ export class ScopedMemory {
 
   /** A first message's index, as data: at most UP_FRONT lines; nothing when there's no memory. */
   upFront(): string {
+    const i = this.indexBlock();
+    return i ? wrapData(i.source, i.body) + "\n\n" : "";
+  }
+
+  /** The up-front index's lines and label; null when there's no memory. */
+  indexBlock(): { source: string; body: string } | null {
     const rows = this.index({ limit: UP_FRONT + 1 });
-    if (!rows.length) return "";
+    if (!rows.length) return null;
     const more = rows.length > UP_FRONT ? ", more with memory_search" : "";
-    const body = rows.slice(0, UP_FRONT).map(lineOf).join("\n");
-    return wrapData("ion's memory index" + more, body) + "\n\n";
+    return { source: "ion's memory index" + more, body: rows.slice(0, UP_FRONT).map(lineOf).join("\n") };
   }
 
   /** A file the caller may see, read from disk, by its path, its file name or its name. */
@@ -118,8 +155,8 @@ export class ScopedMemory {
     const row = this.resolve(name);
     const r = this.memory.read(row.path);
     if (!r.ok) throw new UserError(r.gone ? NONE : r.problem);
-    // Changed by hand to ions only, and not indexed yet: still not for a chat.
-    if (!this.sight.see.includes(r.file.header.see)) throw new UserError(NONE);
+    // Changed by hand (ions only, another project's suggestion) and not indexed yet: still not for it.
+    if (!this.allows(r.file.header)) throw new UserError(NONE);
     return r.file;
   }
 
@@ -142,32 +179,96 @@ export class ScopedMemory {
   /** Makes a file, or updates one read at `expect`; refused unless this caller may write it there. */
   write(w: MemoryWrite): MemoryFile {
     const scope = this.scopeOf(w.scope);
-    this.mayWrite(scope, w.type);
-    const header = {
-      ...{ name: w.name, description: w.description, type: w.type },
-      ...(w.see ? { see: w.see } : {}),
-      ...statusOf(w),
-      ...(w.due ? { due: w.due } : {}),
-    };
-    const by = this.by();
-    if (w.expect === undefined) {
-      const twin = this.named(w.path ?? w.name, scope);
-      if (twin) throw new UserError(`There's already ${twin.path}: read it, then update it with expect`);
-      return this.memory.write({ scope, header, text: w.text, by });
-    }
-    const was = this.named(w.path ?? w.name, scope);
-    if (!was) throw new UserError(NONE);
-    this.mayWrite(scope, was.type);
-    return this.memory.write({ scope, slug: was.slug, header, text: w.text, expectHash: w.expect, by });
+    return w.expect === undefined ? this.create(scope, w) : this.update(scope, w, w.expect);
   }
 
   /** Deletes a file the caller may see and write, only as it was read (`expect`; you: as it is). */
   forget(name: string, expect?: string): string {
     const row = this.resolve(name);
     this.mayWrite(row.scope, row.type);
-    if (this.caller.kind !== "you" && expect === undefined) throw new UserError("Read it first");
+    const c = this.caller;
+    // A chat forgets only your files its own project suggested.
+    if (c.kind === "chat" && row.scope === "you" && row.suggested !== c.projectId)
+      throw new UserError("A chat can't forget your files");
+    if (c.kind !== "you" && expect === undefined) throw new UserError("Read it first");
     this.memory.forget(row.path, this.by(), expect);
     return row.path;
+  }
+
+  /** You keep a chat's suggestion: every project's chats see it from now on. */
+  keep(name: string): string {
+    const f = this.read(name);
+    if (!f.header.suggested) return f.path;
+    const header = { ...f.header };
+    delete header.suggested;
+    const w = { scope: f.scope, slug: f.slug, header, text: f.text, expectHash: f.hash, by: this.by() };
+    return this.memory.write(w).path;
+  }
+
+  /** A new file: never next to one with its name, seen or not (a "-2" would say a hidden one is there). */
+  private create(scope: MemoryScope, w: MemoryWrite): MemoryFile {
+    const { name, description, type, text } = w;
+    if (!name || !description || !type || !text) throw new UserError(NEW_NEEDS);
+    this.mayWrite(scope, type);
+    const c = this.caller;
+    const chatsYours = c.kind === "chat" && scope === "you";
+    if (chatsYours && w.see) throw new UserError("A chat can't choose who sees your files");
+    this.noClash(scope, name);
+    const header = {
+      ...{ name, description, type, ...statusOf(type, w.status) },
+      ...given({ see: w.see, due: w.due }),
+      // A chat's preference waits for you to keep it (security review, 2026-11-22).
+      ...(c.kind === "chat" && chatsYours ? { suggested: c.projectId } : {}),
+    };
+    return this.memory.write({ scope, header, text, by: this.by() });
+  }
+
+  /** An update: the file's header on disk, with only the fields given changed. */
+  private update(scope: MemoryScope, w: MemoryWrite, expectHash: string): MemoryFile {
+    const was = this.named(w.path ?? w.name ?? "", scope);
+    if (!was) throw new UserError(NONE);
+    const disk = this.read(was.path);
+    const { name, description, type, see, status, due } = w;
+    const header = { ...disk.header, ...given({ name, description, type, see, status, due }) };
+    this.mayWrite(scope, disk.header.type);
+    this.mayWrite(scope, header.type);
+    this.mayChange(scope, disk.header, header.see);
+    const text = w.text ?? disk.text;
+    return this.memory.write({ scope, slug: was.slug, header, text, expectHash, by: this.by() });
+  }
+
+  /** A chat changes only your files its project suggested; who sees a file changes only by you (or wider, never). */
+  private mayChange(scope: MemoryScope, old: MemoryFile["header"], see: MemorySee): void {
+    const c = this.caller;
+    if (c.kind === "you") return;
+    if (c.kind === "chat" && scope === "you" && old.suggested !== c.projectId)
+      throw new UserError("A chat can't change your shared files");
+    if (old.see === see) return;
+    if (c.kind === "chat") throw new UserError("A chat can't change who sees a file");
+    if (see === "chats") throw new UserError("Only the user shares a file with chats");
+  }
+
+  /** A file with this name (its slug) in that scope, whether this caller sees it or not, is refused alike. */
+  private noClash(scope: MemoryScope, name: string): void {
+    const path = `${folderOf(scope)}/${slugOf(name)}.md`;
+    const disk = this.memory.read(path);
+    if (this.named(name, scope) || this.memory.row(path) || disk.ok || !disk.gone)
+      throw new UserError(
+        `There's already a memory named ${quoted(name)}: read it, then update it with expect`,
+      );
+  }
+
+  /** The caller may see a file with this header (as read from disk). */
+  private allows(h: { see: MemorySee; suggested?: string }): boolean {
+    const s = this.sight;
+    return s.see.includes(h.see) && (!h.suggested || !s.suggestedFor || h.suggested === s.suggestedFor);
+  }
+
+  /** The caller may see this indexed file. */
+  private visible(r: MemoryRow): boolean {
+    const s = this.sight;
+    const inScope = s.scopes === "all" || s.scopes.some((x) => sameScope(x, r.scope));
+    return inScope && this.allows({ see: r.see, ...(r.suggested ? { suggested: r.suggested } : {}) });
   }
 
   /** Who a change is by. */
@@ -214,8 +315,11 @@ export class ScopedMemory {
 
   private matches(name: string): MemoryRow[] {
     const key = name.trim();
+    if (MEMORY_PATH.test(key)) {
+      const row = this.memory.row(key);
+      return row && this.visible(row) ? [row] : [];
+    }
     const all = this.memory.find({ ...this.sight, limit: Number.MAX_SAFE_INTEGER });
-    if (MEMORY_PATH.test(key)) return all.filter((r) => r.path === key);
     const lower = key.toLowerCase().replace(/\.md$/, "");
     const slug = slugOf(lower);
     return all.filter((r) => r.slug === slug || r.name.toLowerCase() === lower);

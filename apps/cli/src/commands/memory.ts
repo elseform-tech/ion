@@ -7,7 +7,8 @@ import { clean, text } from "../sanitize.js";
 
 /** A file in one line: where it is, its type (a to-do's state and date), its name and description. */
 const lineOf = (m: MemoryInfo) => {
-  const kind = [m.type, ...(m.type === "todo" ? [m.status ?? "open", m.due ?? ""] : [])].filter(Boolean);
+  const todo = m.type === "todo" ? [m.status ?? "open", m.due ?? ""] : [];
+  const kind = [m.type, ...todo, m.suggested ? "suggested" : ""].filter(Boolean);
   return [m.memoryId, kind.join(" "), `${m.name}: ${m.description}`].map(clean).join("  ");
 };
 
@@ -46,6 +47,12 @@ export function memoryCommands(program: Command, out: () => Out) {
     .action(async (name: string) => {
       await withClient((c) => c.call("memory.forget", { memoryId: name }));
       print(out(), "Forgotten", { ok: true });
+    });
+  m.command("keep <name>")
+    .description("Keep a chat's suggestion for every project")
+    .action(async (name: string) => {
+      const r = await withClient((c) => c.call("memory.keep", { path: name }));
+      print(out(), "Kept for every project", r);
     });
   m.command("open")
     .description("Open the folder")

@@ -100,6 +100,7 @@
     "memory.read",
     "memory.search",
     "memory.forget",
+    "memory.keep",
     "memory.folder",
     "harnesses.list",
     "routine.add",

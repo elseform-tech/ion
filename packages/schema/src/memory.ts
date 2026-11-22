@@ -39,6 +39,14 @@ export const MemoryHeaderSchema = z.object({
     .optional(),
   /** The old memory note this file was moved from, once. */
   from: z.string().min(1).max(40).optional(),
+  /**
+   * A preference a chat wrote, by its project's id: only that project's chats (and the ions) see it, until you keep
+   * it for every project (security review, 2026-11-22).
+   */
+  suggested: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
+    .optional(),
 });
 export type MemoryHeader = z.infer<typeof MemoryHeaderSchema>;
 
@@ -97,6 +105,8 @@ export type MemoryInfo = {
   /** A to-do's state and date. */
   status?: "open" | "done";
   due?: string;
+  /** A chat's preference waiting for you to keep it: the project whose chat wrote it. */
+  suggested?: string;
   text: string;
   /** "you", the chat it came from, or "ion:<id>". */
   source: string;
@@ -116,6 +126,7 @@ export type MemoryFileInfo = {
   see: MemorySee;
   status?: "open" | "done";
   due?: string;
+  suggested?: string;
   text: string;
   hash: string;
 };

@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import type { MemoryScope, MemoryType } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MemoryFiles } from "../memory/index.js";
+import { ScopedMemory } from "../memory/scoped.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { createGrants, createMcpHandler, type Grants } from "./index.js";
@@ -125,7 +126,7 @@ describe("memory tools", () => {
     expect(await call(c, "memory_write", person)).toMatchObject(refused);
     expect(await call(c, "memory_write", { ...fact("Elsewhere"), scope: "shop" })).toMatchObject(refused);
     expect(text(await call(c, "memory_write", { ...fact("Tabs"), scope: "you", type: "preference" }))).toBe(
-      "Saved you/tabs.md",
+      "Saved you/tabs.md as a suggestion",
     );
     expect(text(await call(c, "memory_write", fact("Linter")))).toBe("Saved projects/app/linter.md");
     expect(memory.read("projects/app/linter.md")).toMatchObject({ ok: true, file: { text: "Linter text" } });
@@ -163,7 +164,9 @@ describe("memory tools", () => {
     // A new file with the same name would be a near-copy: it's read and updated instead.
     expect(await call(c, "memory_write", fact("Test runner"))).toMatchObject({
       isError: true,
-      content: [{ text: "There's already projects/app/test-runner.md: read it, then update it with expect" }],
+      content: [
+        { text: 'There\'s already a memory named "Test runner": read it, then update it with expect' },
+      ],
     });
     expect(await call(c, "memory_forget", { name: "test-runner", expect: old })).toMatchObject(changed);
     const now = hashOf(await call(c, "memory_read", { name: "test-runner" }));
@@ -260,15 +263,109 @@ describe("memory tools", () => {
       .split("\n")
       .slice(1, -1);
     expect(lines[0]).toBe(
-      'projects/app/rotate-keys.md "Rotate keys": "Rotate the API keys" (todo, open, due 2026-12-01, app)',
+      // Task review, 2026-11-22 (M-1): each line says who wrote it.
+      'projects/app/rotate-keys.md "Rotate keys": "Rotate the API keys" (todo, open, due 2026-12-01, app, by you)',
     );
     expect(lines).toContain(
-      'you/short-replies.md "Short replies": "About Short replies" (preference, yours)',
+      'you/short-replies.md "Short replies": "About Short replies" (preference, yours, by you)',
     );
     const todos = text(await call(c, "memory_index", { type: "todo", status: "open" }))
       .split("\n")
       .slice(1, -1);
     expect(todos).toHaveLength(1);
     await c.close();
+  });
+
+  // Task review, 2026-11-22 (I-1): a new file named like one the caller can't see got a "-2" name, which told it the
+  // hidden one exists. It gets the same answer a clash with a file it sees gets, naming no path.
+  it("a new file's name never shows a hidden one", async () => {
+    const c = await chat();
+    const clash = (name: string) => ({
+      isError: true,
+      content: [{ text: `There's already a memory named "${name}": read it, then update it with expect` }],
+    });
+    expect(await call(c, "memory_write", fact("Ions only"))).toMatchObject(clash("Ions only"));
+    expect(await call(c, "memory_write", fact("Test runner"))).toMatchObject(clash("Test runner"));
+    expect(memory.read("projects/app/ions-only-2.md")).toMatchObject({ ok: false, gone: true });
+    await c.close();
+  });
+
+  // Task review, 2026-11-22 (I-2): an ion's update without `see` put the default back (your fact became chats'), and
+  // nothing stopped one from sharing an ions-only file with chats.
+  it("an update keeps who sees the file, and only you share one with chats", async () => {
+    const s = await ion("shop");
+    const expect1 = hashOf(await call(s, "memory_read", { name: "partner" }));
+    const update = { scope: "you", name: "Partner", text: "Partner is Sam, a nurse", expect: expect1 };
+    expect(text(await call(s, "memory_write", update))).toBe("Saved you/partner.md");
+    expect(memory.read("you/partner.md")).toMatchObject({
+      ok: true,
+      file: { header: { see: "ions", type: "fact" } },
+    });
+    const now = hashOf(await call(s, "memory_read", { name: "partner" }));
+    expect(await call(s, "memory_write", { ...update, see: "chats", expect: now })).toMatchObject({
+      isError: true,
+      content: [{ text: "Only the user shares a file with chats" }],
+    });
+    await s.close();
+  });
+
+  // Task review, 2026-11-22 (I-3): an update dropped a to-do's status and date, and the note it was moved from.
+  it("an update keeps a to-do's status, date and where it came from", async () => {
+    memory.write({
+      scope: { projectId: "app" },
+      header: {
+        name: "Rotate keys",
+        description: "Rotate the keys",
+        type: "todo",
+        status: "open",
+        due: "2026-12-01",
+        from: "m1",
+      },
+      text: "Rotate them",
+      by: "you",
+    });
+    const c = await ion("chief");
+    const hash = hashOf(await call(c, "memory_read", { name: "rotate-keys" }));
+    const update = { scope: "app", name: "Rotate keys", text: "Rotate them all", expect: hash };
+    expect(text(await call(c, "memory_write", update))).toBe("Saved projects/app/rotate-keys.md");
+    expect(memory.read("projects/app/rotate-keys.md")).toMatchObject({
+      ok: true,
+      file: {
+        text: "Rotate them all",
+        header: { type: "todo", status: "open", due: "2026-12-01", from: "m1" },
+      },
+    });
+    await c.close();
+  });
+
+  // Security review, 2026-11-22: a chat in one project wrote a preference every other project's chats then read (an
+  // injection that outlives the chat). A chat's preference is a suggestion, seen by its project's chats and the ions,
+  // until you keep it.
+  it("another project's chat doesn't see a suggested preference; after keep it does", async () => {
+    const app = await chat();
+    const tabs = { ...fact("Tabs"), scope: "you", type: "preference", text: "Use tabs" };
+    expect(text(await call(app, "memory_write", tabs))).toBe("Saved you/tabs.md as a suggestion");
+    expect(memory.read("you/tabs.md")).toMatchObject({ ok: true, file: { header: { suggested: "app" } } });
+    expect(text(await call(app, "memory_index"))).toContain("you/tabs.md");
+    const shop = await client(grants.create({ kind: "run", projectId: "shop", chatId: "c2", runId: "r2" }));
+    expect(text(await call(shop, "memory_index"))).not.toContain("tabs");
+    expect(await call(shop, "memory_read", { name: "you/tabs.md" })).toMatchObject(NONE);
+    const chief = await ion("chief");
+    expect(text(await call(chief, "memory_index"))).toContain("you/tabs.md");
+    new ScopedMemory(memory, { kind: "you" }).keep("tabs");
+    expect(text(await call(shop, "memory_index"))).toContain("you/tabs.md");
+    // Kept, it's yours: a chat can't change it, forget it, or hide one of your files from chats.
+    const kept = hashOf(await call(shop, "memory_read", { name: "tabs" }));
+    for (const [tool, args, why] of [
+      [
+        "memory_write",
+        { ...tabs, text: "Use spaces", expect: kept },
+        "A chat can't change your shared files",
+      ],
+      ["memory_forget", { name: "tabs", expect: kept }, "A chat can't forget your files"],
+      ["memory_write", { ...tabs, name: "Indent", see: "ions" }, "A chat can't choose who sees your files"],
+    ] as const)
+      expect(await call(shop, tool, args)).toMatchObject({ isError: true, content: [{ text: why }] });
+    for (const c of [app, shop, chief]) await c.close();
   });
 });

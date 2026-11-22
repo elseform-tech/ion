@@ -186,6 +186,28 @@ describe("an ion's turn", () => {
     expect(text.endsWith("\n\nhello")).toBe(true);
   });
 
+  // Task review, 2026-11-22 (M-5): every turn repeated the index into a resumed session. It goes in once per session,
+  // and again only when it changed.
+  it("a resumed session gets the index again only when it changed", async () => {
+    const memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
+    const w = (name: string) =>
+      memory.write({
+        scope: { projectId: "storefront" },
+        header: { name, description: name, type: "fact" },
+        text: name,
+        by: "you",
+      });
+    w("Deploy day");
+    const t = turns(undefined, { memory });
+    sent.length = 0;
+    await t.turn("storefront", "hello");
+    await t.turn("storefront", "hello again");
+    w("Rate limits");
+    await t.turn("storefront", "and again");
+    expect(sent.map((x) => x.startsWith("<ion-data"))).toEqual([true, false, true]);
+    expect(starts.at(-1)?.resume).toBeTruthy();
+  });
+
   it("an ion's turn gets only ion's server, never yours", async () => {
     writeFileSync(join(home, "mcp.json"), JSON.stringify({ mcpServers: { docs: { command: "docs-mcp" } } }));
     const c = loadUserConfig(join(home, "config.toml")).config;

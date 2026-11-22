@@ -47,13 +47,13 @@ export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, 
     "memory_write",
     {
       description:
-        "Keep something for later as a small file, one topic each. Updating a file: memory_read it, then pass its hash as expect.",
+        "Keep something for later as a small file, one topic each: a new one needs name, description, type and text. To update one, memory_read it, pass its hash as expect, and give only what changes.",
       inputSchema: {
         scope: z.string().min(1).max(64).describe(scopeHelp(caller)),
-        name: z.string().min(1).max(80),
-        description: z.string().min(1).max(160).describe("One line: what the index shows"),
-        type: z.enum(MEMORY_TYPES),
-        text: z.string().min(1).max(MEMORY_TEXT_MAX),
+        name: z.string().min(1).max(80).optional(),
+        description: z.string().min(1).max(160).optional().describe("One line: what the index shows"),
+        type: z.enum(MEMORY_TYPES).optional(),
+        text: z.string().min(1).max(MEMORY_TEXT_MAX).optional(),
         see: z.enum(MEMORY_SEE).optional(),
         status: z.enum(["open", "done"]).optional(),
         due: z.string().max(10).optional(),
@@ -61,7 +61,10 @@ export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, 
         path: z.string().max(200).optional(),
       },
     },
-    guard((w: MemoryWrite) => ok(`Saved ${counted(() => m.write(w)).path}`)),
+    guard((w: MemoryWrite) => {
+      const f = counted(() => m.write(w));
+      return ok(`Saved ${f.path}${f.header.suggested ? " as a suggestion" : ""}`);
+    }),
   );
   server.registerTool(
     "memory_forget",

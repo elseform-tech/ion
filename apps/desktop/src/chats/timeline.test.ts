@@ -41,6 +41,31 @@ describe("timeline", () => {
     expect(t.items.at(-1)).toEqual({ kind: "ion", tone: "note", text });
   });
 
+  // Security review, 2026-11-22: a chat's preference waits for you to keep it; the chat says so in one quiet line.
+  it("says a chat's preference was saved as a suggestion", () => {
+    const header = { name: "Tabs", description: "d", type: "preference", see: "chats", suggested: "app" };
+    const written = {
+      path: "you/tabs.md",
+      scope: "you",
+      slug: "tabs",
+      header,
+      hash: "h",
+      by: { chatId: "c1", runId: "r1" },
+    };
+    const t = play(ev("message.sent", { text: "Hi" }), ev("memory.written", written));
+    expect(t.items.at(-1)).toEqual({
+      kind: "ion",
+      tone: "note",
+      text: "Saved as a suggestion: Tabs — keep it for every project?",
+    });
+    const fact = {
+      ...written,
+      path: "projects/app/x.md",
+      header: { ...header, type: "fact", suggested: undefined },
+    };
+    expect(play(ev("memory.written", fact)).items).toEqual([]);
+  });
+
   // Review Focus 2: a long chat stays one item per message.
   it("folds 5,000 deltas into one message", () => {
     const events = Array.from({ length: 5000 }, () => ev("message.delta", { text: "x" }));

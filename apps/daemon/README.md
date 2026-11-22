@@ -50,7 +50,12 @@ The always-on service that owns all state.
   revoked when the run ends) that sees its own project: `chat_history`, `search_chats`, `open_needs`, `memory_index`,
   `memory_search`, `memory_read`, `memory_write` and `memory_forget` (20 changes per run), `ask`, `decisions`, `report_outcome`. Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
   tools ask.
-- `src/memory`: memory is yours ("you", shown in every project) or one project's, never shared between projects.
+- `src/memory`: a folder of small files, yours (`you/`) or one project's (`projects/<id>/`), never shared between
+  projects. `see: ions` means ions only, for your files and a project's alike: that project's chats don't see it.
+  `scoped.ts` keeps who sees and writes what: a chat sees its project's files and your `see: chats` ones; a project's
+  ion its project's and all yours; ion chief yours and every project shared with it. A file a caller can't see
+  doesn't exist for it. A preference a chat writes is `suggested: <project>` (only that project's chats and the ions
+  see it) until you keep it (`ion memory keep`).
 - `src/api`: the WebSocket API (see `@ion/schema` `api.ts` for the protocol).
 - `src/main.ts`: entry point. Takes the `daemon.lock` (an exclusive SQLite lock the OS releases if the process dies, so only one daemon per data dir), then writes `daemon.json` (`pid`, `port`, `token`, mode 0600).
 

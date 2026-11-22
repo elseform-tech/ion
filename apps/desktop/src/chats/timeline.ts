@@ -382,6 +382,16 @@ const HANDLERS: Record<string, Handler> = {
   // A run went without one of your MCP servers: ion says why, once per chat.
   [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
+  // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once.
+  [EV.memoryWritten]: (t, d) => {
+    const h = (d.header ?? {}) as { name?: unknown; suggested?: unknown };
+    if (!h.suggested || d.before) return t;
+    return push(t, {
+      kind: "ion",
+      tone: "note",
+      text: `Saved as a suggestion: ${str(h.name)} — keep it for every project?`,
+    });
+  },
 };
 
 /** Adds one event to the chat's timeline. Pure: the same events always give the same items. */

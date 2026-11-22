@@ -111,6 +111,7 @@ Commands:
   show <name>     Show one
   search <words>  Find by words
   forget <name>   Forget it
+  keep <name>     Keep a chat's suggestion for every project
   open            Open the folder
   help [command]  display help for command
 

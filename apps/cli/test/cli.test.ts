@@ -487,6 +487,16 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(existsSync(join(mem, "projects/app/test-runner.md"))).toBe(false);
       expect((await ion("memory", "search", "vitest")).out).toBe("Nothing found");
       expect((await ion("memory", "open")).out).toBe(mem);
+      // Security review, 2026-11-22: a chat's preference waits for you; keep makes it every project's.
+      file("you/tabs.md", "name: Tabs\ndescription: Use tabs\ntype: preference\nsuggested: app", "Tabs.");
+      const prefs = () => ion("memory", "ls", "--type", "preference");
+      for (let i = 0; i < 30 && !(await prefs()).out.includes("tabs"); i++)
+        await new Promise((r) => setTimeout(r, 200));
+      expect((await prefs()).out).toContain("you/tabs.md  preference suggested  Tabs: Use tabs");
+      expect((await ion("memory", "keep", "tabs")).out).toBe("Kept for every project");
+      expect((await ion("memory", "ls", "--type", "preference")).out).toContain(
+        "you/tabs.md  preference  Tabs: Use tabs",
+      );
     });
 
     // Plan 09: ions from the CLI (messaging one starts real work, so only the list and a refusal here).

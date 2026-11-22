@@ -302,6 +302,8 @@ export type Commands = ToolsCommands & {
   "memory.search": { args: { q: string; projectId?: string }; result: MemoryInfo[] };
   /** Deletes a file, by its path, file name or name. */
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
+  /** Keeps a chat's suggested preference for every project (by its path or name). */
+  "memory.keep": { args: { path: string }; result: { path: string } };
   /** Where the memory folder is. */
   "memory.folder": { args: Record<string, never>; result: { path: string } };
   "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
@@ -477,6 +479,7 @@ export const COMMANDS = [
   "memory.read",
   "memory.search",
   "memory.forget",
+  "memory.keep",
   "memory.folder",
   "harnesses.list",
   "routine.add",

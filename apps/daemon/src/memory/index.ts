@@ -24,7 +24,7 @@ import {
 } from "./files.js";
 
 export type { FileRead, MemoryFile } from "./files.js";
-export { upFront } from "./scoped.js";
+export { ionIndex, upFront } from "./scoped.js";
 
 /** A note's `from:` (the old note it was moved from) and `see`; `overCap`: moving old notes only. */
 type NoteOptions = { from?: string; see?: "chats" | "ions"; overCap?: true };
@@ -166,15 +166,18 @@ export class MemoryFiles {
   private log(file: MemoryFile, by: MemoryBy, before?: Before): void {
     const { path, scope, slug, header, hash } = file;
     const data = { path, scope, slug, header, hash, by, ...(before ? { before: capped(before) } : {}) };
-    this.append(EV.memoryWritten, data);
+    this.append(EV.memoryWritten, data, by);
     memoryView.index(this.o.db, path, file.text);
   }
 
+  /** In the log; a chat's change is also in that chat (it says a suggestion was saved). */
   private append(
     type: typeof EV.memoryWritten | typeof EV.memoryForgotten,
     data: Record<string, unknown>,
+    by?: MemoryBy,
   ): void {
-    this.o.store.append({ chatId: null, runId: null, origin: "daemon", type, data });
+    const run = by && by !== "you" && "chatId" in by ? by : { chatId: null, runId: null };
+    this.o.store.append({ chatId: run.chatId, runId: run.runId, origin: "daemon", type, data });
   }
 }
 

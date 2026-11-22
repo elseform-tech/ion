@@ -25,7 +25,7 @@ import { ionsView } from "../views/ions.js";
 import { type IonBrain, ionBrain } from "./brain.js";
 import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
-import { type MemoryFiles, upFront } from "../memory/index.js";
+import { ionIndex, type MemoryFiles } from "../memory/index.js";
 import { ownAgentStart } from "../access/runner.js";
 import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
@@ -180,6 +180,8 @@ export class IonTurns {
   /** ion is stopping: no turn starts, and nothing more is written. */
   private stopping = false;
 
+  /** The memory index each ion's session was last given (M-5: a resumed one gets it again only when it changed). */
+  private readonly sentIndex = new Map<string, string>();
   /** Your servers for its turns (none when the daemon gives none). */
   private readonly servers: IonServers;
 
@@ -393,9 +395,8 @@ export class IonTurns {
       },
     };
     const resume = this.resumeOf(t.ionId, brain.harness, scope.projects);
-    const text = upFront(this.d.memory, scope) + t.text;
     const end = await this.within(abort, t.turnId, (e, hold) =>
-      this.drive({ ...t, text, adapter, opts, resume }, e, hold),
+      this.drive({ ...t, scope, adapter, opts, resume }, e, hold),
     );
     return { end, projects: scope.projects };
   }
@@ -449,15 +450,17 @@ export class IonTurns {
 
   /** Starts (or resumes) the session, sends your message, and reads the session to its end. */
   private async drive(
-    t: TurnRef & { text: string; adapter: HarnessAdapter; opts: StartOpts; resume: string | undefined },
+    t: TurnRef & { text: string; scope: IonScope; adapter: HarnessAdapter; opts: StartOpts; resume?: string },
     end: Ended,
     hold: (s: Session) => void,
   ): Promise<void> {
-    const session = await this.start(t.adapter, t.opts, t.resume);
+    const { session, resumed } = await this.start(t.adapter, t.opts, t.resume);
     hold(session);
     end.nativeId = session.nativeId;
     if (end.late) return;
-    await session.send({ text: t.text });
+    await session.send({
+      text: ionIndex(this.d.memory, t.scope, { resumed, sent: this.sentIndex }) + t.text,
+    });
     await this.pump(session, t, end);
   }
 
@@ -476,12 +479,12 @@ export class IonTurns {
     adapter: HarnessAdapter,
     opts: StartOpts,
     resume: string | undefined,
-  ): Promise<Session> {
-    if (!resume) return adapter.start(opts);
+  ): Promise<{ session: Session; resumed: boolean }> {
+    if (!resume) return { session: await adapter.start(opts), resumed: false };
     try {
-      return await adapter.start({ ...opts, resume });
+      return { session: await adapter.start({ ...opts, resume }), resumed: true };
     } catch (e) {
-      if (e instanceof ResumeFailed) return adapter.start(opts);
+      if (e instanceof ResumeFailed) return { session: await adapter.start(opts), resumed: false };
       throw e;
     }
   }
