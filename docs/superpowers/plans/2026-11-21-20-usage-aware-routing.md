@@ -97,12 +97,24 @@
   3. **Headroom:** Codex's windows; others from recent errors.
   4. **Billing:** subscription and free before api.
 - **The reason is one line:** "On Codex — Claude is near its limit", or "On opencode — free and enough for this". It shows in the thread line and the chat header.
+- **Two settings in Settings → Agents (the user, 2026-11-22: "sure"):**
+  - **Agent order:** a drag list (default opencode, Grok Build, Codex, Claude Code). It is the one preference list used by handoff targets, Pick by usage, and an ion's chats when the project names no agent. It replaces the order fixed in code.
+  - **"When an agent hits its limit":** Ask (default) / Continue on the next agent / Wait. "Always continue on X here" decisions still win for their project.
+- **Chats at once, made clear (the user asked what it covers, 2026-11-22):**
+  - It counts your chats (plain and coding), the chats ions start, and routines. It doesn't count ions' own replies, the judge or Dream.
+  - The row is renamed "Chats at once" with a second row, "Of those, ions may use" (Auto = half, or a number), so ion-started chats never take every slot.
+  - When a slot frees up, a chat you sent goes before ion-started and routine ones.
+  - A queued chat says why: "Waiting — 4 chats running".
+  - The setting itself (resources.max_runs) is kept; the new one is resources.ion_runs.
 - [ ] Tests (pure policy):
   - "a limited agent is never picked";
   - "Claude is saved unless deep work needs it";
   - "near a window's end, another agent is picked";
   - "api-billed comes after subscription and free";
-  - "your pick always wins".
+  - "your pick always wins";
+  - "the agent order decides handoff targets and routing";
+  - "ion-started chats never take every slot";
+  - "your chat goes first when a slot frees".
 - [ ] FAIL → implement → PASS → live → commit `feat: ion picks a thread's agent by usage and cost, and says why`.
 
 ### Task 4: Estimates from history
