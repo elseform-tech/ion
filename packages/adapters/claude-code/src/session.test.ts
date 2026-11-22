@@ -256,6 +256,10 @@ describe("claude-code session", () => {
       plugins: unknown[];
     };
     expect(o).toMatchObject({ strictMcpConfig: true, settingSources: [], permissionMode: "default" });
+    // Task 11, 2026-11-22 (live log): the SDK warned that servers go on Claude Code's command line. Only `${ION_MCP_*}`
+    // names go there (values are in the env), so ion says 'argv' outright: older Claude Codes still start, no warning.
+    expect(o).toMatchObject({ mcpServersDelivery: "argv" });
+    expect(JSON.stringify(o.mcpServers)).not.toMatch(/Bearer|https?:\/\//);
     expect(Object.keys(o.mcpServers)).toEqual(["ion", "github"]);
     expect(Object.keys(o.env).filter((k) => /^ION_MCP_[CAE]/.test(k))).toEqual([]);
     expect(o.plugins).toEqual([

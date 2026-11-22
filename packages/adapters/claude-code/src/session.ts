@@ -113,6 +113,9 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...(opts.resume ? { resume: opts.resume } : {}),
     ...(Object.keys(mcp.servers).length ? { mcpServers: mcp.servers } : {}),
+    // Only `${ION_MCP_*}` names reach the command line (their values are in env), so the SDK's argv delivery is kept
+    // on purpose: it works with older Claude Codes, and says so to quiet the SDK's warning (Task 11, 2026-11-22).
+    mcpServersDelivery: "argv" as const,
     // With ion's MCP server, questions go through its ask tool (a question in the app); Claude's own pop-up
     // question can't be shown in a headless session and comes back empty.
     ...(hasIon(opts) ? { disallowedTools: ["AskUserQuestion"] } : {}),
