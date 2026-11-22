@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
+import type { Dreams } from "../scheduler/index.js";
 import type { MemoryFiles } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
 import {
@@ -106,6 +107,8 @@ export type Ctx = {
   ionServers?: IonServers;
   /** What Auto is often unsure about (said in `ion status`). */
   unsure?: { notes(): string[] };
+  /** ion's dream: it tidies memory on its schedule, or now. */
+  dreams?: Dreams;
 };
 
 export type Handlers = {

@@ -1,6 +1,7 @@
 import { loadUserConfig } from "@ion/config";
 import type { EffortLevel as Effort, HarnessInfo } from "@ion/schema";
 import { defaultAgent } from "../adapters/registry.js";
+import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 
@@ -59,15 +60,19 @@ export function brainOf(
 export type IonBrain = { harness: string; model: string | null; effort: Effort | null };
 
 /**
- * An ion's agent, model and effort, or null when it has no agent ready. ion chief: [ion] quick ("<agent>[:<model>]")
+ * An ion's agent, model and effort, or null when it has no agent ready. ion chief (and its dream, on [memory]
+ * dreamAgent when set): [ion] quick ("<agent>[:<model>]")
  * while that agent is ready, else the first ready on its default model. A project's ion: the project's agent, model
  * and effort, as its threads get them. Effort falls back to [ion] quickEffort.
  */
 export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | null> {
-  const ion = loadUserConfig(d.configFile).config.ion;
+  const c = loadUserConfig(d.configFile).config;
+  const ion = c.ion;
   const quickEffort = ion.quickEffort ?? null;
-  if (ionId === "chief") {
-    const [set, ...rest] = ion.quick.split(":");
+  if (ionId === "chief" || ionId === DREAM_ION) {
+    // ion's dream: Settings → Memory's agent, else ion's quick model's.
+    const spec = (ionId === DREAM_ION && c.memory.dreamAgent) || ion.quick;
+    const [set, ...rest] = spec.split(":");
     if (await isReady(d, set!)) return { harness: set!, model: rest.join(":") || null, effort: quickEffort };
     const first = defaultAgent(await readyAgents(d.agents), null);
     return first ? { harness: first, model: null, effort: quickEffort } : null;

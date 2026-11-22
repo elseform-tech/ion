@@ -63,15 +63,15 @@ export class MemoryFiles {
     return file;
   }
 
-  /** Deletes a file and logs it, with its text before. */
-  forget(path: string, by: MemoryBy, expectHash?: string): void {
+  /** Deletes a file and logs it, with its text before; `into`: the file it was merged into (ion's dream). */
+  forget(path: string, by: MemoryBy, expectHash?: string, into?: string): void {
     if (!MEMORY_PATH.test(path)) throw new UserError(`Unknown memory: ${path}`);
     const row = memoryView.get(this.o.db, path);
     const gone = this.folder.remove(path, expectHash);
     if (!row && !gone) throw new UserError(`Unknown memory: ${path}`);
     this.broken.delete(path);
     const before = gone ?? { hash: row!.hash, text: row!.text };
-    this.append(EV.memoryForgotten, { path, by, before: capped(before) });
+    this.append(EV.memoryForgotten, { path, by, before: capped(before), ...(into ? { into } : {}) });
   }
 
   /**

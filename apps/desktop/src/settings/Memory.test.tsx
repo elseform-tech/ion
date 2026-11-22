@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import type { MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "@ion/schema";
+import type { DreamInfo, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "@ion/schema";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openFile } from "../opener.js";
 import { Settings } from "./Settings.js";
+import { settings } from "./testing.js";
 
 vi.mock("../opener.js", () => ({
   CANT_OPEN: "Couldn't open it",
@@ -103,13 +104,25 @@ const HISTORY: MemoryChangeInfo[] = [
 ];
 
 /** A daemon with memory: each call answers from FILES; `memory.search` finds by name. */
-function memoryClient(o: { text?: string; refuse?: string } = {}) {
+type MemoryClientOpts = {
+  text?: string;
+  refuse?: string;
+  dream?: { tidied: DreamInfo; files: MemoryInfo[] };
+};
+
+function memoryClient(o: MemoryClientOpts = {}) {
+  const all = [...FILES, ...(o.dream?.files ?? [])];
+  const dreamAnswer = (cmd: string) => {
+    if (cmd === "memory.tidied") return o.dream?.tidied ?? null;
+    if (cmd === "settings.get") return o.dream ? settings : null;
+    return [{ id: "grok-build", label: "Grok", installed: true, signedIn: true, models: [] }];
+  };
   const answer = async (cmd: string, a: Record<string, unknown>) => {
+    if (["memory.tidied", "settings.get", "harnesses.list"].includes(cmd)) return dreamAnswer(cmd);
     if (cmd === "projects.list") return [{ id: "shop", name: "Shop", path: "/p/shop", starred: true }];
     if (cmd === "ions.list")
       return [{ ionId: "chief", name: "ion", color: null, harness: null, last: null, needs: 0 }];
-    if (cmd === "settings.get") return null;
-    if (cmd === "memory.list") return a.type === "todo" ? FILES.filter((f) => f.type === "todo") : FILES;
+    if (cmd === "memory.list") return a.type === "todo" ? all.filter((f) => f.type === "todo") : all;
     if (cmd === "memory.search")
       return FILES.filter((f) => f.name.toLowerCase().includes(String(a.q).toLowerCase()));
     if (cmd === "memory.folder") return { path: "/d/memory", problems: ["shop/notes.md can't be read"] };
@@ -277,5 +290,30 @@ describe("Settings → Memory", () => {
     expect(await screen.findByText("Changed since you read it")).toBeTruthy();
     await waitFor(() => expect(reads()).toBe(before + 1));
     expect(c.call.mock.calls.filter(([cmd]) => cmd === "memory.history")).toHaveLength(2);
+  });
+});
+
+// The user, 2026-11-22: "could we also have a 'dream' setting to allow active harness to manage stale information and
+// update memory" → ion tidies memory overnight. Settings → Memory turns it on, marks what it changed for a day, and
+// brings back a file it forgot.
+describe("ion's dream in Memory", () => {
+  it("Dream turns on, a file it changed says so for a day, and a file it forgot comes back", async () => {
+    const tidied: DreamInfo = {
+      ...{ at: ago(5), merged: 0, updated: 1, forgot: 1, moved: 0, notes: [] },
+      forgotten: [{ path: "you/old-launch.md", name: "Old launch" }],
+    };
+    const files = [
+      file({ memoryId: "you/node.md", name: "Node version", source: "ion:dream", writtenAt: ago(5) }),
+      file({ memoryId: "you/older.md", name: "Older tidy", source: "ion:dream", writtenAt: ago(30) }),
+    ];
+    const c = await openMemory(memoryClient({ dream: { tidied, files } }));
+    fireEvent.click(await screen.findByRole("button", { name: "Nightly" }));
+    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { dream: { mode: "nightly" } } });
+    expect(within(rowOf("Node version")).getByText("Tidied by ion")).toBeTruthy();
+    expect(within(rowOf("Node version")).getByText(/ion \(dream\)/)).toBeTruthy();
+    expect(within(rowOf("Older tidy")).queryByText("Tidied by ion")).toBeNull();
+    const gone = (await screen.findByText(/Old launch/)).closest(".srow") as HTMLElement;
+    fireEvent.click(within(gone).getByRole("button", { name: "Restore" }));
+    expect(c.call).toHaveBeenCalledWith("memory.restore", { path: "you/old-launch.md" });
   });
 });

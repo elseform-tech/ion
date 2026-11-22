@@ -8,6 +8,7 @@ import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import type { Ctx } from "./commands.js";
 import { memoryHandlers, todoHandlers } from "./memory.js";
+import { runRefusal } from "./run-calls.js";
 
 const handlers = { ...memoryHandlers, ...todoHandlers };
 type H = typeof handlers;
@@ -104,5 +105,20 @@ describe("memory in Settings", () => {
     const found = await client.call("memory.search", { q: "deploy", scope: "shop" });
     expect(found.map((m) => m.name)).toEqual(["Shop"]);
     expect(await client.call("memory.search", { q: "deploy", scope: "you" })).toHaveLength(20);
+  });
+
+  // Security review, 2026-11-22: restoring, what ion's dream did, and dreaming now are yours only; a chat's agent
+  // (a run's key) is refused by the handler itself, not only by the connection.
+  it("refuses a chat's agent restore, tidied and dream", async () => {
+    const run = {
+      ...ctx,
+      caller: { kind: "run", projectId: "p", chatId: "c", runId: "r" },
+    } as unknown as Ctx;
+    const why = "A chat's agent can't do that";
+    expect(() => memoryHandlers["memory.restore"]({ path: "you/x.md" }, run)).toThrow(why);
+    expect(() => memoryHandlers["memory.tidied"]({}, run)).toThrow(why);
+    await expect(memoryHandlers["memory.dream"]({}, run)).rejects.toThrow(why);
+    expect(runRefusal("memory.restore")).toBe(why);
+    expect(runRefusal("memory.dream")).toBe(why);
   });
 });

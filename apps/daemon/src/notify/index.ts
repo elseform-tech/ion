@@ -151,10 +151,12 @@ export class Notifier {
 
   constructor(private readonly d: { store: EventStore; db: Db; configFile: string; memory?: MemoryFiles }) {}
 
-  start(): void {
+  /** Starts listening and looking; returns a stop. */
+  start(): () => void {
     this.started = Date.now();
     this.off = this.d.store.onAppend((e) => this.heard(e));
     this.tick();
+    return () => this.stop();
   }
 
   stop(): void {

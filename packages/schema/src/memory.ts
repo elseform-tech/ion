@@ -88,9 +88,48 @@ const noteWritten = z.object({
 export const memoryEventSchemas = {
   "memory.written": z.union([fileWritten, noteWritten]),
   "memory.forgotten": z.union([
-    z.object({ path: memoryPath, by: MemoryBySchema, before: Before }),
+    z.object({
+      path: memoryPath,
+      by: MemoryBySchema,
+      before: Before,
+      /** The file it was merged into (ion's dream, merging or moving a file). */
+      into: memoryPath.optional(),
+    }),
     z.object({ memoryId: z.string() }),
   ]),
+  /**
+   * ion tidied your memory (its dream): what it changed, by kind; the paths it forgot (Restore brings each back);
+   * `notes`: up to two lines it left for you; `status`: how its turn ended (or that it started).
+   */
+  "memory.dreamed": z.object({
+    merged: z.number().int().min(0),
+    updated: z.number().int().min(0),
+    forgot: z.number().int().min(0),
+    moved: z.number().int().min(0),
+    forgotten: z.array(memoryPath).max(100),
+    changed: z.array(memoryPath).max(100),
+    notes: z.array(z.string().max(300)).max(2),
+    /** "started": recorded as it starts, so a night's run never happens twice (a restart mid-dream too). */
+    status: z.enum(["started", "done", "failed", "late"]),
+    /** The night it's for (that night's 3:00; weekly, Monday's); none for one you asked for now. */
+    period: z.string().optional(),
+  }),
+};
+
+/** How often ion tidies your memory: never, each night, or once a week. */
+export const DREAM_MODES = ["off", "nightly", "weekly"] as const;
+export type DreamMode = (typeof DREAM_MODES)[number];
+
+/** What ion's dream did last, as Settings → Memory and the briefing say it (within a day of it). */
+export type DreamInfo = {
+  at: string;
+  merged: number;
+  updated: number;
+  forgot: number;
+  moved: number;
+  /** Files it forgot that are still gone: each can be restored. */
+  forgotten: { path: string; name: string }[];
+  notes: string[];
 };
 
 /** A memory file as the app and the CLI list it. */

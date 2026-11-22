@@ -10,7 +10,6 @@ import type { EventStore } from "../store/index.js";
 import { runsView } from "../views/runs.js";
 import { createAuth } from "./auth.js";
 import { cliOf, wsAccess } from "./run-calls.js";
-import type { Ctx } from "./commands.js";
 import { Connection } from "./connection.js";
 import { yourToolsOf } from "./tools.js";
 import { NeedsService } from "../needs/index.js";
@@ -34,9 +33,9 @@ import { IonServers } from "../ions/servers.js";
 import { ownServerNames, pickSource } from "./tools-picks.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
-import { diffOfChat, handlers, harnessInfos, useAgentsHome } from "./commands.js";
+import { type Ctx, diffOfChat, handlers, harnessInfos, useAgentsHome } from "./commands.js";
 import { PromptQueue } from "../queue/index.js";
-import { Routines } from "../scheduler/index.js";
+import { Dreams, dreamThink, Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
 import { TodoOffers } from "../ions/todo-offers.js";
 import { chatsView } from "../views/chats.js";
@@ -138,9 +137,9 @@ export async function startServer(
   ctx.ions.watch();
   const unwatch = ctx.memory.watch(); // first: the briefing and reminders read memory as it is now
   const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile, memory: ctx.memory });
-  notifier.start();
+  const stopNotifier = notifier.start();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
-  const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop(), unwatch];
+  const stops = [ctx.routines.start(), ctx.suggestions.start(), ctx.dreams!.start(), stopNotifier, unwatch];
   // Your answers still waiting go in first; then what you queued while ion was stopped, to each chat or ion that
   // isn't working.
   void ctx.decisions
@@ -278,7 +277,7 @@ function startIons(
     ionServers: IonServers;
     memory: MemoryFiles;
   },
-): { ions: Ions; turns: IonTurns } {
+): { ions: Ions; turns: IonTurns; dreams: Dreams } {
   const { dataDir, grants, base, ionServers, memory, ...deps } = d;
   const agents = () => harnessInfos.list();
   const agent = (id: string) => harnessInfos.one(id);
@@ -298,7 +297,9 @@ function startIons(
   late.ions = ions;
   // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
   ions.answerUnanswered();
-  return { ions, turns };
+  // ion's dream: it tidies memory overnight, as one of ion's turns (Settings → Memory).
+  const dreams = new Dreams({ ...d, memory, think: dreamThink(turns) });
+  return { ions, turns, dreams };
 }
 
 /**
@@ -488,7 +489,7 @@ function openState(
     requestOf: (runId) => runs.requestOf(runId),
   });
   late.decisions = decisions;
-  const { ions, turns } = startIons({ store, db, ...opts, runs, grants, base, ionServers, memory });
+  const { ions, turns, dreams } = startIons({ store, db, ...opts, runs, grants, base, ionServers, memory });
   // A routine's time came (or you ran it now): its ion starts its thread.
   const routines = new Routines({
     ...{ store, db, configFile: opts.configFile },
@@ -497,7 +498,7 @@ function openState(
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines, memory });
   const base0 = {
     ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
-    ...{ tools, oauth, unsure, ionServers, memory },
+    ...{ tools, oauth, unsure, ionServers, memory, dreams },
   };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };

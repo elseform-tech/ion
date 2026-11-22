@@ -255,3 +255,31 @@ describe("the briefing's to-dos", () => {
     expect(briefings()).toEqual(["Still to do: “Call the bank”."]);
   });
 });
+
+// The user, 2026-11-22: ion's dream tidies memory overnight ("Apply everything"); the next briefing says what it did
+// in a line, and where to undo it.
+describe("the briefing after a dream", () => {
+  it("the briefing says what dream did", async () => {
+    vi.setSystemTime(at(19, 3));
+    store.append({
+      chatId: null,
+      runId: null,
+      origin: "daemon",
+      type: EV.memoryDreamed,
+      data: {
+        ...{ merged: 2, updated: 1, forgot: 1, moved: 0, status: "done" },
+        forgotten: ["you/old-launch.md"],
+        changed: ["you/deploy.md"],
+        notes: ["“Sam” may be out of date: Sam moved to Porto in a chat."],
+      },
+    });
+    boot();
+    await until(at(19, 8, 30));
+    expect(briefings()).toEqual([
+      "Tidied memory: merged 2, updated 1, forgot 1 — undo in Memory.\n“Sam” may be out of date: Sam moved to Porto in a chat.",
+    ]);
+    // Said once: the next day's briefing has nothing new to say.
+    await until(at(20, 8, 30));
+    expect(briefings()).toHaveLength(1);
+  });
+});

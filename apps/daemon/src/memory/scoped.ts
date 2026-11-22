@@ -2,6 +2,7 @@ import { MEMORY_PATH, type MemoryBy, type MemoryScope, type MemorySee, type Memo
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryRow } from "../views/memory.js";
+import { DREAM_ION, dreamInto, dreamMayBe, dreamMayTouch, dreamSee } from "./dream-rules.js";
 import { slugOf } from "./files.js";
 import type { MemoryFile, MemoryFiles } from "./index.js";
 
@@ -153,12 +154,15 @@ function sightOf(c: Caller): Sight {
  */
 export class ScopedMemory {
   private readonly sight: Sight;
+  /** ion's dream: it never touches your person files, a suggestion, or what you changed in the last day. */
+  private readonly dreams: boolean;
 
   constructor(
     private readonly memory: MemoryFiles,
     private readonly caller: Caller,
   ) {
     this.sight = sightOf(caller);
+    this.dreams = caller.kind === "ion" && caller.ionId === DREAM_ION;
   }
 
   /** Open to-dos first, then the most recently changed. */
@@ -219,10 +223,17 @@ export class ScopedMemory {
     return w.expect === undefined ? this.create(scope, w) : this.update(scope, w, w.expect);
   }
 
-  /** Deletes a file the caller may see and write, only as it was read (`expect`; you: as it is). */
-  forget(name: string, expect?: string): string {
+  /**
+   * Deletes a file the caller may see and write, only as it was read (`expect`; you: as it is); `into`: the file ion's
+   * dream merged it into.
+   */
+  forget(name: string, expect?: string, into?: string): string {
     const row = this.resolve(name);
     this.mayWrite(row.scope, row.type);
+    if (this.dreams) {
+      dreamMayTouch(this.memory, row);
+      if (into !== undefined) dreamInto(row, this.matches(into)[0]);
+    }
     const c = this.caller;
     // A chat forgets only your files its own project suggested.
     if (c.kind === "chat" && row.scope === "you" && row.suggested !== c.projectId)
@@ -230,7 +241,7 @@ export class ScopedMemory {
     if (c.kind !== "you" && expect === undefined) throw new UserError("Read it first");
     // Forgetting an open to-do closes it too (task review, 2026-11-22).
     if (c.kind !== "you" && row.type === "todo" && row.status !== "done") throw new UserError(ONLY_YOU_CLOSE);
-    this.memory.forget(row.path, this.by(), expect);
+    this.memory.forget(row.path, this.by(), expect, into && this.matches(into)[0]?.path);
     return row.path;
   }
 
@@ -252,11 +263,13 @@ export class ScopedMemory {
     const c = this.caller;
     const chatsYours = c.kind === "chat" && scope === "you";
     if (chatsYours && w.see) throw new UserError("A chat can't choose who sees your files");
+    if (this.dreams) dreamMayBe(type);
+    const see = this.dreams ? dreamSee(w.see) : w.see;
     this.mayClose({ type }, { type, ...statusOf(type, w.status) });
     this.noClash(scope, name);
     const header = {
       ...{ name, description, type, ...statusOf(type, w.status) },
-      ...given({ see: w.see, due: w.due }),
+      ...given({ see, due: w.due }),
       // A chat's preference waits for you to keep it (security review, 2026-11-22).
       ...(c.kind === "chat" && chatsYours ? { suggested: c.projectId } : {}),
     };
@@ -275,6 +288,10 @@ export class ScopedMemory {
     });
     this.mayWrite(scope, disk.header.type);
     this.mayWrite(scope, header.type);
+    if (this.dreams) {
+      dreamMayTouch(this.memory, { ...disk.header, path: disk.path });
+      if (header.type !== disk.header.type) dreamMayBe(header.type);
+    }
     this.mayChange(scope, disk.header, header.see);
     this.mayClose(disk.header, header);
     const text = w.text ?? disk.text;

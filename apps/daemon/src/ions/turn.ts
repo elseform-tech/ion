@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
-  type AdapterEvent,
   type ApprovalRequest,
   type HarnessAdapter,
   ION_SERVER,
@@ -30,6 +29,10 @@ import { ownAgentStart } from "../access/runner.js";
 import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
 import { type IonGateCall as GateCall, IonServers } from "./servers.js";
+import { DREAM_ION } from "../memory/dream-rules.js";
+import { DREAM_TURN_MS, dreamVerdict } from "./dream.js";
+import { CLOSE_MS, closing, type Ended, note } from "./turn-end.js";
+import type { Verdict } from "./web.js";
 
 /** A turn's hard limit: past it the agent is stopped and the ion says it couldn't finish. */
 const ION_TURN_MS = 300_000;
@@ -111,54 +114,9 @@ type Live = {
   halt?: (stopped?: true) => void;
 };
 
-/**
- * How a turn's session ended: its last message, its native id, whether it ran past its limit, and `stuck`: it
- * didn't close in time (the agent may still hold it open).
- */
-type Ended = {
-  last: string;
-  nativeId: string | null;
-  late: boolean;
-  failed: boolean;
-  stuck?: true;
-  /** You stopped it (it ended as `late` does, but says so). */
-  stopped?: true;
-};
-
 /** ion's own server for a turn, with the turn's key. */
 const ionSpec = ({ url, key }: { url: string; key: string }) =>
   ({ name: ION_SERVER, transport: "http", url, headers: { Authorization: `Bearer ${key}` } }) as const;
-
-/** How long ion waits for a session to close: an agent that never does can't hold the turn, nor the ion's next. */
-const CLOSE_MS = 2000;
-
-/** Closes a session, waiting at most CLOSE_MS: whether it closed in time. */
-async function closing(session: Session): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const wait = new Promise<false>((r) => {
-    timer = setTimeout(() => r(false), CLOSE_MS);
-  });
-  try {
-    return await Promise.race([
-      session.close().then(
-        () => true,
-        () => true,
-      ),
-      wait,
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** Notes the session's last message, and its native id once the agent says it (some only say it when it starts). */
-function note(e: AdapterEvent, end: Ended): void {
-  if (e.type === EV.error) end.failed = true;
-  if (e.type === EV.runFinished && (e.data as { status?: unknown }).status !== "done") end.failed = true;
-  if (e.type === EV.messageCompleted) end.last = String((e.data as { text?: unknown }).text ?? "");
-  const id = e.type === EV.runStarted ? (e.data as { sessionId?: unknown }).sessionId : undefined;
-  if (typeof id === "string" && id) end.nativeId = id;
-}
 
 /**
  * One ion's turn is a real agent session: on its agent, model and effort, in its folder, with ion's tools for the
@@ -242,7 +200,13 @@ export class IonTurns {
     const call = t?.adapter.gateCall?.(payload);
     if (!t || !call) return null;
     const req = { requestId: "gate", toolId: "gate", ...call };
-    return ionVerdict(req, t.rules, this.webOf(t), this.servers.of(scope.turnId));
+    return this.verdict(t, req, scope.turnId);
+  }
+
+  /** ion's gate for a live turn's call: an ion only reads; its dream only uses memory's tools. */
+  private verdict(t: Live, req: ApprovalRequest, turnId: string): Promise<Verdict> {
+    if (t.ionId === DREAM_ION) return Promise.resolve(dreamVerdict(req));
+    return ionVerdict(req, t.rules, this.webOf(t), this.servers.of(turnId));
   }
 
   /** ion's gate for an ion's call on one of your servers (ion's gateway asks): only what reads, and only yours. */
@@ -329,14 +293,14 @@ export class IonTurns {
     return STOPPED;
   }
 
-  /** ion chief: an empty folder of its own (made now); a project's ion: its project's folder. */
+  /** ion chief (and its dream): an empty folder of its own (made now); a project's ion: its project's folder. */
   private folderOf(ionId: string): string {
-    if (ionId !== "chief") {
+    if (ionId !== "chief" && ionId !== DREAM_ION) {
       const p = loadUserConfig(this.d.configFile).config.projects.find((x) => x.id === ionId);
       if (!p || ionId === DEFAULT_PROJECT) throw new UserError(`Unknown ion: ${ionId}`);
       return p.path;
     }
-    const dir = join(this.d.dataDir, "ions", "chief");
+    const dir = join(this.d.dataDir, "ions", ionId);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     return dir;
   }
@@ -352,7 +316,7 @@ export class IonTurns {
   private scopeOf(t: TurnRef & { report: boolean }): IonScope {
     const all = loadUserConfig(this.d.configFile).config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
     const projects =
-      t.ionId === "chief"
+      t.ionId === "chief" || t.ionId === DREAM_ION
         ? all
             .filter((p) => p.shareWithIon !== false)
             .map((p) => p.id)
@@ -376,7 +340,7 @@ export class IonTurns {
     const abort = new AbortController();
     // Your servers that are on, at ion's URL for each with only the turn's key (a report's turn gets none).
     const ion = { url: this.d.mcpUrl(), key: mcpKey };
-    const yours = await this.servers.forTurn(t.turnId, ion, adapter, t.report);
+    const yours = await this.servers.forTurn(t.turnId, ion, adapter, t.report || t.ionId === DREAM_ION);
     const opts: StartOpts = {
       cwd: t.cwd,
       model: brain.model,
@@ -390,8 +354,7 @@ export class IonTurns {
       signal: abort.signal,
       decide: async (req: ApprovalRequest) => {
         const live = this.live.get(t.turnId);
-        const on = this.servers.of(t.turnId);
-        return live ? (await ionVerdict(req, t.rules, this.webOf(live), on)).decision : "deny";
+        return live ? (await this.verdict(live, req, t.turnId)).decision : "deny";
       },
     };
     const resume = this.resumeOf(t.ionId, brain.harness, scope.projects);
@@ -422,7 +385,7 @@ export class IonTurns {
         void session?.interrupt().catch(() => {});
         r();
       };
-      timer = setTimeout(() => stop(), this.d.turnMs ?? ION_TURN_MS);
+      timer = setTimeout(() => stop(), this.d.turnMs ?? this.limitOf(turnId));
       // ion stopping ends the turn as its limit would.
       const live = this.live.get(turnId);
       if (live) {
@@ -448,6 +411,11 @@ export class IonTurns {
     }
   }
 
+  /** A turn's hard limit: a dream's is longer (it reads and tidies every file). */
+  private limitOf(turnId: string): number {
+    return this.live.get(turnId)?.ionId === DREAM_ION ? DREAM_TURN_MS : ION_TURN_MS;
+  }
+
   /** Starts (or resumes) the session, sends your message, and reads the session to its end. */
   private async drive(
     t: TurnRef & { text: string; scope: IonScope; adapter: HarnessAdapter; opts: StartOpts; resume?: string },
@@ -458,9 +426,10 @@ export class IonTurns {
     hold(session);
     end.nativeId = session.nativeId;
     if (end.late) return;
-    await session.send({
-      text: ionIndex(this.d.memory, t.scope, { resumed, sent: this.sentIndex }) + t.text,
-    });
+    // A dream's message holds the whole index already.
+    const index =
+      t.ionId === DREAM_ION ? "" : ionIndex(this.d.memory, t.scope, { resumed, sent: this.sentIndex });
+    await session.send({ text: index + t.text });
     await this.pump(session, t, end);
   }
 
@@ -469,6 +438,8 @@ export class IonTurns {
    * kept from ion chief or removed is forgotten with the session that knew it).
    */
   private resumeOf(ionId: string, harness: string, projects: string[]): string | undefined {
+    // Each dream starts afresh, and keeps no session.
+    if (ionId === DREAM_ION) return undefined;
     const s = ionsView.session(this.d.db, ionId);
     const same = s?.projects?.join("\n") === projects.join("\n");
     return s?.harness === harness && same ? s.nativeId : undefined;
@@ -493,7 +464,7 @@ export class IonTurns {
   private async pump(session: Session, t: TurnRef, end: Ended): Promise<void> {
     for await (const e of session.events()) {
       if (end.late) return;
-      if (KEPT.has(e.type))
+      if (KEPT.has(e.type) && t.ionId !== DREAM_ION)
         this.d.store.append({ ...e, chatId: `ion:${t.ionId}`, runId: t.turnId, origin: "adapter" });
       this.live.get(t.turnId)?.web.note(e);
       note(e, end);
@@ -514,6 +485,7 @@ export class IonTurns {
 
   /** Records the ion's session when it's new (another agent, a session it couldn't resume, other projects). */
   private keepSession(ionId: string, k: Kept): void {
+    if (ionId === DREAM_ION) return;
     const s = ionsView.session(this.d.db, ionId);
     const same = s?.projects?.join("\n") === k.projects.join("\n");
     if (s?.harness === k.harness && s.nativeId === k.nativeId && same) return;

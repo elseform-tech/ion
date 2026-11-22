@@ -1,8 +1,12 @@
+import { DREAM_ION } from "../memory/dream-rules.js";
+import { dreamInstructions } from "./dream.js";
+
 /**
  * What an ion is told for each turn it thinks (an agent session with ion's tools and a gate that only lets it read).
  * Both start "You are ion" (the fake agent tells an ion's turn from a run by it; packages/adapters/fake).
  */
 export function ionInstructions(ionId: "chief" | string): string {
+  if (ionId === DREAM_ION) return dreamInstructions();
   const who =
     ionId === "chief"
       ? [

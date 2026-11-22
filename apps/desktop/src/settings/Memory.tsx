@@ -9,6 +9,7 @@ import { CANT_OPEN } from "../opener.js";
 import type { SettingsData } from "./data.js";
 import { IconTabs } from "./IconTabs.js";
 import { type MemoryData, scopeOf, sharable, useMemory, useSearch, whoOf } from "./memory-data.js";
+import { DreamRow, Tidied, tidiedByIon } from "./MemoryDream.js";
 import { MemoryFile } from "./MemoryFile.js";
 import { Nothing, TypeIcon } from "./memory-parts.js";
 import { MemoryTodos } from "./MemoryTodos.js";
@@ -41,6 +42,7 @@ function MemoryRow({ m, ions, client, run, onOpen }: RowProps) {
           {m.name}
         </button>
         {m.suggested && <span className="chip">Suggested</span>}
+        {tidiedByIon(m) && <span className="chip">Tidied by ion</span>}
         <div className="s">
           {/* A to-do's description is often its name: said once. */}
           {m.description !== m.name && <span className="clamp">{m.description}</span>}
@@ -91,7 +93,10 @@ function Scopes(p: { scope: string; data: SettingsData; onPick: (s: string) => v
   );
 }
 
-/** Your files or a project's (You, then each project), searched by words; a row opens its text. */
+/**
+ * Dream and what it tidied, then your files or a project's (You, then each project), searched by words; a row opens
+ * its text.
+ */
 type Filter = { scope: string; q: string };
 type ListProps = {
   mem: MemoryData;
@@ -112,6 +117,8 @@ function MemoryList(p: ListProps) {
   const shown = (found ?? p.mem.files).filter((m) => scopeOf(m) === scope);
   return (
     <>
+      <DreamRow client={p.client} data={p.data} run={p.run} />
+      <Tidied tidied={p.mem.tidied} client={p.client} run={p.run} />
       <Scopes scope={scope} data={p.data} onPick={setScope} />
       <input
         className="fin msearch"

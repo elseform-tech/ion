@@ -26,10 +26,10 @@ export function projectIdOf(name: string): string {
 }
 
 /**
- * Ids no project takes: ion chief's ("ion:chief" is its chat), and "you", your own memory's scope (task review,
- * 2026-11-22: a project called you shared it).
+ * Ids no project takes: ion chief's ("ion:chief" is its chat), "you", your own memory's scope (task review,
+ * 2026-11-22: a project called you shared it), and "dream", the ion that tidies memory (Plan 19, Task 6).
  */
-export const RESERVED_IDS = ["chief", "you"];
+export const RESERVED_IDS = ["chief", "you", "dream"];
 
 /** Returns a new config with the git repo at `path` added. Throws a user-facing message otherwise. */
 export function addProject(c: UserConfig, path: string): UserConfig {

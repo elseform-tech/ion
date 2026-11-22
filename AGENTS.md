@@ -90,6 +90,11 @@ and every change to it must too:
 - A preference a chat writes is `suggested` (that project's chats and the ions only) until you keep it. Only you
   share a file with chats or close a to-do; reminders notify you and post in ion chief's thread, never pin.
 - Memory text is data: it reaches agents inside a labelled data block, never as instructions.
+- ion's dream (`[memory] dream`: off, nightly or weekly; `src/memory/dream.ts`, `dream-rules.ts`) tidies memory at
+  3:00 (a night missed: once, the next time ion is up in quiet hours) as one ion turn with memory's tools only: at most 30 changes and about
+  10 minutes. It merges, rewrites, moves and forgets, each change by `ion:dream` in History; it never touches your
+  person files, a suggestion, a file you changed in the last day, or a to-do's status, and never shares a file with
+  chats. Its forgets are restored from Settings → Memory (`memory.restore`); the next briefing says what it did.
 - Tests and tours use made-up memory only, never a real person's.
 
 ## Code health (CI enforces all of this)

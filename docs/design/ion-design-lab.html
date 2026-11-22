@@ -3020,10 +3020,14 @@ const MEMF=[
   {p:'you/short-replies.md',sc:'you',t:'preference',n:'Short replies',d:'Answers in a few lines, details on request',by:'Cart badge fix',at:'1h',see:'chats',sugg:'storefront',text:'Keep answers short. Offer details instead of writing them.',hist:[['Cart badge fix','1h']]},
   {p:'you/sam.md',sc:'you',t:'person',n:'Sam',d:'Designer on the storefront; reviews UI changes',by:'ion chief',at:'Tue',see:'ions',text:'Sam reviews UI changes on storefront. Prefers screenshots in the PR.',hist:[['ion chief','Tue']]},
   {p:'you/renew-passport.md',sc:'you',t:'todo',n:'Renew the passport',d:'Renew the passport',by:'You',at:'Mon',see:'ions',st:'open',due:'Due today',text:'Renew the passport.',hist:[['You','Mon']]},
+  {p:'you/node-version.md',sc:'you',t:'fact',n:'Node version',d:'Projects run Node 22',by:'ion (dream)',at:'5h',see:'ions',tidied:1,text:'Projects run Node 22 (was 18; a chat on Tue said it moved).',hist:[['ion (dream)','5h'],['ion chief','2 Nov']]},
   {p:'projects/storefront/deploy.md',sc:'storefront',t:'reference',n:'Deploy',d:'pnpm deploy from main; staging first',by:'storefront',at:'3 Nov',see:'chats',text:'Deploy with `pnpm deploy` from main. Staging first, then production.',hist:[['storefront','3 Nov']]},
   {p:'projects/storefront/check-headline.md',sc:'storefront',t:'todo',n:'Check the headline on mobile',d:'Check the headline on mobile',by:'Pricing headline',at:'now',see:'chats',st:'open',due:'Due Friday',text:'Check the headline on mobile.',hist:[['Pricing headline','now']]},
   {p:'you/book-dentist.md',sc:'you',t:'todo',n:'Book the dentist',d:'Book the dentist',by:'You',at:'Sun',see:'ions',st:'done',text:'Book the dentist.',hist:[['You','Sun']]}];
 const MBROKEN=['storefront/notes.md can’t be read'];
+/* ion's dream (Plan 19, Task 6): Off / Nightly / Weekly and its agent; what it forgot in the last day comes back
+   with Restore; a file it changed says Tidied by ion for a day */
+let dreamMode='nightly'; const DREAM_GONE=[['you/old-launch.md','Old launch']], DREAM_NOTES=['“Sam” may be out of date: a chat said Sam moved to Porto.'];
 let memTab='all', memScope='you', memOpen=null, memHist=false, memAsk=null, memDoneOpen=false;
 const openTodos=()=>MEMF.filter(f=>f.t==='todo'&&f.st==='open');
 const mib=(ic,l,a)=>`<button class="ib" type="button" title="${l}" aria-label="${l}" ${a}><i data-lucide="${ic}"></i></button>`;
@@ -3032,7 +3036,7 @@ function memRow(f){
   const end=f.sugg?`<button class="btn" type="button" data-mkeep="${f.p}">Keep</button>`
     :mine&&f.t!=='todo'?`<span class="msee" title="Shared with chats"><i data-lucide="messages-square"></i><button type="button" class="sw${f.see==='chats'?' on':''}" role="switch" aria-checked="${f.see==='chats'}" aria-label="Shared with chats" data-msee="${f.p}"></button></span>`:'';
   /* a done to-do shows its check; a description that only repeats the name is said once */
-  return `<div class="trow mrow2" data-mopen="${f.p}"><span class="ti" title="${tn}"><i data-lucide="${f.st==='done'?'circle-check':ic}"></i></span><div><button type="button" class="tname">${esc(f.n)}</button>${f.sugg?'<span class="chip">Suggested</span>':''}<div class="s">${f.d!==f.n?`<span class="clamp">${esc(f.d)}</span>`:''}<span class="mby">${esc(f.by)} · ${f.at}</span></div></div><span class="hsup"></span><div class="acts2">${end}</div></div>`;
+  return `<div class="trow mrow2" data-mopen="${f.p}"><span class="ti" title="${tn}"><i data-lucide="${f.st==='done'?'circle-check':ic}"></i></span><div><button type="button" class="tname">${esc(f.n)}</button>${f.sugg?'<span class="chip">Suggested</span>':''}${f.tidied?'<span class="chip">Tidied by ion</span>':''}<div class="s">${f.d!==f.n?`<span class="clamp">${esc(f.d)}</span>`:''}<span class="mby">${esc(f.by)} · ${f.at}</span></div></div><span class="hsup"></span><div class="acts2">${end}</div></div>`;
 }
 function todoRow(f){
   const late=f.due==='Overdue', who=f.sc==='you'?'You':f.sc;
@@ -3060,11 +3064,14 @@ function renderMemory(){
     icons(el); return;
   }
   const scopes=[['you','You'],...PROJECTS.map(p=>[p,p])];
-  el.innerHTML=`<div>${tabs}${broken}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div><input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
-  icons(el);
+  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Dream</span></div>${dreamMode!=='off'?'<div class="hpick" role="radiogroup" aria-label="Agent"><button type="button" role="radio" aria-checked="true" class="on" title="Grok" aria-label="Grok"><canvas class="av" data-bot="grok" aria-hidden="true"></canvas></button></div>':''}<span class="seg sm" role="group" aria-label="Dream">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
+    +`<div class="group">${DREAM_GONE.map(([p,n])=>`<div class="srow"><div class="g">Forgot “${esc(n)}”</div><button class="btn" type="button">Restore</button></div>`).join('')}${DREAM_NOTES.map(n=>`<div class="srow"><div class="g s">${esc(n)}</div></div>`).join('')}</div>`;
+  el.innerHTML=`<div>${tabs}${broken}${dream}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div><input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
+  hydrate(el); icons(el);
 }
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-mtab]'); if(t){ memTab=t.dataset.mtab; renderMemory(); return; }
+  const dm=e.target.closest('[data-dream]'); if(dm){ dreamMode=dm.dataset.dream; renderMemory(); return; }
   const sc=e.target.closest('[data-mscope]'); if(sc){ memScope=sc.dataset.mscope; renderMemory(); return; }
   const sw=e.target.closest('[data-msee]'); if(sw){ const f=MEMF.find(x=>x.p===sw.dataset.msee); f.see=f.see==='chats'?'ions':'chats'; renderMemory(); return; }
   const kp=e.target.closest('[data-mkeep]'); if(kp){ const f=MEMF.find(x=>x.p===kp.dataset.mkeep); delete f.sugg; f.by='You'; f.at='now'; renderMemory(); return; }

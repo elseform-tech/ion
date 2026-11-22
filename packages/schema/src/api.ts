@@ -1,7 +1,8 @@
 import type { EffortLevel } from "./capabilities.js";
 import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
-import type { MemoryChangeInfo, MemoryFileInfo, MemoryInfo, MemorySee, MemoryType } from "./memory.js";
+import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
+import type { MemorySee, MemoryType } from "./memory.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -138,12 +139,15 @@ export type SettingsInfo = IonSettings & {
   };
   /** By agent id: "Use its own tools" (its own servers, skills and plugins in ion's chats). */
   ownTools: Record<string, boolean>;
+  /** ion tidies your memory overnight: how often, and on which agent (null: ion's own model's). */
+  dream: { mode: DreamMode; agent: string | null };
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
 export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools">> & {
+  dream?: { mode?: DreamMode; agent?: string | null };
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
@@ -319,6 +323,12 @@ export type Commands = ToolsCommands & {
   };
   /** Where the memory folder is, and each file in it that can't be read (one plain line). */
   "memory.folder": { args: Record<string, never>; result: { path: string; problems: string[] } };
+  /** Brings back a file ion forgot (or you did), as it was, by you; refused while a file is there. */
+  "memory.restore": { args: { path: string }; result: MemoryInfo };
+  /** What ion's dream did last, within a day of it (null: nothing to say). */
+  "memory.tidied": { args: Record<string, never>; result: DreamInfo | null };
+  /** ion tidies your memory now (its dream, out of turn); what it did. */
+  "memory.dream": { args: Record<string, never>; result: DreamInfo | null };
   /** A new to-do: yours, or a project's; `due` a day (YYYY-MM-DD). */
   "todo.add": { args: { text: string; projectId?: string; due?: string }; result: MemoryInfo };
   /** Marks a to-do done, by its path, file name or name. */
@@ -500,6 +510,9 @@ export const COMMANDS = [
   "memory.history",
   "memory.write",
   "memory.folder",
+  "memory.restore",
+  "memory.tidied",
+  "memory.dream",
   "todo.add",
   "todo.done",
   "harnesses.list",

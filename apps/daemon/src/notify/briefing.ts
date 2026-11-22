@@ -1,5 +1,6 @@
 import { DEFAULT_PROJECT, type ProjectEntry, type UserConfig } from "@ion/config";
 import { EV, nextRun, stripControl, timeLabel } from "@ion/schema";
+import { dreamLines } from "../memory/dream.js";
 import type { MemoryFiles } from "../memory/index.js";
 import { chiefTodos, dayLabel, sharedIds } from "../memory/todos.js";
 import type { Db, EventStore } from "../store/index.js";
@@ -118,6 +119,7 @@ function briefingText(d: BriefingDeps, c: UserConfig, since: string, now: Date):
   const todos = d.memory ? todoLines(chiefTodos(d.memory, sharedIds(c)), dayOf(now)) : [];
   return [
     ...todos,
+    ...dreamLines(d.store, since),
     ...finished(d, projects, since),
     ...needing(d.db, projects),
     ...routinesToday(c, projects, now),

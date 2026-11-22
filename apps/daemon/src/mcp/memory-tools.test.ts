@@ -469,4 +469,28 @@ describe("memory tools", () => {
       expect(await call(shop, tool, args)).toMatchObject({ isError: true, content: [{ text: why }] });
     for (const c of [app, shop, chief]) await c.close();
   });
+
+  // The user, 2026-11-22: ion's dream tidies memory overnight, within strict limits: only memory's tools, and at most
+  // 30 changes a night.
+  it("the cap stops a run at 30 changes", async () => {
+    const turnId = "dream-1";
+    const c = await client(grants.create({ kind: "ion", ionId: "dream", projects: ["app", "shop"], turnId }));
+    const tools = (await c.listTools()).tools.map((t) => t.name).sort();
+    expect(tools).toEqual(["memory_forget", "memory_index", "memory_read", "memory_search", "memory_write"]);
+    const note = (i: number) => ({
+      scope: "app",
+      name: `Note ${i}`,
+      description: "A note",
+      type: "fact",
+      text: "x",
+    });
+    for (let i = 1; i <= 30; i++) expect((await call(c, "memory_write", note(i))).isError).toBeFalsy();
+    expect(await call(c, "memory_write", note(31))).toMatchObject({
+      isError: true,
+      content: [{ text: "That's 30 changes, the most for one night; stop here" }],
+    });
+    expect(memory.row("projects/app/note-30.md")).toBeDefined();
+    expect(memory.row("projects/app/note-31.md")).toBeUndefined();
+    await c.close();
+  });
 });

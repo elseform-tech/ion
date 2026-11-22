@@ -22,6 +22,7 @@ import type { IonScope } from "./grants.js";
 import { registerYourTools, type YourTools } from "./ion-your-tools.js";
 import { guard, ok, q } from "./result.js";
 import { registerMemoryTools } from "./memory-tools.js";
+import { DREAM_ION } from "../memory/dream-rules.js";
 import { type Deps, historyData, needsData, SEARCH_MAX, searchData } from "./tools.js";
 
 /** Skills and servers a thread starts with, by name (the user, 2026-11-21: "/" and "@" for ions too). */
@@ -38,6 +39,10 @@ type StartThread = (
 export type IonDeps = Deps & { configFile: string; startThread?: StartThread; yourTools?: YourTools };
 
 const HISTORY_MAX = 200;
+/** The most changes ion's dream makes in one night. */
+const DREAM_CHANGES = 30;
+/** ion chief and its dream see every project shared with ion; a project's ion only its own. */
+const sharing = (ionId: string) => ionId === "chief" || ionId === DREAM_ION;
 const TITLES = 5;
 
 /** What an ion's tools share: its scope, the daemon, and the projects it may see right now. */
@@ -56,8 +61,8 @@ function ionOf(scope: IonScope, d: IonDeps): Ion {
       (p) =>
         scope.projects.includes(p.id) &&
         p.id !== DEFAULT_PROJECT &&
-        // A project's ion sees its own project only, whatever its key lists.
-        (scope.ionId === "chief" ? p.shareWithIon !== false : p.id === scope.ionId),
+        // A project's ion sees its own project only, whatever its key lists; ion chief and its dream, those shared.
+        (sharing(scope.ionId) ? p.shareWithIon !== false : p.id === scope.ionId),
     );
   const need = (projectId: string) => {
     const p = projects().find((x) => x.id === projectId);
@@ -73,6 +78,7 @@ function ionOf(scope: IonScope, d: IonDeps): Ion {
  */
 export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps): void {
   const ion = ionOf(scope, d);
+  if (scope.ionId === DREAM_ION) return dreamTools(server, ion);
   projectsTool(server, ion);
   chatTools(server, ion);
   needsTools(server, ion);
@@ -195,6 +201,14 @@ function memoryTools(server: McpServer, ion: Ion): void {
     refuse: () => notInReport(scope),
   };
   registerMemoryTools(server, caller, d, limit);
+}
+
+/** ion's dream gets memory's tools only, and at most DREAM_CHANGES changes a night. */
+function dreamTools(server: McpServer, ion: Ion): void {
+  const { scope, d } = ion;
+  const caller = { kind: "ion" as const, ionId: DREAM_ION, projects: ion.projects().map((p) => p.id) };
+  const tooMany = `That's ${DREAM_CHANGES} changes, the most for one night; stop here`;
+  registerMemoryTools(server, caller, d, { id: scope.turnId, max: DREAM_CHANGES, tooMany });
 }
 
 /** A report turn (its prompt holds a thread agent's words) writes nothing: no memory, no profile, no thread. */

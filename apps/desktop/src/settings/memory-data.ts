@@ -1,16 +1,18 @@
 import type { IonClient } from "@ion/client/browser";
-import { EV, type IonInfo, type MemoryInfo, type MemoryType } from "@ion/schema";
+import { type DreamInfo, EV, type IonInfo, type MemoryInfo, type MemoryType } from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
 
 export type MemoryData = {
   files: MemoryInfo[];
   /** The memory folder, and each file in it that can't be read. */
   folder: { path: string; problems: string[] } | null;
+  /** What ion's dream did in the last day (null: nothing to say). */
+  tidied: DreamInfo | null;
   reload: () => void;
 };
 
-/** What changes the Memory page: a file written or forgotten (by you, a chat, an ion, or in your editor). */
-const CHANGES = new Set<string>([EV.memoryWritten, EV.memoryForgotten]);
+/** What changes the Memory page: a file written or forgotten (by you, a chat, an ion, or in your editor), a dream. */
+const CHANGES = new Set<string>([EV.memoryWritten, EV.memoryForgotten, EV.memoryDreamed]);
 
 /** Hears ion's events from now on while mounted; `fn` for each. */
 function useEvents(client: IonClient, fn: (type: string) => void): void {
@@ -39,17 +41,19 @@ function useEvents(client: IonClient, fn: (type: string) => void): void {
 export function useMemory(client: IonClient): MemoryData {
   const [files, setFiles] = useState<MemoryInfo[]>([]);
   const [folder, setFolder] = useState<MemoryData["folder"]>(null);
+  const [tidied, setTidied] = useState<DreamInfo | null>(null);
   const reload = useCallback(() => {
     const quiet = () => {};
     void client.call("memory.list", {}).then(setFiles, quiet);
     void client.call("memory.folder", {}).then(setFolder, quiet);
+    void client.call("memory.tidied", {}).then(setTidied, quiet);
   }, [client]);
   useEffect(reload, [reload]);
   useEvents(
     client,
     useCallback((type: string) => CHANGES.has(type) && reload(), [reload]),
   );
-  return { files, folder, reload };
+  return { files, folder, tidied, reload };
 }
 
 /** How long typing pauses before a search goes out. */
@@ -94,6 +98,8 @@ export function whoOf(m: { source: string; sourceTitle?: string }, ions: IonInfo
     const id = m.source.slice(4);
     // ion chief's name is the wordmark, "ion": said in full here, so it isn't read as ion itself (tour, 2026-11-22).
     if (id === "chief") return "ion chief";
+    // ion's dream, which tidies memory overnight.
+    if (id === "dream") return "ion (dream)";
     return ions.find((i) => i.ionId === id)?.name ?? id;
   }
   return m.sourceTitle ?? "A chat";

@@ -133,7 +133,7 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   projects: z.array(Project).default([]),
-  /** Projects named with ion's own ids (chief, you): kept in your file as written, never used. */
+  /** Projects named with ion's own ids (chief, you, dream): kept in your file as written, never used. */
   heldProjects: z.array(z.looseObject({})).optional(),
   /** Where `ion projects new <name>` makes projects. */
   folders: z.looseObject({ projects: z.string().default("~/ion/projects") }).prefault({}),
@@ -169,6 +169,16 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   tools: Tools.prefault({}),
+  /**
+   * ion's memory. `dream`: how often ion tidies it, in quiet hours (merges, rewrites, forgets; every change undoable);
+   * `dreamAgent`: "<harness>[:<model>]" it does it on (absent: ion's quick model).
+   */
+  memory: z
+    .looseObject({
+      dream: z.enum(["off", "nightly", "weekly"]).default("off"),
+      dreamAgent: z.string().optional(),
+    })
+    .prefault({}),
   /**
    * Each coding agent's own setup, by agent id. `ownTools`: whether it brings its own MCP servers, skills and plugins
    * into ion's chats (the user, 2026-11-21: on by default); off, ion's tools only. Its own hooks never run where ion
@@ -212,6 +222,9 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["tools", "ionUse"], z.array(z.string())],
   [["tools", "skills"], z.looseObject({ on: z.array(z.string()).optional() })],
   [["agents"], z.looseObject({})],
+  [["memory"], z.looseObject({})],
+  [["memory", "dream"], z.enum(["off", "nightly", "weekly"])],
+  [["memory", "dreamAgent"], z.string()],
 ];
 
 /** Whether this agent brings its own servers, skills and plugins into ion's chats (on unless you turned it off). */
@@ -270,7 +283,7 @@ function dropIfBad(raw: unknown, path: string[], schema: z.ZodType): boolean {
 }
 
 /**
- * A project whose id is ion's own (chief, you) is left out of `projects` and held as written (`heldProjects`), so a
+ * A project whose id is ion's own (chief, you, dream) is left out of `projects` and held as written (`heldProjects`), so a
  * save keeps it in your file (task review, 2026-11-22); returns those ids.
  */
 function holdReservedProjects(raw: unknown): string[] {

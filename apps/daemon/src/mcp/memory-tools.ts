@@ -5,6 +5,7 @@ import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryFiles } from "../memory/index.js";
 import { dayOf } from "../notify/clock.js";
+import { DREAM_ION } from "../memory/dream-rules.js";
 import { type Caller, lineOf, type MemoryWrite, ScopedMemory } from "../memory/scoped.js";
 import type { MemoryRow } from "../views/memory.js";
 import type { Grants } from "./grants.js";
@@ -14,6 +15,8 @@ import { guard, ok } from "./result.js";
 export type WriteLimit = { id: string; max: number; tooMany: string; refuse?: () => void };
 
 type Deps = { memory: MemoryFiles; grants: Grants };
+
+const isDream = (c: Caller) => c.kind === "ion" && c.ionId === DREAM_ION;
 
 const lines = (source: string, rows: MemoryRow[]) => ok(wrapData(source, rows.map(lineOf).join("\n")));
 
@@ -40,20 +43,7 @@ const dueHelp = (now: Date) =>
 export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, limit: WriteLimit): void {
   const m = new ScopedMemory(d.memory, caller);
   findTools(server, m);
-  // Counted only when it goes through: a refused change doesn't use one up.
-  const counted = <T>(change: () => T): T => {
-    limit.refuse?.();
-    if (d.grants.noteWrite(limit.id) > limit.max) {
-      d.grants.noteWrite(limit.id, -1);
-      throw new UserError(limit.tooMany);
-    }
-    try {
-      return change();
-    } catch (e) {
-      d.grants.noteWrite(limit.id, -1);
-      throw e;
-    }
-  };
+  const counted = countedBy(d.grants, limit);
   server.registerTool(
     "memory_write",
     {
@@ -77,16 +67,37 @@ export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, 
       return ok(`Saved ${f.path}${f.header.suggested ? " as a suggestion" : ""}`);
     }),
   );
+  // ion's dream says which file it merged one into (a merge or a move, not a plain forget).
+  const into: Record<string, z.ZodOptional<z.ZodString>> = isDream(caller)
+    ? { into: z.string().min(1).max(200).optional().describe("The file you merged it into, if you did") }
+    : {};
   server.registerTool(
     "memory_forget",
     {
       description: "Delete a memory file: memory_read it first and pass its hash as expect.",
-      inputSchema: { name: z.string().min(1).max(200), expect: z.string().min(1).max(64) },
+      inputSchema: { name: z.string().min(1).max(200), expect: z.string().min(1).max(64), ...into },
     },
-    guard(({ name, expect }: { name: string; expect: string }) =>
-      ok(`Forgot ${counted(() => m.forget(name, expect))}`),
+    guard((a: { name: string; expect: string; into?: string }) =>
+      ok(`Forgot ${counted(() => m.forget(a.name, a.expect, a.into))}`),
     ),
   );
+}
+
+/** A change counted against the limit only when it goes through: a refused one doesn't use one up. */
+function countedBy(grants: Grants, limit: WriteLimit) {
+  return <T>(change: () => T): T => {
+    limit.refuse?.();
+    if (grants.noteWrite(limit.id) > limit.max) {
+      grants.noteWrite(limit.id, -1);
+      throw new UserError(limit.tooMany);
+    }
+    try {
+      return change();
+    } catch (e) {
+      grants.noteWrite(limit.id, -1);
+      throw e;
+    }
+  };
 }
 
 function findTools(server: McpServer, m: ScopedMemory): void {

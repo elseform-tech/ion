@@ -60,6 +60,9 @@ The always-on service that owns all state.
   each change (`memory.written`, `memory.forgotten`: who, the header, the text before) and `watch.ts` picks up your
   edits in an editor as yours; a file that can't be read keeps its last good version indexed and shows one line in
   Settings. `migrate.ts` moves notes from before memory was files, one file each (`from:` the old note), once.
+  `dream.ts` is ion's dream (when it's due, its prompt with the last week's chats as data, what it did:
+  `memory.dreamed`, the briefing's line, Restore for what it forgot); `dream-rules.ts` what it may never do;
+  `src/scheduler/dreams.ts` runs it, and `src/ions/dream.ts` is its turn's gate (memory's tools only) and instructions.
   To-dos (`type: todo`): `todos.ts` for ion chief's briefing, `ion todo` and "Mark done?" (`src/ions/todo-offers.ts`:
   a chat's finished work that matches an open to-do by its words; only you close one), and
   `src/scheduler/reminders.ts` (one reminder at 9:00 local on the due day, or when quiet hours end).
