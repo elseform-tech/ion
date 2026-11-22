@@ -193,7 +193,8 @@ SF="$(node -e 'const c=require("fs").readFileSync(process.env.ION_HOME+"/config.
 node --input-type=module -e '
 const { connect, readDaemonInfo } = await import("./packages/client/dist/index.js");
 const c = await connect(readDaemonInfo(process.env.ION_HOME + "/data"));
-await c.call("tools.setOn", { kind: "skill", id: "tour-check", on: true }).catch(() => {});
+const skill = (await c.call("tools.list", {})).skills.find((x) => x.name === "tour-check");
+if (skill) await c.call("tools.setOn", { kind: "skill", id: skill.id, on: true });
 await c.call("ask", { text: "hello", projectId: "storefront", harness: "fake", skills: ["tour-check"],
   mentions: ["everything"] }).catch((e) => console.error("picks:", e.message));
 const tools = await c.call("tools.serverTools", { id: "everything" }).catch(() => null);

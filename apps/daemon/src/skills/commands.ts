@@ -68,12 +68,35 @@ function folder(dir: string, runs: boolean, prefix = ""): OwnCommand[] {
   });
 }
 
-/** Claude Code's own: yours, then each enabled plugin's (`plugin:name`). */
+/** A plugin's skills (`skills/<name>/SKILL.md`) as `plugin:name`, sent as their text (Task 11, 2026-11-22). */
+function pluginSkills(dir: string, prefix: string): OwnCommand[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+  return names.flatMap((n) => {
+    const file = join(dir, n, "SKILL.md");
+    try {
+      const st = statSync(file);
+      if (!NAME.test(`${prefix}${n}`) || !st.isFile() || st.size > MAX_FILE) return [];
+      return [{ name: `${prefix}${n}`, ...parse(readFileSync(file, "utf8")), runs: false }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** Claude Code's own: yours, then each enabled plugin's commands and skills (`plugin:name`). */
 function claude(o: ReadOpts): OwnCommand[] {
   const plugins = readPlugins(o).filter((p) => p.agent === "claude-code" && p.path);
   return [
     ...folder(join(o.home, ".claude", "commands"), false),
-    ...plugins.flatMap((p) => folder(join(p.path!, "commands"), true, `${p.name}:`)),
+    ...plugins.flatMap((p) => [
+      ...folder(join(p.path!, "commands"), true, `${p.name}:`),
+      ...pluginSkills(join(p.path!, "skills"), `${p.name}:`),
+    ]),
   ];
 }
 

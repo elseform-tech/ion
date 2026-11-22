@@ -45,4 +45,22 @@ describe("each agent's own commands", () => {
     ]);
     expect(ownCommands("grok-build", o)).toEqual([]);
   });
+
+  // Task 11, 2026-11-22 (tour): "/" in a Claude Code chat left out its plugins' skills (superpowers:brainstorming), though
+  // the plugin reaches the chat. They're listed as `plugin:skill`, sent as their text (not run by name, unverified live).
+  it("lists a Claude Code plugin's skills as plugin:skill", () => {
+    const home = mkdtempSync(join(tmpdir(), "ion-cmds-"));
+    const kit = join(home, "kit");
+    put(join(kit, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "kit" }));
+    put(join(kit, "skills", "plan", "SKILL.md"), "---\nname: plan\ndescription: Plans it\n---\nPlan it.");
+    put(join(kit, "skills", "loose.md"), "not a skill");
+    put(
+      join(home, ".claude", "plugins", "installed_plugins.json"),
+      JSON.stringify({ version: 2, plugins: { "kit@m": [{ scope: "user", installPath: kit }] } }),
+    );
+    put(join(home, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "kit@m": true } }));
+    expect(ownCommands("claude-code", { home, env: {}, projects: [] })).toEqual([
+      { name: "kit:plan", description: "Plans it", body: "Plan it.", runs: false },
+    ]);
+  });
 });
