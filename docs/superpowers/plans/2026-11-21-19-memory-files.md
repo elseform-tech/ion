@@ -167,6 +167,17 @@ Earlier, 2026-11-18: ion should remember "open tasks, ongoing tasks, their prefe
 - [ ] FAIL → implement → PASS → tour (Memory at 1440×900 and 900×700, a broken file, History and Restore, a to-do) → commit `feat: Memory in Settings, with history and your to-dos`.
 
 ### Task 5: Tour, docs, and verify end to end
+- **Memory evals (the user, 2026-11-22: "sure"):** `apps/daemon/src/evals/memory.test.ts` + `memory-cases.ts`, opt-in like the judge eval (`ION_LIVE=1` opencode, `ION_LIVE_GROK=1`; Claude only with `ION_LIVE_CLAUDE=1`). Scored cases, reported per agent and per measure:
+  - **recall:** a fact saved earlier is searched for, found and used;
+  - **precision:** the right file among many, irrelevant ones ignored;
+  - **updates, not copies:** an existing file is updated rather than duplicated;
+  - **to-do capture:** clear asks are added, casual mentions aren't;
+  - **Mark done:** offered only when the work matches;
+  - **privacy:** ions-only and other-project files never reach a chat, even when asked directly;
+  - **memory text can't give orders:** a file saying "ignore your instructions" stays data;
+  - **scale:** with 300 files, search still finds the right one.
+  
+  Privacy failures and memory-text-gave-orders failures must be 0, else the eval fails. `docs/research/memory-evals.md` records how to run it and the latest numbers.
 
 - `scripts/tour.sh` seeds memory files (yours and a project's; one broken; two to-dos, one due today), so a fresh tour shows every state.
 - Live (opencode free model and Grok; Claude only if needed), reading the daemon log and chat events afterwards:
@@ -177,3 +188,39 @@ Earlier, 2026-11-18: ion should remember "open tasks, ongoing tasks, their prefe
   - old notes migrate.
 - Docs: `docs/README.md`, `AGENTS.md` (the memory folder and its rules), and the walkthrough artifact refreshed with Memory screenshots, never real personal memory.
 - [ ] Run → fix what fails (each fix with a failing test first) → commit `test: memory and to-dos checked end to end`.
+
+### Task 6: Dream — ion tidies memory overnight
+
+The user, 2026-11-22: "could we also have a 'dream' setting to allow active harness to manage stale information and update memory … so that memories can be maintained" → chose "Apply everything".
+
+**Files:** `apps/daemon/src/memory/dream.ts` (new), `apps/daemon/src/scheduler` (when it runs), `apps/daemon/src/ions/*` (it runs as one of ion's turns, sandboxed), `packages/config` (`memory.dream: "off" | "nightly" | "weekly"`, `memory.dreamAgent`), `apps/desktop/src/settings/Memory*.tsx` (the setting, and a "Tidied" line), the briefing, the lab, docs.
+
+- **The setting:** Settings → Memory, "Dream": Off (default), Nightly or Weekly, plus which agent (default: ion's quick model). It runs in quiet hours (or 3:00 local), as one ion turn with memory tools, inside the sandbox, with a cap (at most 30 files changed and about 10 minutes per run).
+- **What it looks for:**
+  - duplicates;
+  - contradictions between files, or between a file and recent chats ("uses npm" vs "switched to pnpm");
+  - stale facts (passed dates, things later chats say changed);
+  - facts filed in the wrong scope;
+  - to-dos whose work is clearly done.
+- **What it changes, on its own:** it merges, rewrites and forgets files. Every change is a normal memory write by "ion (dream)", in History with Restore.
+- **Never:**
+  - your `person` files (it may only suggest);
+  - closing a to-do (it can only raise "Mark done?");
+  - widening `see`;
+  - touching files changed by you in the last 24 hours;
+  - keeping a chat's suggested preference.
+- **Afterwards:** the next briefing says what it did in one or two lines ("Tidied memory: merged 2, updated 1, forgot 1 — undo in Memory"). The Memory page shows a "Tidied by ion" chip on changed rows for a day.
+- **Dream eval:** cases in the memory eval:
+  - stale facts caught;
+  - valid facts left alone (forgetting or rewriting a still-true fact counts as a failure, and must be 0);
+  - duplicates merged without losing details;
+  - person files untouched;
+  - no to-do closed.
+- [ ] Tests:
+  - "dream runs only when on, in quiet hours";
+  - "dream merges duplicates keeping both details";
+  - "dream never touches person files, recent edits, or to-do status";
+  - "every dream change has history and can be restored";
+  - "the briefing says what dream did";
+  - "the cap stops a run at 30 changes".
+- [ ] FAIL → implement → PASS → live (Grok: a memory with a duplicate, a contradicted fact and a valid one; after a dream run, the duplicate is merged, the contradicted fact updated, the valid one untouched) → commit `feat: ion dreams — it tidies your memory overnight, every change undoable`.
