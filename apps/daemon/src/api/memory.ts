@@ -72,9 +72,8 @@ function historyOf(ctx: Parameters<Handlers["memory.history"]>[1], path: string)
  * Restoring, what the dream did, and dreaming now are yours only: a chat's agent (a run's key) is refused here too,
  * not only by the connection (security review, 2026-11-22).
  */
-function yoursOnly(ctx: { caller?: unknown }): undefined {
+function yoursOnly(ctx: { caller?: unknown }): void {
   if (ctx.caller) throw new UserError("A chat's agent can't do that");
-  return undefined;
 }
 
 /** Your memory files: list, read, search, forget, and where the folder is (you see and change everything). */
@@ -157,10 +156,14 @@ export const memoryHandlers: Pick<
     return titled(infoOf(ctx, w.path), titles(ctx.db));
   },
   "memory.folder": (_a, ctx) => ({ path: ctx.memory.root, problems: ctx.memory.problems() }),
-  "memory.restore": (a, ctx) =>
-    yoursOnly(ctx) ??
-    titled(infoOf(ctx, restoreForgotten(ctx.memory, String(a.path ?? "")).path), titles(ctx.db)),
-  "memory.tidied": (_a, ctx) => yoursOnly(ctx) ?? tidied(ctx.store, ctx.memory),
+  "memory.restore": (a, ctx) => {
+    yoursOnly(ctx);
+    return titled(infoOf(ctx, restoreForgotten(ctx.memory, String(a.path ?? "")).path), titles(ctx.db));
+  },
+  "memory.tidied": (_a, ctx) => {
+    yoursOnly(ctx);
+    return tidied(ctx.store, ctx.memory);
+  },
   "memory.dream": async (_a, ctx) => {
     yoursOnly(ctx);
     if (!ctx.dreams) throw new UserError("ion can't tidy memory here");
