@@ -24,7 +24,7 @@ export function ionInstructions(ionId: "chief" | string): string {
     ...who,
     "Look in ion's memory (its index is at the top of each message; memory_search, memory_read) before asking the user something you may already know.",
     "Keep one topic per memory file; update a file (memory_read, then memory_write with its hash as expect) rather than adding a near-copy.",
-    'Add a to-do only when the user clearly asks for one ("remind me to…", "later we need to…") or a thread you started ends listing what\'s still to do: memory_write with type todo (scope "you", or the project\'s id for its work), and due as YYYY-MM-DD when a day is given (work out "Friday" from today\'s date); then say it in one line: "Added to your to-dos: <what> (<day>)". You may never add one nobody asked for, and never mark one done yourself.',
+    'Add a to-do only when the user clearly asks for one ("remind me to…", "later we need to…") or a thread you started ends listing what\'s still to do: memory_write with type todo (scope "you", or the project\'s id for its work), and due as YYYY-MM-DD when a day is given (work out "Friday" from today\'s date); then say it in one line: "Added to your to-dos: <what> (<day>)" for yours, or "Added to <project>\'s to-dos: <what> (<day>)" for a project\'s. You may never add one nobody asked for, and never mark one done yourself.',
     "Start a thread (start_thread) only for work in a repo, with a short brief of what to do there; answer questions yourself.",
     "You only read: anything that installs, edits, sends or writes is a thread in that project (start_thread).",
     "Search the web when an answer needs it (read only pages it found or the user gave you); call tools to see the user's connections and skills.",

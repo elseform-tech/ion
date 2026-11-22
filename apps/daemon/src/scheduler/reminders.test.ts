@@ -5,13 +5,15 @@ import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { EV, type MemoryScope } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryFiles } from "../memory/index.js";
+import { ScopedMemory } from "../memory/scoped.js";
 import { Notifier } from "../notify/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 
 // The user, 2026-11-21: "does memory cover todo as well". A to-do with a date gets one reminder that morning, in ion
-// chief's thread (at the briefing's time, or 9:00 without one), recorded so it never comes twice; a done or forgotten
-// to-do never reminds.
+// chief's thread, recorded so it never comes twice; a done or forgotten to-do never reminds. Task review, 2026-11-22
+// (ruling): the reminder is a real notification ("needs you", by the project's level), at 9:00 local or when quiet
+// hours end, never at a late briefing's time.
 
 let db: Db;
 let store: EventStore;
@@ -22,14 +24,15 @@ let stops: (() => void)[] = [];
 const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m);
 const until = (t: Date) => vi.advanceTimersByTimeAsync(t.getTime() - Date.now());
 
-function save(briefing: boolean, projects = [{ id: "storefront", path: "/p/s", starred: false }]) {
+type Opts = { briefing?: string; quiet?: [string, string]; projects?: unknown[] };
+function save(o: Opts = {}) {
   saveUserConfig(configFile, {
     ...DEFAULT_CONFIG,
     notifications: {
-      briefing: { on: briefing, at: "08:30" },
-      quiet: { on: false, from: "22:00", to: "08:00" },
+      briefing: { on: o.briefing !== undefined, at: o.briefing ?? "08:30" },
+      quiet: { on: !!o.quiet, from: o.quiet?.[0] ?? "22:00", to: o.quiet?.[1] ?? "08:00" },
     },
-    projects,
+    projects: (o.projects ?? [{ id: "storefront", path: "/p/s", starred: false }]) as never,
   });
 }
 
@@ -49,7 +52,7 @@ beforeEach(() => {
   const root = mkdtempSync(join(tmpdir(), "ion-remind-"));
   configFile = join(root, "config.toml");
   memory = new MemoryFiles({ root: join(root, "memory"), store, db });
-  save(false);
+  save();
 });
 
 afterEach(() => {
@@ -70,6 +73,14 @@ function restart(): void {
   boot();
 }
 
+const notified = () =>
+  store
+    .read({ chatId: "notify" })
+    .filter((e) => e.type === EV.notify)
+    .map((e) => e.data);
+
+const README = { title: "ion", body: "Due today: “Update the README”.", chatId: "ion:chief", kind: "needs" };
+
 const said = () =>
   store
     .read({ chatId: "ion:chief" })
@@ -89,6 +100,7 @@ describe("to-do reminders", () => {
     expect(said()).toEqual([]);
     await until(at(20, 9, 1));
     expect(said()).toEqual(["Due today: “Update the README”."]);
+    expect(notified()).toEqual([README]);
     restart();
     await until(at(20, 18));
     restart();
@@ -99,11 +111,54 @@ describe("to-do reminders", () => {
     ]);
   });
 
-  it("with a briefing, the briefing is the reminder: it's said once", async () => {
-    save(true);
+  it("the reminder notifies you once, at 9:00, whatever the briefing's time", async () => {
+    save({ briefing: "11:00" });
     todo("you", "Update the README", "2026-11-19");
     boot();
+    await until(at(19, 8, 59));
+    expect(notified()).toEqual([]);
+    await until(at(19, 9, 1));
+    expect(said()).toEqual(["Due today: “Update the README”."]);
+    expect(notified()).toEqual([README]);
     await until(at(19, 12));
+    expect(notified()).toEqual([README]);
+  });
+
+  it("quiet hours hold it until they end", async () => {
+    save({ quiet: ["22:00", "10:00"] });
+    todo("you", "Update the README", "2026-11-19");
+    boot();
+    await until(at(19, 9, 30));
+    expect(notified()).toEqual([]);
+    await until(at(19, 10, 1));
+    expect(notified()).toEqual([README]);
+  });
+
+  it("a project's level decides whether it notifies; the line is said either way", async () => {
+    save({
+      projects: [{ id: "storefront", name: "Storefront", path: "/p/s", starred: false, notify: "digest" }],
+    });
+    todo({ projectId: "storefront" }, "Rotate the keys", "2026-11-19");
+    boot();
+    await until(at(19, 9, 1));
+    expect(said()).toEqual(["Due today: “Rotate the keys”."]);
+    expect(notified()).toEqual([]);
+  });
+
+  // Task review, 2026-11-22: an edit after 9:00 (ion stopped then) kept a to-do made days before from its reminder.
+  it("goes by when the to-do was made, not when it last changed", async () => {
+    vi.setSystemTime(at(18, 12));
+    todo("you", "Update the README", "2026-11-19");
+    vi.setSystemTime(at(19, 9, 30));
+    const f = new ScopedMemory(memory, { kind: "you" }).read("update-the-readme");
+    new ScopedMemory(memory, { kind: "you" }).write({
+      scope: "you",
+      path: f.path,
+      text: "More",
+      expect: f.hash,
+    });
+    boot();
+    await until(at(19, 10));
     expect(said()).toEqual(["Due today: “Update the README”."]);
   });
 
@@ -116,7 +171,7 @@ describe("to-do reminders", () => {
   });
 
   it("a project kept from ion chief isn't reminded in its thread", async () => {
-    save(false, [{ id: "private", path: "/p/p", starred: false, shareWithIon: false } as never]);
+    save({ projects: [{ id: "private", path: "/p/p", starred: false, shareWithIon: false }] });
     todo({ projectId: "private" }, "Rotate the keys", "2026-11-19");
     boot();
     await until(at(19, 12));

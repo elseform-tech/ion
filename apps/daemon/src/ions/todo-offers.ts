@@ -35,12 +35,31 @@ function wordsOf(text: string): Set<string> {
   return new Set(words.filter((w) => w.length >= 3 && !STOP.has(w)).map(stem));
 }
 
-/** At least half of the to-do's telling words are in what the chat did. */
+/** A sentence that says something wasn't done ("didn't", "not", "couldn't", "no"…). */
+const NEGATED =
+  /\b(?:not|no|never|didn't|don't|doesn't|couldn't|can't|cannot|won't|wasn't|isn't|haven't|hasn't|without|yet)\b/i;
+
+/** The reply's sentences, less those that say something wasn't done. */
+const saidDone = (reply: string) =>
+  reply
+    .replace(/[‘’]/g, "'")
+    .split(/(?<=[.!?:;])\s+|\n+/)
+    .filter((x) => !NEGATED.test(x))
+    .join(" ");
+
+/**
+ * What the chat did matches the to-do: at least half its telling words, and two when it has two or more (one word in
+ * common, "README", isn't enough; task review, 2026-11-22).
+ */
 function matches(t: MemoryRow, did: Set<string>): boolean {
   const want = wordsOf(`${t.name} ${t.description}`);
   const hits = [...want].filter((w) => did.has(w)).length;
-  return hits > 0 && hits * 2 >= want.size;
+  return hits >= Math.min(2, want.size) && hits * 2 >= want.size;
 }
+
+/** An unanswered card for this to-do is still waiting (one at a time per to-do). */
+const waiting = (db: Db, path: string) =>
+  suggestionsView.list(db).some((s) => s.answer === null && s.card.kind === "todo" && s.card.path === path);
 
 const isOpen = (r: MemoryRow | undefined) => r?.type === "todo" && r.status === "open";
 
@@ -97,7 +116,8 @@ export class TodoOffers {
           | undefined)
       : undefined;
     const files = await this.d.changed(chatId).catch(() => []);
-    const did = wordsOf([chat.title, reply?.text ?? "", ...files].join(" "));
+    // The title and the files it changed say what it did; the reply only where it doesn't say something wasn't done.
+    const did = wordsOf([chat.title, ...files, saidDone(reply?.text ?? "")].join(" "));
     for (const t of todos.filter((x) => matches(x, did))) {
       const card: TodoCard = {
         kind: "todo",
@@ -107,7 +127,8 @@ export class TodoOffers {
         path: t.path,
         name: t.name,
       };
-      if (suggestionsView.offered(this.d.db, sameAs(card)) || !this.open(t.path)) continue;
+      const offered = suggestionsView.offered(this.d.db, sameAs(card)) || waiting(this.d.db, t.path);
+      if (offered || !this.open(t.path)) continue;
       const thread = cardThread(card);
       this.d.store.append({
         chatId: thread,

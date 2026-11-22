@@ -23,7 +23,10 @@ const scopeHelp = (c: Caller) =>
     ? '"project" (this project), or "you" for the user\'s preferences'
     : '"you" (the user), or a project\'s id';
 
-/** A to-do's day, with today's (local) so "Friday" can be worked out. */
+/**
+ * A to-do's day, with today's (local) so "Friday" can be worked out: the tools are registered for each request, so
+ * it's today's on every call (task review, 2026-11-22).
+ */
 const dueHelp = (now: Date) =>
   `A to-do's day, YYYY-MM-DD; today is ${dayOf(now)}, a ${now.toLocaleDateString("en-US", { weekday: "long" })}`;
 
@@ -60,7 +63,7 @@ export function registerMemoryTools(server: McpServer, caller: Caller, d: Deps, 
         type: z.enum(MEMORY_TYPES).optional(),
         text: z.string().min(1).max(MEMORY_TEXT_MAX).optional(),
         see: z.enum(MEMORY_SEE).optional(),
-        status: z.enum(["open", "done"]).optional(),
+        status: z.enum(["open", "done"]).optional().describe("A to-do's state; only the user sets done"),
         due: z.string().max(10).optional().describe(dueHelp(new Date())),
         expect: z.string().max(64).optional(),
         path: z.string().max(200).optional(),

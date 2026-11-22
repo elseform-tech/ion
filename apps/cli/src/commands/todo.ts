@@ -4,9 +4,11 @@ import { withClient } from "../connect.js";
 import { type Out, print } from "../output.js";
 import { clean } from "../sanitize.js";
 
-/** A to-do in one line: where it is, its day, its name. */
-const lineOf = (m: MemoryInfo) =>
-  [m.memoryId, ...(m.due ? [`due ${m.due}`] : []), m.name].map(clean).join("  ");
+/** A to-do in one line: its name, its day, and its project (the path is in --json). */
+const lineOf = (m: MemoryInfo) => {
+  const project = m.scope.startsWith("project:") ? [m.scope.slice("project:".length)] : [];
+  return [m.name, ...(m.due ? [`due ${m.due}`] : []), ...project].map(clean).join("  ");
+};
 
 /** Those with a day first, soonest first; then the rest, as listed. */
 const byDue = (a: MemoryInfo, b: MemoryInfo) => (a.due ?? "9").localeCompare(b.due ?? "9");

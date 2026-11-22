@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import type { MemoryScope, MemoryType } from "@ion/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryFiles } from "../memory/index.js";
 import { ScopedMemory } from "../memory/scoped.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
@@ -353,7 +353,10 @@ describe("memory tools", () => {
       return r.ok ? r.file.header : null;
     };
     expect(header()).toMatchObject({ type: "todo", status: "open", due: "2026-12-01" });
-    await to("fact");
+    // Only you close a to-do, so you retype it (task review, 2026-11-22).
+    const you = new ScopedMemory(memory, { kind: "you" });
+    const f = you.read("test-runner");
+    you.write({ scope: "app", path: f.path, type: "fact", expect: f.hash });
     expect(header()?.type).toBe("fact");
     expect(header()).not.toHaveProperty("status");
     expect(header()).not.toHaveProperty("due");
@@ -369,19 +372,50 @@ describe("memory tools", () => {
       text: "Rotate them",
       by: "you",
     });
+    let plain = 0;
     for (const c of [await chat(), await ion("chief")]) {
       const hash = hashOf(await call(c, "memory_read", { name: "rotate-keys" }));
       const done = { scope: "app", name: "Rotate keys", status: "done", expect: hash };
-      expect(await call(c, "memory_write", done)).toMatchObject({
-        isError: true,
-        content: [{ text: "Only the user marks a to-do done" }],
-      });
+      const refused = { isError: true, content: [{ text: "Only you close a to-do" }] };
+      expect(await call(c, "memory_write", done)).toMatchObject(refused);
       const fresh = { ...fact("Old chore"), scope: "app", type: "todo", status: "done" };
-      expect(text(await call(c, "memory_write", fresh))).toBe("Only the user marks a to-do done");
+      expect(await call(c, "memory_write", fresh)).toMatchObject(refused);
+      // Task review, 2026-11-22: retyping it away from a to-do, or forgetting it, closed it too.
+      const retype = { scope: "app", name: "Rotate keys", type: "fact", expect: hash };
+      expect(await call(c, "memory_write", retype)).toMatchObject(refused);
+      expect(await call(c, "memory_forget", { name: "rotate-keys", expect: hash })).toMatchObject(refused);
+      // Any other file may still say "done" (it's not a to-do).
+      const note = { ...fact(`Plain note ${++plain}`), scope: "app", status: "done" };
+      expect(text(await call(c, "memory_write", note))).toMatch(/^Saved /);
       await c.close();
     }
     const r = memory.read("projects/app/rotate-keys.md");
     expect(r.ok && r.file.header.status).toBe("open");
+  });
+
+  // Task review, 2026-11-22: the date memory_write's `due` gives (to work out "Friday") must be today's on every call,
+  // and its status says only you set done.
+  it("memory_write says today's date each time it's listed, and that only you close a to-do", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const fields = async () => {
+        const c = await chat();
+        const { tools } = await c.listTools();
+        await c.close();
+        const props = tools.find((t) => t.name === "memory_write")!.inputSchema.properties as Record<
+          string,
+          { description?: string }
+        >;
+        return { due: props.due?.description ?? "", status: props.status?.description ?? "" };
+      };
+      vi.setSystemTime(new Date(2026, 10, 22, 12));
+      expect((await fields()).due).toContain("today is 2026-11-22, a Sunday");
+      vi.setSystemTime(new Date(2026, 10, 23, 12));
+      expect((await fields()).due).toContain("today is 2026-11-23, a Monday");
+      expect((await fields()).status).toBe("A to-do's state; only the user sets done");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Security review, 2026-11-22: a chat in one project wrote a preference every other project's chats then read (an

@@ -126,8 +126,10 @@ export class Suggestions {
   private async take(c: ChiefCard): Promise<void> {
     if (c.kind === "stalled") return this.d.resume(c.chatId);
     try {
-      if (c.kind === "todo") this.d.todos?.done(c.path);
-      else this.d.addRoutine(c.projectId, { name: c.name, when: c.when, text: c.text });
+      if (c.kind === "todo") {
+        if (!this.d.todos) throw new UserError("Can't close to-dos here");
+        this.d.todos.done(c.path);
+      } else this.d.addRoutine(c.projectId, { name: c.name, when: c.when, text: c.text });
     } catch (e) {
       throw e instanceof UserError ? e : new UserError((e as Error).message);
     }

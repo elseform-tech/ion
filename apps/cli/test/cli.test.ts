@@ -515,8 +515,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         code: 1,
         err: "Give the date as YYYY-MM-DD",
       });
-      const both =
-        "you/update-the-readme.md  due 2026-12-04  Update the README\nprojects/app/rotate-keys.md  Rotate keys";
+      const both = "Update the README  due 2026-12-04\nRotate keys  app";
       expect((await ion("todo")).out).toBe(both);
       expect((await ion("todo", "ls")).out).toBe(both);
       const file = join(home, "data", "memory", "you", "update-the-readme.md");
@@ -524,7 +523,10 @@ describe("ion cli", { timeout: 20_000 }, () => {
         expect(readFileSync(file, "utf8")).toContain(`\n${line}\n`);
       expect((await ion("todo", "done", "update-the-readme")).out).toBe("Done: Update the README");
       expect(readFileSync(file, "utf8")).toContain("status: done");
-      expect((await ion("todo")).out).toBe("projects/app/rotate-keys.md  Rotate keys");
+      expect((await ion("todo")).out).toBe("Rotate keys  app");
+      // Task review, 2026-11-22: the list leads with the name; the path is in --json.
+      const json = JSON.parse((await ion("todo", "--json")).out) as { memoryId: string }[];
+      expect(json.map((m) => m.memoryId)).toEqual(["projects/app/rotate-keys.md"]);
       expect(await ion("todo", "done", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
     });
 

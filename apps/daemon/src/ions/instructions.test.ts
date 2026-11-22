@@ -33,6 +33,8 @@ describe("what an ion is told about to-dos", () => {
       expect(told).toContain("a thread you started ends listing what's still to do");
       expect(told).toContain("memory_write with type todo");
       expect(told).toContain('"Added to your to-dos: <what> (<day>)"');
+      // Task review, 2026-11-22: one wording, yours or a project's.
+      expect(told).toContain(`"Added to <project>'s to-dos: <what> (<day>)" for a project's`);
       expect(told).toContain("never add one nobody asked for");
       expect(told).toContain("never mark one done yourself");
     }

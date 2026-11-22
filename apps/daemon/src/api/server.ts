@@ -136,10 +136,11 @@ export async function startServer(
   // unfinished end (their ions report them). Then what starts runs: routines on their schedule (one missed while
   // ion was stopped goes now), ion chief's suggestions (now, then hourly), and answers still waiting.
   ctx.ions.watch();
+  const unwatch = ctx.memory.watch(); // first: the briefing and reminders read memory as it is now
   const notifier = new Notifier({ store: ctx.store, db, configFile: opts.configFile, memory: ctx.memory });
   notifier.start();
   ctx.runs.closeUnfinishedRuns(runsView.rows(db));
-  const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop(), ctx.memory.watch()];
+  const stops = [ctx.routines.start(), ctx.suggestions.start(), () => notifier.stop(), unwatch];
   // Your answers still waiting go in first; then what you queued while ion was stopped, to each chat or ion that
   // isn't working.
   void ctx.decisions
@@ -249,8 +250,7 @@ const followAsk = (chatId: string, m: { harness: string | null; text: string }) 
  * ion chief's suggestions: a routine is added the way you'd add it; a stalled chat gets its follow-up through the
  * normal ask, on the chat's own agent.
  */
-type ForSuggestions = Pick<Ctx, "store" | "db" | "configFile" | "runs" | "routines" | "memory">;
-function chiefSuggestions(c: ForSuggestions): Suggestions {
+function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | "routines" | "memory">) {
   const base = { store: c.store, db: c.db, configFile: c.configFile };
   const changed = async (chatId: string) => (await diffOfChat(c, chatId)).files.map((f) => f.path);
   return new Suggestions({

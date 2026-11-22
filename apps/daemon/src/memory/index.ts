@@ -122,8 +122,9 @@ export class MemoryFiles {
     return this.folder.list();
   }
 
-  /** Watches the folder for your own edits; returns a stop. */
+  /** Brings the index up to date (your edits since ion opened it), then watches the folder for more; returns a stop. */
   watch(): () => void {
+    this.reindex();
     return watchMemory(this);
   }
 

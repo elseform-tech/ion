@@ -39,6 +39,8 @@ const UP_FRONT = 40;
 /** One answer for a file that isn't there and one the caller may not see: it doesn't exist for it. */
 const NONE = "No such memory";
 const CHAT_WRITES = "A chat writes this project's files and your preferences only";
+const ONLY_YOU_CLOSE = "Only you close a to-do";
+type TodoFields = { type: MemoryType; status?: "open" | "done"; due?: string };
 const NEW_NEEDS = "A new memory needs a name, a description, a type and a text";
 /** Each line with its control characters (a bell, a stray escape) gone; line breaks and tabs kept. */
 const clean = (t: string) => t.replace(/[^\P{Cc}\n\t]/gu, "");
@@ -203,9 +205,6 @@ export class ScopedMemory {
   /** Makes a file, or updates one read at `expect`; refused unless this caller may write it there. */
   write(w: MemoryWrite): MemoryFile {
     if (w.due !== undefined && !isDay(w.due)) throw new UserError("Give the date as YYYY-MM-DD");
-    // Only you close a to-do: chats and ions offer "Mark done?" (live, Grok, 2026-11-22).
-    if (w.status === "done" && this.caller.kind !== "you")
-      throw new UserError("Only the user marks a to-do done");
     const scope = this.scopeOf(w.scope);
     return w.expect === undefined ? this.create(scope, w) : this.update(scope, w, w.expect);
   }
@@ -219,6 +218,8 @@ export class ScopedMemory {
     if (c.kind === "chat" && row.scope === "you" && row.suggested !== c.projectId)
       throw new UserError("A chat can't forget your files");
     if (c.kind !== "you" && expect === undefined) throw new UserError("Read it first");
+    // Forgetting an open to-do closes it too (task review, 2026-11-22).
+    if (c.kind !== "you" && row.type === "todo" && row.status !== "done") throw new UserError(ONLY_YOU_CLOSE);
     this.memory.forget(row.path, this.by(), expect);
     return row.path;
   }
@@ -241,6 +242,7 @@ export class ScopedMemory {
     const c = this.caller;
     const chatsYours = c.kind === "chat" && scope === "you";
     if (chatsYours && w.see) throw new UserError("A chat can't choose who sees your files");
+    this.mayClose({ type }, { type, ...statusOf(type, w.status) });
     this.noClash(scope, name);
     const header = {
       ...{ name, description, type, ...statusOf(type, w.status) },
@@ -264,8 +266,24 @@ export class ScopedMemory {
     this.mayWrite(scope, disk.header.type);
     this.mayWrite(scope, header.type);
     this.mayChange(scope, disk.header, header.see);
+    this.mayClose(disk.header, header);
     const text = w.text ?? disk.text;
     return this.memory.write({ scope, slug: was.slug, header, text, expectHash, by: this.by() });
+  }
+
+  /**
+   * Only you close a to-do: a chat or an ion never marks one done, retypes one away from a to-do, or clears its
+   * status or date (live, Grok, and task review, 2026-11-22). They offer "Mark done?" instead.
+   */
+  private mayClose(old: TodoFields, next: TodoFields): void {
+    if (this.caller.kind === "you") return;
+    const closes =
+      old.type === "todo"
+        ? next.type !== "todo" ||
+          (next.status === "done" && old.status !== "done") ||
+          (!!old.due && !next.due)
+        : next.type === "todo" && next.status === "done";
+    if (closes) throw new UserError(ONLY_YOU_CLOSE);
   }
 
   /** A chat changes only your files its project suggested; who sees a file changes only by you (or wider, never). */

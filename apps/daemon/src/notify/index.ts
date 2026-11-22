@@ -11,11 +11,14 @@ import { REMIND_AT, remindIfDue } from "../scheduler/reminders.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
-import { briefIfDue, line } from "./briefing.js";
+import type { MemoryRow } from "../views/memory.js";
+import { briefIfDue, dueTodayLine, line } from "./briefing.js";
 import { dayOf, lastQuiet, nextAt, quietNow, type Window } from "./clock.js";
 
 /** The stream the app listens on for system notifications. */
 const STREAM = "notify";
+/** ion chief's thread: a to-do's reminder opens it. */
+const CHIEF = "ion:chief";
 /** The timer looks again at least this often, so a setting you changed (or a computer that slept) is noticed. */
 const LOOK_MS = 5 * 60_000;
 /**
@@ -193,18 +196,30 @@ export class Notifier {
       this.summarize(c, now);
       const day = dayOf(now);
       if (this.looked !== day && briefIfDue(this.d, c, now) !== "waiting") this.looked = day;
-      // After the briefing: the to-dos it named are reminded already.
-      const memory = this.d.memory;
-      if (
-        memory &&
-        this.reminded !== day &&
-        remindIfDue({ store: this.d.store, memory }, c, now) !== "waiting"
-      )
-        this.reminded = day;
+      this.remindTodos(c, now, day);
     } catch (err) {
       console.warn(`ion couldn't notify: ${(err as Error).message}`);
     }
     this.arm(c, now);
+  }
+
+  /** To-dos due today: their line in ion chief's thread, and a "needs you" notification by each project's level. */
+  private remindTodos(c: UserConfig, now: Date, day: string): void {
+    const memory = this.d.memory;
+    if (!memory || this.reminded === day) return;
+    const due = remindIfDue({ store: this.d.store, memory }, c, now);
+    if (due === "waiting") return;
+    this.reminded = day;
+    const byProject = new Map<string | null, MemoryRow[]>();
+    for (const t of due) {
+      const projectId = t.scope === "you" ? null : t.scope.projectId;
+      byProject.set(projectId, [...(byProject.get(projectId) ?? []), t]);
+    }
+    for (const [projectId, todos] of byProject) {
+      const item: Item = { kind: "needs", projectId, chatId: CHIEF, body: dueTodayLine(todos) };
+      if (allowed(c, item))
+        this.send({ title: titleOf(c, projectId), body: item.body, chatId: CHIEF, kind: "needs" });
+    }
   }
 
   /** The next moment something is due: quiet hours' end, the briefing, reminders, or a look in a few minutes. */

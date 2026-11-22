@@ -110,7 +110,7 @@ describe("Mark done?", () => {
     expect(status("you/update-the-readme.md")).toBe("open");
     expect(suggestions.list()).toEqual([]);
     // Another chat that does it: offered again; Done closes it, as yours.
-    await finish("c2", "storefront", "The README now covers deploys.");
+    await finish("c2", "storefront", "Updated the README to cover deploys.");
     const again = cards("ion:chief").at(-1)!.card;
     expect(suggestions.list()).toMatchObject([{ suggestionId: again.suggestionId, kind: "todo" }]);
     await suggestions.answer(again.suggestionId, { keep: true });
@@ -128,5 +128,31 @@ describe("Mark done?", () => {
     await finish("c4", "private", "I updated the README.");
     expect(cards("ion:chief")).toEqual([]);
     expect(cards("ion:storefront")).toHaveLength(1);
+  });
+
+  // Task review, 2026-11-22: a second chat that matched while the first card waited added another card for the same
+  // to-do; one word in common ("README") was enough; "I didn't update the README" counted as doing it.
+  it("one open card per to-do; two words in common; a mention that says it wasn't done doesn't count", async () => {
+    changed = ["README.md"];
+    await finish("c1", "storefront", "Fixed a typo.");
+    expect(cards("ion:chief")).toEqual([]);
+    changed = [];
+    await finish("c2", "storefront", "I didn't update the README: the docs build is broken.");
+    await finish("c3", "storefront", "The README is not updated yet.");
+    expect(cards("ion:chief")).toEqual([]);
+    await finish("c4", "storefront", "I updated the README.");
+    await finish("c5", "storefront", "Updated the README again.");
+    expect(cards("ion:chief").map((s) => s.card.chatId)).toEqual(["c4"]);
+  });
+
+  // Task review, 2026-11-22: Done with no to-dos wired said it was done and closed nothing.
+  it("Done without to-dos to close says so", async () => {
+    await finish("c1", "storefront", "I updated the README.");
+    const bare = new Suggestions({
+      ...{ store, db, configFile, changes: async () => 0, addRoutine: () => {}, resume: async () => {} },
+    });
+    const id = cards("ion:chief")[0]!.card.suggestionId;
+    await expect(bare.answer(id, { keep: true })).rejects.toThrow("Can't close to-dos here");
+    expect(status("you/update-the-readme.md")).toBe("open");
   });
 });

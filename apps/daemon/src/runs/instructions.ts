@@ -14,7 +14,7 @@ export const ION_INSTRUCTIONS = [
   "With memory_write, write what the next chat in this project should know.",
   'When the user clearly asks for something to be done later ("remind me to…", "later we need to…"), add a to-do:',
   'memory_write with type todo and scope "project" (due as YYYY-MM-DD when a day is given), then say it in one line:',
-  '"Added to your to-dos: <what> (<day>)". You may never add one nobody asked for, and never mark one done: the user does.',
+  '"Added to <project>\'s to-dos: <what> (<day>)". You may never add one nobody asked for, and never mark one done: the user does.',
   "When you need several read-only lookups, chain them into one command with && rather than one call each.",
   "To add an MCP server, skill or hook, use ion's own commands, never an agent's config: `ion mcp search <name>`",
   "shows the official registry's install command, keys and source (copy them, never guess), then",

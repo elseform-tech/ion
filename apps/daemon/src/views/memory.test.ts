@@ -54,12 +54,29 @@ describe("the memory index", () => {
       by: "you",
     });
     const scopes = { scopes: ["you", { projectId: "shop" }], ...all };
-    const started = performance.now();
     expect(paths(memoryView.search(db, { ...scopes, q: "stripe" }))).toEqual([byName.path]);
     expect(paths(memoryView.search(db, { ...scopes, q: "rotate" }))).toEqual([byDesc.path]);
     expect(paths(memoryView.search(db, { ...scopes, q: "lisbon" }))).toEqual([byText.path]);
     expect(memoryView.search(db, scopes)).toHaveLength(500);
-    expect(performance.now() - started).toBeLessThan(50);
+    // Task review, 2026-11-22: one timed pass failed under a loaded machine (79 ms). Warmed up, then the median of 5
+    // passes, and a guard that doesn't depend on the machine: 500 files cost at most ~20× one file.
+    const pass = (q: typeof scopes) => () => {
+      for (const word of ["stripe", "rotate", "lisbon"]) memoryView.search(db, { ...q, q: word });
+      memoryView.search(db, q);
+    };
+    const median = (run: () => void) => {
+      run();
+      const times = Array.from({ length: 5 }, () => {
+        const t = performance.now();
+        run();
+        return performance.now() - t;
+      });
+      return times.sort((a, b) => a - b)[2]!;
+    };
+    const many = median(pass(scopes));
+    const one = median(pass({ scopes: ["you"], ...all }));
+    expect(many).toBeLessThan(50);
+    expect(many).toBeLessThan(Math.max(one, 0.5) * 20);
     // Only the scopes and the `see` asked for; FTS syntax in a query is plain words.
     expect(memoryView.search(db, { scopes: [{ projectId: "shop" }], ...all, q: "lisbon" })).toEqual([]);
     expect(memoryView.search(db, { scopes: ["you"], see: ["chats"], q: "lisbon" })).toEqual([]);
