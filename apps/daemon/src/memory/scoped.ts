@@ -265,6 +265,8 @@ export class ScopedMemory {
     if (c.kind !== "you" && expect === undefined) throw new UserError("Read it first");
     // Forgetting an open to-do closes it too (task review, 2026-11-22).
     if (c.kind !== "you" && row.type === "todo" && row.status !== "done") throw new UserError(ONLY_YOU_CLOSE);
+    // Nor does an ion forget one chats see, but its own suggestions (final review, 2026-11-22).
+    this.ionMayChange(row);
     this.memory.forget(row.path, this.by(), expect, into && this.resolve(into).path);
     return row.path;
   }
@@ -298,6 +300,12 @@ export class ScopedMemory {
     return this.memory.write({ scope, header, text, by: this.by() });
   }
 
+  /** An ion changes or forgets only files chats don't see, or ions' suggestions (final review, 2026-11-22). */
+  private ionMayChange(was: { see: MemorySee; suggested?: string | null }): void {
+    if (this.ionWrites() && was.see === "chats" && !was.suggested?.startsWith("_"))
+      throw new UserError(SUGGEST_IT);
+  }
+
   /** An ion's own write (not ion's dream, which keeps to its pass's rules). */
   private ionWrites(): boolean {
     return this.caller.kind === "ion" && !this.dream;
@@ -329,9 +337,7 @@ export class ScopedMemory {
     if (this.dream) dreamUpdate(this.memory, this.dream, { ...disk.header, path: disk.path, scope }, header);
     this.mayChange(scope, disk.header, header.see);
     this.mayClose(disk.header, header);
-    // An ion changes only files chats don't see, or its own suggestions (final review, 2026-11-22).
-    if (this.ionWrites() && disk.header.see === "chats" && !disk.header.suggested?.startsWith("_"))
-      throw new UserError(SUGGEST_IT);
+    this.ionMayChange(disk.header);
     const text = w.text ?? disk.text;
     return this.memory.write({ scope, slug: was.slug, header, text, expectHash, by: this.by() });
   }

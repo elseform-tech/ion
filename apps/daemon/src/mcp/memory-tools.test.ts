@@ -579,6 +579,25 @@ describe("memory tools", () => {
     await c.close();
   });
 
+  // Final review, 2026-11-22: an ion that couldn't change a file chats see could still forget it.
+  it("an ion can't forget a file chats see, only its suggestions and ions-only files", async () => {
+    const SHARED = {
+      isError: true,
+      content: [{ text: "That file is shared with chats; suggest the change instead" }],
+    };
+    const s = await ion("shop");
+    const forget = async (name: string) =>
+      call(s, "memory_forget", { name, expect: hashOf(await call(s, "memory_read", { name })) });
+    for (const name of ["short-replies", "deploy-day"]) expect(await forget(name)).toMatchObject(SHARED);
+    expect(memory.row("you/short-replies.md")).toBeDefined();
+    expect(memory.row("projects/shop/deploy-day.md")).toBeDefined();
+    await call(s, "memory_write", { ...fact("Offer"), text: "An offer" });
+    await call(s, "memory_write", { ...fact("Notes"), see: "ions" });
+    for (const name of ["offer", "notes", "partner"]) expect((await forget(name)).isError).toBeFalsy();
+    expect(memory.row("projects/shop/offer.md")).toBeUndefined();
+    await s.close();
+  });
+
   // Final review, 2026-11-22: ion chief saw every suggestion, also one from a project you keep from it.
   it("ion chief never sees a suggestion from a project not shared with it", async () => {
     const own = await client(grants.create({ kind: "run", projectId: "private", chatId: "c3", runId: "r3" }));
