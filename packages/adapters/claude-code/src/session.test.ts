@@ -471,7 +471,7 @@ describe("claude-code session", () => {
       cwd,
       model: null,
       effort: null,
-      sandbox: { kind: "seatbelt", paths: { deny: [data], read: [], write: [], noWrite: [] } },
+      sandbox: { kind: "seatbelt", paths: { deny: [data], read: [], write: [], noWrite: [] }, dataDir: data },
       signal: new AbortController().signal,
       decide: async () => "allow",
     });

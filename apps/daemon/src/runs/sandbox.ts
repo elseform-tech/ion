@@ -102,7 +102,7 @@ export function runSandbox(
   if (kind === "none") return undefined;
   const read = [o.pluginDir, o.ionBin].filter((p): p is string => !!p);
   const noWrite = agentConfigs(o.harness ?? "", o.env);
-  return { kind, paths: { deny: ionDenied(o), read, write: [o.cwd], noWrite } };
+  return { kind, paths: { deny: ionDenied(o), read, write: [o.cwd], noWrite }, dataDir: o.dataDir };
 }
 
 /**
@@ -143,7 +143,11 @@ function deniedWith(
   env: NodeJS.ProcessEnv = process.env,
 ): RunSandbox | undefined {
   if (kind === "none") return undefined;
-  return { kind, paths: { deny: ionDenied(o), read: [], write, noWrite: agentConfigs("", env) } };
+  return {
+    kind,
+    paths: { deny: ionDenied(o), read: [], write, noWrite: agentConfigs("", env) },
+    dataDir: o.dataDir,
+  };
 }
 
 export type SandboxCtx = {

@@ -439,6 +439,7 @@ describe.skipIf(sandboxKind() !== "seatbelt")("a local server in the sandbox", (
     const sandbox = (data: string): RunSandbox => ({
       kind: "seatbelt",
       paths: { deny: [data], read: [], write: [], noWrite: [] },
+      dataDir: data,
     });
     const { b, data, folder, worktree } = bridge({}, { sandbox });
     writeFileSync(join(data, "daemon.json"), "full-token\n");

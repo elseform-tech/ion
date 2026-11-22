@@ -1,5 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  chmodSync,
+  closeSync,
+  constants,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { whichOnPath } from "./system.js";
 
@@ -22,8 +34,11 @@ export type SandboxPaths = {
 /** How this computer sandboxes: macOS's Seatbelt (`sandbox-exec`), Linux's bubblewrap, or not at all. */
 export type SandboxKind = "seatbelt" | "bwrap" | "none";
 
-/** A run's sandbox: how, and its paths. Absent from a start: the run isn't sandboxed. */
-export type RunSandbox = { kind: SandboxKind; paths: SandboxPaths };
+/**
+ * A run's sandbox: how, its paths, and ion's data folder (where its Seatbelt rules file is kept, in a folder every
+ * run is denied). Absent from a start: the run isn't sandboxed.
+ */
+export type RunSandbox = { kind: SandboxKind; paths: SandboxPaths; dataDir: string };
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 
@@ -42,7 +57,17 @@ export function realForms(p: string): string[] {
   }
 }
 
-const allForms = (ps: string[]) => [...new Set(ps.flatMap(realForms))];
+/**
+ * A path the sandbox's rules can hold (CodeQL, PR #25, 2026-11-22): one with a NUL, a newline or a carriage return is
+ * refused outright, never escaped (it could end a rule and start another).
+ */
+function checked(p: string): string {
+  if (/[\0\n\r]/.test(p))
+    throw new Error(`ion: a sandbox path can't hold a NUL or a line break: ${JSON.stringify(p)}`);
+  return p;
+}
+
+const allForms = (ps: string[]) => [...new Set(ps.map(checked).flatMap(realForms).map(checked))];
 
 /** Every folder above `p`, nearest first, up to the root. */
 function ancestors(p: string): string[] {
@@ -111,12 +136,55 @@ export function bwrapArgs(p: SandboxPaths, env: NodeJS.ProcessEnv = process.env)
     ...["--die-with-parent", "--new-session", "--unshare-pid", "--bind", "/", "/"],
     ...["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm"],
   ];
-  if (env.XDG_RUNTIME_DIR) args.push("--tmpfs", join(env.XDG_RUNTIME_DIR, "bus"));
+  // Each path is its own argument (no shell reads them); one with a NUL or a line break is refused (CodeQL, PR #25).
+  if (env.XDG_RUNTIME_DIR) args.push("--tmpfs", checked(join(env.XDG_RUNTIME_DIR, "bus")));
   for (const d of allForms(p.deny)) args.push("--tmpfs", d);
   for (const r of allForms(p.read)) args.push("--ro-bind-try", r, r);
   for (const w of allForms(p.write)) args.push("--bind-try", w, w);
   for (const n of allForms(p.noWrite)) args.push("--ro-bind-try", n, n);
   return args;
+}
+
+/** The rules files this process wrote, removed when it ends. */
+const written = new Set<string>();
+
+/** Removes the rules files this process wrote (when it ends; a started sandbox has read its own already). */
+export function removeProfiles(): void {
+  for (const f of written) rmSync(f, { force: true });
+  written.clear();
+}
+process.on("exit", removeProfiles);
+
+/**
+ * Writes a run's Seatbelt rules to a file and returns its path (CodeQL, PR #25, 2026-11-22: the rules were text on
+ * sandbox-exec's command line, built from paths taken from the environment). The file is `<data>/sandbox/<sha256>.sb`:
+ * a fixed folder of ion's data folder, which every run is denied, named by its content; written 0600 to a fresh name
+ * (O_CREAT|O_EXCL|O_NOFOLLOW) and moved into place, so a link or a file planted there is never written through.
+ */
+function profileFile(sb: RunSandbox): string {
+  const profile = seatbeltProfile(sb.paths);
+  const dir = join(checked(resolve(sb.dataDir)), "sandbox");
+  if (!allForms(sb.paths.deny).some((d) => realForms(dir).some((f) => inside(f, d))))
+    throw new Error("ion: the sandbox's rules file would be within a run's reach");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!lstatSync(dir).isDirectory()) throw new Error(`ion: not a folder: ${dir}`);
+  chmodSync(dir, 0o700);
+  const file = join(dir, `${createHash("sha256").update(profile).digest("hex")}.sb`);
+  const fresh = `${file}.${randomBytes(8).toString("hex")}`;
+  rmSync(fresh, { force: true });
+  const fd = openSync(
+    fresh,
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    writeSync(fd, profile);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(fresh, file);
+  written.add(file);
+  return file;
 }
 
 /** A command as the sandbox runs it (unchanged with no sandbox): every process it starts stays inside. */
@@ -127,7 +195,7 @@ export function sandboxed(
 ): { command: string; args: string[] } {
   if (!sb || sb.kind === "none") return { command, args };
   if (sb.kind === "seatbelt")
-    return { command: SANDBOX_EXEC, args: ["-p", seatbeltProfile(sb.paths), command, ...args] };
+    return { command: SANDBOX_EXEC, args: ["-f", profileFile(sb), command, ...args] };
   return { command: "bwrap", args: [...bwrapArgs(sb.paths), "--", command, ...args] };
 }
 
@@ -138,6 +206,7 @@ export function withPaths(sb: RunSandbox | undefined, more: Partial<SandboxPaths
   return {
     kind: sb.kind,
     paths: { deny: add("deny"), read: add("read"), write: add("write"), noWrite: add("noWrite") },
+    dataDir: sb.dataDir,
   };
 }
 

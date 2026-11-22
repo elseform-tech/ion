@@ -1,10 +1,21 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   bwrapArgs,
+  removeProfiles,
   type RunSandbox,
   sandboxed,
   sandboxKind,
@@ -44,19 +55,27 @@ describe("the sandbox's rules", () => {
   });
 
   it("wraps a command in the sandbox, every process it starts inside", () => {
-    const sb: RunSandbox = { kind: "seatbelt", paths: FIXED };
-    const w = sandboxed(sb, "opencode", ["acp"]);
-    expect(w.command).toBe("/usr/bin/sandbox-exec");
-    expect(w.args.slice(0, 1)).toEqual(["-p"]);
-    expect(w.args.slice(2)).toEqual(["opencode", "acp"]);
-    const b = sandboxed({ kind: "bwrap", paths: FIXED }, "grok", ["agent", "stdio"]);
+    const data = realpathSync(mkdtempSync(join(tmpdir(), "ion-sbf-")));
+    try {
+      const paths = { ...FIXED, deny: [...FIXED.deny, data] };
+      const w = sandboxed({ kind: "seatbelt", paths, dataDir: data }, "opencode", ["acp"]);
+      expect(w.command).toBe("/usr/bin/sandbox-exec");
+      expect(w.args[0]).toBe("-f");
+      expect(w.args.slice(2)).toEqual(["opencode", "acp"]);
+    } finally {
+      rmSync(data, { recursive: true, force: true });
+    }
+    const b = sandboxed({ kind: "bwrap", paths: FIXED, dataDir: "/ion-test/data" }, "grok", [
+      "agent",
+      "stdio",
+    ]);
     expect(b.command).toBe("bwrap");
     expect(b.args.slice(-4)).toEqual(["--", "grok", "agent", "stdio"]);
   });
 
   // The user, 2026-11-21: on a machine without a sandbox the run still starts (Settings says "Not sandboxed").
   it("runs a command as it is where there's no sandbox", () => {
-    expect(sandboxed({ kind: "none", paths: FIXED }, "grok", ["agent"])).toEqual({
+    expect(sandboxed({ kind: "none", paths: FIXED, dataDir: "/ion-test/data" }, "grok", ["agent"])).toEqual({
       command: "grok",
       args: ["agent"],
     });
@@ -64,9 +83,72 @@ describe("the sandbox's rules", () => {
   });
 
   it("adds an agent's own paths", () => {
-    const sb = withPaths({ kind: "seatbelt", paths: FIXED }, { noWrite: ["/h/.grok/hooks"] });
+    const sb = withPaths({ kind: "seatbelt", paths: FIXED, dataDir: "/d" }, { noWrite: ["/h/.grok/hooks"] });
     expect(sb?.paths.noWrite).toEqual([...FIXED.noWrite, "/h/.grok/hooks"]);
     expect(sb?.paths.deny).toEqual(FIXED.deny);
+    expect(sb?.dataDir).toBe("/d");
+  });
+});
+
+// CodeQL, PR #25, 2026-11-22: the Seatbelt profile went on sandbox-exec's command line as text built from paths taken
+// from the environment (js/indirect-command-line-injection, js/shell-command-injection-from-environment). It goes in
+// a 0600 file in a folder of ion's data folder that every run is denied, and every path in it is escaped or refused.
+describe("the sandbox's rules file", () => {
+  let data = "";
+  beforeAll(() => {
+    data = realpathSync(mkdtempSync(join(tmpdir(), "ion-sbf-")));
+  });
+  afterAll(() => rmSync(data, { recursive: true, force: true }));
+  const sb = (extra: Partial<SandboxPaths> = {}): RunSandbox => ({
+    kind: "seatbelt",
+    paths: { deny: [data], read: [], write: [join(data, "worktrees", "w")], noWrite: [], ...extra },
+    dataDir: data,
+  });
+
+  it("is a 0600 file in a 0700 folder of ion's data folder, read by sandbox-exec -f, holding the profile", () => {
+    const s = sb();
+    const w = sandboxed(s, "opencode", ["acp"]);
+    expect(w.args.slice(0, 1)).toEqual(["-f"]);
+    const file = w.args[1] ?? "";
+    expect(file.startsWith(`${join(data, "sandbox")}/`)).toBe(true);
+    expect(file).toMatch(/\/[0-9a-f]{64}\.sb$/);
+    expect(readFileSync(file, "utf8")).toBe(seatbeltProfile(s.paths));
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(join(data, "sandbox")).mode & 0o777).toBe(0o700);
+    expect(w.args.join(" ")).not.toContain("(version 1)");
+  });
+
+  it("is removed when ion ends", () => {
+    const file = sandboxed(sb({ read: [join(data, "skills")] }), "x", []).args[1] ?? "";
+    expect(existsSync(file)).toBe(true);
+    removeProfiles();
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("is never written where a run could reach it", () => {
+    expect(() => sandboxed({ ...sb(), paths: { ...sb().paths, deny: [] } }, "x", [])).toThrow();
+  });
+
+  it("escapes a quote and a backslash in a path", () => {
+    const p = seatbeltProfile({ deny: [], read: [], write: ['/x/a "q" \\ b'], noWrite: [] });
+    expect(p).toContain('(subpath "/x/a \\"q\\" \\\\ b")');
+  });
+
+  it("refuses a path with a newline or a NUL (Seatbelt and bubblewrap)", () => {
+    for (const bad of ["/x/a\n(allow file-read*)", "/x/a\0b", "/x/a\rb"]) {
+      const paths = { deny: [], read: [], write: [bad], noWrite: [] };
+      expect(() => seatbeltProfile(paths), JSON.stringify(bad)).toThrow(/path/);
+      expect(() => bwrapArgs(paths, {}), JSON.stringify(bad)).toThrow(/path/);
+    }
+    const ok = { deny: [], read: [], write: [], noWrite: [] };
+    expect(() => bwrapArgs(ok, { XDG_RUNTIME_DIR: "/run/a\nb" })).toThrow(/path/);
+  });
+
+  // bubblewrap takes each path as its own argument (no shell): a space or a quote is just part of it.
+  it("gives bubblewrap each path as its own argument", () => {
+    const odd = '/x/a "q" b';
+    const a = bwrapArgs({ deny: [], read: [], write: [odd], noWrite: [] }, {});
+    expect(a.slice(-3)).toEqual(["--bind-try", odd, odd]);
   });
 });
 
@@ -105,14 +187,16 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
     chmodSync(join(data, "bin", "ion"), 0o755);
     mkdirSync(join(home, ".claude"));
     execFileSync("git", ["init", "-q"], { cwd: wt });
+    mkdirSync(join(data, "worktrees", 'odd "q" \\ b'));
     sb = {
       kind: "seatbelt",
       paths: {
         deny: [data, join(home, ".config", "ion")],
         read: [join(data, "skills", "run-1"), join(data, "bin")],
-        write: [wt],
+        write: [wt, join(data, "worktrees", 'odd "q" \\ b')],
         noWrite: [join(home, ".claude", "settings.json")],
       },
+      dataDir: data,
     };
   });
   afterAll(() => rmSync(home, { recursive: true, force: true }));
@@ -155,6 +239,16 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
     );
     expect(r.stderr).toBe("");
     expect(r.stdout).toBe("in the worktree\na skill\nlauncher ran\n");
+  });
+
+  // CodeQL, PR #25, 2026-11-22: the rules are a file now; a path with a quote and a backslash still works, and the
+  // rules file itself is out of the run's reach.
+  it("lets a path with a quote and a backslash through, and can't read its own rules file", () => {
+    const odd = join(data, "worktrees", 'odd "q" \\ b');
+    expect(run('echo x > "$D/f" && cat "$D/f"', { D: odd }).stdout).toBe("x\n");
+    const file = sandboxed(sb, "/usr/bin/true", []).args[1] ?? "";
+    expect(run('cat "$P"', { P: file }).status).not.toBe(0);
+    expect(run('echo x > "$D/../other"', { D: odd }).status).not.toBe(0);
   });
 
   // Task review, 2026-11-21: `open -g Probe.app` started an app through LaunchServices, outside the sandbox, and it

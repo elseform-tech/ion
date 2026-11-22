@@ -35,6 +35,7 @@ describe.skipIf(sandboxKind() !== "seatbelt")("ion's git in the sandbox", () => 
     sandboxGit({
       kind: "seatbelt",
       paths: { deny: [ion], read: [], write: [join(data, "worktrees")], noWrite: [] },
+      dataDir: data,
     });
     return { repo, data, out };
   }

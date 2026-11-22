@@ -48,6 +48,7 @@ describe("a run's sandbox", () => {
           "/h/.cache/opencode",
         ],
       },
+      dataDir: "/h/.local/share/ion",
     });
   });
 

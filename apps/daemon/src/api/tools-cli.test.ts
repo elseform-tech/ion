@@ -160,7 +160,11 @@ describe("ion inside a chat's run", () => {
       await start({ notes: { command: "notes-mcp" } });
       const data = join(home, "data");
       writeFileSync(join(data, "daemon.json"), JSON.stringify({ port: srv.port, token: srv.token }));
-      const sb: RunSandbox = { kind: "seatbelt", paths: { deny: [home], read: [], write: [], noWrite: [] } };
+      const sb: RunSandbox = {
+        kind: "seatbelt",
+        paths: { deny: [home], read: [], write: [], noWrite: [] },
+        dataDir: data,
+      };
       const r = await runIon(["mcp", "ls"], runEnvOf(data), sb);
       expect(r.stdout).toContain("notes");
       expect(r.status).toBe(0);

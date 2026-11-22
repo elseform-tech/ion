@@ -523,7 +523,11 @@ describe.skipIf(sandboxKind() !== "seatbelt")("acp adapter in the run's sandbox"
         cwd: wt,
         model: null,
         effort: null,
-        sandbox: { kind: "seatbelt", paths: { deny: [data], read: [], write: [wt], noWrite: [] } },
+        sandbox: {
+          kind: "seatbelt",
+          paths: { deny: [data], read: [], write: [wt], noWrite: [] },
+          dataDir: data,
+        },
         signal: new AbortController().signal,
         decide: async () => "allow",
       });
@@ -547,7 +551,11 @@ describe("an agent that sets itself up first", () => {
     let ready = false;
     const starts: number[] = [];
     const h: AcpHarness = { ...fake, prepare: () => ready, env: () => (starts.push(1), {}) };
-    const sandbox = { kind: "none" as const, paths: { deny: [], read: [], write: [], noWrite: [] } };
+    const sandbox = {
+      kind: "none" as const,
+      paths: { deny: [], read: [], write: [], noWrite: [] },
+      dataDir: "",
+    };
     const go = async () => {
       const s = await createAcpAdapter(h, { which: () => process.execPath }).start({
         cwd,
@@ -585,6 +593,7 @@ describe.skipIf(sandboxKind() !== "seatbelt")("ion's checks of an agent", () => 
         sandbox: (dir: string) => ({
           kind: "seatbelt" as const,
           paths: { deny: [deny], read: [], write: [dir], noWrite: [] },
+          dataDir: deny,
         }),
       });
       // Final review, 2026-11-22: each check's session is deleted from the agent's history after (Grok kept them all).

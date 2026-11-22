@@ -97,7 +97,11 @@ describe("a bare start (ion's judge) on an ACP agent", () => {
     const base = realpathSync(mkdtempSync(join(tmpdir(), "ion-bare-")));
     const log = join(base, "log");
     process.env.FAKE_ACP_RECORD = log;
-    const sandbox = { kind: "none" as const, paths: { deny: [], read: [], write: [base], noWrite: [] } };
+    const sandbox = {
+      kind: "none" as const,
+      paths: { deny: [], read: [], write: [base], noWrite: [] },
+      dataDir: base,
+    };
     const home = join(base, "home");
     const one = mkdtempSync(join(base, "s-"));
     const two = mkdtempSync(join(base, "s-"));

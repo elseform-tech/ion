@@ -125,7 +125,11 @@ describe.skipIf(sandboxKind() !== "seatbelt")("a hook in the sandbox", () => {
     const project = dir();
     writeFileSync(join(ion, "daemon.json"), "full-token\n");
     writeFileSync(join(project, "README.md"), "project\n");
-    const sandbox = { kind: "seatbelt" as const, paths: { deny: [ion], read: [], write: [], noWrite: [] } };
+    const sandbox = {
+      kind: "seatbelt" as const,
+      paths: { deny: [ion], read: [], write: [], noWrite: [] },
+      dataDir: ion,
+    };
     const run = `cat README.md && echo built > out.txt && cat out.txt; cat ${ion}/daemon.json`;
     const r = await runHook({ ...base, cwd: project, sandbox, run });
     expect(r.tail).toContain("project\nbuilt\n");

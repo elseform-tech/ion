@@ -141,6 +141,7 @@ describe("codex adapter", () => {
         write: ["/ion-x/data/worktrees/c1"],
         noWrite: [],
       },
+      dataDir: "/ion-x/data",
     };
     const { thread, overrides } = await whoami({ sandbox });
     expect(overrides).toEqual(
