@@ -15,9 +15,10 @@ export const fromOf = (source: string) => ({ by: "you" as const, source, at: "" 
 export type Whose = "all" | string;
 
 /** One row: its name, who has it (ion first, then agents), ion's own entry if ion has it, and why it differs. */
-export type Merged<T> = { name: string; agents: string[]; ion?: T; differs?: string };
+export type Merged<T> = { name: string; agents: string[]; ion?: T; differs?: string; fresh?: true };
 
-type Item<T> = { agent: string; name: string; key: string; item?: T };
+/** `fresh`: an agent's own that appeared since ion last listed them (New, once). */
+type Item<T> = { agent: string; name: string; key: string; item?: T; fresh?: true };
 
 /** Merges what each has: by name, then by setup (`key`); a name with more than one setup marks each `differs`. */
 export function merge<T>(items: Item<T>[], differs: string): Merged<T>[] {
@@ -31,7 +32,8 @@ export function merge<T>(items: Item<T>[], differs: string): Merged<T>[] {
     [...setups.values()].map((xs) => {
       const ion = xs.find((x) => x.agent === "ion")?.item;
       const agents = [...new Set(xs.map((x) => x.agent))];
-      return { name, agents, ...(ion ? { ion } : {}), ...(setups.size > 1 ? { differs } : {}) };
+      const fresh = xs.some((x) => x.fresh) ? { fresh: true as const } : {};
+      return { name, agents, ...(ion ? { ion } : {}), ...(setups.size > 1 ? { differs } : {}), ...fresh };
     }),
   );
 }
@@ -113,8 +115,8 @@ export function OwnRow(p: {
     <ToolRow
       icon={p.icon}
       name={p.r.name}
-      chip={p.r.differs ? "Differs" : null}
-      {...(p.r.differs ? { chipTitle: p.r.differs } : {})}
+      chip={p.r.fresh ? "New" : p.r.differs ? "Differs" : null}
+      {...(p.r.differs && !p.r.fresh ? { chipTitle: p.r.differs } : {})}
       line={p.line}
       dim={p.off === "off"}
       mid={<Faces who={p.r.agents} agents={p.agents} />}

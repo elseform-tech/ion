@@ -14,10 +14,12 @@ import { startServer } from "./server.js";
 let srv: Awaited<ReturnType<typeof startServer>>;
 let client: IonClient;
 let root: string;
+let srvHome: string;
 
 async function start(config: string, withProject = false) {
   root = mkdtempSync(join(tmpdir(), "ion-own-api-"));
   const { home, project } = agentHome();
+  srvHome = home;
   pluginHome(home);
   if (withProject) config += `[[projects]]\nid = "shop"\npath = "${project}"\nstarred = false\n`;
   writeFileSync(join(root, "mcp.json"), JSON.stringify({ mcpServers: {} }), { mode: 0o600 });
@@ -56,6 +58,22 @@ describe("each agent's own tools", () => {
     expect(t.own.plugins.map((p) => `${p.agent}:${p.name}`)).toContain("claude-code:superpowers");
     // No switch: it's the agent's.
     await expect(client.call("tools.setOn", { kind: "mcp", id: "github", on: true })).rejects.toThrow();
+  });
+
+  // Final review, 2026-11-22: a Claude run may write ~/.claude.json (Claude keeps its state there), so a server can
+  // appear there without you. One that appears after ion first listed them shows as New until Settings has shown it.
+  it("an agent's own server that appears later is New until Settings has shown it once", async () => {
+    await start("");
+    const first = await client.call("tools.list", {});
+    expect(first.own.servers.filter((s) => s.new)).toEqual([]);
+    const file = join(srvHome, ".claude.json");
+    const c = JSON.parse(readFileSync(file, "utf8"));
+    c.mcpServers.planted = { command: "planted-mcp" };
+    writeFileSync(file, JSON.stringify(c));
+    const next = await client.call("tools.list", {});
+    expect(next.own.servers.filter((s) => s.new).map((s) => s.name)).toEqual(["planted"]);
+    const again = await client.call("tools.list", {});
+    expect(again.own.servers.filter((s) => s.new)).toEqual([]);
   });
 
   // Security review, 2026-11-21: a project's own .mcp.json is the repo's, not yours: listed with a switch, off until

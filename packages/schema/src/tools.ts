@@ -140,6 +140,8 @@ export type OwnServerInfo = {
   launch: string;
   /** What makes two setups the same (what it runs, URL query names, env or header names), hashed: never a value. */
   match: string;
+  /** It appeared after ion first listed them (a run may have added it), until Settings has shown it once. */
+  new?: true;
   /**
    * A project's own file (the repo wrote it, not you; Claude Code's `.mcp.json`): `id` turns it on (`tools.setOn` kind
    * "repo"), off until you do; `new`: never turned on, `changed`: it runs something else since.

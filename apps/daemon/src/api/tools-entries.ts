@@ -145,7 +145,32 @@ export function withOrigins(
     mcp: info.mcp.map((m) => row(m, "mcp", m.id, hashOf.get(m.id) ?? "")),
     hooks: info.hooks.map((g) => ({ ...g, hooks: g.hooks.map((h) => row(h, "hook", h.id, hookHash(h))) })),
     skills: info.skills.map((s) => row(s, "skill", s.id, skillHash(s.id))),
+    own: { ...info.own, servers: freshOwn(ctx, info.own.servers, shown) },
   };
   ctx.seen.add(shown);
   return out;
+}
+
+/** Marks that ion has listed agents' own servers before: what's there the first time isn't new. */
+const OWN_LISTED = "own-servers:listed";
+
+/**
+ * An agent's own server that appeared after ion first listed them is New until Settings has shown it once (final
+ * review, 2026-11-22: a Claude run may write ~/.claude.json, where Claude keeps its state, so one can appear unasked).
+ * A repo's server has its own New (off until you turn it on).
+ */
+function freshOwn(
+  ctx: Pick<Ctx, "seen">,
+  servers: ToolsInfo["own"]["servers"],
+  shown: string[],
+): ToolsInfo["own"]["servers"] {
+  const before = ctx.seen.has(OWN_LISTED);
+  if (!before) shown.push(OWN_LISTED);
+  return servers.map((s) => {
+    if (s.repo) return s;
+    const key = `own:${s.agent}:${s.name}:${s.match}`;
+    if (ctx.seen.has(key)) return s;
+    shown.push(key);
+    return before ? { ...s, new: true as const } : s;
+  });
 }

@@ -244,7 +244,7 @@ function rowsOf(info: ToolsInfo): Merged<McpToolInfo>[] {
   const ion = info.mcp.map((s) => ({ agent: "ion", name: s.name, key: s.match ?? launchOf(s), item: s }));
   const own = info.own.servers
     .filter((s) => !s.repo)
-    .map((s) => ({ agent: s.agent, name: s.name, key: s.match }));
+    .map((s) => ({ agent: s.agent, name: s.name, key: s.match, ...(s.new ? { fresh: s.new } : {}) }));
   return merge<McpToolInfo>([...ion, ...own], "Runs something else");
 }
 

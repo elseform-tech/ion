@@ -655,6 +655,18 @@ describe("Settings → Tools: each agent's own", () => {
     }
   });
 
+  // Final review, 2026-11-22: a server that appeared in an agent's own config since ion last listed them (a run may
+  // write ~/.claude.json) shows New, once.
+  it("an agent's own server that's new shows New", async () => {
+    const c = withOwn({
+      servers: [{ ...stdio("claude-code", "planted", "planted-mcp"), new: true }, stdio("codex", "fs", "fs-mcp")],
+    });
+    await open(c);
+    const planted = await findRow("planted");
+    expect(within(planted).getByText("New")).toBeTruthy();
+    expect(within(row("fs")).queryByText("New")).toBeNull();
+  });
+
   it("an agent whose own tools are off in ion shows its rows dimmed, Off in ion", async () => {
     const c = withOwn({
       agents: { "claude-code": true, codex: false, "grok-build": true, opencode: true },
