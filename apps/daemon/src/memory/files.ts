@@ -66,8 +66,12 @@ const cantRead = (path: string): FileRead => ({
   problem: `${shown(path)} can't be read`,
 });
 
-/** Who may see a file unless it says: a project's chats; your preferences and references too; the rest ions only. */
-function defaultSee(scope: MemoryScope, type: MemoryType): MemorySee {
+/**
+ * Who may see a file unless it says: a person file, ions only, wherever it is (final review, 2026-11-22); else a
+ * project's chats; your preferences and references too; the rest ions only.
+ */
+export function defaultSee(scope: MemoryScope, type: MemoryType): MemorySee {
+  if (type === "person") return "ions";
   if (scope !== "you") return "chats";
   return type === "preference" || type === "reference" ? "chats" : "ions";
 }

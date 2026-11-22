@@ -37,7 +37,16 @@ Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `app
 `need.raised`, `need.resolved`, `route.sent`, `claim.checked`, `checks.finished`, `routine.proposed`, `routine.ran`,
 `briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
 `decision.recorded`, `decision.outcome`, `decision.forgotten`, `queue.added`, `queue.removed`, `queue.sent`,
-`queue.failed`, `notify`, `briefing.posted`, `tool.signedIn`, `tool.signedOut`, `tool.needsSignIn`.
+`queue.failed`, `notify`, `briefing.posted`, `tool.signedIn`, `tool.signedOut`, `tool.needsSignIn`,
+`memory.dreamed`, `todo.reminded`.
+
+A memory file's change is `memory.written` (its path, scope, header, hash, `by`, and the text `before`) or
+`memory.forgotten` (`path`, `by`, `before`, and `into`: the file ion's dream merged it into). A header's `suggested`
+marks a file waiting for your Keep: a project's id (a chat's preference: that project's chats, its ion and ion chief
+see it), or `_` and an ion's id (a file an ion wrote that chats would see: only the ions see it). ion's dream
+records each night as `memory.dreamed` (chatId null): `status` `started`, then `done`, `late` or `failed`, with what
+it merged, updated, forgot and moved, its notes, and the night (`period`). `todo.reminded { path, due }` (chatId
+null) is a to-do's one reminder for its due day.
 
 Signing in to a remote MCP server (OAuth) is `tool.signedIn { id }`, `tool.signedOut { id }` and
 `tool.needsSignIn { id }` (a refresh failed: "Sign in again"), `id` being the server's name in mcp.json. They never

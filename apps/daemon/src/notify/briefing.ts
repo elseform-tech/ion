@@ -2,7 +2,7 @@ import { DEFAULT_PROJECT, type ProjectEntry, type UserConfig } from "@ion/config
 import { EV, nextRun, stripControl, timeLabel } from "@ion/schema";
 import { dreamLines } from "../memory/dream.js";
 import type { MemoryFiles } from "../memory/index.js";
-import { chiefTodos, dayLabel, sharedIds } from "../memory/todos.js";
+import { chiefSuggestions, chiefTodos, dayLabel, sharedIds } from "../memory/todos.js";
 import type { Db, EventStore } from "../store/index.js";
 import type { MemoryRow } from "../views/memory.js";
 import { chatsView } from "../views/chats.js";
@@ -113,12 +113,26 @@ function todoLines(todos: MemoryRow[], today: string): string[] {
 
 type BriefingDeps = { store: EventStore; db: Db; memory?: MemoryFiles };
 
+/**
+ * What an ion wrote since `since` that chats would see, still waiting for your Keep (final review, 2026-11-22):
+ * "Suggested by ion: “A” and “B” — keep them in Memory."
+ */
+function suggestedLines(memory: MemoryFiles, c: UserConfig, since: string): string[] {
+  const waiting = chiefSuggestions(memory, sharedIds(c)).filter(
+    (r) => r.suggested?.startsWith("_") && r.updatedAt >= since,
+  );
+  if (!waiting.length) return [];
+  const it = waiting.length === 1 ? "it" : "them";
+  return [`Suggested by ion: ${listed(waiting.map((r) => quoted(r.name)))} — keep ${it} in Memory.`];
+}
+
 /** The briefing's words: plain sentences, no headings; "" when there's nothing to say. To-dos lead. */
 function briefingText(d: BriefingDeps, c: UserConfig, since: string, now: Date): string {
   const projects = shared(c);
   const todos = d.memory ? todoLines(chiefTodos(d.memory, sharedIds(c)), dayOf(now)) : [];
   return [
     ...todos,
+    ...(d.memory ? suggestedLines(d.memory, c, since) : []),
     ...dreamLines(d.store, since),
     ...finished(d, projects, since),
     ...needing(d.db, projects),

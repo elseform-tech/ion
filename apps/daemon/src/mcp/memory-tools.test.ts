@@ -225,7 +225,10 @@ describe("memory tools", () => {
       isError: true,
       content: [{ text: "Only ion chief writes your person files" }],
     });
-    expect(text(await call(s, "memory_write", fact("Payments")))).toBe("Saved projects/shop/payments.md");
+    // A project's file chats see waits for your Keep (final review, 2026-11-22).
+    expect(text(await call(s, "memory_write", fact("Payments")))).toBe(
+      "Saved projects/shop/payments.md as a suggestion",
+    );
     await s.close();
     const c = await ion("chief");
     expect(text(await call(c, "memory_write", person))).toBe("Saved you/birthday.md");
@@ -234,7 +237,7 @@ describe("memory tools", () => {
       content: [{ text: "Name the project" }],
     });
     expect(text(await call(c, "memory_write", { ...fact("Where"), scope: "app" }))).toBe(
-      "Saved projects/app/where.md",
+      "Saved projects/app/where.md as a suggestion",
     );
     await c.close();
     const r = await ion("shop", "t9", true);
@@ -284,7 +287,11 @@ describe("memory tools", () => {
       isError: true,
       content: [{ text: `There's already a memory named "${name}": read it, then update it with expect` }],
     });
-    expect(await call(c, "memory_write", fact("Ions only"))).toMatchObject(clash("Ions only"));
+    // Final review, 2026-11-22 (M2): "There's already a memory named …" still said a hidden file exists.
+    expect(await call(c, "memory_write", fact("Ions only"))).toMatchObject({
+      isError: true,
+      content: [{ text: "Pick another name" }],
+    });
     expect(await call(c, "memory_write", fact("Test runner"))).toMatchObject(clash("Test runner"));
     expect(memory.read("projects/app/ions-only-2.md")).toMatchObject({ ok: false, gone: true });
     await c.close();
@@ -468,6 +475,60 @@ describe("memory tools", () => {
     ] as const)
       expect(await call(shop, tool, args)).toMatchObject({ isError: true, content: [{ text: why }] });
     for (const c of [app, shop, chief]) await c.close();
+  });
+
+  // Final review, 2026-11-22 (M5, ruling): a chat's suggestion is for its project's chats, its project's ion and ion
+  // chief; another project's ion read it too.
+  it("another project's ion doesn't see a chat's suggestion", async () => {
+    const app = await chat();
+    const tabs = { ...fact("Tabs"), scope: "you", type: "preference", text: "Use tabs" };
+    expect(text(await call(app, "memory_write", tabs))).toBe("Saved you/tabs.md as a suggestion");
+    const shop = await ion("shop");
+    expect(text(await call(shop, "memory_index"))).not.toContain("tabs");
+    expect(await call(shop, "memory_read", { name: "you/tabs.md" })).toMatchObject(NONE);
+    expect(text(await call(shop, "memory_search", { q: "tabs" }))).not.toContain("tabs");
+    const own = await ion("app");
+    expect(text(await call(own, "memory_index"))).toContain("you/tabs.md");
+    for (const c of [app, shop, own]) await c.close();
+  });
+
+  // Final review, 2026-11-22 (I1, the user: "Yes, like chats"): what an ion writes that chats would see waits for
+  // your Keep, like a chat's preference; an ions-only file it writes freely, and it never shares one with chats.
+  it("an ion's file that chats would see waits as a suggestion until you keep it", async () => {
+    const shop = await ion("shop");
+    const pref = { ...fact("Spaces"), scope: "you", type: "preference", text: "Use spaces" };
+    expect(text(await call(shop, "memory_write", pref))).toBe("Saved you/spaces.md as a suggestion");
+    expect(memory.read("you/spaces.md")).toMatchObject({
+      ok: true,
+      file: { header: { suggested: "_shop" } },
+    });
+    expect(text(await call(shop, "memory_index"))).toContain("you/spaces.md");
+    const own = await client(grants.create({ kind: "run", projectId: "shop", chatId: "c2", runId: "r2" }));
+    const app = await chat();
+    for (const c of [own, app]) {
+      expect(text(await call(c, "memory_index"))).not.toContain("spaces");
+      expect(await call(c, "memory_read", { name: "you/spaces.md" })).toMatchObject(NONE);
+    }
+    const quiet = { ...fact("Roadmap"), see: "ions" };
+    expect(text(await call(shop, "memory_write", quiet))).toBe("Saved projects/shop/roadmap.md");
+    new ScopedMemory(memory, { kind: "you" }).keep("spaces");
+    for (const c of [own, app]) expect(text(await call(c, "memory_index"))).toContain("you/spaces.md");
+    for (const c of [shop, own, app]) await c.close();
+  });
+
+  it("ion chief can't share a person file's words with chats", async () => {
+    const c = await ion("chief");
+    const app = await chat();
+    expect(text(await call(c, "memory_read", { name: "home-city" }))).toContain("Lisbon");
+    const leak = { ...fact("City"), scope: "app", text: "Lives in Lisbon" };
+    expect(await call(c, "memory_write", { ...leak, see: "chats" })).toMatchObject({
+      isError: true,
+      content: [{ text: "Only the user shares a file with chats" }],
+    });
+    expect(text(await call(c, "memory_write", leak))).toBe("Saved projects/app/city.md as a suggestion");
+    expect(text(await call(app, "memory_search", { q: "Lisbon" }))).not.toContain("city");
+    expect(await call(app, "memory_read", { name: "projects/app/city.md" })).toMatchObject(NONE);
+    for (const x of [c, app]) await x.close();
   });
 
   // The user, 2026-11-22: ion's dream tidies memory overnight, within strict limits: only memory's tools, and at most

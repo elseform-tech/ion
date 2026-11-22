@@ -177,4 +177,20 @@ describe("to-do reminders", () => {
     await until(at(19, 12));
     expect(said()).toEqual([]);
   });
+
+  // Final review, 2026-11-22: a to-do in a project not shared with ion chief never got its reminder at all; only
+  // the line in ion chief's thread is for shared projects, the notification is yours either way.
+  it("a project kept from ion chief still notifies you, once", async () => {
+    save({
+      projects: [{ id: "private", name: "Private", path: "/p/p", starred: false, shareWithIon: false }],
+    });
+    todo({ projectId: "private" }, "Rotate the keys", "2026-11-19");
+    boot();
+    await until(at(19, 9, 1));
+    expect(said()).toEqual([]);
+    expect(notified()).toEqual([{ title: "Private", body: "Due today: “Rotate the keys”.", kind: "needs" }]);
+    restart();
+    await until(at(19, 12));
+    expect(notified()).toHaveLength(1);
+  });
 });

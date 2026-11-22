@@ -40,12 +40,13 @@ export const MemoryHeaderSchema = z.object({
   /** The old memory note this file was moved from, once. */
   from: z.string().min(1).max(40).optional(),
   /**
-   * A preference a chat wrote, by its project's id: only that project's chats (and the ions) see it, until you keep
-   * it for every project (security review, 2026-11-22).
+   * A preference a chat wrote, by its project's id: only that project's chats (and its ion and ion chief) see it,
+   * until you keep it for every project (security review, 2026-11-22). Or a file an ion wrote that chats would see,
+   * as "_" and the ion's id: only the ions see it until you keep it (final review, 2026-11-22).
    */
   suggested: z
     .string()
-    .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
+    .regex(/^_?[a-z0-9][a-z0-9._-]{0,63}$/)
     .optional(),
 });
 export type MemoryHeader = z.infer<typeof MemoryHeaderSchema>;

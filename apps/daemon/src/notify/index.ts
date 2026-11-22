@@ -7,6 +7,7 @@ import {
 } from "@ion/config";
 import { EV, type IonEvent, type NeedInfo, type NotifyKind } from "@ion/schema";
 import type { MemoryFiles } from "../memory/index.js";
+import { sharedIds } from "../memory/todos.js";
 import { REMIND_AT, remindIfDue } from "../scheduler/reminders.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -217,10 +218,13 @@ export class Notifier {
       const projectId = t.scope === "you" ? null : t.scope.projectId;
       byProject.set(projectId, [...(byProject.get(projectId) ?? []), t]);
     }
+    const shared = new Set(sharedIds(c));
     for (const [projectId, todos] of byProject) {
       const item: Item = { kind: "needs", projectId, chatId: CHIEF, body: dueTodayLine(todos) };
+      // A project kept from ion chief isn't in its thread: the notification opens nothing.
+      const open = projectId === null || shared.has(projectId) ? { chatId: CHIEF } : {};
       if (allowed(c, item))
-        this.send({ title: titleOf(c, projectId), body: item.body, chatId: CHIEF, kind: "needs" });
+        this.send({ title: titleOf(c, projectId), body: item.body, ...open, kind: "needs" });
     }
   }
 

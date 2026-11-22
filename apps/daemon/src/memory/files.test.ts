@@ -50,6 +50,19 @@ describe("memory files", () => {
   });
 
   // The user, 2026-11-21: "repurpose memory into multiple memory files": a YAML header, then the text.
+  // Final review, 2026-11-22 (M1): a person file in a project's folder defaulted to see: chats, so every chat in that
+  // project read it. A person file is for the ions unless it says, written by ion or by hand.
+  it("a person file is the ions' unless it says, in every folder", () => {
+    const who = { name: "Sam", description: "Who Sam is", type: "person" as const };
+    for (const scope of ["you", { projectId: "shop" }] as const) {
+      const f = files.write({ scope, header: who, text: "Sam is a nurse.", by: "you" });
+      expect(f.header.see).toBe("ions");
+      const kim = f.path.replace("sam.md", "kim.md");
+      writeFileSync(join(root, kim), "---\nname: Kim\ndescription: Kim\ntype: person\n---\nKim.\n");
+      expect(files.read(kim)).toMatchObject({ ok: true, file: { header: { see: "ions" } } });
+    }
+  });
+
   it("a file is parsed into its header and text", () => {
     mkdirSync(join(root, "projects", "shop"), { recursive: true });
     writeFileSync(

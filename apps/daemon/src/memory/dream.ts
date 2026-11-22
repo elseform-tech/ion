@@ -246,7 +246,8 @@ async function passes(d: DreamDeps, c: UserConfig, since: string): Promise<Dream
 /** Which passes a night has: only those with files to tidy. */
 function passesOf(d: DreamDeps, c: UserConfig): DreamPass[] {
   const ion = { kind: "ion" as const, ionId: DREAM_ION, projects: sharedIds(c) };
-  const all = new ScopedMemory(d.memory, ion).index({ limit: ALL });
+  // Suggestions aren't the dream's: they never make a pass (final review, 2026-11-22).
+  const all = new ScopedMemory(d.memory, ion).index({ limit: ALL }).filter((r) => !r.suggested);
   const have = new Set(all.map((r) => `${r.scope === "you" ? "" : r.scope.projectId}\n${r.see}`));
   const projects = [...new Set(all.flatMap((r) => (r.scope === "you" ? [] : [r.scope.projectId])))].sort();
   return [...projects, null].flatMap((project) =>

@@ -47,8 +47,10 @@ export type MemoryQuery = {
   q?: string;
   type?: MemoryType;
   status?: "open" | "done";
-  /** A chat's project: your files suggested by another project's chat are left out. */
-  suggestedFor?: string;
+  /** The suggestions it may see (a chat: its project's): every other suggestion is left out. */
+  suggestedFor?: string[];
+  /** No suggestion at all (ion's dream never reads one: final review, 2026-11-22). */
+  noSuggested?: boolean;
   limit?: number;
 };
 
@@ -138,9 +140,10 @@ function filtersOf(q: MemoryQuery): { where: string; params: unknown[] } {
     where.push("m.status = ?");
     params.push(q.status);
   }
-  if (q.suggestedFor !== undefined) {
-    where.push("(m.suggested IS NULL OR m.suggested = ?)");
-    params.push(q.suggestedFor);
+  if (q.noSuggested) where.push("m.suggested IS NULL");
+  else if (q.suggestedFor !== undefined) {
+    where.push(`(m.suggested IS NULL OR m.suggested IN (${ANY(q.suggestedFor.length)}))`);
+    params.push(...q.suggestedFor);
   }
   return { where: where.join(" AND "), params };
 }

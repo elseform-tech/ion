@@ -20,7 +20,7 @@ function madeAt(store: EventStore): Map<string, string> {
 
 /**
  * A to-do due today gets one reminder that morning, at 9:00 local (when quiet hours end, if they cover it), said in
- * ion chief's thread; the caller notifies you of it. Each is recorded, so it never comes twice, across restarts too.
+ * ion chief's thread (only a shared project's: final review, 2026-11-22); the caller notifies you of each. Each is recorded, so it never comes twice, across restarts too.
  * One made after that time today isn't reminded (you just told ion about it); a done or forgotten one never.
  * "waiting" until its time; then the to-dos reminded now (none: today's are settled).
  */
@@ -33,7 +33,8 @@ export function remindIfDue(
   if (now < from || quietNow(c.notifications.quiet, now)) return "waiting";
   const today = dayOf(now);
   const before = from.toISOString();
-  const todos = chiefTodos(d.memory, sharedIds(c)).filter((t) => t.due === today);
+  const all = c.projects.map((p) => p.id);
+  const todos = chiefTodos(d.memory, all).filter((t) => t.due === today);
   if (!todos.length) return [];
   const made = madeAt(d.store);
   const due = todos.filter(
@@ -42,7 +43,10 @@ export function remindIfDue(
   if (!due.length) return [];
   // Recorded first: a crash between the two loses a reminder rather than saying it twice.
   markReminded(d.store, due);
-  const text = dueTodayLine(due);
-  d.store.append({ chatId: "ion:chief", runId: null, origin: "daemon", type: EV.ionSaid, data: { text } });
+  const shared = new Set(sharedIds(c));
+  const told = due.filter((t) => t.scope === "you" || shared.has(t.scope.projectId));
+  const text = told.length ? dueTodayLine(told) : "";
+  if (text)
+    d.store.append({ chatId: "ion:chief", runId: null, origin: "daemon", type: EV.ionSaid, data: { text } });
   return due;
 }

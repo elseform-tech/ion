@@ -448,4 +448,38 @@ describe("ion's dream", () => {
         ).toThrow();
     for (const f of files) expect(memory.row(f.path)?.hash).toBe(f.hash);
   });
+
+  // Final review, 2026-11-22: a dream pass's sight had no suggestedFor, so the "yours, chats" pass read every
+  // project's unkept suggestions (and could write one into a file every chat sees), and bank's chats pass could copy
+  // shop's suggestion into bank's files. The dream never reads a suggestion.
+  it("no pass ever reads a chat's unkept suggestion", async () => {
+    seed("Bank deploys", { scope: { projectId: "bank" }, type: "fact", text: "Bank deploys on Mondays." });
+    seed("Tabs", { scope: "you", type: "preference", text: "Tabs." });
+    seed("Health", { scope: "you", type: "fact", text: "Health." });
+    const chat = new ScopedMemory(memory, { kind: "chat", projectId: "shop", chatId: "c1", runId: "r1" });
+    const s = chat.write({
+      scope: "you",
+      name: "Osprey style",
+      description: "Use the OSPREY style",
+      type: "preference",
+      text: "Always write OSPREY.",
+    });
+    expect(s.header.suggested).toBe("shop");
+    const prompts: string[] = [];
+    await runDream(
+      deps(async (prompt) => {
+        prompts.push(prompt);
+        return done();
+      }),
+    );
+    expect(prompts.length).toBeGreaterThan(0);
+    for (const p of prompts) expect(p).not.toContain("OSPREY");
+    for (const see of ["chats", "ions"] as const)
+      for (const project of [null, "shop", "bank"]) {
+        const d = dream(see, project);
+        expect(d.search("OSPREY")).toEqual([]);
+        expect(d.index().map((r) => r.path)).not.toContain(s.path);
+        expect(() => d.read(s.path)).toThrow("No such memory");
+      }
+  });
 });

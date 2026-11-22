@@ -3,7 +3,7 @@ import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryRow } from "../views/memory.js";
 import { type DreamPass, dreamCreate, dreamForget, dreamUpdate } from "./dream-rules.js";
-import { slugOf } from "./files.js";
+import { defaultSee, slugOf } from "./files.js";
 import type { MemoryFile, MemoryFiles } from "./index.js";
 
 /**
@@ -41,6 +41,7 @@ const UP_FRONT = 40;
 const NONE = "No such memory";
 const CHAT_WRITES = "A chat writes this project's files and your preferences only";
 const ONLY_YOU_CLOSE = "Only you close a to-do";
+const ONLY_YOU_SHARE = "Only the user shares a file with chats";
 type TodoFields = { type: MemoryType; status?: "open" | "done"; due?: string };
 const NEW_NEEDS = "A new memory needs a name, a description, a type and a text";
 /** Each line with its control characters (a bell, a stray escape) gone; line breaks and tabs kept. */
@@ -138,19 +139,37 @@ function asTodoOrNot<H extends { type: MemoryType; status?: "open" | "done"; due
   return rest;
 }
 
-type Sight = { scopes: MemoryScope[] | "all"; see: MemorySee[]; suggestedFor?: string };
+type Sight = {
+  scopes: MemoryScope[] | "all";
+  see: MemorySee[];
+  suggestedFor?: string[];
+  noSuggested?: boolean;
+};
 
-/** What a caller may see: which scopes, which files there (`see`), and (a chat) only its own project's suggestions. */
+/**
+ * An ion's suggestion, by the ion: a mark no project's id can be (they start with a letter or digit), so no chat ever
+ * sees it before you keep it (final review, 2026-11-22, the user: "Yes, like chats").
+ */
+const ionSuggestion = (ionId: string) => `_${ionId}`;
+
+/**
+ * What a caller may see: which scopes, which files there (`see`), and which suggestions: a chat, its own project's
+ * chats'; a project's ion, those and its own and ion chief's (final review, 2026-11-22: not other projects'); ion
+ * chief, all; ion's dream, none.
+ */
 function sightOf(c: Caller): Sight {
   if (c.kind === "you") return { scopes: "all", see: ["chats", "ions"] };
   if (c.kind === "chat")
-    return { scopes: ["you", { projectId: c.projectId }], see: ["chats"], suggestedFor: c.projectId };
+    return { scopes: ["you", { projectId: c.projectId }], see: ["chats"], suggestedFor: [c.projectId] };
   // ion's dream: one project's files (and yours, which its chats and ion see) or yours alone; a chats pass, chats files.
   if (c.dream) {
     const scopes: MemoryScope[] = c.dream.project ? ["you", { projectId: c.dream.project }] : ["you"];
-    return { scopes, see: c.dream.see === "chats" ? ["chats"] : ["chats", "ions"] };
+    return { scopes, see: c.dream.see === "chats" ? ["chats"] : ["chats", "ions"], noSuggested: true };
   }
-  return { scopes: ["you", ...c.projects.map((projectId) => ({ projectId }))], see: ["chats", "ions"] };
+  const scopes: MemoryScope[] = ["you", ...c.projects.map((projectId) => ({ projectId }))];
+  if (c.ionId === "chief") return { scopes, see: ["chats", "ions"] };
+  const suggestedFor = [c.ionId, ionSuggestion(c.ionId), ionSuggestion("chief")];
+  return { scopes, see: ["chats", "ions"], suggestedFor };
 }
 
 /**
@@ -265,23 +284,38 @@ export class ScopedMemory {
     const { name, description, type, text } = w;
     if (!name || !description || !type || !text) throw new UserError(NEW_NEEDS);
     this.mayWrite(scope, type);
-    const c = this.caller;
-    const chatsYours = c.kind === "chat" && scope === "you";
-    if (chatsYours && w.see) throw new UserError("A chat can't choose who sees your files");
+    if (this.caller.kind === "chat" && scope === "you" && w.see)
+      throw new UserError("A chat can't choose who sees your files");
+    if (this.ionWrites() && w.see === "chats") throw new UserError(ONLY_YOU_SHARE);
     const see = this.dream ? dreamCreate(this.dream, scope, type, w.see) : w.see;
     this.mayClose({ type }, { type, ...statusOf(type, w.status) });
     this.noClash(scope, name);
+    const suggested = this.suggestion(scope, see ?? defaultSee(scope, type));
     const header = {
       ...{ name, description, type, ...statusOf(type, w.status) },
-      ...given({ see, due: w.due }),
-      // A chat's preference waits for you to keep it (security review, 2026-11-22).
-      ...(c.kind === "chat" && chatsYours ? { suggested: c.projectId } : {}),
+      ...given({ see, due: w.due, suggested }),
     };
     return this.memory.write({ scope, header, text, by: this.by() });
   }
 
+  /** An ion's own write (not ion's dream, which keeps to its pass's rules). */
+  private ionWrites(): boolean {
+    return this.caller.kind === "ion" && !this.dream;
+  }
+
+  /**
+   * What a new file waits for: a chat's preference of yours (security review, 2026-11-22), and anything an ion
+   * writes that chats would see (final review, 2026-11-22, the user: "Yes, like chats"), wait for you to keep them.
+   */
+  private suggestion(scope: MemoryScope, see: MemorySee): string | undefined {
+    const c = this.caller;
+    if (c.kind === "chat") return scope === "you" ? c.projectId : undefined;
+    return c.kind === "ion" && !this.dream && see === "chats" ? ionSuggestion(c.ionId) : undefined;
+  }
+
   /** An update: the file's header on disk, with only the fields given changed. */
   private update(scope: MemoryScope, w: MemoryWrite, expectHash: string): MemoryFile {
+    if (this.ionWrites() && w.see === "chats") throw new UserError(ONLY_YOU_SHARE);
     const was = this.named(w.path ?? w.name ?? "", scope);
     if (!was) throw new UserError(NONE);
     const disk = this.read(was.path);
@@ -322,23 +356,29 @@ export class ScopedMemory {
       throw new UserError("A chat can't change your shared files");
     if (old.see === see) return;
     if (c.kind === "chat") throw new UserError("A chat can't change who sees a file");
-    if (see === "chats") throw new UserError("Only the user shares a file with chats");
+    if (see === "chats") throw new UserError(ONLY_YOU_SHARE);
   }
 
-  /** A file with this name (its slug) in that scope, whether this caller sees it or not, is refused alike. */
+  /**
+   * A file with this name (its slug) in that scope is refused: one the caller sees, by name; one it doesn't,
+   * neutrally, never saying it's there (final review, 2026-11-22).
+   */
   private noClash(scope: MemoryScope, name: string): void {
-    const path = `${folderOf(scope)}/${slugOf(name)}.md`;
-    const disk = this.memory.read(path);
-    if (this.named(name, scope) || this.memory.row(path) || disk.ok || !disk.gone)
+    if (this.named(name, scope))
       throw new UserError(
         `There's already a memory named ${quoted(name)}: read it, then update it with expect`,
       );
+    const path = `${folderOf(scope)}/${slugOf(name)}.md`;
+    const disk = this.memory.read(path);
+    if (this.memory.row(path) || disk.ok || !disk.gone) throw new UserError("Pick another name");
   }
 
   /** The caller may see a file with this header (as read from disk). */
   private allows(h: { see: MemorySee; suggested?: string }): boolean {
     const s = this.sight;
-    return s.see.includes(h.see) && (!h.suggested || !s.suggestedFor || h.suggested === s.suggestedFor);
+    if (!s.see.includes(h.see)) return false;
+    if (!h.suggested) return true;
+    return !s.noSuggested && (!s.suggestedFor || s.suggestedFor.includes(h.suggested));
   }
 
   /** The caller may see this indexed file. */

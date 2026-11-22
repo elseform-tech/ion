@@ -32,6 +32,12 @@ export function chiefTodos(memory: MemoryFiles, projects: string[]): MemoryRow[]
   return m.index({ type: "todo", status: "open", limit: ALL });
 }
 
+/** Suggestions ion chief may see (yours and the shared projects'), each waiting for your Keep. */
+export function chiefSuggestions(memory: MemoryFiles, projects: string[]): MemoryRow[] {
+  const m = new ScopedMemory(memory, { kind: "ion", ionId: "chief", projects });
+  return m.index({ limit: ALL }).filter((r) => r.suggested);
+}
+
 /** This to-do was reminded for this due day (in a briefing or its own line). */
 export const wasReminded = (store: EventStore, path: string, due: string) =>
   store

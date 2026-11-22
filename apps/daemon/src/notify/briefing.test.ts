@@ -5,6 +5,7 @@ import { DEFAULT_CONFIG, type RoutineEntry, saveUserConfig } from "@ion/config";
 import { EV, type MemoryScope } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryFiles } from "../memory/index.js";
+import { ScopedMemory } from "../memory/scoped.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { Notifier } from "./index.js";
@@ -253,6 +254,27 @@ describe("the briefing's to-dos", () => {
     boot(memory);
     await until(at(19, 8, 30));
     expect(briefings()).toEqual(["Still to do: “Call the bank”."]);
+  });
+});
+
+// Final review, 2026-11-22 (I1, the user: "Yes, like chats"): what an ion writes that chats would see waits for your
+// Keep; the briefing names what waits, once.
+describe("the briefing's suggestions", () => {
+  it("names what an ion suggested since the last briefing", async () => {
+    const memory = new MemoryFiles({
+      root: join(mkdtempSync(join(tmpdir(), "ion-brief-mem-")), "m"),
+      store,
+      db,
+    });
+    vi.setSystemTime(at(19, 7));
+    const ion = new ScopedMemory(memory, { kind: "ion", ionId: "storefront", projects: ["storefront"] });
+    ion.write({ scope: "you", name: "Spaces", description: "Spaces", type: "preference", text: "Spaces." });
+    ion.write({ scope: "you", name: "Quiet", description: "Quiet", type: "fact", text: "Ions only." });
+    boot(memory);
+    await until(at(19, 8, 30));
+    expect(briefings()).toEqual(["Suggested by ion: “Spaces” — keep it in Memory."]);
+    await until(at(20, 8, 30));
+    expect(briefings()).toHaveLength(1);
   });
 });
 
