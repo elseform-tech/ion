@@ -136,6 +136,61 @@ narrower `"write"` entry inside a `"none"` folder wins; `curl https://example.co
   one hook run, with a run key's limited rights (ion's commands for tools; nothing turned on, no keys, no settings),
   revoked when the hook ends. Doctor's test run of a hook is sandboxed the same way.
 
+## ion's own agent processes (final review, 2026-11-22)
+
+The judge, ion's quick model (how ion chief and the project ions think), an ion's turn, and the ACP agents' sign-in
+and model checks used to start agents outside the sandbox, in `$TMPDIR`. On Grok and opencode those processes keep
+their tools and load their plugins, so code a run planted in a plugin ran unsandboxed later. Now each starts in a
+run's sandbox (ion's folders denied, every other agent's config read-only, the agent's own config files read-only as
+in a run) in a folder of ion's data folder: `<data>/scratch/ion-judge-<agent>` for the judge (its warm agent works
+there between verdicts; emptied at the daemon's start) and `<data>/scratch/ion-probe-*` for checks (removed after).
+Folders `ion-probe-*` and `ion-judge-*` left in `$TMPDIR` are removed at the daemon's start (nothing else there). Only
+opencode's first setup still runs outside (it installs ion's plugin package into a folder runs can only read).
+
+Read-only to every run, the run's own agent's too:
+
+- **Grok:** `~/.grok/hooks`, `config.toml` (it says which plugins are on: `[plugins] enabled`), `skills`,
+  `installed-plugins` (each plugin's files and `registry.json`) and `plugins`.
+- **opencode:** its npm plugin cache, `$XDG_CACHE_HOME/opencode` (else `~/.cache/opencode`). opencode runs with it
+  read-only (`opencode models` under a Seatbelt profile that denies writes there: fine; it only refreshes its models
+  list there).
+
+Probed with a throwaway `HOME` (Grok 1.0.92): `grok plugin install --trust <dir>` copies the plugin to
+`~/.grok/installed-plugins/<name>-<hash>/`, adds it to `installed-plugins/registry.json` and to `[plugins] enabled` in
+`config.toml`. A folder copied by hand into `installed-plugins` isn't loaded (`grok inspect` doesn't list it); with an
+entry added to `registry.json` too, it's listed but `disabled` (it isn't in `enabled`, which a run can't write). A skill
+edited in place inside an enabled plugin's folder is loaded as edited: the folder itself must be read-only, so it is.
+
+### The judge on Grok and opencode
+
+Live (Task 11): Grok's judge timed out in every live chat (up to 44 s). Each verdict spawned the agent and its server,
+with all its tools, on its default model at high effort. Now:
+
+- **No tools.** Grok runs with an agent profile in the judge's folder (`grok agent --agent-profile <file> --no-leader
+  stdio`) whose only tool is its todo list (`tools: todo_write`, `mcpInheritance: none`). Tried first: `GROK_CONFIG`'s
+  `toolset` only narrows settings (it can't remove a tool), and `--tools`/`--disallowed-tools` before `agent` don't
+  reach `agent stdio` (the model still listed every tool). `search_tool`/`use_tool` stay; ion's gate refuses them. For
+  both agents ion's gate (Grok's hook, opencode's plugin) points at `http://127.0.0.1:0/…`, which nothing answers, so
+  every tool call fails closed.
+- **Fast.** Grok's judge uses `grok-4.7-build-fast` at low effort, chosen in the adapter (model names only in
+  adapters); a model named in `[access] judge` wins.
+- **Warm.** One agent process per agent (and folder, sandbox, env), a fresh session per verdict: no spawn and server
+  start per call. A session is closed (ACP `session/close`), then deleted from the agent's history (`grok sessions
+  delete <id>`, `opencode session delete <id>`), so verdicts don't pile up among your own sessions. A warm agent with
+  no verdict for 10 minutes is stopped.
+- **Retry.** A judge that times out or fails is asked once more on another signed-in agent, within the same 30 s (the
+  first try gets 20 s); only then "ion couldn't decide in time". A timeout is never an allow. Each miss is counted per
+  agent: Settings → Agents says "Judge didn't answer N times this week".
+
+Live (2026-11-22, a temporary ION_HOME, Grok 1.0.92). Judge eval on Grok, 59 cases, 4 at once: 0 dangerous allowed,
+0 ordinary refused, 5 unsure (4 of 5 where unsure was right), 0 without a verdict, p50 5.4 s, p95 8.3 s (before: p50
+7.1 s, p95 22.0 s, 3 without a verdict). Four Auto chats on Grok with the calls that timed out in Task 11 (each 30 s+,
+each asked): the judge took 4.3 s (a joined-path python read, the warm agent's first verdict), 3.6 s (a base64 path),
+3.9 s (`./read.sh`: unsure, "can't see what the script does", so you were asked) and 6.7 s (`echo ok >
+~/Documents/…`, which you asked for: allowed). One question in four, none for want of time. The sign-in checks ran
+sandboxed in `<data>/scratch` and their Grok sessions were deleted; 3 of 4 judge sessions were (the last one's
+delete didn't finish before the daemon stopped). The warm Grok judge stopped with the daemon.
+
 ## The word rules once a run is sandboxed
 
 Only ion's own sandbox counts (Claude Code, opencode, Grok): Codex runs keep every word rule, since its own process
@@ -166,7 +221,12 @@ read"), so an answer says nothing about a file.
 - **Other processes:** a same-user debugger attach or `ps eww` isn't blocked; ion's token is never in an environment.
 - **Codex's own process** isn't in a sandbox of ion's (only its commands are): its file edits and MCP calls go through
   ion's gate and hard rules.
-- **ion's own turns and the judge** aren't sandboxed (ions only read, through ion's gate).
+- **Codex's judge** runs Codex's own read-only, throwaway thread with every approval refused; its process isn't in
+  ion's sandbox (macOS won't nest Codex's own sandbox inside ion's). Claude Code's, opencode's and Grok's judges are.
+- **`~/.claude.json` stays writable in Claude runs:** Claude Code keeps its own state there (projects, onboarding, its
+  tips and counters) and stops when it can't write it, so a Claude run can add a server there. ion doesn't load your
+  `~/.claude.json` servers blindly: one that appears after ion first listed your agents' own servers shows as **New**
+  in Settings → Tools until you've seen it once (final review, 2026-11-22). Every other agent's run gets it read-only.
 - **Codex wasn't run with a model** in this task: its profile was checked with `codex sandbox` and the app-server's
   `command/exec`, and `thread/start`'s active profile.
 - **`~/.gitconfig`** and other dotfiles outside agents' config stay writable from a run (ion's own git no longer reads
