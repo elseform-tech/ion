@@ -60,6 +60,8 @@ export type Item =
   | { kind: "added"; tool: ToolType; name: string }
   /** The chat added a to-do (yours or its project's). */
   | { kind: "todo"; name: string }
+  /** A chat saved a preference as a suggestion: you keep it (for every project) in Memory. */
+  | { kind: "suggested"; name: string }
   | { kind: "end"; status: string; seconds: number; cost?: number; reason?: string; files?: FileChange[] }
   /** gone: its run ended (done, or failed with it as the reason), so it's not shown on its own. */
   | { kind: "error"; text: string; runId: string; gone?: boolean };
@@ -384,18 +386,14 @@ const HANDLERS: Record<string, Handler> = {
   // A run went without one of your MCP servers: ion says why, once per chat.
   [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
-  // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once.
+  // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once, with a link
+  // to Memory (Task 5, 2026-11-22: a question here had no answer).
   // A to-do it added: one quiet line with a link to your to-dos.
   [EV.memoryWritten]: (t, d) => {
     const h = (d.header ?? {}) as { name?: unknown; suggested?: unknown; type?: unknown };
     if (d.before) return t;
     if (h.type === "todo") return push(t, { kind: "todo", name: str(h.name) });
-    if (!h.suggested) return t;
-    return push(t, {
-      kind: "ion",
-      tone: "note",
-      text: `Saved as a suggestion: ${str(h.name)} — keep it for every project?`,
-    });
+    return h.suggested ? push(t, { kind: "suggested", name: str(h.name) }) : t;
   },
 };
 

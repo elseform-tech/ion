@@ -250,6 +250,13 @@ describe("Settings → Memory", () => {
     expect(screen.getByRole("button", { name: "To-dos" }).className).toBe("on");
   });
 
+  // Task 5, 2026-11-22 (tour): a chat's "Suggested for every project" line opens Memory at your files, where Keep is.
+  it("opens at your files from a chat's suggestion", async () => {
+    render(<Settings client={memoryClient()} onOpenIon={() => {}} at={{ kind: "memory" }} />);
+    expect(await screen.findByText("Tabs, not spaces")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "To-dos" }).className).not.toBe("on");
+  });
+
   // Task review, 2026-11-22: an image in a memory file is never fetched (it could be a tracker): its words only.
   it("shows an image in a file as its words, never loads it", async () => {
     await openMemory(memoryClient({ text: "Tabs ![a tracker](http://t.example/p.png)" }));

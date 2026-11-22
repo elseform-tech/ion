@@ -53,11 +53,9 @@ describe("timeline", () => {
       by: { chatId: "c1", runId: "r1" },
     };
     const t = play(ev("message.sent", { text: "Hi" }), ev("memory.written", written));
-    expect(t.items.at(-1)).toEqual({
-      kind: "ion",
-      tone: "note",
-      text: "Saved as a suggestion: Tabs — keep it for every project?",
-    });
+    // Task 5, 2026-11-22 (tour): "keep it for every project?" asked a question the chat had no way to answer; it
+    // now says what was suggested, with a link to Memory, where Keep is.
+    expect(t.items.at(-1)).toEqual({ kind: "suggested", name: "Tabs" });
     const fact = {
       ...written,
       path: "projects/app/x.md",

@@ -17,12 +17,12 @@ type Page = { kind: Tab } | { kind: "ion"; ionId: string };
 type Props = { client: IonClient; onOpenIon: (ionId: string) => void; at?: SettingsAt | null };
 
 /** The row in Tools a link pointed to, if it did. */
-const toolsAtOf = (at: SettingsAt | null): ToolsAt | null => (at?.kind === "todos" ? null : at);
+const toolsAtOf = (at: SettingsAt | null): ToolsAt | null => (at && "name" in at ? at : null);
 
 /** The page Settings opens on: where a link pointed (your to-dos, a row in Tools), else Agents. */
 function firstPage(at: SettingsAt | null): Tab {
   if (!at) return "agents";
-  return at.kind === "todos" ? "memory" : "tools";
+  return "name" in at ? "tools" : "memory";
 }
 
 const TABS: [Tab, string, typeof Plug][] = [

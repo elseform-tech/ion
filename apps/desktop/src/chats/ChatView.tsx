@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Added, AddedTodo, Answered, Quiet, Reply } from "./Asked.js";
+import { Answered, isLinked, Linked, Quiet, Reply } from "./Asked.js";
 import { Markdown } from "./Message.js";
 import { empty, type FileChange, type Item, reduce, type Timeline } from "./timeline.js";
 import { WorkBlock } from "./Work.js";
@@ -84,6 +84,7 @@ function yours(item: Extract<Item, { kind: "you" }>): ReactNode {
 }
 
 function show(item: Item, onFile?: (path: string) => void): ReactNode {
+  if (isLinked(item)) return <Linked item={item} />;
   switch (item.kind) {
     case "you":
       return yours(item);
@@ -100,10 +101,6 @@ function show(item: Item, onFile?: (path: string) => void): ReactNode {
     case "question":
       // Open ones are in the box above the message box; once closed, each shows here, where it was asked.
       return item.resolved ? <Answered q={item} /> : null;
-    case "added":
-      return <Added item={item} />;
-    case "todo":
-      return <AddedTodo item={item} />;
     case "end":
       return (
         <>

@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 
 /** A row in Settings → Tools: which tab, and its name. */
 export type ToolsAt = { kind: ToolType; name: string };
-/** Where Settings opens from a link elsewhere: a row in Tools, or your to-dos in Memory. */
-export type SettingsAt = ToolsAt | { kind: "todos" };
+/** Where Settings opens from a link elsewhere: a row in Tools, or Memory (your files, or your to-dos). */
+export type SettingsAt = ToolsAt | { kind: "todos" } | { kind: "memory" };
 
 const OPEN_SETTINGS = "ion:open-settings";
 
@@ -17,6 +17,9 @@ export const openTools = (at: ToolsAt): void => openAt(at);
 
 /** Opens Settings → Memory at your to-dos (ion chief's count, a chat's "Added to your to-dos"). */
 export const openTodos = (): void => openAt({ kind: "todos" });
+
+/** Opens Settings → Memory at your files (a chat's suggested preference, kept there). */
+export const openMemory = (): void => openAt({ kind: "memory" });
 
 /** Hears each "open Settings here" (the window does: it switches to Settings). */
 function useOpenSettings(fn: (at: SettingsAt) => void): void {

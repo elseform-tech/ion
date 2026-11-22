@@ -1467,6 +1467,8 @@ export function sumLines(lines: Line[]) {
                 <div class="qa"><button class="qq" type="button" aria-expanded="false" title="Should the old headline stay as the page title for search?" data-qa><i data-lucide="message-circle-question"></i>Should the old headline stay as the page title for search?</button><div class="quiet"><i data-lucide="square"></i>The chat stopped before you answered</div></div>
                 <div class="quiet"><i data-lucide="plug-zap"></i>github-mcp added, off<button class="lnk" type="button" title="Open in Settings" data-gotools="gh-mcp"><i data-lucide="blocks"></i>Tools</button></div>
                 <div class="quiet"><i data-lucide="list-todo"></i>Added to your to-dos: Check the headline on mobile<button class="lnk" type="button" title="Open in Settings" data-gotodos><i data-lucide="list-todo"></i>To-dos</button></div>
+                <!-- Task 5, 2026-11-22: a preference a chat saved waits for you; the chat says so, with a link to Memory (Keep is there). -->
+                <div class="quiet"><i data-lucide="heart"></i>Suggested for every project: Short replies<button class="lnk" type="button" title="Open in Settings" data-gomem><i data-lucide="notebook-text"></i>Memory</button></div>
               </div></div>
               <div class="foot"><div class="fcol">
                 <div class="cbox">
@@ -3072,6 +3074,7 @@ document.addEventListener('click',e=>{
   const fd=e.target.closest('[data-mfold]'); if(fd){ memDoneOpen=!memDoneOpen; renderMemory(); return; }
   const hs=e.target.closest('[data-mhist]'); if(hs){ memHist=!memHist; renderMemory(); return; }
   const gt=e.target.closest('[data-gotodos]'); if(gt){ memTab='todos'; memOpen=null; go('settings'); showS('memory'); return; }
+  const gm=e.target.closest('[data-gomem]'); if(gm){ memTab='all'; memScope='you'; memOpen=null; go('settings'); showS('memory'); return; }
   const op=e.target.closest('[data-mopen]'); if(op&&!e.target.closest('.sw,.btn')){ memOpen=op.dataset.mopen||null; memHist=false; memAsk=null; renderMemory(); }
 });
 function hybrid(h,color){ const {name,org,...base}=LIB[h]; return {...base,color}; }
