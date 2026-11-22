@@ -12,10 +12,17 @@ describe("blockedQuestion", () => {
       "ion isn't sure: it runs a file this command creates",
     );
   });
-  // Task review, 2026-11-21: a judge that couldn't decide isn't "risky".
-  it("says ion couldn't decide when the judge gave no verdict", () => {
+  // Task review, 2026-11-21: a judge that couldn't decide isn't "risky". Final review, 2026-11-22: it read "ion
+  // couldn't decide: ion couldn't decide in time"; the reason already says it, so it's said once.
+  it("says ion couldn't decide when the judge gave no verdict, once", () => {
     expect(blockedQuestion({ ...b, undecided: true, reason: "ion couldn't decide in time" }).why).toBe(
-      "ion couldn't decide: ion couldn't decide in time",
+      "ion couldn't decide in time",
+    );
+    expect(
+      blockedQuestion({ ...b, undecided: true, reason: "ion couldn't decide: Grok isn't signed in" }).why,
+    ).toBe("ion couldn't decide: Grok isn't signed in");
+    expect(blockedQuestion({ ...b, undecided: true, reason: "ion couldn't decide" }).why).toBe(
+      "ion couldn't decide",
     );
   });
   it("says ion is wary of it for a guess", () => {

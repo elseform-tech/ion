@@ -69,9 +69,13 @@ const whyWord = (b: Blocked) => {
   return b.unsure ? "ion isn't sure" : "ion thinks this is risky";
 };
 
+/** Why, then the reason; a reason that already says ion couldn't decide is said once (final review, 2026-11-22). */
+const whyLine = (b: Blocked) =>
+  b.undecided && b.reason.startsWith("ion couldn't decide") ? b.reason : `${whyWord(b)}: ${b.reason}`;
+
 const callQuestion = (b: Blocked) => ({
   question: `${PREFIX}${b.summary}`,
-  why: [`${whyWord(b)}: ${b.reason}`, ...(addsToTitle(b) ? [b.input] : [])].join("\n\n"),
+  why: [whyLine(b), ...(addsToTitle(b) ? [b.input] : [])].join("\n\n"),
   // Remember (the user, 2026-11-21) keeps either answer for this exact action in this project; a cut input can't be
   // remembered (you don't see all of it).
   choices: [
