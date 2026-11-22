@@ -96,6 +96,11 @@ export default tseslint.config(
     rules: { "sonarjs/no-os-command-from-path": "off" },
   },
   {
+    // The test runs' temp folder: a fresh mkdtemp folder under /tmp, set as the runs' TMPDIR on purpose (Task 11).
+    files: ["tools/test-temp/**"],
+    rules: { "sonarjs/publicly-writable-directories": "off" },
+  },
+  {
     // The address ranges sign-in requests may never reach (private, link-local, …) are written out on purpose.
     files: ["apps/daemon/src/secrets/oauth-net.ts"],
     rules: { "sonarjs/no-hardcoded-ip": "off" },
