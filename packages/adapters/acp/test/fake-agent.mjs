@@ -4,6 +4,14 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
+// `--forget <id>`: an agent's own "delete this session" command; recorded, then it exits.
+const forgetAt = process.argv.indexOf("--forget");
+if (forgetAt >= 0) {
+  if (process.env.FAKE_ACP_RECORD)
+    appendFileSync(process.env.FAKE_ACP_RECORD, `${JSON.stringify({ forgot: process.argv[forgetAt + 1] })}\n`);
+  process.exit(0);
+}
+
 const send = (m) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);
 const update = (sessionId, u) => send({ method: "session/update", params: { sessionId, update: u } });
 let nextId = 1000;
@@ -213,7 +221,7 @@ function initialize(m) {
   const agentCapabilities = {
     loadSession: caps !== "none",
     mcpCapabilities: { http: !process.env.FAKE_ACP_NO_HTTP },
-    ...(caps === "resume" ? { sessionCapabilities: { resume: {} } } : {}),
+    ...(caps === "resume" ? { sessionCapabilities: { resume: {}, close: {} } } : {}),
   };
   send({
     id: m.id,
@@ -247,20 +255,23 @@ function record(cwd) {
     } catch {
       wrote = "blocked";
     }
-  appendFileSync(process.env.FAKE_ACP_RECORD, `${JSON.stringify({ cwd, wrote, args: process.argv.slice(2) })}\n`);
+  const row = { cwd, wrote, args: process.argv.slice(2), pid: process.pid, gate: process.env.ION_GATE_URL ?? null };
+  appendFileSync(process.env.FAKE_ACP_RECORD, `${JSON.stringify(row)}\n`);
 }
 
 function newSession(m) {
   if (process.env.FAKE_ACP_SIGNED_OUT === "1")
     return send({ id: m.id, error: { code: -32000, message: "Authentication required" } });
   record(m.params.cwd);
-  sessions.set("s1", m.params.cwd);
-  metas.set("s1", m.params._meta ?? null);
-  mcps.set("s1", m.params.mcpServers ?? null);
+  // s1, then s2… for more sessions in one process (ion's warm judge).
+  const sessionId = `s${sessions.size + 1}`;
+  sessions.set(sessionId, m.params.cwd);
+  metas.set(sessionId, m.params._meta ?? null);
+  mcps.set(sessionId, m.params.mcpServers ?? null);
   return send({
     id: m.id,
     result: {
-      sessionId: "s1",
+      sessionId,
       configOptions: [
         {
           id: "model",
@@ -292,5 +303,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (m.method === "session/set_config_option") return send({ id: m.id, result: { configOptions: [] } });
   if (m.method === "session/prompt") return void prompt(m.id, m.params);
   if (m.method === "session/cancel") return cancel?.();
+  if (m.method === "session/close") {
+    if (process.env.FAKE_ACP_RECORD)
+      appendFileSync(process.env.FAKE_ACP_RECORD, `${JSON.stringify({ closed: m.params.sessionId })}\n`);
+    return send({ id: m.id, result: {} });
+  }
   if (m.id !== undefined) send({ id: m.id, error: { code: -32601, message: "Method not found" } });
 });

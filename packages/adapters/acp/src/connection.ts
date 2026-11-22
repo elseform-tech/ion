@@ -20,8 +20,10 @@ import type { AcpHarness } from "./harnesses.js";
 
 type Choice = { value?: unknown; name?: unknown; options?: Choice[] };
 type ConfigOption = { id: string; category?: string; currentValue?: unknown; options?: Choice[] };
+/** The agent's process as a session sees it: a real one, or one session of ion's warm judge (bare.ts). */
+export type AgentChild = { kill(): unknown; on(event: "exit", listener: () => void): unknown };
 export type Connection = {
-  child: ChildProcessByStdio<Writable, Readable, Readable>;
+  child: AgentChild;
   rpc: Rpc;
   sessionId: string;
   options: ConfigOption[];
@@ -40,6 +42,8 @@ export type ConnectOpts = {
   envDrop?: StartOpts["envDrop"];
   ownTools?: StartOpts["ownTools"];
   sandbox?: StartOpts["sandbox"];
+  /** Its command line instead of the harness's (a bare start's). */
+  args?: string[];
 };
 
 /** Starts of an agent that's setting up, by agent: they take turns (two at once slowed each other past the limit). */
@@ -56,30 +60,49 @@ export function connect(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Con
   return mine;
 }
 
-async function open(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
-  const timeoutMs = o.timeoutMs ?? 30_000;
+/** A started agent process: its JSON-RPC, and its log's last failure reason (harnesses with `logFailure`). */
+export type Spawned = {
+  child: ChildProcessByStdio<Writable, Readable, Readable>;
+  rpc: Rpc;
+  failure?: () => string | undefined;
+};
+
+/** Spawns the agent (never through a shell) in the run's sandbox, with the agent's own paths added. */
+export function spawnAgent(h: AcpHarness, bin: string, o: ConnectOpts): Spawned {
   // In a run's sandbox (with the agent's own paths), so every process it starts is too.
   const sb = withPaths(o.sandbox, h.sandboxPaths?.(o.ownTools) ?? {});
-  const run = sandboxed(sb, bin, h.args);
+  const run = sandboxed(sb, bin, o.args ?? h.args);
   const child = spawn(run.command, run.args, { stdio: ["pipe", "pipe", "pipe"], env: envOf(h, o) });
   const rpc = createRpc({ stdin: child.stdin, stdout: child.stdout });
   // Gone (or never started): its output ends, so nothing waits on it.
   for (const gone of ["error", "exit"] as const) child.on(gone, () => child.stdout.destroy());
   // Its log is read only where it can say why a turn failed; otherwise it's drained unread.
   const failure = h.logFailure ? lastFailure(child.stderr, h.logFailure) : void child.stderr.resume();
+  return failure ? { child, rpc, failure } : { child, rpc };
+}
+
+/** `work`, or NotResponding once the start's time is up. */
+export async function inTime<T>(h: AcpHarness, o: ConnectOpts, work: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     const why = h.notResponding?.(o.ownTools) ?? `${h.label} didn't respond`;
-    timer = setTimeout(() => reject(new NotResponding(why)), timeoutMs);
+    timer = setTimeout(() => reject(new NotResponding(why)), o.timeoutMs ?? 30_000);
   });
   try {
-    const c = await Promise.race([handshake(h, { rpc, child }, o), timeout]);
-    return failure ? { ...c, failure } : c;
-  } catch (e) {
-    child.kill();
-    throw startError(h, o, e);
+    return await Promise.race([work, timeout]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function open(h: AcpHarness, bin: string, o: ConnectOpts): Promise<Connection> {
+  const a = spawnAgent(h, bin, o);
+  try {
+    const session = async () => openSession(h, a.rpc, await initialize(a.rpc), o);
+    return { ...a, ...(await inTime(h, o, session())) };
+  } catch (e) {
+    a.child.kill();
+    throw startError(h, o, e);
   }
 }
 
@@ -91,7 +114,7 @@ const envOf = (h: AcpHarness, o: ConnectOpts) => ({
 });
 
 /** What a start that failed says: not signed in, a session it couldn't continue, or the error as it was. */
-function startError(h: AcpHarness, o: ConnectOpts, e: unknown): unknown {
+export function startError(h: AcpHarness, o: ConnectOpts, e: unknown): unknown {
   if (e instanceof RpcError && e.code === -32000)
     return new Error(`${h.label} isn't signed in. Run: ${h.loginHint}`);
   if (o.resume && e instanceof RpcError)
@@ -116,9 +139,9 @@ function lastFailure(stderr: Readable, read: (line: string) => string | null): (
 /** The agent didn't answer in time (first-run download, an interactive prompt, a hang). */
 class NotResponding extends Error {}
 
-type AgentCaps = {
+export type AgentCaps = {
   loadSession?: boolean;
-  sessionCapabilities?: { resume?: object };
+  sessionCapabilities?: { resume?: object; close?: object };
   mcpCapabilities?: { http?: boolean };
 };
 
@@ -136,32 +159,39 @@ function acpServers(servers: HttpMcpSpec[] = [], caps: AgentCaps): unknown[] {
   });
 }
 
-async function handshake(
-  h: AcpHarness,
-  io: Pick<Connection, "rpc" | "child">,
-  o: ConnectOpts,
-): Promise<Connection> {
-  const init = (await io.rpc.request("initialize", {
+/** ACP's `initialize`: what the agent can do. */
+export async function initialize(rpc: Rpc): Promise<AgentCaps> {
+  const init = (await rpc.request("initialize", {
     protocolVersion: 1,
     clientCapabilities: {},
     clientInfo: { name: "ion", version: "0.0.0" },
   })) as { agentCapabilities?: AgentCaps };
-  const mcpServers = acpServers(o.mcpServers, init.agentCapabilities ?? {});
+  return init.agentCapabilities ?? {};
+}
+
+/** Opens (or continues) a session in `o.cwd` on a started agent. */
+export async function openSession(
+  h: AcpHarness,
+  rpc: Rpc,
+  caps: AgentCaps,
+  o: ConnectOpts,
+): Promise<{ sessionId: string; options: ConfigOption[] }> {
+  const mcpServers = acpServers(o.mcpServers, caps);
   const base = { cwd: o.cwd, mcpServers, ...(h.sessionMeta ? { _meta: h.sessionMeta } : {}) };
   if (o.resume) {
-    const method = continueMethod(init.agentCapabilities ?? {});
+    const method = continueMethod(caps);
     if (!method) throw new ResumeFailed(`${h.label} can't continue sessions`);
     // session/load replays the old conversation as updates; nothing listens yet, so it isn't shown again.
-    const r = (await io.rpc.request(method, { ...base, sessionId: o.resume })) as {
+    const r = (await rpc.request(method, { ...base, sessionId: o.resume })) as {
       configOptions?: ConfigOption[];
     };
-    return { ...io, sessionId: o.resume, options: r?.configOptions ?? [] };
+    return { sessionId: o.resume, options: r?.configOptions ?? [] };
   }
-  const s = (await io.rpc.request("session/new", base)) as {
+  const s = (await rpc.request("session/new", base)) as {
     sessionId: string;
     configOptions?: ConfigOption[];
   };
-  return { ...io, sessionId: s.sessionId, options: s.configOptions ?? [] };
+  return { sessionId: s.sessionId, options: s.configOptions ?? [] };
 }
 
 /** session/resume when the agent offers it (no replay), else session/load, else none. */

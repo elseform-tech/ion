@@ -1,6 +1,8 @@
+import { writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { GateCall, SandboxPaths } from "@ion/adapter-kit";
+import type { EffortLevel } from "@ion/schema";
 import { type GateEnv, grokGateEnv, grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
 import {
   carriedConfig,
@@ -59,6 +61,13 @@ export type AcpHarness = {
   prepare?: (own?: boolean) => boolean;
   /** Its own paths in a run's sandbox: what of ion's it reads, and its config, which a run can't write. */
   sandboxPaths?: (own?: boolean) => Partial<SandboxPaths>;
+  /**
+   * A bare start (ion's judge): its fast model and low effort (when ion's config names none), and its command line
+   * with no tools, given the judge's folder (Grok: an agent profile there that allows none).
+   */
+  bare?: { model?: string; effort?: EffortLevel; args?: (dir: string) => string[] };
+  /** Its own command that deletes a session from its history (ion's judge sessions don't pile up among yours). */
+  forgetArgs?: (sessionId: string) => string[];
 };
 
 /** Grok's folder: `$GROK_HOME`, else `~/.grok`. */
@@ -91,7 +100,31 @@ export const GROK_BUILD: AcpHarness = {
   sandboxPaths: () => ({
     noWrite: ["hooks", "config.toml", "skills", "installed-plugins", "plugins"].map((f) => join(grokHome(), f)),
   }),
+  // ion's judge: its fast model at low effort, with a profile that leaves it no tool of consequence (final review,
+  // 2026-11-22; GROK_CONFIG's toolset can't remove tools, `--tools` doesn't reach `agent stdio`, a profile does).
+  bare: { model: "grok-4.7-build-fast", effort: "low", args: grokBareArgs },
+  forgetArgs: (id) => ["sessions", "delete", id],
 };
+
+/**
+ * Grok for ion's judge: an agent profile in the judge's folder whose only tool is its todo list (a profile needs one;
+ * `search_tool`/`use_tool` stay, and ion's gate refuses them), no servers inherited, no shared leader.
+ */
+function grokBareArgs(dir: string): string[] {
+  const file = join(dir, "ion-judge.md");
+  const profile = [
+    "---",
+    "name: ion-judge",
+    "description: Answers one question for ion",
+    "tools: todo_write",
+    "mcpInheritance: none",
+    "---",
+    "Answer the user's message directly, in the format it asks for. You have no tools.",
+    "",
+  ].join("\n");
+  writeFileSync(file, profile, { mode: 0o600 });
+  return ["--permission-mode", "default", "agent", "--agent-profile", file, "--no-leader", "stdio"];
+}
 
 /**
  * Grok's switches for what it reads from Claude Code (~/.claude.json servers and skills, ~/.claude/settings.json hooks)
@@ -175,6 +208,9 @@ export const OPENCODE: AcpHarness = {
     noWrite: [join(userConfigHome(), "opencode"), join(homedir(), ".opencode")],
   }),
   logFailure: opencodeFailure,
+  // ion's judge: its free model, low effort; every tool refused by ion's gate (final review, 2026-11-22).
+  bare: { effort: "low" },
+  forgetArgs: (id) => ["session", "delete", id],
 };
 
 /**

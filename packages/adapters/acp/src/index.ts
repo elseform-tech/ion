@@ -5,10 +5,12 @@ import {
   capabilitiesWith,
   type HarnessAdapter,
   readVersion,
+  type StartOpts,
   whichOnPath,
 } from "@ion/adapter-kit";
 import type { Capabilities } from "@ion/schema";
 import {
+  type ConnectOpts,
   connect,
   type ProbePlace,
   probeModels,
@@ -16,6 +18,7 @@ import {
   setOption,
   setUpOutside,
 } from "./connection.js";
+import { bareConnect, REFUSE_ALL } from "./bare.js";
 import type { AcpHarness } from "./harnesses.js";
 import { startAcpSession } from "./session.js";
 
@@ -105,13 +108,33 @@ export function createAcpAdapter(
       // Not set up yet: once outside the sandbox first, where it can write ion's folder for it.
       if (opts.sandbox && h.prepare && !h.prepare(opts.ownTools))
         await setUpOutside(h, path, { ownTools: !!opts.ownTools, timeoutMs: deps.startTimeoutMs });
-      // The chat's folder, session, MCP server, gate and env (ConnectOpts reads only those).
-      const c = await connect(h, path, { ...opts, timeoutMs: deps.startTimeoutMs });
-      const model =
-        (await setOption(c, "model", opts.model ?? h.defaultModel)) ?? h.defaultModel ?? "default";
-      await setOption(c, "thought_level", opts.effort === "max" ? "high" : opts.effort);
-      return startAcpSession(c, opts, { harness: h.id, model, silent: silenceOf(h) });
+      // The chat's folder, session, MCP server, gate and env (ConnectOpts reads only those). ion's judge (bare): a
+      // session of a warm agent with no tools, on the harness's fast model and low effort.
+      const c = opts.bare
+        ? await bareConnect(h, path, bareOpts(h, opts, deps.startTimeoutMs))
+        : await connect(h, path, { ...opts, timeoutMs: deps.startTimeoutMs });
+      const wanted = opts.model ?? (opts.bare ? h.bare?.model : null) ?? h.defaultModel;
+      const model = (await setOption(c, "model", wanted)) ?? h.defaultModel ?? "default";
+      const effort = opts.effort ?? (opts.bare ? (h.bare?.effort ?? null) : null);
+      await setOption(c, "thought_level", effort === "max" ? "high" : effort);
+      return startAcpSession(c, { ...opts, effort }, { harness: h.id, model, silent: silenceOf(h) });
     },
+  };
+}
+
+/**
+ * A bare start's connection: the harness's bare command line, no servers, ion's gate pointed where every call is
+ * refused (final review, 2026-11-22), in the judge's folder and sandbox.
+ */
+function bareOpts(h: AcpHarness, opts: StartOpts, timeoutMs?: number): ConnectOpts {
+  return {
+    cwd: opts.cwd,
+    gate: { url: REFUSE_ALL },
+    env: { ION_GATE_URL: REFUSE_ALL },
+    ...(opts.envDrop ? { envDrop: opts.envDrop } : {}),
+    ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
+    ...(h.bare?.args ? { args: h.bare.args(opts.cwd) } : {}),
+    ...(timeoutMs ? { timeoutMs } : {}),
   };
 }
 

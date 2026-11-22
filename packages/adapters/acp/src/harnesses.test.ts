@@ -433,3 +433,30 @@ describe("agents' own paths in a run's sandbox", () => {
     ]);
   });
 });
+
+// Final review, 2026-11-22 (live: Grok's judge timed out in every live chat, up to 44 s): the judge ran Grok with all
+// its tools (it tried them, got refused, tried again) on its slow default model at high effort. A bare start runs Grok
+// with an agent profile that allows no tool of consequence (checked live: GROK_CONFIG's toolset can't remove tools and
+// `--tools` doesn't reach `agent stdio`; a profile does), on its fast model at low effort, and its sessions are
+// deleted after. opencode's are deleted too; its tools are refused by ion's gate (no switch removes them all).
+describe("ion's judge on ACP agents", () => {
+  it("runs Grok with a no-tools profile, its fast model and low effort", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ion-bare-grok-"));
+    const args = GROK_BUILD.bare?.args?.(dir) ?? [];
+    const at = args.indexOf("--agent-profile");
+    expect(at).toBeGreaterThan(-1);
+    expect(args).toEqual(expect.arrayContaining(["--permission-mode", "default", "agent", "--no-leader", "stdio"]));
+    const profile = readFileSync(args[at + 1]!, "utf8");
+    expect(args[at + 1]!.startsWith(dir)).toBe(true);
+    expect(profile).toMatch(/^tools: todo_write$/m);
+    expect(profile).toMatch(/^mcpInheritance: none$/m);
+    expect(GROK_BUILD.bare?.model).toBe("grok-4.7-build-fast");
+    expect(GROK_BUILD.bare?.effort).toBe("low");
+  });
+
+  it("deletes the judge's sessions from each agent's history", () => {
+    expect(GROK_BUILD.forgetArgs?.("abc")).toEqual(["sessions", "delete", "abc"]);
+    expect(OPENCODE.forgetArgs?.("ses_1")).toEqual(["session", "delete", "ses_1"]);
+    expect(OPENCODE.bare?.effort).toBe("low");
+  });
+});
