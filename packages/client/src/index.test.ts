@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readDaemonInfo } from "./index.js";
+import { daemonUrl, readDaemonInfo } from "./index.js";
 
 const dirWith = (x: unknown) => {
   const d = mkdtempSync(join(tmpdir(), "ion-info-"));
@@ -25,6 +25,33 @@ describe("readDaemonInfo", () => {
   });
   it("returns null when the file is missing", () => {
     expect(readDaemonInfo(mkdtempSync(join(tmpdir(), "ion-none-")))).toBeNull();
+  });
+});
+
+// CodeQL on main, 2026-11-22 (js/file-access-to-http): ion's token went to any host asked for.
+describe("daemonUrl", () => {
+  it("is this computer only", () => {
+    expect(daemonUrl(4000)).toBe("ws://127.0.0.1:4000/");
+    expect(daemonUrl(4000, "::1")).toBe("ws://[::1]:4000/");
+    // Review, 2026-11-22: "localhost" can resolve elsewhere; only numeric loopback is connected to.
+    expect(daemonUrl(4000, "localhost")).toBe("ws://127.0.0.1:4000/");
+    for (const h of [
+      "example.com",
+      "ion.example.org",
+      "127.0.0.1.evil.com",
+      "0.0.0.0",
+      "__proto__",
+      "localhost:80@x",
+    ])
+      expect(() => daemonUrl(4000, h)).toThrow(/only to this computer/);
+    expect(() => daemonUrl(0)).toThrow(/not a port/);
+  });
+
+  it("refuses to send the token anywhere else", async () => {
+    const { connect } = await import("./index.js");
+    await expect(connect({ port: 4000, host: "example.com", token: "t" })).rejects.toThrow(
+      /only to this computer/,
+    );
   });
 });
 
