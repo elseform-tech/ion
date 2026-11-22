@@ -258,6 +258,11 @@ function opencodeAskEnv(gate?: GateEnv, own = false): Record<string, string> {
     ...(gate ? { ION_GATE_URL: gate.url } : {}),
     // An inline config in ion's own environment is carried into the file, never passed on.
     OPENCODE_CONFIG_CONTENT: "",
+    // A file outside the folder: opencode asks its own `external_directory` after ion's gate allowed the call, as an
+    // ACP ask of kind "other" ion can't read, so an ion's read outside its project failed (PR #26 follow-up,
+    // 2026-11-22). With a gate, ion's gate decides alone (it saw the call whole first); without one, opencode asks.
+    // Either way a permission in ion's own environment isn't passed on.
+    OPENCODE_PERMISSION: gate ? JSON.stringify({ external_directory: "allow" }) : "",
     // A repo's own opencode.json could set permissions back to "allow" (verified): don't load it.
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     // Skills only from the folders ion names (with your own tools): none it finds by itself (~/.claude, a project's).
