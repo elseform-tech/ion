@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { stripControl } from "@ion/schema";
 import { readFile } from "../tools/import.js";
 import { readPlugins } from "../tools/plugins.js";
-import { openFile } from "../tools/read-file.js";
+import { type Follow, openFile } from "../tools/read-file.js";
 
 /**
  * Each agent's own commands, as "/" lists them (the user, 2026-11-21, after Task 13: the agent's own come first):
@@ -47,8 +47,17 @@ function parse(md: string): { description: string; body: string } {
   };
 }
 
-/** The `.md` files in a folder, as commands named by their file (with a prefix). */
-function folder(dir: string, runs: boolean, prefix = ""): OwnCommand[] {
+/** Secrets folders a link in your own commands folder may never lead into. */
+const SECRET_DIRS = [".ssh", ".gnupg", ".aws", ".config/ion", ".local/share/ion", ".cache/ion"];
+
+/** Your own folder's links (dotfiles) may lead anywhere in your home but its secrets folders. */
+const yourLinks = (home: string): Follow => ({
+  root: home,
+  deny: SECRET_DIRS.map((d) => join(home, d)),
+});
+
+/** The `.md` files in a folder, as commands named by their file (with a prefix); `follow`: your own folder's links. */
+function folder(dir: string, runs: boolean, prefix = "", follow?: Follow): OwnCommand[] {
   let names: string[] = [];
   try {
     names = readdirSync(dir)
@@ -60,9 +69,8 @@ function folder(dir: string, runs: boolean, prefix = ""): OwnCommand[] {
   return names.flatMap((n) => {
     const name = `${prefix}${n.slice(0, -3)}`;
     if (!NAME.test(name)) return [];
-    // Checked and read through one open file (CodeQL, PR #25).
-    // Your commands may be links (dotfiles): followed deliberately.
-    const f = openFile(join(dir, n), MAX_FILE, undefined, { follow: true });
+    // Checked and read through one open file (CodeQL, PR #25); a link only in your own folder (automated review).
+    const f = openFile(join(dir, n), MAX_FILE, undefined, follow ? { follow } : {});
     return f?.kind === "file" && f.text !== null ? [{ name, ...parse(f.text), runs }] : [];
   });
 }
@@ -88,7 +96,7 @@ function pluginSkills(dir: string, prefix: string): OwnCommand[] {
 function claude(o: ReadOpts): OwnCommand[] {
   const plugins = readPlugins(o).filter((p) => p.agent === "claude-code" && p.path);
   return [
-    ...folder(join(o.home, ".claude", "commands"), false),
+    ...folder(join(o.home, ".claude", "commands"), false, "", yourLinks(o.home)),
     ...plugins.flatMap((p) => [
       ...folder(join(p.path!, "commands"), true, `${p.name}:`),
       ...pluginSkills(join(p.path!, "skills"), `${p.name}:`),
@@ -99,7 +107,11 @@ function claude(o: ReadOpts): OwnCommand[] {
 /** opencode's: its command folders, then its config's `command` table. */
 function opencode(o: ReadOpts): OwnCommand[] {
   const dir = join(o.env.XDG_CONFIG_HOME || join(o.home, ".config"), "opencode");
-  const files = [...folder(join(dir, "command"), true), ...folder(join(dir, "commands"), true)];
+  const yours = yourLinks(o.home);
+  const files = [
+    ...folder(join(dir, "command"), true, "", yours),
+    ...folder(join(dir, "commands"), true, "", yours),
+  ];
   const table = ["opencode.json", "opencode.jsonc", "config.json"]
     .map((f) => readFile(join(dir, f)))
     .find(isObj)?.command;
@@ -122,7 +134,7 @@ function opencode(o: ReadOpts): OwnCommand[] {
 
 /** Codex's custom prompts (`/prompts:name` in Codex). */
 const codex = (o: ReadOpts) =>
-  folder(join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts"), false, "prompts:");
+  folder(join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts"), false, "prompts:", yourLinks(o.home));
 
 const BY_AGENT: Record<string, (o: ReadOpts) => OwnCommand[]> = { "claude-code": claude, opencode, codex };
 

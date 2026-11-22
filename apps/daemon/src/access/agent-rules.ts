@@ -40,12 +40,15 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 /** Files read, by path, with the mtime and size they had: read again only when they change (task review, 2026-11-21). */
 const read = new Map<string, { at: string; text: string | null }>();
 
+/** Where a settings file's link may lead: anywhere but your keys (its text is only parsed for rules). */
+const SETTINGS_LINKS = { root: "/", deny: [".ssh", ".gnupg", ".aws"].map((d) => join(homedir(), d)) };
+
 /** A file's text: missing, too big or unreadable is nothing. */
 function textOf(path: string): string | null {
   const known = read.get(path);
   // Checked and read through one open file (CodeQL, PR #25).
-  // Your settings file may be a link (dotfiles): followed deliberately.
-  const f = openFile(path, MAX, known?.at, { follow: true });
+  // Your settings file may be a link (dotfiles): followed one hop, never into your keys (automated review).
+  const f = openFile(path, MAX, known?.at, { follow: SETTINGS_LINKS });
   if (!f || f.kind !== "file") return null;
   if (known?.at === f.at) return known.text;
   read.set(path, { at: f.at, text: f.text });

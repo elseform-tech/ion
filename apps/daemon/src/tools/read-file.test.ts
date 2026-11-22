@@ -36,9 +36,22 @@ describe("openFile", () => {
     writeFileSync(join(d, "real.json"), "{}");
     symlinkSync(join(d, "real.json"), join(d, "link.json"));
     expect(openFile(join(d, "link.json"), 100)).toBeNull();
-    expect(openFile(join(d, "link.json"), 100, undefined, { follow: true })).toMatchObject({
+    const follow = { root: d };
+    expect(openFile(join(d, "link.json"), 100, undefined, { follow })).toMatchObject({
       kind: "file",
       text: "{}",
     });
+    // Automated review of d407c95, 2026-11-22: one hop, only into its root, never into a folder it denies.
+    const out = dir();
+    writeFileSync(join(out, "secret"), "s");
+    symlinkSync(join(out, "secret"), join(d, "out.json"));
+    expect(openFile(join(d, "out.json"), 100, undefined, { follow })).toBeNull();
+    mkdirSync(join(d, ".ssh"));
+    writeFileSync(join(d, ".ssh", "id"), "k");
+    symlinkSync(join(d, ".ssh", "id"), join(d, "id.json"));
+    const denied = { follow: { root: d, deny: [join(d, ".ssh")] } };
+    expect(openFile(join(d, "id.json"), 100, undefined, denied)).toBeNull();
+    symlinkSync(join(d, "link.json"), join(d, "two.json"));
+    expect(openFile(join(d, "two.json"), 100, undefined, { follow })).toBeNull();
   }, 10_000);
 });
