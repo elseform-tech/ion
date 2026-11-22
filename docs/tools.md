@@ -142,35 +142,45 @@ things on, sign in or add keys.
     free for other repos, `~/Downloads`, `~/Documents`, `/usr`, `/etc/hosts` and the like. By class, these go to the
     judge instead (security review, 2026-11-21): anything under a dot-folder or a dotfile (`~/.config/…`, `~/.local/…`,
     `~/.zsh_history`, another repo's `.git`, other agents' folders), `~/Library/{Application Support, Keychains, Cookies,
-    Containers, Group Containers, Mail, Messages, Safari}`, `/proc`, `/sys`, `/dev`, `/private/var/db`, and files named
-    `.env*`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `*credential*`, `*secret*`, `id_*`. Searches (`grep -r`, `ls -R`, a
-    search tool, a glob) outside the project go to the judge, and a command reads outside freely only regular files
-    (a folder it names goes to the judge, whatever its flags); inside it, everything reads as before. A path with `~`,
-    `..` or a wildcard goes to the judge.
+    Containers, Group Containers, Mail, Messages, Safari, Preferences, Accounts, Calendars, Mobile Documents, Logs,
+    IdentityServices}`, `/proc`, `/sys`, `/dev`, `/private/var/db`, any folder named `secret(s)`, `private` or
+    `credentials` on the way, and files named `.env*`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `*credential*`, `*secret*`,
+    `id_*`. Searches (`grep -r`, `ls -R`, a search tool, a glob) outside the project go to the judge. Outside the
+    project, a read tool or a command reads freely only regular files: a folder (or something that isn't there) goes to
+    the judge, whatever the flags say. Inside the project, everything reads as before. A command may name a path from
+    your home as `~/…` (`cat ~/notes/a.md`); `..`, `$HOME`, quotes and wildcards go to the judge. A command given as a
+    list of words (Codex's shell) is checked the same way as a string.
   - **Refused outright, in Auto:** your secrets (`~/.ssh`, `~/.aws`, `.netrc`, …) and agents' sign-in files, for every
     chat (its own agent's too): `~/.codex/auth.json`, `~/.claude/.credentials.json`, opencode's `auth.json` in its data
     folder, and any `*credential*`, `*token*` or `auth*.json` in an agent's folder.
-  - **Writes in the project and the system temp folders:** the chat's worktree, `/tmp` (and `/private/tmp`), `$TMPDIR`
-    and macOS's `/var/folders/…/T`, links followed. Files in the worktree that make git, an agent or a package manager
+  - **Writes in the project and the system temp folders:** the chat's worktree, `/tmp` (and `/private/tmp`), and your
+    own `$TMPDIR` (on macOS, your own `/var/folders/…/T`, never another user's). Links are followed, broken ones too:
+    a link is taken to be where it points even if nothing is there yet, and a link that can't be resolved (a loop)
+    counts as outside. Files in the worktree that make git, an agent or a package manager
     run code (`.git`, `.npmrc`, `.mcp.json`, `.envrc`, any dot-folder, …) still go to the judge.
   - **Everything else goes to the judge:** writes elsewhere (`~/Documents`), other commands, the web, MCP tools,
     pushes and publishing. It allows normal work.
 - **Each agent's own allow and deny rules** count as your decisions in that agent's chats, deny winning. ion reads
   them from your own settings, never a project's (a repo writes those), and never changes them. Settings → Agents says
-  "Uses its own allow/deny rules (N)".
+  "Uses its own allow/deny rules (N)" (Codex's trusted projects aren't counted: they aren't allow or deny rules).
   - **Claude Code:** `permissions.allow` / `permissions.deny` in `~/.claude/settings.json` and
-    `~/.claude/settings.local.json` (`$CLAUDE_CONFIG_DIR` when set).
-  - **opencode:** `permission` in its global config (`$XDG_CONFIG_HOME/opencode/opencode.json(c)`, `config.json`).
+    `~/.claude/settings.local.json` (`$CLAUDE_CONFIG_DIR` when set), and Claude Code's managed settings
+    (`/Library/Application Support/ClaudeCode/managed-settings.json`; `/etc/claude-code/managed-settings.json` on Linux).
+  - **opencode:** `permission` in its global config (`$XDG_CONFIG_HOME/opencode/opencode.json(c)`, `config.json`) and
+    `$OPENCODE_CONFIG` when set.
   - **Codex:** a trusted project (`[projects."<path>"] trust_level = "trusted"` in `~/.codex/config.toml`) is a line
     for the judge ("Codex trusts this project"), not an allow.
   - **How a rule is matched** (only what ion can match safely; anything else is left out, never widened):
     `Bash(npm test)` is that exact command; `Bash(npm test:*)` and `Bash(npm test *)` (opencode: `"npm test *"`) are
-    commands that start with those words. An allow covers the command alone: anything chained, piped, redirected or
+    commands that start with those words. Spaces and tabs count as one space (`git  push` is `git push`). An allow covers the command alone: anything chained, piped, redirected or
     substituted after it (`;`, `&&`, `|`, `>`, `$(…)`) goes to the judge. A deny looks at every part of a chain. A plain
     tool name (`WebFetch`, `mcp__github__create_issue`, opencode's `"webfetch": "deny"`) is that tool; `mcp__github` is
-    every tool of that server. Left out: path patterns (`Read(./src/**)`), wildcards inside a command, `ask`, and an
-    allow of every command or every edit (`Bash`, `Edit`, `Write`, opencode's `"bash": "allow"` or `"*"`): that's what
-    Full access is for.
+    every tool of that server. A bare allow of a tool that only reads or fetches (`Read`, `WebFetch`, `WebSearch`) is
+    honoured as written: your settings allow it everywhere, so Auto does too (your secrets still refused). A deny with
+    a wildcard inside or at the end (`git push*`, `rm -rf *.tmp`) is read as "starts with" what comes before it (the
+    safe way). Left out: path patterns (`Read(./src/**)`), an allow with an inner wildcard, `ask`, and an allow of
+    every command or every edit (`Bash`, `Edit`, `Write`, opencode's `"bash": "allow"` or `"*"`): that's what Full
+    access is for.
   - An allow is Auto's: it never lets through what the floor refuses, and ion's own guesses still go to the judge. A
     deny refuses in every mode, Full too: "Your Claude Code settings deny this". A denied command wrapped in another
     (`sh -c "git push"`) isn't matched, as in Claude Code itself; it goes to the judge in Auto like any command.

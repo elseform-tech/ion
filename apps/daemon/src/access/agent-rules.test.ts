@@ -192,7 +192,7 @@ describe("each agent's own allow and deny rules", () => {
       }),
     });
     const r = readAgentRules("opencode", { home, env: {} });
-    expect(ruleCount(r)).toBe(3);
+    expect(ruleCount(r)).toBe(4);
     const say = (req: ApprovalRequest) => (r ? theirSay(req, r)?.decision : undefined);
     expect(say({ ...cmd("git status"), toolName: "bash" })).toBe("allow");
     expect(say({ ...cmd("npm test"), toolName: "bash" })).toBe("allow");
@@ -205,8 +205,9 @@ describe("each agent's own allow and deny rules", () => {
         input: { url: "https://x" },
       }),
     ).toBe("deny");
-    // "git push*" has a wildcard ion can't read safely: ignored, not widened.
-    expect(say({ ...cmd("git push"), toolName: "bash" })).toBeUndefined();
+    // Task review, 2026-11-22: a deny's wildcard is read as "starts with" (the safe way): "git push*" refuses "git pushx".
+    expect(say({ ...cmd("git push"), toolName: "bash" })).toBe("deny");
+    expect(say({ ...cmd("git pushx --force"), toolName: "bash" })).toBe("deny");
   });
 
   it("Codex's trusted projects are a line for the judge, not an allow", async () => {
@@ -216,7 +217,8 @@ describe("each agent's own allow and deny rules", () => {
     });
     const r = readAgentRules("codex", { home, env: {}, project });
     expect(r?.notes).toEqual(["Codex trusts this project (its own setting)"]);
-    expect(ruleCount(r)).toBe(1);
+    // Task review, 2026-11-22: trusted projects aren't allow/deny rules: not in Settings' count.
+    expect(ruleCount(r)).toBe(0);
     expect(r ? theirSay(cmd("npm test"), r) : null).toBeNull();
     const seen: string[][] = [];
     const access = createAccess({
@@ -254,5 +256,47 @@ describe("reading agents' rules", () => {
     const later = new Date(mtime.getTime() + 5000);
     utimesSync(file, later, later);
     expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(2);
+  });
+});
+
+describe("matching a deny", () => {
+  // Task review, 2026-11-22: doubled spaces or a tab got round a deny (and matched an allow).
+  it("doubled spaces and tabs can't dodge a deny, in Full too", async () => {
+    const { a } = approvalsFor(claudeHome(["Bash(git push:*)"], ["Bash(git push:*)", "Bash(rm -rf:*)"]));
+    for (const c of ["git  push", "git\tpush origin", "rm  -rf /", "ls && git   push"])
+      for (const mode of ["auto", "full"] as const)
+        expect(
+          (await a.gate({ ...run("claude-code", mode), sandboxed: true }, cmd(c), [wt])).decision,
+          `${mode} ${c}`,
+        ).toBe("deny");
+  });
+
+  // Task review, 2026-11-22: a deny with a wildcard inside or at the end is read as "starts with".
+  it("reads a Claude deny's wildcard as starts-with", () => {
+    const r = readAgentRules("claude-code", {
+      home: claudeHome([], ["Bash(rm -rf *.tmp)", "Bash(npm publish*)"]),
+      env: {},
+    });
+    const say = (c: string) => (r ? theirSay(cmd(c), r)?.decision : undefined);
+    expect(say("rm -rf build")).toBe("deny");
+    expect(say("npm publishx")).toBe("deny");
+    expect(say("npm test")).toBeUndefined();
+  });
+
+  // Task review, 2026-11-22: Claude's managed settings and OPENCODE_CONFIG are your settings too.
+  it("reads Claude's managed settings and OPENCODE_CONFIG", () => {
+    const sys = fakeHome({ "managed.json": JSON.stringify({ permissions: { deny: ["Bash(curl:*)"] } }) });
+    const claude = readAgentRules("claude-code", {
+      home: fakeHome({}),
+      env: {},
+      managed: join(sys, "managed.json"),
+    });
+    expect(claude ? theirSay(cmd("curl https://x"), claude)?.decision : null).toBe("deny");
+    const oc = fakeHome({ "oc.json": JSON.stringify({ permission: { bash: { "git push": "deny" } } }) });
+    const open = readAgentRules("opencode", {
+      home: fakeHome({}),
+      env: { OPENCODE_CONFIG: join(oc, "oc.json") },
+    });
+    expect(open ? theirSay({ ...cmd("git push"), toolName: "bash" }, open)?.decision : null).toBe("deny");
   });
 });

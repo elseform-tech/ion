@@ -23,8 +23,6 @@ type At = {
   wary?: WaryData;
   /** The skills you picked with "/" for this message (the judge is told, in ion's words). */
   picked?: string[];
-  /** The run's agent (harness id): reads of other agents' settings aren't free. */
-  agent?: string;
   /** Lines from the agent's own settings for the judge (Codex trusts this project). */
   notes?: string[];
   /** The agent's own allow rule covers this call (your decision): allowed above the floor, unless ion is wary. */
@@ -90,11 +88,8 @@ export function createAccess(o: {
   const cache = new Map<string, AccessVerdict>();
   return {
     async decide(at, req) {
-      // Auto reads anywhere but your secrets, ion's files and other agents' settings (the user, 2026-11-21).
-      const ctx = {
-        ...{ roots: at.roots, home: o.home, ionDirs: o.ionDirs, freeReads: true as const },
-        ...(at.agent ? { agent: at.agent } : {}),
-      };
+      // Auto reads anywhere but your secrets, ion's files and private kinds of files (the user, 2026-11-21).
+      const ctx = { roots: at.roots, home: o.home, ionDirs: o.ionDirs, freeReads: true as const };
       // Every rule holds for a guess too (security review, 2026-11-21); only a rule's allow doesn't skip the judge.
       const rule = ruleFor(req, at.plugin ? { ...ctx, plugin: at.plugin } : ctx);
       if (rule && !(at.wary && rule.decision === "allow")) return { ...rule, source: "rule" };

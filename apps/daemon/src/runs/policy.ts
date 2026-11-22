@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
@@ -44,11 +44,29 @@ function pathsOf(req: ApprovalRequest): string[] {
   return out;
 }
 
-/** The real path, resolving symlinks; for a file that doesn't exist yet, its nearest existing parent's. */
-export function realish(p: string): string {
+/** Where a path that can't be resolved (a link loop, links too deep) is taken to be: outside everything. */
+const UNRESOLVED = "/.ion-unresolved-link";
+
+/** A link's target, when `p` is a link (broken or not); else null. */
+function linkOf(p: string): string | null {
+  try {
+    return lstatSync(p).isSymbolicLink() ? readlinkSync(p) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The real path, resolving symlinks; for a file that doesn't exist yet, its nearest existing parent's. A broken link is
+ * followed to where it points (task review, 2026-11-22), however deep (40 links at most; past that, outside).
+ */
+export function realish(p: string, depth = 0): string {
   let dir = p;
   const tail: string[] = [];
   while (!existsSync(dir) && dirname(dir) !== dir) {
+    const link = linkOf(dir);
+    if (link !== null)
+      return depth >= 40 ? UNRESOLVED : realish(join(resolve(dirname(dir), link), ...tail), depth + 1);
     tail.unshift(basename(dir));
     dir = dirname(dir);
   }
@@ -71,14 +89,15 @@ function inside(p: string, roots: string[]): boolean {
 
 const allInside = (paths: string[], roots: string[]) => paths.every((p) => inside(p, roots));
 
-/** The system temp folders: /tmp (and /private/tmp), and macOS's per-user `/var/folders/<a>/<b>/T`. */
-const SYSTEM_TEMP = /^(\/private)?(\/tmp|\/var\/folders\/[^/]+\/[^/]+\/T)(\/|$)/;
+/** The system temp folder everyone shares: /tmp (and /private/tmp). */
+const SYSTEM_TEMP = /^(\/private)?\/tmp(\/|$)/;
+/** macOS's per-user temp folder, `/var/folders/<a>/<b>/T`: only your own counts (task review, 2026-11-22). */
+const VAR_TEMP = /^(\/private)?\/var\/folders\/[^/]+\/[^/]+\/T$/;
 
-/** `$TMPDIR` (real path), unless it's `/` or holds your home: a TMPDIR set that wide isn't a temp folder. */
+/** Your `$TMPDIR` (real path), when it's your own /var/folders temp folder or under /tmp; else none. */
 function namedTemp(): string | null {
-  const d = realish(tmpdir()); // $TMPDIR when set
-  const home = realish(homedir());
-  return d === "/" || !relative(d, home).startsWith("..") ? null : d;
+  const d = realish(tmpdir()); // $TMPDIR when set (no trailing slash: a real path)
+  return VAR_TEMP.test(d) || SYSTEM_TEMP.test(d) ? d : null;
 }
 
 /** Inside a system temp folder (links followed): agents write their scratch files there freely (the user, 2026-11-21). */

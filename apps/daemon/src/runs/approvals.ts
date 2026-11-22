@@ -352,13 +352,12 @@ export class Approvals {
     }
   }
 
-  /** What Auto is told about the run: its chat, request and roots, its agent, picks and plugin, and `how`. */
+  /** What Auto is told about the run: its chat, request and roots, picks and plugin, and `how`. */
   private atOf(r: AskingRun, roots: string[], how: AutoHow) {
     return {
       ...{ chatId: r.chatId, projectId: r.projectId, text: r.request, roots },
       ...(r.pluginDir ? { plugin: r.pluginDir } : {}),
       ...(r.picked?.length ? { picked: r.picked } : {}),
-      ...(r.harness ? { agent: r.harness } : {}),
       ...(how.notes?.length ? { notes: how.notes } : {}),
       ...(how.allowedBy ? { allowedBy: how.allowedBy } : {}),
       ...(how.checksFailed ? { checksFailed: true } : {}),

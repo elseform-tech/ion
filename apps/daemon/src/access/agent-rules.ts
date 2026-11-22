@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { loadUserConfig } from "@ion/config";
 import { type ApprovalRequest, parseJsonc } from "@ion/adapter-kit";
 import { parse as parseToml } from "smol-toml";
 import { commandText, under, unshell } from "./paths.js";
@@ -8,16 +10,27 @@ import { commandText, under, unshell } from "./paths.js";
  * Each agent's own allow and deny rules, as your decisions (the user, 2026-11-21: "use whatever the underlying harnesses
  * already does"): read from your own settings only (never a project's, which a repo writes), never written. A rule ion
  * can't match safely is left out, never widened: exact tool names, and a command's exact text or its first words.
- * `command` with neither `exact` nor `prefix` is every command (a deny only).
+ * `command` with neither `exact` nor `prefix` is every command (a deny only); `loose`: a deny's wildcard, read as plain
+ * "starts with" (task review, 2026-11-22: the safe way).
  */
 type AgentRule =
-  | { kind: "command"; exact?: string; prefix?: string }
+  | { kind: "command"; exact?: string; prefix?: string; loose?: true }
   | { kind: "tool"; name: string }
   | { kind: "server"; name: string };
 /** One agent's rules: who they're from, its allows and denies, and lines for the judge (Codex's trust). */
 export type TheirRules = { agent: string; allow: AgentRule[]; deny: AgentRule[]; notes: string[] };
 
-type Where = { home: string; env?: NodeJS.ProcessEnv; project?: string };
+/** `managed`: Claude Code's managed settings file (tests); by default where Claude Code keeps it on this system. */
+type Where = { home: string; env?: NodeJS.ProcessEnv; project?: string; managed?: string };
+
+/** Claude Code's managed settings (set by an administrator, or by you for the whole computer). */
+const MANAGED =
+  process.platform === "darwin"
+    ? "/Library/Application Support/ClaudeCode/managed-settings.json"
+    : "/etc/claude-code/managed-settings.json";
+
+/** Spaces and tabs as one space: `git  push` is `git push` (task review, 2026-11-22). */
+const oneSpace = (s: string) => s.replace(/\s+/g, " ").trim();
 
 const MAX = 1024 * 1024;
 const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -58,12 +71,17 @@ const CHAINS = /[;&|<>`$()\n\r]/;
 /** First words a rule can name: plain words, no shell syntax, no wildcards. */
 const WORDS = /^[\w./@+=:,%~-]+(?: [\w./@+=:,%~-]+)*$/;
 
-/** `npm test`, `npm test:*`, `npm test *`: the exact text, or its first words; anything else is null. */
-function commandRule(pattern: string): AgentRule | null {
-  const p = pattern.trim();
+/**
+ * `npm test`, `npm test:*`, `npm test *`: the exact text, or its first words. A deny with any other wildcard is what
+ * comes before it, as "starts with" (`git push*`, `rm -rf *.tmp`); an allow with one is null.
+ */
+function commandRule(pattern: string, allow: boolean): AgentRule | null {
+  const p = oneSpace(pattern);
   const prefix = /^(.*?)(?::\*| \*)$/.exec(p)?.[1]?.trim();
-  if (prefix !== undefined) return WORDS.test(prefix) ? { kind: "command", prefix } : null;
-  return WORDS.test(p) ? { kind: "command", exact: p } : null;
+  if (prefix !== undefined && WORDS.test(prefix)) return { kind: "command", prefix };
+  if (WORDS.test(p)) return { kind: "command", exact: p };
+  const lit = p.split("*")[0]!.trim();
+  return !allow && p.includes("*") && WORDS.test(lit) ? { kind: "command", prefix: lit, loose: true } : null;
 }
 
 const NAME = /^[A-Za-z_][\w-]*$/;
@@ -73,7 +91,7 @@ const CLAUDE_BROAD = new Set(["Bash", "Edit", "Write", "MultiEdit", "NotebookEdi
 /** One Claude Code rule: `Bash(...)`, an exact tool, `mcp__server` (its tools); the rest (path patterns) is null. */
 function claudeRule(text: string, allow: boolean): AgentRule | null {
   const bash = /^Bash\((.+)\)$/.exec(text.trim());
-  if (bash) return commandRule(bash[1]!);
+  if (bash) return commandRule(bash[1]!, allow);
   const t = text.trim().replace(/__\*$/, "");
   if (!NAME.test(t)) return null;
   if (t === "Bash") return allow ? null : { kind: "command" };
@@ -82,10 +100,14 @@ function claudeRule(text: string, allow: boolean): AgentRule | null {
   return server && !server.includes("__") ? { kind: "server", name: server } : { kind: "tool", name: t };
 }
 
-/** Claude Code's `permissions` from your user settings (`settings.json`, and `settings.local.json` there). */
+/**
+ * Claude Code's `permissions` from your user settings (`settings.json`, and `settings.local.json` there) and its managed
+ * settings.
+ */
 function claudeRules(w: Where): TheirRules {
   const dir = (w.env ?? process.env).CLAUDE_CONFIG_DIR || join(w.home, ".claude");
-  const files = ["settings.json", "settings.local.json"].map((f) => jsonOf(join(dir, f)));
+  const paths = [...["settings.json", "settings.local.json"].map((f) => join(dir, f)), w.managed ?? MANAGED];
+  const files = paths.map(jsonOf);
   const of = (key: "allow" | "deny") =>
     files.flatMap((s) => stringsOf(isObject(s.permissions) ? s.permissions[key] : undefined));
   const pick = (key: "allow" | "deny") =>
@@ -97,7 +119,7 @@ function claudeRules(w: Where): TheirRules {
 
 /** One opencode bash pattern: `*` is every command (a deny only); `npm *` its first words; plain text exact. */
 function opencodeBash(pattern: string, allow: boolean): AgentRule | null {
-  if (pattern.trim() !== "*") return commandRule(pattern);
+  if (pattern.trim() !== "*") return commandRule(pattern, allow);
   return allow ? null : { kind: "command" };
 }
 
@@ -116,19 +138,21 @@ function opencodeTool(tool: string, v: unknown, out: { allow: AgentRule[]; deny:
   }
 }
 
-/** opencode's `permission` from its global config (`$XDG_CONFIG_HOME/opencode`), never a project's. */
+/** opencode's `permission` from its global config (`$XDG_CONFIG_HOME/opencode`, `$OPENCODE_CONFIG`), never a project's. */
 function opencodeRules(w: Where): TheirRules {
-  const dir = join((w.env ?? process.env).XDG_CONFIG_HOME || join(w.home, ".config"), "opencode");
+  const env = w.env ?? process.env;
+  const dir = join(env.XDG_CONFIG_HOME || join(w.home, ".config"), "opencode");
   const out = { allow: [] as AgentRule[], deny: [] as AgentRule[] };
-  for (const f of ["config.json", "opencode.json", "opencode.jsonc"]) {
-    const permission = jsonOf(join(dir, f)).permission;
+  const files = ["config.json", "opencode.json", "opencode.jsonc"].map((f) => join(dir, f));
+  for (const f of [...files, ...(env.OPENCODE_CONFIG ? [env.OPENCODE_CONFIG] : [])]) {
+    const permission = jsonOf(f).permission;
     if (isObject(permission)) for (const [tool, v] of Object.entries(permission)) opencodeTool(tool, v, out);
   }
   return { agent: "opencode", ...out, notes: [] };
 }
 
 /** Codex's trusted projects: a line for the judge when this project is one, never an allow. */
-function codexRules(w: Where): TheirRules & { trusted: number } {
+function codexRules(w: Where): TheirRules {
   const dir = (w.env ?? process.env).CODEX_HOME || join(w.home, ".codex");
   let projects: Record<string, unknown> = {};
   try {
@@ -142,41 +166,35 @@ function codexRules(w: Where): TheirRules & { trusted: number } {
     .map(([p]) => resolve(p));
   const here = !!w.project && trusted.some((p) => under(resolve(w.project!), p));
   const notes = here ? ["Codex trusts this project (its own setting)"] : [];
-  return {
-    agent: "Codex",
-    allow: [],
-    deny: [],
-    notes,
-    trusted: trusted.length,
-  };
+  return { agent: "Codex", allow: [], deny: [], notes };
 }
 
 /** The rules an agent's chats go by, from your own settings; null for an agent with none ion reads. */
-export function readAgentRules(harness: string, w: Where): (TheirRules & { trusted?: number }) | null {
+export function readAgentRules(harness: string, w: Where): TheirRules | null {
   if (harness === "claude-code") return claudeRules(w);
   if (harness === "opencode") return opencodeRules(w);
   return harness === "codex" ? codexRules(w) : null;
 }
 
-/** How many of an agent's rules ion goes by (Settings → Agents). */
-export const ruleCount = (r: (TheirRules & { trusted?: number }) | null): number =>
-  r ? r.allow.length + r.deny.length + (r.trusted ?? 0) : 0;
+/** How many of an agent's allow and deny rules ion goes by (Settings → Agents); Codex's trust isn't one. */
+export const ruleCount = (r: TheirRules | null): number => (r ? r.allow.length + r.deny.length : 0);
 
 /** A command's parts, each as the shell reads it: what a deny looks for anywhere in a chain. */
 const partsOf = (command: string) =>
   unshell(command)
     .split(/[;&|\n\r()`]|\$\(/)
-    .map((p) => p.trim())
+    .map(oneSpace)
     .filter(Boolean);
 
 const startsWith = (text: string, prefix: string) => text === prefix || text.startsWith(`${prefix} `);
 
 /** An allow: the whole command, alone (nothing chained after it). A deny: any part of it. */
 function commandMatches(rule: AgentRule & { kind: "command" }, command: string, allow: boolean): boolean {
-  const alone = CHAINS.test(command) ? [] : [command.trim()];
+  const alone = CHAINS.test(command) ? [] : [oneSpace(command)];
   const texts = allow ? alone : partsOf(command);
-  if (rule.exact !== undefined) return texts.some((t) => t === rule.exact);
-  if (rule.prefix !== undefined) return texts.some((t) => startsWith(t, rule.prefix!));
+  const { exact, prefix, loose } = rule;
+  if (exact !== undefined) return texts.some((t) => t === exact);
+  if (prefix !== undefined) return texts.some((t) => (loose ? t.startsWith(prefix) : startsWith(t, prefix)));
   return !allow;
 }
 
@@ -197,4 +215,22 @@ export function theirSay(
   if (r.allow.some((x) => matches(x, req, true)))
     return { decision: "allow", reason: `Your ${r.agent} settings allow this` };
   return null;
+}
+
+/**
+ * The rules of a run's agent, with Codex's trust for the run's project folder. Your config is read again only when it
+ * changes (task review, 2026-11-22); the agents' files are cached the same way.
+ */
+export function theirRulesOf(configFile: string) {
+  let seen: { at: number; projects: { id: string; path: string }[] } | null = null;
+  const projects = () => {
+    const at = statSync(configFile, { throwIfNoEntry: false })?.mtimeMs ?? 0;
+    if (seen?.at !== at) seen = { at, projects: loadUserConfig(configFile).config.projects };
+    return seen.projects;
+  };
+  return (r: { harness?: string; projectId: string }): TheirRules | null => {
+    if (!r.harness) return null;
+    const project = projects().find((p) => p.id === r.projectId)?.path;
+    return readAgentRules(r.harness, { home: homedir(), ...(project ? { project } : {}) });
+  };
 }

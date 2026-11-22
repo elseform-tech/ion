@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
@@ -587,15 +587,16 @@ describe("Auto's reads, anywhere", () => {
 
   it("a read outside the project (not secret) is allowed in Auto", async () => {
     judged.length = 0;
-    for (const r of [
-      readOf("/etc/hosts"),
-      readOf(`${home}/other-repo/README.md`),
-      readOf(`${home}/Downloads/notes.txt`),
-      readOf("/usr/include/stdio.h"),
-      cmd("cat /etc/hosts"),
-    ])
-      expect(await access.decide(at, r), r.summary).toMatchObject({ decision: "allow", source: "rule" });
+    // Real files (a read of a folder, or of nothing, goes to the judge).
+    const mine = mkdtempSync(join(tmpdir(), "ion-mine-"));
+    mkdirSync(join(mine, "other-repo"));
+    writeFileSync(join(mine, "other-repo/README.md"), "# other\n");
+    const there = createAccess({ judge, home: mine, ionDirs: ["/data"] });
+    for (const r of [readOf("/etc/hosts"), readOf(join(mine, "other-repo/README.md")), cmd("cat /etc/hosts")])
+      expect(await there.decide(at, r), r.summary).toMatchObject({ decision: "allow", source: "rule" });
     expect(judged).toEqual([]);
+    // Task review, 2026-11-22: a read tool on a folder outside the project goes to the judge, like a command.
+    expect((await there.decide(at, readOf(join(mine, "other-repo")))).source).toBe("judge");
   });
 
   it("a secret read is refused", async () => {
@@ -622,6 +623,17 @@ describe("Auto's reads, anywhere", () => {
       `${home}/Library/Cookies/x`,
       `${home}/Library/Application Support/x/y`,
       `${home}/Library/Messages/chat.db`,
+      // Task review, 2026-11-22: more private Library folders, and folders named secret(s), private or credentials.
+      `${home}/Library/Preferences/com.x.plist`,
+      `${home}/Library/Accounts/a.sqlite`,
+      `${home}/Library/Calendars/c`,
+      `${home}/Library/Mobile Documents/d`,
+      `${home}/Library/Logs/l`,
+      `${home}/Library/IdentityServices/i`,
+      `${home}/work/secrets/notes.txt`,
+      `${home}/work/secret/notes.txt`,
+      `${home}/work/private/notes.txt`,
+      `${home}/work/credentials/notes.txt`,
       "/proc/1/environ",
       "/sys/x",
       "/dev/disk0",
@@ -713,5 +725,31 @@ describe("a command's reads outside the project", () => {
       `grep --directories=recurse x ${real}`,
     ])
       expect((await access.decide(at, cmd(c))).source, c).toBe("judge");
+  });
+});
+
+// Task review, 2026-11-22: a command given as a list of words (Codex's shell) skipped the path checks: `cat key`, with
+// the worktree's `key` a link to ~/.ssh/id_rsa, was allowed.
+describe("a command given as a list of words", () => {
+  const mine = realpathSync(mkdtempSync(join(tmpdir(), "ion-list-")));
+  const tree = join(mine, "wt");
+  for (const d of [".ssh", ".config", "wt"]) mkdirSync(join(mine, d));
+  writeFileSync(join(mine, ".ssh/id_rsa"), "k");
+  writeFileSync(join(mine, ".config/x"), "x");
+  writeFileSync(join(tree, "a.txt"), "a");
+  symlinkSync(join(mine, ".ssh/id_rsa"), join(tree, "key"));
+  symlinkSync(join(mine, ".config/x"), join(tree, "cfg"));
+  const judge = async (_i: { req: ApprovalRequest }) => ({ verdict: "deny" as const, reason: "no" });
+  const access = createAccess({ judge, home: mine, ionDirs: ["/data"] });
+  const at = { chatId: "c1", projectId: "app", text: "x", roots: [tree] };
+  const list = (...words: string[]): ApprovalRequest => ({
+    ...cmd(words.join(" ")),
+    input: { command: words },
+  });
+
+  it("is checked like a string: links to secrets are refused, links to private files judged", async () => {
+    expect(await access.decide(at, list("cat", "key"))).toMatchObject({ decision: "deny" });
+    expect((await access.decide(at, list("cat", "cfg"))).source).toBe("judge");
+    expect(await access.decide(at, list("cat", "a.txt"))).toMatchObject({ decision: "allow" });
   });
 });

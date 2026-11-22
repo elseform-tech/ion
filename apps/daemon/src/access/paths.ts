@@ -12,10 +12,8 @@ export type RuleCtx = {
   ionDirs: string[];
   plugin?: string;
   sandboxed?: boolean;
-  /** Auto (the user, 2026-11-21): reads anywhere but your secrets, ion's files and other agents' settings. */
+  /** Auto (the user, 2026-11-21): reads anywhere but your secrets, ion's files and private kinds of files. */
   freeReads?: true;
-  /** The run's agent (harness id): its own settings it may read; another agent's aren't free. */
-  agent?: string;
 };
 
 /** A path in any text: absolute, ~ or $HOME, at the start of a word (not "/a.ts" inside "src/a.ts"). */
@@ -64,7 +62,8 @@ export function pathsIn(req: ApprovalRequest, c: RuleCtx): string[] {
   const texts = [...strings(req.input)].flatMap((s) => [s, unshell(s)].map((t) => fillXdg(t, c.home)));
   const out = texts.flatMap((s) => [...s.matchAll(PATH)].map((m) => expand(m[0], c.home)));
   // Every argument of a command is a path from the worktree (where commands run): a link named "key" counts too.
-  const command = typeof req.input.command === "string" ? unshell(req.input.command) : "";
+  // A command given as a list of words (Codex's shell) too (task review, 2026-11-22).
+  const command = unshell(commandText(req));
   const words = command.split(/[\s|;&]+/).filter((t) => t && !/^[-/~$]/.test(t));
   out.push(...words.map((t) => resolve(c.roots[0] ?? "/", t)));
   return out.map((p) => realish(resolve(p)));

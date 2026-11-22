@@ -118,12 +118,27 @@ const PRIVATE_LIBRARY = [
   "Mail",
   "Messages",
   "Safari",
+  // Task review, 2026-11-22.
+  "Preferences",
+  "Accounts",
+  "Calendars",
+  "Mobile Documents",
+  "Logs",
+  "IdentityServices",
 ];
 /** Private kinds of files, by name: keys, certificates, vaults, credentials, secrets, .env files. */
 const PRIVATE_NAME = /^\.env|\.(pem|key|p12|kdbx)$|credential|secret|^id_/i;
 
 /** Under a dot-folder or a dotfile itself (`~/.config/…`, `~/.zsh_history`, `.git/…`, `.env`). */
 const dotted = (p: string) => p.split("/").some((s) => s.startsWith(".") && s !== "." && s !== "..");
+/** A folder named secret(s), private or credentials on the way (macOS's own leading /private aside). */
+const PRIVATE_SEGMENT = /^(secrets?|private|credentials)$/i;
+const privateSegment = (p: string) =>
+  p
+    .replace(/^\/private(?=\/)/, "")
+    .split("/")
+    .slice(0, -1)
+    .some((s) => PRIVATE_SEGMENT.test(s));
 
 /**
  * Free to read in Auto, outside the project (security review, 2026-11-21: by class, not a few names): not a secret
@@ -135,7 +150,11 @@ function readable(p: string, c: RuleCtx): boolean {
   const library = PRIVATE_LIBRARY.map((d) => fold(realish(join(c.home, "Library", d))));
   const folders = [...PRIVATE_FOLDERS.map((d) => fold(d)), ...library];
   return (
-    !isSecret(p, c.home) && !dotted(p) && !PRIVATE_NAME.test(basename(p)) && !folders.some((d) => under(f, d))
+    !isSecret(p, c.home) &&
+    !dotted(p) &&
+    !privateSegment(p) &&
+    !PRIVATE_NAME.test(basename(p)) &&
+    !folders.some((d) => under(f, d))
   );
 }
 
@@ -158,7 +177,8 @@ function readsFreely(req: ApprovalRequest, c: RuleCtx, outside: string[]): boole
   // A command reads outside freely only regular files: a folder goes to the judge, whatever its flags say.
   if (req.kind === "command")
     return readOnly(command, true) && outside.every(regularFile) && !recurses(command);
-  return req.kind === "read" && !climbs(req);
+  // A read tool on a folder (or on nothing) outside goes to the judge too (task review, 2026-11-22).
+  return req.kind === "read" && !climbs(req) && outside.every(regularFile);
 }
 
 /** Only looks: inside the worktree (read-only commands, reads and searches), or anywhere free to read in Auto. */
