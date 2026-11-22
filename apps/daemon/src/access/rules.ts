@@ -2,54 +2,17 @@ import { statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { realish } from "../runs/policy.js";
-import { agentConfigs } from "../runs/sandbox.js";
 import { hardRuleFor } from "./hard.js";
+import { isSecret, SECRET_NAMES } from "./secrets.js";
 import { touchesKeychain } from "./keychain.js";
 import { commandText, fold, isContent, pathsIn, type RuleCtx, strings, toolPaths, under } from "./paths.js";
 
 export type Verdict = { decision: "allow" | "deny"; reason: string };
 export type { RuleCtx } from "./paths.js";
 
-/** Your secrets under your home folder (folders end in "/"): never touched in Auto, whatever the judge says. */
-const SECRETS = [
-  ".ssh/",
-  ".aws/",
-  ".gnupg/",
-  ".kube/",
-  ".docker/",
-  ".config/gh/",
-  ".config/gcloud/",
-  ".config/op/",
-  ".password-store/",
-  "Library/Keychains/",
-  ".netrc",
-  ".git-credentials",
-  ".npmrc",
-  ".pypirc",
-];
 /** Commands that only look: allowed in Auto when every path they name is free to read. */
 const READ_ONLY = new Set(["ls", "cat", "head", "tail", "wc", "grep", "pwd", "echo", "which", "stat"]);
 const READ_ONLY_GIT = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "blame"]);
-/** Secret folders and files named anywhere in an action (any case) are denied: they never belong to a project. */
-const SECRET_NAMES = [
-  // Agents' sign-in files (task review, 2026-11-21).
-  ".codex/auth.json",
-  ".claude/.credentials.json",
-  "opencode/auth.json",
-  ".ssh",
-  ".aws",
-  ".gnupg",
-  ".kube",
-  ".password-store",
-  "keychains",
-  ".config/gh",
-  ".config/gcloud",
-  ".config/op",
-  ".docker/config",
-  ".git-credentials",
-  ".netrc",
-  ".pypirc",
-];
 /** A plain relative path or word: no absolute or home paths, no shell syntax. */
 const PLAIN = /^[\w.\-/@+=:,%]+$/;
 /** A plain path from your home (`~/notes/a.md`), for Auto's free reads. */
@@ -79,25 +42,6 @@ function readOnly(command: string, anywhere = false): boolean {
   });
 }
 
-/** A sign-in file's name: credentials, tokens, auth*.json. */
-const SIGN_IN = /credential|token|^auth.*\.json$/i;
-/** Where agents keep their settings and sign-ins: every agent's config folder, and opencode's data folder. */
-const agentHomes = (home: string) => [
-  ...agentConfigs("", { ...process.env, HOME: home }),
-  join(process.env.XDG_DATA_HOME || join(home, ".local/share"), "opencode"),
-];
-/**
- * An agent's sign-in file (task review, 2026-11-21): a secret for every chat, its own agent's too, refused like ~/.ssh.
- */
-const signInFile = (p: string, home: string) =>
-  SIGN_IN.test(basename(p)) && agentHomes(home).some((d) => under(fold(p), fold(realish(d))));
-
-const isSecret = (p: string, home: string) =>
-  signInFile(p, home) ||
-  SECRETS.some((s) => {
-    const secret = fold(realish(join(home, s)));
-    return s.endsWith("/") ? under(fold(p), secret) : fold(p) === secret;
-  });
 /** A flag that makes `ls` or `grep` read folders whole (`-R`, `-r`, `--recursive`). */
 const RECURSIVE_FLAG = /^(-[a-zA-Z]*[rR]|--(dereference-)?recursive$)/;
 /** A read-only command that reads folders whole (`ls -R`, `grep -r`): from outside the project, the judge decides. */

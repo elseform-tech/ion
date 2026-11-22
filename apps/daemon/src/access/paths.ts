@@ -52,7 +52,11 @@ export const fillXdg = (text: string, home: string) =>
 export const unshell = (s: string) => s.replace(/\\(.)/gs, "$1").replace(/["']/g, "");
 
 // macOS folders ignore case by default: ~/.SSH is ~/.ssh.
-export const fold = (p: string) => (process.platform === "darwin" ? p.toLowerCase() : p);
+// Names compare in one Unicode form (NFC; review of 05d5c8b, 2026-11-22: macOS takes "é" either way).
+export const fold = (p: string) => {
+  const n = p.normalize("NFC");
+  return process.platform === "darwin" ? n.toLowerCase() : n;
+};
 
 /**
  * Every path the request names, resolved for real (symlinks followed): absolute and ~ paths anywhere in its input,

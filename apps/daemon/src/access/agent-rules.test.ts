@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
   writeSync,
@@ -342,5 +343,25 @@ describe("matching a deny", () => {
     // Bare allows stay left out (Full is that switch).
     const allow = readAgentRules("claude-code", { home: claudeHome(["Bash(*)", "Edit(*)"]), env: {} });
     expect(allow?.allow).toEqual([]);
+  });
+});
+
+// Review of 05d5c8b, 2026-11-22: a settings file that's a link is followed only to a .json file in your home that
+// isn't a secret (an agent's sign-in file least of all): your dotfiles repo, yes; ~/.codex/auth.json, no.
+describe("an agent's settings file that's a link", () => {
+  it("is followed to your dotfiles' .json, never to a secret or outside your home", () => {
+    const rules = JSON.stringify({ permissions: { deny: ["WebSearch"] } });
+    const home = fakeHome({ "dotfiles/claude/settings.json": rules, ".codex/auth.json": rules });
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    symlinkSync(join(home, "dotfiles", "claude", "settings.json"), join(home, ".claude", "settings.json"));
+    expect(ruleCount(readAgentRules("claude-code", { home, env: {} }))).toBe(1);
+    const other = fakeHome({ ".codex/auth.json": rules });
+    mkdirSync(join(other, ".claude"), { recursive: true });
+    symlinkSync(join(other, ".codex", "auth.json"), join(other, ".claude", "settings.json"));
+    expect(ruleCount(readAgentRules("claude-code", { home: other, env: {} }))).toBe(0);
+    const away = fakeHome({});
+    mkdirSync(join(away, ".claude"), { recursive: true });
+    symlinkSync(join(home, "dotfiles", "claude", "settings.json"), join(away, ".claude", "settings.json"));
+    expect(ruleCount(readAgentRules("claude-code", { home: away, env: {} }))).toBe(0);
   });
 });

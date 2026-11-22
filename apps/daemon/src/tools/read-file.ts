@@ -1,19 +1,26 @@
-import { closeSync, constants, fstatSync, openSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+} from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { fold, under } from "../access/paths.js";
 
 /** What an open path is, its size and change mark, and its text (a file within `max` bytes; else null). */
 export type OpenedFile = { kind: "file" | "dir" | "other"; size: number; at: string; text: string | null };
 
-/** Where a followed link may lead: inside `root`, never inside a folder in `deny` (your keys, ion's folders). */
-export type Follow = { root: string; deny?: string[] };
+/**
+ * Where a followed link may lead (review of 05d5c8b, 2026-11-22): inside `root`, and only to what `accept` takes (the
+ * caller's allow-list: your own .md commands, your settings' .json). Names compare as the disk does (any case on macOS).
+ */
+export type Follow = { root: string; accept: (target: string) => boolean };
 
 const FLAGS = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
-
-/** `p` inside `dir` (or `dir` itself). */
-const inside = (p: string, dir: string) => {
-  const r = relative(dir, p);
-  return r === "" || (!r.startsWith("..") && !isAbsolute(r));
-};
 
 /** A path with its folders resolved (its last part as it is). */
 const resolvedDir = (p: string) => join(realpathSync(dirname(p)), basename(p));
@@ -25,21 +32,37 @@ const real = (p: string) => {
   }
 };
 
-/** The file a link points at, when it lies inside `f.root` and outside every `f.deny`; else null. */
-function linkTarget(path: string, f: Follow): string | null {
+type Checked = { path: string; dev: number; ino: number };
+
+/** The regular file a link points at, inside `f.root` and accepted, with its identity; else null. */
+function linkTarget(path: string, f: Follow): Checked | null {
   try {
     const target = resolvedDir(resolve(dirname(path), readlinkSync(path)));
-    if (!inside(target, real(f.root))) return null;
-    return (f.deny ?? []).some((d) => inside(target, real(d))) ? null : target;
+    if (!under(fold(target), fold(real(f.root)))) return null;
+    const st = lstatSync(target);
+    if (!st.isFile() || !f.accept(target)) return null;
+    return { path: target, dev: st.dev, ino: st.ino };
   } catch {
     return null;
+  }
+}
+
+/** The file open on `fd` is the one checked, and still at its path (a swap in between is refused). */
+function same(fd: number, c: Checked): boolean {
+  try {
+    const open = fstatSync(fd);
+    const now = lstatSync(c.path);
+    return open.dev === c.dev && open.ino === c.ino && now.dev === c.dev && now.ino === c.ino;
+  } catch {
+    return false;
   }
 }
 
 /**
  * Opens a path without blocking on a pipe and without following a link (automated review of 9777e0b, 2026-11-22: a
  * FIFO planted at a settings path blocked the daemon). With `follow` (your own dotfiles), a link is followed one hop:
- * its target checked against `follow`, then opened the same way (a link to a link isn't). Null when it can't be.
+ * its target checked against `follow`, opened the same way (a link to a link isn't) and checked to be the file it
+ * checked. Null when it can't be.
  */
 export function openNoBlock(path: string, follow?: Follow): number | null {
   try {
@@ -50,11 +73,15 @@ export function openNoBlock(path: string, follow?: Follow): number | null {
   }
   const target = linkTarget(path, follow);
   if (!target) return null;
+  let fd: number;
   try {
-    return openSync(target, FLAGS);
+    fd = openSync(target.path, FLAGS);
   } catch {
     return null;
   }
+  if (same(fd, target)) return fd;
+  closeSync(fd);
+  return null;
 }
 
 const kindOf = (st: { isFile(): boolean; isDirectory(): boolean }): OpenedFile["kind"] => {

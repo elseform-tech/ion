@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -36,22 +36,41 @@ describe("openFile", () => {
     writeFileSync(join(d, "real.json"), "{}");
     symlinkSync(join(d, "real.json"), join(d, "link.json"));
     expect(openFile(join(d, "link.json"), 100)).toBeNull();
-    const follow = { root: d };
+    const follow = { root: d, accept: () => true };
     expect(openFile(join(d, "link.json"), 100, undefined, { follow })).toMatchObject({
       kind: "file",
       text: "{}",
     });
-    // Automated review of d407c95, 2026-11-22: one hop, only into its root, never into a folder it denies.
+    // Automated review of d407c95, 2026-11-22: one hop, only into its root, and only what the caller accepts.
     const out = dir();
     writeFileSync(join(out, "secret"), "s");
     symlinkSync(join(out, "secret"), join(d, "out.json"));
     expect(openFile(join(d, "out.json"), 100, undefined, { follow })).toBeNull();
-    mkdirSync(join(d, ".ssh"));
-    writeFileSync(join(d, ".ssh", "id"), "k");
-    symlinkSync(join(d, ".ssh", "id"), join(d, "id.json"));
-    const denied = { follow: { root: d, deny: [join(d, ".ssh")] } };
-    expect(openFile(join(d, "id.json"), 100, undefined, denied)).toBeNull();
+    const refuse = { follow: { root: d, accept: () => false } };
+    expect(openFile(join(d, "link.json"), 100, undefined, refuse)).toBeNull();
     symlinkSync(join(d, "link.json"), join(d, "two.json"));
     expect(openFile(join(d, "two.json"), 100, undefined, { follow })).toBeNull();
+    // Review of 05d5c8b: the root is compared as macOS compares names (any case).
+    if (process.platform === "darwin") {
+      const upper = { root: d.toUpperCase(), accept: () => true };
+      expect(openFile(join(d, "link.json"), 100, undefined, { follow: upper })).toMatchObject({ text: "{}" });
+    }
+  }, 10_000);
+
+  // Review of 05d5c8b, 2026-11-22: the target checked and the file opened must be the same file (a swap in between
+  // is refused).
+  it("refuses a target swapped after it was checked", () => {
+    const d = dir();
+    writeFileSync(join(d, "good.md"), "good");
+    writeFileSync(join(d, "evil.md"), "evil");
+    symlinkSync(join(d, "good.md"), join(d, "link.md"));
+    const swap = {
+      root: d,
+      accept: () => {
+        renameSync(join(d, "evil.md"), join(d, "good.md"));
+        return true;
+      },
+    };
+    expect(openFile(join(d, "link.md"), 100, undefined, { follow: swap })).toBeNull();
   }, 10_000);
 });

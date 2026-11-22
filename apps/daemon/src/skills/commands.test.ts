@@ -86,6 +86,13 @@ describe("each agent's own commands", () => {
       JSON.stringify({ version: 2, plugins: { "kit@m": [{ scope: "user", installPath: kit }] } }),
     );
     put(join(home, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "kit@m": true } }));
+    // Review of 05d5c8b: a case variant of a secrets folder, a secret file and an agent's sign-in file aren't followed.
+    put(join(home, ".npmrc"), "//registry/:_authToken=x");
+    put(join(home, ".codex", "auth.json"), '{"token":"x"}');
+    put(join(home, ".ssh", "notes.md"), "PRIVATE KEY notes");
+    symlinkSync(join(home, ".SSH", "notes.md"), join(home, ".claude", "commands", "upper.md"));
+    symlinkSync(join(home, ".npmrc"), join(home, ".claude", "commands", "npm.md"));
+    symlinkSync(join(home, ".codex", "auth.json"), join(home, ".claude", "commands", "auth.md"));
     const got = ownCommands("claude-code", { home, env: {}, projects: [] });
     expect(got).toEqual([{ name: "review", description: "Review", body: "Review it.", runs: false }]);
     expect(JSON.stringify(got)).not.toContain("PRIVATE KEY");

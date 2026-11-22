@@ -1,9 +1,12 @@
 import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { stripControl } from "@ion/schema";
 import { readFile } from "../tools/import.js";
 import { readPlugins } from "../tools/plugins.js";
 import { type Follow, openFile } from "../tools/read-file.js";
+import { fold, under } from "../access/paths.js";
+import { isPrivate } from "../access/secrets.js";
+import { realish } from "../runs/policy.js";
 
 /**
  * Each agent's own commands, as "/" lists them (the user, 2026-11-21, after Task 13: the agent's own come first):
@@ -47,13 +50,19 @@ function parse(md: string): { description: string; body: string } {
   };
 }
 
-/** Secrets folders a link in your own commands folder may never lead into. */
-const SECRET_DIRS = [".ssh", ".gnupg", ".aws", ".config/ion", ".local/share/ion", ".cache/ion"];
-
-/** Your own folder's links (dotfiles) may lead anywhere in your home but its secrets folders. */
-const yourLinks = (home: string): Follow => ({
+/**
+ * Where a link in your own commands folder (`dir`: your dotfiles) may lead (review of 05d5c8b, 2026-11-22): a regular
+ * .md file in your home, not a secret or ion's, and in no dot-folder but that commands folder itself.
+ */
+const yourLinks = (home: string, dir: string): Follow => ({
   root: home,
-  deny: SECRET_DIRS.map((d) => join(home, d)),
+  accept: (t) => {
+    if (!/\.md$/i.test(t) || isPrivate(t, home)) return false;
+    if (under(fold(t), fold(realish(dir)))) return true;
+    return !relative(realish(home), t)
+      .split(sep)
+      .some((part) => part.startsWith("."));
+  },
 });
 
 /** The `.md` files in a folder, as commands named by their file (with a prefix); `follow`: your own folder's links. */
@@ -96,7 +105,12 @@ function pluginSkills(dir: string, prefix: string): OwnCommand[] {
 function claude(o: ReadOpts): OwnCommand[] {
   const plugins = readPlugins(o).filter((p) => p.agent === "claude-code" && p.path);
   return [
-    ...folder(join(o.home, ".claude", "commands"), false, "", yourLinks(o.home)),
+    ...folder(
+      join(o.home, ".claude", "commands"),
+      false,
+      "",
+      yourLinks(o.home, join(o.home, ".claude", "commands")),
+    ),
     ...plugins.flatMap((p) => [
       ...folder(join(p.path!, "commands"), true, `${p.name}:`),
       ...pluginSkills(join(p.path!, "skills"), `${p.name}:`),
@@ -107,11 +121,9 @@ function claude(o: ReadOpts): OwnCommand[] {
 /** opencode's: its command folders, then its config's `command` table. */
 function opencode(o: ReadOpts): OwnCommand[] {
   const dir = join(o.env.XDG_CONFIG_HOME || join(o.home, ".config"), "opencode");
-  const yours = yourLinks(o.home);
-  const files = [
-    ...folder(join(dir, "command"), true, "", yours),
-    ...folder(join(dir, "commands"), true, "", yours),
-  ];
+  const files = ["command", "commands"].flatMap((c) =>
+    folder(join(dir, c), true, "", yourLinks(o.home, join(dir, c))),
+  );
   const table = ["opencode.json", "opencode.jsonc", "config.json"]
     .map((f) => readFile(join(dir, f)))
     .find(isObj)?.command;
@@ -133,8 +145,10 @@ function opencode(o: ReadOpts): OwnCommand[] {
 }
 
 /** Codex's custom prompts (`/prompts:name` in Codex). */
-const codex = (o: ReadOpts) =>
-  folder(join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts"), false, "prompts:", yourLinks(o.home));
+const codex = (o: ReadOpts) => {
+  const dir = join(o.env.CODEX_HOME || join(o.home, ".codex"), "prompts");
+  return folder(dir, false, "prompts:", yourLinks(o.home, dir));
+};
 
 const BY_AGENT: Record<string, (o: ReadOpts) => OwnCommand[]> = { "claude-code": claude, opencode, codex };
 

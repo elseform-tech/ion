@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
-import { openFile } from "../tools/read-file.js";
+import { type Follow, openFile } from "../tools/read-file.js";
+import { isPrivate } from "./secrets.js";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { loadUserConfig } from "@ion/config";
@@ -40,22 +41,28 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 /** Files read, by path, with the mtime and size they had: read again only when they change (task review, 2026-11-21). */
 const read = new Map<string, { at: string; text: string | null }>();
 
-/** Where a settings file's link may lead: anywhere but your keys (its text is only parsed for rules). */
-const SETTINGS_LINKS = { root: "/", deny: [".ssh", ".gnupg", ".aws"].map((d) => join(homedir(), d)) };
+/**
+ * Where a settings file's link may lead (review of 05d5c8b, 2026-11-22): a regular .json (or .jsonc, .toml) file in
+ * your home that isn't a secret (an agent's sign-in file least of all) or ion's.
+ */
+const settingsLinks = (home: string): Follow => ({
+  root: home,
+  accept: (t) => /\.(json|jsonc|toml)$/i.test(t) && !isPrivate(t, home),
+});
 
 /** A file's text: missing, too big or unreadable is nothing. */
-function textOf(path: string): string | null {
+function textOf(path: string, home: string): string | null {
   const known = read.get(path);
   // Checked and read through one open file (CodeQL, PR #25).
-  // Your settings file may be a link (dotfiles): followed one hop, never into your keys (automated review).
-  const f = openFile(path, MAX, known?.at, { follow: SETTINGS_LINKS });
+  // Your settings file may be a link (dotfiles): followed one hop, only to your own settings files (review).
+  const f = openFile(path, MAX, known?.at, { follow: settingsLinks(home) });
   if (!f || f.kind !== "file") return null;
   if (known?.at === f.at) return known.text;
   read.set(path, { at: f.at, text: f.text });
   return f.text;
 }
-function jsonOf(path: string): Record<string, unknown> {
-  const text = textOf(path);
+function jsonOf(path: string, home: string): Record<string, unknown> {
+  const text = textOf(path, home);
   try {
     const v = text === null ? null : parseJsonc(text);
     return isObject(v) ? v : {};
@@ -115,7 +122,7 @@ function namedRule(text: string, allow: boolean): AgentRule | null {
 function claudeRules(w: Where): TheirRules {
   const dir = (w.env ?? process.env).CLAUDE_CONFIG_DIR || join(w.home, ".claude");
   const paths = [...["settings.json", "settings.local.json"].map((f) => join(dir, f)), w.managed ?? MANAGED];
-  const files = paths.map(jsonOf);
+  const files = paths.map((p) => jsonOf(p, w.home));
   const of = (key: "allow" | "deny") =>
     files.flatMap((s) => stringsOf(isObject(s.permissions) ? s.permissions[key] : undefined));
   const pick = (key: "allow" | "deny") =>
@@ -153,7 +160,7 @@ function opencodeRules(w: Where): TheirRules {
   const out = { allow: [] as AgentRule[], deny: [] as AgentRule[] };
   const files = ["config.json", "opencode.json", "opencode.jsonc"].map((f) => join(dir, f));
   for (const f of [...files, ...(env.OPENCODE_CONFIG ? [env.OPENCODE_CONFIG] : [])]) {
-    const permission = jsonOf(f).permission;
+    const permission = jsonOf(f, w.home).permission;
     if (isObject(permission)) for (const [tool, v] of Object.entries(permission)) opencodeTool(tool, v, out);
   }
   return { agent: "opencode", ...out, notes: [] };
@@ -164,7 +171,7 @@ function codexRules(w: Where): TheirRules {
   const dir = (w.env ?? process.env).CODEX_HOME || join(w.home, ".codex");
   let projects: Record<string, unknown> = {};
   try {
-    const t = parseToml(textOf(join(dir, "config.toml")) ?? "");
+    const t = parseToml(textOf(join(dir, "config.toml"), w.home) ?? "");
     projects = isObject(t.projects) ? t.projects : {};
   } catch {
     // unreadable: no trust
