@@ -61,9 +61,9 @@ export function chatBrief(events: IonEvent[], files: FileStat[]): string {
   const asked = yours(events);
   const lastRun = events.findLast((e) => e.type === EV.runStarted)?.runId ?? null;
   const out: string[] = [];
-  if (asked[0]) out.push(`Your request: ${quoted(textOf(asked[0]))}`);
+  if (asked[0]) out.push(`The user's request: ${quoted(textOf(asked[0]))}`);
   const latest = asked.at(-1);
-  if (latest && latest !== asked[0]) out.push(`Latest message: ${quoted(textOf(latest))}`);
+  if (latest && latest !== asked[0]) out.push(`The user's latest message: ${quoted(textOf(latest))}`);
   const changed = files.slice(0, FILES).map(fileLine);
   if (files.length > FILES) changed.push(`and ${files.length - FILES} more`);
   out.push(`Files changed so far: ${changed.length ? changed.join(", ") : "none"}`);
@@ -82,7 +82,7 @@ type Summarized = { chatId: string; runId: string; cwd: string; projectId: strin
 /**
  * A long chat's run starting a new session (not a handoff's, whose message is a brief already): ion's summary of the
  * chat before this run, from its events and its worktree's diff, kept on the run (`long.brief`); the chat says
- * "Started fresh with a summary" once per run (`b.summarized`).
+ * "Started fresh with a summary" once.
  */
 export async function summarize<L extends Summarized & { long?: { budget: number; brief?: string } }>(
   d: { store: EventStore; configFile: string },
@@ -96,7 +96,11 @@ export async function summarize<L extends Summarized & { long?: { budget: number
     () => [],
   );
   l.long.brief = chatBrief(events, files);
-  if (!b.summarized) {
+  // Said once per chat (ruling, 2026-11-22), not again on its later new sessions.
+  const said = d.store
+    .read({ chatId: l.chatId, types: [EV.chatHandoff] })
+    .some((e) => (e.data as { kind?: string }).kind === "fresh");
+  if (!b.summarized && !said) {
     b.summarized = true;
     const data = { kind: "fresh", text: "Started fresh with a summary" };
     d.store.append({ chatId: l.chatId, runId: l.runId, origin: "daemon", type: EV.chatHandoff, data });

@@ -383,8 +383,11 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     until: z.iso.datetime().optional(),
     /** A wait whose reset is ion's guess: at `until` ion tries, and waits again while still limited. */
     guessed: z.literal(true).optional(),
+    /** How many times a guessed wait has tried so far (kept across a restart). */
+    tries: z.number().int().min(0).optional(),
   }),
-  "run.queued": z.object({}),
+  /** A run waiting for a slot, with its access (a handoff on another agent keeps the chat's). */
+  "run.queued": z.object({ access: z.enum(["auto", "full"]).optional() }),
   "run.retrying": z.object({
     attempt: z.number().int().min(1),
     delayS: z.number().min(0),

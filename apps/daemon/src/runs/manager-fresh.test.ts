@@ -53,15 +53,16 @@ const freshLines = (chatId: string) =>
   store.read({ chatId, types: [EV.chatHandoff] }).map((e) => (e.data as { text: string }).text);
 
 // The user, 2026-11-22 ("sure"): a new session for a chat whose history is longer than the new agent can take
-// (about half its window, characters/4) gets ion's brief and its last few messages, not the whole transcript; the
-// chat shows "Started fresh with a summary" once.
+// (ruling, 2026-11-22: a quarter of its window at characters/4, at most 100,000 characters) gets ion's brief and its
+// last few messages, not the whole transcript; the chat shows "Started fresh with a summary" once (per chat: ruling,
+// 2026-11-22).
 it("a long chat starting fresh gets the brief and its last messages, not the whole transcript", async () => {
-  process.env.ION_FAKE_CONTEXT_TOKENS = "2000"; // half of it: 1,000 tokens, about 4,000 characters
+  process.env.ION_FAKE_CONTEXT_TOKENS = "4000"; // a quarter of it: 1,000 tokens, about 4,000 characters
   const chatId = await chatOf(300); // about 6,000 characters
   process.env.ION_FAKE_RESUME_FAIL = "1";
   const got = (await reply("echo next", chatId)).text;
   expect(got).toMatch(/source="ion's summary of this chat"/);
-  expect(got).toContain('Your request: "echo m0 a');
+  expect(got).toContain("The user's request: \"echo m0 a");
   expect(got).toContain("echo m9");
   expect(got).toContain("echo m8");
   expect(got).not.toContain("echo m3");
@@ -69,10 +70,13 @@ it("a long chat starting fresh gets the brief and its last messages, not the who
   expect(got.endsWith("\n\necho next")).toBe(true);
   expect(got.length).toBeLessThan(4000);
   expect(freshLines(chatId)).toEqual(["Started fresh with a summary"]);
+  // Another new session later: summarized again, said once.
+  expect((await reply("echo again", chatId)).text).toMatch(/source="ion's summary of this chat"/);
+  expect(freshLines(chatId)).toEqual(["Started fresh with a summary"]);
 });
 
 // The user, 2026-11-22: short chats keep the full history as today. Short is within the agent's budget: 60,000
-// characters fit in half of 128k tokens (before, the oldest were cut at 24,000 characters).
+// characters fit in 100,000 (a quarter of 128k tokens, capped at 100,000 characters).
 it("a short chat still gets its full history", async () => {
   const chatId = await chatOf(3000);
   process.env.ION_FAKE_RESUME_FAIL = "1";
@@ -81,4 +85,11 @@ it("a short chat still gets its full history", async () => {
   for (let i = 0; i < 10; i++) expect(got).toContain(`you: "echo m${i}`);
   expect(got).not.toContain("ion's summary");
   expect(freshLines(chatId)).toEqual([]);
+});
+
+// Ruling, 2026-11-22: the budget is at most 100,000 characters, whatever the window: 120,000 is long even at 128k.
+it("a chat over 100,000 characters starts fresh with a summary on any agent", async () => {
+  const chatId = await chatOf(6000);
+  process.env.ION_FAKE_RESUME_FAIL = "1";
+  expect((await reply("echo next", chatId)).text).toMatch(/source="ion's summary of this chat"/);
 });

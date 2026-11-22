@@ -196,6 +196,7 @@ export const handlers: Handlers = {
     // You stopped it (Stop, Esc twice): what's queued for the chat waits for you.
     const chatId = ctx.store.read({ runId, limit: 1 })[0]?.chatId;
     if (chatId) ctx.queue.hold({ chatId });
+    if (chatId) ctx.handoffs?.cancel(chatId); // a chat waiting for its agent's reset stops waiting too
     await ctx.runs.interrupt(runId);
     return { ok: true as const };
   },

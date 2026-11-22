@@ -13,10 +13,11 @@ const LAST_MESSAGES = 6;
 const CONTEXT_TOKENS = 128_000;
 
 /**
- * How much history a new session on this agent gets in full (the user, 2026-11-22): about half its context, at four
- * characters a token until ion knows the tokens. A longer history goes as ion's summary and the last messages.
+ * How much history a new session on this agent gets in full (ruling, 2026-11-22): a quarter of its context, at four
+ * characters a token until ion knows the tokens, and never more than 100,000 characters. A longer history goes as
+ * ion's summary and the last messages.
  */
-const historyBudget = (contextTokens?: number) => (contextTokens ?? CONTEXT_TOKENS) * 2;
+const historyBudget = (contextTokens?: number) => Math.min(contextTokens ?? CONTEXT_TOKENS, 100_000);
 
 /**
  * What a new run gets of its chat's history (read before your message is stored: what came before): the newest up to

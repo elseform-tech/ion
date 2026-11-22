@@ -19,7 +19,8 @@ export const messagesView: View & {
   search(db: Db, projectId: string, query: string, limit: number): SearchHit[];
 } = {
   name: "messages",
-  version: 1,
+  // 2: ion's handoff briefs left out.
+  version: 2,
   tables: ["view_messages", "messages_fts"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_messages (
@@ -32,7 +33,8 @@ export const messagesView: View & {
   },
   apply(db, e: IonEvent) {
     const role = ROLE[e.type];
-    if (!role || !e.chatId) return;
+    // ion's brief handing the chat to another agent isn't one of your messages (history, search, size).
+    if (!role || !e.chatId || (e.data as { handoff?: unknown }).handoff === true) return;
     const text = String((e.data as { text: unknown }).text ?? "");
     const r = db
       .prepare(

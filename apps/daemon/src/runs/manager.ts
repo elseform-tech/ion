@@ -191,7 +191,7 @@ export class RunManager {
     };
     const sent = { ...data, ...shownPicks(picks) };
     this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: sent });
-    this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
+    this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: { access } });
     // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
     const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };
     const l = {

@@ -310,7 +310,8 @@ function promptQueue(c: Omit<Ctx, "queue">): PromptQueue {
       busy: (chatId) => runs.busy(chatId),
       stop: (chatId) => runs.stopChat(chatId),
       onEnded: (fn) => runs.onEnded(fn),
-      answersWaiting: (chatId) => c.decisions.hasWaiting(chatId),
+      // Your answers waiting to go in, or ion's question after the chat's agent hit its limit: the queue waits.
+      answersWaiting: (chatId) => c.decisions.hasWaiting(chatId) || !!c.handoffs?.holding(chatId),
       dropQuestions: (chatId) => c.needs.supersedeChat(chatId),
     },
   });

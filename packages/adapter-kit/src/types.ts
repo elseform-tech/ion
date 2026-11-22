@@ -157,8 +157,8 @@ export interface HarnessAdapter {
   /** It reads an MCP server's resources (so "@" lists them for it). */
   mcpResources?: true;
   /**
-   * About how many tokens its default model's context holds: a chat's history longer than half of it reaches a new
-   * session as ion's summary and the last messages (runs/history.ts). Absent: 128,000.
+   * About how many tokens its default model's context holds: a chat's history longer than a quarter of it (at most
+   * 100,000 characters) reaches a new session as ion's summary and the last messages (runs/history.ts). Absent: 128,000.
    */
   contextTokens?: number;
   /**
