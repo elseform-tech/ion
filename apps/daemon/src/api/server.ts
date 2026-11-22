@@ -91,13 +91,21 @@ const toolsOf = (o: Pick<ServerOpts, "configFile" | "secrets" | "dataDir">) => {
   });
 };
 
+/**
+ * Where your agents' configs are, read once before ION_AGENTS_HOME is dropped (security review, 2026-11-22); then the
+ * per-run variables go (idempotent: embedders and tests start the server without main()).
+ */
+function withAgentsHome<T extends ServerOpts>(given: T): T & { home: string } {
+  const opts = { ...given, home: given.home ?? agentsHome() };
+  useAgentsHome(opts.home);
+  dropInheritedMarkers();
+  return opts;
+}
+
 export async function startServer(
   given: ServerOpts,
 ): Promise<{ port: number; token: string; oauth: OAuth; grants: Grants; close(): Promise<void> }> {
-  // Where your agents' configs are, read once before ION_AGENTS_HOME is dropped (security review, 2026-11-22).
-  const opts = { ...given, home: given.home ?? agentsHome() };
-  useAgentsHome(opts.home);
-  dropInheritedMarkers(); // idempotent: embedders and tests start the server without main()
+  const opts = withAgentsHome(given);
   let port = 0;
   const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
   const { db } = ctx;

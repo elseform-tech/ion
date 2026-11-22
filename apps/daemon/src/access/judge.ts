@@ -93,19 +93,24 @@ function verdictIn(body: string): { verdict: JudgeVerdict; reason: string } | nu
 /** Where each top-level `{…}` starts and ends (strings respected); null when the braces don't balance. */
 function objectsIn(text: string): [number, number][] | null {
   const found: [number, number][] = [];
-  let depth = 0;
-  let start = 0;
-  let inString = false;
+  const at = { depth: 0, start: 0, inString: false, skip: false };
   for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (c === "\\") i++;
-      else if (c === '"') inString = false;
-    } else if (c === '"') inString = depth > 0;
-    else if (c === "{" && depth++ === 0) start = i;
-    else if (c === "}" && depth > 0 && --depth === 0) found.push([start, i + 1]);
+    if (at.inString) stringStep(at, text[i]);
+    else if (text[i] === '"') at.inString = at.depth > 0;
+    else braceStep(at, text[i], i, found);
   }
-  return depth === 0 ? found : null;
+  return at.depth === 0 ? found : null;
+}
+type Scan = { depth: number; start: number; inString: boolean; skip: boolean };
+/** Inside a string: an escape skips the next character; a quote ends it. */
+function stringStep(at: Scan, c: string | undefined): void {
+  if (at.skip) at.skip = false;
+  else if (c === "\\") at.skip = true;
+  else if (c === '"') at.inString = false;
+}
+function braceStep(at: Scan, c: string | undefined, i: number, found: [number, number][]): void {
+  if (c === "{" && at.depth++ === 0) at.start = i;
+  else if (c === "}" && at.depth > 0 && --at.depth === 0) found.push([at.start, i + 1]);
 }
 
 /**
