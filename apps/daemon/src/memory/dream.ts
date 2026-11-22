@@ -6,7 +6,7 @@ import { dayOf, onDay, quietNow } from "../notify/clock.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { messagesView } from "../views/messages.js";
-import { DREAM_ION } from "./dream-rules.js";
+import { DREAM_ION, type DreamPass } from "./dream-rules.js";
 import type { MemoryFile, MemoryFiles } from "./index.js";
 import { lineOf, ScopedMemory } from "./scoped.js";
 import { sharedIds } from "./todos.js";
@@ -14,13 +14,16 @@ import { sharedIds } from "./todos.js";
 /** How a dream's turn ended: its reply, and whether it ran out of time or couldn't reach its agent. */
 export type DreamTurn = { reply: string; status: "done" | "failed" | "late" };
 
+/** One pass of a dream: which files it sees and changes, how many changes are left, and how long it has. */
+type DreamStep = { pass: DreamPass; max: number; ms: number };
+
 export type DreamDeps = {
   store: EventStore;
   db: Db;
   memory: MemoryFiles;
   configFile: string;
-  /** One turn of ion's dream with this prompt (ion's turn, with memory's tools only). */
-  think: (prompt: string) => Promise<DreamTurn>;
+  /** One pass of ion's dream with this prompt (ion's turn, with memory's tools only). */
+  think: (prompt: string, step: DreamStep) => Promise<DreamTurn>;
 };
 
 /** What a `memory.dreamed` event holds. */
@@ -41,8 +44,13 @@ const CHATS_MAX = 20;
 const SAID_MAX = 400;
 const NOTES_MAX = 2;
 const NOTE_CHARS = 300;
+/** A night's limits, over all its passes. */
+const DREAM_CHANGES = 30;
+const DREAM_MS = 600_000;
+const ALL = Number.MAX_SAFE_INTEGER;
 
 const NO_CHAT = { chatId: null, runId: null, origin: "daemon" as const };
+const NOTHING = { merged: 0, updated: 0, forgot: 0, moved: 0, forgotten: [], changed: [], notes: [] };
 const clean = (t: string) => t.replace(/[^\P{Cc}\n\t]/gu, "");
 const oneLine = (t: string, max: number) => {
   const s = clean(t).replace(/\s+/g, " ").trim();
@@ -51,7 +59,7 @@ const oneLine = (t: string, max: number) => {
 const folderOf = (path: string) => path.slice(0, path.lastIndexOf("/"));
 const byDream = (by: MemoryBy) => by !== "you" && "ion" in by && by.ion === DREAM_ION;
 
-/** The nights already dreamed for (or being dreamed now), each by its 3:00. */
+/** The nights already dreamed for (or being dreamed now), each by its local date. */
 export const servedPeriods = (store: EventStore): Set<string> =>
   new Set(
     store
@@ -75,48 +83,63 @@ function periodOf(c: UserConfig, now: Date): Date {
  */
 export function dreamDue(c: UserConfig, now: Date, served: ReadonlySet<string>): string | null {
   if (c.memory.dream === "off") return null;
-  const night = periodOf(c, now);
-  const key = night.toISOString();
+  // The night's local date: a change of time zone doesn't make it another night (task review, 2026-11-22).
+  const key = dayOf(periodOf(c, now));
   if (served.has(key)) return null;
   const early = now >= onDay(now, DREAM_AT) && now < onDay(now, DREAM_UNTIL);
   return early || quietNow(c.notifications.quiet, now) ? key : null;
 }
 
 /** The latest chats of the last week (in projects shared with ion): your last message and the agent's last reply. */
-function recentChats(db: Db, c: UserConfig, now: Date): string {
+function recentChats(db: Db, c: UserConfig, now: Date, pass: DreamPass): string {
+  // Pass A reads only its project's chats (yours: none); pass B every chat ion may read.
+  if (pass.see === "chats" && !pass.project) return "";
   const since = new Date(now.getTime() - CHATS_DAYS * DAY_MS).toISOString();
   const shared = new Set(sharedIds(c));
+  const readable = (p: string | null) =>
+    pass.see === "chats" ? p === pass.project : !p || p === DEFAULT_PROJECT || shared.has(p);
   const chats = chatsView
     .list(db)
     .filter((x) => !x.archived && (x.lastActivityAt ?? "") >= since)
-    .filter((x) => !x.projectId || x.projectId === DEFAULT_PROJECT || shared.has(x.projectId))
+    .filter((x) => readable(x.projectId))
     .sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""))
     .slice(0, CHATS_MAX);
   const lines = chats.flatMap((x) => {
-    const said = messagesView.history(db, x.chatId, 20_000);
-    const you = said.findLast((m) => m.role === "you");
-    const agent = said.findLast((m) => m.role === "agent");
+    const you = messagesView.last(db, x.chatId, "you");
+    const agent = messagesView.last(db, x.chatId, "agent");
     if (!you && !agent) return [];
     const where = x.projectId && x.projectId !== DEFAULT_PROJECT ? ` (${x.projectId})` : "";
     const at = dayOf(new Date(x.lastActivityAt ?? now));
     return [
       `${oneLine(x.title, 80)}${where}, ${at}:`,
-      ...(you ? [`  you: ${oneLine(you.text, SAID_MAX)}`] : []),
-      ...(agent ? [`  agent: ${oneLine(agent.text, SAID_MAX)}`] : []),
+      ...(you ? [`  you: ${oneLine(you, SAID_MAX)}`] : []),
+      ...(agent ? [`  agent: ${oneLine(agent, SAID_MAX)}`] : []),
     ];
   });
   return lines.join("\n");
 }
 
-/** The dream's message: today's date, every memory file it may see, and the last week's chats, both as data. */
-function dreamPrompt(d: Pick<DreamDeps, "db" | "memory">, c: UserConfig, now: Date): string {
-  const m = new ScopedMemory(d.memory, { kind: "ion", ionId: DREAM_ION, projects: sharedIds(c) });
-  const index = m.index().map(lineOf).join("\n");
-  const chats = recentChats(d.db, c, now);
+/** What a pass changes, in a line for its prompt. */
+function passLine(pass: DreamPass): string {
+  if (pass.see === "ions")
+    return "This pass changes only files chats can't see (see: ions); leave the others.";
+  const whose = pass.project ? `the project ${pass.project}'s` : "the user's own";
+  return `This pass changes only ${whose} files that chats see; the others are context.`;
+}
+
+/** The dream ion as one pass of it sees memory. */
+const passMemory = (d: Pick<DreamDeps, "memory">, c: UserConfig, pass: DreamPass) =>
+  new ScopedMemory(d.memory, { kind: "ion", ionId: DREAM_ION, projects: sharedIds(c), dream: pass });
+
+/** A pass's message: today's date, the files it may see, and the chats it may read, both as data. */
+function dreamPrompt(d: Pick<DreamDeps, "db" | "memory">, c: UserConfig, now: Date, pass: DreamPass): string {
+  const index = passMemory(d, c, pass).index().map(lineOf).join("\n");
+  const chats = recentChats(d.db, c, now, pass);
   return [
     `Today is ${dayOf(now)}. Tidy ion's memory now, as your instructions say, then reply with what you did.`,
+    passLine(pass),
     index ? wrapData("ion's memory index", index) : "Memory is empty: there's nothing to tidy.",
-    chats ? wrapData("recent chats (last 7 days)", chats) : "No chats in the last 7 days.",
+    chats ? wrapData("recent chats (last 7 days)", chats) : "No chats for this pass.",
   ].join("\n\n");
 }
 
@@ -125,8 +148,8 @@ function notesOf(reply: string): string[] {
   return reply
     .split("\n")
     .map((l) => l.trim().replace(/^[-*] /, ""))
-    .filter((l) => /^note:/i.test(l))
-    .map((l) => l.slice(5).trim())
+    .filter((l) => /^(note:|dream skipped:)/i.test(l))
+    .map((l) => (/^note:/i.test(l) ? l.slice(5).trim() : l))
     .filter(Boolean)
     .slice(0, NOTES_MAX)
     .map((n) => oneLine(n, NOTE_CHARS));
@@ -196,11 +219,68 @@ export async function runDream(d: DreamDeps, period?: string): Promise<DreamInfo
   const since = now.toISOString();
   const at = { ...(period ? { period } : {}) };
   // Recorded first: a restart mid-dream never dreams that night again.
-  const started = { merged: 0, updated: 0, forgot: 0, moved: 0, forgotten: [], changed: [], notes: [] };
-  d.store.append({ ...NO_CHAT, type: EV.memoryDreamed, data: { ...started, status: "started", ...at } });
-  const turn = await d.think(dreamPrompt(d, c, now));
+  d.store.append({ ...NO_CHAT, type: EV.memoryDreamed, data: { ...NOTHING, status: "started", ...at } });
+  const turn = await passes(d, c, since);
   const data = { ...summarize(d.store, since, turn), ...at };
   return infoOf(d.memory, d.store.append({ ...NO_CHAT, type: EV.memoryDreamed, data }));
+}
+
+/**
+ * The night's passes (task review, 2026-11-22: ions-only text never reaches a file chats see): one per project with
+ * chats files, one for your chats files, then one for every ions file; all within 30 changes and 10 minutes.
+ */
+async function passes(d: DreamDeps, c: UserConfig, since: string): Promise<DreamTurn> {
+  const start = Date.now();
+  const turns: DreamTurn[] = [];
+  for (const pass of passesOf(d, c)) {
+    const step = {
+      pass,
+      max: DREAM_CHANGES - changesSince(d.store, since),
+      ms: DREAM_MS - (Date.now() - start),
+    };
+    if (step.max <= 0 || step.ms <= 0) break;
+    const turn = await d.think(dreamPrompt(d, c, new Date(), pass), step);
+    turns.push(turn);
+    if (turn.status === "failed") break;
+  }
+  const worst = turns.find((t) => t.status === "failed") ?? turns.find((t) => t.status === "late");
+  return { reply: turns.map((t) => t.reply).join("\n"), status: worst?.status ?? "done" };
+}
+
+/** Which passes a night has: only those with files to tidy. */
+function passesOf(d: DreamDeps, c: UserConfig): DreamPass[] {
+  const all = passMemory(d, c, { see: "ions" }).index({ limit: ALL });
+  const projects = new Set(
+    all.flatMap((r) => (r.see === "chats" && r.scope !== "you" ? [r.scope.projectId] : [])),
+  );
+  return [
+    ...[...projects].sort().map((project) => ({ see: "chats" as const, project })),
+    ...(all.some((r) => r.see === "chats" && r.scope === "you")
+      ? [{ see: "chats" as const, project: null }]
+      : []),
+    ...(all.some((r) => r.see === "ions") ? [{ see: "ions" as const }] : []),
+  ];
+}
+
+/** How many changes the dream made since `since`. */
+const changesSince = (store: EventStore, since: string) =>
+  store
+    .read({ since, types: [EV.memoryWritten, EV.memoryForgotten] })
+    .filter((e) => byDream((e.data as { by: MemoryBy }).by)).length;
+
+/**
+ * A dream that started and never ended (ion stopped mid-dream) is summed up at the next start: what it changed,
+ * as failed, for its night (task review, 2026-11-22).
+ */
+export function closeCutOff(store: EventStore): void {
+  const last = store.read({ types: [EV.memoryDreamed] }).at(-1);
+  const d = last?.data as Dreamed | undefined;
+  if (!last || d?.status !== "started") return;
+  const data = {
+    ...summarize(store, last.ts, { reply: "", status: "failed" }),
+    ...(d.period ? { period: d.period } : {}),
+  };
+  store.append({ ...NO_CHAT, type: EV.memoryDreamed, data });
 }
 
 /** What the last dream did, within a day of it, when it changed something or left a note (else null). */

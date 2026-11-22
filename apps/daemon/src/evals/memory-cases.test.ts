@@ -85,7 +85,8 @@ describe("memory cases", () => {
       expect(index.split("\n").length, c.id).toBe(40);
       for (const s of c.seeds) expect(index, c.id).not.toContain(s.path);
     }
-  });
+    // pnpm check, 2026-11-22: writing 600 files took past the 5 s default under a full run.
+  }, 60_000);
 
   it("answers a to-do question both ways, and Mark done both ways", () => {
     const todo = MEMORY_CASES.filter((c) => c.measure === "todo");

@@ -30,7 +30,8 @@ import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
 import { type IonGateCall as GateCall, IonServers } from "./servers.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
-import { DREAM_TURN_MS, dreamVerdict } from "./dream.js";
+import { DREAM_SKIPPED, dreamVerdict } from "./dream.js";
+import type { DreamPass } from "../memory/dream-rules.js";
 import { CLOSE_MS, closing, type Ended, note } from "./turn-end.js";
 import type { Verdict } from "./web.js";
 
@@ -68,7 +69,10 @@ type StartIonThread = (
  * How a turn may act: `request`: your own words, what the judge reads for a thread it starts (by default the
  * turn's text); `noThreads`: a turn the daemon asked for (a report) starts none, and has no request of yours.
  */
-export type TurnOpts = { request?: string; noThreads?: true };
+export type TurnOpts = { request?: string; noThreads?: true; dream?: DreamTurn };
+
+/** One pass of ion's dream: which files it sees and changes, how many changes are left, and how long it has. */
+export type DreamTurn = { pass: DreamPass; max: number; ms: number };
 
 /**
  * A turn's reply and the threads it started; `turnId`: the turn whose work its chat keeps (none when no session
@@ -105,6 +109,8 @@ type Live = {
   ionId: string;
   /** Your words, for the judge; null: this turn starts no threads. */
   request: string | null;
+  /** ion's dream's pass (its tools, its limits). */
+  dream?: DreamTurn;
   adapter: HarnessAdapter;
   rules: RuleCtx;
   /** The addresses this turn found (your message's, its searches' results): the only pages it may read. */
@@ -151,7 +157,7 @@ export class IonTurns {
   turn(ionId: string, text: string, o: TurnOpts = {}): Promise<TurnResult> {
     const next = (this.chains.get(ionId) ?? Promise.resolve())
       .catch(() => {})
-      .then(() => this.run(ionId, text, o.noThreads ? null : (o.request ?? text)));
+      .then(() => this.run(ionId, text, o));
     this.chains.set(ionId, next);
     this.pending.set(ionId, (this.pending.get(ionId) ?? 0) + 1);
     // Counted down before whoever awaits the turn hears it's over.
@@ -232,30 +238,35 @@ export class IonTurns {
     clearTimeout(timer);
   }
 
-  private async run(ionId: string, text: string, request: string | null): Promise<TurnResult> {
+  private async run(ionId: string, text: string, o: TurnOpts): Promise<TurnResult> {
     if (this.stopping) return { reply: NO_AGENT, threads: [] };
+    const request = o.noThreads ? null : (o.request ?? text);
     this.starting.set(ionId, request !== null);
     try {
-      return await this.think(ionId, text, request);
+      return await this.think(ionId, text, { request, ...(o.dream ? { dream: o.dream } : {}) });
     } finally {
       this.starting.delete(ionId);
       this.stopAsked.delete(ionId);
     }
   }
 
-  private async think(ionId: string, text: string, request: string | null): Promise<TurnResult> {
+  private async think(ionId: string, text: string, o: Pick<Live, "request" | "dream">): Promise<TurnResult> {
+    const { request } = o;
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, threads: [] };
     const h = brain && getHarness(brain.harness);
     if (!brain || !h || this.stopping) return { reply: NO_AGENT, threads: [] };
+    // A dream never searches the web (task review, 2026-11-22): on an agent that can't turn its web off, none.
+    if (o.dream && !h.adapter.noWeb)
+      return { reply: `${DREAM_SKIPPED} ${h.label} can't turn its web off`, threads: [] };
     const turnId = `turn_${randomUUID()}`;
     const rules = this.rulesFor(cwd);
     // Only your own words seed what it may read: a report's prompt is an agent's.
-    const live: Live = { ionId, request, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
+    const live: Live = { ionId, ...o, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
     this.live.set(turnId, live);
     try {
-      const t = { ionId, turnId, text, cwd, rules, report: request === null };
+      const t = { ionId, turnId, text, cwd, rules, report: request === null, dream: o.dream };
       const { end, projects } = await this.session(t, brain, h.adapter);
       return {
         reply: this.settle(ionId, { harness: brain.harness, projects }, end),
@@ -313,7 +324,7 @@ export class IonTurns {
    * The projects an ion's tools may see (sorted): ion chief those shared with it, a project's ion its own. A report
    * turn's key says so: its tools write nothing.
    */
-  private scopeOf(t: TurnRef & { report: boolean }): IonScope {
+  private scopeOf(t: TurnRef & { report: boolean; dream?: DreamTurn }): IonScope {
     const all = loadUserConfig(this.d.configFile).config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
     const projects =
       t.ionId === "chief" || t.ionId === DREAM_ION
@@ -322,7 +333,15 @@ export class IonTurns {
             .map((p) => p.id)
             .sort()
         : [t.ionId];
-    return { kind: "ion", ionId: t.ionId, projects, turnId: t.turnId, ...(t.report ? { report: true } : {}) };
+    const dream = t.dream ? { dream: { ...t.dream.pass, max: t.dream.max } } : {};
+    return {
+      kind: "ion",
+      ionId: t.ionId,
+      projects,
+      turnId: t.turnId,
+      ...(t.report ? { report: true } : {}),
+      ...dream,
+    };
   }
 
   /**
@@ -330,7 +349,7 @@ export class IonTurns {
    * it ended, and the projects it saw.
    */
   private async session(
-    t: TurnRef & { text: string; cwd: string; rules: RuleCtx; report: boolean },
+    t: TurnRef & { text: string; cwd: string; rules: RuleCtx; report: boolean; dream?: DreamTurn },
     brain: IonBrain,
     adapter: HarnessAdapter,
   ): Promise<{ end: Ended; projects: string[] }> {
@@ -351,6 +370,7 @@ export class IonTurns {
       ...(gateKey ? { gate: { url: `${this.d.gateUrl()}/${gateKey}` } } : {}),
       // ion's own agents don't inherit your keys either, and start in a run's sandbox (final review, 2026-11-22).
       ...(await ownAgentStart(this.d, t.cwd, brain.harness)),
+      ...(t.dream ? { noWeb: true, bareHome: this.ownFolder() } : {}),
       signal: abort.signal,
       decide: async (req: ApprovalRequest) => {
         const live = this.live.get(t.turnId);
@@ -411,9 +431,16 @@ export class IonTurns {
     }
   }
 
-  /** A turn's hard limit: a dream's is longer (it reads and tidies every file). */
+  /** A turn's hard limit: a dream's pass has what's left of its 10 minutes. */
   private limitOf(turnId: string): number {
-    return this.live.get(turnId)?.ionId === DREAM_ION ? DREAM_TURN_MS : ION_TURN_MS;
+    return this.live.get(turnId)?.dream?.ms ?? ION_TURN_MS;
+  }
+
+  /** A daemon-only folder for the dream's agent's own files (Grok's profile), which it may only read. */
+  private ownFolder(): string {
+    const dir = join(this.d.dataDir, "ions", `${DREAM_ION}-own`);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    return dir;
   }
 
   /** Starts (or resumes) the session, sends your message, and reads the session to its end. */

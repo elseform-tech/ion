@@ -42,8 +42,10 @@ export type ConnectOpts = {
   envDrop?: StartOpts["envDrop"];
   ownTools?: StartOpts["ownTools"];
   sandbox?: StartOpts["sandbox"];
-  /** Its command line instead of the harness's (a bare start's). */
+  /** Its command line instead of the harness's (a bare start's, or one with no web). */
   args?: string[];
+  /** Set after the harness's own environment (a start with no web: its own config folder). */
+  lastEnv?: Record<string, string>;
 };
 
 /** Starts of an agent that's setting up, by agent: they take turns (two at once slowed each other past the limit). */
@@ -111,6 +113,7 @@ const envOf = (h: AcpHarness, o: ConnectOpts) => ({
   ...agentEnv(process.env, o.envDrop),
   ...o.env,
   ...(h.env?.(o.gate ? { url: o.gate.url, cwd: o.cwd } : undefined, !!o.ownTools) ?? {}),
+  ...o.lastEnv,
 });
 
 /** What a start that failed says: not signed in, a session it couldn't continue, or the error as it was. */

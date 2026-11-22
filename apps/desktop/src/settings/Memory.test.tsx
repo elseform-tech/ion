@@ -303,8 +303,8 @@ describe("ion's dream in Memory", () => {
       forgotten: [{ path: "you/old-launch.md", name: "Old launch" }],
     };
     const files = [
-      file({ memoryId: "you/node.md", name: "Node version", source: "ion:dream", writtenAt: ago(5) }),
-      file({ memoryId: "you/older.md", name: "Older tidy", source: "ion:dream", writtenAt: ago(30) }),
+      file({ memoryId: "you/node.md", name: "Node version", source: "ion:_dream", writtenAt: ago(5) }),
+      file({ memoryId: "you/older.md", name: "Older tidy", source: "ion:_dream", writtenAt: ago(30) }),
     ];
     const c = await openMemory(memoryClient({ dream: { tidied, files } }));
     fireEvent.click(await screen.findByRole("button", { name: "Nightly" }));

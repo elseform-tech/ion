@@ -157,6 +157,26 @@ describe("claude-code session", () => {
     ]);
   });
 
+  // Task review, 2026-11-22: ion's dream never searches the web; a start with no web has no WebSearch or WebFetch.
+  it("turns off Claude's web tools for a start with no web", async () => {
+    const calls: FakeQueryCall[] = [];
+    const s = await make(calls).start({
+      cwd,
+      model: null,
+      effort: null,
+      noWeb: true,
+      mcpServers: [{ name: "ion", transport: "http", url: "http://127.0.0.1:9/mcp", headers: {} }],
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await s.close();
+    expect((calls.at(-1)?.options as { disallowedTools?: string[] }).disallowedTools).toEqual([
+      "AskUserQuestion",
+      "WebSearch",
+      "WebFetch",
+    ]);
+  });
+
   // The user, 2026-11-20: skills are "the skills your agents already have", passed T3 Code's way (the SDK's plugins);
   // probe 2026-11-21 (docs/research/skills.md). Your own Claude settings stay off, and a skill can't run shell lines.
   it("a Claude Code run gets the enabled skills as a plugin, with ion's settings still off", async () => {

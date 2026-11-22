@@ -258,6 +258,8 @@ function threadParams(opts: StartOpts, own: string[]): Record<string, unknown> {
     config: {
       ...mcpConfig(opts.mcpServers, own),
       ...(sandboxedRun(opts) ? {} : { sandbox_workspace_write: { network_access: true } }),
+      // No web (ion's dream): its own web search off, by the newer key and the older one.
+      ...(opts.noWeb ? { web_search: "disabled", tools: { web_search: false } } : {}),
     },
     ...(opts.instructions ? { developerInstructions: opts.instructions } : {}),
     ...(opts.bare ? { ephemeral: true } : {}),

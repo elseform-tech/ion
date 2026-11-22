@@ -470,4 +470,12 @@ describe("what Codex's switch really turns off", () => {
     expect(a.ownTools).toBe(true);
     expect(a.ownTrust).toBe(true);
   });
+
+  // Task review, 2026-11-22: ion's dream never searches the web; a start with no web turns Codex's web search off.
+  it("turns its web search off for a start with no web", async () => {
+    const { thread } = await whoami({ noWeb: true });
+    expect(thread.config).toMatchObject({ web_search: "disabled", tools: { web_search: false } });
+    const plain = await whoami();
+    expect(plain.thread.config.web_search).toBeUndefined();
+  });
 });

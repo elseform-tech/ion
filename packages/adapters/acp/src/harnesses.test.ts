@@ -469,6 +469,38 @@ describe("ion's judge on ACP agents", () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
+  // Task review, 2026-11-22: ion's dream never searches the web. Grok gets a profile with no tool of its own (ion's
+  // server still comes from the session); opencode a config of its own with web fetch and search denied and off.
+  it("starts Grok and opencode with no web for ion's dream", () => {
+    expect(GROK_BUILD.noWeb).toBeTypeOf("function");
+    expect(OPENCODE.noWeb).toBeTypeOf("function");
+    const dir = mkdtempSync(join(tmpdir(), "ion-noweb-grok-"));
+    const g = GROK_BUILD.noWeb?.({ dir, own: false });
+    const args = g?.args ?? [];
+    const profile = readFileSync(args[args.indexOf("--agent-profile") + 1]!, "utf8");
+    expect(profile).toMatch(/^name: ion-dream$/m);
+    expect(profile).toMatch(/^tools: todo_write$/m);
+    expect(g?.read).toEqual([dir]);
+    const h = opencodeHome();
+    const o = withEnv(
+      { HOME: h.home, XDG_CONFIG_HOME: h.xdg, XDG_CACHE_HOME: h.cache, ION_HOME: undefined },
+      () => OPENCODE.noWeb?.({ dir, own: false }),
+    );
+    const home = o?.env?.XDG_CONFIG_HOME ?? "";
+    expect(home).toBe(join(h.cache, "ion", "opencode", "default-noweb"));
+    const config = JSON.parse(readFileSync(join(home, "opencode", "opencode.json"), "utf8")) as Loose;
+    expect(config.permission).toMatchObject({
+      edit: "ask",
+      bash: "ask",
+      webfetch: "deny",
+      websearch: "deny",
+    });
+    expect(config.tools).toEqual({ webfetch: false, websearch: false });
+    expect(o?.read).toEqual([home]);
+    // A chat's config keeps its web (asking).
+    expect(started(h).config.permission).toMatchObject({ webfetch: "ask" });
+  });
+
   it("deletes the judge's sessions from each agent's history", () => {
     expect(GROK_BUILD.forgetArgs?.("abc")).toEqual(["sessions", "delete", "abc"]);
     expect(OPENCODE.forgetArgs?.("ses_1")).toEqual(["session", "delete", "ses_1"]);

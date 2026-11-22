@@ -6,8 +6,8 @@ import type { Verdict } from "./web.js";
  * information and update memory"): memory's tools only, nothing else on its agent, about 10 minutes at most.
  */
 
-/** A dream's hard limit: past it the agent is stopped, and what it changed so far stays (each change undoable). */
-export const DREAM_TURN_MS = 600_000;
+/** How a dream that couldn't run on its agent starts its reply (and its note for you). */
+export const DREAM_SKIPPED = "Dream skipped:";
 
 /** ion's memory tools: `mcp__ion__memory_*` (Claude Code) or `ion__memory_*` (Grok). */
 const MEMORY_TOOL = /^(mcp__)?ion__memory_(index|search|read|write|forget)$/;
@@ -36,7 +36,7 @@ export function dreamInstructions(): string {
     "Fix them yourself: to merge, memory_write the file you keep with every detail of both, then memory_forget the other with into set to the kept file's path; to update, memory_write the new text (and description); to forget a fact that's no longer true, memory_forget it; to move one, memory_write it in the right scope, then memory_forget the old one with into set to the new path.",
     "Always memory_read a file before you change it, and pass its hash as expect.",
     "Change only what you're sure of: a fact no chat or file contradicts stays exactly as it is, even if it's old. Never invent a fact, and keep every detail when you merge.",
-    "Never change or forget the user's person files, a suggestion, a file the user changed in the last day, or a to-do's status: when one looks out of date or done, say so in a note instead. Never share a file with chats. ion refuses these anyway.",
+    "Never change or forget the user's person files, to-dos, a suggestion, or a file the user changed in the last day: when one looks out of date or done, say so in a note instead. Never change who sees a file. Each pass changes only the files its message names; the rest are context. ion refuses these anyway.",
     "At most 30 changes; then stop.",
     'End your reply with a line per change, then at most two lines for the user, each starting "Note:" (a person file that looks out of date, a to-do that looks done). With nothing to tidy, change nothing and say so.',
   ].join(" ");

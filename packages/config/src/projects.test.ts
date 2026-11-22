@@ -77,6 +77,12 @@ describe("reserved names", () => {
     expect(projectNameError("you")).toBe("That name is ion's own");
     expect(addProject(DEFAULT_CONFIG, repo("you")).projects[0]!.id).toBe("you-2");
   });
+
+  // Task review, 2026-11-22: ion's dream runs as "_dream", an id no project can have, so a project named dream works.
+  it("names a project dream", () => {
+    expect(projectNameError("dream")).toBeNull();
+    expect(addProject(DEFAULT_CONFIG, repo("dream")).projects[0]!.id).toBe("dream");
+  });
 });
 
 // The user, 2026-11-19: rename and remove projects. A rename is the name ion shows (its id stays: every event,

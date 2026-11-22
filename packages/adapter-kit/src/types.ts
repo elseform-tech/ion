@@ -67,6 +67,11 @@ export type StartOpts = {
   /** A plain model call (ion's judge): no tools at all, a short system prompt, one turn, no thinking. */
   bare?: boolean;
   /**
+   * No web at all (ion's dream): the agent's own web search and fetch are off, ion's MCP server stays. Only on an
+   * adapter with `noWeb`; `bareHome` holds what it needs for that (Grok's profile).
+   */
+  noWeb?: boolean;
+  /**
    * A bare start's daemon-only folder for the agent's own files (Grok's profile): outside its working folder, only read
    * by the agent (PR #25 review, 2026-11-22).
    */
@@ -140,6 +145,8 @@ export interface HarnessAdapter {
   ownTools?: true;
   /** Its own hooks run in ion's chats too (it has no switch for them). */
   ownHooks?: true;
+  /** It can start with its own web search and fetch off (`StartOpts.noWeb`). */
+  noWeb?: true;
   /** What "Use its own tools" off really turns off, by kind (task review, 2026-11-21). Absent: all of it. */
   ownOff?: OwnOff;
   /** It decides by itself whether to trust a project's own tools (its own trust list). */

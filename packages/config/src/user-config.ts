@@ -133,7 +133,7 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   projects: z.array(Project).default([]),
-  /** Projects named with ion's own ids (chief, you, dream): kept in your file as written, never used. */
+  /** Projects named with ion's own ids (chief, you): kept in your file as written, never used. */
   heldProjects: z.array(z.looseObject({})).optional(),
   /** Where `ion projects new <name>` makes projects. */
   folders: z.looseObject({ projects: z.string().default("~/ion/projects") }).prefault({}),
@@ -283,7 +283,7 @@ function dropIfBad(raw: unknown, path: string[], schema: z.ZodType): boolean {
 }
 
 /**
- * A project whose id is ion's own (chief, you, dream) is left out of `projects` and held as written (`heldProjects`), so a
+ * A project whose id is ion's own (chief, you) is left out of `projects` and held as written (`heldProjects`), so a
  * save keeps it in your file (task review, 2026-11-22); returns those ids.
  */
 function holdReservedProjects(raw: unknown): string[] {

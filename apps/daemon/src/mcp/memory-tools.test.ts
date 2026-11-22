@@ -474,7 +474,10 @@ describe("memory tools", () => {
   // 30 changes a night.
   it("the cap stops a run at 30 changes", async () => {
     const turnId = "dream-1";
-    const c = await client(grants.create({ kind: "ion", ionId: "dream", projects: ["app", "shop"], turnId }));
+    const dream = { see: "ions" as const, max: 30 };
+    const c = await client(
+      grants.create({ kind: "ion", ionId: "_dream", projects: ["app", "shop"], turnId, dream }),
+    );
     const tools = (await c.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual(["memory_forget", "memory_index", "memory_read", "memory_search", "memory_write"]);
     const note = (i: number) => ({

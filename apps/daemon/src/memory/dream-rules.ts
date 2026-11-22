@@ -1,4 +1,4 @@
-import type { MemorySee, MemoryType } from "@ion/schema";
+import type { MemoryScope, MemorySee, MemoryType } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { MemoryRow } from "../views/memory.js";
 import type { MemoryFiles } from "./index.js";
@@ -8,7 +8,8 @@ import type { MemoryFiles } from "./index.js";
  * update memory"): the ion that tidies memory overnight. What it may never do, whatever it's told, is here; every
  * change it makes is a normal memory write by "ion (dream)", so History and Restore work.
  */
-export const DREAM_ION = "dream";
+/** Its id: one no project can have (a project's id starts with a letter or digit). */
+export const DREAM_ION = "_dream";
 
 const DAY_MS = 86_400_000;
 
@@ -22,34 +23,82 @@ function youChangedLately(memory: MemoryFiles, path: string, now = new Date()): 
 }
 
 /**
- * The dream never changes or forgets your person files (it may only say so in its summary), a chat's suggestion
- * (only you keep one), or a file you changed in the last day.
+ * The dream never changes or forgets your person files or to-dos (it may only say so in its summary), a chat's
+ * suggestion (only you keep one), or a file you changed in the last day.
  */
-export function dreamMayTouch(memory: MemoryFiles, f: Touched, now = new Date()): void {
+function dreamMayTouch(memory: MemoryFiles, f: Touched, now = new Date()): void {
   if (f.type === "person") throw new UserError("Your person files are the user's; say it in your summary");
+  // Not even a to-do's text (task review, 2026-11-22): it may only note one in its summary.
+  if (f.type === "todo") throw new UserError("A to-do is yours; I'll note it");
   if (f.suggested) throw new UserError("A suggestion waits for the user to keep it");
   if (youChangedLately(memory, f.path, now))
     throw new UserError("The user changed this in the last day; leave it");
 }
 
 /** What a file the dream makes or retypes may be: never a person file or a to-do. */
-export function dreamMayBe(type: MemoryType): void {
+function dreamMayBe(type: MemoryType): void {
   if (type === "person") throw new UserError("Your person files are the user's; say it in your summary");
   if (type === "todo") throw new UserError("Only the user adds to-dos");
 }
 
-/** Who sees a file the dream makes: ions only (it never shares one with chats). */
-export function dreamSee(see: MemorySee | undefined): MemorySee {
-  if (see === "chats") throw new UserError("Only the user shares a file with chats");
-  return "ions";
+/**
+ * A dream's pass (task review, 2026-11-22: ions-only text must never reach a file chats see): pass A sees and
+ * changes only chats files, one project's (`project`) or yours (null); pass B sees everything and changes only ions
+ * files.
+ */
+export type DreamPass = { see: MemorySee; project?: string | null };
+
+/** The pass may change a file seen like this, in this scope. */
+function passWrites(pass: DreamPass, scope: MemoryScope, see: MemorySee): void {
+  if (see !== pass.see)
+    throw new UserError(
+      pass.see === "ions"
+        ? "This pass only changes files chats can't see"
+        : "This pass only changes files chats see",
+    );
+  if (pass.see !== "chats") return;
+  const mine = pass.project ? scope !== "you" && scope.projectId === pass.project : scope === "you";
+  const whose = pass.project ? `${pass.project}'s` : "your";
+  if (!mine) throw new UserError(`This pass only changes ${whose} files`);
 }
 
-/** A file merged into another: into one the dream may change, seen by no more than the file it came from. */
-export function dreamInto(from: Touched, into: Touched | undefined): void {
-  if (!into) throw new UserError("Merge it into a file that's there");
+/** A file the dream makes: never a person file or a to-do, seen as its pass's files are. */
+export function dreamCreate(
+  pass: DreamPass,
+  scope: MemoryScope,
+  type: MemoryType,
+  see?: MemorySee,
+): MemorySee {
+  dreamMayBe(type);
+  if (see && see !== pass.see) throw new UserError("I never change who sees a file");
+  passWrites(pass, scope, pass.see);
+  return pass.see;
+}
+
+/** A file the dream updates: one it may touch and its pass may change, never retyped to a person file or to-do. */
+export function dreamUpdate(
+  memory: MemoryFiles,
+  pass: DreamPass,
+  was: Touched & { scope: MemoryScope },
+  next: { type: MemoryType; see: MemorySee },
+): void {
+  dreamMayTouch(memory, was);
+  if (next.see !== was.see) throw new UserError("I never change who sees a file");
+  passWrites(pass, was.scope, was.see);
+  if (next.type !== was.type) dreamMayBe(next.type);
+}
+
+/** A file the dream forgets, and the file it was merged into (one it may touch and its pass may change). */
+export function dreamForget(
+  memory: MemoryFiles,
+  pass: DreamPass,
+  from: Touched & { scope: MemoryScope },
+  into?: Touched & { scope: MemoryScope },
+): void {
+  dreamMayTouch(memory, from);
+  passWrites(pass, from.scope, from.see);
+  if (!into) return;
   if (into.path === from.path) throw new UserError("Merge it into another file");
-  // Into a person file or a suggestion would change one the dream may not (its write there was refused already).
-  if (into.type === "person" || into.suggested) throw new UserError("Merge it into a file you may change");
-  if (into.see === "chats" && from.see === "ions")
-    throw new UserError("That shows it to chats; merge it into a file seen by ions only");
+  dreamMayTouch(memory, into);
+  passWrites(pass, into.scope, into.see);
 }

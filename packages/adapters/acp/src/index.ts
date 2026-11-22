@@ -58,6 +58,7 @@ const CAPABILITIES: Omit<Capabilities, "models" | "defaultModel" | "modelsLive">
 /** What the agent brings of its own (its tools, hooks, trust) and how it takes "/" picks, as its harness says. */
 const ownOf = (h: AcpHarness) => ({
   ...(h.ownTools ? { ownTools: true as const } : {}),
+  ...(h.noWeb ? { noWeb: true as const } : {}),
   ...(h.picks ? { picks: h.picks } : {}),
   ...(h.ownHooks ? { ownHooks: true as const } : {}),
   ...(h.ownOff ? { ownOff: h.ownOff } : {}),
@@ -117,11 +118,23 @@ async function startAcp(h: AcpHarness, path: string | null, deps: AcpDeps, opts:
   // session of a warm agent with no tools, on the harness's fast model and low effort.
   const c = opts.bare
     ? await bareConnect(h, path, bareOpts(h, opts, deps.startTimeoutMs))
-    : await connect(h, path, { ...opts, timeoutMs: deps.startTimeoutMs });
+    : await connect(h, path, { ...opts, ...noWebOpts(h, opts), timeoutMs: deps.startTimeoutMs });
   const want = wanted(h, opts);
   const model = (await setOption(c, "model", want.model)) ?? h.defaultModel ?? "default";
   await setOption(c, "thought_level", want.effort === "max" ? "high" : want.effort);
   return startAcpSession(c, { ...opts, effort: want.effort }, { harness: h.id, model, silent: silenceOf(h) });
+}
+
+/** A start with no web (ion's dream): the harness's way to turn its web off, or an error when it has none. */
+function noWebOpts(h: AcpHarness, opts: StartOpts): Partial<ConnectOpts> {
+  if (!opts.noWeb) return {};
+  if (!h.noWeb) throw new Error(`${h.label} can't turn its web off`);
+  const nw = h.noWeb({ dir: opts.bareHome ?? opts.cwd, own: !!opts.ownTools });
+  return {
+    ...(nw.args ? { args: nw.args } : {}),
+    ...(nw.env ? { lastEnv: nw.env } : {}),
+    ...(opts.sandbox && nw.read ? { sandbox: withPaths(opts.sandbox, { read: nw.read }) } : {}),
+  };
 }
 
 /** The model and effort a start asks for: yours, else (ion's judge) the harness's fast model and low effort. */

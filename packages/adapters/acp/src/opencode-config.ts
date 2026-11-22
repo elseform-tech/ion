@@ -236,8 +236,9 @@ function onlyPluginPackage(path: string): void {
  * or dependency left there would load in every later chat): its config, and only what opencode keeps for its plugin
  * package. A folder that isn't ion's own is refused plainly. Returns the folder (opencode's XDG_CONFIG_HOME).
  */
-export function writeIonConfig(config: Record<string, unknown>, own = false): string {
-  const home = ionConfigHome(own);
+export function writeIonConfig(config: Record<string, unknown>, own = false, noWeb = false): string {
+  // No web (ion's dream): a folder of its own, so a chat starting at the same time keeps its web.
+  const home = noWeb ? `${ionConfigHome(own)}-noweb` : ionConfigHome(own);
   const cache = ionCache();
   mkdirSync(dirname(cache), { recursive: true, mode: 0o700 });
   for (const p of [cache, dirname(home), home, join(home, "opencode")]) ownFolder(p);
@@ -245,7 +246,7 @@ export function writeIonConfig(config: Record<string, unknown>, own = false): st
   for (const name of readdirSync(dir))
     if (!KEEP.has(name)) rmSync(join(dir, name), { recursive: true, force: true });
   onlyPluginPackage(join(dir, "package.json"));
-  if (own) takePluginPackage(dir, join(ionConfigHome(false), "opencode"));
+  if (own || noWeb) takePluginPackage(dir, join(ionConfigHome(false), "opencode"));
   writeWhole(join(dir, ".gitignore"), GITIGNORE);
   writeWhole(join(dir, "opencode.json"), `${JSON.stringify(config, null, 2)}\n`);
   if (installed(dir)) prepared.add(home);

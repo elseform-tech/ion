@@ -99,7 +99,7 @@ export function whoOf(m: { source: string; sourceTitle?: string }, ions: IonInfo
     // ion chief's name is the wordmark, "ion": said in full here, so it isn't read as ion itself (tour, 2026-11-22).
     if (id === "chief") return "ion chief";
     // ion's dream, which tidies memory overnight.
-    if (id === "dream") return "ion (dream)";
+    if (id === "_dream") return "ion (dream)";
     return ions.find((i) => i.ionId === id)?.name ?? id;
   }
   return m.sourceTitle ?? "A chat";

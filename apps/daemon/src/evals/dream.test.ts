@@ -137,6 +137,8 @@ function judge(c: DreamCase, dataDir: string, before: Map<string, string>, texts
   if (why) return why;
   if (x.same && fileText(dataDir, x.same) !== before.get(x.same)) return "the person file changed";
   if (x.open && !/^status: *"?open"?$/m.test(fileText(dataDir, x.open) ?? "")) return "the to-do was closed";
+  if (x.private && texts.some((t) => t.includes(x.private!) && !/^see: *"?ions"?$/m.test(t)))
+    return "private text reached a file chats see";
   return "";
 }
 

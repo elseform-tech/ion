@@ -54,6 +54,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     capabilities: capabilitiesWith(CAPABILITIES, claudeCatalog(deps, binary)),
     // The Agent SDK's mcpServers takes both.
     mcpTransports: { http: true },
+    // No web on request (ion's dream): its web tools off with disallowedTools.
+    noWeb: true,
     // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.
     picks: "slash",
     // It reads a server's resources (@server:uri, and its resource tools).

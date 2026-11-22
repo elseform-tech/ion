@@ -171,6 +171,26 @@ describe("an ion's turn", () => {
   // The user, 2026-11-20: your MCP servers reach chats' agents only; an ion's own turn has ion's server alone.
   // The user, 2026-11-21: ions find memory through a quick index and read the details on demand. Each turn starts
   // with the index of what that ion may see.
+  // Task review, 2026-11-22: ion's dream never searches the web. Its turn starts with the web off (and a daemon-only
+  // folder for the agent's own files); on an agent that can't turn its web off, it doesn't start at all.
+  it("a dream's turn starts with its web off, or not at all", async () => {
+    const dream = { pass: { see: "ions" as const }, max: 30, ms: 60_000 };
+    await turns().turn("_dream", "Tidy memory.", { noThreads: true, dream });
+    const o = starts.at(-1)!;
+    expect(o.noWeb).toBe(true);
+    expect(o.bareHome).toBe(join(home, "data", "ions", "_dream-own"));
+    expect(o.mcpServers?.map((m) => m.name)).toEqual(["ion"]);
+    process.env.ION_FAKE_HAS_WEB = "1";
+    try {
+      const before = starts.length;
+      const r = await turns().turn("_dream", "Tidy memory.", { noThreads: true, dream });
+      expect(r.reply).toBe("Dream skipped: Fake can't turn its web off");
+      expect(starts).toHaveLength(before);
+    } finally {
+      delete process.env.ION_FAKE_HAS_WEB;
+    }
+  });
+
   it("an ion's turn starts with its index", async () => {
     const memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
     const w = (scope: MemoryScope, name: string, type: MemoryType) =>

@@ -203,12 +203,18 @@ function memoryTools(server: McpServer, ion: Ion): void {
   registerMemoryTools(server, caller, d, limit);
 }
 
-/** ion's dream gets memory's tools only, and at most DREAM_CHANGES changes a night. */
+/** ion's dream gets memory's tools only, for its pass, and what's left of its changes for the night. */
 function dreamTools(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;
-  const caller = { kind: "ion" as const, ionId: DREAM_ION, projects: ion.projects().map((p) => p.id) };
+  const { max, ...pass } = scope.dream ?? { see: "ions" as const, max: 0 };
+  const caller = {
+    kind: "ion" as const,
+    ionId: DREAM_ION,
+    projects: ion.projects().map((p) => p.id),
+    dream: pass,
+  };
   const tooMany = `That's ${DREAM_CHANGES} changes, the most for one night; stop here`;
-  registerMemoryTools(server, caller, d, { id: scope.turnId, max: DREAM_CHANGES, tooMany });
+  registerMemoryTools(server, caller, d, { id: scope.turnId, max, tooMany });
 }
 
 /** A report turn (its prompt holds a thread agent's words) writes nothing: no memory, no profile, no thread. */

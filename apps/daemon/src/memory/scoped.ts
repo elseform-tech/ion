@@ -2,7 +2,7 @@ import { MEMORY_PATH, type MemoryBy, type MemoryScope, type MemorySee, type Memo
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryRow } from "../views/memory.js";
-import { DREAM_ION, dreamInto, dreamMayBe, dreamMayTouch, dreamSee } from "./dream-rules.js";
+import { type DreamPass, dreamCreate, dreamForget, dreamUpdate } from "./dream-rules.js";
 import { slugOf } from "./files.js";
 import type { MemoryFile, MemoryFiles } from "./index.js";
 
@@ -12,7 +12,7 @@ import type { MemoryFile, MemoryFiles } from "./index.js";
  */
 export type Caller =
   | { kind: "chat"; projectId: string; chatId: string; runId: string }
-  | { kind: "ion"; ionId: string; projects: string[] }
+  | { kind: "ion"; ionId: string; projects: string[]; dream?: DreamPass }
   | { kind: "you" };
 
 /** What a write gives: where ("you", "project": the caller's own, or a project's id), the header and the text. */
@@ -145,6 +145,9 @@ function sightOf(c: Caller): Sight {
   if (c.kind === "you") return { scopes: "all", see: ["chats", "ions"] };
   if (c.kind === "chat")
     return { scopes: ["you", { projectId: c.projectId }], see: ["chats"], suggestedFor: c.projectId };
+  // ion's dream, pass A: chats files only, of one project (and yours, which its chats see) or yours alone.
+  if (c.dream?.see === "chats")
+    return { scopes: c.dream.project ? ["you", { projectId: c.dream.project }] : ["you"], see: ["chats"] };
   return { scopes: ["you", ...c.projects.map((projectId) => ({ projectId }))], see: ["chats", "ions"] };
 }
 
@@ -154,15 +157,15 @@ function sightOf(c: Caller): Sight {
  */
 export class ScopedMemory {
   private readonly sight: Sight;
-  /** ion's dream: it never touches your person files, a suggestion, or what you changed in the last day. */
-  private readonly dreams: boolean;
+  /** ion's dream's pass: what it may never touch, and which files this pass sees and changes (dream-rules.ts). */
+  private readonly dream: DreamPass | undefined;
 
   constructor(
     private readonly memory: MemoryFiles,
     private readonly caller: Caller,
   ) {
     this.sight = sightOf(caller);
-    this.dreams = caller.kind === "ion" && caller.ionId === DREAM_ION;
+    this.dream = caller.kind === "ion" ? caller.dream : undefined;
   }
 
   /** Open to-dos first, then the most recently changed. */
@@ -232,10 +235,8 @@ export class ScopedMemory {
   forget(name: string, expect?: string, into?: string): string {
     const row = this.resolve(name);
     this.mayWrite(row.scope, row.type);
-    if (this.dreams) {
-      dreamMayTouch(this.memory, row);
-      if (into !== undefined) dreamInto(row, this.matches(into)[0]);
-    }
+    if (this.dream)
+      dreamForget(this.memory, this.dream, row, into === undefined ? undefined : this.resolve(into));
     const c = this.caller;
     // A chat forgets only your files its own project suggested.
     if (c.kind === "chat" && row.scope === "you" && row.suggested !== c.projectId)
@@ -243,7 +244,7 @@ export class ScopedMemory {
     if (c.kind !== "you" && expect === undefined) throw new UserError("Read it first");
     // Forgetting an open to-do closes it too (task review, 2026-11-22).
     if (c.kind !== "you" && row.type === "todo" && row.status !== "done") throw new UserError(ONLY_YOU_CLOSE);
-    this.memory.forget(row.path, this.by(), expect, into && this.matches(into)[0]?.path);
+    this.memory.forget(row.path, this.by(), expect, into && this.resolve(into).path);
     return row.path;
   }
 
@@ -265,8 +266,7 @@ export class ScopedMemory {
     const c = this.caller;
     const chatsYours = c.kind === "chat" && scope === "you";
     if (chatsYours && w.see) throw new UserError("A chat can't choose who sees your files");
-    if (this.dreams) dreamMayBe(type);
-    const see = this.dreams ? dreamSee(w.see) : w.see;
+    const see = this.dream ? dreamCreate(this.dream, scope, type, w.see) : w.see;
     this.mayClose({ type }, { type, ...statusOf(type, w.status) });
     this.noClash(scope, name);
     const header = {
@@ -290,10 +290,7 @@ export class ScopedMemory {
     });
     this.mayWrite(scope, disk.header.type);
     this.mayWrite(scope, header.type);
-    if (this.dreams) {
-      dreamMayTouch(this.memory, { ...disk.header, path: disk.path });
-      if (header.type !== disk.header.type) dreamMayBe(header.type);
-    }
+    if (this.dream) dreamUpdate(this.memory, this.dream, { ...disk.header, path: disk.path, scope }, header);
     this.mayChange(scope, disk.header, header.see);
     this.mayClose(disk.header, header);
     const text = w.text ?? disk.text;

@@ -33,7 +33,18 @@ function seed(name: string, s: Seed) {
 }
 
 /** ion's dream as its tools have it: every project shared with ion. */
-const dream = () => new ScopedMemory(memory, { kind: "ion", ionId: "dream", projects: ["shop"] });
+/** ion's dream as its tools have it: pass A (chats files: a project's, or yours) or pass B (ions files). */
+const dream = (see: "chats" | "ions" = "ions", project: string | null = null) =>
+  new ScopedMemory(memory, { kind: "ion", ionId: "_dream", projects: ["shop"], dream: { see, project } });
+/** Runs `f` on the first pass only (a dream has a pass per kind of file). */
+const once = (f: () => void) => {
+  let ran = false;
+  return async () => {
+    if (!ran) f();
+    ran = true;
+    return done();
+  };
+};
 const done = (reply = "Tidied."): DreamTurn => ({ reply, status: "done" });
 const deps = (think: DreamDeps["think"]): DreamDeps => ({ store, db, memory, configFile, think });
 const dreamed = () => store.read({ types: [EV.memoryDreamed] });
@@ -63,7 +74,7 @@ afterEach(() => {
 describe("ion's dream", () => {
   it("dream runs only when on, in quiet hours", async () => {
     const none = new Set<string>();
-    const night = at(20, 3).toISOString();
+    const night = "2026-11-20";
     const due = (c: UserConfig, now: Date, served = none) => dreamDue(c, now, served) !== null;
     expect(due(config("off"), at(20, 3, 30))).toBe(false);
     expect(dreamDue(config("nightly"), at(20, 3, 30), none)).toBe(night);
@@ -76,12 +87,13 @@ describe("ion's dream", () => {
     // Once a night; once a week (the night to Monday, 3:00).
     expect(due(config("nightly"), at(20, 4), new Set([night]))).toBe(false);
     expect(due(config("nightly"), at(21, 3, 30), new Set([night]))).toBe(true);
-    const monday = at(23, 3).toISOString();
+    const monday = "2026-11-23";
     expect(dreamDue(config("weekly"), at(23, 3, 30), none)).toBe(monday);
     expect(due(config("weekly"), at(24, 3, 30), new Set([monday]))).toBe(false);
     expect(due(config("weekly"), at(30, 3, 30), new Set([monday]))).toBe(true);
 
     // The scheduler (quiet hours off, so 1:00 isn't a catch-up): one turn at 3:00, none while off.
+    seed("Node", { scope: { projectId: "shop" }, type: "fact", text: "Node 22." });
     saveUserConfig(configFile, config("nightly", false));
     vi.useFakeTimers();
     vi.setSystemTime(at(20, 1));
@@ -103,6 +115,7 @@ describe("ion's dream", () => {
   // next time ion is up in quiet hours, else at the next 3:00; never in the working day, never twice for one night.
   it("a missed dream catches up once, in quiet hours, never in the working day", async () => {
     vi.useFakeTimers();
+    seed("Node", { scope: { projectId: "shop" }, type: "fact", text: "Node 22." });
     const think = vi.fn(async () => done());
     // Started at 7:00 after a missed 3:00, quiet hours off: it waits for the next 3:00.
     saveUserConfig(configFile, config("nightly", false));
@@ -130,7 +143,7 @@ describe("ion's dream", () => {
     expect(again).toHaveBeenCalledTimes(1);
     stop3();
     const periods = dreamed().map((e) => (e.data as { period?: string }).period);
-    expect(new Set(periods)).toEqual(new Set([at(21, 3).toISOString(), at(22, 3).toISOString()]));
+    expect(new Set(periods)).toEqual(new Set(["2026-11-21", "2026-11-22"]));
   });
 
   it("dream sees recent chats' words as data, and memory's index", async () => {
@@ -169,17 +182,18 @@ describe("ion's dream", () => {
       text: "Deploys need the VPN on.",
     });
     const info = await runDream(
-      deps(async () => {
-        const m = dream();
-        m.write({
-          scope: "shop",
-          path: a.path,
-          text: "Deploys run from main, with the VPN on.",
-          expect: a.hash,
-        });
-        m.forget(b.path, b.hash, a.path);
-        return done("Merged the deploy notes.");
-      }),
+      deps(
+        once(() => {
+          const m = dream("chats", "shop");
+          m.write({
+            scope: "shop",
+            path: a.path,
+            text: "Deploys run from main, with the VPN on.",
+            expect: a.hash,
+          });
+          m.forget(b.path, b.hash, a.path);
+        }),
+      ),
     );
     expect(info).toMatchObject({ merged: 1, updated: 0, forgot: 0, moved: 0 });
     const kept = memory.read(a.path);
@@ -207,16 +221,18 @@ describe("ion's dream", () => {
     const tries: (() => unknown)[] = [
       () => dream().write({ scope: "you", path: person.path, text: "Sam moved.", expect: person.hash }),
       () => dream().forget(person.path, person.hash),
-      () => dream().write({ scope: "you", path: mine.path, text: "Uses Vim.", expect: mine.hash }),
-      () => dream().forget(mine.path, mine.hash),
+      () => dream("chats").write({ scope: "you", path: mine.path, text: "Uses Vim.", expect: mine.hash }),
+      () => dream("chats").forget(mine.path, mine.hash),
       () => dream().write({ scope: "you", path: todo.path, status: "done", expect: todo.hash }),
       () => dream().forget(todo.path, todo.hash),
+      // Task review, 2026-11-22: not even a to-do's text; the dream may only note it.
+      () => dream().write({ scope: "you", path: todo.path, text: "Renew it soon.", expect: todo.hash }),
       () => dream().write({ scope: "you", path: quiet.path, see: "chats", expect: quiet.hash }),
       () =>
         dream().write({ scope: "you", name: "Kid", description: "Kid", type: "person", text: "Has a kid." }),
       () =>
         dream().write({
-          scope: "shop",
+          scope: "you",
           name: "Shared",
           description: "x",
           type: "fact",
@@ -226,18 +242,20 @@ describe("ion's dream", () => {
     ];
     const refused: string[] = [];
     await runDream(
-      deps(async () => {
-        for (const t of tries)
-          try {
-            t();
-          } catch (e) {
-            refused.push((e as Error).message);
-          }
-        return done();
-      }),
+      deps(
+        once(() => {
+          for (const t of tries)
+            try {
+              t();
+            } catch (e) {
+              refused.push((e as Error).message);
+            }
+        }),
+      ),
     );
     expect(refused).toHaveLength(tries.length);
     expect(refused[2]).toBe("The user changed this in the last day; leave it");
+    expect(refused[6]).toBe("A to-do is yours; I'll note it");
     for (const f of [person, mine, todo, quiet]) expect(memory.row(f.path)?.hash).toBe(f.hash);
   });
 
@@ -253,17 +271,19 @@ describe("ion's dream", () => {
       text: "Launch is on 1 March 2025.",
     });
     await runDream(
-      deps(async () => {
-        dream().write({ scope: "shop", path: fact.path, text: "The shop runs Node 22.", expect: fact.hash });
-        dream().forget(old.path, old.hash);
-        return done();
-      }),
+      deps(
+        once(() => {
+          const m = dream("chats", "shop");
+          m.write({ scope: "shop", path: fact.path, text: "The shop runs Node 22.", expect: fact.hash });
+          m.forget(old.path, old.hash);
+        }),
+      ),
     );
     const last = memory.history(fact.path).at(-1);
-    expect(last).toMatchObject({ kind: "written", by: { ion: "dream" } });
+    expect(last).toMatchObject({ kind: "written", by: { ion: "_dream" } });
     const ctx = { db, store, memory, configFile } as unknown as Ctx;
     const shown = memoryHandlers["memory.history"]({ path: fact.path }, ctx);
-    expect(shown[0]).toMatchObject({ source: "ion:dream", text: "The shop runs Node 22." });
+    expect(shown[0]).toMatchObject({ source: "ion:_dream", text: "The shop runs Node 22." });
     // Restore an older text (History), and a forgotten file (Memory's Tidied line).
     const now = memoryHandlers["memory.read"]({ name: fact.path }, ctx);
     memoryHandlers["memory.write"]({ path: fact.path, text: shown[1]!.text!, expect: now.hash }, ctx);
@@ -278,5 +298,79 @@ describe("ion's dream", () => {
       file: { header: { name: "Old launch" }, text: "Launch is on 1 March 2025." },
     });
     expect(memoryHandlers["memory.tidied"]({}, ctx)).toMatchObject({ forgotten: [] });
+  });
+  // Task review, 2026-11-22: ions-only text could be copied into a file chats see. The dream runs in two passes: one
+  // sees and writes only chats files (one project's, or yours), the other sees everything but writes only ions files.
+  it("dream can't copy ions-only text into a chats file", async () => {
+    const secret = memory.write({
+      scope: "you",
+      header: { name: "Health", description: "A private note", type: "fact", see: "ions" },
+      text: "Has a hospital visit on Friday.",
+      by: CHIEF,
+    });
+    const shared = seed("Deploy steps", { scope: { projectId: "shop" }, type: "fact", text: "From main." });
+    const mine = seed("Tabs", { scope: "you", type: "preference", text: "Tabs, width 2." });
+    const write = (m: ScopedMemory, f: typeof shared, text: string) => () =>
+      m.write({ scope: f.scope === "you" ? "you" : "shop", path: f.path, text, expect: f.hash });
+    const refused = (f: () => unknown) => {
+      try {
+        f();
+        return "";
+      } catch (e) {
+        return (e as Error).message;
+      }
+    };
+    // Pass B sees the private note, and may not write a file chats see.
+    expect(dream().read(secret.path).text).toContain("hospital");
+    expect(refused(write(dream(), shared, "From main. Has a hospital visit on Friday."))).toBe(
+      "This pass only changes files chats can't see",
+    );
+    // Pass A (shop's) can't see it at all, nor change your shared files.
+    expect(refused(() => dream("chats", "shop").read(secret.path))).toBe("No such memory");
+    expect(
+      dream("chats", "shop")
+        .index()
+        .map((r) => r.path),
+    ).not.toContain(secret.path);
+    expect(refused(write(dream("chats", "shop"), mine, "Spaces."))).toBe(
+      "This pass only changes shop's files",
+    );
+    // Neither changes who sees a file, and a new file is seen as its pass's files are.
+    const widen = () => dream().write({ scope: "you", path: secret.path, see: "chats", expect: secret.hash });
+    expect(refused(widen)).toBe("I never change who sees a file");
+    const made = dream().write({ scope: "you", name: "Visit", description: "x", type: "fact", text: "x" });
+    expect(made.header.see).toBe("ions");
+    for (const f of [secret, shared, mine]) expect(memory.row(f.path)?.hash).toBe(f.hash);
+  });
+
+  // Task review, 2026-11-22: a merge's target is a file the dream may change (not one you just edited), and an `into`
+  // that names two files is refused rather than guessed.
+  it("dream merges only into a file it may change, named once", async () => {
+    const a = seed("Deploy", { scope: { projectId: "shop" }, type: "fact", text: "From main.", by: "you" });
+    const b = seed("Deploy notes", { scope: { projectId: "shop" }, type: "fact", text: "VPN on." });
+    seed("Deploy", { scope: "you", type: "preference", text: "Mine." });
+    const m = dream("chats", "shop");
+    expect(() => m.forget(b.path, b.hash, a.path)).toThrow("The user changed this in the last day; leave it");
+    expect(() => m.forget(b.path, b.hash, "Deploy")).toThrow(/^Several match: .*; give the path$/);
+    expect(memory.row(b.path)?.hash).toBe(b.hash);
+  });
+
+  // Task review, 2026-11-22: a dream that started but never ended (ion stopped mid-dream) is summed up at the next
+  // start, so the briefing and Memory say what it changed, and that night isn't dreamed again.
+  it("a dream cut off mid-way is summed up at the next start", async () => {
+    store.append({
+      ...{ chatId: null, runId: null, origin: "daemon" },
+      type: EV.memoryDreamed,
+      data: {
+        ...{ merged: 0, updated: 0, forgot: 0, moved: 0, forgotten: [], changed: [], notes: [] },
+        ...{ status: "started", period: "2026-11-20" },
+      },
+    });
+    const f = seed("Node", { scope: { projectId: "shop" }, type: "fact", text: "Node 18." });
+    dream("chats", "shop").write({ scope: "shop", path: f.path, text: "Node 22.", expect: f.hash });
+    const stop = new Dreams(deps(async () => done())).start();
+    stop();
+    const last = dreamed().at(-1)?.data as { status: string; updated: number; period?: string };
+    expect(last).toMatchObject({ status: "failed", updated: 1, period: "2026-11-20" });
   });
 });

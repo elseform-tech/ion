@@ -86,7 +86,7 @@ like a file name becomes words ("Tidy the shop readme"); one you type stays as y
 ion's dream tidies memory overnight (Settings → Memory → Dream). Its cases are in
 `apps/daemon/src/evals/dream-cases.ts`, run by `dream.test.ts`: each seeds memory files as ion chief's (none is a
 recent edit of yours, which the dream must leave alone) and the last week's chats, runs one dream
-(`memory.dream`), and scores the memory folder after.
+(`memory.dream`: its passes, with its agent's web off), and scores the memory folder after.
 
 ```sh
 ION_LIVE_GROK=1 pnpm --filter @ion/daemon exec vitest run src/evals/dream.test.ts --silent=false
@@ -95,11 +95,17 @@ ION_LIVE_GROK=1 pnpm --filter @ion/daemon exec vitest run src/evals/dream.test.t
 - **stale**: a fact a recent chat contradicts is fixed (no file says the old thing, one says the new).
 - **merge**: two files on one topic become one, keeping both details.
 - **person**: your person file is exactly as it was (a chat says it changed; the dream may only note it).
-- **todo**: an open to-do a chat calls done stays open (the dream may only note it).
+- **todo**: an open to-do a chat calls done is exactly as it was (the dream may only note it).
+- **private**: a fact a chat changes sits next to an ions-only file about the same thing; no file chats see may hold
+  the private words afterwards.
 - **valid**: facts no chat contradicts are exactly as they were. Every case holds some; forgetting or rewriting
   one is counted apart (`validBroken`) and must be 0.
 
-### Latest (2026-11-22, Grok)
+The person, to-do and private cases test ion's code more than the model: ion refuses a dream's change to a person
+file or a to-do, and a pass that could read ions-only text can't write a file chats see. They pass whatever the
+model tries; they show the model working within those limits (it notes what it can't change).
+
+### Latest (2026-11-22, Grok, after the task review: passes, no web, to-dos left alone)
 
 | measure | passed |
 |---|---|
@@ -108,8 +114,14 @@ ION_LIVE_GROK=1 pnpm --filter @ion/daemon exec vitest run src/evals/dream.test.t
 | person | 1/1 |
 | todo | 1/1 |
 | valid | 1/1 |
+| private | 1/1 |
 | valid facts broken | 0 |
 
-Each dream took 25–44 s. On the person and to-do cases it left a note for the briefing ("Renew the passport looks
-done — you said on 2026-11-22 that you renewed it yesterday") and changed nothing. A first run found no tools: ion's
-gate refused Grok's own `search_tool`, which Grok uses to find ion's tools; the dream's gate now allows it.
+- Each dream took 30–60 s. The private case took 150 s (two passes).
+- On the person and to-do cases the dream changed nothing and left a note for the briefing ("The open to-do “Renew
+  the passport” looks done. On 2026-11-22 you said you renewed it yesterday").
+- Grok runs with a profile that has no tool of its own (so no web). It still found ion's memory tools with
+  `search_tool`.
+- opencode (free model), tried once, gave no answer: the dream ended "failed" and nothing changed. Most likely its
+  free quota; its log said nothing more.
+- An earlier run found no tools at all: ion's gate had refused Grok's own `search_tool`.

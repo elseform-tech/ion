@@ -14,7 +14,7 @@ const DAY_MS = 86_400_000;
 
 /** ion's dream changed this file in the last day (its row says Tidied by ion). */
 export const tidiedByIon = (m: MemoryInfo, now = Date.now()) =>
-  m.source === "ion:dream" && now - Date.parse(m.writtenAt) < DAY_MS;
+  m.source === "ion:_dream" && now - Date.parse(m.writtenAt) < DAY_MS;
 
 /**
  * Dream: ion tidies memory overnight (off, nightly or weekly), on an agent you pick (ion's own model's unless you do).
