@@ -72,6 +72,15 @@ export type AcpHarness = {
    * with no tools, given the judge's folder (Grok: an agent profile there that allows none).
    */
   bare?: { model?: string; effort?: EffortLevel; args?: (dir: string) => string[] };
+  /**
+   * A start with no web (ion's dream), given a daemon-only folder for its own files: its command line, environment
+   * (after the harness's own) and the paths its sandbox may read. Absent: it can't turn its web off.
+   */
+  noWeb?: (o: { dir: string; own: boolean }) => {
+    args?: string[];
+    env?: Record<string, string>;
+    read?: string[];
+  };
   /** Its own command that deletes a session from its history (ion's judge sessions don't pile up among yours). */
   forgetArgs?: (sessionId: string) => string[];
 };
@@ -111,6 +120,8 @@ export const GROK_BUILD: AcpHarness = {
   // ion's judge: its fast model at low effort, with a profile that leaves it no tool of consequence (final review,
   // 2026-11-22; GROK_CONFIG's toolset can't remove tools, `--tools` doesn't reach `agent stdio`, a profile does).
   bare: { model: "grok-4.7-build-fast", effort: "low", args: grokBareArgs },
+  // ion's dream: a profile with no tool of its own (no web), ion's MCP server found with search_tool.
+  noWeb: ({ dir }) => ({ args: grokDreamArgs(dir), read: [dir] }),
   forgetArgs: (id) => ["sessions", "delete", id],
 };
 
@@ -119,17 +130,33 @@ export const GROK_BUILD: AcpHarness = {
  * `search_tool`/`use_tool` stay, and ion's gate refuses them), no servers inherited, no shared leader.
  */
 function grokBareArgs(dir: string): string[] {
-  const file = join(dir, "ion-judge.md");
-  const profile = [
-    "---",
-    "name: ion-judge",
+  return grokProfileArgs(dir, "ion-judge", [
     "description: Answers one question for ion",
     "tools: todo_write",
     "mcpInheritance: none",
     "---",
     "Answer the user's message directly, in the format it asks for. You have no tools.",
-    "",
-  ].join("\n");
+  ]);
+}
+
+/**
+ * Grok for ion's dream (task review, 2026-11-22: no web while it tidies memory): a profile whose only own tool is its
+ * to-do list (todo_write), so no web search or fetch; ion's MCP server (from the session) is found with search_tool.
+ */
+function grokDreamArgs(dir: string): string[] {
+  return grokProfileArgs(dir, "ion-dream", [
+    "description: Tidies ion's memory with ion's memory tools",
+    "tools: todo_write",
+    "mcpInheritance: none",
+    "---",
+    "Do what the user's message asks with ion's memory tools (find them with search_tool). You have no other tools.",
+  ]);
+}
+
+/** Grok's command line with an agent profile written fresh in `dir` (its name, then its header lines and body). */
+function grokProfileArgs(dir: string, name: string, lines: string[]): string[] {
+  const file = join(dir, `${name}.md`);
+  const profile = ["---", `name: ${name}`, ...lines, ""].join("\n");
   // Written fresh: whatever is in its place goes, and the new file is made, never opened through a link.
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   rmSync(file, { force: true });
@@ -242,6 +269,7 @@ export const OPENCODE: AcpHarness = {
   logGiveUp: opencodeGiveUp,
   // ion's judge: its free model, low effort; every tool refused by ion's gate (final review, 2026-11-22).
   bare: { effort: "low" },
+  noWeb: ({ own }) => opencodeNoWeb(own),
   forgetArgs: (id) => ["session", "delete", id],
 };
 
@@ -251,27 +279,7 @@ export const OPENCODE: AcpHarness = {
  * provider keys reached every process opencode started); only the gate's address is in env.
  */
 function opencodeAskEnv(gate?: GateEnv, own = false): Record<string, string> {
-  const base = carriedConfig(own);
-  const ask = { edit: "ask", bash: "ask", webfetch: "ask" };
-  const permission = { ...((base.permission as object) ?? {}), ...ask };
-  // Agent-level permissions win over top-level ones, so set them too.
-  const baseAgents = (base.agent ?? {}) as Record<string, Record<string, unknown>>;
-  const agent = {
-    ...baseAgents,
-    build: { ...baseAgents.build, permission: { ...(baseAgents.build?.permission as object), ...ask } },
-    plan: { ...baseAgents.plan, permission: { ...(baseAgents.plan?.permission as object), ...ask } },
-  };
-  // ion's plugin reports every tool call to ion before it runs (with a gate; without one it does nothing). Listed
-  // always, so the config is the same for every start and the daemon's first sign-in check installs what opencode needs
-  // for it, not a chat's start (live, 2026-11-21: a first chat timed out waiting on that install).
-  // Your own plugins (with your own tools), then ion's, always there and last, so it judges a call as your plugins
-  // left it (task review, 2026-11-21; opencode loads plugins in the order listed: not checked live).
-  const yours = (Array.isArray(base.plugin) ? base.plugin : []).filter((p) => p !== OPENCODE_PLUGIN);
-  const skills = own ? { skills: { ...(base.skills as object), paths: ownSkillPaths(base) } } : {};
-  const home = writeIonConfig(
-    { ...base, permission, agent, ...skills, plugin: [...yours, OPENCODE_PLUGIN] },
-    own,
-  );
+  const home = writeIonConfig(opencodeConfig(own, { webfetch: "ask" }), own);
   return {
     ...(gate ? { ION_GATE_URL: gate.url } : {}),
     // An inline config in ion's own environment is carried into the file, never passed on.
@@ -292,4 +300,37 @@ function opencodeAskEnv(gate?: GateEnv, own = false): Record<string, string> {
     OPENCODE_CONFIG: "",
     OPENCODE_CONFIG_DIR: "",
   };
+}
+
+/**
+ * opencode for ion's dream (task review, 2026-11-22): the same config with its web fetch and search denied and off,
+ * in a folder of its own.
+ */
+function opencodeNoWeb(own: boolean): { env: Record<string, string>; read: string[] } {
+  const web = { webfetch: "deny", websearch: "deny" };
+  const config = { ...opencodeConfig(own, web), tools: { webfetch: false, websearch: false } };
+  const home = writeIonConfig(config, own, true);
+  return { env: { XDG_CONFIG_HOME: home }, read: [home] };
+}
+
+/** ion's opencode config: edits and shell ask, `web` as given, your plugins (with your own tools) then ion's. */
+function opencodeConfig(own: boolean, web: Record<string, string>): Record<string, unknown> {
+  const base = carriedConfig(own);
+  const ask = { edit: "ask", bash: "ask", ...web };
+  const permission = { ...((base.permission as object) ?? {}), ...ask };
+  // Agent-level permissions win over top-level ones, so set them too.
+  const baseAgents = (base.agent ?? {}) as Record<string, Record<string, unknown>>;
+  const agent = {
+    ...baseAgents,
+    build: { ...baseAgents.build, permission: { ...(baseAgents.build?.permission as object), ...ask } },
+    plan: { ...baseAgents.plan, permission: { ...(baseAgents.plan?.permission as object), ...ask } },
+  };
+  // ion's plugin reports every tool call to ion before it runs (with a gate; without one it does nothing). Listed
+  // always, so the config is the same for every start and the daemon's first sign-in check installs what opencode needs
+  // for it, not a chat's start (live, 2026-11-21: a first chat timed out waiting on that install).
+  // Your own plugins (with your own tools), then ion's, always there and last, so it judges a call as your plugins
+  // left it (task review, 2026-11-21; opencode loads plugins in the order listed: not checked live).
+  const yours = (Array.isArray(base.plugin) ? base.plugin : []).filter((p) => p !== OPENCODE_PLUGIN);
+  const skills = own ? { skills: { ...(base.skills as object), paths: ownSkillPaths(base) } } : {};
+  return { ...base, permission, agent, ...skills, plugin: [...yours, OPENCODE_PLUGIN] };
 }

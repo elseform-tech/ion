@@ -46,6 +46,34 @@ describe("loadUserConfig", () => {
     expect(r.config).toEqual(DEFAULT_CONFIG);
     expect(r.error).toBe("config.toml: ion.deepEffort must be one of low, medium, high, max");
   });
+  // Task review, 2026-11-22: a project called "you" or "chief" collides with your memory and ion chief.
+  it("leaves out a project called you or chief, and says so", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(
+      f,
+      '[[projects]]\nid = "you"\npath = "/p/you"\n\n[[projects]]\nid = "shop"\npath = "/p/shop"\n',
+    );
+    const r = loadUserConfig(f);
+    expect(r.config.projects.map((p) => p.id)).toEqual(["shop"]);
+    expect(r.warning).toBe(
+      "config.toml: rename project 'you' (the name is ion's own; ion leaves it out until then)",
+    );
+  });
+  // Task review, 2026-11-22: the next save took the project called you out of your file.
+  it("keeps a project called you in the file when it saves, still left out", () => {
+    const f = join(tmp(), "config.toml");
+    writeFileSync(
+      f,
+      '[[projects]]\nid = "you"\npath = "/p/you"\nname = "Me"\n\n[[projects]]\nid = "shop"\npath = "/p/shop"\n',
+    );
+    const { config } = loadUserConfig(f);
+    saveUserConfig(f, { ...config, ion: { ...config.ion, useDeep: "never" } });
+    const again = loadUserConfig(f);
+    expect(again.config.ion.useDeep).toBe("never");
+    expect(again.config.projects.map((p) => p.id)).toEqual(["shop"]);
+    expect(again.warning).toMatch(/rename project 'you'/);
+    expect(readFileSync(f, "utf8")).toMatch(/id = "you"\npath = "\/p\/you"\nname = "Me"/);
+  });
   it("returns defaults and an error for broken TOML", () => {
     const f = join(tmp(), "config.toml");
     writeFileSync(f, "[ion\n");

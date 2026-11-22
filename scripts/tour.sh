@@ -111,6 +111,8 @@ c.saveUserConfig(f, { ...config, projects: config.projects.map((p) => ({ ...p, h
 # One chat per state: an edit, a question, a failure, a retry that works, one that gives up, a gated call.
 for s in edit asks fail flaky overloaded gated; do ion ask "$s" -p storefront --harness fake >/dev/null 2>&1 || true; done
 ion ask "hello" --harness fake >/dev/null 2>&1 # a plain chat, in default
+# Task 5, 2026-11-22: memory a chat wrote names the chat by its title ("edit · now" read oddly): a real title.
+ion ask "Pricing headline" -p storefront --harness fake >/dev/null 2>&1
 ion ask "edit the onboarding email copy so it reads warmer and mentions the free trial length up front" \
   -p payments-api --harness fake >/dev/null 2>&1
 # A question that ended without you: its run stopped before you answered (written below while ion is stopped).
@@ -158,6 +160,25 @@ step("tool.output", { toolId: "e1", text: "Echo: hello" }, 4);
 step("tool.finished", { toolId: "e1", ok: true, summary: null }, 4);
 step("message.completed", { text: "The everything server echoed: hello" }, 5);
 step("run.finished", { status: "done" }, 6);
+// Plan 19: memory files (made up): yours (a preference a chat changed, a chat suggestion, a person, to-dos, one due
+// today and one done), a project file, a to-do the "Pricing headline" chat added (its line in the chat), and a file that
+// cannot be read (its line in Settings).
+const { openMemory } = await import("./apps/daemon/dist/memory/index.js");
+const mem = openMemory(process.env.ION_HOME + "/data", store, db);
+const day = (d) => { const t = new Date(Date.now() + d * 864e5); return [t.getFullYear(), t.getMonth() + 1, t.getDate()].map((n) => String(n).padStart(2, "0")).join("-"); };
+const put = (scope, header, text, by) => mem.write({ scope, header, text, by });
+const pricing = db.prepare("SELECT chat_id AS id FROM view_chats WHERE title = ?").get("Pricing headline");
+// Task review, 2026-11-22: if that chat couldn'"'"'t start, the "edit" chat writes instead (the tour goes on).
+const byChat = { chatId: (pricing ?? edit).id, runId: "tour-memory" };
+const tabs = put("you", { name: "Tabs, not spaces", description: "Indent with tabs in every project", type: "preference" }, "Indent with tabs.", "you");
+mem.write({ scope: "you", slug: tabs.slug, header: tabs.header, text: "Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.", expectHash: tabs.hash, by: byChat });
+put("you", { name: "Short replies", description: "Answers in a few lines, details on request", type: "preference", suggested: "storefront" }, "Keep answers short. Offer details instead of writing them.", byChat);
+put("you", { name: "Sam", description: "Designer on the storefront; reviews UI changes", type: "person" }, "Sam reviews UI changes on storefront and likes screenshots in the PR.", { ion: "chief" });
+put("you", { name: "Renew the passport", description: "Renew the passport", type: "todo", status: "open", due: day(0) }, "Renew the passport.", "you");
+put("you", { name: "Book the dentist", description: "Book the dentist", type: "todo", status: "done" }, "Book the dentist.", "you");
+put({ projectId: "storefront" }, { name: "Deploy", description: "pnpm deploy from main; staging first", type: "reference" }, "Deploy with `pnpm deploy` from main. Staging first, then production.", { ion: "storefront" });
+put({ projectId: "storefront" }, { name: "Check the headline on mobile", description: "Check the headline on mobile", type: "todo", status: "open", due: day(3) }, "Check the headline on mobile.", byChat);
+fs.writeFileSync(process.env.ION_HOME + "/data/memory/projects/storefront/notes.md", "no header here\n");
 db.close();'
 ion daemon start >/dev/null
 # Plan 09, 14: a thread storefront's ion started, and ion chief routing a message to two projects (each a turn of

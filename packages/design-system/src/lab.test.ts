@@ -82,4 +82,27 @@ describe("lab.css", () => {
   it("lines up the agents' faces on every Tools row", () => {
     expect(lab).toMatch(/\.trow \.acts2\{[^}]*justify-content:flex-end;min-width:150px/);
   });
+
+  // The user, 2026-11-21 (Plan 19): Settings → Memory, between Ions and Tools, drawn in the lab first (renderMemory).
+  it("holds the lab's Memory page: whose, rows, a file, its history, to-dos, and ion chief's count", () => {
+    for (const sel of [
+      ".mscope{",
+      ".trow .mby{",
+      ".mhead{",
+      ".mtext{",
+      ".srow .when{",
+      ".mfold{",
+      ".head .todos{",
+      // Task review, 2026-11-22: the switch's icon, named on hover.
+      ".msee{",
+    ])
+      expect(lab.includes(sel), sel).toBe(true);
+    expect(page).toContain("function renderMemory(){");
+    const nav = page.slice(
+      page.indexOf('<nav class="snav">'),
+      page.indexOf("</nav>", page.indexOf('<nav class="snav">')),
+    );
+    expect(nav.indexOf('data-snav="ions"')).toBeLessThan(nav.indexOf('data-snav="memory"'));
+    expect(nav.indexOf('data-snav="memory"')).toBeLessThan(nav.indexOf('data-snav="tools"'));
+  });
 });

@@ -58,6 +58,12 @@ function loginStatus(l: Launch): Promise<AuthStatus> {
   );
 }
 
+/**
+ * What it takes from ion: MCP servers by url (Codex's mcp_servers is Streamable HTTP), and a start with no web (ion's
+ * dream: its web search off in the thread's config).
+ */
+const TAKES = { mcpTransports: { http: true }, noWeb: true } as const;
+
 /** OpenAI's Codex CLI, driven through its app-server (JSON-RPC on stdio): `codex app-server`. */
 export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
   const which = deps.which ?? whichOnPath;
@@ -99,8 +105,7 @@ export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
     },
     gateCall: codexGateCall,
     capabilities: capabilitiesWith(CAPABILITIES, catalog),
-    // Codex's mcp_servers takes a url (Streamable HTTP).
-    mcpTransports: { http: true },
+    ...TAKES,
     // Task review, 2026-11-21: off turns off its servers and plugins; its own skills (~/.codex/skills, .agents/skills)
     // load whatever the switch says, and a project's own tools load by its own trust.
     ownOff: { servers: true, skills: false, plugins: true },

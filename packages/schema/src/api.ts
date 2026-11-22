@@ -1,6 +1,8 @@
 import type { EffortLevel } from "./capabilities.js";
 import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
+import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
+import type { MemorySee, MemoryType } from "./memory.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -76,10 +78,13 @@ export type ActivityInfo = {
   yesterday: RecentRun[];
 };
 
-/** One of ion chief's open suggestions: a routine for something you keep asking for, or a stalled chat to resume. */
+/**
+ * One of the ions' open suggestions: a routine for something you keep asking for, a stalled chat to resume, or a
+ * to-do a chat's work matches ("Mark done?").
+ */
 export type SuggestionInfo = {
   suggestionId: string;
-  kind: "routine" | "stalled";
+  kind: "routine" | "stalled" | "todo";
   projectId: string;
   /** What it asks: "Make Weekly PR summary a routine?", "Resume Tailwind 4 migration?". */
   title: string;
@@ -134,12 +139,15 @@ export type SettingsInfo = IonSettings & {
   };
   /** By agent id: "Use its own tools" (its own servers, skills and plugins in ion's chats). */
   ownTools: Record<string, boolean>;
+  /** ion tidies your memory overnight: how often, and on which agent (null: ion's own model's). */
+  dream: { mode: DreamMode; agent: string | null };
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
 export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools">> & {
+  dream?: { mode?: DreamMode; agent?: string | null };
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
@@ -293,8 +301,38 @@ export type Commands = ToolsCommands & {
   "suggestions.list": { args: Record<string, never>; result: SuggestionInfo[] };
   /** What a chat changed in its worktree since it started (empty once archived); omitted: files past the cap. */
   "chat.diff": { args: { chatId: string }; result: { files: FileDiff[]; omitted?: number } };
-  "memory.list": { args: { projectId?: string }; result: MemoryInfo[] };
+  /** Yours and a project's files (or all), open to-dos first, then the latest; `open`: open to-dos only. */
+  "memory.list": { args: { projectId?: string; type?: MemoryType; open?: boolean }; result: MemoryInfo[] };
+  /** One file, by its path, file name or name. */
+  "memory.read": { args: { name: string }; result: MemoryFileInfo };
+  /**
+   * The best matches for some words (at most 20), yours and a project's (or all); `scope` ("you" or a project's id):
+   * only that scope's files.
+   */
+  "memory.search": { args: { q: string; projectId?: string; scope?: string }; result: MemoryInfo[] };
+  /** Deletes a file, by its path, file name or name. */
   "memory.forget": { args: { memoryId: string }; result: { ok: true } };
+  /** Keeps a chat's suggested preference for every project (by its path or name). */
+  "memory.keep": { args: { path: string }; result: { path: string } };
+  /** Each change to a file, newest first: who, when, and the text it left. */
+  "memory.history": { args: { path: string }; result: MemoryChangeInfo[] };
+  /** Changes a file's text or who sees it, as you, only over the version read (`expect`: its hash). */
+  "memory.write": {
+    args: { path: string; text?: string; see?: MemorySee; expect: string };
+    result: MemoryInfo;
+  };
+  /** Where the memory folder is, and each file in it that can't be read (one plain line). */
+  "memory.folder": { args: Record<string, never>; result: { path: string; problems: string[] } };
+  /** Brings back a file ion forgot (or you did), as it was, by you; refused while a file is there. */
+  "memory.restore": { args: { path: string }; result: MemoryInfo };
+  /** What ion's dream did last, within a day of it (null: nothing to say). */
+  "memory.tidied": { args: Record<string, never>; result: DreamInfo | null };
+  /** ion tidies your memory now (its dream, out of turn); what it did. */
+  "memory.dream": { args: Record<string, never>; result: DreamInfo | null };
+  /** A new to-do: yours, or a project's; `due` a day (YYYY-MM-DD). */
+  "todo.add": { args: { text: string; projectId?: string; due?: string }; result: MemoryInfo };
+  /** Marks a to-do done, by its path, file name or name. */
+  "todo.done": { args: { name: string }; result: MemoryInfo };
   "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
   "routine.add": {
     args: { projectId: string; name: string; when: string; text: string; effort?: EffortLevel };
@@ -331,16 +369,6 @@ export type HarnessInfo = {
   ownRules?: number;
   /** How often its judge didn't answer (too slow, or failed) in the last 7 days; absent when it always did. */
   judgeMisses?: number;
-};
-
-export type MemoryInfo = {
-  memoryId: string;
-  /** "you", or the project it belongs to. */
-  scope: string;
-  text: string;
-  /** "you", or the chat it came from. */
-  source: string;
-  writtenAt: string;
 };
 
 export type NeedInfo = {
@@ -475,7 +503,18 @@ export const COMMANDS = [
   "suggestions.list",
   "chat.diff",
   "memory.list",
+  "memory.read",
+  "memory.search",
   "memory.forget",
+  "memory.keep",
+  "memory.history",
+  "memory.write",
+  "memory.folder",
+  "memory.restore",
+  "memory.tidied",
+  "memory.dream",
+  "todo.add",
+  "todo.done",
   "harnesses.list",
   "routine.add",
   "routine.update",

@@ -41,6 +41,52 @@ describe("timeline", () => {
     expect(t.items.at(-1)).toEqual({ kind: "ion", tone: "note", text });
   });
 
+  // Security review, 2026-11-22: a chat's preference waits for you to keep it; the chat says so in one quiet line.
+  it("says a chat's preference was saved as a suggestion", () => {
+    const header = { name: "Tabs", description: "d", type: "preference", see: "chats", suggested: "app" };
+    const written = {
+      path: "you/tabs.md",
+      scope: "you",
+      slug: "tabs",
+      header,
+      hash: "h",
+      by: { chatId: "c1", runId: "r1" },
+    };
+    const t = play(ev("message.sent", { text: "Hi" }), ev("memory.written", written));
+    // Task 5, 2026-11-22 (tour): "keep it for every project?" asked a question the chat had no way to answer; it
+    // now says what was suggested, with a link to Memory, where Keep is.
+    expect(t.items.at(-1)).toEqual({ kind: "suggested", name: "Tabs" });
+    const fact = {
+      ...written,
+      path: "projects/app/x.md",
+      header: { ...header, type: "fact", suggested: undefined },
+    };
+    expect(play(ev("memory.written", fact)).items).toEqual([]);
+  });
+
+  // The user, 2026-11-21: "does memory cover todo as well". A chat that adds a to-do says so in one quiet line, with
+  // a link to your to-dos; changing one says nothing.
+  it("says a chat added a to-do", () => {
+    const written = {
+      path: "projects/app/check-mobile.md",
+      scope: { projectId: "app" },
+      slug: "check-mobile",
+      header: {
+        name: "Check the headline on mobile",
+        description: "d",
+        type: "todo",
+        see: "chats",
+        status: "open",
+      },
+      hash: "h",
+      by: { chatId: "c1", runId: "r1" },
+    };
+    const t = play(ev("message.sent", { text: "Hi" }), ev("memory.written", written));
+    expect(t.items.at(-1)).toEqual({ kind: "todo", name: "Check the headline on mobile" });
+    const changed = { ...written, before: { hash: "g", text: "x" } };
+    expect(play(ev("memory.written", changed)).items).toEqual([]);
+  });
+
   // Review Focus 2: a long chat stays one item per message.
   it("folds 5,000 deltas into one message", () => {
     const events = Array.from({ length: 5000 }, () => ev("message.delta", { text: "x" }));

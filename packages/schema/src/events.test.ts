@@ -66,6 +66,35 @@ describe("parseEvent", () => {
   });
 });
 
+describe("memory events", () => {
+  const at = { ...valid, chatId: null, runId: null, origin: "daemon" as const };
+  const header = { name: "Deploys", description: "How we deploy", type: "fact", see: "chats" };
+
+  // The user, 2026-11-21: memory is a folder of files; each change is an event, with the text before it.
+  it("reads a file's change, and old notes still read", () => {
+    const written = {
+      ...{ path: "projects/shop/deploys.md", scope: { projectId: "shop" }, slug: "deploys", header },
+      ...{ hash: "h2", by: { ion: "chief" }, before: { hash: "h1", text: "old" } },
+    };
+    expect(parseEvent({ ...at, type: "memory.written", data: written }).data).toEqual(written);
+    const forgotten = { path: "you/likes.md", by: "you", before: { hash: "h1", text: "x" } };
+    expect(parseEvent({ ...at, type: "memory.forgotten", data: forgotten }).data).toEqual(forgotten);
+    const old = { memoryId: "m1a2b3c", scope: "you", text: "Prefer short answers", source: "you" };
+    expect(parseEvent({ ...at, type: "memory.written", data: old }).data).toEqual(old);
+  });
+
+  it("refuses a path outside the folder, a bad header, or a before over 8 KB", () => {
+    const base = { path: "you/a.md", scope: "you", slug: "a", header, hash: "h", by: "you" };
+    const bad = [
+      { ...base, path: "../x.md" },
+      { ...base, header: { ...header, type: "secret" } },
+      { ...base, header: { ...header, name: "x".repeat(81) } },
+      { ...base, before: { hash: "h0", text: "x".repeat(8193) } },
+    ];
+    for (const data of bad) expect(() => parseEvent({ ...at, type: "memory.written", data })).toThrow();
+  });
+});
+
 describe("event type sets", () => {
   it("keeps adapter and daemon types disjoint and complete", () => {
     expect(new Set([...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES]).size).toBe(EVENT_TYPES.length);

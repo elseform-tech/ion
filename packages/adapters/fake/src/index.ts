@@ -11,7 +11,7 @@ import {
   ResumeFailed,
 } from "@ion/adapter-kit";
 import { type Capabilities, EV } from "@ion/schema";
-import { SCENARIOS, type Script } from "./scenarios.js";
+import { ownText, SCENARIOS, type Script } from "./scenarios.js";
 
 const CAPABILITIES: Capabilities = {
   models: [
@@ -30,9 +30,6 @@ const CAPABILITIES: Capabilities = {
   skills: false,
   usage: "none",
 };
-
-/** A scripted harness for tests: the prompt's first word picks a scenario (hello, edit, approve, fail, slow). */
-const HISTORY_END = /<\/ion-data id="\w+">\n\n/;
 
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
@@ -64,6 +61,8 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
     capabilities: async () => CAPABILITIES,
     // ION_FAKE_NO_HTTP=1: an agent that takes local servers only.
     mcpTransports: { http: process.env.ION_FAKE_NO_HTTP !== "1" },
+    // No web on request (ion's dream): it has no web.
+    ...(process.env.ION_FAKE_HAS_WEB === "1" ? {} : { noWeb: true as const }),
     // The fake hook already sends ion's own shape.
     gateCall: (payload) => {
       const p = payload as
@@ -145,7 +144,7 @@ function fakeSession(start: StartOpts, delayMs: number): Session {
     nativeId,
     async send({ text }) {
       // The scenario is the first word of your message, after any history ion put before it.
-      const own = text.split(HISTORY_END).at(-1) ?? text;
+      const own = ownText(text);
       const name = scenarioOf(text, own, start.instructions);
       const scenario = SCENARIOS[name] ?? SCENARIOS.hello!;
       sent = text;

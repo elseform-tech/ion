@@ -7,14 +7,14 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
 import type { NewEvent, SkillInfo } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeMemory } from "../memory/index.js";
+import { MemoryFiles } from "../memory/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import type { McpServer } from "../tools/index.js";
 import { allViews } from "../views/index.js";
-import { memoryView } from "../views/memory.js";
 import { createGrants, createMcpHandler, type Grants } from "./index.js";
 
 let db: Db;
+let memory: MemoryFiles;
 let store: EventStore;
 let grants: Grants;
 let http: Server;
@@ -77,6 +77,7 @@ beforeEach(async () => {
   db = openDb(":memory:");
   store = new EventStore(db, allViews);
   const root = mkdtempSync(join(tmpdir(), "ion-iontools-"));
+  memory = new MemoryFiles({ root: join(root, "memory"), store, db });
   writeFileSync(join(root, "README.md"), "# Shop\n\nThe shop's cart and checkout.\n");
   configFile = join(root, "config.toml");
   saveUserConfig(configFile, {
@@ -94,12 +95,12 @@ beforeEach(async () => {
   put({ chatId: "c1", runId: "r0", type: "message.sent", data: { text: "kiwi in the app" } });
   put({ chatId: "c2", runId: "r9", type: "message.sent", data: { text: "kiwi in the shop" } });
   put({ chatId: "c3", runId: "r8", type: "message.sent", data: { text: "kiwi kept private" } });
-  writeMemory(store, db, { scope: { projectId: "private" }, text: "Private note", source: "you" });
+  memory.note({ projectId: "private" }, "Private note", "you");
   grants = createGrants();
   startThread = vi.fn(async (projectId: string) => ({ chatId: `t-${projectId}` }));
   shopDir = root;
   yourTools = vi.fn(async (dirs: string[]) => yourToolsFixture(dirs));
-  const handle = createMcpHandler({ store, db, grants, configFile, startThread, yourTools });
+  const handle = createMcpHandler({ store, db, grants, memory, configFile, startThread, yourTools });
   http = createServer((req, res) => void handle(req, res));
   await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
   const addr = http.address();
@@ -149,7 +150,7 @@ describe("ion tools", () => {
     expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c3" } })).toMatchObject(
       NOT_ALLOWED,
     );
-    expect(text(await c.callTool({ name: "memory_list", arguments: {} }))).not.toContain("Private note");
+    expect(text(await c.callTool({ name: "memory_index", arguments: {} }))).not.toContain("private");
     await c.close();
   });
 
@@ -234,31 +235,21 @@ describe("ion tools", () => {
     await c.close();
   });
 
-  it("memory_write writes you-memory for ion chief and project memory for a project's ion", async () => {
-    const c = await chief();
-    await c.callTool({ name: "memory_write", arguments: { text: "Likes short replies" } });
-    expect(memoryView.list(db, null).find((m) => m.text === "Likes short replies")?.scope).toBe("you");
-    await c.close();
-    const s = await shopIon();
-    await s.callTool({ name: "memory_write", arguments: { text: "Uses Stripe" } });
-    expect(memoryView.list(db, null).find((m) => m.text === "Uses Stripe")?.scope).toBe("shop");
-    for (let i = 0; i < 4; i++) await s.callTool({ name: "memory_write", arguments: { text: `note ${i}` } });
-    const sixth = await s.callTool({ name: "memory_write", arguments: { text: "one more" } });
-    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough memory for one turn" }] });
-    await s.close();
-  });
-
   // Final review, 2026-11-19: a report turn (its prompt holds a thread agent's words) could still write memory and
   // suggest a profile from them. In a report, they refuse like start_thread.
   it("refuses memory_write and set_profile in a report", async () => {
     const s = await client(
       grants.create({ kind: "ion", ionId: "shop", projects: ["shop"], turnId: "t3", report: true }),
     );
+    const note = { scope: "project", name: "Stripe", description: "Payments", type: "fact" };
     for (const name of ["memory_write", "set_profile"]) {
-      const r = await s.callTool({ name, arguments: { text: "Uses Stripe" } });
+      const r = await s.callTool({
+        name,
+        arguments: { text: "Uses Stripe", ...(name === "set_profile" ? {} : note) },
+      });
       expect(r).toMatchObject({ isError: true, content: [{ text: "Not in a report" }] });
     }
-    expect(memoryView.list(db, null).map((m) => m.text)).toEqual(["Private note"]);
+    expect(memory.list(null, ["chats", "ions"]).map((m) => m.text)).toEqual(["Private note"]);
     expect(
       loadUserConfig(configFile).config.projects.find((p) => p.id === "shop")?.profileSuggestion,
     ).toBeUndefined();
@@ -275,7 +266,10 @@ describe("ion tools", () => {
     expect(names).toEqual([
       "chat_history",
       "decisions",
-      "memory_list",
+      "memory_forget",
+      "memory_index",
+      "memory_read",
+      "memory_search",
       "memory_write",
       "open_needs",
       "projects",
@@ -291,7 +285,7 @@ describe("ion tools", () => {
 
   it("refuses start_thread when ion can't start threads here", async () => {
     await new Promise((r) => http.close(r));
-    const handle = createMcpHandler({ store, db, grants, configFile });
+    const handle = createMcpHandler({ store, db, grants, memory, configFile });
     http = createServer((req, res) => void handle(req, res));
     await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
     const addr = http.address();

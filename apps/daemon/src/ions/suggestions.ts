@@ -4,7 +4,7 @@ import { type ChatInfo, EV, type SuggestionInfo, whenLabel } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
-import { asksView, type ChiefCard, sameAs, suggestionsView } from "../views/suggestions.js";
+import { asksView, type ChiefCard, cardThread, sameAs, suggestionsView } from "../views/suggestions.js";
 import { habits, sameKey } from "./habits.js";
 
 /** How often ion chief looks for something to suggest (and once at start). */
@@ -24,14 +24,24 @@ export type SuggestionsDeps = {
   addRoutine: (projectId: string, r: { name: string; when: string; text: string }) => void;
   /** Sends the chat its follow-up, on its own agent. */
   resume: (chatId: string) => Promise<void>;
+  /** To-dos for "Mark done?": whether one is still open, marking it done (as you), and watching chats finish. */
+  todos?: { open: (path: string) => boolean; done: (path: string) => void; watch?: () => () => void };
 };
 
 const days = (since: string, now: number) => Math.floor((now - Date.parse(since)) / DAY_MS);
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /** What a card asks, in a line (its message's words, and the CLI's). */
-function askOf(c: ChiefCard): string {
+export function askOf(c: ChiefCard): string {
+  if (c.kind === "todo") return `Mark “${c.name}” done?`;
   return c.kind === "routine" ? `Make “${c.name}” a routine?` : `Resume “${c.title}”?`;
+}
+
+/** A card's evidence in a few words. */
+function detailOf(c: ChiefCard, now: number, chatTitle: (chatId: string) => string): string {
+  if (c.kind === "routine") return `${whenLabel(c.when)} · asked on ${plural(c.dates.length, "day")}`;
+  if (c.kind === "todo") return chatTitle(c.chatId);
+  return `Stalled ${plural(days(c.since, now), "day")} · ${plural(c.files, "file")}`;
 }
 
 /**
@@ -46,11 +56,15 @@ export class Suggestions {
 
   constructor(private readonly d: SuggestionsDeps) {}
 
-  /** Looks now, then hourly. Returns stop. */
+  /** Looks now, then hourly; offers "Mark done?" as chats finish. Returns stop. */
   start(): () => void {
     const timer = setInterval(() => void this.look(), LOOK_MS);
+    const unwatch = this.d.todos?.watch?.();
     void this.look();
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      unwatch?.();
+    };
   }
 
   async look(): Promise<void> {
@@ -66,9 +80,11 @@ export class Suggestions {
     }
   }
 
-  /** Your open suggestions: not answered, and for a stalled chat, still stalled. */
+  /** Your open suggestions: not answered, for a stalled chat still stalled, for a to-do still open. */
   list(): SuggestionInfo[] {
     const now = Date.now();
+    const chats = new Map(chatsView.list(this.d.db).map((c) => [c.chatId, c.title]));
+    const title = (chatId: string) => chats.get(chatId) ?? "";
     return suggestionsView
       .list(this.d.db)
       .filter((s) => s.answer === null && this.current(s.card))
@@ -77,10 +93,7 @@ export class Suggestions {
         kind: card.kind,
         projectId: card.projectId,
         title: askOf(card),
-        detail:
-          card.kind === "routine"
-            ? `${whenLabel(card.when)} · asked on ${plural(card.dates.length, "day")}`
-            : `Stalled ${plural(days(card.since, now), "day")} · ${plural(card.files, "file")}`,
+        detail: detailOf(card, now, title),
         at,
       }));
   }
@@ -99,7 +112,7 @@ export class Suggestions {
       if (a.keep) await this.take(s.card);
       const data = { suggestionId, keep: a.keep, ...(!a.keep && a.mute ? { mute: true as const } : {}) };
       this.d.store.append({
-        chatId: "ion:chief",
+        chatId: cardThread(s.card),
         runId: null,
         origin: "daemon",
         type: EV.suggestionAnswered,
@@ -113,7 +126,10 @@ export class Suggestions {
   private async take(c: ChiefCard): Promise<void> {
     if (c.kind === "stalled") return this.d.resume(c.chatId);
     try {
-      this.d.addRoutine(c.projectId, { name: c.name, when: c.when, text: c.text });
+      if (c.kind === "todo") {
+        if (!this.d.todos) throw new UserError("Can't close to-dos here");
+        this.d.todos.done(c.path);
+      } else this.d.addRoutine(c.projectId, { name: c.name, when: c.when, text: c.text });
     } catch (e) {
       throw e instanceof UserError ? e : new UserError((e as Error).message);
     }
@@ -124,9 +140,10 @@ export class Suggestions {
     return loadUserConfig(this.d.configFile).config.projects.filter((p) => p.shareWithIon !== false);
   }
 
-  /** A stalled chat's card is current until the chat is touched again (or archived). */
+  /** A stalled chat's card is current until the chat is touched again (or archived); a to-do's while it's open. */
   private current(c: ChiefCard): boolean {
     if (c.kind === "routine") return true;
+    if (c.kind === "todo") return this.d.todos?.open(c.path) ?? false;
     const chat = chatsView.list(this.d.db).find((x) => x.chatId === c.chatId);
     return !!chat && !chat.archived && chat.lastActivityAt === c.since;
   }

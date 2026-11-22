@@ -26,6 +26,11 @@ describe("a work step's name", () => {
     expect(stepName("mcp__ion__open_needs")).toBe("Open needs");
     expect(stepName("mcp__ion__memory_list")).toBe("Memory");
     expect(stepName("mcp__ion__memory_write")).toBe("Remember");
+    // Plan 19, 2026-11-22: memory is files, found and read through these (older chats' memory_list stays "Memory").
+    expect(stepName("mcp__ion__memory_index")).toBe("Memory");
+    expect(stepName("mcp__ion__memory_search")).toBe("Search memory");
+    expect(stepName("mcp__ion__memory_read")).toBe("Read memory");
+    expect(stepName("ion__memory_forget")).toBe("Forget");
     expect(stepName("ion__decisions")).toBe("Decisions");
     expect(stepName("mcp__ion__set_profile")).toBe("Suggest profile");
     expect(stepName("mcp__ion__start_thread")).toBe("Start thread");

@@ -14,6 +14,7 @@ export const settings: SettingsInfo = {
     projects: { shop: "needs" },
   },
   ownTools: { "claude-code": true, "grok-build": true },
+  dream: { mode: "off", agent: null },
 };
 
 /** A daemon that answers Settings; `refuse`: settings.set says no with this reason. */

@@ -1,4 +1,4 @@
-import { type AnchorHTMLAttributes, memo } from "react";
+import { type AnchorHTMLAttributes, type ImgHTMLAttributes, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./CodeBlock.js";
@@ -15,18 +15,26 @@ function Link({ href, children }: AnchorHTMLAttributes<HTMLAnchorElement>) {
   );
 }
 
+/** An image as its words only: nothing is fetched (a memory file's image could be a tracker). */
+const NoImage = ({ alt }: ImgHTMLAttributes<HTMLImageElement>) => (alt ? <span>{alt}</span> : null);
+
 /**
  * An agent's text as Markdown. Raw HTML is never rendered (react-markdown leaves it out without a raw-HTML
  * plugin), and unsafe link targets such as javascript: are emptied by its URL check.
  */
-export const Markdown = memo(function Markdown({ text, htmlAsText }: { text: string; htmlAsText?: boolean }) {
+export const Markdown = memo(function Markdown(p: {
+  text: string;
+  htmlAsText?: boolean;
+  noImages?: boolean;
+}) {
+  const { text, htmlAsText } = p;
   return (
     <div className="md">
       {/* htmlAsText: raw HTML is shown as its text (escaped), never rendered and never dropped. */}
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         skipHtml={!htmlAsText}
-        components={{ a: Link, pre: CodeBlock }}
+        components={{ a: Link, pre: CodeBlock, ...(p.noImages ? { img: NoImage } : {}) }}
       >
         {text}
       </ReactMarkdown>

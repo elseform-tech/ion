@@ -1117,6 +1117,13 @@ button.arow:hover{background:var(--hover)}
 .smenu .ds{min-width:0;color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .u .catt,.bu .catt{margin:0 0 6px;justify-content:flex-end}.u .catt .chip{margin-left:0}.bu .chip.pick{background:rgba(255,255,255,.16);color:inherit}
 .stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}.stools .trow .s{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+/* settings: Memory: whose (you, each project), search, rows with who changed each and when; a file's text, its history; your to-dos, done ones folded; ion chief's open to-dos */
+.mscope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.group+.mscope{margin-top:12px}.mscope .chip{border:0;cursor:pointer}.msearch{margin:0 0 10px}
+.trow .mby{display:block;color:var(--faint);font-size:12px;margin-top:2px}.trow .mby .late{color:var(--del-ink)}.trow.done .tname{color:var(--faint);text-decoration:line-through}.trow.mrow2{cursor:pointer}.trow.mrow2:hover{background:var(--hover)}.trow button.tname{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}.msee{display:inline-flex;align-items:center;gap:8px;color:var(--faint)}.msee .lucide{width:15px;height:15px}
+.mhead{display:flex;align-items:center;gap:10px}.mhead .ti{width:30px;height:30px;border-radius:8px;background:var(--hover);display:grid;place-items:center;color:var(--muted)}.mhead .ti .lucide{width:16px;height:16px}.mhead h3{margin:0;flex:1;min-width:0;font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mhead+.s{color:var(--muted);font-size:13px;margin-top:-18px}
+.mtext{padding:12px 16px;font-size:13.5px;line-height:1.55;overflow-wrap:anywhere}.mtext>.md>:first-child{margin-top:0}.mtext>.md>:last-child{margin-bottom:0}
+.srow .when{color:var(--faint);font-size:12px;white-space:nowrap}.srow.ask .g{font-size:13px}.mfold{width:100%;border:0;background:transparent;font:inherit;color:var(--muted);cursor:pointer;text-align:left}.mfold:hover{color:var(--ink)}.mfold .lucide{width:14px;height:14px}
+.head .todos{width:auto;padding:0 8px;gap:5px;display:inline-flex;align-items:center}.head .todos .ct{font-size:12px;font-variant-numeric:tabular-nums}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1459,6 +1466,9 @@ export function sumLines(lines: Line[]) {
                 </div>
                 <div class="qa"><button class="qq" type="button" aria-expanded="false" title="Should the old headline stay as the page title for search?" data-qa><i data-lucide="message-circle-question"></i>Should the old headline stay as the page title for search?</button><div class="quiet"><i data-lucide="square"></i>The chat stopped before you answered</div></div>
                 <div class="quiet"><i data-lucide="plug-zap"></i>github-mcp added, off<button class="lnk" type="button" title="Open in Settings" data-gotools="gh-mcp"><i data-lucide="blocks"></i>Tools</button></div>
+                <div class="quiet"><i data-lucide="list-todo"></i>Added to your to-dos: Check the headline on mobile<button class="lnk" type="button" title="Open in Settings" data-gotodos><i data-lucide="list-todo"></i>To-dos</button></div>
+                <!-- Task 5, 2026-11-22: a preference a chat saved waits for you; the chat says so, with a link to Memory (Keep is there). -->
+                <div class="quiet"><i data-lucide="heart"></i>Suggested for every project: Short replies<button class="lnk" type="button" title="Open in Settings" data-gomem><i data-lucide="notebook-text"></i>Memory</button></div>
               </div></div>
               <div class="foot"><div class="fcol">
                 <div class="cbox">
@@ -1604,6 +1614,7 @@ export function sumLines(lines: Line[]) {
           <button type="button" data-snav="general"><i data-lucide="sliders-horizontal"></i>General</button>
           <button type="button" data-snav="harness" class="on"><i data-lucide="plug"></i>Agents</button>
           <button type="button" data-snav="ions"><i data-lucide="orbit"></i>Ions</button>
+          <button type="button" data-snav="memory"><i data-lucide="notebook-text"></i>Memory</button>
           <button type="button" data-snav="tools"><i data-lucide="blocks"></i>Tools</button>
           <button type="button" data-snav="notif"><i data-lucide="bell"></i>Notifications</button>
           <button type="button" data-snav="keys"><i data-lucide="keyboard"></i>Shortcuts</button>
@@ -1617,6 +1628,7 @@ export function sumLines(lines: Line[]) {
           </div>
           <div class="spage" data-spage="keys" hidden id="sKeys"></div>
           <div class="spage" data-spage="notif" hidden id="sNotif"></div>
+          <div class="spage" data-spage="memory" hidden id="sMem"></div>
           <div class="spage" data-spage="tools" hidden id="sTools"></div>
           <div class="spage" data-spage="ions" hidden>
             <div><h4>Your ions</h4><div class="group" id="sIons"></div></div>
@@ -2995,6 +3007,80 @@ document.addEventListener('click',e=>{
   const n=e.target.closest('[data-need]'); if(n){ const s=TOOLS.mcp.find(x=>x.id===n.dataset.need); if(s.need==='Add key') keyOpen=keyOpen===s.id?null:s.id; else { delete s.need; delete s.st; s.on=true; } renderTools(); return; }
   const w=e.target.closest('[data-tool]'); if(w){ const [g,id]=w.dataset.tool.split(':'); const all=g==='hook'?Object.values(TOOLS.mine).flat():TOOLS[g]; const x=all.find(r=>r.id===id); x.on=!x.on; delete x.st; renderTools(); }
 });
+/* Settings → Memory (Plan 19): ion's memory is small files, yours and each project's. A row: its type, name,
+   description, who changed it last and when; your files have Shared with chats; a chat's preference waits as
+   Suggested until you keep it. A row opens its text (read-only), with Open, History (Restore) and Forget. To-dos: open
+   ones first with their dates, done ones folded. */
+const MTYPE={preference:['heart','Preference'],fact:['lightbulb','Fact'],person:['user','Person'],todo:['circle','To-do'],reference:['bookmark','Reference']};
+const MEMF=[
+  {p:'you/tabs-not-spaces.md',sc:'you',t:'preference',n:'Tabs, not spaces',d:'Indent with tabs in every project',by:'You',at:'2h',see:'chats',text:'Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.',hist:[['You','2h'],['Docs pass','Mon'],['You','Sun',1],['You','Sat']]},
+  {p:'you/short-replies.md',sc:'you',t:'preference',n:'Short replies',d:'Answers in a few lines, details on request',by:'Cart badge fix',at:'1h',see:'chats',sugg:'storefront',text:'Keep answers short. Offer details instead of writing them.',hist:[['Cart badge fix','1h']]},
+  {p:'you/sam.md',sc:'you',t:'person',n:'Sam',d:'Designer on the storefront; reviews UI changes',by:'ion chief',at:'Tue',see:'ions',text:'Sam reviews UI changes on storefront. Prefers screenshots in the PR.',hist:[['ion chief','Tue']]},
+  {p:'you/renew-passport.md',sc:'you',t:'todo',n:'Renew the passport',d:'Renew the passport',by:'You',at:'Mon',see:'ions',st:'open',due:'Due today',text:'Renew the passport.',hist:[['You','Mon']]},
+  {p:'you/node-version.md',sc:'you',t:'fact',n:'Node version',d:'Projects run Node 22',by:'ion (dream)',at:'5h',see:'ions',tidied:1,text:'Projects run Node 22 (was 18; a chat on Tue said it moved).',hist:[['ion (dream)','5h'],['ion chief','2 Nov']]},
+  {p:'projects/storefront/deploy.md',sc:'storefront',t:'reference',n:'Deploy',d:'pnpm deploy from main; staging first',by:'storefront',at:'3 Nov',see:'chats',text:'Deploy with `pnpm deploy` from main. Staging first, then production.',hist:[['storefront','3 Nov']]},
+  {p:'projects/storefront/check-headline.md',sc:'storefront',t:'todo',n:'Check the headline on mobile',d:'Check the headline on mobile',by:'Pricing headline',at:'now',see:'chats',st:'open',due:'Due Friday',text:'Check the headline on mobile.',hist:[['Pricing headline','now']]},
+  {p:'you/book-dentist.md',sc:'you',t:'todo',n:'Book the dentist',d:'Book the dentist',by:'You',at:'Sun',see:'ions',st:'done',text:'Book the dentist.',hist:[['You','Sun']]}];
+const MBROKEN=['storefront/notes.md can’t be read'];
+/* ion's dream (Plan 19, Task 6): Off / Nightly / Weekly and its agent; what it forgot in the last day comes back
+   with Restore; a file it changed says Tidied by ion for a day */
+let dreamMode='nightly'; const DREAM_GONE=[['you/old-launch.md','Old launch']], DREAM_NOTES=['“Sam” may be out of date: a chat said Sam moved to Porto.'];
+let memTab='all', memScope='you', memOpen=null, memHist=false, memAsk=null, memDoneOpen=false;
+const openTodos=()=>MEMF.filter(f=>f.t==='todo'&&f.st==='open');
+const mib=(ic,l,a)=>`<button class="ib" type="button" title="${l}" aria-label="${l}" ${a}><i data-lucide="${ic}"></i></button>`;
+function memRow(f){
+  const [ic,tn]=MTYPE[f.t], mine=f.sc==='you';
+  const end=f.sugg?`<button class="btn" type="button" data-mkeep="${f.p}">Keep</button>`
+    :mine&&f.t!=='todo'?`<span class="msee" title="Shared with chats"><i data-lucide="messages-square"></i><button type="button" class="sw${f.see==='chats'?' on':''}" role="switch" aria-checked="${f.see==='chats'}" aria-label="Shared with chats" data-msee="${f.p}"></button></span>`:'';
+  /* a done to-do shows its check; a description that only repeats the name is said once */
+  return `<div class="trow mrow2" data-mopen="${f.p}"><span class="ti" title="${tn}"><i data-lucide="${f.st==='done'?'circle-check':ic}"></i></span><div><button type="button" class="tname">${esc(f.n)}</button>${f.sugg?'<span class="chip">Suggested</span>':''}${f.tidied?'<span class="chip">Tidied by ion</span>':''}<div class="s">${f.d!==f.n?`<span class="clamp">${esc(f.d)}</span>`:''}<span class="mby">${esc(f.by)} · ${f.at}</span></div></div><span class="hsup"></span><div class="acts2">${end}</div></div>`;
+}
+function todoRow(f){
+  const late=f.due==='Overdue', who=f.sc==='you'?'You':f.sc;
+  const ask=memAsk===f.p?`<div class="srow ask"><div class="g">Forget “${esc(f.n)}”?</div><button class="btn" type="button" data-mask="">Cancel</button><button class="btn bad" type="button" data-mforget="${f.p}">Forget</button></div>`:'';
+  return `<div class="trow${f.st==='done'?' done':''}"><span class="ti" title="To-do"><i data-lucide="${f.st==='done'?'circle-check':'circle'}"></i></span><div><span class="tname">${esc(f.n)}</span><div class="s"><span class="mby">${f.due?`<span class="${late?'late':''}">${f.due}</span> · `:''}${esc(who)}</span></div></div><span class="hsup"></span><div class="acts2">${f.st==='open'?mib('check','Done',`data-mdone="${f.p}"`):''}${mib('trash-2','Forget',`data-mask="${f.p}"`)}</div></div>${ask}`;
+}
+function memFile(f){
+  const [ic,tn]=MTYPE[f.t];
+  const ask=memAsk===f.p?`<div class="group"><div class="srow ask"><div class="g">Forget “${esc(f.n)}”?</div><button class="btn" type="button" data-mask="">Cancel</button><button class="btn bad" type="button" data-mforget="${f.p}">Forget</button></div></div>`:'';
+  const hist=memHist?`<div><h4>History</h4><div class="group">${f.hist.map(([by,at,gone],i)=>`<div class="srow"><div class="g">${esc(by)}${gone?'<span class="chip">Forgotten</span>':''}</div><span class="when">${at}</span>${i?'<button class="btn" type="button">Restore</button>':''}</div>`).join('')}</div></div>`:'';
+  return `<button class="back" type="button" data-mopen=""><i data-lucide="chevron-left"></i>Memory</button>
+    <div class="mhead"><span class="ti" title="${tn}"><i data-lucide="${ic}"></i></span><h3>${esc(f.n)}</h3>${mib('file-pen','Open','')}${mib('history',memHist?'Hide history':'History','data-mhist')}${mib('trash-2','Forget',`data-mask="${f.p}"`)}</div>
+    <div class="s">${esc(f.d)}</div>${ask}
+    <div class="group mtext"><div class="md">${esc(f.text).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code>$1</code>').split('\n\n').map(x=>`<p>${x}</p>`).join('')}</div></div>${hist}`;
+}
+function renderMemory(){
+  const el=document.getElementById('sMem'); if(!el) return;
+  const f=memOpen&&MEMF.find(x=>x.p===memOpen);
+  if(f){ el.innerHTML=memFile(f); icons(el); return; }
+  const tabs=`<div class="tabs2"><span class="seg sm" role="group" aria-label="Memory">${[['all','Memory','notebook-text'],['todos','To-dos','list-todo']].map(([id,l,ic])=>`<button type="button" class="${memTab===id?'on':''}" data-mtab="${id}" title="${l}" aria-label="${l}"><i data-lucide="${ic}"></i></button>`).join('')}</span>${mib('folder-open','Open memory folder','')}</div>`;
+  const broken=MBROKEN.map(l=>`<div class="perr">${esc(l)}</div>`).join('');
+  if(memTab==='todos'){
+    const open=openTodos(), done=MEMF.filter(x=>x.t==='todo'&&x.st==='done');
+    el.innerHTML=`<div>${tabs}${broken}<div class="group">${open.map(todoRow).join('')}${done.length?`<div class="srow"><button class="mfold" type="button" data-mfold aria-expanded="${memDoneOpen}"><i data-lucide="${memDoneOpen?'chevron-down':'chevron-right'}"></i> Done · ${done.length}</button></div>`:''}${memDoneOpen?done.map(todoRow).join(''):''}</div></div>`;
+    icons(el); return;
+  }
+  const scopes=[['you','You'],...PROJECTS.map(p=>[p,p])];
+  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Dream</span></div>${dreamMode!=='off'?'<div class="hpick" role="radiogroup" aria-label="Agent"><button type="button" role="radio" aria-checked="true" class="on" title="Grok" aria-label="Grok"><canvas class="av" data-bot="grok" aria-hidden="true"></canvas></button></div>':''}<span class="seg sm" role="group" aria-label="Dream">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
+    +`<div class="group">${DREAM_GONE.map(([p,n])=>`<div class="srow"><div class="g">Forgot “${esc(n)}”</div><button class="btn" type="button">Restore</button></div>`).join('')}${DREAM_NOTES.map(n=>`<div class="srow"><div class="g s">${esc(n)}</div></div>`).join('')}</div>`;
+  el.innerHTML=`<div>${tabs}${broken}${dream}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div><input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
+  hydrate(el); icons(el);
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-mtab]'); if(t){ memTab=t.dataset.mtab; renderMemory(); return; }
+  const dm=e.target.closest('[data-dream]'); if(dm){ dreamMode=dm.dataset.dream; renderMemory(); return; }
+  const sc=e.target.closest('[data-mscope]'); if(sc){ memScope=sc.dataset.mscope; renderMemory(); return; }
+  const sw=e.target.closest('[data-msee]'); if(sw){ const f=MEMF.find(x=>x.p===sw.dataset.msee); f.see=f.see==='chats'?'ions':'chats'; renderMemory(); return; }
+  const kp=e.target.closest('[data-mkeep]'); if(kp){ const f=MEMF.find(x=>x.p===kp.dataset.mkeep); delete f.sugg; f.by='You'; f.at='now'; renderMemory(); return; }
+  const dn=e.target.closest('[data-mdone]'); if(dn){ MEMF.find(x=>x.p===dn.dataset.mdone).st='done'; renderMemory(); return; }
+  const ak=e.target.closest('[data-mask]'); if(ak){ memAsk=ak.dataset.mask||null; renderMemory(); return; }
+  const fg=e.target.closest('[data-mforget]'); if(fg){ MEMF.splice(MEMF.findIndex(x=>x.p===fg.dataset.mforget),1); memAsk=null; memOpen=null; renderMemory(); return; }
+  const fd=e.target.closest('[data-mfold]'); if(fd){ memDoneOpen=!memDoneOpen; renderMemory(); return; }
+  const hs=e.target.closest('[data-mhist]'); if(hs){ memHist=!memHist; renderMemory(); return; }
+  const gt=e.target.closest('[data-gotodos]'); if(gt){ memTab='todos'; memOpen=null; go('settings'); showS('memory'); return; }
+  const gm=e.target.closest('[data-gomem]'); if(gm){ memTab='all'; memScope='you'; memOpen=null; go('settings'); showS('memory'); return; }
+  const op=e.target.closest('[data-mopen]'); if(op&&!e.target.closest('.sw,.btn')){ memOpen=op.dataset.mopen||null; memHist=false; memAsk=null; renderMemory(); }
+});
 function hybrid(h,color){ const {name,org,...base}=LIB[h]; return {...base,color}; }
 const ionLib=k=>{ const v=IONS[k]; return v.bot?{...LIB[v.bot]}:hybrid(v.harness,v.color); };
 for(const k of Object.keys(IONS)) LIB['ion:'+k]=ionLib(k);
@@ -3111,7 +3197,7 @@ function renderIon(k,ph){
   curIon=k; const v=IONS[k]; actBtn.classList.remove('on'); chatEl.classList.remove('peek'); delete chatEl.dataset.peeked;
   document.querySelectorAll('[data-ionsel]').forEach(b=>b.classList.toggle('on',b.dataset.ionsel===k));
   let h=`<div class="head"><canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>${k==='lead'?'<span class="title brand hname" aria-label="ion">i<i>o</i>n</span>':`<span class="title">${esc(v.name)}</span>`}<span class="sp"></span>
-    <button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${esc(k)}"><i data-lucide="sliders-horizontal"></i></button></div>
+    ${k==='lead'&&openTodos().length?`<button class="ib todos" type="button" title="${openTodos().length} open to-dos" aria-label="${openTodos().length} open to-dos" data-gotodos><i data-lucide="list-todo"></i><span class="ct">${openTodos().length}</span></button>`:''}<button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${esc(k)}"><i data-lucide="sliders-horizontal"></i></button></div>
     <div class="bubbles">${k==='lead'?pinStrip():''}<div class="bcol">`;
   v.msgs.forEach((m,i)=>{
     const isI=x=>x&&(x.f==='i'||x.newIon||x.route||x.fanout||x.routineAdded||x.sugg);
@@ -3153,6 +3239,7 @@ function showS(page){
   if(page==='notif') renderNotif();
   if(page==='keys') renderKeys();
   if(page==='tools') renderTools();
+  if(page==='memory') renderMemory();
   if(page==='ions'){
     const order=[['lead',IONS.lead],...PROJECTS.flatMap(p=>live().filter(([k,v])=>k!=='lead'&&v.proj===p))];
     sIons.innerHTML=order.map(([k,v])=>`<button class="irow" type="button" data-ionedit="${k}"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas><span><span style="display:block">${esc(v.name)}</span><span class="s" style="display:block">${esc(v.role)}</span></span><span class="h">${hAv(v.harness)}${esc(hName(v.harness))}</span><span class="h">${esc(pj(v))}</span><i data-lucide="chevron-right"></i></button>`).join('');

@@ -18,6 +18,7 @@ Commands:
   routines                           What your projects' ions do on a schedule
   suggestions                        What ion suggests
   memory                             What ion remembers
+  todo                               Your to-dos
   decisions                          Your answers, and what came of them
   harnesses                          Coding agents and their models
   mcp                                MCP servers ion gives every agent (each
@@ -108,8 +109,26 @@ Options:
 
 Commands:
   ls [options]    List it
-  forget <id>     Forget it
+  show <name>     Show one
+  search <words>  Find by words
+  forget <name>   Forget it
+  keep <name>     Keep a chat's suggestion for every project
+  open            Open the folder
   help [command]  display help for command
+
+---
+
+Usage: ion todo [options] [command]
+
+Your to-dos
+
+Options:
+  -h, --help            display help for command
+
+Commands:
+  ls                    List what's open
+  add [options] <text>  Add one
+  done <name>           Mark one done
 
 ---
 
@@ -160,7 +179,8 @@ Options:
 
 Commands:
   ls              List them
-  take <id>       Do it: add the routine, or resume the chat
+  take <id>       Do it: add the routine, resume the chat, or mark the to-do
+                  done
   dismiss <id>    Not now
   mute <id>       Not now, and fewer like this
   help [command]  display help for command

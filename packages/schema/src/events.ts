@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IonCardSchema, PICKED } from "./ion-cards.js";
+import { memoryEventSchemas } from "./memory.js";
 
 export const SCHEMA_VERSION = 1;
 
@@ -47,6 +48,7 @@ export const DAEMON_EVENT_TYPES = [
   "proposal.answered",
   "memory.written",
   "memory.forgotten",
+  "memory.dreamed",
   "decision.recorded",
   "decision.outcome",
   "decision.forgotten",
@@ -56,6 +58,7 @@ export const DAEMON_EVENT_TYPES = [
   "queue.failed",
   "notify",
   "briefing.posted",
+  "todo.reminded",
   "tool.signedIn",
   "tool.signedOut",
   "tool.needsSignIn",
@@ -106,6 +109,7 @@ export const EV = {
   proposalAnswered: "proposal.answered",
   memoryWritten: "memory.written",
   memoryForgotten: "memory.forgotten",
+  memoryDreamed: "memory.dreamed",
   decisionRecorded: "decision.recorded",
   decisionOutcome: "decision.outcome",
   decisionForgotten: "decision.forgotten",
@@ -115,6 +119,7 @@ export const EV = {
   queueFailed: "queue.failed",
   notify: "notify",
   briefingPosted: "briefing.posted",
+  todoReminded: "todo.reminded",
   toolSignedIn: "tool.signedIn",
   toolSignedOut: "tool.signedOut",
   toolNeedsSignIn: "tool.needsSignIn",
@@ -196,14 +201,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     /** What you picked with "/" and "@" (shown as chips; the agent got them its way). */
     ...PICKED,
   }),
-  /** Something to remember: yours ("you", shown in every project) or one project's, never shared between projects. */
-  "memory.written": z.object({
-    memoryId: z.string(),
-    scope: z.union([z.literal("you"), z.object({ projectId: z.string() })]),
-    text: z.string().min(1).max(2000),
-    source: z.union([z.literal("you"), z.object({ chatId: z.string(), runId: z.string() })]),
-  }),
-  "memory.forgotten": z.object({ memoryId: z.string() }),
+  /** A memory file made or changed, or a note from before memory was files; and one forgotten. */
+  ...memoryEventSchemas,
   "need.raised": z.object({
     needId: z.string(),
     requestId: z.string(),
@@ -321,6 +320,11 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
   }),
   /** ion chief's daily briefing went out for this local day (YYYY-MM-DD): never twice, also across a restart. */
   "briefing.posted": z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+  /** A to-do's one reminder on its due morning (in ion chief's briefing or its own line): never twice. */
+  "todo.reminded": z.strictObject({
+    path: z.string().min(1).max(200),
+    due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }),
   /** A connection (its name in mcp.json) signed in, signed out, or needs signing in again: never a token. */
   "tool.signedIn": z.strictObject({ id: z.string().min(1).max(40) }),
   "tool.signedOut": z.strictObject({ id: z.string().min(1).max(40) }),

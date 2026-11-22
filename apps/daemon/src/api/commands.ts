@@ -2,9 +2,9 @@ import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
 import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
-import { forgetMemory } from "../memory/index.js";
+import type { Dreams } from "../scheduler/index.js";
+import type { MemoryFiles } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
-import { memoryView } from "../views/memory.js";
 import {
   addProject,
   loadUserConfig,
@@ -34,6 +34,7 @@ import { changeConfig, settingsHandlers } from "./settings.js";
 import { workspaceHandlers } from "./workspace.js";
 import { routineHandlers } from "./routines.js";
 import { queueHandlers } from "./queue.js";
+import { memoryHandlers, todoHandlers } from "./memory.js";
 import type { PromptQueue } from "../queue/index.js";
 import type { Routines } from "../scheduler/index.js";
 import type { Suggestions } from "../ions/suggestions.js";
@@ -81,6 +82,8 @@ export type Ctx = {
   routines: Routines;
   suggestions: Suggestions;
   queue: PromptQueue;
+  /** Your memory and each project's: a folder of files, indexed. */
+  memory: MemoryFiles;
   /** Your connections (mcp.json) and the keychain their keys and tokens are in. */
   tools: Tools;
   /** Signing in to remote servers (OAuth); their tokens are in the keychain. */
@@ -104,6 +107,8 @@ export type Ctx = {
   ionServers?: IonServers;
   /** What Auto is often unsure about (said in `ion status`). */
   unsure?: { notes(): string[] };
+  /** ion's dream: it tidies memory on its schedule, or now. */
+  dreams?: Dreams;
 };
 
 export type Handlers = {
@@ -118,6 +123,8 @@ export const handlers: Handlers = {
   ...workspaceHandlers,
   ...routineHandlers,
   ...queueHandlers,
+  ...memoryHandlers,
+  ...todoHandlers,
   ...toolsHandlers,
   ...toolsCliHandlers,
   ...toolsImportHandlers,
@@ -129,11 +136,6 @@ export const handlers: Handlers = {
     return (await harnessInfos.list())
       .filter((h) => listed.includes(h.id))
       .map((h) => ({ ...h, ...missesOf(h.id) }));
-  },
-  "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
-  "memory.forget": (a, ctx) => {
-    forgetMemory(ctx.store, ctx.db, String(a.memoryId ?? ""));
-    return { ok: true as const };
   },
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
@@ -252,8 +254,7 @@ export const handlers: Handlers = {
     ctx.queue.clear({ ionId: id });
     // What you decided for it, and what ion remembers of it, go with it: a later project of the same id starts clean.
     for (const d of decisionsView.list(ctx.db, id)) ctx.decisions.forget(d.decisionId);
-    for (const m of memoryView.list(ctx.db, id))
-      if (m.scope === id) forgetMemory(ctx.store, ctx.db, m.memoryId);
+    ctx.memory.forgetProject(id, "you");
     return { ok: true as const };
   },
   "project.star": (a, ctx) => {

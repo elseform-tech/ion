@@ -47,10 +47,27 @@ The always-on service that owns all state.
 - Continuing a chat: a run resumes the chat's last harness session; when the harness can't, a new session gets the
   chat's earlier messages (newest 24,000 characters) as a labelled data block before your message.
 - `src/mcp`: ion's MCP server at `/mcp` on the daemon's port. Each run gets its own key (kept only as a hash,
-  revoked when the run ends) that sees its own project: `chat_history`, `search_chats`, `open_needs`, `memory_list`,
-  `memory_write` (5 per run), `ask`, `decisions`, `report_outcome`. Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
+  revoked when the run ends) that sees its own project: `chat_history`, `search_chats`, `open_needs`, `memory_index`,
+  `memory_search`, `memory_read`, `memory_write` and `memory_forget` (20 changes per run), `ask`, `decisions`, `report_outcome`. Any `Origin` header is refused. ion's own tools are allowed by exact name; other MCP
   tools ask.
-- `src/memory`: memory is yours ("you", shown in every project) or one project's, never shared between projects.
+- `src/memory`: a folder of small files, yours (`you/`) or one project's (`projects/<id>/`), never shared between
+  projects. `see: ions` means ions only, for your files and a project's alike: that project's chats don't see it.
+  `scoped.ts` keeps who sees and writes what: a chat sees its project's files and your `see: chats` ones; a project's
+  ion its project's and all yours; ion chief yours and every project shared with it. A file a caller can't see
+  doesn't exist for it. A preference a chat writes is `suggested: <project>` (only that project's chats and the ions
+  see it) until you keep it (`ion memory keep`).
+  The folder is `<data>/memory` (only you can open it; chats' agents can't reach it). `index.ts` writes files and logs
+  each change (`memory.written`, `memory.forgotten`: who, the header, the text before) and `watch.ts` picks up your
+  edits in an editor as yours; a file that can't be read keeps its last good version indexed and shows one line in
+  Settings. `migrate.ts` moves notes from before memory was files, one file each (`from:` the old note), once.
+  `dream.ts` is ion's dream (when it's due, its prompt with the last week's chats as data, what it did:
+  `memory.dreamed`, the briefing's line, Restore for what it forgot); `dream-rules.ts` what it may never do and what each pass sees and changes;
+  `src/scheduler/dreams.ts` runs it, and `src/ions/dream.ts` is its turn's gate (memory's tools only) and instructions.
+  To-dos (`type: todo`): `todos.ts` for ion chief's briefing, `ion todo` and "Mark done?" (`src/ions/todo-offers.ts`:
+  a chat's finished work that matches an open to-do by its words; only you close one), and
+  `src/scheduler/reminders.ts` (one reminder at 9:00 local on the due day, or when quiet hours end).
+- `src/evals`: opt-in live evals on real agents (`live.test.ts`, `judge.test.ts`, `memory.test.ts` with
+  `memory-cases.ts`); see `docs/research/judge-evals.md` and `docs/research/memory-evals.md`.
 - `src/api`: the WebSocket API (see `@ion/schema` `api.ts` for the protocol).
 - `src/main.ts`: entry point. Takes the `daemon.lock` (an exclusive SQLite lock the OS releases if the process dies, so only one daemon per data dir), then writes `daemon.json` (`pid`, `port`, `token`, mode 0600).
 

@@ -167,7 +167,8 @@ function Card(p: CardProps) {
       />
     );
   if (p.card.kind === "suggest") return <Suggest {...p} card={p.card} />;
-  if (p.card.kind === "routine" || p.card.kind === "stalled") return <SuggestionCard {...p} card={p.card} />;
+  if (p.card.kind === "routine" || p.card.kind === "stalled" || p.card.kind === "todo")
+    return <SuggestionCard {...p} card={p.card} />;
   return (
     <div className="note">
       <CircleAlert />
@@ -176,7 +177,7 @@ function Card(p: CardProps) {
   );
 }
 
-const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled";
+const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled" || c?.kind === "todo";
 const ions = (m: IonItem | undefined) => m !== undefined && m.kind !== "you";
 
 type LineProps = Omit<CardProps, "card"> & { m: Exclude<IonItem, { kind: "you" }>; last: boolean };
@@ -326,7 +327,13 @@ export function IonChat(p: Omit<CardProps, "card" | "peek" | "onPeek">) {
   const panel = again ? { open: Boolean(open), toggle: () => show(open ? null : again) } : undefined;
   return (
     <section className={`ichat${open ? " peek" : ""}`}>
-      <IonHead ion={p.ion} chats={p.chats} onOpenChat={p.onOpenChat} {...(panel ? { panel } : {})} />
+      <IonHead
+        client={p.client}
+        ion={p.ion}
+        chats={p.chats}
+        onOpenChat={p.onOpenChat}
+        {...(panel ? { panel } : {})}
+      />
       <Bubbles items={items} {...p} peek={open ? peek : null} onPeek={toggle} />
       <IonBox client={p.client} ion={p.ion} />
       {open && (

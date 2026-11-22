@@ -26,7 +26,7 @@ export function suggestionsCommands(program: Command, out: () => Out) {
         await withClient((c) => c.call("suggestion.answer", { suggestionId: id, ...args }));
         print(out(), done, { ok: true });
       });
-  answer("take", "Do it: add the routine, or resume the chat", { keep: true }, "Done");
+  answer("take", "Do it: add the routine, resume the chat, or mark the to-do done", { keep: true }, "Done");
   answer("dismiss", "Not now", { keep: false }, "Dismissed");
   answer("mute", "Not now, and fewer like this", { keep: false, mute: true }, "Muted");
 }

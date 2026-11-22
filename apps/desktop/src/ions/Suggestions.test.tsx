@@ -152,3 +152,29 @@ describe("ion chief's suggestions", () => {
     expect(screen.getByRole("button", { name: "Add routine" })).toBeTruthy();
   });
 });
+
+// The user, 2026-11-21: "does memory cover todo as well". When a chat's finished work matches an open to-do, the ion
+// asks "Mark done?" with Done / Not yet (no "fewer like this"); the chat that did it opens from the card.
+describe("an ion's Mark done?", () => {
+  const todo = {
+    ...{ kind: "todo", suggestionId: "s3", chatId: "c1", projectId: "storefront" },
+    ...{ path: "you/update-the-readme.md", name: "Update the README" },
+  };
+  const said = [ev(EV.ionSaid, { text: "Mark “Update the README” done?", card: todo })];
+
+  it("asks Mark done? with Done and Not yet, and the chat that did it", async () => {
+    const onOpenChat = vi.fn();
+    const c = client(said);
+    const { container } = render(<Ions client={c} onOpenChat={onOpenChat} />);
+    await waitFor(() => expect(container.querySelectorAll(".sugg")).toHaveLength(1));
+    const card = container.querySelector(".sugg")!;
+    expect(card.querySelector("b")?.textContent).toBe("Mark “Update the README” done?");
+    expect(container.querySelector(".bi")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fewer like this" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tailwind 4 migration" }));
+    expect(onOpenChat).toHaveBeenCalledWith("c1");
+    fireEvent.click(screen.getByRole("button", { name: "Not yet" }));
+    expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "s3", keep: false });
+    await waitFor(() => expect(container.querySelector(".sugg .done")?.textContent).toBe("Not yet"));
+  });
+});

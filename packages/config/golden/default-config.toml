@@ -34,4 +34,7 @@ ionUse = []
 [tools.skills]
 on = []
 
+[memory]
+dream = "off"
+
 [agents]

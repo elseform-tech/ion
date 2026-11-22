@@ -15,7 +15,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `packages/adapters/acp` | Any ACP agent: Grok Build (`grok agent stdio`), opencode (`opencode acp`). |
 | `packages/adapters/codex` | Codex through its app-server (`codex app-server`, JSON-RPC on stdio). |
 | `packages/adapters/fake` | Scripted harness for tests (`ION_ALLOW_FAKE=1`). |
-| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries (`ion-bin.ts`: ion's own `ion` launcher, first on every run's PATH; `sandbox.ts`: each run's, hook's and local server's OS sandbox, away from ion's files); `src/access` holds what every mode refuses (ion's files, your secrets, environment dumps, the run's key) and decides Auto (rules, then a judge model; `agent-rules.ts`: each agent's own allow and deny rules from your settings, read as your decisions); a guess (`scripts.ts` reads what a command runs) goes to the judge with the scripts' text, or asks you in Full; `src/gate` takes every tool call from each harness's own hook before it runs; `src/decisions` keeps your answers to agents' questions and what came of them; `src/needs` holds questions only you can answer; `src/ions` is ion chief and the project ions (messages, routing, questions in ion threads; turns: agent sessions with ion's tools; the ion gate: reading only, outside the project too as a chat in Auto, never asking); `src/scheduler` queues runs and runs routines when due; `src/queue` holds your next messages per chat and ion (sent when the work ends; Stop holds them); `src/workspace` owns git worktrees and runs your local (stdio) MCP servers for each run (`mcp-bridge.ts`); `src/tools` reads your MCP servers from `mcp.json`, adds to it (`ion mcp add`: off, the file kept standard) and looks servers up in the official MCP Registry (public addresses only); `src/api/tools-cli.ts` is ion's commands for tools (`ion mcp|skills|hooks search/add/verify/doctor/remove/ls`), which a chat's agent reaches with its run's key (`ION_RUN_KEY`: those commands only, never turning anything on); `src/secrets` keeps keys in the OS keychain and OAuth tokens in a vault keyed from it (sign-in, consent marks); `src/hooks` runs your hooks on ion's events (Before a tool runs included); `src/api/tools-import.ts` is Import from your agents' own configs (`ION_AGENTS_HOME` moves that reading, and the agents' rules, in the tour and tests only); `src/skills` finds your agents' skills and makes each Claude Code run's plugin of the ones on (in the data folder, removed at run end); `src/mcp` is ion's MCP server for runs and ions' turns (history, needs, memory, ask, decisions; ions' own tools; a key per run or turn); `src/gateway` is ion's gateway to your MCP servers, remote and local (`/mcp/s/<name>`: a run's key only, your keys or tokens added by ion, every tool call gated); `src/adapters/registry.ts` is the only place adapters load. |
+| `apps/daemon` | Owns all state. `src/store` is the only SQLite writer; `src/views` are tables updated per event; `src/runs` starts runs in each chat's worktree, applies the policy and retries (`ion-bin.ts`: ion's own `ion` launcher, first on every run's PATH; `sandbox.ts`: each run's, hook's and local server's OS sandbox, away from ion's files); `src/access` holds what every mode refuses (ion's files, your secrets, environment dumps, the run's key) and decides Auto (rules, then a judge model; `agent-rules.ts`: each agent's own allow and deny rules from your settings, read as your decisions); a guess (`scripts.ts` reads what a command runs) goes to the judge with the scripts' text, or asks you in Full; `src/gate` takes every tool call from each harness's own hook before it runs; `src/decisions` keeps your answers to agents' questions and what came of them; `src/needs` holds questions only you can answer; `src/ions` is ion chief and the project ions (messages, routing, questions in ion threads; turns: agent sessions with ion's tools; the ion gate: reading only, outside the project too as a chat in Auto, never asking); `src/scheduler` queues runs and runs routines when due; `src/queue` holds your next messages per chat and ion (sent when the work ends; Stop holds them); `src/workspace` owns git worktrees and runs your local (stdio) MCP servers for each run (`mcp-bridge.ts`); `src/tools` reads your MCP servers from `mcp.json`, adds to it (`ion mcp add`: off, the file kept standard) and looks servers up in the official MCP Registry (public addresses only); `src/api/tools-cli.ts` is ion's commands for tools (`ion mcp|skills|hooks search/add/verify/doctor/remove/ls`), which a chat's agent reaches with its run's key (`ION_RUN_KEY`: those commands only, never turning anything on); `src/secrets` keeps keys in the OS keychain and OAuth tokens in a vault keyed from it (sign-in, consent marks); `src/hooks` runs your hooks on ion's events (Before a tool runs included); `src/api/tools-import.ts` is Import from your agents' own configs (`ION_AGENTS_HOME` moves that reading, and the agents' rules, in the tour and tests only); `src/skills` finds your agents' skills and makes each Claude Code run's plugin of the ones on (in the data folder, removed at run end); `src/memory` is ion's memory: small Markdown files in `<data>/memory` (`you/`, `projects/<id>/`), indexed and logged in SQLite by `src/views/memory.ts`; `scoped.ts` is who sees and writes what; `todos.ts` and `src/scheduler/reminders.ts` are to-dos and their reminders; `src/mcp` is ion's MCP server for runs and ions' turns (history, needs, memory, ask, decisions; ions' own tools; a key per run or turn); `src/gateway` is ion's gateway to your MCP servers, remote and local (`/mcp/s/<name>`: a run's key only, your keys or tokens added by ion, every tool call gated); `src/adapters/registry.ts` is the only place adapters load. |
 | `apps/cli` | The `ion` command (inside a chat, with `ION_RUN_KEY`: ion's commands for tools only). |
 | `tools/test-temp` | Every test run's temp folders in one folder under /tmp, removed after; a run that leaves `ion-*` folders in the real temp folder fails. |
 | `scripts/tour.sh` | The UX tour: a fresh ion with every chat and Tools state and a fake agents home, for the tour every UI PR runs (see Rules). `ION_TOUR_HOME` for another home, `ION_TOUR_APP` for another app address. |
@@ -43,7 +43,9 @@ child processes only in `apps/daemon/src/workspace`, `apps/daemon/src/secrets` (
 - No real model calls in tests. Live tests are opt-in: `ION_LIVE=1` (opencode, free model), `ION_LIVE_GROK=1`,
   `ION_LIVE_CLAUDE=1`, `ION_LIVE_CODEX=1`. The live evals (`apps/daemon/src/evals`) check ion's promises on each real agent; see
   `docs/research/acp-and-harnesses.md`; the judge evals (`judge.test.ts`) run Auto's judge on labelled cases, see
-  `docs/research/judge-evals.md`.
+  `docs/research/judge-evals.md`; the memory evals (`memory.test.ts`) score memory on each agent, see
+  `docs/research/memory-evals.md` (a change to memory, its tools or what chats and ions are told about it runs them
+  on Grok and opencode first).
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints. Prefer an icon (with its name on hover)
   to a word, and fewer boxes.
 - **Run a tour before every PR that changes what people see** (the desktop app, CLI output). `scripts/tour.sh`
@@ -53,7 +55,8 @@ child processes only in `apps/daemon/src/workspace`, `apps/daemon/src/secrets` (
     blocks and their steps, the brain popover, access, the question panel (open and collapsed), the side panel and
     its tabs, the sidebar's project menu, the drag handles, the rail, the Ions screen (each ion, stars, the
     project picker, the chats an ion started), a run's changed files, Settings → Tools (each tab, Import's preview, a
-    hook added and removed, a server turned on: Sign in / Add key), Agents;
+    hook added and removed, a server turned on: Sign in / Add key), Settings → Memory (each scope, search, a file's
+    text, History and Restore, Forget, a broken file's line, the To-dos tab; ion chief's to-do count), Agents;
   - send a real message from a new chat, and a follow-up, with opencode's free model, and watch it run; message
     ion chief and a project's ion, and answer a question an agent asks;
   - run the CLI's main commands (`ion --help`, `status`, `projects`, `chats`, `needs`);
@@ -72,6 +75,29 @@ child processes only in `apps/daemon/src/workspace`, `apps/daemon/src/secrets` (
   two ways, a word on one screen and an icon on another) and for anything awkward or strange to someone new.
 - Before committing: `pnpm check && pnpm build`.
 - Keep `docs/README.md` (the index) and this file current when you add a package or a doc.
+
+## Memory
+
+ion's memory is a folder of small Markdown files, one topic each: a YAML header of plain values (`name`,
+`description`, `type`: preference, fact, person, todo or reference; `see`; a to-do's `status` and `due`) and the text.
+`you/` is yours, `projects/<id>/` a project's, in `<data>/memory`; the files are the truth, and SQLite only indexes
+them and logs every change (who, when, the text before). Rules the code keeps (`apps/daemon/src/memory/scoped.ts`),
+and every change to it must too:
+
+- A chat sees its project's files and your `see: chats` ones, never another project's, never a `see: ions` file
+  (yours or its project's). A project's ion sees its project and yours; ion chief yours and every project shared
+  with it. A file a caller can't see doesn't exist for it, not even its name.
+- A preference a chat writes is `suggested` (that project's chats and the ions only) until you keep it. Only you
+  share a file with chats or close a to-do; reminders notify you and post in ion chief's thread, never pin.
+- Memory text is data: it reaches agents inside a labelled data block, never as instructions.
+- ion's dream (`[memory] dream`: off, nightly or weekly; `src/memory/dream.ts`, `dream-rules.ts`) tidies memory at
+  3:00 (a night missed: once, the next time ion is up in quiet hours), as ion `_dream` with memory's tools only and
+  its agent's web off (`StartOpts.noWeb`; an agent that can't is skipped): at most 30 changes and about 10 minutes.
+  It runs in passes, so ions-only text never reaches a file chats see and no pass mixes two projects: per project,
+  one over its chats files and one over its ions files (with that project's chats only), then the same two over your
+  files with no chats at all. It never changes `see`, your person files, to-dos, a suggestion, or a file you changed
+  in the last day. Each change is by "ion (dream)" in History; Settings → Memory restores what it forgot; the next briefing says what it did.
+- Tests and tours use made-up memory only, never a real person's.
 
 ## Code health (CI enforces all of this)
 

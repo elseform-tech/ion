@@ -1,6 +1,7 @@
 import { availableParallelism } from "node:os";
 import { CLOCK, MAX_RUNS, MIN_RUNS, NOTIFY_LEVELS, type UserConfig } from "@ion/config";
-import type { NotifyLevel, SettingsInfo, SettingsPatch } from "@ion/schema";
+import { DREAM_MODES, type NotifyLevel, type SettingsInfo, type SettingsPatch } from "@ion/schema";
+import { harnessIds } from "../adapters/registry.js";
 import { maxRuns } from "../scheduler/index.js";
 import { UserError } from "./errors.js";
 
@@ -18,7 +19,23 @@ export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort" 
       },
       projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? "needs"])),
     },
+    dream: { mode: c.memory.dream, agent: c.memory.dreamAgent ?? null },
   };
+}
+
+/** ion's dream changed: how often (checked), and its agent (one ion knows; null: ion's own model's again). */
+function dreamPatch(m: UserConfig["memory"], p: SettingsPatch["dream"]): UserConfig["memory"] {
+  if (!p) return m;
+  if (p.mode !== undefined && !DREAM_MODES.includes(p.mode))
+    throw new UserError("Pick off, nightly or weekly");
+  const next = { ...m, ...(p.mode ? { dream: p.mode } : {}) };
+  if (p.agent === null) delete next.dreamAgent;
+  else if (p.agent !== undefined) {
+    if (!harnessIds().includes(String(p.agent).split(":")[0]!))
+      throw new UserError(`Unknown agent: ${p.agent}`);
+    next.dreamAgent = p.agent;
+  }
+  return next;
 }
 
 function flag(v: unknown): boolean {
@@ -76,5 +93,6 @@ export function applyGeneral(c: UserConfig, patch: SettingsPatch): UserConfig {
       quiet: merged(c.notifications.quiet, n?.quiet, { on: flag, from: clock, to: clock }),
     },
     projects: projectLevels(c, n?.projects),
+    memory: dreamPatch(c.memory, patch.dream),
   };
 }

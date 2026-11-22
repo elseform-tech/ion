@@ -1,5 +1,8 @@
 import { wrapData } from "../context/index.js";
 import type { HistoryMessage } from "../views/messages.js";
+import { type MemoryFiles, upFront } from "../memory/index.js";
+
+export type { MemoryFiles };
 
 /** How much of a chat's history a new session gets: the newest whole messages up to this many characters. */
 export const HISTORY_CHARS = 24_000;
@@ -27,4 +30,20 @@ export function historyPreamble(messages: HistoryMessage[]): string {
 /** Your message, after the chat's history when there is any. */
 export function withHistory(messages: HistoryMessage[], text: string): string {
   return messages.length ? historyPreamble(messages) + text : text;
+}
+
+type Fresh = {
+  history: HistoryMessage[];
+  args: { text: string };
+  projectId: string;
+  chatId: string;
+  runId: string;
+};
+
+/**
+ * A new session's first message: the chat's memory index (when its run has ion's tools, `mcpKey`, to read more), its
+ * history, then your message.
+ */
+export function freshText(l: Fresh & { mcpKey?: string }, memory: MemoryFiles | undefined): string {
+  return upFront(l.mcpKey ? memory : undefined, { kind: "chat", ...l }) + withHistory(l.history, l.args.text);
 }

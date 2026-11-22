@@ -9,7 +9,8 @@ const WHEN_TEXT =
 
 /**
  * What an ion's message can carry: threads it started, a suggestion, or a decision that keeps failing. ion chief's
- * own suggestions (Plan 11): a routine for something you keep asking for, or a chat of yours that stalled.
+ * own suggestions (Plan 11): a routine for something you keep asking for, or a chat of yours that stalled; and an
+ * ion's "Mark done?" for a to-do a chat's finished work matches (Plan 19).
  */
 export const IonCardSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -51,6 +52,16 @@ export const IonCardSchema = z.discriminatedUnion("kind", [
     since: z.iso.datetime(),
     /** Files changed in its worktree. */
     files: z.number().int().min(1),
+  }),
+  z.object({
+    kind: z.literal("todo"),
+    suggestionId: z.string(),
+    /** The chat whose finished work matches the to-do, and its project. */
+    chatId: z.string(),
+    projectId: z.string(),
+    /** The to-do's memory file, and its name. */
+    path: z.string(),
+    name: z.string().min(1),
   }),
 ]);
 export type IonCard = z.infer<typeof IonCardSchema>;

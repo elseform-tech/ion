@@ -12,6 +12,8 @@ export type SearchHit = { chatId: string; role: "you" | "agent"; text: string; t
 /** Your messages (`message.sent`) and the agent's (`message.completed`), per chat, with full-text search. */
 export const messagesView: View & {
   history(db: Db, chatId: string, maxChars: number): HistoryMessage[];
+  /** A chat's last message by you or by its agent, if any. */
+  last(db: Db, chatId: string, role: "you" | "agent"): string | undefined;
   search(db: Db, projectId: string, query: string, limit: number): SearchHit[];
 } = {
   name: "messages",
@@ -37,6 +39,12 @@ export const messagesView: View & {
       )
       .run(e.chatId, e.chatId, role, text, e.ts);
     db.prepare("INSERT INTO messages_fts (rowid, text) VALUES (?, ?)").run(r.lastInsertRowid, text);
+  },
+  last(db, chatId, role) {
+    const r = db
+      .prepare("SELECT text FROM view_messages WHERE chat_id = ? AND role = ? ORDER BY id DESC LIMIT 1")
+      .get(chatId, role) as { text: string } | undefined;
+    return r?.text;
   },
   history(db, chatId, maxChars) {
     const rows = db

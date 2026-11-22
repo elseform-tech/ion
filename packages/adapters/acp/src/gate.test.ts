@@ -115,8 +115,8 @@ describe("opencode's gate plugin", () => {
     expect(OPENCODE.toCall!({ tool: "edit", args: { filePath: "a" } })).toMatchObject({ kind: "edit" });
     expect(OPENCODE.toCall!({ tool: "github_search", args: {} })).toMatchObject({ kind: "other" });
     // Live check: opencode names ion's own MCP tools ion_<tool>; they're ion's, allowed by policy.
-    expect(OPENCODE.toCall!({ tool: "ion_memory_list", args: {} })).toMatchObject({
-      toolName: "ion__memory_list",
+    expect(OPENCODE.toCall!({ tool: "ion_memory_index", args: {} })).toMatchObject({
+      toolName: "ion__memory_index",
       kind: "mcp",
       mcpServer: "ion",
     });

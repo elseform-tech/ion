@@ -39,4 +39,25 @@ describe("an ion's agent", () => {
     expect(await ionBrain(d, "app")).toMatchObject({ harness: "fake" });
     expect(asked).toEqual(["fake", "fake"]);
   });
+
+  // Task review, 2026-11-22: a dream never searches the web. On an agent that can't turn its web off it moves to the
+  // next ready one that can; with none, it keeps the chosen one, and the turn says it was skipped.
+  it("picks a dream agent that can turn its web off", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    process.env.ION_FAKE_HAS_WEB = "1";
+    try {
+      const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+      saveUserConfig(configFile, { ...DEFAULT_CONFIG, memory: { dream: "nightly", dreamAgent: "fake" } });
+      const both = {
+        configFile,
+        db: openDb(":memory:"),
+        agents: async () => [info("fake", true), info("claude-code", true)],
+      };
+      expect(await ionBrain(both, "_dream")).toMatchObject({ harness: "claude-code" });
+      const alone = { ...both, agents: async () => [info("fake", true)] };
+      expect(await ionBrain(alone, "_dream")).toMatchObject({ harness: "fake" });
+    } finally {
+      delete process.env.ION_FAKE_HAS_WEB;
+    }
+  });
 });

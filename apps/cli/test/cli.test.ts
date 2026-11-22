@@ -239,6 +239,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["needs"],
         ["chats"],
         ["memory"],
+        ["todo"],
         ["harnesses"],
         ["routines"],
         ["routines", "add"],
@@ -370,6 +371,19 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("routines")).out).toBe("No routines");
   });
 
+  // Task review, 2026-11-22: every connected command waited out reach()'s 1 s timeout timer before exiting.
+  it("a connected command exits at once", async () => {
+    await ion("daemon", "start");
+    await ion("status");
+    const t0 = Date.now();
+    expect((await ion("status")).code).toBe(0);
+    const bare = Date.now() - t0;
+    const t1 = Date.now();
+    await ion("--version");
+    // Measured against a command that never connects, so a slow machine doesn't count against it.
+    expect(bare - (Date.now() - t1)).toBeLessThan(600);
+  });
+
   // Plan 11: ion chief's suggestions, from the command line.
   it("lists suggestions, and says so for one it doesn't know", async () => {
     await ion("daemon", "start");
@@ -452,6 +466,95 @@ describe("ion cli", { timeout: 20_000 }, () => {
       await setup();
       expect((await ion("memory", "ls", "-p", "app")).out).toBe("No memory");
       expect(await ion("memory", "forget", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
+    });
+
+    // The user, 2026-11-21: memory is a folder of small files you can read and fix yourself; the CLI lists, shows,
+    // searches and forgets them, and opens the folder.
+    it("the CLI lists, shows, searches and forgets", async () => {
+      const mem = join(home, "data", "memory");
+      const file = (path: string, head: string, text: string) => {
+        mkdirSync(join(mem, path, ".."), { recursive: true });
+        writeFileSync(join(mem, path), `---\n${head}\n---\n\n${text}\n`);
+      };
+      file(
+        "you/short-replies.md",
+        "name: Short replies\ndescription: Keep replies short\ntype: preference",
+        "Short.",
+      );
+      file(
+        "projects/app/test-runner.md",
+        "name: Test runner\ndescription: Which tests\ntype: fact",
+        "Tests use vitest.",
+      );
+      const todo =
+        "name: Rotate keys\ndescription: Rotate the API keys\ntype: todo\nstatus: open\ndue: 2026-12-01";
+      file("projects/app/rotate-keys.md", todo, "Rotate them.");
+      file("you/call-sam.md", "name: Call Sam\ndescription: Call Sam\ntype: fact", "Call Sam.");
+      await setup();
+      const todoLine = "projects/app/rotate-keys.md  todo open 2026-12-01  Rotate keys: Rotate the API keys";
+      const ls = (await ion("memory", "ls", "-p", "app")).out.split("\n");
+      expect(ls[0]).toBe(todoLine);
+      expect(ls).toContain("you/short-replies.md  preference  Short replies: Keep replies short");
+      expect(ls).toHaveLength(4);
+      expect((await ion("memory", "ls", "--open")).out).toBe(todoLine);
+      expect((await ion("memory", "ls", "--type", "preference")).out).toBe(
+        "you/short-replies.md  preference  Short replies: Keep replies short",
+      );
+      expect((await ion("memory", "show", "test-runner")).out).toBe(
+        "Test runner\nWhich tests\nfact  projects/app/test-runner.md\n\nTests use vitest.",
+      );
+      expect((await ion("memory", "search", "vitest")).out).toBe(
+        "projects/app/test-runner.md  fact  Test runner: Which tests",
+      );
+      expect((await ion("memory", "forget", "test-runner")).out).toBe("Forgotten");
+      expect(existsSync(join(mem, "projects/app/test-runner.md"))).toBe(false);
+      expect((await ion("memory", "search", "vitest")).out).toBe("Nothing found");
+      expect((await ion("memory", "open")).out).toBe(mem);
+      // Task 5, 2026-11-22 (tour): a file whose description is its name read "Call Sam: Call Sam".
+      expect((await ion("memory", "search", "Sam")).out).toBe("you/call-sam.md  fact  Call Sam");
+      // Security review, 2026-11-22: a chat's preference waits for you; keep makes it every project's.
+      file("you/tabs.md", "name: Tabs\ndescription: Use tabs\ntype: preference\nsuggested: app", "Tabs.");
+      const prefs = () => ion("memory", "ls", "--type", "preference");
+      for (let i = 0; i < 30 && !(await prefs()).out.includes("tabs"); i++)
+        await new Promise((r) => setTimeout(r, 200));
+      expect((await prefs()).out).toContain("you/tabs.md  preference suggested  Tabs: Use tabs");
+      expect((await ion("memory", "keep", "tabs")).out).toBe("Kept for every project");
+      expect((await ion("memory", "ls", "--type", "preference")).out).toContain(
+        "you/tabs.md  preference  Tabs: Use tabs",
+      );
+    });
+
+    // The user, 2026-11-21: "does memory cover todo as well". To-dos are memory files; `ion todo` adds, lists and
+    // closes them, the same files ion keeps.
+    it("ion todo adds, lists and closes", async () => {
+      await setup();
+      expect((await ion("todo")).out).toBe("Nothing to do");
+      expect((await ion("todo", "add", "Update the README", "--due", "2026-12-04")).out).toBe(
+        "Added to your to-dos: Update the README (2026-12-04)",
+      );
+      expect((await ion("todo", "add", "Rotate keys", "-p", "app")).out).toBe(
+        "Added to app's to-dos: Rotate keys",
+      );
+      // Task review, 2026-11-22: a name you type stays as you typed it (only agents' file-name names become words).
+      expect((await ion("todo", "add", "e2e-tests")).out).toBe("Added to your to-dos: e2e-tests");
+      expect(await ion("todo", "done", "e2e-tests")).toMatchObject({ code: 0 });
+      expect(await ion("todo", "add", "Call the bank", "--due", "friday")).toMatchObject({
+        code: 1,
+        err: "Give the date as YYYY-MM-DD",
+      });
+      const both = "Update the README  due 2026-12-04\nRotate keys  app";
+      expect((await ion("todo")).out).toBe(both);
+      expect((await ion("todo", "ls")).out).toBe(both);
+      const file = join(home, "data", "memory", "you", "update-the-readme.md");
+      for (const line of ["type: todo", "status: open", "due: 2026-12-04"])
+        expect(readFileSync(file, "utf8")).toContain(`\n${line}\n`);
+      expect((await ion("todo", "done", "update-the-readme")).out).toBe("Done: Update the README");
+      expect(readFileSync(file, "utf8")).toContain("status: done");
+      expect((await ion("todo")).out).toBe("Rotate keys  app");
+      // Task review, 2026-11-22: the list leads with the name; the path is in --json.
+      const json = JSON.parse((await ion("todo", "--json")).out) as { memoryId: string }[];
+      expect(json.map((m) => m.memoryId)).toEqual(["projects/app/rotate-keys.md"]);
+      expect(await ion("todo", "done", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
     });
 
     // Plan 09: ions from the CLI (messaging one starts real work, so only the list and a refusal here).

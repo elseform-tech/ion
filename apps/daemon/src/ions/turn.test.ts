@@ -4,10 +4,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentEnv, sandboxKind, type StartOpts } from "@ion/adapter-kit";
 import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
-import { EV, type HarnessInfo, type IonEvent } from "@ion/schema";
+import { EV, type HarnessInfo, type IonEvent, type MemoryScope, type MemoryType } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler } from "../mcp/index.js";
+import { MemoryFiles } from "../memory/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { ionsView } from "../views/ions.js";
@@ -18,6 +19,8 @@ process.env.ION_ALLOW_FAKE = "1";
 
 /** What each fake session was started with. */
 const starts = vi.hoisted(() => [] as StartOpts[]);
+/** What each fake session was sent. */
+const sent = vi.hoisted(() => [] as string[]);
 vi.mock("@ion/adapter-fake", async (real) => {
   const m = await real<typeof import("@ion/adapter-fake")>();
   return {
@@ -25,9 +28,15 @@ vi.mock("@ion/adapter-fake", async (real) => {
     createFakeAdapter: (...a: Parameters<typeof m.createFakeAdapter>) => {
       const adapter = m.createFakeAdapter(...a);
       const start = adapter.start.bind(adapter);
-      adapter.start = (o) => {
+      adapter.start = async (o) => {
         starts.push(o);
-        return start(o);
+        const session = await start(o);
+        const send = session.send.bind(session);
+        session.send = (m) => {
+          sent.push(m.text);
+          return send(m);
+        };
+        return session;
       };
       return adapter;
     },
@@ -57,7 +66,7 @@ const agents = async (): Promise<HarnessInfo[]> => [
 /** A public address (a CDN's), built rather than written out. */
 const PUBLIC_IP = [104, 20, 22, 46].join(".");
 
-function turns(turnMs?: number): IonTurns {
+function turns(turnMs?: number, more: Partial<ConstructorParameters<typeof IonTurns>[0]> = {}): IonTurns {
   current = new IonTurns({
     ...{ store, db, configFile: join(home, "config.toml"), dataDir: join(home, "data") },
     grants,
@@ -69,12 +78,14 @@ function turns(turnMs?: number): IonTurns {
     // Every name is a public address here (no real DNS in tests).
     dns: async () => [{ address: PUBLIC_IP, family: 4 }],
     ...(turnMs ? { turnMs } : {}),
+    ...more,
   });
   made.push(current);
   return current;
 }
 
 let grants: ReturnType<typeof createGrants>;
+let memory: MemoryFiles;
 
 beforeEach(async () => {
   db = openDb(":memory:");
@@ -95,8 +106,9 @@ beforeEach(async () => {
   grants = createGrants();
   startThread = vi.fn(async (projectId: string) => ({ chatId: `t-${projectId}` }));
   const configFile = join(home, "config.toml");
+  memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
   const mcp = createMcpHandler({
-    ...{ store, db, grants, configFile },
+    ...{ store, db, grants, configFile, memory },
     startThread: (p, b, t) => current.startThread(p, b, t),
   });
   const gate = createGateHandler({
@@ -157,6 +169,67 @@ describe("an ion's turn", () => {
   });
 
   // The user, 2026-11-20: your MCP servers reach chats' agents only; an ion's own turn has ion's server alone.
+  // The user, 2026-11-21: ions find memory through a quick index and read the details on demand. Each turn starts
+  // with the index of what that ion may see.
+  // Task review, 2026-11-22: ion's dream never searches the web. Its turn starts with the web off (and a daemon-only
+  // folder for the agent's own files); on an agent that can't turn its web off, it doesn't start at all.
+  it("a dream's turn starts with its web off, or not at all", async () => {
+    const dream = { pass: { see: "ions" as const }, max: 30, ms: 60_000 };
+    await turns().turn("_dream", "Tidy memory.", { noThreads: true, dream });
+    const o = starts.at(-1)!;
+    expect(o.noWeb).toBe(true);
+    expect(o.bareHome).toBe(join(home, "data", "ions", "_dream-own"));
+    expect(o.mcpServers?.map((m) => m.name)).toEqual(["ion"]);
+    process.env.ION_FAKE_HAS_WEB = "1";
+    try {
+      const before = starts.length;
+      const r = await turns().turn("_dream", "Tidy memory.", { noThreads: true, dream });
+      expect(r.reply).toBe("Dream skipped: Fake can't turn its web off");
+      expect(starts).toHaveLength(before);
+    } finally {
+      delete process.env.ION_FAKE_HAS_WEB;
+    }
+  });
+
+  it("an ion's turn starts with its index", async () => {
+    const memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
+    const w = (scope: MemoryScope, name: string, type: MemoryType) =>
+      memory.write({ scope, header: { name, description: name, type }, text: name, by: "you" });
+    w("you", "Home city", "person");
+    w({ projectId: "storefront" }, "Deploy day", "fact");
+    w({ projectId: "payments-api" }, "Rate limits", "fact");
+    sent.length = 0;
+    await turns(undefined, { memory }).turn("storefront", "hello");
+    const text = sent.at(-1) ?? "";
+    expect(text).toMatch(/^<ion-data id="\w+" source="ion's memory index">\n/);
+    expect(text).toContain("you/home-city.md");
+    expect(text).toContain("projects/storefront/deploy-day.md");
+    expect(text).not.toContain("payments-api");
+    expect(text.endsWith("\n\nhello")).toBe(true);
+  });
+
+  // Task review, 2026-11-22 (M-5): every turn repeated the index into a resumed session. It goes in once per session,
+  // and again only when it changed.
+  it("a resumed session gets the index again only when it changed", async () => {
+    const memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
+    const w = (name: string) =>
+      memory.write({
+        scope: { projectId: "storefront" },
+        header: { name, description: name, type: "fact" },
+        text: name,
+        by: "you",
+      });
+    w("Deploy day");
+    const t = turns(undefined, { memory });
+    sent.length = 0;
+    await t.turn("storefront", "hello");
+    await t.turn("storefront", "hello again");
+    w("Rate limits");
+    await t.turn("storefront", "and again");
+    expect(sent.map((x) => x.startsWith("<ion-data"))).toEqual([true, false, true]);
+    expect(starts.at(-1)?.resume).toBeTruthy();
+  });
+
   it("an ion's turn gets only ion's server, never yours", async () => {
     writeFileSync(join(home, "mcp.json"), JSON.stringify({ mcpServers: { docs: { command: "docs-mcp" } } }));
     const c = loadUserConfig(join(home, "config.toml")).config;
@@ -279,6 +352,21 @@ describe("an ion's turn", () => {
   it("an ion that doesn't exist is refused", async () => {
     await expect(turns().turn("default", "hello")).rejects.toThrow("Unknown ion: default");
     await expect(turns().turn("nope", "hello")).rejects.toThrow("Unknown ion: nope");
+  });
+
+  // The user, 2026-11-21: "does memory cover todo as well". An ion adds a to-do only when you clearly ask ("remind me
+  // to…"), with its date, and says so in one line. (The fake agent follows the instructions it's given.)
+  it("remind me to … becomes a to-do with its date", async () => {
+    const r = await turns().turn("chief", "remind me to update the README on 2026-11-27");
+    expect(r.reply).toBe("Added to your to-dos: update the README (2026-11-27)");
+    const f = memory.read("you/update-the-readme.md");
+    expect(f).toMatchObject({
+      ok: true,
+      file: { header: { type: "todo", status: "open", due: "2026-11-27" } },
+    });
+    // Nothing asked for, nothing added.
+    await turns().turn("chief", "the README needs work");
+    expect(memory.paths()).toEqual(["you/update-the-readme.md"]);
   });
 
   it("a turn is told it's an ion", () => {

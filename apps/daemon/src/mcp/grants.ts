@@ -1,3 +1,4 @@
+import type { DreamPass } from "../memory/dream-rules.js";
 import { createHash, randomBytes } from "node:crypto";
 
 /** What a run's key may see: its own project (and chat, as the default for history). */
@@ -5,7 +6,15 @@ export type RunScope = { kind: "run"; projectId: string; chatId: string; runId: 
 
 /** What an ion's key may see for one turn: the projects it looks after (ion chief: those shared with it). */
 /** An ion's turn; `report`: a turn the daemon asked for (a thread's report), which writes nothing and starts nothing. */
-export type IonScope = { kind: "ion"; ionId: string; projects: string[]; turnId: string; report?: true };
+export type IonScope = {
+  kind: "ion";
+  ionId: string;
+  projects: string[];
+  turnId: string;
+  report?: true;
+  /** ion's dream's pass: which files it sees and changes, and how many changes it has left. */
+  dream?: DreamPass & { max: number };
+};
 
 export type Scope = RunScope | IonScope;
 
@@ -25,8 +34,8 @@ export type Grants = {
   revoke(id: string): void;
   /** The key's scope, only when it's a live key of this kind. */
   check(key: string, kind?: KeyKind): Scope | null;
-  /** Counts one memory write for the run or turn; the count goes away when its grants are revoked. */
-  noteWrite(id: string): number;
+  /** Counts one memory write for the run or turn (-1 gives one back); the count goes away with its grants. */
+  noteWrite(id: string, by?: 1 | -1): number;
   /** Counts one thread started in the turn (-1 gives a slot back); the count goes away with its grants. */
   noteThread(id: string, by?: 1 | -1): number;
 };
@@ -54,7 +63,7 @@ export function createGrants(): Grants {
       counts.delete(`write:${id}`);
       counts.delete(`thread:${id}`);
     },
-    noteWrite: (id) => note(id, "write"),
+    noteWrite: (id, by = 1) => note(id, "write", by),
     noteThread: (id, by = 1) => note(id, "thread", by),
     check(key, kind = "mcp") {
       const s = byHash.get(hash(key));

@@ -1,6 +1,7 @@
 import { loadUserConfig } from "@ion/config";
 import type { EffortLevel as Effort, HarnessInfo } from "@ion/schema";
-import { defaultAgent } from "../adapters/registry.js";
+import { defaultAgent, getHarness } from "../adapters/registry.js";
+import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 
@@ -55,17 +56,36 @@ export function brainOf(
   return { ...(model ? { model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
 }
 
+/** This agent can start with its web off. */
+const webOff = (id: string) => !!getHarness(id)?.adapter.noWeb;
+
+/**
+ * ion's dream's agent: Settings → Memory's (else ion's quick model's) while it's ready and can turn its web off, else
+ * the first ready one that can (task review, 2026-11-22); with none, the chosen one (its turn says it was skipped).
+ */
+async function dreamBrain(d: BrainDeps, spec: string, effort: IonBrain["effort"]): Promise<IonBrain | null> {
+  const [set, ...rest] = spec.split(":");
+  const ready = await isReady(d, set!);
+  if (ready && webOff(set!)) return { harness: set!, model: rest.join(":") || null, effort };
+  const other = defaultAgent((await readyAgents(d.agents)).filter(webOff), null);
+  if (other) return { harness: other, model: null, effort };
+  return ready ? { harness: set!, model: rest.join(":") || null, effort } : null;
+}
+
 /** What an ion thinks on: its agent, the model on it (null: the agent's own) and the effort (null: the agent's). */
 export type IonBrain = { harness: string; model: string | null; effort: Effort | null };
 
 /**
- * An ion's agent, model and effort, or null when it has no agent ready. ion chief: [ion] quick ("<agent>[:<model>]")
+ * An ion's agent, model and effort, or null when it has no agent ready. ion chief (and its dream, on [memory]
+ * dreamAgent when set): [ion] quick ("<agent>[:<model>]")
  * while that agent is ready, else the first ready on its default model. A project's ion: the project's agent, model
  * and effort, as its threads get them. Effort falls back to [ion] quickEffort.
  */
 export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | null> {
-  const ion = loadUserConfig(d.configFile).config.ion;
+  const c = loadUserConfig(d.configFile).config;
+  const ion = c.ion;
   const quickEffort = ion.quickEffort ?? null;
+  if (ionId === DREAM_ION) return dreamBrain(d, c.memory.dreamAgent || ion.quick, quickEffort);
   if (ionId === "chief") {
     const [set, ...rest] = ion.quick.split(":");
     if (await isReady(d, set!)) return { harness: set!, model: rest.join(":") || null, effort: quickEffort };

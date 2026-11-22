@@ -2,8 +2,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, type RoutineEntry, saveUserConfig } from "@ion/config";
-import { EV } from "@ion/schema";
+import { EV, type MemoryScope } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryFiles } from "../memory/index.js";
+import { ScopedMemory } from "../memory/scoped.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { Notifier } from "./index.js";
@@ -53,8 +55,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function boot(): void {
-  const x = new Notifier({ store, db, configFile });
+function boot(memory?: MemoryFiles): void {
+  const x = new Notifier({ store, db, configFile, ...(memory ? { memory } : {}) });
   x.start();
   stops.push(() => x.stop());
 }
@@ -200,5 +202,106 @@ describe("the briefing after a gap", () => {
     expect(briefings()).toHaveLength(2);
     expect(briefings()[1]).toContain("New work");
     expect(briefings()[1]).not.toContain("Old work");
+  });
+});
+
+// The user, 2026-11-21: "does memory cover todo as well". To-dos are memory files; ion chief's briefing starts with
+// what's due today or overdue, then the rest of what's open, in plain words. Done ones aren't named.
+describe("the briefing's to-dos", () => {
+  it("the briefing lists due and overdue first", async () => {
+    const memory = new MemoryFiles({
+      root: join(mkdtempSync(join(tmpdir(), "ion-brief-mem-")), "m"),
+      store,
+      db,
+    });
+    const todo = (scope: MemoryScope, name: string, more: { due?: string; status?: "done" } = {}) =>
+      memory.write({
+        scope,
+        header: { name, description: name, type: "todo", status: "open", ...more },
+        text: name,
+        by: "you",
+      });
+    todo("you", "Update the README", { due: "2026-11-19" });
+    todo("you", "Rotate the keys", { due: "2026-11-17" });
+    todo("you", "Write the changelog");
+    todo("you", "Old thing", { due: "2026-11-19", status: "done" });
+    todo({ projectId: "storefront" }, "Fix the cart badge", { due: "2026-11-30" });
+    chat("c1", "Fix the cart");
+    finished("c1");
+    boot(memory);
+    await until(at(19, 8, 30));
+    expect(briefings()).toHaveLength(1);
+    const lines = briefings()[0]!.split("\n");
+    expect(lines[0]).toBe("Due today: “Update the README”.");
+    expect(lines[1]).toBe("Overdue: “Rotate the keys” (Tue 17 Nov).");
+    expect(lines[2]).toBe("Still to do: “Fix the cart badge” (Mon 30 Nov) and “Write the changelog”.");
+    expect(lines[3]).toContain("Finished in Storefront");
+    expect(briefings()[0]).not.toContain("Old thing");
+  });
+
+  it("open to-dos alone are worth a briefing", async () => {
+    const memory = new MemoryFiles({
+      root: join(mkdtempSync(join(tmpdir(), "ion-brief-mem-")), "m"),
+      store,
+      db,
+    });
+    memory.write({
+      scope: "you",
+      header: { name: "Call the bank", description: "Call the bank", type: "todo", status: "open" },
+      text: "Call.",
+      by: "you",
+    });
+    boot(memory);
+    await until(at(19, 8, 30));
+    expect(briefings()).toEqual(["Still to do: “Call the bank”."]);
+  });
+});
+
+// Final review, 2026-11-22 (I1, the user: "Yes, like chats"): what an ion writes that chats would see waits for your
+// Keep; the briefing names what waits, once.
+describe("the briefing's suggestions", () => {
+  it("names what an ion suggested since the last briefing", async () => {
+    const memory = new MemoryFiles({
+      root: join(mkdtempSync(join(tmpdir(), "ion-brief-mem-")), "m"),
+      store,
+      db,
+    });
+    vi.setSystemTime(at(19, 7));
+    const ion = new ScopedMemory(memory, { kind: "ion", ionId: "storefront", projects: ["storefront"] });
+    ion.write({ scope: "you", name: "Spaces", description: "Spaces", type: "preference", text: "Spaces." });
+    ion.write({ scope: "you", name: "Quiet", description: "Quiet", type: "fact", text: "Ions only." });
+    boot(memory);
+    await until(at(19, 8, 30));
+    expect(briefings()).toEqual(["Suggested by ion: “Spaces” — keep it in Memory."]);
+    await until(at(20, 8, 30));
+    expect(briefings()).toHaveLength(1);
+  });
+});
+
+// The user, 2026-11-22: ion's dream tidies memory overnight ("Apply everything"); the next briefing says what it did
+// in a line, and where to undo it.
+describe("the briefing after a dream", () => {
+  it("the briefing says what dream did", async () => {
+    vi.setSystemTime(at(19, 3));
+    store.append({
+      chatId: null,
+      runId: null,
+      origin: "daemon",
+      type: EV.memoryDreamed,
+      data: {
+        ...{ merged: 2, updated: 1, forgot: 1, moved: 0, status: "done" },
+        forgotten: ["you/old-launch.md"],
+        changed: ["you/deploy.md"],
+        notes: ["“Sam” may be out of date: Sam moved to Porto in a chat."],
+      },
+    });
+    boot();
+    await until(at(19, 8, 30));
+    expect(briefings()).toEqual([
+      "Tidied memory: merged 2, updated 1, forgot 1 — undo in Memory.\n“Sam” may be out of date: Sam moved to Porto in a chat.",
+    ]);
+    // Said once: the next day's briefing has nothing new to say.
+    await until(at(20, 8, 30));
+    expect(briefings()).toHaveLength(1);
   });
 });

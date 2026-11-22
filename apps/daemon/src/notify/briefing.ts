@@ -1,6 +1,10 @@
 import { DEFAULT_PROJECT, type ProjectEntry, type UserConfig } from "@ion/config";
 import { EV, nextRun, stripControl, timeLabel } from "@ion/schema";
+import { dreamLines } from "../memory/dream.js";
+import type { MemoryFiles } from "../memory/index.js";
+import { chiefSuggestions, chiefTodos, dayLabel, sharedIds } from "../memory/todos.js";
 import type { Db, EventStore } from "../store/index.js";
+import type { MemoryRow } from "../views/memory.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { dayOf, onDay } from "./clock.js";
@@ -87,10 +91,49 @@ function routinesToday(c: UserConfig, projects: Map<string, ProjectEntry>, now: 
   return [sentence(`Today: ${listed(named)}`)];
 }
 
-/** The briefing's words: plain sentences, no headings; "" when there's nothing to say. */
-function briefingText(d: { store: EventStore; db: Db }, c: UserConfig, since: string, now: Date): string {
-  const projects = shared(c);
+/** "Due today: “A” and “B”." */
+export const dueTodayLine = (todos: MemoryRow[]) =>
+  sentence(`Due today: ${listed(todos.map((t) => quoted(t.name)))}`);
+
+/** A to-do with its day: "“Rotate the keys” (Tue 17 Nov)". */
+const withDay = (t: MemoryRow) => (t.due ? `${quoted(t.name)} (${dayLabel(t.due)})` : quoted(t.name));
+const soonest = (a: MemoryRow, b: MemoryRow) => (a.due ?? "9").localeCompare(b.due ?? "9");
+
+/** Open to-dos, due today and overdue first, then the rest (those with a day first, soonest first). */
+function todoLines(todos: MemoryRow[], today: string): string[] {
+  const dueToday = todos.filter((t) => t.due === today);
+  const overdue = todos.filter((t) => t.due && t.due < today).sort(soonest);
+  const rest = todos.filter((t) => !t.due || t.due > today).sort(soonest);
   return [
+    ...(dueToday.length ? [dueTodayLine(dueToday)] : []),
+    ...(overdue.length ? [sentence(`Overdue: ${listed(overdue.map(withDay))}`)] : []),
+    ...(rest.length ? [sentence(`Still to do: ${listed(rest.map(withDay))}`)] : []),
+  ];
+}
+
+type BriefingDeps = { store: EventStore; db: Db; memory?: MemoryFiles };
+
+/**
+ * What an ion wrote since `since` that chats would see, still waiting for your Keep (final review, 2026-11-22):
+ * "Suggested by ion: “A” and “B” — keep them in Memory."
+ */
+function suggestedLines(memory: MemoryFiles, c: UserConfig, since: string): string[] {
+  const waiting = chiefSuggestions(memory, sharedIds(c)).filter(
+    (r) => r.suggested?.startsWith("_") && r.updatedAt >= since,
+  );
+  if (!waiting.length) return [];
+  const it = waiting.length === 1 ? "it" : "them";
+  return [`Suggested by ion: ${listed(waiting.map((r) => quoted(r.name)))} — keep ${it} in Memory.`];
+}
+
+/** The briefing's words: plain sentences, no headings; "" when there's nothing to say. To-dos lead. */
+function briefingText(d: BriefingDeps, c: UserConfig, since: string, now: Date): string {
+  const projects = shared(c);
+  const todos = d.memory ? todoLines(chiefTodos(d.memory, sharedIds(c)), dayOf(now)) : [];
+  return [
+    ...todos,
+    ...(d.memory ? suggestedLines(d.memory, c, since) : []),
+    ...dreamLines(d.store, since),
     ...finished(d, projects, since),
     ...needing(d.db, projects),
     ...routinesToday(c, projects, now),
@@ -99,14 +142,11 @@ function briefingText(d: { store: EventStore; db: Db }, c: UserConfig, since: st
 
 /**
  * ion chief's daily briefing, once its time came today: "posted" (now, or earlier today: `briefing.posted` keeps
- * that across a restart), "nothing" to say today, or "waiting" (not yet its time, or it's off). It names what
- * finished since the last briefing (a day back at most), what needs you, and today's routines.
+ * that across a restart), "nothing" to say today, or "waiting" (not yet its time, or it's off). It names your open
+ * to-dos (due today and overdue first), what finished since the last briefing (a day back at most), what needs you,
+ * and today's routines.
  */
-export function briefIfDue(
-  d: { store: EventStore; db: Db },
-  c: UserConfig,
-  now: Date,
-): "posted" | "nothing" | "waiting" {
+export function briefIfDue(d: BriefingDeps, c: UserConfig, now: Date): "posted" | "nothing" | "waiting" {
   const b = c.notifications.briefing;
   if (!b.on || now < onDay(now, b.at)) return "waiting";
   const day = dayOf(now);

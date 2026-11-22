@@ -314,7 +314,7 @@ describe("answered questions and added tools in the chat", () => {
 
   it("the chat shows a line after an agent adds, with a link to it in Settings → Tools", () => {
     const opened = vi.fn();
-    window.addEventListener("ion:open-tools", (e) => opened((e as CustomEvent).detail));
+    window.addEventListener("ion:open-settings", (e) => opened((e as CustomEvent).detail));
     const { container } = view([{ kind: "added", tool: "mcp", name: "github" }]);
     expect(container.querySelector(".quiet")?.textContent).toBe("github added, offTools");
     fireEvent.click(container.querySelector(".quiet .lnk") as HTMLButtonElement);

@@ -2,6 +2,9 @@ import {
   Blocks,
   BookOpen,
   Info,
+  Heart,
+  ListTodo,
+  NotebookText,
   type LucideIcon,
   MessageCircleQuestion,
   PlugZap,
@@ -10,7 +13,7 @@ import {
 } from "@ion/design-system";
 import type { ToolType } from "@ion/schema";
 import { useState } from "react";
-import { openTools } from "../goto.js";
+import { openMemory, openTodos, openTools } from "../goto.js";
 import type { Item, Keep } from "./timeline.js";
 
 /** A quiet line: an icon and one muted line in the conversation, never a banner. */
@@ -70,8 +73,47 @@ export const Reply = ({ text, always }: { text: string; always: Keep | undefined
 
 const ICON: Record<ToolType, LucideIcon> = { mcp: PlugZap, skill: BookOpen, hook: Webhook };
 
+/** A chat added a to-do: "Added to your to-dos: …", and a link to them in Settings → Memory. */
+function AddedTodo({ item }: { item: Extract<Item, { kind: "todo" }> }) {
+  return (
+    <div className="quiet">
+      <ListTodo />
+      {`Added to your to-dos: ${item.name}`}
+      <button className="lnk" type="button" title="Open in Settings" onClick={openTodos}>
+        <ListTodo />
+        To-dos
+      </button>
+    </div>
+  );
+}
+
+/** A chat saved a preference as a suggestion: "Suggested for every project: …", and a link to it in Memory. */
+function Suggested({ item }: { item: Extract<Item, { kind: "suggested" }> }) {
+  return (
+    <div className="quiet">
+      <Heart />
+      {`Suggested for every project: ${item.name}`}
+      <button className="lnk" type="button" title="Open in Settings" onClick={openMemory}>
+        <NotebookText />
+        Memory
+      </button>
+    </div>
+  );
+}
+
+type LinkedItem = Extract<Item, { kind: "added" | "todo" | "suggested" }>;
+
+/** A quiet line with a link into Settings: a tool added, a to-do added, a preference suggested. */
+export const isLinked = (item: Item): item is LinkedItem =>
+  item.kind === "added" || item.kind === "todo" || item.kind === "suggested";
+
+export function Linked({ item }: { item: LinkedItem }) {
+  if (item.kind === "added") return <Added item={item} />;
+  return item.kind === "todo" ? <AddedTodo item={item} /> : <Suggested item={item} />;
+}
+
 /** A chat's agent added a tool: "github added, off", and a link to its row in Settings → Tools. */
-export function Added({ item }: { item: Extract<Item, { kind: "added" }> }) {
+function Added({ item }: { item: Extract<Item, { kind: "added" }> }) {
   const Icon = ICON[item.tool] ?? PlugZap;
   return (
     <div className="quiet">

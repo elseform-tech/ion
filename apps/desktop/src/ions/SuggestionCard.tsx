@@ -4,6 +4,7 @@ import {
   BellOff,
   CalendarClock,
   Check,
+  CircleCheck,
   CircleAlert,
   FileDiff,
   Folder,
@@ -14,7 +15,7 @@ import {
 import { type ChatInfo, type IonCard, type IonInfo, whenLabel } from "@ion/schema";
 import { type ReactNode, useState } from "react";
 
-type Chief = Extract<IonCard, { kind: "routine" | "stalled" }>;
+type Chief = Extract<IonCard, { kind: "routine" | "stalled" | "todo" }>;
 /** Your answer: taken, not now, or not now and fewer like this. */
 type Answer = "took" | "later" | "muted";
 
@@ -38,8 +39,17 @@ const dayLabel = (iso: string) => {
 };
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** What the card asks, as ion chief says it. */
-const askOf = (c: Chief) => (c.kind === "routine" ? `Make “${c.name}” a routine?` : `Resume “${c.title}”?`);
+/** What the card asks, as the ion says it. */
+const askOf = (c: Chief) => {
+  if (c.kind === "todo") return `Mark “${c.name}” done?`;
+  return c.kind === "routine" ? `Make “${c.name}” a routine?` : `Resume “${c.title}”?`;
+};
+
+/** The card's icon: a routine, a stalled chat, a to-do. */
+const iconOf = (c: Chief) => {
+  if (c.kind === "todo") return <CircleCheck className="si" />;
+  return c.kind === "routine" ? <Repeat className="si" /> : <Hourglass className="si" />;
+};
 
 /** The project, with its ion's avatar (a project without an ion, `default`, gets a folder). */
 function Project({ id, ions }: { id: string; ions: IonInfo[] }) {
@@ -52,8 +62,17 @@ function Project({ id, ions }: { id: string; ions: IonInfo[] }) {
   );
 }
 
-/** The evidence: the days you asked; or how long it's stalled and what it changed (both open the chat). */
-function Evidence({ card, onOpenChat }: Pick<SuggestionProps, "card" | "onOpenChat">) {
+/** The evidence: the days you asked; how long it's stalled and what it changed; the chat that did the to-do. */
+function Evidence({ card, chats, onOpenChat }: Pick<SuggestionProps, "card" | "chats" | "onOpenChat">) {
+  if (card.kind === "todo") {
+    const title = chats.find((c) => c.chatId === card.chatId)?.title ?? "Chat";
+    return (
+      <button type="button" onClick={() => onOpenChat(card.chatId)}>
+        <MessageSquare />
+        {title}
+      </button>
+    );
+  }
   if (card.kind === "routine")
     return (
       <>
@@ -80,11 +99,17 @@ function Evidence({ card, onOpenChat }: Pick<SuggestionProps, "card" | "onOpenCh
   );
 }
 
+/** What taking it did: the routine's time, "Resumed", or "Done". */
+function tookLabel(c: Chief): string {
+  if (c.kind === "routine") return whenLabel(c.when);
+  return c.kind === "todo" ? "Done" : "Resumed";
+}
+
 /** What came of it: the routine's time or "Resumed"; "Not now"; "Fewer like this"; or the chat moved on without it. */
 function Done({ card, answer }: { card: Chief; answer: Answer | "moved" }) {
   if (answer === "moved") return <div className="done">Picked up</div>;
-  const took = card.kind === "routine" ? whenLabel(card.when) : "Resumed";
-  const label = { took, later: "Not now", muted: "Fewer like this" }[answer];
+  const later = card.kind === "todo" ? "Not yet" : "Not now";
+  const label = { took: tookLabel(card), later, muted: "Fewer like this" }[answer];
   return (
     <div className="done">
       {answer === "took" ? <Check /> : <BellOff />}
@@ -99,25 +124,29 @@ const answerOf = (p: SuggestionProps): Answer | null => {
   return p.muted ? "muted" : "later";
 };
 
-/** Add routine (or Resume), Not now, and fewer like this. */
+const TAKE = { routine: "Add routine", stalled: "Resume", todo: "Done" } as const;
+
+/** Add routine (or Resume), Not now, and fewer like this; a to-do's Done and Not yet. */
 function Acts({ card, send }: { card: Chief; send: (a: Answer) => void }) {
   return (
     <div className="acts">
       <button className="btn pri" type="button" onClick={() => send("took")}>
-        {card.kind === "routine" ? "Add routine" : "Resume"}
+        {TAKE[card.kind]}
       </button>
       <button className="mute" type="button" onClick={() => send("later")}>
-        Not now
+        {card.kind === "todo" ? "Not yet" : "Not now"}
       </button>
-      <button
-        className="ib"
-        type="button"
-        title="Fewer like this"
-        aria-label="Fewer like this"
-        onClick={() => send("muted")}
-      >
-        <BellOff />
-      </button>
+      {card.kind !== "todo" && (
+        <button
+          className="ib"
+          type="button"
+          title="Fewer like this"
+          aria-label="Fewer like this"
+          onClick={() => send("muted")}
+        >
+          <BellOff />
+        </button>
+      )}
     </div>
   );
 }
@@ -150,7 +179,7 @@ export function SuggestionCard(p: SuggestionProps) {
     <div className="sugg">
       <div className="sh">
         <b>
-          {card.kind === "routine" ? <Repeat className="si" /> : <Hourglass className="si" />}
+          {iconOf(card)}
           <span className="st" title={askOf(card)}>
             {askOf(card)}
           </span>
@@ -158,7 +187,7 @@ export function SuggestionCard(p: SuggestionProps) {
         {shown ? <Done card={card} answer={shown} /> : <Acts card={card} send={send} />}
       </div>
       <div className="sm2">
-        <Evidence card={card} onOpenChat={p.onOpenChat} />
+        <Evidence card={card} chats={p.chats} onOpenChat={p.onOpenChat} />
         {card.kind === "routine" && shown !== "took" && (
           <span>
             <CalendarClock />

@@ -6,14 +6,20 @@ import {
   type UserConfig,
 } from "@ion/config";
 import { EV, type IonEvent, type NeedInfo, type NotifyKind } from "@ion/schema";
+import type { MemoryFiles } from "../memory/index.js";
+import { sharedIds } from "../memory/todos.js";
+import { REMIND_AT, remindIfDue } from "../scheduler/reminders.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
-import { briefIfDue, line } from "./briefing.js";
+import type { MemoryRow } from "../views/memory.js";
+import { briefIfDue, dueTodayLine, line } from "./briefing.js";
 import { dayOf, lastQuiet, nextAt, quietNow, type Window } from "./clock.js";
 
 /** The stream the app listens on for system notifications. */
 const STREAM = "notify";
+/** ion chief's thread: a to-do's reminder opens it. */
+const CHIEF = "ion:chief";
 /** The timer looks again at least this often, so a setting you changed (or a computer that slept) is noticed. */
 const LOOK_MS = 5 * 60_000;
 /**
@@ -141,12 +147,17 @@ export class Notifier {
   /** The settings last read without an error: kept while a hand edit leaves the file unreadable. */
   private good: UserConfig | null = null;
 
-  constructor(private readonly d: { store: EventStore; db: Db; configFile: string }) {}
+  /** The day to-dos due today are settled (reminded, or none): ticks don't look again that day. */
+  private reminded: string | null = null;
 
-  start(): void {
+  constructor(private readonly d: { store: EventStore; db: Db; configFile: string; memory?: MemoryFiles }) {}
+
+  /** Starts listening and looking; returns a stop. */
+  start(): () => void {
     this.started = Date.now();
     this.off = this.d.store.onAppend((e) => this.heard(e));
     this.tick();
+    return () => this.stop();
   }
 
   stop(): void {
@@ -188,15 +199,38 @@ export class Notifier {
       this.summarize(c, now);
       const day = dayOf(now);
       if (this.looked !== day && briefIfDue(this.d, c, now) !== "waiting") this.looked = day;
+      this.remindTodos(c, now, day);
     } catch (err) {
       console.warn(`ion couldn't notify: ${(err as Error).message}`);
     }
     this.arm(c, now);
   }
 
-  /** The next moment something is due: quiet hours' end, the briefing, or a look in a few minutes. */
+  /** To-dos due today: their line in ion chief's thread, and a "needs you" notification by each project's level. */
+  private remindTodos(c: UserConfig, now: Date, day: string): void {
+    const memory = this.d.memory;
+    if (!memory || this.reminded === day) return;
+    const due = remindIfDue({ store: this.d.store, memory }, c, now);
+    if (due === "waiting") return;
+    this.reminded = day;
+    const byProject = new Map<string | null, MemoryRow[]>();
+    for (const t of due) {
+      const projectId = t.scope === "you" ? null : t.scope.projectId;
+      byProject.set(projectId, [...(byProject.get(projectId) ?? []), t]);
+    }
+    const shared = new Set(sharedIds(c));
+    for (const [projectId, todos] of byProject) {
+      const item: Item = { kind: "needs", projectId, chatId: CHIEF, body: dueTodayLine(todos) };
+      // A project kept from ion chief isn't in its thread: the notification opens nothing.
+      const open = projectId === null || shared.has(projectId) ? { chatId: CHIEF } : {};
+      if (allowed(c, item))
+        this.send({ title: titleOf(c, projectId), body: item.body, ...open, kind: "needs" });
+    }
+  }
+
+  /** The next moment something is due: quiet hours' end, the briefing, reminders, or a look in a few minutes. */
   private arm(c: UserConfig, now: Date): void {
-    const due = [c.notifications.quiet.to, c.notifications.briefing.at].map(
+    const due = [c.notifications.quiet.to, c.notifications.briefing.at, REMIND_AT].map(
       (clock) => nextAt(clock, now).getTime() - now.getTime(),
     );
     clearTimeout(this.timer);

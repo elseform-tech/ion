@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { basename, dirname } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { z } from "zod";
+import { RESERVED_IDS } from "./projects.js";
 
 const Effort = z.enum(["low", "medium", "high", "max"]);
 
@@ -132,6 +133,8 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   projects: z.array(Project).default([]),
+  /** Projects named with ion's own ids (chief, you): kept in your file as written, never used. */
+  heldProjects: z.array(z.looseObject({})).optional(),
   /** Where `ion projects new <name>` makes projects. */
   folders: z.looseObject({ projects: z.string().default("~/ion/projects") }).prefault({}),
   /**
@@ -166,6 +169,16 @@ const UserConfigSchema = z.looseObject({
     })
     .prefault({}),
   tools: Tools.prefault({}),
+  /**
+   * ion's memory. `dream`: how often ion tidies it, in quiet hours (merges, rewrites, forgets; every change undoable);
+   * `dreamAgent`: "<harness>[:<model>]" it does it on (absent: ion's quick model).
+   */
+  memory: z
+    .looseObject({
+      dream: z.enum(["off", "nightly", "weekly"]).default("off"),
+      dreamAgent: z.string().optional(),
+    })
+    .prefault({}),
   /**
    * Each coding agent's own setup, by agent id. `ownTools`: whether it brings its own MCP servers, skills and plugins
    * into ion's chats (the user, 2026-11-21: on by default); off, ion's tools only. Its own hooks never run where ion
@@ -209,6 +222,9 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["tools", "ionUse"], z.array(z.string())],
   [["tools", "skills"], z.looseObject({ on: z.array(z.string()).optional() })],
   [["agents"], z.looseObject({})],
+  [["memory"], z.looseObject({})],
+  [["memory", "dream"], z.enum(["off", "nightly", "weekly"])],
+  [["memory", "dreamAgent"], z.string()],
 ];
 
 /** Whether this agent brings its own servers, skills and plugins into ion's chats (on unless you turned it off). */
@@ -266,15 +282,34 @@ function dropIfBad(raw: unknown, path: string[], schema: z.ZodType): boolean {
   return true;
 }
 
+/**
+ * A project whose id is ion's own (chief, you) is left out of `projects` and held as written (`heldProjects`), so a
+ * save keeps it in your file (task review, 2026-11-22); returns those ids.
+ */
+function holdReservedProjects(raw: unknown): string[] {
+  const r = raw as { projects?: unknown; heldProjects?: unknown } | null;
+  if (!Array.isArray(r?.projects)) return [];
+  const isReserved = (p: unknown) => RESERVED_IDS.includes(String((p as { id?: unknown } | null)?.id));
+  const held = r.projects.filter(isReserved);
+  r.projects = r.projects.filter((p) => !isReserved(p));
+  if (held.length) r.heldProjects = held;
+  return held.map((p) => String((p as { id: unknown }).id));
+}
+
 /** Drops each invalid setting from `raw` (its default applies) and says which, so the rest of the file still loads. */
 function dropBad(raw: unknown, file: string): string | null {
   const dropped = FALLBACKS.filter(([path, schema]) => dropIfBad(raw, path, schema)).map(([path]) =>
     path.length === 1 ? path[0]! : path.slice(1).join("."),
   );
   dropped.push(...dropBadNotify(raw), ...dropBadHooks(raw), ...dropBadAgents(raw));
-  if (!dropped.length) return null;
-  const verb = dropped.length > 1 ? "are" : "is";
-  return `${basename(file)}: ${dropped.join(", ")} ${verb} not valid; using the default`;
+  const said = holdReservedProjects(raw).map(
+    (id) => `${basename(file)}: rename project '${id}' (the name is ion's own; ion leaves it out until then)`,
+  );
+  if (dropped.length) {
+    const verb = dropped.length > 1 ? "are" : "is";
+    said.unshift(`${basename(file)}: ${dropped.join(", ")} ${verb} not valid; using the default`);
+  }
+  return said.join("; ") || null;
 }
 
 /** Removes `holder[key]`; whether it held something other than "auto" (worth a warning). */
@@ -327,7 +362,10 @@ export function loadUserConfig(file: string): {
 export function saveUserConfig(file: string, c: UserConfig): void {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, stringify(UserConfigSchema.parse(c)), { mode: 0o600 });
+  const { heldProjects, ...parsed } = UserConfigSchema.parse(c);
+  // A held project goes back in the file as you wrote it (after the others).
+  const out = heldProjects?.length ? { ...parsed, projects: [...parsed.projects, ...heldProjects] } : parsed;
+  writeFileSync(tmp, stringify(out), { mode: 0o600 });
   renameSync(tmp, file);
   chmodSync(file, 0o600);
 }

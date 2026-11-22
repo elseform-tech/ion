@@ -104,6 +104,18 @@ export function startSession(
   };
 }
 
+/**
+ * Tools it never has: its pop-up question with ion's server (questions go through ion's ask tool), and its web
+ * search and fetch when the start has no web (ion's dream; task review, 2026-11-22).
+ */
+function disallowed(opts: StartOpts): { disallowedTools?: string[] } {
+  const tools = [
+    ...(hasIon(opts) ? ["AskUserQuestion"] : []),
+    ...(opts.noWeb ? ["WebSearch", "WebFetch"] : []),
+  ];
+  return tools.length ? { disallowedTools: tools } : {};
+}
+
 /** SDK options: the user's binary and settings, login-only environment, never bypassing permissions. */
 function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController, canUseTool: CanUseTool) {
   const mcp = mcpPlan(opts);
@@ -118,7 +130,7 @@ function sdkOptions(opts: StartOpts, binaryPath: string, abort: AbortController,
     mcpServersDelivery: "argv" as const,
     // With ion's MCP server, questions go through its ask tool (a question in the app); Claude's own pop-up
     // question can't be shown in a headless session and comes back empty.
-    ...(hasIon(opts) ? { disallowedTools: ["AskUserQuestion"] } : {}),
+    ...disallowed(opts),
     ...(opts.gate ? { hooks: gateHooks(opts.gate.url) } : {}),
     ...pluginsOf(opts),
     ...sandboxOf(opts),

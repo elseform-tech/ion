@@ -18,17 +18,32 @@ const isAlive = (pid: number) => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * The promise, or a timeout error after 1 s. The timer is cleared once it settles (task review, 2026-11-22: a timer
+ * left running held every connected command open for a second after it was done).
+ */
+async function within<T>(p: Promise<T>, ms = 1000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * A connected client when ion is up: daemon.json's pid is alive, the token works, and the daemon reports
  * that same pid. A reused pid or an unrelated process never passes. Inside a chat's run, `reachRun` instead.
  */
 export async function reach(dataDir: string): Promise<{ client: IonClient; info: DaemonInfo } | null> {
   const info = readDaemonInfo(dataDir);
   if (!info || !isAlive(info.pid)) return null;
-  const timeout = () => sleep(1000).then(() => Promise.reject(new Error("timeout")));
   let client: IonClient | undefined;
   try {
-    client = await Promise.race([connect(info), timeout()]);
-    const s = await Promise.race([client.call("status", {}), timeout()]);
+    client = await within(connect(info));
+    const s = await within(client.call("status", {}));
     if (s.pid !== info.pid) throw new Error("pid mismatch");
     return { client, info };
   } catch {
@@ -44,11 +59,10 @@ export async function reach(dataDir: string): Promise<{ client: IonClient; info:
 export async function reachRun(port: string | undefined, runKey: string): Promise<IonClient | null> {
   const n = Number(port);
   if (!Number.isInteger(n) || n <= 0) return null;
-  const timeout = () => sleep(1000).then(() => Promise.reject(new Error("timeout")));
   let client: IonClient | undefined;
   try {
     // The key is checked as the connection opens: a wrong or ended one never connects.
-    client = await Promise.race([connect({ port: n, runKey }), timeout()]);
+    client = await within(connect({ port: n, runKey }));
     return client;
   } catch {
     client?.close();
@@ -97,4 +111,19 @@ export async function stopDaemon(dataDir: string): Promise<"stopped" | "not-runn
   if (isAlive(pid)) process.kill(pid, "SIGKILL");
   rmSync(join(dataDir, "daemon.json"), { force: true });
   return "stopped";
+}
+
+const OPENERS: Partial<Record<NodeJS.Platform, string>> = { darwin: "open", win32: "explorer" };
+
+/** Opens a folder in the system's file manager (Finder, Explorer, xdg-open); false when it can't be started. */
+export function openFolder(path: string): boolean {
+  const cmd = OPENERS[process.platform] ?? "xdg-open";
+  try {
+    const child = spawn(cmd, [path], { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
 }
