@@ -26,6 +26,7 @@ const readers: SkillReaders = {
   "claude-code": { fromIon: true, own: [] },
   codex: { fromIon: false, own: ["codex", "shared"] },
   opencode: { fromIon: false, own: ["opencode", "claude", "shared"] },
+  "grok-build": { fromIon: false, own: ["grok", "claude", "shared"] },
 };
 
 function skill(dir: string, md: string, extra: Record<string, string> = {}) {
@@ -43,7 +44,7 @@ function setup() {
   const project = join(home, "code", "app");
   const dataDir = join(root, "data");
   mkdirSync(project, { recursive: true });
-  const skills = createSkills({ home, dataDir, sign, readers });
+  const skills = createSkills({ home, dataDir, sign, readers, env: {} });
   return { root, home, project, dataDir, skills };
 }
 
@@ -81,12 +82,54 @@ describe("skills", () => {
     expect(by("bare")?.description).toBe("");
   });
 
+  // The user, 2026-11-22: "/" should inherit each agent's own skills. Grok keeps yours in ~/.grok/skills ($GROK_HOME)
+  // and a repo's in .grok/skills (checked with `grok inspect`, Grok 1.0.92); Codex yours in $CODEX_HOME/skills.
+  it("finds Grok's skills, and Codex's and Grok's in their own home folders when set", async () => {
+    const { root, home, project, dataDir } = setup();
+    skill(join(home, ".grok/skills/ship"), md("ship", "Ships"));
+    skill(join(project, ".grok/skills/house"), md("house", "House style"));
+    const list = await createSkills({ home, dataDir, sign, readers, env: {} }).list([], [project]);
+    const ship = list.find((s) => s.name === "ship");
+    expect(ship).toMatchObject({ whose: "grok", where: "~/.grok/skills/ship", own: "grok-build", on: false });
+    expect(ship?.readers).toEqual(["grok-build"]);
+    // A repo's own: the repo wrote it, so it's off until you turn it on, and Grok gets it from ion then.
+    const house = list.find((s) => s.name === "house");
+    expect(house).toMatchObject({ whose: "grok", project: "app", on: false, new: true });
+    expect(house).not.toHaveProperty("own");
+    const on = await createSkills({ home, dataDir, sign, readers, env: {} }).turn([], house!.id, true, {
+      projects: [project],
+    });
+    const again = await createSkills({ home, dataDir, sign, readers, env: {} }).list(on, [project]);
+    expect(again.find((s) => s.name === "house")).toMatchObject({ on: true });
+    // Never into Claude Code's plugin: it's Grok's.
+    const forClaude = createSkills({ home, dataDir, sign, readers, env: {} });
+    expect(await forClaude.forRun({ runId: "r1", on, projectDir: project })).toBeNull();
+
+    const codexHome = join(root, "codex-home");
+    const grokHome = join(root, "grok-home");
+    skill(join(codexHome, "skills/deploy"), md("deploy", "Deploys"));
+    skill(join(grokHome, "skills/notes"), md("notes", "Notes"));
+    const moved = await createSkills({
+      ...{ home, dataDir, sign, readers },
+      env: { CODEX_HOME: codexHome, GROK_HOME: grokHome },
+    }).list([], []);
+    expect(moved.map((s) => [s.name, s.whose]).sort()).toEqual([
+      ["deploy", "codex"],
+      ["notes", "grok"],
+    ]);
+  });
+
   it("other agents show their skills as their own", async () => {
     const { home, skills } = setup();
     skill(join(home, ".claude/skills/pdf"), md("pdf", "PDFs"));
     skill(join(home, ".codex/skills/deploy"), md("deploy", "Ships"));
     const list = await skills.list([], []);
-    expect(list.find((s) => s.name === "pdf")?.support).toEqual({ "claude-code": "ion", opencode: "own" });
+    // Grok reads Claude's skills too (the user, 2026-11-22).
+    expect(list.find((s) => s.name === "pdf")?.support).toEqual({
+      "claude-code": "ion",
+      opencode: "own",
+      "grok-build": "own",
+    });
     expect(list.find((s) => s.name === "deploy")?.support).toEqual({ codex: "own" });
     await expect(
       skills.turn([], list.find((s) => s.name === "deploy")!.id, true, { projects: [] }),
@@ -321,10 +364,10 @@ describe("who loads a skill", () => {
     const list = await skills.list([], [project], { "claude-code": true, codex: true, opencode: true });
     const by = Object.fromEntries(list.map((s) => [s.name, s.readers ?? []]));
     expect(by).toEqual({
-      pdf: ["claude-code", "opencode"],
+      pdf: ["claude-code", "opencode", "grok-build"],
       deploy: ["codex"],
       review: ["opencode"],
-      notes: ["codex", "opencode"],
+      notes: ["codex", "opencode", "grok-build"],
       x: [],
       y: ["codex"],
     });

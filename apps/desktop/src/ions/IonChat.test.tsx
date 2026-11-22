@@ -200,11 +200,12 @@ describe("/ in an ion's message box", () => {
     await screen.findByRole("listbox", { name: "Skills" });
     expect(d.call).toHaveBeenCalledWith("tools.picks", { ionId: "storefront" });
     fireEvent.keyDown(box(), { key: "Enter" });
-    type("fill the form");
+    // The user, 2026-11-22: the pick stays in the sentence where it was typed.
+    type("/pdf fill the form");
     fireEvent.keyDown(box(), { key: "Enter" });
     expect(d.call).toHaveBeenCalledWith("ion.message", {
       ionId: "storefront",
-      text: "fill the form",
+      text: "/pdf fill the form",
       skills: ["pdf"],
     });
   });
@@ -212,5 +213,9 @@ describe("/ in an ion's message box", () => {
   it("shows your message's picks as chips", () => {
     show(daemon([ev(EV.ionHeard, { text: "fill it", skills: ["pdf"] })]), false);
     expect(screen.getByText("pdf").closest(".chip")).not.toBeNull();
+    // The user, 2026-11-22: one in the text is a chip there.
+    cleanup();
+    show(daemon([ev(EV.ionHeard, { text: "/pdf fill it", skills: ["pdf"] })]), false);
+    expect(screen.getByText("/pdf").closest(".chip.inl")).not.toBeNull();
   });
 });

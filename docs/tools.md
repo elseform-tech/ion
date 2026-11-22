@@ -109,6 +109,17 @@ skipped); at most 4 hook processes at once per run. Each runs in its own process
 Your agents' own skills (Claude Code's `~/.claude/skills`, a project's, and the other agents' where they keep them),
 on or off per skill. A Claude Code run gets a plugin folder of the ones on (only `name` and `description` copied; removed at
 run end). A skill's files may be read and its scripts run, never written; in Auto each script run goes to the judge.
+Where each agent keeps them (the user, 2026-11-22: "/" lists each agent's own): Claude Code `~/.claude/skills`, Codex
+`$CODEX_HOME/skills` (else `~/.codex/skills`), opencode `~/.config/opencode/skills`, Grok `$GROK_HOME/skills` (else
+`~/.grok/skills`; it reads Claude's and `~/.agents/skills` too), and in a project `.claude/skills`, `.opencode/skills`,
+`.grok/skills`, `.agents/skills`. A Grok chat's "/" lists Grok's own, then ion's that are on; a project's
+`.grok/skills` is the repo's, off until you turn it on, and then given to Grok as its text.
+
+A pick stays in your sentence where you typed it, drawn as a chip (the user, 2026-11-22): "use /review on this, then
+/pdf". Any number; Backspace after one (or Delete before it) takes it out whole, and the arrows step over it. The box
+stays a text field (its picks named for screen readers). The message is that text, picks in place, with their names in
+the order they come; the chat shows it with the same chips. An agent never gets a skill at the very start as a command
+(its slash is left out), and a command you put first isn't put in front again.
 
 ## ion's commands for agents
 
@@ -151,6 +162,10 @@ things on, sign in or add keys.
     the judge, whatever the flags say. Inside the project, everything reads as before. A command may name a path from
     your home as `~/…` (`cat ~/notes/a.md`); `..`, `$HOME`, quotes and wildcards go to the judge. A command given as a
     list of words (Codex's shell) is checked the same way as a string.
+  - **Ions read the same way** (the user, 2026-11-22): a project's ion (and ion chief) reads outside its project as
+    freely as a chat in Auto. What a chat's judge would decide (the classes above, searches outside) is refused for an
+    ion instead ("An ion doesn't read that; a thread can, with your OK"): an ion never asks and never calls the judge.
+    Secrets are refused, and an ion still never writes, `/tmp` included.
   - **Refused outright, in Auto:** your secrets (`~/.ssh`, `~/.aws`, `.netrc`, …) and agents' sign-in files, for every
     chat (its own agent's too): `~/.codex/auth.json`, `~/.claude/.credentials.json`, opencode's `auth.json` in its data
     folder, and any `*credential*`, `*token*` or `auth*.json` in an agent's folder.

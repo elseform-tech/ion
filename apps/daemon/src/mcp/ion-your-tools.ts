@@ -26,6 +26,7 @@ const OWNER: Record<SkillWhose, string> = {
   claude: "Claude Code",
   codex: "Codex",
   opencode: "opencode",
+  grok: "Grok Build",
   shared: "every agent",
   ion: "ion",
 };

@@ -626,6 +626,9 @@ button.arow:hover{background:var(--hover)}
 .proof.warn .lucide{color:var(--wait)}
 .catt{display:flex;gap:6px;margin:-2px 0 -2px -6px}
 .chip.file{gap:6px}
+/* Picks in the sentence (the user, 2026-11-22): a chip where it was typed, its letters at their size and place. */
+.chip.inl,.u .chip.inl{display:inline;margin:0;padding:0;font-size:inherit;border-radius:5px;background:color-mix(in srgb,var(--brand) 22%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 22%,transparent);color:var(--accent)}
+.bu .chip.inl{background:color-mix(in srgb,var(--brand) 14%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand)}
 .chip.file small{color:var(--faint);font-size:11px}
 .acard{display:flex;align-items:center;gap:12px;width:100%;max-width:420px;margin-top:12px;padding:10px 12px;border-radius:12px;border:0;background:var(--win);box-shadow:0 0 0 1px var(--line);cursor:pointer;text-align:left}
 .acard:hover{box-shadow:0 0 0 1px var(--faint)}
@@ -1360,8 +1363,8 @@ export function sumLines(lines: Line[]) {
                 <div class="cbox">
                   <div class="pmenu smenu" role="listbox" aria-label="Skills" hidden><button type="button" class="act"><span title="Skill" style="display:flex"><i data-lucide="sparkles"></i></span><span class="nm">pdf</span><span class="ds">Read and fill PDFs</span></button><button type="button"><span title="Command" style="display:flex"><i data-lucide="square-terminal"></i></span><span class="nm">review</span><span class="ds">Review the diff</span></button></div>
                   <div class="pmenu smenu" role="listbox" aria-label="Connections" hidden><button type="button" class="act"><span title="Connection" style="display:flex"><i data-lucide="plug"></i></span><span class="nm">everything</span></button><button type="button"><span title="Resource" style="display:flex"><i data-lucide="file-text"></i></span><span class="nm">Readme</span><span class="ds">file:///readme</span></button></div>
-                  <div class="catt"><span class="chip file"><i data-lucide="file-text"></i>ci-log.txt<small>4 KB</small><button type="button" aria-label="Remove ci-log.txt"><i data-lucide="x"></i></button></span><span class="chip pick"><i data-lucide="sparkles"></i>pdf<button type="button" aria-label="Remove pdf"><i data-lucide="x"></i></button></span></div>
-                  <span class="ph">Reply…</span>
+                  <div class="catt"><span class="chip file"><i data-lucide="file-text"></i>ci-log.txt<small>4 KB</small><button type="button" aria-label="Remove ci-log.txt"><i data-lucide="x"></i></button></span></div>
+                  <div class="ctext">Use <span class="chip pick inl" title="Command" aria-label="Command: review">/review</span> on the cart, then <span class="chip pick inl" title="Skill" aria-label="Skill: pdf">/pdf</span> for the receipt</div>
                   <div class="bar">
                     <button class="ib" type="button" title="Attach files, images or recordings"><i data-lucide="paperclip"></i></button>
                     <button class="pill bpill" type="button" data-brain="code" aria-haspopup="dialog"></button>
@@ -1478,7 +1481,7 @@ export function sumLines(lines: Line[]) {
           <div class="split solo">
             <div class="convo">
               <div class="msgs"><div class="col">
-                <div class="u">Move us to Tailwind 4. Keep the look the same.</div>
+                <div class="u">Move us to Tailwind 4 with <span class="chip pick inl" title="Skill" aria-label="Skill: migrate">/migrate</span>. Keep the look the same.</div>
                 <div class="a"><p>Most of the config maps over as is. One thing first.</p></div>
               </div></div>
               <div class="foot"><div class="fcol">

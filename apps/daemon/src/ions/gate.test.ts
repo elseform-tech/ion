@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { decideForIon, ionVerdict } from "./gate.js";
@@ -39,7 +42,8 @@ describe("an ion's gate", () => {
       cmd("npm install"),
       cmd("git push"),
       cmd("cat ~/.ssh/id_rsa"),
-      req({ toolName: "Read", kind: "read", input: { file_path: "/etc/passwd" } }),
+      // The user, 2026-11-22: ions read outside freely as chats do (/etc/passwd too); a dotfile stays out.
+      req({ toolName: "Read", kind: "read", input: { file_path: "/Users/me/.zsh_history" } }),
     ];
     for (const r of bad) expect(decideForIon(r, ctx)).toBe("deny");
   });
@@ -366,5 +370,68 @@ describe("an ion's call on a server", () => {
     expect(decideForIon(mcp("notes__search"), ctx, ["notes"], ["notes"])).toBe("deny");
     expect(decideForIon(mcp("a__b__c"), ctx, ["a"], ["a__b"])).toBe("deny");
     expect(decideForIon(mcp("search", "notes"), ctx, ["notes"], ["notes"])).toBe("deny");
+  });
+});
+
+// The user, 2026-11-22 ("yes, of course"): ions read as freely as chats outside their roots; what a chat's judge
+// would decide (dot-folders, private kinds of files, searches outside) is refused for an ion, which never asks.
+describe("an ion's reads outside its project", () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "ion-ion-home-")));
+  const put = (rel: string) => {
+    mkdirSync(dirname(join(home, rel)), { recursive: true });
+    writeFileSync(join(home, rel), "x\n");
+    return join(home, rel);
+  };
+  const readme = put("other-repo/README.md");
+  const dotConfig = put(".config/x");
+  const env = put("elsewhere/.env");
+  const key = put(".ssh/id_rsa");
+  put("proj/a.ts");
+  const at = { roots: [join(home, "proj")], home, ionDirs: [join(home, ".ion")] };
+  const readOf = (file_path: string) => req({ toolName: "Read", kind: "read", input: { file_path } });
+  const NOT_FOR_ION = "An ion doesn't read that; a thread can, with your OK.";
+
+  it("reads another repo's README, by a read tool or cat", async () => {
+    expect(decideForIon(readOf(readme), at)).toBe("allow");
+    expect(decideForIon(cmd(`cat ${readme}`), at)).toBe("allow");
+    expect(await ionVerdict(readOf(readme), at, new WebFound())).toEqual({ decision: "allow" });
+  });
+
+  it("is refused a dot-folder, a .env outside and searches outside, with why", async () => {
+    for (const r of [
+      readOf(dotConfig),
+      readOf(env),
+      cmd(`cat ${dotConfig}`),
+      cmd("cat ~/.zsh_history"),
+      req({ toolName: "Grep", kind: "search", input: { pattern: "x", path: join(home, "other-repo") } }),
+    ]) {
+      expect(decideForIon(r, at)).toBe("deny");
+      expect(await ionVerdict(r, at, new WebFound())).toEqual({ decision: "deny", reason: NOT_FOR_ION });
+    }
+  });
+
+  it("is refused secrets", async () => {
+    expect(decideForIon(readOf(key), at)).toBe("deny");
+    expect(await ionVerdict(readOf(key), at, new WebFound())).toEqual({
+      decision: "deny",
+      reason: "Touches your secrets",
+    });
+  });
+
+  it("still never writes, in the temp folder neither", async () => {
+    for (const r of [
+      req({
+        toolName: "Write",
+        kind: "edit",
+        input: { file_path: join(tmpdir(), "ion-x.txt"), content: "x" },
+      }),
+      cmd(`touch ${join(tmpdir(), "ion-x.txt")}`),
+    ]) {
+      expect(decideForIon(r, at)).toBe("deny");
+      expect(await ionVerdict(r, at, new WebFound())).toEqual({
+        decision: "deny",
+        reason: "An ion only reads; a thread does the work.",
+      });
+    }
   });
 });

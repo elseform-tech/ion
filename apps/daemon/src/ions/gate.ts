@@ -1,10 +1,12 @@
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { ION_ION_TOOLS } from "@ion/schema";
-import { ruleFor, type RuleCtx } from "../access/rules.js";
+import { meansToRead, ruleFor, type RuleCtx } from "../access/rules.js";
 import { fetchVerdict, isWebNamed, isWebSearch, searchVerdict, type TurnWeb, type Verdict } from "./web.js";
 
 /** Why an ion's call was refused, when it isn't a page read. */
 const READ_ONLY = "An ion only reads; a thread does the work.";
+/** Why an ion's read was refused where a chat's would go to the judge (the user, 2026-11-22). */
+const NOT_FOR_ION = "An ion doesn't read that; a thread can, with your OK.";
 
 /** A web call, whatever kind its harness gave it: kind "web", a web tool by name, or Grok's own search. */
 const isWeb = (req: ApprovalRequest) => req.kind === "web" || isWebNamed(req);
@@ -14,8 +16,9 @@ const ION_TOOL = new RegExp(`^(mcp__)?ion__(${ION_ION_TOOLS.join("|")})$`);
 
 /**
  * An ion's agent may look and ask ion, nothing else: ion's own tools, its agent's web search, then Auto's read-only
- * rules (commands that only look, reads and searches inside the roots). Everything else is denied, a page read too
- * (only `ionVerdict` can check one). It never asks and never calls the judge: nobody is there to answer.
+ * rules with Auto's free reads (the user, 2026-11-22: as a chat reads, inside the roots and out). Everything else is
+ * denied, a page read too (only `ionVerdict` can check one), and what a chat's judge would decide: it never asks and
+ * never calls the judge, nobody is there to answer.
  */
 export function decideForIon(
   req: ApprovalRequest,
@@ -25,7 +28,15 @@ export function decideForIon(
 ): "allow" | "deny" {
   if (req.kind === "mcp") return mcpForIon(req, served, own);
   if (isWeb(req)) return isWebSearch(req) ? searchVerdict(req.input).decision : "deny";
-  return ruleFor(req, c)?.decision === "allow" ? "allow" : "deny";
+  return fileVerdict(req, c).decision;
+}
+
+/** A file read or command under Auto's rules with free reads; what would go to the judge is refused. */
+function fileVerdict(req: ApprovalRequest, c: RuleCtx): Verdict {
+  const rule = ruleFor(req, { ...c, freeReads: true });
+  if (rule?.decision === "allow") return { decision: "allow" };
+  if (!meansToRead(req)) return { decision: "deny", reason: READ_ONLY };
+  return { decision: "deny", reason: rule?.reason ?? NOT_FOR_ION };
 }
 
 /**
@@ -39,9 +50,11 @@ export async function ionVerdict(
   servers: { served: string[]; own: string[] } = { served: [], own: [] },
 ): Promise<Verdict> {
   if (isWeb(req)) return isWebSearch(req) ? searchVerdict(req.input) : fetchVerdict(req, web);
-  return decideForIon(req, c, servers.served, servers.own) === "allow"
-    ? { decision: "allow" }
-    : { decision: "deny", reason: READ_ONLY };
+  if (req.kind === "mcp")
+    return mcpForIon(req, servers.served, servers.own) === "allow"
+      ? { decision: "allow" }
+      : { decision: "deny", reason: READ_ONLY };
+  return fileVerdict(req, c);
 }
 
 /**

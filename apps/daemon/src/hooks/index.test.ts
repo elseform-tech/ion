@@ -1,4 +1,12 @@
-import { mkdtempSync, readFileSync, realpathSync, existsSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, type HookEntry, saveUserConfig } from "@ion/config";
@@ -316,20 +324,30 @@ describe("hooks before a tool runs", () => {
     expect(ran()).toHaveLength(1);
   });
 
+  // macOS CI, 2026-11-22: this saw 5 at once. The limit held: a hook that outlived the test's 400 ms limit was
+  // killed before it wrote its "-", so the count never came down. Hooks now wait for the test to let them go, with
+  // the real 10 s limit, and the test counts who is running while they wait.
   it("at most 4 hook processes at once for one run; the others wait", async () => {
-    const out = join(home, "out.txt");
+    const dir = join(home, "in");
+    mkdirSync(dir);
+    const go = join(home, "go");
+    const slow = new Hooks({ store, db, configFile, sign });
     await save([
-      { id: "g", name: "Log", event: "tool.before", run: `echo + >> ${out}; sleep 0.3; echo - >> ${out}` },
+      {
+        id: "g",
+        name: "Log",
+        event: "tool.before",
+        run: `touch ${dir}/$$; while [ ! -e ${go} ]; do sleep 0.02; done`,
+      },
     ]);
     const run = runOf(chat());
-    await Promise.all(Array.from({ length: 6 }, () => hooks.beforeTool(run, call("ls"))));
-    let now = 0;
-    let most = 0;
-    for (const l of readFileSync(out, "utf8").trim().split("\n")) {
-      now += l === "+" ? 1 : -1;
-      most = Math.max(most, now);
-    }
-    expect(most).toBe(4);
+    const all = Promise.all(Array.from({ length: 6 }, () => slow.beforeTool(run, call("ls"))));
+    while (readdirSync(dir).length < 4) await wait(20);
+    await wait(300);
+    expect(readdirSync(dir)).toHaveLength(4);
+    writeFileSync(go, "");
+    await all;
+    expect(readdirSync(dir)).toHaveLength(6);
     expect(ran()).toHaveLength(6);
   });
 

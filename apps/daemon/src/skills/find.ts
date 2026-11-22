@@ -42,16 +42,25 @@ export type FoundSkill = {
   files: SkillFile[];
 };
 
-/** Where each agent keeps its skills: in your home, and in a project. */
-const IN_HOME: [SkillWhose, string][] = [
-  ["claude", ".claude/skills"],
-  ["codex", ".codex/skills"],
-  ["opencode", ".config/opencode/skills"],
-  ["shared", ".agents/skills"],
+/** Agents' own folders' environment: `CODEX_HOME`, `GROK_HOME` (each else its folder in your home). */
+export type AgentsEnv = Record<string, string | undefined>;
+
+/**
+ * Where each agent keeps its skills in your home: Codex in `$CODEX_HOME/skills` (the user, 2026-11-22), Grok in
+ * `$GROK_HOME/skills` (else `~/.grok/skills`; `grok inspect`, Grok 1.0.92).
+ */
+const inHome = (home: string, env: AgentsEnv): [SkillWhose, string][] => [
+  ["claude", join(home, ".claude/skills")],
+  ["codex", join(env.CODEX_HOME || join(home, ".codex"), "skills")],
+  ["opencode", join(home, ".config/opencode/skills")],
+  ["grok", join(env.GROK_HOME || join(home, ".grok"), "skills")],
+  ["shared", join(home, ".agents/skills")],
 ];
+/** Where each agent keeps a project's skills (written by the repo). */
 const IN_PROJECT: [SkillWhose, string][] = [
   ["claude", ".claude/skills"],
   ["opencode", ".opencode/skills"],
+  ["grok", ".grok/skills"],
   ["shared", ".agents/skills"],
 ];
 
@@ -216,10 +225,12 @@ const realOr = (path: string) => {
 const withProject = (s: FoundSkill, r: Root): FoundSkill => (r.project ? { ...s, project: r.project } : s);
 
 type Root = { whose: SkillWhose; base: string; dir: string; project?: string };
-const rootsOf = (home: string, projects: string[], ionDir?: string): Root[] =>
+/** A home folder of an agent's moved out of your home ($CODEX_HOME elsewhere) is read from its own folder. */
+const baseOf = (dir: string, home: string) => (inside(dir, home) ? home : dirname(dirname(dir)));
+const rootsOf = (home: string, projects: string[], o: { ionDir?: string; env: AgentsEnv }): Root[] =>
   [
-    ...(ionDir ? [{ whose: "ion" as const, base: dirname(ionDir), dir: ionDir }] : []),
-    ...IN_HOME.map(([whose, rel]) => ({ whose, base: home, dir: join(home, rel) })),
+    ...(o.ionDir ? [{ whose: "ion" as const, base: dirname(o.ionDir), dir: o.ionDir }] : []),
+    ...inHome(home, o.env).map(([whose, dir]) => ({ whose, base: baseOf(dir, home), dir })),
     ...projects.flatMap((p) =>
       IN_PROJECT.map(([whose, rel]) => ({ whose, base: p, dir: join(p, rel), project: basename(p) })),
     ),
@@ -235,9 +246,13 @@ export function readSkillFolder(dir: string, home: string): FoundSkill | null {
  * Every skill in your agents' folders and in these projects' folders (and ion's own, `ionDir`): each a folder with a
  * SKILL.md.
  */
-export function findSkills(home: string, projects: string[], ionDir?: string): FoundSkill[] {
+export function findSkills(
+  home: string,
+  projects: string[],
+  o: { ionDir?: string; env?: AgentsEnv } = {},
+): FoundSkill[] {
   const homeReal = realOr(home);
-  return rootsOf(home, projects, ionDir).flatMap((r) => {
+  return rootsOf(home, projects, { ...o, env: o.env ?? {} }).flatMap((r) => {
     const real = realDir(r.dir, r.base, homeReal);
     const budget = { left: MAX_ENTRIES };
     const out: FoundSkill[] = [];

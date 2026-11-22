@@ -1,4 +1,4 @@
-import { PickChips } from "./Picks.js";
+import { PickedText } from "./PickChips.js";
 import type { IonClient } from "@ion/client/browser";
 import { CircleAlert, Info, RotateCw, ShieldX, Square } from "@ion/design-system";
 import type { IonEvent } from "@ion/schema";
@@ -78,8 +78,7 @@ function yours(item: Extract<Item, { kind: "you" }>): ReactNode {
   if (item.gone) return null;
   return (
     <div className="u">
-      {item.picked && <PickChips picked={item.picked} />}
-      {item.text}
+      <PickedText text={item.text} picked={item.picked} />
     </div>
   );
 }
