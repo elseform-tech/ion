@@ -327,6 +327,8 @@ describe("memory tools", () => {
         status: "open",
         due: "2026-12-01",
         from: "m1",
+        // Ions-only: an ion suggests changes to a file chats see (final review, 2026-11-22).
+        see: "ions",
       },
       text: "Rotate them",
       by: "you",
@@ -349,20 +351,21 @@ describe("memory tools", () => {
   // a to-do changed to a fact kept its status and date.
   it("a file that becomes a to-do is open; one that stops being one drops its status and date", async () => {
     const c = await ion("chief");
-    const read = async () => hashOf(await call(c, "memory_read", { name: "test-runner" }));
+    // An ions-only file: an ion suggests changes to one chats see (final review, 2026-11-22).
+    const read = async () => hashOf(await call(c, "memory_read", { name: "ions-only" }));
     const to = (type: string, more: Record<string, unknown> = {}) =>
       read().then((expect) =>
-        call(c, "memory_write", { scope: "app", name: "Test runner", type, expect, ...more }),
+        call(c, "memory_write", { scope: "app", name: "Ions only", type, expect, ...more }),
       );
     await to("todo", { due: "2026-12-01" });
     const header = () => {
-      const r = memory.read("projects/app/test-runner.md");
+      const r = memory.read("projects/app/ions-only.md");
       return r.ok ? r.file.header : null;
     };
     expect(header()).toMatchObject({ type: "todo", status: "open", due: "2026-12-01" });
     // Only you close a to-do, so you retype it (task review, 2026-11-22).
     const you = new ScopedMemory(memory, { kind: "you" });
-    const f = you.read("test-runner");
+    const f = you.read("ions-only");
     you.write({ scope: "app", path: f.path, type: "fact", expect: f.hash });
     expect(header()?.type).toBe("fact");
     expect(header()).not.toHaveProperty("status");
@@ -529,6 +532,70 @@ describe("memory tools", () => {
     expect(text(await call(app, "memory_search", { q: "Lisbon" }))).not.toContain("city");
     expect(await call(app, "memory_read", { name: "projects/app/city.md" })).toMatchObject(NONE);
     for (const x of [c, app]) await x.close();
+  });
+
+  // Final review, 2026-11-22: an ion could still rewrite a file chats already see (one you kept, a project's), so its
+  // words reached chats without your Keep. It suggests the change instead; chats edit their project's files as before.
+  it("an ion suggests a change to a file chats see, and never makes it", async () => {
+    const SHARED = {
+      isError: true,
+      content: [{ text: "That file is shared with chats; suggest the change instead" }],
+    };
+    for (const id of ["shop", "chief"]) {
+      const s = await ion(id);
+      const short = hashOf(await call(s, "memory_read", { name: "short-replies" }));
+      const edit = { scope: "you", name: "Short replies", text: "Long replies", expect: short };
+      expect(await call(s, "memory_write", edit)).toMatchObject(SHARED);
+      const deploy = hashOf(await call(s, "memory_read", { name: "deploy-day" }));
+      const scope = id === "chief" ? "shop" : "project";
+      const day = { scope, name: "Deploy day", text: "Deploys on Mondays", expect: deploy };
+      expect(await call(s, "memory_write", day)).toMatchObject(SHARED);
+      await s.close();
+    }
+    expect(memory.read("you/short-replies.md")).toMatchObject({
+      ok: true,
+      file: { text: "Keep replies short" },
+    });
+    const s = await ion("shop");
+    const offer = { ...fact("Deploy day change"), text: "Deploys on Mondays now" };
+    expect(text(await call(s, "memory_write", offer))).toBe(
+      "Saved projects/shop/deploy-day-change.md as a suggestion",
+    );
+    const mine = hashOf(await call(s, "memory_read", { name: "deploy-day-change" }));
+    const again = {
+      scope: "project",
+      name: "Deploy day change",
+      text: "Mondays, from December",
+      expect: mine,
+    };
+    expect(text(await call(s, "memory_write", again))).toBe(
+      "Saved projects/shop/deploy-day-change.md as a suggestion",
+    );
+    await s.close();
+    const c = await chat();
+    const runner = hashOf(await call(c, "memory_read", { name: "test-runner" }));
+    const vitest = { scope: "project", name: "Test runner", text: "Tests use vitest 4", expect: runner };
+    expect(text(await call(c, "memory_write", vitest))).toBe("Saved projects/app/test-runner.md");
+    await c.close();
+  });
+
+  // Final review, 2026-11-22: ion chief saw every suggestion, also one from a project you keep from it.
+  it("ion chief never sees a suggestion from a project not shared with it", async () => {
+    const own = await client(grants.create({ kind: "run", projectId: "private", chatId: "c3", runId: "r3" }));
+    const pref = { ...fact("Hush style"), scope: "you", type: "preference", text: "Whisper" };
+    expect(text(await call(own, "memory_write", pref))).toBe("Saved you/hush-style.md as a suggestion");
+    await own.close();
+    const p = await client(
+      grants.create({ kind: "ion", ionId: "private", projects: ["private"], turnId: "t7" }),
+    );
+    const quiet = { ...fact("Hush mode"), scope: "you", type: "preference", text: "Quiet" };
+    expect(text(await call(p, "memory_write", quiet))).toBe("Saved you/hush-mode.md as a suggestion");
+    await p.close();
+    const c = await ion("chief");
+    expect(text(await call(c, "memory_index"))).not.toContain("hush");
+    expect(text(await call(c, "memory_search", { q: "hush" }))).not.toContain("hush");
+    expect(await call(c, "memory_read", { name: "you/hush-style.md" })).toMatchObject(NONE);
+    await c.close();
   });
 
   // The user, 2026-11-22: ion's dream tidies memory overnight, within strict limits: only memory's tools, and at most

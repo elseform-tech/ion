@@ -42,6 +42,7 @@ const NONE = "No such memory";
 const CHAT_WRITES = "A chat writes this project's files and your preferences only";
 const ONLY_YOU_CLOSE = "Only you close a to-do";
 const ONLY_YOU_SHARE = "Only the user shares a file with chats";
+const SUGGEST_IT = "That file is shared with chats; suggest the change instead";
 type TodoFields = { type: MemoryType; status?: "open" | "done"; due?: string };
 const NEW_NEEDS = "A new memory needs a name, a description, a type and a text";
 /** Each line with its control characters (a bell, a stray escape) gone; line breaks and tabs kept. */
@@ -154,8 +155,8 @@ const ionSuggestion = (ionId: string) => `_${ionId}`;
 
 /**
  * What a caller may see: which scopes, which files there (`see`), and which suggestions: a chat, its own project's
- * chats'; a project's ion, those and its own and ion chief's (final review, 2026-11-22: not other projects'); ion
- * chief, all; ion's dream, none.
+ * chats'; an ion, those of the projects it may see (ion chief: those shared with it) and their ions', and ion chief's
+ * (final review, 2026-11-22: not other projects'); ion's dream, none.
  */
 function sightOf(c: Caller): Sight {
   if (c.kind === "you") return { scopes: "all", see: ["chats", "ions"] };
@@ -167,8 +168,7 @@ function sightOf(c: Caller): Sight {
     return { scopes, see: c.dream.see === "chats" ? ["chats"] : ["chats", "ions"], noSuggested: true };
   }
   const scopes: MemoryScope[] = ["you", ...c.projects.map((projectId) => ({ projectId }))];
-  if (c.ionId === "chief") return { scopes, see: ["chats", "ions"] };
-  const suggestedFor = [c.ionId, ionSuggestion(c.ionId), ionSuggestion("chief")];
+  const suggestedFor = [...c.projects, ...c.projects.map(ionSuggestion), ionSuggestion("chief")];
   return { scopes, see: ["chats", "ions"], suggestedFor };
 }
 
@@ -329,6 +329,9 @@ export class ScopedMemory {
     if (this.dream) dreamUpdate(this.memory, this.dream, { ...disk.header, path: disk.path, scope }, header);
     this.mayChange(scope, disk.header, header.see);
     this.mayClose(disk.header, header);
+    // An ion changes only files chats don't see, or its own suggestions (final review, 2026-11-22).
+    if (this.ionWrites() && disk.header.see === "chats" && !disk.header.suggested?.startsWith("_"))
+      throw new UserError(SUGGEST_IT);
     const text = w.text ?? disk.text;
     return this.memory.write({ scope, slug: was.slug, header, text, expectHash, by: this.by() });
   }
