@@ -61,7 +61,8 @@ function folder(dir: string, runs: boolean, prefix = ""): OwnCommand[] {
     const name = `${prefix}${n.slice(0, -3)}`;
     if (!NAME.test(name)) return [];
     // Checked and read through one open file (CodeQL, PR #25).
-    const f = openFile(join(dir, n), MAX_FILE);
+    // Your commands may be links (dotfiles): followed deliberately.
+    const f = openFile(join(dir, n), MAX_FILE, undefined, { follow: true });
     return f?.kind === "file" && f.text !== null ? [{ name, ...parse(f.text), runs }] : [];
   });
 }

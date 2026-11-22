@@ -44,7 +44,8 @@ const read = new Map<string, { at: string; text: string | null }>();
 function textOf(path: string): string | null {
   const known = read.get(path);
   // Checked and read through one open file (CodeQL, PR #25).
-  const f = openFile(path, MAX, known?.at);
+  // Your settings file may be a link (dotfiles): followed deliberately.
+  const f = openFile(path, MAX, known?.at, { follow: true });
   if (!f || f.kind !== "file") return null;
   if (known?.at === f.at) return known.text;
   read.set(path, { at: f.at, text: f.text });

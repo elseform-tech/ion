@@ -8,6 +8,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -178,4 +179,24 @@ describe("a manifest that names a component file", () => {
     expect(readdirSync(join(to, "agents")).sort()).toEqual(["a.md", "b.md"]);
     expect(readFileSync(join(to, "agents", "a.md"), "utf8")).toContain("A.");
   });
+});
+
+// Automated review of 9777e0b, 2026-11-22: a FIFO planted in a plugin blocked the daemon's read, and a file of any size
+// was read whole. Only regular files and folders are opened for reading (never blocking on a pipe), and a file over
+// 5 MB (or a plugin over 50 MB) is left out with one line.
+describe.skipIf(process.platform === "win32")("ion's copy of a plugin, odd files", () => {
+  it("leaves out a FIFO without blocking, and a file over the size cap", async () => {
+    const { home, root } = plugin({ name: "kit" });
+    put(join(root, "skills", "ok", "SKILL.md"), "---\nname: ok\n---\nOK.");
+    execFileSync("mkfifo", [join(root, "skills", "ok", "pipe.sh")]);
+    put(join(root, "skills", "ok", "big.bin"), "");
+    writeFileSync(join(root, "skills", "ok", "big.bin"), Buffer.alloc(5 * 1024 * 1024 + 1));
+    const lines: string[] = [];
+    const to = join(home, "copy");
+    await copyWithoutHooks(root, to, "kit", lines);
+    expect(existsSync(join(to, "skills", "ok", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(to, "skills", "ok", "pipe.sh"))).toBe(false);
+    expect(existsSync(join(to, "skills", "ok", "big.bin"))).toBe(false);
+    expect(lines.some((l) => l.includes("big.bin") && /too big/.test(l))).toBe(true);
+  }, 10_000);
 });

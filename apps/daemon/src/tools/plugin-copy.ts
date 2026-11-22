@@ -1,16 +1,8 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-} from "node:fs";
+import { closeSync, fstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { isMap, isScalar, parseDocument, Scalar, stringify, visit } from "yaml";
+import { openNoBlock } from "./read-file.js";
 
 /**
  * ion's copy of a Claude Code plugin, built from a whitelist (the user, 2026-11-21: hooks stay ion's; automated reviews,
@@ -26,7 +18,8 @@ const KINDS = ["skills", "agents", "commands"] as const;
 const MAX_DEPTH = 3;
 const MARKDOWN = /\.(md|markdown)$/i;
 
-type Walk = { root: string; name: string; lines: string[] };
+/** `copied`: bytes copied so far, against the plugin's cap. */
+type Walk = { root: string; name: string; lines: string[]; copied: number };
 
 /** A path's real place when it's inside the plugin (links followed), else null. */
 function inside(root: string, path: string): string | null {
@@ -97,14 +90,16 @@ async function walk(w: Walk, src: string, dst: string, depth: number): Promise<v
   };
   const real = inside(w.root, src);
   if (!real) return say("it links outside the plugin");
-  // What it is and what it holds, through one open file (CodeQL, PR #25: no stat by path, then a read by path).
-  const got = contentOf(real);
+  // What it is and what it holds, through one open file (CodeQL, PR #25: no stat by path, then a read by path),
+  // opened without blocking on a pipe; only folders and regular files, within the caps (automated review, 2026-11-22).
+  const got = contentOf(real, w);
   if (got === "dir") {
     if (depth > MAX_DEPTH) return say("too deep");
     await mkdir(dst, { recursive: true, mode: 0o700 });
     for (const n of await readdir(real)) await walk(w, join(src, n), join(dst, n), depth + 1);
     return;
   }
+  if (got === "too big") return say("too big");
   if (!got) return;
   await mkdir(dirname(dst), { recursive: true, mode: 0o700 });
   // Its own bits kept (a skill's script stays runnable), never more than yours.
@@ -114,18 +109,24 @@ async function walk(w: Walk, src: string, dst: string, depth: number): Promise<v
   await writeFile(dst, text, { mode: 0o600 });
 }
 
-/** A path opened once: "dir" for a folder, a file's bytes and mode, or null (anything else, or it can't be opened). */
-function contentOf(path: string): "dir" | { bytes: Buffer; mode: number } | null {
-  let fd: number;
-  try {
-    fd = openSync(path, constants.O_RDONLY);
-  } catch {
-    return null;
-  }
+/** The most ion copies of one file, and of one plugin in all. */
+const MAX_FILE = 5 * 1024 * 1024;
+const MAX_PLUGIN = 50 * 1024 * 1024;
+
+/**
+ * A path (already resolved inside the plugin) opened once, without blocking on a pipe: "dir" for a folder, a regular
+ * file's bytes and mode, "too big" past a cap (counted against the plugin's), or null (anything else; can't open).
+ */
+function contentOf(path: string, w: Walk): "dir" | "too big" | { bytes: Buffer; mode: number } | null {
+  const fd = openNoBlock(path);
+  if (fd === null) return null;
   try {
     const st = fstatSync(fd);
     if (st.isDirectory()) return "dir";
-    return st.isFile() ? { bytes: readFileSync(fd), mode: st.mode } : null;
+    if (!st.isFile()) return null;
+    if (st.size > MAX_FILE || w.copied + st.size > MAX_PLUGIN) return "too big";
+    w.copied += st.size;
+    return { bytes: readFileSync(fd), mode: st.mode };
   } finally {
     closeSync(fd);
   }
@@ -174,9 +175,10 @@ export async function copyWithoutHooks(
   const root = realpathSync(from);
   const manifest = manifestOf(root);
   await mkdir(join(to, ".claude-plugin"), { recursive: true, mode: 0o700 });
+  const w: Walk = { root, name, lines, copied: 0 };
   for (const kind of KINDS)
     for (const folder of foldersOf(root, manifest, kind))
-      await walk({ root, name, lines }, folder, targetOf(folder, join(to, kind)), 0);
+      await walk(w, folder, targetOf(folder, join(to, kind)), 0);
   const kept = Object.fromEntries(
     ["name", "version", "description"]
       .filter((k) => typeof manifest[k] === "string")

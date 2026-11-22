@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -25,4 +26,19 @@ describe("openFile", () => {
     expect(openFile(join(d, "big"), 10)).toMatchObject({ kind: "file", text: null, size: 20 });
     expect(openFile(join(d, "none"), 10)).toBeNull();
   });
+
+  // Automated review of 9777e0b, 2026-11-22: a FIFO planted at a settings path blocked the daemon's open; a link was
+  // followed wherever it pointed. A FIFO is opened without blocking and isn't read; a link only where the caller says.
+  it("doesn't block on a FIFO, and follows a link only when asked", () => {
+    const d = dir();
+    execFileSync("mkfifo", [join(d, "pipe")]);
+    expect(openFile(join(d, "pipe"), 100)).toMatchObject({ kind: "other", text: null });
+    writeFileSync(join(d, "real.json"), "{}");
+    symlinkSync(join(d, "real.json"), join(d, "link.json"));
+    expect(openFile(join(d, "link.json"), 100)).toBeNull();
+    expect(openFile(join(d, "link.json"), 100, undefined, { follow: true })).toMatchObject({
+      kind: "file",
+      text: "{}",
+    });
+  }, 10_000);
 });
