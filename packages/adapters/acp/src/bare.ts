@@ -5,6 +5,7 @@ import {
   type Connection,
   type ConnectOpts,
   forget,
+  type GiveUp,
   initialize,
   inTime,
   openSession,
@@ -84,14 +85,34 @@ export async function bareConnect(h: AcpHarness, bin: string, o: ConnectOpts): P
   try {
     const a = await w.ready;
     const s = await inTime(h, o, openSession(h, a.rpc, a.caps, { ...o, resume: null }));
-    const child = new SessionChild(() => endSession(h, bin, o, { w: w!, a, sessionId: s.sessionId }));
+    const log = a.giveUp && ownGiveUp(a.giveUp, s.sessionId);
+    const child = new SessionChild(() => {
+      log?.off();
+      endSession(h, bin, o, { w: w!, a, sessionId: s.sessionId });
+    });
     w.routes.set(s.sessionId, { notes: new Map(), asks: new Map(), child });
     const rpc = routed(a.rpc, w.routes.get(s.sessionId)!);
-    return { child, rpc, ...s, ...(a.failure ? { failure: a.failure } : {}) };
+    const giveUp = log ? { giveUp: log.giveUp } : {};
+    return { child, rpc, ...s, ...(a.failure ? { failure: a.failure } : {}), ...giveUp };
   } catch (e) {
     if (warm.get(key) === w && !w.routes.size) stop(key, w);
     throw startError(h, o, e);
   }
+}
+
+/**
+ * The shared log's lines saying the agent can't go on, as one session hears them: its own, and those that name no
+ * session (Judge eval, 2026-11-22: opencode out of quota says so once per session), until the session ends.
+ */
+function ownGiveUp(all: GiveUp, sessionId: string): { giveUp: GiveUp; off: () => void } {
+  const offs: (() => void)[] = [];
+  const giveUp: GiveUp = (l) => {
+    const off = all((why, id) => (id === undefined || id === sessionId ? l(why, id) : undefined));
+    offs.push(off);
+    return off;
+  };
+  // Its end stops its listening: the warm agent's log outlives it.
+  return { giveUp, off: () => offs.splice(0).forEach((off) => off()) };
 }
 
 /** Starts the agent and routes its session updates and permission asks to the session they're for. */

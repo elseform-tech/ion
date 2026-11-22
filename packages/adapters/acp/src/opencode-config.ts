@@ -8,13 +8,12 @@ import {
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseJsonc } from "@ion/adapter-kit";
+import { parseJsonc, readSmallFile } from "@ion/adapter-kit";
 
 /**
  * opencode's own config, carried into a file of ion's. With "Use its own tools" on (the user, 2026-11-21: agents bring
@@ -36,9 +35,10 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 
 /** One config file as an object: missing, too big or unreadable is nothing. */
 function readConfig(path: string): Record<string, unknown> {
+  const text = readSmallFile(path, MAX);
+  if (text === null) return {};
   try {
-    if (!existsSync(path) || statSync(path).size > MAX) return {};
-    const v = parseJsonc(readFileSync(path, "utf8"));
+    const v = parseJsonc(text);
     return isObject(v) ? v : {};
   } catch {
     return {};

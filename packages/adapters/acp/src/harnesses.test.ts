@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OPENCODE_PLUGIN } from "./gate.js";
-import { GROK_BUILD, OPENCODE, opencodeFailure } from "./harnesses.js";
+import { GROK_BUILD, OPENCODE, opencodeFailure, opencodeGiveUp } from "./harnesses.js";
 
 // Regression (final review I8): a repo's opencode.json could set permissions back to "allow".
 describe("opencode environment", () => {
@@ -129,6 +129,22 @@ function started(
   const file = join(env.XDG_CONFIG_HOME ?? "", "opencode", "opencode.json");
   return { env, file, config: JSON.parse(readFileSync(file, "utf8")) as Loose };
 }
+
+// PR #26 follow-up, 2026-11-22: an ion on opencode couldn't read a file outside its project although ion's gate allowed
+// the read. opencode's read tool then asks its own `external_directory` permission over ACP (kind "other", rawInput
+// `{filepath, parentDir}`), which ion can't tell from any other call, so an ion refused it; Grok has no second ask.
+describe("opencode outside the project", () => {
+  it("leaves reads outside to ion's gate when there is one, and asks itself when there isn't", () => {
+    const h = opencodeHome();
+    const { env } = started(h);
+    expect(JSON.parse(env.OPENCODE_PERMISSION ?? "{}")).toEqual({ external_directory: "allow" });
+    const none = withEnv(
+      { HOME: h.home, XDG_CONFIG_HOME: h.xdg, XDG_CACHE_HOME: h.cache },
+      () => OPENCODE.env?.() ?? {},
+    );
+    expect(none.OPENCODE_PERMISSION).toBe("");
+  });
+});
 
 // The user, 2026-11-21: "Only ion's, plus Import": in ion's chats every agent uses only the servers, hooks and skills
 // set up in ion. opencode's own config folder is swapped for one of ion's (XDG_CONFIG_HOME: checked on opencode 1.18.8,
@@ -382,6 +398,23 @@ describe("opencode's log", () => {
     ).toBeLessThanOrEqual(200);
     expect(opencodeFailure('level=INFO message="init"')).toBeNull();
     expect(OPENCODE.args).toEqual(["acp", "--print-logs", "--log-level", "WARN"]);
+  });
+
+  // Judge eval, 2026-11-22: out of its free quota (opencode 1.18.8 logs it per session, then retries quietly) every
+  // judge verdict waited 30 s. That line ends the turn at once, for the session it names; a failure it may retry
+  // past doesn't.
+  it("says when it won't get past a failure, and for which session", () => {
+    const quota =
+      'level=ERROR message="stream error" providerID=opencode modelID=big-pickle session.id=ses_abc small=false agent=build error.error="AI_APICallError: Free usage limit reached. Free models work in OpenCode"';
+    expect(opencodeGiveUp(quota)).toEqual({
+      why: "opencode's free usage is used up — try again later or pick another model",
+      sessionId: "ses_abc",
+    });
+    expect(OPENCODE.logGiveUp).toBe(opencodeGiveUp);
+    expect(
+      opencodeGiveUp('level=ERROR message="stream error" error.error="AI_APICallError: Overloaded"'),
+    ).toBeNull();
+    expect(opencodeGiveUp('level=INFO message="init"')).toBeNull();
   });
 });
 

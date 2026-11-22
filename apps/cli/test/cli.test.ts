@@ -71,6 +71,10 @@ const isIonDaemon = (pid: number) => {
     return false;
   }
 };
+/** Until `pid` is no longer a live ion daemon (a killed child left unreaped isn't one: ps shows it as defunct). */
+const gone = async (pid: number) => {
+  for (let i = 0; i < 200 && alive(pid) && isIonDaemon(pid); i++) await new Promise((r) => setTimeout(r, 25));
+};
 const daemonPid = (): number[] => {
   try {
     return [JSON.parse(readFileSync(join(home, "data", "daemon.json"), "utf8")).pid as number];
@@ -89,6 +93,10 @@ describe("ion cli", { timeout: 20_000 }, () => {
     const pids = [...started.splice(0), ...daemonPid()];
     await ion("daemon", "stop");
     for (const pid of pids) if (alive(pid) && isIonDaemon(pid)) process.kill(pid, "SIGKILL");
+    // A SIGKILL takes effect only when the process next runs: checked at once, a daemon on a busy machine still
+    // looked alive ("cleans up a daemon that is still starting", flaky under the full suite, 2026-11-22). Wait for
+    // each to be gone, then check.
+    await Promise.all(pids.map(gone));
     const leaked = pids.filter((pid) => isIonDaemon(pid) && alive(pid));
     rmSync(home, { recursive: true, force: true });
     expect(leaked).toEqual([]);

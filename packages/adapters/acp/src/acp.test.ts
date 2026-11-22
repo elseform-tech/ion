@@ -426,6 +426,26 @@ describe("acp adapter", () => {
     });
   });
 
+  // Judge eval, 2026-11-22: opencode out of its free quota logs it once and then retries quietly, sending updates that
+  // aren't progress; every judge verdict on it waited its whole 30 s ("ion couldn't decide in time", 59 of 59) because
+  // the turn only failed at the silence check. A log line saying the agent can't go on now ends the turn at once.
+  it("fails a turn at once when the agent's log says it can't go on", { timeout: 20_000 }, async () => {
+    const h = {
+      ...fake,
+      silenceMs: 60_000,
+      logFailure: (line: string) => (line.includes("Free usage") ? "Fake ACP is out of quota" : null),
+      logGiveUp: (line: string) => (line.includes("Free usage") ? { why: "Fake ACP is out of quota" } : null),
+    };
+    const t0 = Date.now();
+    const quota = await turn(h, "quota");
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(quota.at(-2)).toMatchObject({
+      type: "error",
+      data: { code: "agent", retryable: false, message: "Fake ACP is out of quota" },
+    });
+    expect(quota.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
+  });
+
   // Re-review, 2026-11-21: a long tool run, or ion holding a call for your answer through its gate (not only a
   // permission request), isn't the agent being quiet.
   it("doesn't fail a turn while a tool runs or while ion holds a call", async () => {

@@ -52,6 +52,12 @@ export type AcpHarness = {
    * "stream error … error.error=…"). With it, the agent is started with its log on stderr.
    */
   logFailure?: (line: string) => string | null;
+  /**
+   * Reads one line of its log: a failure the agent won't get past by itself (out of quota), which ends the turn at
+   * once, and the session it's for when the line names one (Judge eval, 2026-11-22: opencode logs it, then retries
+   * quietly until the silence check).
+   */
+  logGiveUp?: (line: string) => { why: string; sessionId?: string } | null;
   /** What a start that timed out says instead of "didn't respond" (an agent still setting up); none: the usual. */
   notResponding?: (own?: boolean) => string | undefined;
   /**
@@ -217,6 +223,17 @@ export function opencodeFailure(line: string): string | null {
   return known ? known[1] : `opencode: ${cleanReason(why)}`;
 }
 
+/**
+ * opencode's log line for a failed model call it won't get past by itself (a known case: out of its free quota), and
+ * the session it names; null for any other line, a failure it may retry past among them.
+ */
+export function opencodeGiveUp(line: string): { why: string; sessionId?: string } | null {
+  const why = opencodeFailure(line);
+  if (!why || !KNOWN.some(([, said]) => said === why)) return null;
+  const sessionId = /\bsession\.id=(\S+)/.exec(line)?.[1];
+  return sessionId ? { why, sessionId } : { why };
+}
+
 export const OPENCODE: AcpHarness = {
   id: "opencode",
   label: "opencode",
@@ -249,6 +266,7 @@ export const OPENCODE: AcpHarness = {
     noWrite: [join(userConfigHome(), "opencode"), join(homedir(), ".opencode")],
   }),
   logFailure: opencodeFailure,
+  logGiveUp: opencodeGiveUp,
   // ion's judge: its free model, low effort; every tool refused by ion's gate (final review, 2026-11-22).
   bare: { effort: "low" },
   noWeb: ({ own }) => opencodeNoWeb(own),
@@ -266,6 +284,11 @@ function opencodeAskEnv(gate?: GateEnv, own = false): Record<string, string> {
     ...(gate ? { ION_GATE_URL: gate.url } : {}),
     // An inline config in ion's own environment is carried into the file, never passed on.
     OPENCODE_CONFIG_CONTENT: "",
+    // A file outside the folder: opencode asks its own `external_directory` after ion's gate allowed the call, as an
+    // ACP ask of kind "other" ion can't read, so an ion's read outside its project failed (PR #26 follow-up,
+    // 2026-11-22). With a gate, ion's gate decides alone (it saw the call whole first); without one, opencode asks.
+    // Either way a permission in ion's own environment isn't passed on.
+    OPENCODE_PERMISSION: gate ? JSON.stringify({ external_directory: "allow" }) : "",
     // A repo's own opencode.json could set permissions back to "allow" (verified): don't load it.
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     // Skills only from the folders ion names (with your own tools): none it finds by itself (~/.claude, a project's).

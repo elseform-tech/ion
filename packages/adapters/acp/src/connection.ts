@@ -29,7 +29,12 @@ export type Connection = {
   options: ConfigOption[];
   /** The last reason the agent's own log gave for a failed turn (harnesses with `logFailure`). */
   failure?: () => string | undefined;
+  /** Calls `listener` when the agent's log says this session can't go on (harnesses with `logGiveUp`). */
+  giveUp?: GiveUp;
 };
+
+/** Listens for the agent's log saying it can't go on: why, and the session it named, if any. */
+export type GiveUp = (listener: (why: string, sessionId?: string) => void) => () => void;
 
 /** Spawns the agent (never through a shell), initializes ACP and opens a session in `cwd`. */
 export type ConnectOpts = {
@@ -67,6 +72,7 @@ export type Spawned = {
   child: ChildProcessByStdio<Writable, Readable, Readable>;
   rpc: Rpc;
   failure?: () => string | undefined;
+  giveUp?: GiveUp;
 };
 
 /** Spawns the agent (never through a shell) in the run's sandbox, with the agent's own paths added. */
@@ -79,8 +85,12 @@ export function spawnAgent(h: AcpHarness, bin: string, o: ConnectOpts): Spawned 
   // Gone (or never started): its output ends, so nothing waits on it.
   for (const gone of ["error", "exit"] as const) child.on(gone, () => child.stdout.destroy());
   // Its log is read only where it can say why a turn failed; otherwise it's drained unread.
-  const failure = h.logFailure ? lastFailure(child.stderr, h.logFailure) : void child.stderr.resume();
-  return failure ? { child, rpc, failure } : { child, rpc };
+  if (!h.logFailure && !h.logGiveUp) {
+    child.stderr.resume();
+    return { child, rpc };
+  }
+  const log = readLog(child.stderr, h);
+  return { child, rpc, ...log };
 }
 
 /** `work`, or NotResponding once the start's time is up. */
@@ -125,18 +135,31 @@ export function startError(h: AcpHarness, o: ConnectOpts, e: unknown): unknown {
   return e;
 }
 
-/** Reads the agent's log as it comes (never letting it fill up): the last failure reason it gave. */
-function lastFailure(stderr: Readable, read: (line: string) => string | null): () => string | undefined {
+/**
+ * Reads the agent's log as it comes (never letting it fill up): the last failure reason it gave, and each line saying
+ * it can't go on, told to whoever listens.
+ */
+function readLog(stderr: Readable, h: AcpHarness): Pick<Spawned, "failure" | "giveUp"> {
   let last: string | undefined;
   let rest = "";
+  const listeners = new Set<(why: string, sessionId?: string) => void>();
+  const read = (line: string) => {
+    last = h.logFailure?.(line) ?? last;
+    const stop = h.logGiveUp?.(line);
+    if (stop) for (const l of [...listeners]) l(stop.why, stop.sessionId);
+  };
   stderr.setEncoding("utf8");
   stderr.on("data", (chunk: string) => {
     const lines = (rest + chunk).split("\n");
     rest = (lines.pop() ?? "").slice(-8192);
-    for (const line of lines) last = read(line) ?? last;
+    for (const line of lines) read(line);
   });
   stderr.on("error", () => {});
-  return () => last;
+  const giveUp: GiveUp = (l) => {
+    listeners.add(l);
+    return () => void listeners.delete(l);
+  };
+  return { ...(h.logFailure ? { failure: () => last } : {}), ...(h.logGiveUp ? { giveUp } : {}) };
 }
 
 /** The agent didn't answer in time (first-run download, an interactive prompt, a hang). */
