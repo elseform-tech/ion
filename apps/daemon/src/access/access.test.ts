@@ -502,7 +502,7 @@ describe("what ion's model runs on", () => {
 describe("harnessRunner", () => {
   it("asks ion's quick harness, with no tools, and reads its verdict", async () => {
     process.env.ION_ALLOW_FAKE = "1";
-    const configFile = join(mkdtempSync(join(tmpdir(), "ion-judge-")), "config.toml");
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "config.toml");
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, access: { ...DEFAULT_CONFIG.access, judge: "fake" } });
     const judge = createJudge(harnessRunner(runner(configFile)));
     expect(await judge({ projectId: "app", text: "x", req: cmd("pnpm test") })).toEqual({
@@ -518,7 +518,7 @@ describe("harnessRunner", () => {
   // The user, 2026-11-20: your MCP servers reach chats' agents only; the judge gets no server at all.
   it("gives the judge no MCP servers, even with yours turned on", async () => {
     process.env.ION_ALLOW_FAKE = "1";
-    const configFile = join(mkdtempSync(join(tmpdir(), "ion-judge-")), "config.toml");
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "config.toml");
     writeFileSync(
       join(configFile, "..", "mcp.json"),
       JSON.stringify({ mcpServers: { docs: { command: "d" } } }),

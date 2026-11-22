@@ -147,7 +147,7 @@ in a run) in a folder of ion's data folder: each judge or quick-model session in
 ends), the agent's own files (Grok's profile, written fresh, never through a link) in a daemon-only
 `…-own` folder beside it that the agent can only read, and `<data>/scratch/ion-probe-*` for checks (removed after).
 The scratch folder is emptied at the daemon's start.
-Folders `ion-probe-*` and `ion-judge-*` left in `$TMPDIR` are removed at the daemon's start (nothing else there). Only
+Folders `ion-probe-*` and `ion-judge-*` left in `$TMPDIR` and untouched for an hour are removed at the daemon's start (nothing else there). Only
 opencode's first setup still runs outside (it installs ion's plugin package into a folder runs can only read).
 
 Read-only to every run, the run's own agent's too:

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
@@ -18,10 +18,14 @@ const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
  * (final review, 2026-11-22): `ion-probe-*` and `ion-judge-*` folders only, nothing else there.
  */
 export function sweepTmp(tmp: string = tmpdir()): void {
+  // Only folders untouched for an hour: one in use (another ion, a test) stays (pnpm check, 2026-11-22).
+  const before = Date.now() - 3600_000;
   try {
-    for (const e of readdirSync(tmp, { withFileTypes: true }))
-      if (e.isDirectory() && /^ion-(probe|judge)-/.test(e.name))
-        rmSync(join(tmp, e.name), { recursive: true, force: true });
+    for (const e of readdirSync(tmp, { withFileTypes: true })) {
+      if (!e.isDirectory() || !/^ion-(probe|judge)-/.test(e.name)) continue;
+      const at = statSync(join(tmp, e.name), { throwIfNoEntry: false })?.mtimeMs ?? Date.now();
+      if (at < before) rmSync(join(tmp, e.name), { recursive: true, force: true });
+    }
   } catch {
     // a temp folder ion can't list: nothing of ion's to remove
   }

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StartOpts } from "@ion/adapter-kit";
@@ -104,8 +112,11 @@ describe("sweepTmp", () => {
   // daemon's start; nothing else there is touched (the tour's /tmp/ion-tour folders least of all).
   it("removes only ion-probe-* and ion-judge-* folders (not files)", () => {
     const tmp = mkdtempSync(join(tmpdir(), "sweep-"));
-    for (const d of ["ion-probe-a", "ion-judge-b", "ion-tour", "ion-tour2", "ion-setup-c", "other"])
+    const old = new Date(Date.now() - 2 * 3600_000);
+    for (const d of ["ion-probe-a", "ion-judge-b", "ion-tour", "ion-tour2", "ion-setup-c", "other"]) {
       mkdirSync(join(tmp, d));
+      utimesSync(join(tmp, d), old, old);
+    }
     writeFileSync(join(tmp, "ion-probe-file"), "x");
     sweepTmp(tmp);
     expect(readdirSync(tmp).sort()).toEqual([
@@ -115,5 +126,14 @@ describe("sweepTmp", () => {
       "ion-tour2",
       "other",
     ]);
+  });
+
+  // pnpm check, 2026-11-22: a daemon another test started swept a test's live ion-judge-* home out from under it (the
+  // judge then read no config). Only folders untouched for an hour go: none in use.
+  it("leaves a folder that's been touched in the last hour", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "sweep-"));
+    mkdirSync(join(tmp, "ion-judge-live"));
+    sweepTmp(tmp);
+    expect(readdirSync(tmp)).toEqual(["ion-judge-live"]);
   });
 });
