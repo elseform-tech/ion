@@ -145,9 +145,11 @@ function sightOf(c: Caller): Sight {
   if (c.kind === "you") return { scopes: "all", see: ["chats", "ions"] };
   if (c.kind === "chat")
     return { scopes: ["you", { projectId: c.projectId }], see: ["chats"], suggestedFor: c.projectId };
-  // ion's dream, pass A: chats files only, of one project (and yours, which its chats see) or yours alone.
-  if (c.dream?.see === "chats")
-    return { scopes: c.dream.project ? ["you", { projectId: c.dream.project }] : ["you"], see: ["chats"] };
+  // ion's dream: one project's files (and yours, which its chats and ion see) or yours alone; a chats pass, chats files.
+  if (c.dream) {
+    const scopes: MemoryScope[] = c.dream.project ? ["you", { projectId: c.dream.project }] : ["you"];
+    return { scopes, see: c.dream.see === "chats" ? ["chats"] : ["chats", "ions"] };
+  }
   return { scopes: ["you", ...c.projects.map((projectId) => ({ projectId }))], see: ["chats", "ions"] };
 }
 

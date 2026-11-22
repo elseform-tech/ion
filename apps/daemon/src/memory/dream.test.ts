@@ -35,7 +35,12 @@ function seed(name: string, s: Seed) {
 /** ion's dream as its tools have it: every project shared with ion. */
 /** ion's dream as its tools have it: pass A (chats files: a project's, or yours) or pass B (ions files). */
 const dream = (see: "chats" | "ions" = "ions", project: string | null = null) =>
-  new ScopedMemory(memory, { kind: "ion", ionId: "_dream", projects: ["shop"], dream: { see, project } });
+  new ScopedMemory(memory, {
+    kind: "ion",
+    ionId: "_dream",
+    projects: ["shop", "bank"],
+    dream: { see, project },
+  });
 /** Runs `f` on the first pass only (a dream has a pass per kind of file). */
 const once = (f: () => void) => {
   let ran = false;
@@ -54,7 +59,10 @@ function config(dream: "off" | "nightly" | "weekly", quietOn = true): UserConfig
     ...DEFAULT_CONFIG,
     memory: { dream },
     notifications: { ...DEFAULT_CONFIG.notifications, quiet: { on: quietOn, from: "22:00", to: "08:00" } },
-    projects: [{ id: "shop", path: "/p/shop", starred: false }],
+    projects: [
+      { id: "shop", path: "/p/shop", starred: false },
+      { id: "bank", path: "/p/bank", starred: false },
+    ],
   };
 }
 
@@ -320,9 +328,9 @@ describe("ion's dream", () => {
         return (e as Error).message;
       }
     };
-    // Pass B sees the private note, and may not write a file chats see.
-    expect(dream().read(secret.path).text).toContain("hospital");
-    expect(refused(write(dream(), shared, "From main. Has a hospital visit on Friday."))).toBe(
+    // A private pass sees your private note, and may not write a file chats see.
+    expect(dream("ions", "shop").read(secret.path).text).toContain("hospital");
+    expect(refused(write(dream("ions", "shop"), shared, "From main. Has a hospital visit on Friday."))).toBe(
       "This pass only changes files chats can't see",
     );
     // Pass A (shop's) can't see it at all, nor change your shared files.
@@ -372,5 +380,72 @@ describe("ion's dream", () => {
     stop();
     const last = dreamed().at(-1)?.data as { status: string; updated: number; period?: string };
     expect(last).toMatchObject({ status: "failed", updated: 1, period: "2026-11-20" });
+  });
+
+  // Task review, 2026-11-22: the private pass read every project's chats and wrote any project's (and your) ions
+  // files, so one project's chat could reach another project's ion. Every pass keeps to one project, or to your files
+  // with no chats at all.
+  it("text only in project A's chats never lands in project B's files or in your files", async () => {
+    const files = [
+      seed("Shop deploys", { scope: { projectId: "shop" }, type: "fact", text: "Shop deploys on Fridays." }),
+      seed("Bank deploys", { scope: { projectId: "bank" }, type: "fact", text: "Bank deploys on Mondays." }),
+      seed("Tabs", { scope: "you", type: "preference", text: "Tabs." }),
+    ];
+    for (const [scope, name] of [
+      [{ projectId: "shop" }, "Shop roadmap"],
+      [{ projectId: "bank" }, "Bank roadmap"],
+      ["you", "Health"],
+    ] as const)
+      files.push(
+        memory.write({
+          scope,
+          header: { name, description: name, type: "fact", see: "ions" },
+          text: name,
+          by: CHIEF,
+        }),
+      );
+    const secret = "The shop's launch code is KESTREL.";
+    store.append({
+      chatId: "c1",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "Launch", projectId: "shop" },
+    });
+    store.append({
+      chatId: "c1",
+      runId: null,
+      origin: "daemon",
+      type: EV.messageSent,
+      data: { text: secret },
+    });
+    const seen: { see: string; project: string | null; secret: boolean }[] = [];
+    await runDream(
+      deps(async (prompt, step) => {
+        seen.push({
+          see: step.pass.see,
+          project: step.pass.project ?? null,
+          secret: prompt.includes("KESTREL"),
+        });
+        return done();
+      }),
+    );
+    // A pass per project and kind, and one per kind of yours; only shop's passes read shop's chat.
+    expect(seen.map((x) => `${x.see}:${x.project ?? "you"}`).sort()).toEqual(
+      ["chats:bank", "chats:shop", "chats:you", "ions:bank", "ions:shop", "ions:you"].sort(),
+    );
+    expect(seen.filter((x) => x.secret).map((x) => x.project)).toEqual(["shop", "shop"]);
+    // And a shop pass changes only shop's files.
+    for (const see of ["chats", "ions"] as const)
+      for (const f of files.filter((x) => x.scope === "you" || x.scope.projectId === "bank"))
+        expect(() =>
+          dream(see, "shop").write({
+            scope: f.scope === "you" ? "you" : "bank",
+            path: f.path,
+            text: "KESTREL",
+            expect: f.hash,
+          }),
+        ).toThrow();
+    for (const f of files) expect(memory.row(f.path)?.hash).toBe(f.hash);
   });
 });

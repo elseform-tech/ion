@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MEMORY_CASES, MEMORY_MEASURES } from "./memory-cases.js";
-import { fillerSeeds, seedMemory, upFrontOf } from "./memory-seeds.js";
+import { fillerSeeds, upFrontOfSeeds } from "./memory-seeds.js";
 
 // The memory eval's cases (Task 5, 2026-11-22): a broken seed or a case that can't fail would quietly skew the numbers.
 describe("memory cases", () => {
@@ -79,14 +79,16 @@ describe("memory cases", () => {
   // never searched for. Seeded first (the oldest), it's past the index's 40 lines.
   it("leaves each scale case's answer out of the up-front index, so it has to be searched for", () => {
     for (const c of MEMORY_CASES.filter((x) => x.measure === "scale")) {
-      const dataDir = join(mkdtempSync(join(tmpdir(), "ion-memory-cases-")), "data");
-      seedMemory(dataDir, [...c.seeds, ...fillerSeeds(c.filler!)]);
-      const index = upFrontOf(dataDir, "chat" in c.to ? "chat" : "ion");
+      const root = join(mkdtempSync(join(tmpdir(), "ion-memory-cases-")), "memory");
+      const index = upFrontOfSeeds(
+        root,
+        [...c.seeds, ...fillerSeeds(c.filler!)],
+        "chat" in c.to ? "chat" : "ion",
+      );
       expect(index.split("\n").length, c.id).toBe(40);
       for (const s of c.seeds) expect(index, c.id).not.toContain(s.path);
     }
-    // pnpm check, 2026-11-22: writing 600 files took past the 5 s default under a full run.
-  }, 60_000);
+  });
 
   it("answers a to-do question both ways, and Mark done both ways", () => {
     const todo = MEMORY_CASES.filter((c) => c.measure === "todo");

@@ -92,16 +92,12 @@ export function dreamDue(c: UserConfig, now: Date, served: ReadonlySet<string>):
 
 /** The latest chats of the last week (in projects shared with ion): your last message and the agent's last reply. */
 function recentChats(db: Db, c: UserConfig, now: Date, pass: DreamPass): string {
-  // Pass A reads only its project's chats (yours: none); pass B every chat ion may read.
-  if (pass.see === "chats" && !pass.project) return "";
+  // A project's passes read only its chats; yours read none (every project's ion reads your files).
+  if (!pass.project || !sharedIds(c).includes(pass.project)) return "";
   const since = new Date(now.getTime() - CHATS_DAYS * DAY_MS).toISOString();
-  const shared = new Set(sharedIds(c));
-  const readable = (p: string | null) =>
-    pass.see === "chats" ? p === pass.project : !p || p === DEFAULT_PROJECT || shared.has(p);
   const chats = chatsView
     .list(db)
-    .filter((x) => !x.archived && (x.lastActivityAt ?? "") >= since)
-    .filter((x) => readable(x.projectId))
+    .filter((x) => !x.archived && (x.lastActivityAt ?? "") >= since && x.projectId === pass.project)
     .sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""))
     .slice(0, CHATS_MAX);
   const lines = chats.flatMap((x) => {
@@ -121,10 +117,9 @@ function recentChats(db: Db, c: UserConfig, now: Date, pass: DreamPass): string 
 
 /** What a pass changes, in a line for its prompt. */
 function passLine(pass: DreamPass): string {
-  if (pass.see === "ions")
-    return "This pass changes only files chats can't see (see: ions); leave the others.";
   const whose = pass.project ? `the project ${pass.project}'s` : "the user's own";
-  return `This pass changes only ${whose} files that chats see; the others are context.`;
+  const kind = pass.see === "ions" ? "that chats can't see (see: ions)" : "that chats see";
+  return `This pass changes only ${whose} files ${kind}; the others are context.`;
 }
 
 /** The dream ion as one pass of it sees memory. */
@@ -226,8 +221,9 @@ export async function runDream(d: DreamDeps, period?: string): Promise<DreamInfo
 }
 
 /**
- * The night's passes (task review, 2026-11-22: ions-only text never reaches a file chats see): one per project with
- * chats files, one for your chats files, then one for every ions file; all within 30 changes and 10 minutes.
+ * The night's passes (task review, 2026-11-22: ions-only text never reaches a file chats see, and no pass mixes two
+ * projects): per project, its chats files then its ions files; then yours, likewise, with no chats; all within 30
+ * changes and 10 minutes.
  */
 async function passes(d: DreamDeps, c: UserConfig, since: string): Promise<DreamTurn> {
   const start = Date.now();
@@ -249,17 +245,15 @@ async function passes(d: DreamDeps, c: UserConfig, since: string): Promise<Dream
 
 /** Which passes a night has: only those with files to tidy. */
 function passesOf(d: DreamDeps, c: UserConfig): DreamPass[] {
-  const all = passMemory(d, c, { see: "ions" }).index({ limit: ALL });
-  const projects = new Set(
-    all.flatMap((r) => (r.see === "chats" && r.scope !== "you" ? [r.scope.projectId] : [])),
+  const ion = { kind: "ion" as const, ionId: DREAM_ION, projects: sharedIds(c) };
+  const all = new ScopedMemory(d.memory, ion).index({ limit: ALL });
+  const have = new Set(all.map((r) => `${r.scope === "you" ? "" : r.scope.projectId}\n${r.see}`));
+  const projects = [...new Set(all.flatMap((r) => (r.scope === "you" ? [] : [r.scope.projectId])))].sort();
+  return [...projects, null].flatMap((project) =>
+    (["chats", "ions"] as const)
+      .filter((see) => have.has(`${project ?? ""}\n${see}`))
+      .map((see) => ({ see, project })),
   );
-  return [
-    ...[...projects].sort().map((project) => ({ see: "chats" as const, project })),
-    ...(all.some((r) => r.see === "chats" && r.scope === "you")
-      ? [{ see: "chats" as const, project: null }]
-      : []),
-    ...(all.some((r) => r.see === "ions") ? [{ see: "ions" as const }] : []),
-  ];
 }
 
 /** How many changes the dream made since `since`. */

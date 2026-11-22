@@ -93,10 +93,10 @@ and every change to it must too:
 - ion's dream (`[memory] dream`: off, nightly or weekly; `src/memory/dream.ts`, `dream-rules.ts`) tidies memory at
   3:00 (a night missed: once, the next time ion is up in quiet hours), as ion `_dream` with memory's tools only and
   its agent's web off (`StartOpts.noWeb`; an agent that can't is skipped): at most 30 changes and about 10 minutes.
-  It runs in passes so ions-only text never reaches a file chats see: one per project over that project's chats
-  files and chats, one over your chats files, then one that sees everything but changes only `see: ions` files. It
-  never changes `see`, your person files, to-dos, a suggestion, or a file you changed in the last day. Each change
-  is by "ion (dream)" in History; Settings → Memory restores what it forgot; the next briefing says what it did.
+  It runs in passes, so ions-only text never reaches a file chats see and no pass mixes two projects: per project,
+  one over its chats files and one over its ions files (with that project's chats only), then the same two over your
+  files with no chats at all. It never changes `see`, your person files, to-dos, a suggestion, or a file you changed
+  in the last day. Each change is by "ion (dream)" in History; Settings → Memory restores what it forgot; the next briefing says what it did.
 - Tests and tours use made-up memory only, never a real person's.
 
 ## Code health (CI enforces all of this)

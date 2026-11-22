@@ -1,9 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { MemoryScope } from "@ion/schema";
-import { openMemory } from "../memory/index.js";
+import { MemoryFiles, openMemory } from "../memory/index.js";
 import { type Caller, ScopedMemory } from "../memory/scoped.js";
-import { EventStore, openDb } from "../store/index.js";
+import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 
 /** The memory evals' seeded files (Task 5, 2026-11-22): look-alikes for precision, filler for scale. */
@@ -135,12 +135,42 @@ export function seedMemory(dataDir: string, seeds: Seed[]): void {
   mkdirSync(dataDir, { recursive: true });
   const db = openDb(join(dataDir, "ion.db"));
   try {
-    const memory = openMemory(dataDir, new EventStore(db, allViews), db);
+    writeSeeds(openMemory(dataDir, new EventStore(db, allViews), db), db, seeds);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Each seed as a file, in one transaction: not one commit (and its disk sync) per file, which took seconds for 600
+ * files under a full test run (pnpm check, 2026-11-22).
+ */
+function writeSeeds(memory: MemoryFiles, db: Db, seeds: Seed[]): void {
+  db.transaction(() => {
     for (const s of seeds) {
       const header = s.header as unknown as Parameters<typeof memory.write>[0]["header"];
       const slug = s.path.split("/").at(-1)!.slice(0, -3);
       memory.write({ scope: scopeOf(s.path), slug, header, text: s.text, by: "you" });
     }
+  })();
+}
+
+/** Who reads the up-front index: a chat in shop, or shop's ion. */
+const readerOf = (who: "chat" | "ion"): Caller =>
+  who === "chat"
+    ? { kind: "chat", chatId: "c", runId: "r", projectId: "shop" }
+    : { kind: "ion", ionId: "shop", projects: ["shop"] };
+
+/**
+ * The up-front index after these seeds, with the index in memory (no database file, nothing read back from disk): what
+ * the scale cases check, fast under a loaded test run (pnpm check, 2026-11-22).
+ */
+export function upFrontOfSeeds(root: string, seeds: Seed[], who: "chat" | "ion"): string {
+  const db = openDb(":memory:");
+  try {
+    const memory = new MemoryFiles({ root, store: new EventStore(db, allViews), db });
+    writeSeeds(memory, db, seeds);
+    return new ScopedMemory(memory, readerOf(who)).indexBlock()?.body ?? "";
   } finally {
     db.close();
   }
@@ -151,11 +181,7 @@ export function upFrontOf(dataDir: string, who: "chat" | "ion"): string {
   const db = openDb(join(dataDir, "ion.db"));
   try {
     const memory = openMemory(dataDir, new EventStore(db, allViews), db);
-    const caller: Caller =
-      who === "chat"
-        ? { kind: "chat", chatId: "c", runId: "r", projectId: "shop" }
-        : { kind: "ion", ionId: "shop", projects: ["shop"] };
-    return new ScopedMemory(memory, caller).indexBlock()?.body ?? "";
+    return new ScopedMemory(memory, readerOf(who)).indexBlock()?.body ?? "";
   } finally {
     db.close();
   }

@@ -474,7 +474,7 @@ describe("memory tools", () => {
   // 30 changes a night.
   it("the cap stops a run at 30 changes", async () => {
     const turnId = "dream-1";
-    const dream = { see: "ions" as const, max: 30 };
+    const dream = { see: "ions" as const, project: "app", max: 30 };
     const c = await client(
       grants.create({ kind: "ion", ionId: "_dream", projects: ["app", "shop"], turnId, dream }),
     );

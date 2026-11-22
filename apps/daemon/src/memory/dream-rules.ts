@@ -42,9 +42,9 @@ function dreamMayBe(type: MemoryType): void {
 }
 
 /**
- * A dream's pass (task review, 2026-11-22: ions-only text must never reach a file chats see): pass A sees and
- * changes only chats files, one project's (`project`) or yours (null); pass B sees everything and changes only ions
- * files.
+ * A dream's pass (task review, 2026-11-22: ions-only text must never reach a file chats see, and no pass mixes two
+ * projects): each keeps to one project's files (`project`; yours are context) or to yours (null), and changes only
+ * files seen as `see` says.
  */
 export type DreamPass = { see: MemorySee; project?: string | null };
 
@@ -56,7 +56,6 @@ function passWrites(pass: DreamPass, scope: MemoryScope, see: MemorySee): void {
         ? "This pass only changes files chats can't see"
         : "This pass only changes files chats see",
     );
-  if (pass.see !== "chats") return;
   const mine = pass.project ? scope !== "you" && scope.projectId === pass.project : scope === "you";
   const whose = pass.project ? `${pass.project}'s` : "your";
   if (!mine) throw new UserError(`This pass only changes ${whose} files`);
