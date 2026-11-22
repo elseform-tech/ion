@@ -89,11 +89,26 @@ export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | 
   if (ionId === "chief") {
     const [set, ...rest] = ion.quick.split(":");
     if (await isReady(d, set!)) return { harness: set!, model: rest.join(":") || null, effort: quickEffort };
-    const first = defaultAgent(await readyAgents(d.agents), null);
-    return first ? { harness: first, model: null, effort: quickEffort } : null;
+    return nextBrain(d, ionId, [set!]);
   }
+  // A project's own agent that isn't ready (signed out, gone) gives way to the next ready one (Plan 19's checks).
   const harness = await projectAgent(d, ionId);
-  if (!harness || !(await isReady(d, harness))) return null;
+  if (!harness || !(await isReady(d, harness))) return nextBrain(d, ionId, harness ? [harness] : []);
   const b = brainOf(d.configFile, ionId, harness);
+  return { harness, model: b.model ?? null, effort: b.effort ?? quickEffort };
+}
+
+/**
+ * The first ready agent but these (opencode, Grok, Codex, Claude), for an ion whose own agent isn't ready or failed;
+ * on its default model (a project's own model only on the agent it was set for), or null when none is left.
+ */
+export async function nextBrain(d: BrainDeps, ionId: string, not: string[]): Promise<IonBrain | null> {
+  const harness = defaultAgent(
+    (await readyAgents(d.agents)).filter((id) => !not.includes(id)),
+    null,
+  );
+  if (!harness) return null;
+  const quickEffort = loadUserConfig(d.configFile).config.ion.quickEffort ?? null;
+  const b = ionId === "chief" ? {} : brainOf(d.configFile, ionId, harness);
   return { harness, model: b.model ?? null, effort: b.effort ?? quickEffort };
 }

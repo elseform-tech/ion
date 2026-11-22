@@ -60,4 +60,18 @@ describe("an ion's agent", () => {
       delete process.env.ION_FAKE_HAS_WEB;
     }
   });
+
+  // Plan 19's checks, 2026-11-22: a project's ion whose agent wasn't ready had no agent at all ("I couldn't reach my
+  // agent"). It takes the next ready one, on that agent's default model.
+  it("a project's agent that isn't ready gives way to the next ready one", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    const projects = [{ id: "app", path: "/x/app", starred: false, harness: "claude-code", model: "opus" }];
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects });
+    const d = {
+      configFile,
+      db: openDb(":memory:"),
+      agents: async () => [info("claude-code", false), info("opencode", false), info("grok-build", true)],
+    };
+    expect(await ionBrain(d, "app")).toEqual({ harness: "grok-build", model: null, effort: null });
+  });
 });
