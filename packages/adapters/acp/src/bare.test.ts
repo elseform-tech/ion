@@ -21,7 +21,14 @@ const judge: AcpHarness = {
   forgetArgs: (id) => [AGENT, "--forget", id],
 };
 
-type Row = { cwd?: string; pid?: number; args?: string[]; gate?: string | null; closed?: string; forgot?: string };
+type Row = {
+  cwd?: string;
+  pid?: number;
+  args?: string[];
+  gate?: string | null;
+  closed?: string;
+  forgot?: string;
+};
 const rows = (log: string): Row[] =>
   readFileSync(log, "utf8")
     .trim()
@@ -70,8 +77,18 @@ describe("a bare start (ion's judge) on an ACP agent", () => {
     const opened = rows(log).filter((r) => r.cwd);
     expect(opened).toHaveLength(2);
     expect(opened[0]!.pid).toBe(opened[1]!.pid);
-    expect(rows(log).filter((r) => r.closed).map((r) => r.closed).sort()).toEqual(["s1", "s2"]);
-    expect(rows(log).filter((r) => r.forgot).map((r) => r.forgot).sort()).toEqual(["s1", "s2"]);
+    expect(
+      rows(log)
+        .filter((r) => r.closed)
+        .map((r) => r.closed)
+        .sort(),
+    ).toEqual(["s1", "s2"]);
+    expect(
+      rows(log)
+        .filter((r) => r.forgot)
+        .map((r) => r.forgot)
+        .sort(),
+    ).toEqual(["s1", "s2"]);
   });
 
   it("starts with the harness's bare arguments, every tool refused, on its fast model", async () => {

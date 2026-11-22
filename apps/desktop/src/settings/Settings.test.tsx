@@ -172,33 +172,20 @@ describe("Settings", () => {
   });
 
   // The user, 2026-11-21 (Plan 18 Task 12): on a computer without a sandbox, an agent's chats run without one, and
-  // Settings → Agents says so; a sandboxed one says nothing.
-  it("says Not sandboxed for an agent whose chats run without the sandbox", async () => {
+  // Settings → Agents says so; a sandboxed one says nothing. (Plan 18 Task 14): an agent's own allow and deny rules
+  // count as your decisions; it says it uses them, with how many. Final review, 2026-11-22: Grok's judge timed out in
+  // every live chat and nothing said so; it says how often an agent's judge didn't answer this week (only when it
+  // didn't at all).
+  it.each([
+    ["Not sandboxed", "Claude Code"],
+    ["Uses its own allow/deny rules (3)", "Claude Code"],
+    ["Judge didn't answer 4 times this week", "Grok Build"],
+  ])("says %s for that agent only", async (line, agent) => {
     render(<Settings client={client()} onOpenIon={() => {}} />);
     await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
-    const lines = screen.getAllByText("Not sandboxed");
+    const lines = screen.getAllByText(line);
     expect(lines).toHaveLength(1);
-    expect(lines[0]!.closest(".hrow")?.textContent).toContain("Claude Code");
-  });
-
-  // Final review, 2026-11-22: Grok's judge timed out in every live chat and nothing said so. Settings → Agents says how
-  // often an agent's judge didn't answer this week (only when it didn't at all).
-  it("says how often an agent's judge didn't answer this week", async () => {
-    render(<Settings client={client()} onOpenIon={() => {}} />);
-    await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
-    const lines = screen.getAllByText("Judge didn't answer 4 times this week");
-    expect(lines).toHaveLength(1);
-    expect(lines[0]!.closest(".hrow")?.textContent).toContain("Grok Build");
-  });
-
-  // The user, 2026-11-21 (Plan 18 Task 14): an agent's own allow and deny rules count as your decisions; Settings →
-  // Agents says it uses them, with how many.
-  it("says an agent uses its own allow/deny rules, with a count", async () => {
-    render(<Settings client={client()} onOpenIon={() => {}} />);
-    await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
-    const lines = screen.getAllByText("Uses its own allow/deny rules (3)");
-    expect(lines).toHaveLength(1);
-    expect(lines[0]!.closest(".hrow")?.textContent).toContain("Claude Code");
+    expect(lines[0]!.closest(".hrow")?.textContent).toContain(agent);
   });
 
   // The user, 2026-11-19: you choose how hard ion thinks.

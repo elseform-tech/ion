@@ -126,7 +126,9 @@ export const handlers: Handlers = {
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
   "harnesses.list": async () => {
     const listed = listedHarnessIds();
-    return (await harnessInfos.list()).filter((h) => listed.includes(h.id)).map((h) => ({ ...h, ...missesOf(h.id) }));
+    return (await harnessInfos.list())
+      .filter((h) => listed.includes(h.id))
+      .map((h) => ({ ...h, ...missesOf(h.id) }));
   },
   "memory.list": (a, ctx) => memoryView.list(ctx.db, a.projectId ?? null),
   "memory.forget": (a, ctx) => {

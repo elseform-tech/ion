@@ -59,7 +59,10 @@ describe("a run's sandbox", () => {
     const all = ["/h/.codex", "/h/.claude", "/h/.claude.json", "/h/.config/opencode", "/h/.opencode", "/g"];
     const cache = "/h/.cache/opencode";
     expect(agentConfigs("grok-build", env)).toEqual([...all.filter((p) => p !== "/g"), cache]);
-    expect(agentConfigs("claude-code", env)).toEqual([...all.filter((p) => !p.startsWith("/h/.claude")), cache]);
+    expect(agentConfigs("claude-code", env)).toEqual([
+      ...all.filter((p) => !p.startsWith("/h/.claude")),
+      cache,
+    ]);
     expect(agentConfigs("fake", env)).toEqual([...all, cache]);
     const sb = runSandbox("seatbelt", { ...o, cwd: "/w", harness: "opencode", env });
     expect(sb?.paths.noWrite).toEqual([...all.filter((p) => !p.includes("opencode")), cache]);

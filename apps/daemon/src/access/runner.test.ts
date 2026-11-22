@@ -84,6 +84,12 @@ describe("sweepTmp", () => {
       mkdirSync(join(tmp, d));
     writeFileSync(join(tmp, "ion-probe-file"), "x");
     sweepTmp(tmp);
-    expect(readdirSync(tmp).sort()).toEqual(["ion-probe-file", "ion-setup-c", "ion-tour", "ion-tour2", "other"]);
+    expect(readdirSync(tmp).sort()).toEqual([
+      "ion-probe-file",
+      "ion-setup-c",
+      "ion-tour",
+      "ion-tour2",
+      "other",
+    ]);
   });
 });

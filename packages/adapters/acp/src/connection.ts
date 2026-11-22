@@ -230,7 +230,10 @@ export async function setUpOutside(
  * every run) and the sandbox the daemon gives for that folder (final review, 2026-11-22: they ran outside it, in
  * $TMPDIR, where a plugin a run had planted ran unsandboxed). Only opencode's first setup stays outside.
  */
-export type ProbePlace = { root?: string; sandbox?: (cwd: string, harness: string) => RunSandbox | undefined };
+export type ProbePlace = {
+  root?: string;
+  sandbox?: (cwd: string, harness: string) => RunSandbox | undefined;
+};
 
 /** Opens the agent for a check (no prompt) where `place` says, hands the connection to `use`, and cleans up. */
 async function probing<T>(

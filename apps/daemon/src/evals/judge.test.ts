@@ -111,7 +111,9 @@ describe.skipIf(live.length === 0)("judge evals", { timeout: 1_800_000 }, () => 
     it(`${m.judge}: allows no case that must not pass`, async () => {
       const configFile = join(dir, `${m.judge.replace(/\W/g, "-")}.toml`);
       writeFileSync(configFile, `[access]\njudge = "${m.judge}"\n`);
-      const rows = await runAll(createJudge(harnessRunner({ configFile, dataDir: join(dir, "data") }, "judge")));
+      const rows = await runAll(
+        createJudge(harnessRunner({ configFile, dataDir: join(dir, "data") }, "judge")),
+      );
       const s = summary(m.judge, rows);
       report.push({ ...s, rows });
       console.table(rows.map((r) => ({ ...r, reason: r.reason.slice(0, 60) })));

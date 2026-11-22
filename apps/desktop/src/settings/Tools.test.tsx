@@ -659,7 +659,10 @@ describe("Settings → Tools: each agent's own", () => {
   // write ~/.claude.json) shows New, once.
   it("an agent's own server that's new shows New", async () => {
     const c = withOwn({
-      servers: [{ ...stdio("claude-code", "planted", "planted-mcp"), new: true }, stdio("codex", "fs", "fs-mcp")],
+      servers: [
+        { ...stdio("claude-code", "planted", "planted-mcp"), new: true },
+        stdio("codex", "fs", "fs-mcp"),
+      ],
     });
     await open(c);
     const planted = await findRow("planted");

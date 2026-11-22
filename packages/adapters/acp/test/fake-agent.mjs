@@ -8,7 +8,10 @@ import { createInterface } from "node:readline";
 const forgetAt = process.argv.indexOf("--forget");
 if (forgetAt >= 0) {
   if (process.env.FAKE_ACP_RECORD)
-    appendFileSync(process.env.FAKE_ACP_RECORD, `${JSON.stringify({ forgot: process.argv[forgetAt + 1] })}\n`);
+    appendFileSync(
+      process.env.FAKE_ACP_RECORD,
+      `${JSON.stringify({ forgot: process.argv[forgetAt + 1] })}\n`,
+    );
   process.exit(0);
 }
 
@@ -255,7 +258,13 @@ function record(cwd) {
     } catch {
       wrote = "blocked";
     }
-  const row = { cwd, wrote, args: process.argv.slice(2), pid: process.pid, gate: process.env.ION_GATE_URL ?? null };
+  const row = {
+    cwd,
+    wrote,
+    args: process.argv.slice(2),
+    pid: process.pid,
+    gate: process.env.ION_GATE_URL ?? null,
+  };
   appendFileSync(process.env.FAKE_ACP_RECORD, `${JSON.stringify(row)}\n`);
 }
 

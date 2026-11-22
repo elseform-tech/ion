@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -582,7 +590,10 @@ describe.skipIf(sandboxKind() !== "seatbelt")("ion's checks of an agent", () => 
       const a = createAcpAdapter({ ...fake, id: "fake-probed" }, { which: () => process.execPath, probes });
       expect(await a.auth.status()).toEqual({ signedIn: true, method: "Signed in" });
       expect((await a.capabilities()).models.map((m) => m.id)).toEqual(["fake-1", "fake-2"]);
-      const rows = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      const rows = readFileSync(log, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
       expect(rows).toHaveLength(2);
       for (const r of rows) {
         expect(r.cwd.startsWith(join(root, "ion-probe-"))).toBe(true);

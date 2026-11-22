@@ -445,7 +445,9 @@ describe("ion's judge on ACP agents", () => {
     const args = GROK_BUILD.bare?.args?.(dir) ?? [];
     const at = args.indexOf("--agent-profile");
     expect(at).toBeGreaterThan(-1);
-    expect(args).toEqual(expect.arrayContaining(["--permission-mode", "default", "agent", "--no-leader", "stdio"]));
+    expect(args).toEqual(
+      expect.arrayContaining(["--permission-mode", "default", "agent", "--no-leader", "stdio"]),
+    );
     const profile = readFileSync(args[at + 1]!, "utf8");
     expect(args[at + 1]!.startsWith(dir)).toBe(true);
     expect(profile).toMatch(/^tools: todo_write$/m);

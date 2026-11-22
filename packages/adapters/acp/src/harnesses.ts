@@ -98,7 +98,9 @@ export const GROK_BUILD: AcpHarness = {
   // Its hooks (ion's gate among them), config, skills and plugins (installed-plugins holds an enabled plugin's files and
   // its registry; config.toml says which are on): nothing a run does lasts into the next (final review, 2026-11-22).
   sandboxPaths: () => ({
-    noWrite: ["hooks", "config.toml", "skills", "installed-plugins", "plugins"].map((f) => join(grokHome(), f)),
+    noWrite: ["hooks", "config.toml", "skills", "installed-plugins", "plugins"].map((f) =>
+      join(grokHome(), f),
+    ),
   }),
   // ion's judge: its fast model at low effort, with a profile that leaves it no tool of consequence (final review,
   // 2026-11-22; GROK_CONFIG's toolset can't remove tools, `--tools` doesn't reach `agent stdio`, a profile does).

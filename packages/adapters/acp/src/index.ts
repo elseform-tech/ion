@@ -64,10 +64,7 @@ const ownOf = (h: AcpHarness) => ({
 });
 
 /** One adapter for any agent that speaks ACP over stdio (Grok Build, opencode, …). */
-export function createAcpAdapter(
-  h: AcpHarness,
-  deps: AcpDeps = {},
-): HarnessAdapter {
+export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdapter {
   const which = deps.which ?? whichOnPath;
   const binary = () => which(h.bin);
   return {
@@ -84,7 +81,10 @@ export function createAcpAdapter(
       async status() {
         const path = binary();
         if (!path) return { signedIn: false, method: "Not installed" };
-        const probe = await probeSignedIn(h, path, { timeoutMs: deps.startTimeoutMs, place: deps.probes?.() });
+        const probe = await probeSignedIn(h, path, {
+          timeoutMs: deps.startTimeoutMs,
+          place: deps.probes?.(),
+        });
         const slow = h.notResponding?.() ?? "Not responding";
         const method = { yes: "Signed in", no: "Not signed in", "not-responding": slow }[probe];
         return { signedIn: probe === "yes", method };
@@ -113,13 +113,19 @@ export function createAcpAdapter(
       const c = opts.bare
         ? await bareConnect(h, path, bareOpts(h, opts, deps.startTimeoutMs))
         : await connect(h, path, { ...opts, timeoutMs: deps.startTimeoutMs });
-      const wanted = opts.model ?? (opts.bare ? h.bare?.model : null) ?? h.defaultModel;
-      const model = (await setOption(c, "model", wanted)) ?? h.defaultModel ?? "default";
-      const effort = opts.effort ?? (opts.bare ? (h.bare?.effort ?? null) : null);
+      const want = wanted(h, opts);
+      const model = (await setOption(c, "model", want.model)) ?? h.defaultModel ?? "default";
+      const effort = want.effort;
       await setOption(c, "thought_level", effort === "max" ? "high" : effort);
       return startAcpSession(c, { ...opts, effort }, { harness: h.id, model, silent: silenceOf(h) });
     },
   };
+}
+
+/** The model and effort a start asks for: yours, else (ion's judge) the harness's fast model and low effort. */
+function wanted(h: AcpHarness, opts: StartOpts): { model: string | null; effort: StartOpts["effort"] } {
+  const bare = opts.bare ? h.bare : undefined;
+  return { model: opts.model ?? bare?.model ?? h.defaultModel, effort: opts.effort ?? bare?.effort ?? null };
 }
 
 /**

@@ -322,7 +322,9 @@ describe("judge", () => {
     };
     const hangsFirst = (_p: string, _s: AbortSignal, agent?: string) => {
       tried.push(agent);
-      return agent ? Promise.resolve('{"verdict": "allow", "reason": "fine"}') : new Promise<string>(() => {});
+      return agent
+        ? Promise.resolve('{"verdict": "allow", "reason": "fine"}')
+        : new Promise<string>(() => {});
     };
     const t0 = Date.now();
     expect(await createJudge(hangsFirst, 300, others)(input)).toEqual({ verdict: "allow", reason: "fine" });
@@ -552,7 +554,11 @@ describe("harnessRunner for ion's own thinking", () => {
     process.env.ION_ALLOW_FAKE = "1";
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-quick-")), "config.toml");
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "nope" } });
-    const said = await harnessRunner(runner(configFile), "quick")("hello", new AbortController().signal, "fake");
+    const said = await harnessRunner(runner(configFile), "quick")(
+      "hello",
+      new AbortController().signal,
+      "fake",
+    );
     expect(said).toBe("Hi from the fake harness.");
   });
 });

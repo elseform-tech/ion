@@ -30,7 +30,11 @@ type Routes = {
   asks: Map<string, (p: Json) => Promise<unknown>>;
   child: SessionChild;
 };
-type Warm = { ready: Promise<Spawned & { caps: AgentCaps }>; routes: Map<string, Routes>; idle?: NodeJS.Timeout };
+type Warm = {
+  ready: Promise<Spawned & { caps: AgentCaps }>;
+  routes: Map<string, Routes>;
+  idle?: NodeJS.Timeout;
+};
 
 /** ion's warm judges: one agent process per harness, folder, sandbox and env. */
 const warm = new Map<string, Warm>();
@@ -49,12 +53,11 @@ class SessionChild extends EventEmitter {
   constructor(private readonly end: () => void) {
     super();
   }
-  kill(): boolean {
-    if (this.done) return true;
+  kill(): void {
+    if (this.done) return;
     this.done = true;
     this.end();
     this.emit("exit");
-    return true;
   }
   /** The real process went away: the session ends as a crash. */
   gone(): void {
