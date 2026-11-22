@@ -1,10 +1,10 @@
-import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { agentEnv, type Rpc, sandboxed, withPaths } from "@ion/adapter-kit";
+import type { Rpc } from "@ion/adapter-kit";
 import {
   type AgentCaps,
   type Connection,
   type ConnectOpts,
+  forget,
   initialize,
   inTime,
   openSession,
@@ -152,18 +152,4 @@ function endSession(
 function stop(key: string, w: Warm): void {
   warm.delete(key);
   void w.ready.then((a) => a.child.kill()).catch(() => {});
-}
-
-/**
- * Has the agent delete a judge's session from its history (Grok: `grok sessions delete`; opencode: `opencode session
- * delete`), so ion's verdicts don't pile up among your own sessions. In the same sandbox; its failure changes nothing.
- */
-function forget(h: AcpHarness, bin: string, o: ConnectOpts, sessionId: string): void {
-  const args = h.forgetArgs?.(sessionId);
-  if (!args) return;
-  const run = sandboxed(withPaths(o.sandbox, h.sandboxPaths?.() ?? {}), bin, args);
-  const env = { ...agentEnv(process.env, o.envDrop), ...o.env };
-  const child = spawn(run.command, run.args, { stdio: "ignore", env, cwd: o.cwd });
-  child.on("error", () => {});
-  child.unref();
 }

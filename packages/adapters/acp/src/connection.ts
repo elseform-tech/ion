@@ -249,8 +249,11 @@ async function probing<T>(
     const sandbox = o.place?.sandbox?.(dir, h.id);
     // Not set up yet (opencode's plugin package): once outside the sandbox first, as a run's start does.
     if (sandbox && h.prepare && !h.prepare()) await setUpOutside(h, bin, { timeoutMs: o.timeoutMs });
-    const c = await connect(h, bin, { cwd: dir, timeoutMs: o.timeoutMs, ...(sandbox ? { sandbox } : {}) });
+    const at: ConnectOpts = { cwd: dir, timeoutMs: o.timeoutMs, ...(sandbox ? { sandbox } : {}) };
+    const c = await connect(h, bin, at);
     c.child.kill();
+    // Its session goes from the agent's history (final review, 2026-11-22: Grok kept every check's).
+    forget(h, bin, at, c.sessionId);
     return use(c);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -303,4 +306,18 @@ export async function setOption(
     return value;
   }
   return typeof opt.currentValue === "string" ? opt.currentValue : null;
+}
+
+/**
+ * Has the agent delete a judge's (or a check's) session from its history (Grok: `grok sessions delete`; opencode: `opencode session
+ * delete`), so ion's verdicts don't pile up among your own sessions. In the same sandbox; its failure changes nothing.
+ */
+export function forget(h: AcpHarness, bin: string, o: ConnectOpts, sessionId: string): void {
+  const args = h.forgetArgs?.(sessionId);
+  if (!args) return;
+  const run = sandboxed(withPaths(o.sandbox, h.sandboxPaths?.() ?? {}), bin, args);
+  const env = { ...agentEnv(process.env, o.envDrop), ...o.env };
+  const child = spawn(run.command, run.args, { stdio: "ignore", env, cwd: o.cwd });
+  child.on("error", () => {});
+  child.unref();
 }

@@ -587,13 +587,23 @@ describe.skipIf(sandboxKind() !== "seatbelt")("ion's checks of an agent", () => 
           paths: { deny: [deny], read: [], write: [dir], noWrite: [] },
         }),
       });
-      const a = createAcpAdapter({ ...fake, id: "fake-probed" }, { which: () => process.execPath, probes });
+      // Final review, 2026-11-22: each check's session is deleted from the agent's history after (Grok kept them all).
+      const forgetArgs = (id: string) => [AGENT, "--forget", id];
+      const a = createAcpAdapter(
+        { ...fake, id: "fake-probed", forgetArgs },
+        { which: () => process.execPath, probes },
+      );
       expect(await a.auth.status()).toEqual({ signedIn: true, method: "Signed in" });
       expect((await a.capabilities()).models.map((m) => m.id)).toEqual(["fake-1", "fake-2"]);
-      const rows = readFileSync(log, "utf8")
-        .trim()
-        .split("\n")
-        .map((l) => JSON.parse(l));
+      const all = () =>
+        readFileSync(log, "utf8")
+          .trim()
+          .split("\n")
+          .map((l) => JSON.parse(l));
+      for (let i = 0; i < 100 && all().filter((r) => r.forgot).length < 2; i++)
+        await new Promise((r) => setTimeout(r, 20));
+      expect(all().filter((r) => r.forgot)).toHaveLength(2);
+      const rows = all().filter((r) => r.cwd);
       expect(rows).toHaveLength(2);
       for (const r of rows) {
         expect(r.cwd.startsWith(join(root, "ion-probe-"))).toBe(true);
