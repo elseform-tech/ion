@@ -65,9 +65,9 @@ function loginStatus(l: Launch): Promise<AuthStatus> {
 
 /**
  * What it takes from ion: MCP servers by url (Codex's mcp_servers is Streamable HTTP), and a start with no web (ion's
- * dream: its web search off in the thread's config).
+ * dream: its web search off in the thread's config); its default model's context (272k input tokens).
  */
-const TAKES = { mcpTransports: { http: true }, noWeb: true } as const;
+const TAKES = { mcpTransports: { http: true }, noWeb: true, contextTokens: 272_000 } as const;
 
 /** OpenAI's Codex CLI, driven through its app-server (JSON-RPC on stdio): `codex app-server`. */
 export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {

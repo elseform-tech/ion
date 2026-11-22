@@ -51,6 +51,7 @@ import { missesOf } from "../access/misses.js";
 import { readAgentRules, ruleCount } from "../access/agent-rules.js";
 import { usageView } from "../views/usage.js";
 import { agentUsages } from "./usage.js";
+import type { Handoffs } from "../runs/limit-handoff.js";
 
 export { UserError } from "./errors.js";
 
@@ -103,6 +104,8 @@ export type Ctx = {
   seen: Seen;
   /** A chat's agent making this call (with its run's key); none: you. */
   caller?: RunScope;
+  /** When a chat's agent hits its limit: ion's question, the handoff or the wait. */
+  handoffs?: Handoffs;
   configFile: string;
   startedAt: number;
   version: string;
@@ -159,7 +162,10 @@ export const handlers: Handlers = {
     const scope = a.scope ?? "chat";
     if (!DECISION_SCOPES.includes(scope)) throw new UserError("Pick chat, project or everywhere");
     const pick = typeof a.text === "string" ? a.text : Number(a.choice);
-    await ctx.decisions.answer(String(a.needId ?? ""), pick, scope);
+    const needId = String(a.needId ?? "");
+    // ion's own question when a chat's agent hit its limit: Continue, Wait or Always.
+    if (ctx.handoffs?.owns(needId)) await ctx.handoffs.answer(needId, pick, scope);
+    else await ctx.decisions.answer(needId, pick, scope);
     return { ok: true as const };
   },
   "decisions.list": (a, ctx) => decisionsView.list(ctx.db, a.projectId),

@@ -41,6 +41,43 @@ describe("timeline", () => {
     expect(t.items.at(-1)).toEqual({ kind: "ion", tone: "note", text });
   });
 
+  // The user, 2026-11-21 (Plan 20): a limit handed to another agent shows one line, never ion's brief as your message;
+  // your choice shows under ion's question.
+  it("shows a handoff as one line, with your choice under the question and no brief", () => {
+    const choices = [
+      { label: "Continue on Grok Build", consequence: "" },
+      { label: "Wait", consequence: "" },
+    ];
+    const t = play(
+      ev("message.sent", { text: "Add a dark mode" }),
+      ev("need.raised", {
+        needId: "n1",
+        kind: "ask",
+        summary: "opencode hit its limit. Continue on Grok Build, or wait?",
+        detail: null,
+        choices,
+      }),
+      ev("message.sent", { text: "<ion-data …> brief", handoff: true, answers: "n1" }, undefined, "r2"),
+      ev("need.resolved", {
+        needId: "n1",
+        decision: "answered",
+        by: "you",
+        choice: "Continue on Grok Build",
+        scope: "chat",
+      }),
+      ev("chat.handoff", { kind: "continued", text: "Continued on Grok Build — opencode hit its limit" }),
+    );
+    expect(t.items.filter((x) => x.kind === "you")).toEqual([{ kind: "you", text: "Add a dark mode" }]);
+    const q = t.items.find((x) => x.kind === "question");
+    expect(q).toMatchObject({ outcome: { by: "you", choice: "Continue on Grok Build" } });
+    expect(q).not.toHaveProperty("replied");
+    expect(t.items.at(-1)).toEqual({
+      kind: "ion",
+      tone: "note",
+      text: "Continued on Grok Build — opencode hit its limit",
+    });
+  });
+
   // Security review, 2026-11-22: a chat's preference waits for you to keep it; the chat says so in one quiet line.
   it("says a chat's preference was saved as a suggestion", () => {
     const header = { name: "Tabs", description: "d", type: "preference", see: "chats", suggested: "app" };

@@ -1470,6 +1470,13 @@ export function sumLines(lines: Line[]) {
                 <div class="quiet"><i data-lucide="list-todo"></i>Added to your to-dos: Check the headline on mobile<button class="lnk" type="button" title="Open in Settings" data-gotodos><i data-lucide="list-todo"></i>To-dos</button></div>
                 <!-- Task 5, 2026-11-22: a preference a chat saved waits for you; the chat says so, with a link to Memory (Keep is there). -->
                 <div class="quiet"><i data-lucide="heart"></i>Suggested for every project: Short replies<button class="lnk" type="button" title="Open in Settings" data-gomem><i data-lucide="notebook-text"></i>Memory</button></div>
+                <!-- Plan 20, Task 2 (2026-11-22): a chat's agent hit its limit. ion asks (Continue on <other> / Wait / Always
+                     continue on <other> here) in the question box; the answer shows under the question, and the chat says what
+                     happened in one quiet line: the handoff, the wait, or a long chat that started fresh with ion's summary. -->
+                <div class="qa"><button class="qq" type="button" aria-expanded="false" title="opencode hit its limit. Continue on Grok Build, or wait?" data-qa><i data-lucide="message-circle-question"></i>opencode hit its limit. Continue on Grok Build, or wait?</button></div>
+                <div class="quiet"><i data-lucide="info"></i>Continued on Grok Build — opencode hit its limit</div>
+                <div class="quiet"><i data-lucide="info"></i>Waits for Claude Code — 16:00</div>
+                <div class="quiet"><i data-lucide="info"></i>Started fresh with a summary</div>
               </div></div>
               <div class="foot"><div class="fcol">
                 <div class="cbox">

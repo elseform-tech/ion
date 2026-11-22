@@ -23,6 +23,8 @@ export type AcpHarness = {
   loginArgs: string[];
   loginHint: string;
   defaultModel: string | null;
+  /** About how many tokens its default model's context holds (HarnessAdapter.contextTokens). */
+  contextTokens?: number;
   /** Extra environment for the agent (e.g. making it ask before editing); with a gate, its hook too. */
   env?: (gate?: GateEnv, own?: boolean) => Record<string, string>;
   /** The agent's gate-hook payload as one tool call. */
@@ -100,6 +102,8 @@ export const GROK_BUILD: AcpHarness = {
   loginArgs: ["login"],
   loginHint: "grok login",
   defaultModel: null,
+  // grok-code-fast-1, its default model: 256k tokens.
+  contextTokens: 256_000,
   // Always ask ion before tools run, whatever the user's own Grok permission mode is.
   sessionMeta: { yoloMode: false, autoMode: false },
   env: (gate, own) => ({ ...grokAskEnv(), ...grokOwnToolsEnv(own), ...(gate ? grokGateEnv(gate) : {}) }),
@@ -249,6 +253,8 @@ export const OPENCODE: AcpHarness = {
   loginHint: "opencode auth login",
   // A free model, so trying ion costs nothing.
   defaultModel: "opencode/big-pickle",
+  // Its free models differ; the smallest common context, to be safe.
+  contextTokens: 128_000,
   env: opencodeAskEnv,
   toCall: opencodeToCall,
   // ~/.opencode/plugin and the plugins listed in ~/.opencode's config still load: opencode has no switch for that

@@ -61,6 +61,10 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
     capabilities: async () => CAPABILITIES,
     // ION_FAKE_NO_HTTP=1: an agent that takes local servers only.
     mcpTransports: { http: process.env.ION_FAKE_NO_HTTP !== "1" },
+    // ION_FAKE_CONTEXT_TOKENS: a small context, so a chat's history outgrows it in tests.
+    ...(process.env.ION_FAKE_CONTEXT_TOKENS
+      ? { contextTokens: Number(process.env.ION_FAKE_CONTEXT_TOKENS) }
+      : {}),
     // No web on request (ion's dream): it has no web.
     ...(process.env.ION_FAKE_HAS_WEB === "1" ? {} : { noWeb: true as const }),
     // The fake hook already sends ion's own shape.

@@ -17,6 +17,8 @@ export const decisionsView: View & {
   allows(db: Db, projectId: string, allowKey: string): boolean;
   /** What you said never to (a "Don't allow" kept for this exact action) in this chat, its project or everywhere. */
   never(db: Db, at: { projectId: string; chatId: string }, neverKey: string): string | null;
+  /** Your newest "Always continue on <agent> here" in this project (or everywhere): the keys starting with `prefix`. */
+  newestKey(db: Db, projectId: string, prefix: string): string | null;
 } = {
   name: "decisions",
   version: 2,
@@ -93,6 +95,15 @@ export const decisionsView: View & {
       )
       .get(neverKey, at.projectId, at.chatId) as { question: string } | undefined;
     return row?.question ?? null;
+  },
+  newestKey(db, projectId, prefix) {
+    const row = db
+      .prepare(
+        `SELECT allow_key AS k FROM view_decisions WHERE substr(allow_key, 1, ?) = ? AND by = 'you'
+           AND (scope = 'everywhere' OR (scope = 'project' AND project_id = ?)) ORDER BY rowid DESC`,
+      )
+      .get(prefix.length, prefix, projectId) as { k: string } | undefined;
+    return row?.k ?? null;
   },
   find(db, decisionId) {
     const row = db.prepare(`SELECT ${COLUMNS} FROM view_decisions WHERE decision_id = ?`).get(decisionId) as

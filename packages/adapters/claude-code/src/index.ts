@@ -56,6 +56,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     mcpTransports: { http: true },
     // No web on request (ion's dream): its web tools off with disallowedTools.
     noWeb: true,
+    // Its models' standard context.
+    contextTokens: 200_000,
     // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.
     picks: "slash",
     // It reads a server's resources (@server:uri, and its resource tools).

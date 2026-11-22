@@ -81,6 +81,15 @@ export function defaultAgent(ready: string[], own: string | null): string | unde
   return PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
 }
 
+/** These agents best first: the quota-friendly ones first (PREFERRED), then the rest as given. */
+export const byPreference = (ids: string[]): string[] => [
+  ...PREFERRED.filter((id) => ids.includes(id)),
+  ...ids.filter((id) => !PREFERRED.includes(id)),
+];
+
+/** An agent's name as ion says it ("Claude Code"), else its id. */
+export const agentLabel = (id: string): string => getHarness(id)?.label ?? id;
+
 /** Which agents ion can pass skills to (Plan 18, Task 5): Claude Code, through the Agent SDK's plugins. */
 const SKILLS = new Set(["claude-code"]);
 

@@ -21,7 +21,7 @@ import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/i
 import { judgeOthers, startOwnAgents } from "../access/runner.js";
 import { theirRulesOf } from "../access/agent-rules.js";
 import { UnsureLog } from "../access/unsure.js";
-import { createMatcher, Decisions } from "../decisions/index.js";
+import type { Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
@@ -54,6 +54,7 @@ import { runSkillsOf } from "../skills/run.js";
 import { type AskInChat, runOwnOf } from "../tools/own-run.js";
 import { skillReaders } from "../adapters/registry.js";
 import { openStore } from "./open-store.js";
+import { answersOf, followAsk } from "./answers.js";
 import type { MemoryFiles } from "../memory/index.js";
 
 /** The scope of a run that ion asks you about. */
@@ -238,13 +239,6 @@ const judgeOn = (opts: { dataDir: string; configFile: string }, quick: ReturnTyp
 const readyAgents = async () =>
   (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
 
-/** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
-const followAsk = (chatId: string, m: { harness: string | null; text: string }) => ({
-  chatId,
-  text: m.text,
-  ...(m.harness ? { harness: m.harness } : {}),
-});
-
 /**
  * ion chief's suggestions: a routine is added the way you'd add it; a stalled chat gets its follow-up through the
  * normal ask, on the chat's own agent.
@@ -371,6 +365,7 @@ function connectionsOf(
  */
 async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
   ctx.ions.stop();
+  ctx.handoffs?.stop();
   await ctx.oauth.close();
   await turns.shutdown();
   await ctx.runs.shutdown();
@@ -478,16 +473,9 @@ function openState(
   // Said once in the daemon's log when this computer can't sandbox chats' agents; ion's own git runs sandboxed too.
   const sandbox = startOwnAgents(opts, startSandbox(opts));
   const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
-  // Your answer to an agent's question goes back into its chat as the next message, on the chat's harness.
-  const decisions = new Decisions({
-    ...{ store, db, needs },
-    match: createMatcher(ionQuick),
-    ion: ionQuestions,
-    followUp: async (chatId, m) =>
-      (await runs.ask(followAsk(chatId, m), { request: m.request, shown: m.shown, answers: m.answers }))
-        .runId,
-    requestOf: (runId) => runs.requestOf(runId),
-  });
+  // Your answers to agents' questions, and ion's question when a chat's agent hits its limit.
+  const answers = { store, db, needs, runs, configFile: opts.configFile, quick: ionQuick, ion: ionQuestions };
+  const { decisions, handoffs } = answersOf(answers);
   late.decisions = decisions;
   const { ions, turns, dreams } = startIons({ store, db, ...opts, runs, grants, base, ionServers, memory });
   // A routine's time came (or you ran it now): its ion starts its thread.
@@ -498,7 +486,7 @@ function openState(
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines, memory });
   const base0 = {
     ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
-    ...{ tools, oauth, unsure, ionServers, memory, dreams },
+    ...{ tools, oauth, unsure, ionServers, memory, dreams, handoffs },
   };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };

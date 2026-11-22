@@ -65,6 +65,7 @@ export const DAEMON_EVENT_TYPES = [
   "tool.skipped",
   "tool.added",
   "hook.ran",
+  "chat.handoff",
 ] as const;
 
 export const EVENT_TYPES = [...ADAPTER_EVENT_TYPES, ...DAEMON_EVENT_TYPES] as const;
@@ -126,6 +127,7 @@ export const EV = {
   toolSkipped: "tool.skipped",
   toolAdded: "tool.added",
   hookRan: "hook.ran",
+  chatHandoff: "chat.handoff",
 } as const satisfies Record<string, EventType>;
 
 export type AdapterEventType = (typeof ADAPTER_EVENT_TYPES)[number];
@@ -207,6 +209,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     answers: z.string().optional(),
     /** What you picked with "/" and "@" (shown as chips; the agent got them its way). */
     ...PICKED,
+    /** ion's brief handing the chat to another agent, or back after a limit: the chat shows its one line instead. */
+    handoff: z.literal(true).optional(),
   }),
   /** A memory file made or changed, or a note from before memory was files; and one forgotten. */
   ...memoryEventSchemas,
@@ -224,7 +228,23 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     /** In an ion thread: the same question is already waiting (this need), so this one isn't shown; it's settled
      * by that answer, or raised if that one closes another way. */
     heldFor: z.string().optional(),
-    /** An agent's question (kind "ask"): its choices, each with what it leads to. */
+    /**
+     * ion's own question when a chat's agent hit its limit: the agent (from), the one offered (to, null: none is
+     * free), and which agent "Wait" goes on with, at what time.
+     */
+    limit: z
+      .strictObject({
+        from: z.string().min(1),
+        to: z.string().min(1).nullable(),
+        waitOn: z.string().min(1),
+        until: z.iso.datetime(),
+        /** `until` is ion's guess (the limit didn't say): at that time ion tries, and waits again if still limited. */
+        guessed: z.literal(true).optional(),
+        /** `to` is limited by a guess only: it may be free again (trying it tells). */
+        maybe: z.literal(true).optional(),
+      })
+      .optional(),
+    /** An agent's question (kind "ask"): its choices, each with what it leads to (ion's limit question: Wait alone). */
     choices: z
       .array(
         z.object({
@@ -235,7 +255,7 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
           recommended: z.boolean().optional(),
         }),
       )
-      .min(2)
+      .min(1)
       .max(4)
       .optional(),
   }),
@@ -350,6 +370,19 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     code: z.number().int().nullable(),
     ms: z.number().int().min(0),
     tail: z.string().max(2000),
+  }),
+  /**
+   * A chat's agent hit its limit, or a long chat started a new session: one line in the chat ("Continued on Codex —
+   * Claude hit its limit", "Waits for Claude — 16:00", "Started fresh with a summary"). `to`: the agent it goes on
+   * with; `until`: when a wait ends.
+   */
+  "chat.handoff": z.strictObject({
+    kind: z.enum(["continued", "waiting", "fresh"]),
+    text: z.string().min(1).max(200),
+    to: z.string().min(1).optional(),
+    until: z.iso.datetime().optional(),
+    /** A wait whose reset is ion's guess: at `until` ion tries, and waits again while still limited. */
+    guessed: z.literal(true).optional(),
   }),
   "run.queued": z.object({}),
   "run.retrying": z.object({

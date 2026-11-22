@@ -250,6 +250,8 @@ function pickedOf(d: D) {
 }
 
 function sent(t: Timeline, d: D): Timeline {
+  // ion's brief to the next agent (a limit): the chat shows its line instead, and your choice under its question.
+  if (d.handoff === true) return d.answers ? { ...t, named: [...t.named, str(d.answers)] } : t;
   const shown = str(d.shown);
   const text = shown || str(d.text);
   const answers = str(d.answers);
@@ -385,6 +387,8 @@ const HANDLERS: Record<string, Handler> = {
   [EV.error]: error,
   // A run went without one of your MCP servers: ion says why, once per chat.
   [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
+  // A chat's agent hit its limit (it continued on another, or waits), or a long chat started fresh: one quiet line.
+  [EV.chatHandoff]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
   // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once, with a link
   // to Memory (Task 5, 2026-11-22: a question here had no answer).

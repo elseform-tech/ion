@@ -397,9 +397,9 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     s.emit({ type: EV.usageReported, data: { model: "fake", inputTokens: 1200, outputTokens: 80, windows } });
     return "done";
   },
-  /** At its usage limit until an hour from now (Plan 20). */
+  /** At its usage limit until an hour from now (Plan 20); ION_FAKE_RESET_S: that many seconds instead. */
   async limited(s) {
-    const resetsAt = new Date(Date.now() + 3600_000).toISOString();
+    const resetsAt = new Date(Date.now() + Number(process.env.ION_FAKE_RESET_S ?? 3600) * 1000).toISOString();
     s.emit({
       type: EV.error,
       data: {

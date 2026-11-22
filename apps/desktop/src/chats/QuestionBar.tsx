@@ -102,10 +102,11 @@ function Details(p: {
 
 /**
  * Keeping the answer: Always (for this project) on an agent's question; Remember on a call ion stopped (the user,
- * 2026-11-21: kept for this exact action in this project), none when its input was cut.
+ * 2026-11-21: kept for this exact action in this project), none when it can't be kept that way (a stopped call's
+ * input was cut; ion's limit question, which has its own "Always continue on <agent> here").
  */
 function Keep({ q, on, set }: { q: Question; on: boolean; set: (v: boolean) => void }) {
-  if (q.blocked && q.noRemember) return null;
+  if (q.noRemember) return null;
   const [label, word] = q.blocked ? ["Remember", "Remember"] : ["Always for this project", "Always"];
   return (
     <label title={label}>

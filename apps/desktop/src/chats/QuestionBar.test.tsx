@@ -134,6 +134,13 @@ describe("QuestionBar", () => {
     expect(screen.queryByRole("checkbox", { name: "Remember" })).toBeNull();
   });
 
+  // Live check, 2026-11-22 (Plan 20): ion's limit question has its own "Always continue on <agent> here"; an Always
+  // box beside it said the same thing twice.
+  it("has no Always box on a question whose answer isn't kept that way", () => {
+    bar({ ...question, noRemember: true });
+    expect(screen.queryByRole("checkbox", { name: /Always/ })).toBeNull();
+  });
+
   // Security review, 2026-11-19: hiding the hint must not hide what ion stopped. A call ion stopped shows why and
   // its exact input (3 lines, all of it on a click) before you allow it; an agent's own question shows no hint.
   it("shows a stopped call's reason and input before you allow it", () => {

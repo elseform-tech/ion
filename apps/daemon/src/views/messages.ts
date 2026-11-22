@@ -12,6 +12,8 @@ export type SearchHit = { chatId: string; role: "you" | "agent"; text: string; t
 /** Your messages (`message.sent`) and the agent's (`message.completed`), per chat, with full-text search. */
 export const messagesView: View & {
   history(db: Db, chatId: string, maxChars: number): HistoryMessage[];
+  /** How many characters a chat's messages hold in all. */
+  size(db: Db, chatId: string): number;
   /** A chat's last message by you or by its agent, if any. */
   last(db: Db, chatId: string, role: "you" | "agent"): string | undefined;
   search(db: Db, projectId: string, query: string, limit: number): SearchHit[];
@@ -58,6 +60,12 @@ export const messagesView: View & {
       kept.unshift(m);
     }
     return kept;
+  },
+  size(db, chatId) {
+    const r = db
+      .prepare("SELECT coalesce(sum(length(text)), 0) AS n FROM view_messages WHERE chat_id = ?")
+      .get(chatId) as { n: number };
+    return r.n;
   },
   search(db, projectId, query, limit) {
     // Each word is quoted, so the query is plain words, never FTS syntax.

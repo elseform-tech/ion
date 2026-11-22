@@ -57,7 +57,8 @@
     "tool.needsSignIn",
     "tool.skipped",
     "tool.added",
-    "hook.ran"
+    "hook.ran",
+    "chat.handoff"
   ],
   "commands": [
     "status",

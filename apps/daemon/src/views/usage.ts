@@ -8,6 +8,8 @@ export type AgentUsageRow = {
   week: { tokens: number; costUsd: number };
   windows: UsageWindow[];
   limitedUntil: string | null;
+  /** The limit didn't say when it resets: limitedUntil is ion's guess (it may be free sooner; trying tells). */
+  limitGuessed?: true;
 };
 
 /** A limit that doesn't say when it resets: ion waits this long, then tries the agent once more. */
@@ -52,9 +54,10 @@ function limited(db: Db, e: IonEvent, harness: string, limit: Limit): void {
     .get(harness) as { until: string | null } | undefined;
   if (!limit.resetsAt && was?.until && Date.parse(was.until) > Date.parse(e.ts)) return;
   db.prepare(
-    `INSERT INTO view_usage_agents (harness, windows, limited_until, limited_at) VALUES (?, '[]', ?, ?)
-     ON CONFLICT (harness) DO UPDATE SET limited_until = excluded.limited_until, limited_at = excluded.limited_at`,
-  ).run(harness, until, e.ts);
+    `INSERT INTO view_usage_agents (harness, windows, limited_until, limited_at, guessed) VALUES (?, '[]', ?, ?, ?)
+     ON CONFLICT (harness) DO UPDATE SET limited_until = excluded.limited_until, limited_at = excluded.limited_at,
+       guessed = excluded.guessed`,
+  ).run(harness, until, e.ts, limit.resetsAt ? 0 : 1);
 }
 
 /** A run that started after the mark and ended well: the agent got past its limit. */
@@ -90,12 +93,13 @@ function agents(db: Db, now: Date): Record<string, AgentUsageRow> {
     row(s.harness).week = { tokens: s.tokens, costUsd: money(s.cost) };
   for (const s of sums(db, midnight)) row(s.harness).today = { tokens: s.tokens, costUsd: money(s.cost) };
   const marks = db
-    .prepare("SELECT harness, windows, limited_until AS until FROM view_usage_agents")
-    .all() as { harness: string; windows: string | null; until: string | null }[];
+    .prepare("SELECT harness, windows, limited_until AS until, guessed FROM view_usage_agents")
+    .all() as { harness: string; windows: string | null; until: string | null; guessed: number | null }[];
   for (const m of marks) {
     const r = row(m.harness);
     r.windows = JSON.parse(m.windows ?? "[]") as UsageWindow[];
     r.limitedUntil = m.until && Date.parse(m.until) > now.getTime() ? m.until : null;
+    if (r.limitedUntil && m.guessed === 1) r.limitGuessed = true;
   }
   return out;
 }
@@ -121,13 +125,15 @@ export const recordTo =
 /** Each agent's usage ledger (tokens, cost, windows) and its limit, from its runs' events. */
 export const usageView: View & { agents(db: Db, now: Date): Record<string, AgentUsageRow> } = {
   name: "usage",
+  // 2: a limit's mark says whether its reset was guessed.
+  version: 2,
   tables: ["view_usage", "view_usage_agents"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_usage (
       run_id TEXT, harness TEXT NOT NULL, at TEXT NOT NULL, tokens INTEGER NOT NULL, cost REAL NOT NULL)`);
     db.exec("CREATE INDEX IF NOT EXISTS view_usage_at ON view_usage (at)");
     db.exec(`CREATE TABLE IF NOT EXISTS view_usage_agents (
-      harness TEXT PRIMARY KEY, windows TEXT, limited_until TEXT, limited_at TEXT)`);
+      harness TEXT PRIMARY KEY, windows TEXT, limited_until TEXT, limited_at TEXT, guessed INTEGER)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_usage");
