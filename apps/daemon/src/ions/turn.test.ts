@@ -21,6 +21,8 @@ process.env.ION_ALLOW_FAKE = "1";
 const starts = vi.hoisted(() => [] as StartOpts[]);
 /** What each fake session was sent. */
 const sent = vi.hoisted(() => [] as string[]);
+/** Spoils the next fake sessions: their reply is dropped and they end failed (after doing their work). */
+const spoil = vi.hoisted(() => ({ on: false }));
 vi.mock("@ion/adapter-fake", async (real) => {
   const m = await real<typeof import("@ion/adapter-fake")>();
   return {
@@ -35,6 +37,14 @@ vi.mock("@ion/adapter-fake", async (real) => {
         session.send = (m) => {
           sent.push(m.text);
           return send(m);
+        };
+        if (!spoil.on) return session;
+        const events = session.events.bind(session);
+        session.events = async function* () {
+          for await (const e of events()) {
+            if (e.type === EV.messageCompleted) continue;
+            yield e.type === EV.runFinished ? { ...e, data: { status: "failed" } } : e;
+          }
         };
         return session;
       };
@@ -61,6 +71,12 @@ let made: IonTurns[] = [];
 
 const agents = async (): Promise<HarnessInfo[]> => [
   { id: "fake", label: "Fake", installed: true, signedIn, models: [], defaultModel: "fake" },
+];
+
+/** The fake agent, and opencode ready too (it can't start here: real agents are off in tests). */
+const both = async (): Promise<HarnessInfo[]> => [
+  ...(await agents()),
+  { id: "opencode", label: "opencode", installed: true, signedIn: true, models: [], defaultModel: null },
 ];
 
 /** A public address (a CDN's), built rather than written out. */
@@ -534,10 +550,6 @@ describe("an ion's turn", () => {
     const c = loadUserConfig(configFile).config;
     const projects = c.projects.map((p) => (p.id === "storefront" ? { ...p, harness: undefined } : p));
     saveUserConfig(configFile, { ...c, projects });
-    const both = async (): Promise<HarnessInfo[]> => [
-      ...(await agents()),
-      { id: "opencode", label: "opencode", installed: true, signedIn: true, models: [], defaultModel: null },
-    ];
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       // opencode first (it's first in ion's order); it can't start here (real agents are off in tests).
@@ -549,6 +561,43 @@ describe("an ion's turn", () => {
     } finally {
       log.mockRestore();
     }
+  });
+
+  // Security review, 2026-11-22: a retry on the next agent must not reset the turn's caps or repeat its work. Every
+  // try is the same turn (one id), and a try that wrote memory (or started a thread) before failing isn't retried.
+  describe("a turn that failed after its work", () => {
+    let log: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      spoil.on = true;
+      log = vi.spyOn(console, "error").mockImplementation(() => {});
+    });
+    afterEach(() => {
+      spoil.on = false;
+      log.mockRestore();
+    });
+
+    it("isn't retried once it wrote memory", async () => {
+      const r = await turns(undefined, { agents: both }).turn(
+        "chief",
+        "remind me to update the README on 2026-11-27",
+      );
+      expect(r.reply).toBe(NO_AGENT);
+      expect(memory.paths()).toEqual(["you/update-the-readme.md"]);
+      expect(log.mock.calls.map((x) => String(x[0]))).toEqual(["ion's agent (fake): it said nothing"]);
+    });
+
+    it("is retried as the same turn when it did nothing", async () => {
+      const keys = vi.spyOn(grants, "create");
+      const r = await turns(undefined, { agents: both }).turn("chief", "hello");
+      expect(r.reply).toBe(NO_AGENT);
+      expect(log.mock.calls.map((x) => String(x[0]))).toEqual([
+        "ion's agent (fake): it said nothing",
+        "ion's agent (opencode): Error: real agents are off in tests",
+      ]);
+      const ids = new Set(keys.mock.calls.map(([scope]) => (scope as { turnId: string }).turnId));
+      expect(keys.mock.calls.length).toBeGreaterThan(2);
+      expect([...ids]).toEqual([r.turnId]);
+    });
   });
 
   // Task review, 2026-11-19: closing ion left an ion's turn running; its late writes hit a closed store.

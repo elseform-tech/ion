@@ -1,4 +1,5 @@
 import { getHarness } from "../adapters/registry.js";
+import { looksLikeToken } from "../tools/shown.js";
 import type { IonBrain } from "./brain.js";
 
 export const NO_AGENT = "I couldn't reach my agent; try again.";
@@ -12,8 +13,11 @@ export const STOPPED = "Stopped.";
 /** Replies that end a turn without the agent's own words. */
 const ENDS: ReadonlySet<string> = new Set([NO_AGENT, TOO_LONG, STOPPED]);
 
-/** A turn's reply and what came with it; `failed` when its agent said nothing (why: its own words, when it said). */
-export type Tried<R extends { reply: string }> = R & { failed?: { why: string | null } };
+/**
+ * A turn's reply and what came with it; `failed` when its agent said nothing (why: its own words, when it said;
+ * `did`: it wrote memory or started a thread first, so it isn't tried again).
+ */
+export type Tried<R extends { reply: string }> = R & { failed?: { why: string | null; did: boolean } };
 type Failed = { harness: string; why: string | null };
 
 /** Why a turn's agents failed: the first reason one gave, else NO_AGENT. */
@@ -33,9 +37,32 @@ function answered<R extends { reply: string }>(r: R, harness: string, failed: Fa
   return failed.length && !ENDS.has(r.reply) ? { ...r, reply: onOther(r.reply, harness, failed) } : r;
 }
 
-/** An error as one short line for ion's log. */
+const HIDDEN = "•••";
+const LINK = /\b[a-z][\w+.-]*:\/\/\S+/gi;
+const BEARER = /\b(bearer|basic)\s+\S+/gi;
+const NAMED = /\b(\w*(?:key|token|secret|password|auth)\w*)\s*[=:]\s*[^\s,;)]+/gi;
+const PREFIXED = /\b(?:sk|pk|rk|ghp|gho|ghs|xox[abprs])[-_][\w-]{6,}/gi;
+const WORD = /[\w.+/=-]{20,}/g;
+
+/**
+ * An agent's reason as ion shows and logs it: one line of at most 200 characters, with links, keys and anything
+ * key-like hidden (security review, 2026-11-22).
+ */
+export function cleanWhy(why: string): string {
+  return why
+    .replace(LINK, "(a link)")
+    .replace(BEARER, `$1 ${HIDDEN}`)
+    .replace(NAMED, `$1=${HIDDEN}`)
+    .replace(PREFIXED, HIDDEN)
+    .replace(WORD, (w) => (looksLikeToken(w) ? HIDDEN : w))
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+}
+
+/** An error as one clean line for ion's log. */
 export const errLine = (e: unknown): string =>
-  (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).replace(/\s+/g, " ").slice(0, 300);
+  cleanWhy(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
 
 /**
  * A turn on its agent; one that failed goes on to the next ready agent (`next`: the order ion picks in) unless `stay`
@@ -57,7 +84,7 @@ export async function onReadyAgents<R extends { reply: string }>(
     const r = rest as unknown as R;
     if (!f) return answered(r, brain.harness, failed);
     failed.push({ harness: brain.harness, why: f.why });
-    const next = o.stay(r) ? null : await o.next(failed.map((x) => x.harness)).catch(() => null);
+    const next = f.did || o.stay(r) ? null : await o.next(failed.map((x) => x.harness)).catch(() => null);
     if (!next) return { ...r, reply: couldNot(failed) };
     brain = next;
   }

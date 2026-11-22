@@ -255,8 +255,10 @@ export class IonTurns {
     const brain = await ionBrain(this.d, ionId).catch(() => null);
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, threads: [] };
     if (!brain) return { reply: NO_AGENT, threads: [] };
+    // Every try is one turn (security review, 2026-11-22): its id, and so its caps on memory and threads.
+    const turnId = `turn_${randomUUID()}`;
     const r = await onReadyAgents(brain, {
-      once: (b) => this.once(ionId, text, { ...o, cwd }, b),
+      once: (b) => this.once(ionId, text, { ...o, cwd, turnId }, b),
       next: (not) => nextBrain(this.d, ionId, not),
       stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,
     });
@@ -267,16 +269,15 @@ export class IonTurns {
   private async once(
     ionId: string,
     text: string,
-    o: Pick<Live, "request" | "dream"> & { cwd: string },
+    o: Pick<Live, "request" | "dream"> & { cwd: string; turnId: string },
     brain: IonBrain,
   ): Promise<Tried<TurnResult>> {
-    const { request, cwd } = o;
+    const { request, cwd, turnId } = o;
     const h = getHarness(brain.harness);
     if (!h || this.stopping) return { reply: NO_AGENT, threads: [] };
     // A dream never searches the web (task review, 2026-11-22): on an agent that can't turn its web off, none.
     if (o.dream && !h.adapter.noWeb)
       return { reply: `${DREAM_SKIPPED} ${h.label} can't turn its web off`, threads: [] };
-    const turnId = `turn_${randomUUID()}`;
     const rules = this.rulesFor(cwd);
     // Only your own words seed what it may read: a report's prompt is an agent's.
     const live: Live = { ionId, request, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
@@ -289,7 +290,12 @@ export class IonTurns {
       if (reply !== NO_AGENT || this.stopping) return { reply, threads: live.threads, turnId };
       // Said once in ion's log: why the agent failed (Plan 19's checks, 2026-11-22: nothing was).
       console.error(`ion's agent (${brain.harness}): ${end.error ?? "it said nothing"}`);
-      return { reply, threads: live.threads, turnId, failed: { why: end.error ?? null } };
+      return {
+        reply,
+        threads: live.threads,
+        turnId,
+        failed: { why: end.error ?? null, did: this.did(turnId) },
+      };
     } catch (e) {
       console.error(`ion's agent (${brain.harness}): ${errLine(e)}`);
       if (!this.stopping) forgetSession(this.d, ionId);
@@ -297,13 +303,18 @@ export class IonTurns {
         reply: NO_AGENT,
         threads: live.threads,
         turnId,
-        ...(this.stopping ? {} : { failed: { why: null } }),
+        ...(this.stopping ? {} : { failed: { why: null, did: this.did(turnId) } }),
       };
     } finally {
       this.live.delete(turnId);
       this.d.grants.revoke(turnId);
       await this.servers.close(turnId);
     }
+  }
+
+  /** Whether this try wrote memory or started a thread: a try that did isn't tried again. */
+  private did(turnId: string): boolean {
+    return this.d.grants.used(turnId) || !!this.live.get(turnId)?.threads.length;
   }
 
   /** A turn's reply from how its session ended; its session kept for the next turn, or forgotten when broken. */

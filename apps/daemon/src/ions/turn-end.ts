@@ -1,5 +1,6 @@
 import type { AdapterEvent, Session } from "@ion/adapter-kit";
 import { EV } from "@ion/schema";
+import { cleanWhy } from "./fallback.js";
 
 /**
  * How a turn's session ended: its last message, its native id, whether it ran past its limit, and `stuck`: it
@@ -10,7 +11,7 @@ export type Ended = {
   nativeId: string | null;
   late: boolean;
   failed: boolean;
-  /** The agent's own words for why it failed (its first error), on one line. */
+  /** The agent's own words for why it failed (its first error), cleaned (cleanWhy). */
   error?: string;
   stuck?: true;
   /** You stopped it (it ended as `late` does, but says so). */
@@ -43,10 +44,8 @@ export async function closing(session: Session): Promise<boolean> {
 export function note(e: AdapterEvent, end: Ended): void {
   if (e.type === EV.error) {
     end.failed = true;
-    const why = String((e.data as { message?: unknown }).message ?? "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (why && !end.error) end.error = why.slice(0, 300);
+    const why = cleanWhy(String((e.data as { message?: unknown }).message ?? ""));
+    if (why && !end.error) end.error = why;
   }
   if (e.type === EV.runFinished && (e.data as { status?: unknown }).status !== "done") end.failed = true;
   if (e.type === EV.messageCompleted) end.last = String((e.data as { text?: unknown }).text ?? "");

@@ -38,6 +38,8 @@ export type Grants = {
   noteWrite(id: string, by?: 1 | -1): number;
   /** Counts one thread started in the turn (-1 gives a slot back); the count goes away with its grants. */
   noteThread(id: string, by?: 1 | -1): number;
+  /** Whether the run or turn wrote memory or started a thread (its counts, while its grants live). */
+  used(id: string): boolean;
 };
 
 const hash = (key: string) => createHash("sha256").update(key).digest("hex");
@@ -65,6 +67,7 @@ export function createGrants(): Grants {
     },
     noteWrite: (id, by = 1) => note(id, "write", by),
     noteThread: (id, by = 1) => note(id, "thread", by),
+    used: (id) => (counts.get(`write:${id}`) ?? 0) > 0 || (counts.get(`thread:${id}`) ?? 0) > 0,
     check(key, kind = "mcp") {
       const s = byHash.get(hash(key));
       return s && s.kind === kind ? structuredClone(s.scope) : null;
