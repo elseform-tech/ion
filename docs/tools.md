@@ -151,6 +151,10 @@ things on, sign in or add keys.
     the judge, whatever the flags say. Inside the project, everything reads as before. A command may name a path from
     your home as `~/…` (`cat ~/notes/a.md`); `..`, `$HOME`, quotes and wildcards go to the judge. A command given as a
     list of words (Codex's shell) is checked the same way as a string.
+  - **Ions read the same way** (the user, 2026-11-22): a project's ion (and ion chief) reads outside its project as
+    freely as a chat in Auto. What a chat's judge would decide (the classes above, searches outside) is refused for an
+    ion instead ("An ion doesn't read that; a thread can, with your OK"): an ion never asks and never calls the judge.
+    Secrets are refused, and an ion still never writes, `/tmp` included.
   - **Refused outright, in Auto:** your secrets (`~/.ssh`, `~/.aws`, `.netrc`, …) and agents' sign-in files, for every
     chat (its own agent's too): `~/.codex/auth.json`, `~/.claude/.credentials.json`, opencode's `auth.json` in its data
     folder, and any `*credential*`, `*token*` or `auth*.json` in an agent's folder.

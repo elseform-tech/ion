@@ -42,6 +42,21 @@ function readOnly(command: string, anywhere = false): boolean {
   });
 }
 
+/**
+ * A call that means only to read, whatever it names: a read or search tool, or a chain of read-only commands (ions'
+ * reason for a refused read, the user, 2026-11-22). Says nothing about whether it may.
+ */
+export function meansToRead(req: ApprovalRequest): boolean {
+  if (req.kind === "read" || req.kind === "search") return true;
+  if (req.kind !== "command") return false;
+  return commandText(req)
+    .split(/&&|\|\||;|\|/)
+    .every((part) => {
+      const [word, sub] = part.trim().split(/\s+/);
+      return word === "git" ? READ_ONLY_GIT.has(sub ?? "") : READ_ONLY.has(word ?? "");
+    });
+}
+
 /** A flag that makes `ls` or `grep` read folders whole (`-R`, `-r`, `--recursive`). */
 const RECURSIVE_FLAG = /^(-[a-zA-Z]*[rR]|--(dereference-)?recursive$)/;
 /** A read-only command that reads folders whole (`ls -R`, `grep -r`): from outside the project, the judge decides. */
