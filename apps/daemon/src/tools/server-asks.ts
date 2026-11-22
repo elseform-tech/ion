@@ -78,7 +78,11 @@ export class ServerAsks {
       ? await this.d.servers({ label: "ion", takes: { http: true } }).catch(() => null)
       : null;
     const spec = yours?.specs.find((s) => s.name === name);
-    if (!yours || !spec) return "Turn it on to see its tools";
+    if (!yours || !spec) {
+      // Task 11, 2026-11-22: on but left out (not signed in, no key) says why.
+      const skipped = yours?.skipped.find((x) => x.id === name)?.text;
+      return skipped ? skipped.replace(/, so this chat runs without it\.$/, "") : "Turn it on to see its tools";
+    }
     const { up, bridges } = this.reach(spec, yours.fresh[name]);
     try {
       const v = await askServer(up, method);

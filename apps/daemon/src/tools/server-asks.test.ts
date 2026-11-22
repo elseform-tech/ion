@@ -36,3 +36,22 @@ describe("a server's resources for @", () => {
     expect(await asks().tools("notes")).toEqual([{ name: "echo" }]);
   });
 });
+
+// Task 11, 2026-11-22 (tour): a server that's on but not signed in said "Turn it on to see its tools".
+describe("why a server's tools can't be listed", () => {
+  it("says why it was left out, not to turn it on", async () => {
+    const a = new ServerAsks({
+      dataDir: "/nonexistent",
+      servers: async () => ({
+        specs: [],
+        skipped: [{ id: "notes", text: "notes isn't signed in, so this chat runs without it." }],
+        secrets: [],
+        fresh: {},
+        refs: [],
+      }),
+      local: () => local,
+    });
+    expect(await a.tools("notes")).toBe("notes isn't signed in");
+    expect(await a.tools("other")).toBe("Turn it on to see its tools");
+  });
+});
