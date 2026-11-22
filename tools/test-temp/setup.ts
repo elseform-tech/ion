@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,10 +15,18 @@ function restore(name: string, value: string | undefined): void {
   else process.env[name] = value;
 }
 
-export default function setup(): () => void {
-  const real = tmpdir();
+/** A run's own folder's prefix: other runs' folders (turbo runs packages' tests at once) aren't this run's leftovers. */
+const RUN_PREFIX = "ion-test-run-";
+
+/**
+ * Starts a run's temp folder under `base`; the teardown removes it and fails only on what this run left: its own
+ * folder still there, or a new ion-* folder in the real temp folder that isn't another run's folder (CI, PR #25,
+ * 2026-11-22: one package's teardown failed on other packages' live run folders).
+ */
+export function tempRun(o: { real?: string; base?: string } = {}): () => void {
+  const real = o.real ?? tmpdir();
   const before = leftovers(real);
-  const root = mkdtempSync("/tmp/ion-test-run-");
+  const root = mkdtempSync(join(o.base ?? "/tmp", RUN_PREFIX));
   const saved = {
     TMPDIR: process.env.TMPDIR,
     XDG: process.env.XDG_CACHE_HOME,
@@ -34,8 +42,13 @@ export default function setup(): () => void {
     restore("XDG_CACHE_HOME", saved.XDG);
     restore("ION_AGENTS_HOME", saved.AGENTS);
     rmSync(root, { recursive: true, force: true });
-    const left = [...leftovers(real)].filter((n) => !before.has(n));
+    if (existsSync(root)) throw new Error(`The test run's folder is still there: ${root}`);
+    const left = [...leftovers(real)].filter((n) => !before.has(n) && !n.startsWith(RUN_PREFIX));
     if (left.length)
       throw new Error(`Tests left ${left.length} folders in ${real}: ${left.slice(0, 5).join(", ")}`);
   };
+}
+
+export default function setup(): () => void {
+  return tempRun();
 }
