@@ -14,6 +14,7 @@ import { connect, type IonClient } from "@ion/client";
 import { EV, type IonEvent } from "@ion/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startServer } from "../api/server.js";
+import { NO_AGENT } from "../ions/turn.js";
 import { fillerSeeds, MEMORY_CASES, MEMORY_MEASURES, type MemoryCase, type Seed } from "./memory-cases.js";
 
 /**
@@ -271,7 +272,9 @@ async function runCase(root: string, a: (typeof AGENTS)[number], c: MemoryCase):
     const failedRun = events.some(
       (e) => e.chatId === target && e.type === EV.runFinished && dataOf(e).status !== "done",
     );
-    const why = !target || (!reply.trim() && failedRun) ? "no answer" : judge(c, s, reply);
+    // An agent that didn't answer (its quota used up, a failed run; an ion's "couldn't reach my agent") isn't scored.
+    const silent = !reply.trim() || reply.trim() === NO_AGENT;
+    const why = !target || (silent && (failedRun || "ion" in c.to)) ? "no answer" : judge(c, s, reply);
     let result: Row["result"] = why ? "fail" : "pass";
     if (why === "no answer") result = "error";
     return {
