@@ -11,7 +11,7 @@ import { useJudgeMisses } from "./misses.js";
 import { envDropOf } from "../tools/env-drop.js";
 
 /** Where ion's own agent processes (the judge, ion's quick model, sign-in and model checks) work: in its data folder. */
-export const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
+const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
 
 /**
  * Removes the folders ion's judge and agent checks left in the temp folder before they moved into ion's data folder
