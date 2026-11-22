@@ -2799,7 +2799,6 @@ const SUGG={
 const suggState={};
 function suggHTML(id){
   const g=SUGG[id], st=suggState[id];
-  const m=([ic,t])=>ic.startsWith('ion')?`<span><canvas class="av" data-ion="${ic==='ion'?'lead':ic.slice(4)}" aria-hidden="true"></canvas>${esc(t)}</span>`:`<span><i data-lucide="${ic}"></i>${esc(t)}</span>`;
   const foot=!st?`<div class="acts"><button class="btn pri" type="button" data-sg="keep" data-id="${id}">${esc(g.act)}</button><button class="mute" type="button" data-sg="later" data-id="${id}">Not now</button><span class="sp"></span><button class="ib" type="button" title="Fewer like this" data-sg="mute" data-id="${id}"><i data-lucide="bell-off"></i></button></div>`
     :`<div class="done"><i data-lucide="${st==='keep'?'check':'bell-off'}"></i>${st==='keep'?esc(g.done):st==='later'?'Later':'Fewer like this'}</div>`;
   return `<div class="sugg"><div class="sh"><b><i data-lucide="${g.icon}" class="si"></i><span class="st">${esc(g.t)}</span></b>${foot}</div>
@@ -2818,7 +2817,7 @@ const memOf=k=>MEM[k]||[[`Default branch is main`,'Read from the repo'],[`Tests:
 function workHTML(id){
   const w=WORK[id]; if(!w) return '';
   const tools=w.steps.reduce((n,s)=>n+(s.k==='group'?s.items.length:s.k==='tool'?1:0),0);
-  const thinks=w.steps.filter(s=>s.k==='think').length, cur=w.steps[w.steps.length-1];
+  const cur=w.steps[w.steps.length-1];
   const head=w.live
     ?`<span class="now">${esc(cur.n)} ${esc(cur.a||'')}</span><span class="wn">· ${w.dur}</span>`
     :`<i data-lucide="${w.sys===2?'brain':tools?'wrench':'sparkles'}"></i><span>${tools?`Worked for ${w.dur}`:`Thought for ${w.dur}`}</span>`;
@@ -2898,8 +2897,6 @@ const effLabel=e=>EFF.find(x=>x[0]===e)[1];
 const HCONN={claude:{st:'on',how:'Signed in',use:62,rules:3},grok:{st:'on',how:'Signed in',use:88},codex:{st:'on',how:'Signed in',use:31},
   gemini:{st:'on',how:'Signed in',spend:'$4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
 const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],eff:'high',when:'auto',use:4,week:1.8};
-/* System 1 runs with thinking off where the harness allows it */
-const NOTHINK={claude:'Thinking off',codex:'Lowest available · minimal',grok:'Thinking off',gemini:'Can’t turn off · lowest available',pi:'Can’t turn off · lowest available',cursor:'Can’t turn off · lowest available'};
 const S2WHEN=[['auto','When needed'],['always','Always'],['never','Never']];
 let NEEDS=[
   {id:'mig',k:'payments-api',t:'Approve migration 0042?',p:'payments-api',sub:'Adds the idempotency_keys table',urgent:1,acts:[['Review','open'],['Approve','done']]},
@@ -3031,7 +3028,7 @@ const actBtn=document.getElementById('actBtn'), actSub=document.getElementById('
 let pausedAll=false;
 let curProj='*';
 const inProj=k=>k==='lead'||curProj==='*'||IONS[k].proj===curProj;
-const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Ions panel: Activity, ion, then one row per project ion (starred first). No teams. */
 function ionRowHTML(k){
   const v=IONS[k], nd=needsOf(k).length, run=v.state==='working';
@@ -3113,31 +3110,32 @@ document.addEventListener('click',e=>{
 function renderIon(k,ph){
   curIon=k; const v=IONS[k]; actBtn.classList.remove('on'); chatEl.classList.remove('peek'); delete chatEl.dataset.peeked;
   document.querySelectorAll('[data-ionsel]').forEach(b=>b.classList.toggle('on',b.dataset.ionsel===k));
-  let h=`<div class="head"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>${k==='lead'?'<span class="title brand hname" aria-label="ion">i<i>o</i>n</span>':`<span class="title">${esc(v.name)}</span>`}<span class="sp"></span>
-    <button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${k}"><i data-lucide="sliders-horizontal"></i></button></div>
+  let h=`<div class="head"><canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>${k==='lead'?'<span class="title brand hname" aria-label="ion">i<i>o</i>n</span>':`<span class="title">${esc(v.name)}</span>`}<span class="sp"></span>
+    <button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${esc(k)}"><i data-lucide="sliders-horizontal"></i></button></div>
     <div class="bubbles">${k==='lead'?pinStrip():''}<div class="bcol">`;
   v.msgs.forEach((m,i)=>{
     const isI=x=>x&&(x.f==='i'||x.newIon||x.route||x.fanout||x.routineAdded||x.sugg);
     const next=v.msgs[i+1], showAv=isI(m)&&!isI(next);
-    if(m.fanout){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${m.work?workHTML(m.work):''}<div class="tls">${m.fanout.map(r=>tlHTML(...r)).join('')}</div></div></div>`; return; }
+    if(m.fanout){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${m.work?workHTML(m.work):''}<div class="tls">${m.fanout.map(r=>tlHTML(...r)).join('')}</div></div></div>`; return; }
     if(m.routineAdded){ const {k:rk,ri}=m.routineAdded, rv=IONS[rk], r=rv&&rv.routines[ri];
       const body=!r?`<div class="note">Removed. ${esc(rk)} keeps its other routines.</div>`
         :`<div class="ncard"><canvas class="av" data-ion="${esc(rk)}" aria-hidden="true"></canvas><div><b>${esc(r.n)}</b>${r.isNew?'<span class="tag">New routine</span>':''}<div class="s">Added to ${esc(rk)}</div>
           <div class="meta"><span><i data-lucide="calendar-clock"></i>${esc(r.w)}</span><span>${hAv(r.h||rv.harness)}${esc(LIB[r.h||rv.harness].name)}</span><span>${effLabel(r.effort||'medium')}</span></div></div>
           ${r.isNew?`<div class="acts"><button class="btn" type="button" data-rtadd="undo" data-k="${esc(rk)}" data-i="${ri}">Undo</button><button class="btn" type="button" data-ionedit="${esc(rk)}">Change</button><span class="sp"></span><button class="btn pri" type="button" data-rtadd="keep" data-k="${esc(rk)}" data-i="${ri}">Keep</button></div>`:`<div class="done"><i data-lucide="check"></i>Kept</div>`}</div>`;
-      h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${body}</div></div>`; return; }
-    if(m.route){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div><div class="tls">${tlHTML(m.route.k,'run','Delegating')}</div></div></div>`; return; }
-    if(m.newIon){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${newIonCard(m.newIon)}</div></div>`; return; }
+      h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${body}</div></div>`; return; }
+    if(m.route){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div><div class="tls">${tlHTML(m.route.k,'run','Delegating')}</div></div></div>`; return; }
+    if(m.newIon){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${newIonCard(m.newIon)}</div></div>`; return; }
     if(m.quick){ h+=`<div class="quick">${m.quick.map(q=>`<button type="button">${esc(q)}</button>`).join('')}</div>`; return; }
-    if(m.typing){ h+=`<div class="bm"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas><span class="typing"><i></i><i></i><i></i></span></div>`; return; }
+    if(m.typing){ h+=`<div class="bm"><canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas><span class="typing"><i></i><i></i><i></i></span></div>`; return; }
     if(m.f==='u'){ h+=`<div class="bu">${esc(m.t)}</div>`; return; }
-    if(m.sugg){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${suggHTML(m.sugg)}</div></div>`; return; }
-    if(m.workOnly){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${workHTML(m.workOnly)}</div></div>`; return; }
+    if(m.sugg){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${suggHTML(m.sugg)}</div></div>`; return; }
+    if(m.workOnly){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${workHTML(m.workOnly)}</div></div>`; return; }
     const inner=m.link?`<div class="tls">${tlHTML(...m.link)}</div>`:`<div class="bi">${esc(m.t)}</div>`;
     const s2=m.meta==='deep'||m.meta==='reflect';
-    const meta=m.meta?`<div class="bmeta">${m.meta==='deep'?'Briefing · Deep':m.meta==='reflect'?'Suggestions · Deep':'Quick'} · ${esc(s2?IONBRAIN.deep[1]:IONBRAIN.fast[1])}${s2?' · '+effLabel(IONBRAIN.eff):''}</div>`:'';
+    const metaText=m.meta?`${m.meta==='deep'?'Briefing · Deep':m.meta==='reflect'?'Suggestions · Deep':'Quick'} · ${s2?IONBRAIN.deep[1]:IONBRAIN.fast[1]}${s2?' · '+effLabel(IONBRAIN.eff):''}`:'';
+    const meta=m.meta?`<div class="bmeta">${esc(metaText)}</div>`:'';
     const proof=m.proof==='none'?`<div class="proof warn"><i data-lucide="triangle-alert"></i>No tests run<span>·</span><button type="button">Ask for proof</button></div>`:'';
-    h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${k}" aria-hidden="true"></canvas>`:'<span></span>'}<div title="${m.meta?esc(meta.replace(/<[^>]+>/g,'')):''}">${m.work?workHTML(m.work):''}${inner}${proof}</div></div>`;
+    h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div title="${esc(metaText)}">${m.work?workHTML(m.work):''}${inner}${proof}</div></div>`;
   });
   // While the ion thinks (something waits in its queue, or it's typing), its box has Stop, as a chat's does.
   const thinking=Boolean(v.queue||v.msgs.at(-1)?.typing);
@@ -3225,7 +3223,6 @@ function statCard(k){
 /* a role belongs to one project; moving it is rare and says what happens to running chats */
 /* a project ion's project: its folder and the rules everyone on it follows */
 function projRow(k,row){
-  const v=IONS[k];
   if(k==='lead') return row('Projects','','<span class="chip">All</span>');
   const I=PINFO[k]||{};
   return row('Folder','',`<span class="chip mono">${esc(I.path||'')}</span>`)
@@ -3236,7 +3233,6 @@ function projRow(k,row){
 function openIonSettings(k){
   const v=IONS[k], lead=k==='lead', sw=on=>`<span class="sw${on?' on':''}"></span>`;
   const row=(t,s,r)=>`<div class="srow"><div class="g">${t}${s?`<div class="s">${s}</div>`:''}</div>${r}</div>`;
-  const val=(inner)=>`<button class="val" type="button">${inner}<i data-lucide="chevrons-up-down"></i></button>`;
   sIon.innerHTML=`<button class="back" type="button" data-snav="ions"><i data-lucide="chevron-left"></i>Ions</button>
     <div class="ihero"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas><div class="g"><h3>${esc(v.name)}</h3></div><button class="btn" type="button" data-ionsel="${k}"><i data-lucide="message-circle"></i>Open chat</button></div>
     ${statCard(k)}
@@ -3369,7 +3365,7 @@ function renderPMenu(m,q=''){
     const inp=m.querySelector('input'); inp.addEventListener('input',()=>renderPMenu(m,inp.value)); inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const b=m.querySelector('.pml [data-setproj]'); if(b) b.click(); } }); }
   const ql=q.trim().toLowerCase(), list=[...PROJECTS].sort((a,b)=>STARRED.has(b)-STARRED.has(a)).filter(p=>!ql||p.includes(ql));
   m.querySelector('.pml').innerHTML=(ql?'':`<button type="button" data-setproj="*" class="${curProj==='*'?'on':''}"><i data-lucide="layers"></i>All projects${curProj==='*'?'<i data-lucide="check" class="ck"></i>':''}</button>`)+
-    list.map(p=>{ const nd=needsIn(p).length; return `<button type="button" data-setproj="${p}" class="${p===curProj?'on':''}"><i data-lucide="${STARRED.has(p)?'star':'folder'}"${STARRED.has(p)?' class="stari"':''}></i>${p}${nd?`<span class="nb">${nd}</span>`:''}${p===curProj?'<i data-lucide="check" class="ck"></i>':''}</button>`; }).join('')||'<div class="pempty">No project matches</div>';
+    list.map(p=>{ const nd=needsIn(p).length; return `<button type="button" data-setproj="${esc(p)}" class="${p===curProj?'on':''}"><i data-lucide="${STARRED.has(p)?'star':'folder'}"${STARRED.has(p)?' class="stari"':''}></i>${esc(p)}${nd?`<span class="nb">${nd}</span>`:''}${p===curProj?'<i data-lucide="check" class="ck"></i>':''}</button>`; }).join('')||'<div class="pempty">No project matches</div>';
   icons(m.querySelector('.pml'));
 }
 document.querySelectorAll('[data-pm]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); const m=document.getElementById(b.dataset.pm), o=m.hidden; closeMenus(); if(o){ m.innerHTML=''; renderPMenu(m); m.hidden=false; b.setAttribute('aria-expanded','true'); setTimeout(()=>m.querySelector('input')?.focus(),0); } }));
@@ -3671,7 +3667,6 @@ renderHarnesses();
 const PEFF={storefront:'medium','payments-api':'high',docs:'low'};
 const roleModel=k=>{ const v=IONS[k]; return v.model&&MODELS[v.harness].some(x=>x[0]===v.model)?v.model:MODELS[v.harness]?.[0]?.[0]; };
 const roleEffort=k=>{ const v=IONS[k], e=v.effort||PEFF[v.proj]||'medium'; return ESUP[v.harness].includes(e)?e:'auto'; };
-const roleSrc=(k,f)=>{ const v=IONS[k]; return v[f]?'Set on this role':`From ${v.proj} default`; };
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-rmodel],[data-reff],[data-rteff]'); if(!t) return;
   const d=t.dataset, k=d.k||d.rteff, v=IONS[k];

@@ -12,6 +12,10 @@
     "packages/*": {
       "project": ["src/**/*.ts"]
     },
+    "packages/adapter-kit": {
+      "project": ["src/**/*.ts"],
+      "ignoreBinaries": ["mkfifo"]
+    },
     "packages/design-system": {
       "project": ["src/**/*.{ts,tsx}"]
     },
