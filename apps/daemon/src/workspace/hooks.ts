@@ -67,6 +67,8 @@ export function runHook(o: HookRun): Promise<HookResult> {
   let tail = "";
   let stderr = "";
   return new Promise((resolve) => {
+    // The command is exactly your hook's, as you configured it (a shell line, by design); nothing of ion's or of the
+    // environment is added to it: values reach it only through its env (CodeQL, PR #25).
     const sh = sandboxed(o.sandbox, "/bin/sh", ["-c", o.run]);
     const child = spawn(sh.command, sh.args, {
       cwd: o.cwd,

@@ -84,9 +84,11 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
   let data = "";
   let wt = "";
   let sb: RunSandbox;
-  const run = (script: string, cwd = wt) => {
+  // Each script is fixed text; paths reach it only through its env (CodeQL on PR #25: nothing built into a shell string).
+  const run = (script: string, vars: Record<string, string> = {}) => {
     const w = sandboxed(sb, "/bin/sh", ["-c", script]);
-    return spawnSync(w.command, w.args, { cwd, encoding: "utf8", timeout: 15_000 });
+    const env = { ...process.env, ...vars };
+    return spawnSync(w.command, w.args, { cwd: wt, env, encoding: "utf8", timeout: 15_000 });
   };
 
   beforeAll(() => {
@@ -117,20 +119,29 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
 
   it("can't read daemon.json (cat, python, a script it wrote, a link, a moved folder)", () => {
     const file = join(data, "daemon.json");
+    const vars = {
+      F: file,
+      UPPER: join(home, ".local", "share", "ION", "DAEMON.JSON"),
+      DATA: data,
+      B64: Buffer.from(file).toString("base64"),
+      SHARE: join(home, ".local", "share"),
+      MOVED: join(home, "moved"),
+      MCP: join(home, ".config", "ion", "mcp.json"),
+    };
     const tries = [
-      `cat ${file}`,
-      `cat ${join(home, ".local", "share", "ION", "DAEMON.JSON")}`,
-      `python3 -c "print(open('${data}/' + 'daemon.json').read())"`,
-      `printf 'cat ${file}\\n' > s.sh && sh s.sh`,
-      `cat "$(echo ${Buffer.from(file).toString("base64")} | base64 -d)"`,
-      `ln -s ${file} l && cat l`,
-      `ln ${file} h && cat h`,
-      `mv ${join(home, ".local", "share")} ${join(home, "moved")}; cat ${join(home, "moved", "ion", "daemon.json")}`,
-      `cat ${join(home, ".config", "ion", "mcp.json")}`,
-      `ls ${data}`,
+      'cat "$F"',
+      'cat "$UPPER"',
+      `python3 -c "import os; print(open(os.environ['DATA'] + '/daemon.json').read())"`,
+      `printf 'cat "$F"\\n' > s.sh && sh s.sh`,
+      'cat "$(echo "$B64" | base64 -d)"',
+      'ln -s "$F" l && cat l',
+      'ln "$F" h && cat h',
+      'mv "$SHARE" "$MOVED"; cat "$MOVED/ion/daemon.json"',
+      'cat "$MCP"',
+      'ls "$DATA"',
     ];
     for (const t of tries) {
-      const r = run(t);
+      const r = run(t, vars);
       expect(`${r.stdout}`, t).not.toContain("full-token");
       expect(`${r.stdout}`, t).not.toContain("{}");
       expect(r.status, t).not.toBe(0);
@@ -139,7 +150,8 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
 
   it("can read and change its worktree, use git there, read its skills and run the launcher", () => {
     const r = run(
-      `cat a.txt && echo new > b.txt && git add b.txt && git -c user.name=t -c user.email=t@t commit -qm t && cat ${join(data, "skills", "run-1", "SKILL.md")} && ${join(data, "bin", "ion")}`,
+      'cat a.txt && echo new > b.txt && git add b.txt && git -c user.name=t -c user.email=t@t commit -qm t && cat "$SKILL" && "$ION"',
+      { SKILL: join(data, "skills", "run-1", "SKILL.md"), ION: join(data, "bin", "ion") },
     );
     expect(r.stderr).toBe("");
     expect(r.stdout).toBe("in the worktree\na skill\nlauncher ran\n");
@@ -159,8 +171,9 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
   // Security review, 2026-11-21: renaming the folder above an agent's config moved it out from under the rule
   // (`mv ~/.claude ~/.c2`, then write ~/.c2/settings.json).
   it("can't move the folders that hold the agent's config", () => {
-    expect(run(`mv ${join(home, ".claude")} ${join(home, "c2")}`).status).not.toBe(0);
-    expect(run(`echo x > ${join(home, "c2", "settings.json")}`).status).not.toBe(0);
+    const vars = { C: join(home, ".claude"), C2: join(home, "c2") };
+    expect(run('mv "$C" "$C2"', vars).status).not.toBe(0);
+    expect(run('echo x > "$C2/settings.json"', vars).status).not.toBe(0);
   });
 
   it("can't write its skills, the launcher or the agent's own config", () => {
@@ -169,7 +182,7 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
       join(data, "bin", "ion"),
       join(home, ".claude", "settings.json"),
     ])
-      expect(run(`echo x > ${f}`).status, f).not.toBe(0);
-    expect(run(`echo x > ${join(home, ".claude", "other.json")}`).status).toBe(0);
+      expect(run('echo x > "$F"', { F: f }).status, f).not.toBe(0);
+    expect(run('echo x > "$F"', { F: join(home, ".claude", "other.json") }).status).toBe(0);
   });
 });
