@@ -12,7 +12,9 @@ export function dropInheritedMarkers(env: NodeJS.ProcessEnv = process.env): void
 }
 
 /**
- * Where ion reads your agents' own configs (their servers for Import, their skills): your home, or ION_AGENTS_HOME
- * (the tour points it at a fake one so it never reads yours). Nothing else follows it.
+ * Where ion reads your agents' own configs (their servers for Import, their skills, their allow and deny rules): your
+ * home, or ION_AGENTS_HOME (the tour points it at a fake one so it never reads yours), honoured only in the tour
+ * (ION_TOUR=1) and tests (security review, 2026-11-22). Read once when ion starts, before the variable is dropped.
  */
-export const agentsHome = (env: NodeJS.ProcessEnv = process.env): string => env.ION_AGENTS_HOME || homedir();
+export const agentsHome = (env: NodeJS.ProcessEnv = process.env): string =>
+  (env.ION_TOUR === "1" || env.VITEST) && env.ION_AGENTS_HOME ? env.ION_AGENTS_HOME : homedir();

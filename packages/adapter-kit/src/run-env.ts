@@ -11,6 +11,8 @@ export const RUN_ENV_VARS = [
   "GROK_FOLDER_TRUST",
   "OPENCODE_CONFIG_CONTENT",
   "OPENCODE_DISABLE_PROJECT_CONFIG",
+  // Not a run's, but never inherited either: where ion reads agents' configs and rules (the tour's; read once at start).
+  "ION_AGENTS_HOME",
 ] as const;
 
 /** Per-run variables named with this prefix (`ION_MCP_H<i>`: an ion MCP key header, one per header). */

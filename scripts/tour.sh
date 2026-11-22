@@ -6,7 +6,7 @@
 # model from the app as part of the tour.
 set -e
 cd "$(dirname "$0")/.."
-export ION_HOME="${ION_TOUR_HOME:-/tmp/ion-tour}" ION_ALLOW_FAKE=1
+export ION_HOME="${ION_TOUR_HOME:-/tmp/ion-tour}" ION_ALLOW_FAKE=1 ION_TOUR=1
 ion() { node apps/cli/dist/index.js "$@"; }
 if [ "$1" = stop ]; then
   ion daemon stop >/dev/null 2>&1 || true

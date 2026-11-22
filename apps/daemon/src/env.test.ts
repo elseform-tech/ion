@@ -38,6 +38,18 @@ describe("agentsHome", () => {
     const { homedir } = await import("node:os");
     expect(agentsHome({})).toBe(homedir());
     expect(agentsHome({ ION_AGENTS_HOME: "" })).toBe(homedir());
-    expect(agentsHome({ ION_AGENTS_HOME: "/elsewhere/agents" })).toBe("/elsewhere/agents");
+    expect(agentsHome({ ION_AGENTS_HOME: "/elsewhere/agents", ION_TOUR: "1" })).toBe("/elsewhere/agents");
+    expect(agentsHome({ ION_AGENTS_HOME: "/elsewhere/agents", VITEST: "true" })).toBe("/elsewhere/agents");
+  });
+
+  // Task 11, 2026-11-22 (automated security review): ION_AGENTS_HOME redirects where ion reads agents' allow and deny
+  // rules, so an inherited one could swap your rules for others'. Honoured only in the tour (ION_TOUR=1) and tests,
+  // and dropped from the daemon's environment like a run's variables.
+  it("ignores ION_AGENTS_HOME outside the tour and tests, and drops it", async () => {
+    const { homedir } = await import("node:os");
+    expect(agentsHome({ ION_AGENTS_HOME: "/elsewhere/agents" })).toBe(homedir());
+    const env: NodeJS.ProcessEnv = { ION_AGENTS_HOME: "/elsewhere/agents", PATH: "/bin" };
+    dropInheritedMarkers(env);
+    expect(env).toEqual({ PATH: "/bin" });
   });
 });

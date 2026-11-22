@@ -35,7 +35,7 @@ import { IonServers } from "../ions/servers.js";
 import { ownServerNames, pickSource } from "./tools-picks.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
-import { diffOfChat, handlers, harnessInfos } from "./commands.js";
+import { diffOfChat, handlers, harnessInfos, useAgentsHome } from "./commands.js";
 import { PromptQueue } from "../queue/index.js";
 import { Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
@@ -92,8 +92,11 @@ const toolsOf = (o: Pick<ServerOpts, "configFile" | "secrets" | "dataDir">) => {
 };
 
 export async function startServer(
-  opts: ServerOpts,
+  given: ServerOpts,
 ): Promise<{ port: number; token: string; oauth: OAuth; grants: Grants; close(): Promise<void> }> {
+  // Where your agents' configs are, read once before ION_AGENTS_HOME is dropped (security review, 2026-11-22).
+  const opts = { ...given, home: given.home ?? agentsHome() };
+  useAgentsHome(opts.home);
   dropInheritedMarkers(); // idempotent: embedders and tests start the server without main()
   let port = 0;
   const { ctx, turns } = openState(opts, () => `http://127.0.0.1:${port}`);
@@ -392,10 +395,9 @@ const repoAsker =
     return HELD_ANSWER[h ?? "timeout"];
   };
 
-/** Each agent's own allow and deny rules, from your settings for it (Codex's trust: for the run's project folder). */
 /** What a run needs besides its access and servers: picks, hooks, ion's server and gate, and asking you. */
 function runCtxOf(o: {
-  opts: { dataDir: string; configFile: string };
+  opts: { dataDir: string; configFile: string; home?: string };
   base: () => string;
   late: { decisions?: Decisions };
   grants: Grants;
@@ -411,7 +413,7 @@ function runCtxOf(o: {
       return pickSource({ ...o.picks, configFile: opts.configFile }, agent, dir ? [dir] : []);
     },
     beforeTool: (r: AskingRun, c: Parameters<Hooks["beforeTool"]>[1]) => o.hooks.beforeTool(r, c),
-    theirs: theirRulesOf(opts.configFile, agentsHome()),
+    theirs: theirRulesOf(opts.configFile, opts.home ?? agentsHome()),
     mcp: { grants: o.grants, url: () => `${base()}/mcp` },
     gate: { url: () => `${base()}/gate` },
     // `ion` inside a run reaches ion by this port and its run key (daemon.json is out of the run's reach).
