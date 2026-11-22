@@ -7,6 +7,7 @@
 | [tools.md](tools.md) | Tools (Plan 18): `mcp.json` and consent, keys in the keychain and tokens in the vault, OAuth sign-in, ion's gateway to your servers, agents bring their own tools ("Use its own tools", per agent; Settings → Tools shows them beside ion's), Import from your agents (`ION_AGENTS_HOME`), hooks (Auto-approval built in), skills, `ion mcp\|skills\|hooks` for agents (added off), and what ion refuses vs. only guesses ("ion is wary of this"). |
 | [routines.md](routines.md) | Routines: where they live, the schedule format, how the daemon runs them, Activity, the CLI. |
 | [research/acp-and-harnesses.md](research/acp-and-harnesses.md) | ACP protocol, Codex's app-server, how each coding agent is launched and signed in, quota policy for tests. |
+| [research/memory-evals.md](research/memory-evals.md) | ion's memory on real agents: recall, precision, updates not copies, to-dos, Mark done, privacy, memory text that gives orders, and 300 files; how to run them and the latest numbers. |
 | [research/judge-evals.md](research/judge-evals.md) | Auto's judge on real models: 59 labelled cases, how to run them, dangerous allowed / ordinary refused / unsure / latency. |
 | [research/sandbox.md](research/sandbox.md) | Agents in the OS sandbox, away from ion's own files: each agent's real behaviour (Claude Code, Codex, opencode, Grok), Seatbelt and bubblewrap, nesting, what's covered and what isn't. |
 | [research/skills.md](research/skills.md) | Skills through the Agent SDK's `plugins`: the live probe, and what ion passes to Claude Code. |

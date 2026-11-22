@@ -56,6 +56,15 @@ The always-on service that owns all state.
   ion its project's and all yours; ion chief yours and every project shared with it. A file a caller can't see
   doesn't exist for it. A preference a chat writes is `suggested: <project>` (only that project's chats and the ions
   see it) until you keep it (`ion memory keep`).
+  The folder is `<data>/memory` (only you can open it; chats' agents can't reach it). `index.ts` writes files and logs
+  each change (`memory.written`, `memory.forgotten`: who, the header, the text before) and `watch.ts` picks up your
+  edits in an editor as yours; a file that can't be read keeps its last good version indexed and shows one line in
+  Settings. `migrate.ts` moves notes from before memory was files, one file each (`from:` the old note), once.
+  To-dos (`type: todo`): `todos.ts` for ion chief's briefing, `ion todo` and "Mark done?" (`src/ions/todo-offers.ts`:
+  a chat's finished work that matches an open to-do by its words; only you close one), and
+  `src/scheduler/reminders.ts` (one reminder at 9:00 local on the due day, or when quiet hours end).
+- `src/evals`: opt-in live evals on real agents (`live.test.ts`, `judge.test.ts`, `memory.test.ts` with
+  `memory-cases.ts`); see `docs/research/judge-evals.md` and `docs/research/memory-evals.md`.
 - `src/api`: the WebSocket API (see `@ion/schema` `api.ts` for the protocol).
 - `src/main.ts`: entry point. Takes the `daemon.lock` (an exclusive SQLite lock the OS releases if the process dies, so only one daemon per data dir), then writes `daemon.json` (`pid`, `port`, `token`, mode 0600).
 
