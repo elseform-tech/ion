@@ -308,6 +308,52 @@ describe("judge", () => {
     expect(parseVerdict('{"reason": "x"} then {"verdict": "deny", "reason": "y"}')).toBeNull();
   });
 
+  // Final review, 2026-11-22 (live: Grok's judge timed out in every live chat, up to 44 s, and every one asked you): a
+  // judge that times out or fails is asked once more on another signed-in agent, within the same ~30 s; only then
+  // "ion couldn't decide". A timeout is never an allow. Each miss is counted for its agent (Settings → Agents).
+  it("asks once more on another ready agent after a timeout or error, within the same time", async () => {
+    const input = { projectId: "app", text: "x", req: cmd("pnpm test") };
+    const tried: (string | undefined)[] = [];
+    const missed: string[] = [];
+    const others = {
+      first: () => "grok-build",
+      ready: async () => ["grok-build", "opencode"],
+      missed: (a: string) => void missed.push(a),
+    };
+    const hangsFirst = (_p: string, _s: AbortSignal, agent?: string) => {
+      tried.push(agent);
+      return agent ? Promise.resolve('{"verdict": "allow", "reason": "fine"}') : new Promise<string>(() => {});
+    };
+    const t0 = Date.now();
+    expect(await createJudge(hangsFirst, 300, others)(input)).toEqual({ verdict: "allow", reason: "fine" });
+    expect(Date.now() - t0).toBeLessThan(400);
+    expect(tried).toEqual([undefined, "opencode"]);
+    expect(missed).toEqual(["grok-build"]);
+    const failsFirst = async (_p: string, _s: AbortSignal, agent?: string) => {
+      if (!agent) throw new Error("Grok Build isn't signed in");
+      return '{"verdict": "deny", "reason": "no"}';
+    };
+    expect(await createJudge(failsFirst, 300, others)(input)).toEqual({ verdict: "deny", reason: "no" });
+  });
+
+  it("couldn't decide in time when the other agent is slow too, or when no other agent is ready", async () => {
+    const input = { projectId: "app", text: "x", req: cmd("pnpm test") };
+    const never = () => new Promise<string>(() => {});
+    const t0 = Date.now();
+    const both = { first: () => "a", ready: async () => ["a", "b"] };
+    expect(await createJudge(never, 300, both)(input)).toEqual({
+      verdict: "deny",
+      reason: "ion couldn't decide in time",
+      decided: false,
+    });
+    expect(Date.now() - t0).toBeLessThan(400);
+    const tried: (string | undefined)[] = [];
+    const alone = { first: () => "a", ready: async () => ["a"] };
+    const once = (_p: string, _s: AbortSignal, agent?: string) => (tried.push(agent), never());
+    expect((await createJudge(once, 100, alone)(input)).decided).toBe(false);
+    expect(tried).toEqual([undefined]);
+  });
+
   // Review Focus 2: a judge that fails, hangs or answers nonsense denies, with a reason.
   it("denies when the judge fails, takes too long, or doesn't answer in JSON", async () => {
     const input = { projectId: "app", text: "x", req: cmd("pnpm test") };

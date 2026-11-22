@@ -36,6 +36,12 @@ function AgentRow({ h, own, onOwn }: { h: HarnessInfo; own: boolean; onOwn: (on:
         {h.notSandboxed && <div className="s">Not sandboxed</div>}
         {/* Plan 18 Task 14: its own allow and deny rules count as your decisions in its chats. */}
         {h.ownRules ? <div className="s">Uses its own allow/deny rules ({h.ownRules})</div> : null}
+        {/* Final review, 2026-11-22: how often its judge didn't answer (too slow, or failed) this week. */}
+        {h.judgeMisses ? (
+          <div className="s">
+            Judge didn't answer {h.judgeMisses === 1 ? "once" : `${h.judgeMisses} times`} this week
+          </div>
+        ) : null}
       </div>
       {/* The lab's third column (its usage meter) stays empty here; the switch sits where the lab's does. */}
       <span />

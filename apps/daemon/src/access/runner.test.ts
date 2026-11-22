@@ -35,7 +35,7 @@ vi.mock("../adapters/registry.js", () => ({
       : null,
 }));
 
-const { harnessRunner, sweepTmp } = await import("./runner.js");
+const { clearScratch, harnessRunner, sweepTmp } = await import("./runner.js");
 
 function setup() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "ion-runner-")));
@@ -48,13 +48,17 @@ describe("harnessRunner's sandbox and folder", () => {
   // Final review, 2026-11-22: the judge (and ion's quick model) started agents outside the OS sandbox, in $TMPDIR;
   // on Grok and opencode those processes keep their tools and load their plugins. Each now starts in a run's sandbox
   // (ion's folders denied, agents' configs read-only), in a folder of ion's data folder that's removed after.
-  it("starts the agent in a run's sandbox, in a folder in ion's data folder, removed after", async () => {
+  // Its folder is one per agent (an ACP agent's judge stays warm there between verdicts), emptied at the daemon's start.
+  it("starts the agent in a run's sandbox, in its agent's folder in ion's data folder", async () => {
     const o = setup();
     started.length = 0;
     expect(await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal)).toBe("ok");
+    await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal);
     const s = started[0]!;
-    expect(s.cwd.startsWith(join(o.dataDir, "scratch", "ion-judge-"))).toBe(true);
+    expect(s.cwd).toBe(join(o.dataDir, "scratch", "ion-judge-x"));
+    expect(started[1]?.cwd).toBe(s.cwd);
     expect(seen[0]?.dirExists).toBe(true);
+    clearScratch(o.dataDir);
     expect(existsSync(s.cwd)).toBe(false);
     expect(s.bare).toBe(true);
     expect(s.sandbox?.kind).toBe("seatbelt");

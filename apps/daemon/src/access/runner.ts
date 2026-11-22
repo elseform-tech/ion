@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxKind, Session } from "@ion/adapter-kit";
@@ -10,12 +10,6 @@ import { envDropOf } from "../tools/env-drop.js";
 
 /** Where ion's own agent processes (the judge, ion's quick model, sign-in and model checks) work: in its data folder. */
 export const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
-
-/** A fresh folder for one of ion's own agent processes, in ion's data folder (denied to every run). */
-export function scratchFolder(dataDir: string, prefix: string): string {
-  mkdirSync(scratchOf(dataDir), { recursive: true, mode: 0o700 });
-  return realpathSync(mkdtempSync(join(scratchOf(dataDir), prefix)));
-}
 
 /**
  * Removes the folders ion's judge and agent checks left in the temp folder before they moved into ion's data folder
@@ -61,9 +55,9 @@ export function harnessRunner(
     const { id, model, effort } = startOf(loadUserConfig(o.configFile).config, which, agent);
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
-    const dir = scratchFolder(o.dataDir, "ion-judge-");
+    const dir = judgeFolder(o.dataDir, id);
     const sandbox = runSandbox(o.sandbox ?? machineSandbox(), { ...o, cwd: dir, harness: id });
-    try {
+    {
       const session = await h.adapter.start({
         cwd: dir,
         model,
@@ -75,10 +69,23 @@ export function harnessRunner(
         decide: async () => "deny",
       });
       return await lastMessage(session, prompt, signal);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
     }
   };
+}
+
+/**
+ * The folder an agent's judge (and ion's quick model on it) works in: one per agent in ion's data folder, kept while
+ * the daemon runs (an ACP agent's judge stays warm there between verdicts), emptied at the daemon's start.
+ */
+function judgeFolder(dataDir: string, harness: string): string {
+  const dir = join(scratchOf(dataDir), `ion-judge-${harness.replace(/[^\w-]/g, "_")}`);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return realpathSync(dir);
+}
+
+/** Empties ion's scratch folder (the daemon's start): what judges and checks left there before goes. */
+export function clearScratch(dataDir: string): void {
+  rmSync(scratchOf(dataDir), { recursive: true, force: true });
 }
 
 /** Sends the prompt and returns the session's last message; closes the session (also when the judge gives up). */

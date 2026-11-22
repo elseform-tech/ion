@@ -20,6 +20,7 @@ const grok: HarnessInfo = {
   ownTools: true,
   ownHooks: true,
   ownTrust: true,
+  judgeMisses: 4,
 };
 const claude: HarnessInfo = {
   id: "claude-code",
@@ -178,6 +179,16 @@ describe("Settings", () => {
     const lines = screen.getAllByText("Not sandboxed");
     expect(lines).toHaveLength(1);
     expect(lines[0]!.closest(".hrow")?.textContent).toContain("Claude Code");
+  });
+
+  // Final review, 2026-11-22: Grok's judge timed out in every live chat and nothing said so. Settings → Agents says how
+  // often an agent's judge didn't answer this week (only when it didn't at all).
+  it("says how often an agent's judge didn't answer this week", async () => {
+    render(<Settings client={client()} onOpenIon={() => {}} />);
+    await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
+    const lines = screen.getAllByText("Judge didn't answer 4 times this week");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.closest(".hrow")?.textContent).toContain("Grok Build");
   });
 
   // The user, 2026-11-21 (Plan 18 Task 14): an agent's own allow and deny rules count as your decisions; Settings →

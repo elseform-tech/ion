@@ -329,6 +329,8 @@ export type HarnessInfo = {
   notSandboxed?: true;
   /** How many of its own allow and deny rules (your settings for it) its chats go by: deny wins, in every mode. */
   ownRules?: number;
+  /** How often its judge didn't answer (too slow, or failed) in the last 7 days; absent when it always did. */
+  judgeMisses?: number;
 };
 
 export type MemoryInfo = {

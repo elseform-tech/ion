@@ -132,30 +132,76 @@ export function parseVerdict(text: string): { verdict: JudgeVerdict; reason: str
   return v && v.verdict === "allow" ? { ...v, verdict: "unsure" } : v;
 }
 
-/** A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. */
-export function createJudge(
-  run: (prompt: string, signal: AbortSignal) => Promise<string>,
-  timeoutMs = TIMEOUT_MS,
-): Judge {
+/** A run of the judge's prompt: on the judge's agent, or (`agent`) on another one. */
+type JudgeRun = (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>;
+
+/**
+ * The other agents a judge that times out or fails may ask (final review, 2026-11-22): the judge's own agent, the
+ * agents ready now, and where each miss is counted (Settings → Agents).
+ */
+export type JudgeOthers = {
+  first: () => string;
+  ready: () => Promise<string[]>;
+  missed?: (agent: string) => void;
+};
+
+/** One try's outcome: the model's text, too slow, or its error. */
+type Try = { out: string } | { slow: true } | { error: Error };
+
+/** One try of the prompt within `ms`; a slow one is stopped (its harness session closed). */
+async function attempt(run: JudgeRun, prompt: string, ms: number, agent?: string): Promise<Try> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const abort = new AbortController();
+  const slow = new Promise<Try>((r) => {
+    timer = setTimeout(() => {
+      abort.abort();
+      r({ slow: true });
+    }, ms);
+  });
+  try {
+    return await Promise.race([run(prompt, abort.signal, agent).then((out) => ({ out })), slow]);
+  } catch (e) {
+    return { error: e as Error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Another ready agent than the judge's, or none (the list is asked for at most 2 s). */
+async function otherAgent(o: JudgeOthers): Promise<string | undefined> {
+  const first = o.first();
+  const none = new Promise<string[]>((r) => setTimeout(() => r([]), 2000).unref());
+  const ready = await Promise.race([o.ready().catch(() => []), none]);
+  return ready.find((id) => id !== first);
+}
+
+/** The verdict a try gives; a failure, a slow answer or no verdict is a deny that isn't kept. */
+function verdictOfTry(t: Try): { verdict: JudgeVerdict; reason: string; decided?: false } {
+  if ("slow" in t) return { verdict: "deny", reason: "ion couldn't decide in time", decided: false };
+  if ("error" in t) {
+    const message = t.error.message.split("\n")[0]!.slice(0, 100);
+    return { verdict: "deny", reason: `ion couldn't decide: ${message}`, decided: false };
+  }
+  return parseVerdict(t.out) ?? { verdict: "deny", reason: "ion couldn't decide", decided: false };
+}
+
+/** The first try's share of the judge's time when another agent may be asked after it. */
+const FIRST_SHARE = 2 / 3;
+
+/**
+ * A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. With `others`, a
+ * try that times out or fails is made once more on another ready agent, within the same time (never longer).
+ */
+export function createJudge(run: JudgeRun, timeoutMs = TIMEOUT_MS, others?: JudgeOthers): Judge {
   return async (i) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // A judge that takes too long is stopped (its harness session closed), and the answer is deny.
-    const abort = new AbortController();
-    const slow = new Promise<"slow">((r) => {
-      timer = setTimeout(() => {
-        abort.abort();
-        r("slow");
-      }, timeoutMs);
-    });
-    try {
-      const out = await Promise.race([run(judgePrompt(i), abort.signal), slow]);
-      if (out === "slow") return { verdict: "deny", reason: "ion couldn't decide in time", decided: false };
-      return parseVerdict(out) ?? { verdict: "deny", reason: "ion couldn't decide", decided: false };
-    } catch (e) {
-      const message = (e as Error).message.split("\n")[0]!.slice(0, 100);
-      return { verdict: "deny", reason: `ion couldn't decide: ${message}`, decided: false };
-    } finally {
-      clearTimeout(timer);
-    }
+    const prompt = judgePrompt(i);
+    const t0 = Date.now();
+    const first = await attempt(run, prompt, others ? timeoutMs * FIRST_SHARE : timeoutMs);
+    if (!others || "out" in first) return verdictOfTry(first);
+    others.missed?.(others.first());
+    const agent = await otherAgent(others);
+    const left = timeoutMs - (Date.now() - t0);
+    if (!agent || left < timeoutMs / 6) return verdictOfTry(first);
+    return verdictOfTry(await attempt(run, prompt, left, agent));
   };
 }
