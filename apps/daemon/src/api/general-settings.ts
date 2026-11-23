@@ -22,7 +22,9 @@ import { maxRuns } from "../scheduler/index.js";
 import { UserError } from "./errors.js";
 
 /** General and Notifications as the app shows them, from your config (what's not set is its default). */
-export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort" | "judge" | "ownTools"> {
+export function generalOf(
+  c: UserConfig,
+): Omit<SettingsInfo, "quick" | "effort" | "judge" | "quickNow" | "judgeNow" | "judgeChecked" | "ownTools"> {
   return {
     maxRuns: c.resources.max_runs,
     autoRuns: maxRuns("auto", availableParallelism()),

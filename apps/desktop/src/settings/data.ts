@@ -19,7 +19,11 @@ export function useSettingsData(client: IonClient): SettingsData {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const reload = useCallback(() => {
     const quiet = () => {};
-    void client.call("harnesses.list", {}).then(setHarnesses, quiet);
+    // Settings again once the agents are known: whom ion's models follow comes from them (PR #36 review, 2026-11-23).
+    void client.call("harnesses.list", {}).then((h) => {
+      setHarnesses(h);
+      void client.call("settings.get", {}).then(setSettings, quiet);
+    }, quiet);
     void client.call("settings.get", {}).then(setSettings, quiet);
     void client.call("ions.list", {}).then(setIons, quiet);
     void client.call("projects.list", {}).then(setProjects, quiet);
@@ -36,16 +40,3 @@ export function useSettingsData(client: IonClient): SettingsData {
 
 /** Ready: installed and signed in. */
 export const ready = (h: HarnessInfo) => h.installed && h.signedIn;
-
-/**
- * The agent one of ion's own models is on: yours ("<agent>[:<model>]"), else (none set) the first ready agent in your
- * agent order, Claude Code only when it's first there or the only one ready (Plan 21 audit, 2026-11-23); "" with none.
- */
-export function ownSpec(spec: string, data: Pick<SettingsData, "harnesses" | "settings">): string {
-  if (spec) return spec;
-  const order = data.settings?.agentOrder ?? [];
-  const on = data.harnesses.filter(ready).map((h) => h.id);
-  const inOrder = [...order.filter((id) => on.includes(id)), ...on.filter((id) => !order.includes(id))];
-  const ok = (id: string) => id !== "claude-code" || order[0] === id || on.length === 1;
-  return inOrder.find(ok) ?? "";
-}

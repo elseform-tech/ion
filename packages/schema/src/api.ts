@@ -87,7 +87,16 @@ export type ProjectPatch = {
  * ion's own models, each "<agent>" or "<agent>:<model>" ("": none set, the first ready agent in your agent order):
  * `quick` thinks for ion chief and the project ions, at `effort` (null: the agent's default); `judge` decides in Auto.
  */
-export type IonSettings = { quick: string; effort: EffortLevel | null; judge: string };
+export type IonSettings = {
+  quick: string;
+  effort: EffortLevel | null;
+  judge: string;
+  /** Whom each runs on now, "<agent>[:<model>]": yours, else the first ready in your order; null when none is. */
+  quickNow: string | null;
+  judgeNow: string | null;
+  /** Whether ion's judge evals checked the judge's model now (one you set may not be: Settings says so). */
+  judgeChecked: boolean;
+};
 
 /** What ion does when a chat's agent hits its limit (Settings → Agents). */
 export type OnLimit = "ask" | "continue" | "wait";
@@ -127,11 +136,11 @@ export type SettingsInfo = IonSettings & {
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
 export type SettingsPatch = Partial<
-  Pick<
-    SettingsInfo,
-    "maxRuns" | "quick" | "effort" | "judge" | "ownTools" | "agentOrder" | "onLimit" | "byUsage"
-  >
+  Pick<SettingsInfo, "maxRuns" | "effort" | "ownTools" | "agentOrder" | "onLimit" | "byUsage">
 > & {
+  /** ion's quick model or the judge: "<agent>[:<model>]", or null (or "") to follow your agent order again. */
+  quick?: string | null;
+  judge?: string | null;
   dream?: { mode?: DreamMode; agent?: string | null };
   /** Memory on or off everywhere, or in a project (set like everywhere, it follows everywhere again). */
   memory?: { on?: boolean; projects?: Record<string, boolean> };

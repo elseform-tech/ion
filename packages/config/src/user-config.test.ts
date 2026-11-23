@@ -175,6 +175,33 @@ describe("loadUserConfig", () => {
     const picked = loadUserConfig(file).config;
     expect([picked.ion.quick, picked.access.judge]).toEqual(["claude-code", "claude-code:haiku"]);
   });
+
+  // PR #36 review, 2026-11-23: a move is said once, in one line naming what moved, so a choice of Claude Code that
+  // only looked like the default can be set again. Any version below 2 (or none, or not a number) is older; a newer
+  // file's version is never written lower.
+  it("says what moved, reads any version below 2 as older, and never writes a newer one lower", () => {
+    const file = join(tmp(), "config.toml");
+    writeFileSync(file, 'version = 1\n[ion]\nquick = "claude-code"\n');
+    const one = loadUserConfig(file);
+    expect(one.config.ion.quick).toBeUndefined();
+    expect(one.warning).toBe(
+      "config.toml: ion's quick model now follows your order; set it in Settings → Agents to keep Claude Code",
+    );
+    writeFileSync(
+      file,
+      '[ion]\nquick = "claude-code"\ndeep = "claude-code"\n[access]\njudge = "claude-code:haiku"\n',
+    );
+    expect(loadUserConfig(file).warning).toBe(
+      "config.toml: ion's quick model, ion's deep model and the judge now follow your order; set them in Settings → Agents to keep Claude Code",
+    );
+    writeFileSync(file, 'version = "2"\n[ion]\nquick = "claude-code"\n');
+    expect(loadUserConfig(file).config.ion.quick).toBeUndefined();
+    writeFileSync(file, 'version = 3\n[ion]\nquick = "claude-code"\n');
+    const newer = loadUserConfig(file);
+    expect([newer.config.ion.quick, newer.warning]).toEqual(["claude-code", null]);
+    saveUserConfig(file, newer.config);
+    expect(readFileSync(file, "utf8")).toContain("version = 3");
+  });
 });
 
 // Final review, 2026-11-19: the profile's limit was written three times (the config, its ion's tool, Settings).

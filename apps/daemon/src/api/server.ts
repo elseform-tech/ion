@@ -19,7 +19,7 @@ import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, harnessRunner, ionDirsOf } from "../access/index.js";
 import { startOwnAgents } from "../access/runner.js";
-import { type AgentsNow, judgeOn, ownAgents } from "../access/judge-agents.js";
+import { type AgentsNow, judgeOn, ownAgents, readyNow } from "../access/judge-agents.js";
 import { theirRulesOf } from "../access/agent-rules.js";
 import { UnsureLog } from "../access/unsure.js";
 import type { Decisions } from "../decisions/index.js";
@@ -235,8 +235,7 @@ function autoAccess(
 }
 
 /** The agents signed in now (the judge's second try picks one). */
-const readyAgents = async () =>
-  (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
+const readyAgents = readyNow(harnessInfos);
 
 /**
  * ion chief's suggestions: a routine is added the way you'd add it; a stalled chat gets its follow-up through the

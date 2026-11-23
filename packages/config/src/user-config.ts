@@ -375,28 +375,39 @@ function dropOldAccess(raw: unknown, file: string): string | null {
 }
 
 /** The defaults every save wrote before version 2 (Claude Code), with where each is. */
-const OLD_DEFAULTS: [section: string, key: string, was: string][] = [
-  ["ion", "quick", "claude-code"],
-  ["ion", "deep", "claude-code"],
-  ["access", "judge", "claude-code:haiku"],
+const OLD_DEFAULTS: [section: string, key: string, was: string, name: string][] = [
+  ["ion", "quick", "claude-code", "ion's quick model"],
+  ["ion", "deep", "claude-code", "ion's deep model"],
+  ["access", "judge", "claude-code:haiku", "the judge"],
 ];
+
+/** "a", "a and b", "a, b and c". */
+const listed = (names: string[]) =>
+  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
 /**
  * A file from before version 2 (Plan 21 audit, 2026-11-23): each of ion's models and the judge still on the old
  * default (Claude Code, written by every save whether you picked it or not) follows your agent order now; any other
- * value is your choice and stays.
+ * value is your choice and stays. Older: no version, or one that isn't a number of at least 2 (PR #36 review); a
+ * newer file's version is kept so a save never writes it lower. Returns one line naming what moved, or null.
  */
-function moveOldDefaults(raw: unknown): void {
+function moveOldDefaults(raw: unknown, file: string): string | null {
   const r = raw as Record<string, unknown> | null;
-  if (typeof r !== "object" || r === null) return;
-  // The version is the file's, never a setting: each save writes the current one.
-  const older = r.version === undefined;
+  if (typeof r !== "object" || r === null) return null;
+  const v = r.version;
   delete r.version;
-  if (!older) return;
-  for (const [section, key, was] of OLD_DEFAULTS) {
+  if (typeof v === "number" && v > CONFIG_VERSION) r.version = v;
+  if (typeof v === "number" && v >= CONFIG_VERSION) return null;
+  const moved: string[] = [];
+  for (const [section, key, was, name] of OLD_DEFAULTS) {
     const holder = r[section] as Record<string, unknown> | undefined;
-    if (typeof holder === "object" && holder !== null && holder[key] === was) delete holder[key];
+    if (typeof holder !== "object" || holder === null || holder[key] !== was) continue;
+    delete holder[key];
+    moved.push(name);
   }
+  if (!moved.length) return null;
+  const [verb, it] = moved.length > 1 ? ["follow", "them"] : ["follows", "it"];
+  return `${basename(file)}: ${listed(moved)} now ${verb} your order; set ${it} in Settings → Agents to keep Claude Code`;
 }
 
 /**
@@ -416,8 +427,8 @@ export function loadUserConfig(file: string): {
     const first = String((e as Error).message).split("\n")[0];
     return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null };
   }
-  moveOldDefaults(raw);
-  const warning = [dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
+  const moved = moveOldDefaults(raw, file);
+  const warning = [moved, dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
   const r = UserConfigSchema.safeParse(raw);
   if (!r.success)
     return { config: defaults(), error: describeIssue(file, r.error.issues[0]!), warning: null };
@@ -428,8 +439,13 @@ export function loadUserConfig(file: string): {
 export function saveUserConfig(file: string, c: UserConfig): void {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
-  const { heldProjects, ...rest } = UserConfigSchema.parse(c);
-  const parsed = { version: CONFIG_VERSION, ...rest };
+  const {
+    heldProjects,
+    version: read,
+    ...rest
+  } = UserConfigSchema.parse(c) as UserConfig & { version?: unknown };
+  // Never lower than the file's own (a newer ion's): PR #36 review, 2026-11-23.
+  const parsed = { version: Math.max(CONFIG_VERSION, typeof read === "number" ? read : 0), ...rest };
   // A held project goes back in the file as you wrote it (after the others).
   const out = heldProjects?.length ? { ...parsed, projects: [...parsed.projects, ...heldProjects] } : parsed;
   writeFileSync(tmp, stringify(out), { mode: 0o600 });

@@ -258,6 +258,9 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .hpick button{width:34px;height:34px;border-radius:9px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer;opacity:.55}
 .hpick button:hover{background:var(--hover);opacity:1}
 .hpick button.on{background:var(--sel);opacity:1;box-shadow:0 0 0 1px var(--line)}
+/* the agent "Your order" runs on now (PR #36 review, 2026-11-23): shown, not picked */
+.hpick button.now{opacity:1}
+.hpick svg{width:16px;height:16px}
 .hpick canvas{width:24px;height:24px}
 .sws{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;max-width:240px}
 .sws button{width:18px;height:18px;border-radius:50%;border:0;background:var(--c);cursor:pointer;padding:0}
@@ -2976,7 +2979,7 @@ const effLabel=e=>EFF.find(x=>x[0]===e)[1];
    window's percent when the agent reports one (a bar), lim: limited until its reset. Never a gauge ion made up. */
 const HCONN={claude:{st:'on',how:'Signed in',line:'limited until 16:00',lim:1,rules:3},grok:{st:'on',how:'Signed in',line:'Learned from errors'},codex:{st:'on',how:'Signed in',line:'62% of 5 h · resets 14:20',use:62},
   gemini:{st:'on',how:'Signed in',line:'this week $4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
-const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],judge:['grok','grok-code-fast'],eff:'high',when:'auto',use:4,week:1.8};
+const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],judge:null,eff:'high',when:'auto',use:4,week:1.8};
 const S2WHEN=[['auto','When needed'],['always','Always'],['never','Never']];
 let NEEDS=[
   {id:'mig',k:'payments-api',t:'Approve migration 0042?',p:'payments-api',sub:'Adds the idempotency_keys table',urgent:1,acts:[['Review','open'],['Approve','done']]},
@@ -3813,16 +3816,28 @@ function renderHarnesses(){
     return `<div class="hrow ord"><button type="button" class="ib grip" draggable="true" aria-label="Move ${esc(n)}" title="Drag to reorder"><i data-lucide="grip-vertical"></i></button><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}</div>${right}</div>`; }).join('');
   hydrate(el); icons(el); renderIonModels();
 }
+/* The app's Judge row: Your order, then each ready agent (Grok marked while it's whom your order picks). */
+function judgeRow(){
+  const on=HARNESSES.filter(h=>HCONN[h].st==='on'), cur=IONBRAIN.judge, follow=!cur;
+  const pick=`<div class="hpick" role="radiogroup" aria-label="Judge"><button type="button" role="radio" aria-checked="${follow}" title="Your order" class="${follow?'on':''}" data-jpick=""><i data-lucide="list"></i></button>${on.map(h=>`<button type="button" role="radio" aria-checked="${cur===h}" title="${esc(LIB[h].name)}" class="${cur===h?'on':follow&&h==='grok'?'now':''}" data-jpick="${h}"><canvas class="av" data-bot="${h}"></canvas></button>`).join('')}</div>`;
+  const note=cur&&cur!=='grok'&&cur!=='claude'&&cur!=='codex'?'<div class="s">Not checked by ion’s evals</div>':'';
+  return `<div class="srow"><div class="g"><span class="slot"><i data-lucide="shield-check"></i>Judge</span>${note}</div>${pick}<select class="val" aria-label="Judge model"><option>Default</option></select></div>`;
+}
+document.addEventListener('click',e=>{ const j=e.target.closest('[data-jpick]'); if(!j) return; IONBRAIN.judge=j.dataset.jpick||null; renderIonModels(); });
 function renderIonModels(){
   const el=document.getElementById('ionModels'), on=HARNESSES.filter(h=>HCONN[h].st==='on');
-  const chips=slot=>`<div class="chips">${on.flatMap(h=>MODELS[h].map(([m])=>{ const sel=IONBRAIN[slot][0]===h&&IONBRAIN[slot][1]===m; return `<button type="button" class="chip tog${sel?' on':''}" data-islot="${slot}" data-h="${h}" data-m="${esc(m)}"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas>${esc(m)}</button>`; })).join('')}</div>`;
+  /* Quick's "Your order" (PR #36 review, 2026-11-23): none set, it follows your agent order; picking it goes back. */
+  const follow=slot=>slot==='fast'?`<button type="button" class="chip tog${IONBRAIN.fastOrder?' on':''}" data-iorder="1"><i data-lucide="list"></i>Your order</button>`:'';
+  const chips=slot=>`<div class="chips">${follow(slot)}${on.flatMap(h=>MODELS[h].map(([m])=>{ const sel=!(slot==='fast'&&IONBRAIN.fastOrder)&&IONBRAIN[slot][0]===h&&IONBRAIN[slot][1]===m; return `<button type="button" class="chip tog${sel?' on':''}" data-islot="${slot}" data-h="${h}" data-m="${esc(m)}"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas>${esc(m)}</button>`; })).join('')}</div>`;
   const row=(t,d,r)=>`<div class="srow stack"><div class="g">${t}<div class="s">${d}</div></div>${r}</div>`;
   const seg=(items,cur,attr,dis=()=>false)=>`<span class="seg sm">${items.map(([id,l])=>`<button type="button" class="${cur===id?'on':''}" data-${attr}="${id}"${dis(id)?' disabled':''}>${l}</button>`).join('')}</span>`;
   el.innerHTML=row('<span class="slot"><i data-lucide="zap"></i>Quick</span>','For sorting and short replies',chips('fast'))
+    /* Auto's judge (Plan 21 audit; PR #36 review, 2026-11-23), as the app draws it, right after Quick (the Deep rows
+       below aren't in the app yet): no hint (the app has none), "Your order" first (none set: the first ready agent in
+       your order whose judge model ion's evals checked, marked), then the agents; one you set on an unchecked model
+       says so quietly. */
+    +judgeRow()
     +row('<span class="slot"><i data-lucide="brain"></i>Deep</span>','For planning and the briefing',chips('deep'))
-    /* Auto's judge (Plan 21 audit, 2026-11-23): shown and picked like Quick; unset, it's the first ready agent in your
-       order, and when its agent fails it goes on the next one there, never quietly to Claude Code. */
-    +row('<span class="slot"><i data-lucide="shield-check"></i>Judge</span>','Decides in Auto',chips('judge'))
     +`<div class="srow"><div class="g">Deep effort</div>${seg(EFF.filter(([id])=>id!=='auto'),IONBRAIN.eff,'ieff',id=>!ESUP[IONBRAIN.deep[0]].includes(id))}</div>`
     +`<div class="srow"><div class="g">Use Deep</div>${seg(S2WHEN,IONBRAIN.when,'iwhen')}</div>`;
   hydrate(el); icons(el);
@@ -3839,7 +3854,8 @@ document.addEventListener('click',e=>{
     if(h==='codex') st.err=`${LIB[h].name} is working in 2 chats. Sign out after they finish.`; else st.ask=1; renderHarnesses(); return; }
   const y=e.target.closest('[data-hyes]'); if(y){ Object.assign(HCONN[y.dataset.hyes],{ask:0,st:'off',how:'Not signed in'}); renderHarnesses(); paintPills(); return; }
   const no=e.target.closest('[data-hno]'); if(no){ const st=HCONN[no.dataset.hno]; if(st.st==='busy') Object.assign(st,{st:'off'}); st.ask=0; renderHarnesses(); return; }
-  const sl=e.target.closest('[data-islot]'); if(sl){ IONBRAIN[sl.dataset.islot]=[sl.dataset.h,sl.dataset.m]; if(!ESUP[IONBRAIN.deep[0]].includes(IONBRAIN.eff)) IONBRAIN.eff=ESUP[IONBRAIN.deep[0]].find(x=>x!=='auto')||'high'; renderIonModels(); renderByIon(); return; }
+  if(e.target.closest('[data-iorder]')){ IONBRAIN.fastOrder=true; renderIonModels(); return; }
+  const sl=e.target.closest('[data-islot]'); if(sl){ if(sl.dataset.islot==='fast') IONBRAIN.fastOrder=false; IONBRAIN[sl.dataset.islot]=[sl.dataset.h,sl.dataset.m]; if(!ESUP[IONBRAIN.deep[0]].includes(IONBRAIN.eff)) IONBRAIN.eff=ESUP[IONBRAIN.deep[0]].find(x=>x!=='auto')||'high'; renderIonModels(); renderByIon(); return; }
   const ie=e.target.closest('[data-ieff]'); if(ie){ IONBRAIN.eff=ie.dataset.ieff; renderIonModels(); return; }
   const iw=e.target.closest('[data-iwhen]'); if(iw){ IONBRAIN.when=iw.dataset.iwhen; renderIonModels(); return; }
 });

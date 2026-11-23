@@ -20,9 +20,13 @@ The always-on service that owns all state.
   **Full access** allows it. **Auto** never pauses: your secrets (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, gh,
   gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
   by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (unset: the first ready agent in your
-  agent order, at its quick model; a bare session with no tools), which answers allow or deny with a reason. When its
-  agent fails or is slow it goes once on the next agent in your order that's ready and not limited (Claude Code only
-  when it's first there or the only one ready); with none left it's unsure and asks you (deny after 30 s). One judge call
+  agent order whose pinned judge model, in its adapter, ion's judge evals checked (docs/research/judge-evals.md); a
+  bare session with no tools), which answers allow or deny with a reason. A limited judge agent is skipped; when its
+  agent fails or is slow it goes once on the next checked agent in your order that's ready and not limited (Claude
+  Code only when it's first there or the only one ready); with none left it's unsure and asks you. A judge you set on
+  a model the evals didn't check still runs; Settings says "Not checked by ion's evals". `[ion] quick` and `deep`
+  are unset at first too (the first ready agent in your order), so Pick by usage's deep work (Max effort) keeps no
+  agent until you set a deep model. One judge call
   per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
   says no (or can't decide), ion asks you instead: Allow or Don't allow (Remember keeps either for that exact action in the project), or your
   own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes

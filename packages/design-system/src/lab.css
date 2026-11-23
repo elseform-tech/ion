@@ -229,6 +229,9 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .hpick button{width:34px;height:34px;border-radius:9px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer;opacity:.55}
 .hpick button:hover{background:var(--hover);opacity:1}
 .hpick button.on{background:var(--sel);opacity:1;box-shadow:0 0 0 1px var(--line)}
+/* the agent "Your order" runs on now (PR #36 review, 2026-11-23): shown, not picked */
+.hpick button.now{opacity:1}
+.hpick svg{width:16px;height:16px}
 .hpick canvas{width:24px;height:24px}
 .sws{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;max-width:240px}
 .sws button{width:18px;height:18px;border-radius:50%;border:0;background:var(--c);cursor:pointer;padding:0}

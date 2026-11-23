@@ -40,7 +40,7 @@ export type RunnerOpts = {
    * The agent to run on when your config names none ("": a fresh ion follows your agent order; Plan 21 audit,
    * 2026-11-23: it was Claude Code), as "<agent>[:<model>]"; undefined when none is ready.
    */
-  firstOwn?: () => Promise<string | undefined>;
+  firstOwn?: (which: "judge" | "quick") => Promise<string | undefined>;
 };
 
 /**
@@ -62,7 +62,7 @@ async function specOf(
   firstOwn: RunnerOpts["firstOwn"],
 ): Promise<string> {
   const set = which === "quick" ? c.ion.quick : c.access.judge;
-  const spec = set || (await firstOwn?.());
+  const spec = set || (await firstOwn?.(which));
   if (!spec) throw new Error("no agent is ready");
   return spec;
 }

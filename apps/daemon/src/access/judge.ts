@@ -189,7 +189,7 @@ const FIRST_SHARE = 2 / 3;
 /** With no agent to ask (none ready, or none left after a miss): unsure, so you're asked; nothing is kept. */
 const noneLeft = (t?: Try): { verdict: JudgeVerdict; reason: string; decided: false } => ({
   verdict: "unsure",
-  reason: t ? verdictOfTry(t).reason : "no agent is ready to decide",
+  reason: t ? verdictOfTry(t).reason : "ion couldn't decide: no agent is ready",
   decided: false,
 });
 

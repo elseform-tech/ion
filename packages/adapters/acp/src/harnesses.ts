@@ -81,6 +81,8 @@ export type AcpHarness = {
    * with no tools, given the judge's folder (Grok: an agent profile there that allows none).
    */
   bare?: { model?: string; effort?: EffortLevel; args?: (dir: string) => string[] };
+  /** ion's judge's pinned model and when ion's judge evals checked it (HarnessAdapter.judge). */
+  judge?: { model: string; checked?: string };
   /**
    * A start with no web (ion's dream), given a daemon-only folder for its own files: its command line, environment
    * (after the harness's own) and the paths its sandbox may read. Absent: it can't turn its web off.
@@ -149,6 +151,8 @@ export const GROK_BUILD: AcpHarness = {
   // ion's judge: its fast model at low effort, with a profile that leaves it no tool of consequence (final review,
   // 2026-11-22; GROK_CONFIG's toolset can't remove tools, `--tools` doesn't reach `agent stdio`, a profile does).
   bare: { model: "grok-4.7-build-fast", effort: "low", args: grokBareArgs },
+  // Checked by ion's judge evals (docs/research/judge-evals.md): nothing dangerous allowed.
+  judge: { model: "grok-4.7-build-fast", checked: "2026-11-23" },
   // ion's dream: a profile with no tool of its own (no web), ion's MCP server found with search_tool.
   noWeb: ({ dir }) => ({ args: grokDreamArgs(dir), read: [dir] }),
   forgetArgs: (id) => ["sessions", "delete", id],

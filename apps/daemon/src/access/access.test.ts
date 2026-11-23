@@ -558,6 +558,25 @@ describe("a judge with no config, in tests", () => {
   });
 });
 
+// PR #36 review, 2026-11-23: with no config nothing starts at all (above); a judge you set still meets the guard: a
+// real agent never starts under tests.
+describe("a judge you set, in tests", () => {
+  it("fails closed without starting the agent", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "config.toml");
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, access: { judge: "opencode" } });
+    const v = await createJudge(harnessRunner(runner(configFile)))({
+      projectId: "app",
+      text: "x",
+      req: cmd("ls"),
+    });
+    expect(v).toEqual({
+      verdict: "deny",
+      reason: "ion couldn't decide: real agents are off in tests",
+      decided: false,
+    });
+  });
+});
+
 // The user, 2026-11-19 (Settings): ion thinks with its own quick model ([ion] quick), set apart from the judge.
 describe("harnessRunner for ion's own thinking", () => {
   it("uses [ion] quick, not the judge", async () => {

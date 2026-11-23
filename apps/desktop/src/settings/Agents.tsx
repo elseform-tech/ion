@@ -12,7 +12,7 @@ import { Fragment, type HTMLAttributes, type ReactNode, useCallback, useEffect, 
 import { inOrder, PickingAgents, useAgentOrder } from "./AgentOrder.js";
 import { useEvents } from "../events.js";
 import { useCallError } from "../callError.js";
-import { ownSpec, ready, type SettingsData } from "./data.js";
+import { ready, type SettingsData } from "./data.js";
 import { EFFORTS } from "./IonPage.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { Switch } from "./Switch.js";
@@ -108,17 +108,21 @@ function AgentRow(p: {
 }
 
 /**
- * One of ion's own models: an agent (its shape), then one of its models from a menu ("Default": the agent's own).
- * Only agents that are ready; none set shows the one it follows (the first ready in your order).
+ * One of ion's own models: "Your order" (none set: it follows your agent order, the agent it's on now marked), or an
+ * agent (its shape), then one of its models from a menu ("Default": the agent's own). Only agents that are ready.
  */
 function ModelRow(p: {
   data: SettingsData;
   icon: LucideIcon;
   label: string;
+  /** Yours ("" when none is set), and whom it runs on now (the daemon says). */
   spec: string;
-  onPick: (spec: string) => void;
+  now: string | null;
+  onPick: (spec: string | null) => void;
+  /** A quiet line under it (the judge on a model ion's evals didn't check). */
+  note?: string | false;
 }) {
-  const [agent, model = ""] = ownSpec(p.spec, p.data).split(/:(.*)/);
+  const [agent, model = ""] = (p.spec || p.now || "").split(/:(.*)/);
   const ok = p.data.harnesses.filter(ready);
   const models = ok.find((h) => h.id === agent)?.models ?? [];
   const Icon = p.icon;
@@ -129,8 +133,15 @@ function ModelRow(p: {
           <Icon />
           {p.label}
         </span>
+        {p.note && <div className="s">{p.note}</div>}
       </div>
-      <AgentPicker agents={ok} value={agent} onPick={p.onPick} label={p.label} />
+      <AgentPicker
+        agents={ok}
+        value={p.spec ? agent : null}
+        onPick={p.onPick}
+        label={p.label}
+        follow={{ on: !p.spec, now: p.spec ? null : (agent ?? null), onPick: () => p.onPick(null) }}
+      />
       <ModelMenu
         label={`${p.label} model`}
         models={models}
@@ -181,12 +192,19 @@ function IonModels(p: { data: SettingsData; set: (patch: SettingsPatch) => void;
       <h4>ion’s models</h4>
       <div className="group">
         <ModelRow
-          {...{ data: p.data, icon: Zap, label: "Quick", spec: s?.quick ?? "" }}
+          {...{ data: p.data, icon: Zap, label: "Quick", spec: s?.quick ?? "", now: s?.quickNow ?? null }}
           onPick={(quick) => p.set({ quick })}
         />
         <QuickEffort value={s?.effort ?? null} onPick={(effort) => p.set({ effort })} />
         <ModelRow
-          {...{ data: p.data, icon: ShieldCheck, label: "Judge", spec: s?.judge ?? "" }}
+          {...{
+            data: p.data,
+            icon: ShieldCheck,
+            label: "Judge",
+            spec: s?.judge ?? "",
+            now: s?.judgeNow ?? null,
+          }}
+          note={!!s?.judge && !s.judgeChecked && "Not checked by ion’s evals"}
           onPick={(judge) => p.set({ judge })}
         />
         {p.error && <div className="perr">{p.error}</div>}

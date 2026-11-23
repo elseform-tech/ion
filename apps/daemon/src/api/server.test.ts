@@ -7,6 +7,7 @@ import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
+import { getHarness } from "../adapters/registry.js";
 import { startServer } from "./server.js";
 import { loadUserConfig, saveUserConfig } from "@ion/config";
 import { Decisions } from "../decisions/index.js";
@@ -417,6 +418,16 @@ describe("daemon api", () => {
     // Plan 21 audit, 2026-11-23: Settings shows and sets the judge's agent too, with the same picker.
     await client.call("settings.set", { patch: { judge: "opencode" } });
     expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", judge: "opencode" });
+    // PR #36 review, 2026-11-23: the daemon says whom each follows now (yours, else your order's first) and whether
+    // ion's judge evals checked the judge's model; null (or "") goes back to your order.
+    expect(await client.call("settings.get", {})).toMatchObject({
+      quickNow: "grok-build",
+      judgeNow: "opencode",
+      judgeChecked: false,
+    });
+    const grok = `grok-build:${getHarness("grok-build")!.adapter.judge!.model}`;
+    await client.call("settings.set", { patch: { judge: grok } });
+    expect(await client.call("settings.get", {})).toMatchObject({ judgeNow: grok, judgeChecked: true });
     await expect(client.call("settings.set", { patch: { judge: "nope" } })).rejects.toThrow(
       "Unknown agent: nope",
     );
@@ -431,7 +442,9 @@ describe("daemon api", () => {
     );
     await client.call("settings.set", { patch: { effort: null } });
     expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", effort: null });
-  });
+    await client.call("settings.set", { patch: { judge: null, quick: null } });
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "", judge: "" });
+  }, 30_000);
 
   // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.
   it("previews a chat's file and lists its background tasks", async () => {

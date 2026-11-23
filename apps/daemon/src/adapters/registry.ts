@@ -133,6 +133,18 @@ export function quickSpec(id: string): string {
   return m ? `${id}:${m}` : id;
 }
 
+/**
+ * "<agent>:<its pinned judge model>" when ion's judge evals checked it (PR #36 review, 2026-11-23: the judge goes on
+ * its own only there), else undefined.
+ */
+export function judgeSpec(id: string): string | undefined {
+  const j = getHarness(id)?.adapter.judge;
+  return j?.checked ? `${id}:${j.model}` : undefined;
+}
+
+/** Whether ion's judge evals checked this "<agent>[:<model>]" (an agent alone: its own default isn't checked). */
+export const judgeChecked = (spec: string): boolean => !!spec && judgeSpec(spec.split(":")[0]!) === spec;
+
 /** An agent's name as ion says it ("Claude Code"), else its id. */
 export const agentLabel = (id: string): string => getHarness(id)?.label ?? id;
 

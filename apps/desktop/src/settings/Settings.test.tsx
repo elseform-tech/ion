@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import type { AgentUsage, HarnessInfo, IonInfo, ProjectInfo } from "@ion/schema";
+import type { AgentUsage, HarnessInfo, IonInfo, ProjectInfo, SettingsInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "./Settings.js";
@@ -93,6 +93,7 @@ function client(
     problem?: string;
     own?: Record<string, boolean>;
     usage?: AgentUsage[] | (() => AgentUsage[]);
+    settings?: Partial<SettingsInfo>;
   } = {},
 ) {
   const call = vi.fn(async (cmd: string) => {
@@ -105,6 +106,7 @@ function client(
         effort: null,
         problem: o.problem,
         ownTools: o.own ?? { "claude-code": true, "grok-build": true },
+        ...o.settings,
       };
     if (cmd === "ions.list") return ions;
     if (cmd === "projects.list") return o.projects ?? projects;
@@ -149,15 +151,44 @@ describe("Settings", () => {
   // Plan 21 audit, 2026-11-23: Auto's judge ran on Claude Code and Settings never showed it. It's picked like Quick;
   // none set shows the agent it follows (the first ready in your order).
   it("shows the judge's agent and picks it like the quick model", async () => {
-    const c = client();
+    const c = client({ settings: { judge: "", judgeNow: "grok-build:grok-code-fast", judgeChecked: true } });
     render(<Settings client={c} onOpenIon={() => {}} />);
     const judge = () => within(screen.getByRole("radiogroup", { name: "Judge" }));
-    await waitFor(() =>
-      expect(judge().getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
-    );
-    expect((screen.getByLabelText("Judge model") as HTMLSelectElement).value).toBe("");
-    fireEvent.change(screen.getByLabelText("Judge model"), { target: { value: "grok-code-fast" } });
+    fireEvent.change(await screen.findByLabelText("Judge model"), { target: { value: "grok-code-fast" } });
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { judge: "grok-build:grok-code-fast" } });
+    fireEvent.click(await judge().findByRole("radio", { name: "Grok Build" }));
+    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { judge: "grok-build" } });
+  });
+
+  // PR #36 review, 2026-11-23: none set, the Judge and Quick rows say they follow your order (and whom, from the
+  // daemon), with a way back to it; a judge you set on a model ion's evals didn't check says so, quietly.
+  it("shows when ion's models follow your order, goes back to it, and flags an unchecked judge", async () => {
+    const c = client({
+      settings: {
+        quick: "",
+        quickNow: "grok-build",
+        judge: "",
+        judgeNow: "grok-build:grok-code-fast",
+        judgeChecked: true,
+      },
+    });
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const judge = within(await screen.findByRole("radiogroup", { name: "Judge" }));
+    await waitFor(() =>
+      expect(judge.getByRole("radio", { name: "Your order" }).getAttribute("aria-checked")).toBe("true"),
+    );
+    const grok = await judge.findByRole("radio", { name: "Grok Build" });
+    expect(grok.getAttribute("aria-checked")).toBe("false");
+    expect(grok.className).toContain("now");
+    expect(screen.queryByText("Not checked by ion’s evals")).toBeNull();
+    cleanup();
+    const set = client({ settings: { judge: "grok-build", judgeNow: "grok-build", judgeChecked: false } });
+    render(<Settings client={set} onOpenIon={() => {}} />);
+    expect(await screen.findByText("Not checked by ion’s evals")).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Judge" })).getByRole("radio", { name: "Your order" }),
+    );
+    expect(set.call).toHaveBeenCalledWith("settings.set", { patch: { judge: null } });
   });
 
   // The user, 2026-11-21: "Only ion's, plus Import". Grok has no switch for its own servers, hooks and plugins, so
