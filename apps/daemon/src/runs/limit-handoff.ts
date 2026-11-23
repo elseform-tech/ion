@@ -8,7 +8,7 @@ import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
 import { needsView } from "../views/needs.js";
 import { runsView } from "../views/runs.js";
-import { usageView } from "../views/usage.js";
+import { agentReset, usageView } from "../views/usage.js";
 import { CHECK_FIRST, chatBrief, type FileStat } from "./brief.js";
 
 /** "Always continue on <agent> here": a decision for the project, kept with this key (the agent's id after it). */
@@ -139,8 +139,11 @@ export class Handoffs {
     // Your own message in a waiting chat (it goes on now), or the chat archived: the wait is off.
     if ((e.type === EV.messageSent && !d.handoff) || e.type === EV.chatArchived) this.cancel(chatId);
     if (!runId) return;
-    if (e.type === EV.error && d.limit) this.hit.set(runId, d.limit);
-    else if (e.type === EV.runFinished) this.ended(chatId, runId, d.status);
+    // The reset the agent said, checked (none when it isn't a date or is past; 7 days at most): security scan, 2026-11-23.
+    if (e.type === EV.error && d.limit) {
+      const resetsAt = agentReset(d.limit.resetsAt, Date.parse(e.ts));
+      this.hit.set(runId, resetsAt ? { resetsAt } : {});
+    } else if (e.type === EV.runFinished) this.ended(chatId, runId, d.status);
   }
 
   /** The chat's wait is off (your message, Stop, the chat archived). */

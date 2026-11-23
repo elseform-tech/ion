@@ -7,11 +7,18 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
  */
 export class Waits {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private refused = false;
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
+  /** A time that isn't a date is refused (said once): it would wake at once, again and again (security scan, 2026-11-23). */
   at(key: string, when: Date, fn: () => void): void {
     this.cancel(key);
+    if (!Number.isFinite(when.getTime())) {
+      if (!this.refused) console.warn(`ion didn't set a wait: its time isn't a date (${key})`);
+      this.refused = true;
+      return;
+    }
     const step = () => {
       const left = when.getTime() - this.now();
       if (left <= 0) {

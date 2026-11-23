@@ -109,6 +109,21 @@ const lines = (chatId: string) =>
   store.read({ chatId, types: [EV.chatHandoff] }).map((e) => (e.data as { text: string }).text);
 
 describe("Handoffs", () => {
+  // Security scan, 2026-11-23: the reset an agent said reached the question and the wait unchecked. One far off waits 7
+  // days at most; one already past is unknown (ion's guess, tried).
+  it("an agent's far or past reset is checked before ion waits on it", async () => {
+    hitLimit("c1", "claude-code", "3000-01-01T00:00:00.000Z");
+    const far = await until(() => needs.open("c1")[0]);
+    const week = new Date(Date.now() + 7 * 86_400_000);
+    expect(far.summary).not.toContain("3000");
+    await handoffs.answer(far.needId, 2, "chat");
+    const wait = store.read({ chatId: "c1", types: [EV.chatHandoff] }).at(-1)?.data as { until: string };
+    expect(Date.parse(wait.until)).toBeLessThanOrEqual(week.getTime());
+    hitLimit("c2", "codex", new Date(Date.now() - 3600_000).toISOString());
+    const past = await until(() => needs.open("c2")[0]);
+    expect(past.summary).toBe("Codex hit its limit. Continue on Grok Build, or wait?");
+  });
+
   // Tour, 2026-11-23: another session on the agent ended well right after the limit (the judge's), clearing its mark;
   // the question said "resets 16:50" but Wait said "ion goes on at 16:20" (ion's 30-minute guess). The reset the agent
   // said wins over a guess.

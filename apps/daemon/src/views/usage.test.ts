@@ -2,7 +2,7 @@ import type { NewEvent } from "@ion/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "./index.js";
-import { usageView } from "./usage.js";
+import { agentReset, usageView } from "./usage.js";
 
 let db: Db;
 let store: EventStore;
@@ -140,5 +140,28 @@ describe("usageView", () => {
     append("r2", "usage.reported", { model: "opencode-go/glm-5.3", inputTokens: 1, outputTokens: 1 });
     append("r2", "usage.reported", { model: "opencode-go/glm-5.3", inputTokens: 1, outputTokens: 1 });
     expect(agent("opencode")?.models).toEqual(["opencode-go/glm-5.3", "opencode/big-pickle"]);
+  });
+});
+
+// Security scan, 2026-11-23: an agent's reset time reached the scheduler unchecked. A reset that isn't a date, is past,
+// or is far off reads as unknown (ion's 30-minute guess) or at most 7 days away.
+describe("an agent's reset time", () => {
+  it("reads a malformed or past reset as unknown, and a far one as 7 days at most", () => {
+    const now = Date.parse("2026-11-23T12:00:00.000Z");
+    for (const bad of ["not a date", "", undefined, 42, "2026-11-23T11:00:00.000Z"])
+      expect(agentReset(bad, now)).toBeUndefined();
+    expect(agentReset("3000-01-01T00:00:00.000Z", now)).toBe("2026-11-30T12:00:00.000Z");
+    expect(agentReset("2026-11-23T16:00:00.000Z", now)).toBe("2026-11-23T16:00:00.000Z");
+  });
+
+  it("is checked before it marks the agent", () => {
+    start("past", "codex");
+    limitError("past", new Date(Date.now() - 60 * MIN).toISOString());
+    const until = Date.parse(agent("codex")?.limitedUntil ?? "");
+    expect(Math.abs(until - (Date.now() + 30 * MIN))).toBeLessThan(5 * MIN);
+    expect(agent("codex")?.limitGuessed).toBe(true);
+    start("far", "grok-build");
+    limitError("far", "3000-01-01T00:00:00.000Z");
+    expect(Date.parse(agent("grok-build")!.limitedUntil!)).toBeLessThanOrEqual(Date.now() + 7 * 1440 * MIN);
   });
 });

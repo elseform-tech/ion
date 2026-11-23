@@ -14,6 +14,20 @@ export type AgentUsageRow = {
   limitGuessed?: true;
 };
 
+/** The furthest ahead an agent's reset is believed: a later one waits this long, then ion tries again. */
+const RESET_MAX_MS = 7 * 86_400_000;
+
+/**
+ * An agent's reset time, checked before ion marks or waits on it (security scan, 2026-11-23): one that isn't a date,
+ * or is already past, is unknown (undefined: ion's guess, then a try); one further than 7 days ahead is 7 days ahead.
+ */
+export function agentReset(resetsAt: unknown, nowMs: number): string | undefined {
+  if (typeof resetsAt !== "string") return undefined;
+  const at = Date.parse(resetsAt);
+  if (!Number.isFinite(at) || at <= nowMs) return undefined;
+  return new Date(Math.min(at, nowMs + RESET_MAX_MS)).toISOString();
+}
+
 /** A limit that doesn't say when it resets: ion waits this long, then tries the agent once more. */
 const LIMIT_DEFAULT_MS = 30 * 60_000;
 const WEEK_MS = 7 * 86_400_000;
@@ -51,7 +65,9 @@ function reported(db: Db, e: IonEvent, harness: string, d: Data): void {
  * The agent hit its limit: limited until its reset, else for LIMIT_DEFAULT_MS. One mark per agent: another thread
  * hitting the same limit meanwhile doesn't add one or push it later (only a reset the agent said replaces a guess).
  */
-function limited(db: Db, e: IonEvent, harness: string, limit: Limit): void {
+function limited(db: Db, e: IonEvent, harness: string, said: Limit): void {
+  const resetsAt = agentReset(said.resetsAt, Date.parse(e.ts));
+  const limit = resetsAt ? { resetsAt } : {};
   const until = limit.resetsAt ?? new Date(Date.parse(e.ts) + LIMIT_DEFAULT_MS).toISOString();
   const was = db
     .prepare("SELECT limited_until AS until FROM view_usage_agents WHERE harness = ?")
