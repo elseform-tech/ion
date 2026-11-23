@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, relative } from "node:path";
-import { type AdapterEvent, blocksText, TOOL_INPUT_MAX, TOOL_OUTPUT_MAX, toolText } from "@ion/adapter-kit";
+import {
+  type AdapterEvent,
+  blocksText,
+  TOOL_INPUT_MAX,
+  TOOL_OUTPUT_MAX,
+  toolText,
+} from "@ion/adapter-kit";
 import { EV, stripControl, type ToolKind } from "@ion/schema";
 
 type Json = Record<string, unknown>;
@@ -26,7 +32,10 @@ export type AcpState = {
   tools: Map<string, ToolInfo>;
   exists: (path: string) => boolean;
 };
-export const createAcpState = (roots: string[], exists: (path: string) => boolean = existsSync): AcpState => ({
+export const createAcpState = (
+  roots: string[],
+  exists: (path: string) => boolean = existsSync,
+): AcpState => ({
   ...{ roots, costUsd: null, tools: new Map() },
   exists,
 });
@@ -35,13 +44,16 @@ export const createAcpState = (roots: string[], exists: (path: string) => boolea
 function noteAbsent(t: ToolInfo, locs: string[], s: AcpState): void {
   for (const p of locs) {
     if (t.locations.includes(p) || t.absent?.has(p) || s.exists(p)) continue;
-    (t.absent ??= new Set()).add(p);
+    t.absent ??= new Set();
+    t.absent.add(p);
   }
 }
 
 const locationsOf = (u: Json): string[] =>
   (Array.isArray(u.locations) ? u.locations : [])
-    .map((l) => (l && typeof l === "object" ? (l as { path?: unknown }).path : undefined))
+    .map((l) =>
+      l && typeof l === "object" ? (l as { path?: unknown }).path : undefined,
+    )
     .filter((p): p is string => typeof p === "string");
 
 /** Remembers what each update says about a tool (kind, files), since agents spread it across updates. */
@@ -63,15 +75,22 @@ function remember(u: Json, s: AcpState, toolId: string): ToolInfo | undefined {
 /** A command step's command, from its raw input (opencode's bash, Grok's run). */
 function commandOf(u: Json): string {
   if (acpToolKind(u.kind) !== "command" && u.kind !== undefined) return "";
-  const raw = u.rawInput && typeof u.rawInput === "object" ? (u.rawInput as Json) : {};
-  return typeof raw.command === "string" ? stripControl(raw.command).trim().slice(0, 80) : "";
+  const raw =
+    u.rawInput && typeof u.rawInput === "object" ? (u.rawInput as Json) : {};
+  return typeof raw.command === "string"
+    ? stripControl(raw.command).trim().slice(0, 80)
+    : "";
 }
 
-function diffChanges(u: Json, s: AcpState): AdapterEvent[] {
+/** A step's diffs as changed files: no old text, or empty old text for a file that wasn't there (Grok), is added. */
+function diffChanges(u: Json, s: AcpState, tool: ToolInfo): AdapterEvent[] {
   const out: AdapterEvent[] = [];
   for (const c of (Array.isArray(u.content) ? u.content : []) as Json[]) {
     if (c.type !== "diff" || typeof c.path !== "string") continue;
-    const isNew = c.oldText === undefined || c.oldText === null;
+    const isNew =
+      c.oldText === undefined ||
+      c.oldText === null ||
+      (c.oldText === "" && !!tool.absent?.has(c.path));
     out.push({
       type: EV.fileChanged,
       data: {
@@ -94,9 +113,11 @@ const KINDS: Record<string, ToolKind> = {
   execute: "command",
   fetch: "web",
 };
-export const acpToolKind = (kind: unknown): ToolKind => KINDS[String(kind)] ?? "other";
+export const acpToolKind = (kind: unknown): ToolKind =>
+  KINDS[String(kind)] ?? "other";
 
-const lines = (s: unknown) => (typeof s === "string" && s.length ? s.split("\n").length : 0);
+const lines = (s: unknown) =>
+  typeof s === "string" && s.length ? s.split("\n").length : 0;
 
 function shorten(path: string, roots: string[]): string {
   for (const root of roots) {
@@ -113,7 +134,9 @@ const textOf = (content: unknown) => {
 
 /** A command only known after the step started is its summary now (tour, 2026-11-21: opencode showed "bash"). */
 const lateSummary = (t: ToolInfo): string | null =>
-  t.command && !t.commandSent && acpToolKind(t.kind) === "command" ? t.command : null;
+  t.command && !t.commandSent && acpToolKind(t.kind) === "command"
+    ? t.command
+    : null;
 
 function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
   const toolId = String(u.toolCallId);
@@ -123,7 +146,10 @@ function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
   const ok = u.status === "completed";
   // Its output: the text the agent shows for it, else its raw output.
   const raw = u.rawOutput as { output?: unknown } | undefined;
-  const text = toolText(blocksText(u.content) ?? raw?.output ?? u.rawOutput, TOOL_OUTPUT_MAX);
+  const text = toolText(
+    blocksText(u.content) ?? raw?.output ?? u.rawOutput,
+    TOOL_OUTPUT_MAX,
+  );
   const late = tool.input && !tool.inputSent ? { input: tool.input } : {};
   const summary = lateSummary(tool);
   const out: AdapterEvent[] = [
@@ -131,12 +157,18 @@ function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
     { type: EV.toolFinished, data: { toolId, ok, summary, ...late } },
   ];
   if (!ok) return out;
-  const diffs = diffChanges(u, s);
-  if (diffs.length || acpToolKind(tool.kind) !== "edit") return [...out, ...diffs];
+  const diffs = diffChanges(u, s, tool);
+  if (diffs.length || acpToolKind(tool.kind) !== "edit")
+    return [...out, ...diffs];
   // No diff (e.g. opencode): the edited files are the tool's locations; one that wasn't there before is added.
   const fromLocations: AdapterEvent[] = tool.locations.map((p) => ({
     type: EV.fileChanged,
-    data: { path: shorten(p, s.roots), change: tool.absent?.has(p) ? "add" : "modify", added: null, removed: null },
+    data: {
+      path: shorten(p, s.roots),
+      change: tool.absent?.has(p) ? "add" : "modify",
+      added: null,
+      removed: null,
+    },
   }));
   return [...out, ...fromLocations];
 }
@@ -158,7 +190,12 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
   const step = command ? { ...found, summary: command } : found;
   return {
     type: EV.toolStarted,
-    data: { toolId, ...step, summary: step.summary.slice(0, 80), ...(input ? { input } : {}) },
+    data: {
+      toolId,
+      ...step,
+      summary: step.summary.slice(0, 80),
+      ...(input ? { input } : {}),
+    },
   };
 }
 
@@ -167,7 +204,9 @@ type Step = { name: string; kind: ToolKind; summary: string };
 /** Grok's own web search or page read: its tool's name, and what it searched or read (its title only repeats it). */
 function webStep(u: Json, s: AcpState): Step | null {
   const name = webToolOf(u);
-  return name ? { name, kind: "web", summary: lookedFor(u.rawInput, s.roots) } : null;
+  return name
+    ? { name, kind: "web", summary: lookedFor(u.rawInput, s.roots) }
+    : null;
 }
 
 /** Any other step: its kind's name, a routed tool's, or a plain title, with what it looked for. */
@@ -177,13 +216,25 @@ function plainStep(u: Json, s: AcpState): Step {
   // A tool of no known kind is named by its title ("grep"), with what it looked for.
   const known = kind !== "other";
   // Grok's use_tool routes another tool: its structured input names the real one, so that is the step's name.
-  const routed = title === "use_tool" ? (u.rawInput as Json | undefined)?.tool_name : undefined;
+  const routed =
+    title === "use_tool"
+      ? (u.rawInput as Json | undefined)?.tool_name
+      : undefined;
   // The routed name labels the step only when it is plain; otherwise the step keeps "Use tool".
   const clean = typeof routed === "string" ? stripControl(routed).trim() : "";
   const via = /^[\w.-]{1,40}$/.test(clean) ? clean : undefined;
-  if (via !== undefined) return { name: via, kind, summary: lookedFor(withoutToolName(u.rawInput), s.roots) };
+  if (via !== undefined)
+    return {
+      name: via,
+      kind,
+      summary: lookedFor(withoutToolName(u.rawInput), s.roots),
+    };
   const plain = known ? String(u.kind) : (TITLES[title] ?? title).slice(0, 40);
-  return { name: plain, kind, summary: known ? title : lookedFor(u.rawInput, s.roots) };
+  return {
+    name: plain,
+    kind,
+    summary: known ? title : lookedFor(u.rawInput, s.roots),
+  };
 }
 
 /**
@@ -196,7 +247,13 @@ const WEB_TITLES: Record<string, { name: string; kinds: string[] }> = {
 };
 
 /** What opencode's websearch takes (its own parameters): a search's input has no other key. */
-const SEARCH_KEYS = new Set(["query", "numResults", "livecrawl", "type", "contextMaxCharacters"]);
+const SEARCH_KEYS = new Set([
+  "query",
+  "numResults",
+  "livecrawl",
+  "type",
+  "contextMaxCharacters",
+]);
 
 /**
  * Whether a step titled as a web tool is one. opencode sends its websearch as kind "other" (seen live, 2026-11-21),
@@ -205,7 +262,8 @@ const SEARCH_KEYS = new Set(["query", "numResults", "livecrawl", "type", "contex
  */
 function kindAgrees(t: { kind?: unknown; rawInput?: unknown }): boolean {
   if (t.kind !== "other") return true;
-  const raw = t.rawInput && typeof t.rawInput === "object" ? (t.rawInput as Json) : {};
+  const raw =
+    t.rawInput && typeof t.rawInput === "object" ? (t.rawInput as Json) : {};
   return Object.keys(raw).every((k) => SEARCH_KEYS.has(k));
 }
 
@@ -214,12 +272,28 @@ function kindAgrees(t: { kind?: unknown; rawInput?: unknown }): boolean {
  * its title and kind; Grok's search by its kind and title ("search", "Web search:") with its structured variant.
  * Else none.
  */
-export function webToolOf(t: { kind?: unknown; title?: unknown; rawInput?: unknown }): string | undefined {
+export function webToolOf(t: {
+  kind?: unknown;
+  title?: unknown;
+  rawInput?: unknown;
+}): string | undefined {
   const title = typeof t.title === "string" ? t.title : "";
-  const byTitle = Object.hasOwn(WEB_TITLES, title) ? WEB_TITLES[title] : undefined;
-  if (byTitle) return byTitle.kinds.includes(String(t.kind)) && kindAgrees(t) ? byTitle.name : undefined;
-  const variant = t.rawInput && typeof t.rawInput === "object" ? (t.rawInput as Json).variant : undefined;
-  return t.kind === "search" && title === "Web search:" && variant === "WebSearch" ? "web_search" : undefined;
+  const byTitle = Object.hasOwn(WEB_TITLES, title)
+    ? WEB_TITLES[title]
+    : undefined;
+  if (byTitle)
+    return byTitle.kinds.includes(String(t.kind)) && kindAgrees(t)
+      ? byTitle.name
+      : undefined;
+  const variant =
+    t.rawInput && typeof t.rawInput === "object"
+      ? (t.rawInput as Json).variant
+      : undefined;
+  return t.kind === "search" &&
+    title === "Web search:" &&
+    variant === "WebSearch"
+    ? "web_search"
+    : undefined;
 }
 
 /** Agents' own tools, by a plain name. */
@@ -241,7 +315,8 @@ function withoutToolName(raw: unknown): unknown {
 
 /** What a tool looked for: its pattern, query, file, folder, tool or address (a path from the worktree). */
 function lookedFor(raw: unknown, roots: string[]): string {
-  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const r =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const keys = [
     "pattern",
     "query",
