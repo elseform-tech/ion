@@ -1,13 +1,14 @@
-import { EV, type NewEvent } from "@ion/schema";
+import { clockOf, EV, type NewEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Decisions } from "../decisions/index.js";
 import { NeedsService } from "../needs/index.js";
 import { Waits } from "../scheduler/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
+import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
 import { allViews } from "../views/index.js";
 import { messagesView } from "../views/messages.js";
-import { clockOf, Handoffs } from "./limit-handoff.js";
+import { Handoffs } from "./limit-handoff.js";
 
 const LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -19,7 +20,16 @@ let db: Db;
 let store: EventStore;
 let needs: NeedsService;
 let ready: string[];
-let started: { chatId: string; harness: string; text: string; answers?: string; access?: string }[];
+let started: {
+  chatId: string;
+  harness: string;
+  text: string;
+  answers?: string;
+  access?: string;
+  request?: string;
+}[];
+/** The request each live run was given (runs.requestOf). */
+let requests: Record<string, string>;
 let waits: Waits;
 let released: string[];
 let handoffs: Handoffs;
@@ -33,15 +43,16 @@ const depsOf = () => ({
   label: (h) => LABELS[h] ?? h,
   start: async (
     a: { chatId: string; harness: string; text: string; access?: string },
-    o: { answers?: string },
+    o: { answers?: string; request?: string },
   ) => {
-    started.push({ ...a, ...(o.answers ? { answers: o.answers } : {}) });
+    started.push({ ...a, ...(o.answers ? { answers: o.answers } : {}), request: o.request ?? "" });
     return `run_${started.length}`;
   },
   changed: async () => [{ path: "src/theme.ts", added: 12, removed: 3 }],
   waits,
   released: (chatId: string) => void released.push(chatId),
   onLimit: () => onLimit,
+  requestOf: (runId: string) => requests[runId] ?? null,
 });
 const make = () => new Handoffs(depsOf());
 
@@ -51,6 +62,7 @@ beforeEach(() => {
   needs = new NeedsService(store, db);
   ready = ["claude-code", "codex", "grok-build"];
   started = [];
+  requests = {};
   released = [];
   waits = new Waits();
   onLimit = "ask";
@@ -203,7 +215,7 @@ describe("Handoffs", () => {
     expect(needs.open("c2")).toEqual([]);
     // The user, 2026-11-23 ("Auto when unattended"): an Always handoff starts on Auto, and says so.
     expect(started[1]?.access).toBe("auto");
-    expect(lines("c2")).toEqual(["Continued on Codex on Auto — Claude Code hit its limit · always here"]);
+    expect(lines("c2")).toEqual(["Continued on Codex (Auto) — Claude Code hit its limit · always"]);
   });
 
   // The user, 2026-11-21 (Review Focus 5): only agents that aren't limited are offered; none left, Wait alone, with
@@ -365,7 +377,7 @@ describe("Handoffs", () => {
     expect(started[0]).toMatchObject({ chatId: "c1", harness: "codex" });
     expect(needs.open("c1")).toEqual([]);
     expect(started[0]?.access).toBe("auto");
-    expect(lines("c1")).toEqual(["Continued on Codex on Auto — Claude Code hit its limit · always here"]);
+    expect(lines("c1")).toEqual(["Continued on Codex (Auto) — Claude Code hit its limit · always"]);
   });
 
   // Review of 5d5785c, 2026-11-22: a wait that went on on another agent said "· always here" without any Always.
@@ -388,7 +400,7 @@ describe("Handoffs", () => {
     expect(started.map((s) => [s.chatId, s.harness])).toEqual([["c1", "codex"]]);
     // The user, 2026-11-23: a wait that goes on on another agent, unattended, starts it on Auto.
     expect(started[0]?.access).toBe("auto");
-    expect(lines("c1").at(-1)).toBe("Continued on Codex on Auto — Claude Code hit its limit");
+    expect(lines("c1").at(-1)).toBe("Continued on Codex (Auto) — Claude Code hit its limit");
   });
 
   // Review of 5d5785c, 2026-11-22: the kept decision named the agent that hit the limit, yet it applies to any.
@@ -540,6 +552,15 @@ describe("Handoffs", () => {
     released = [];
     await vi.advanceTimersByTimeAsync(61_000);
     expect(released).toEqual(["c1"]);
+    // Final review, 2026-11-23: the chat says it couldn't go on, reads as failed again (not waiting), and a restart
+    // doesn't take the wait up again.
+    expect(lines("c1").at(-1)).toBe("Couldn't go on: Claude Code isn't signed in");
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting ?? null).toBeNull();
+    handoffs.stop();
+    waits = new Waits();
+    handoffs = make();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(started).toEqual([]);
   });
 
   // Re-review, 2026-11-23 (untested before): a chat archived while ion was stopped doesn't go on at its reset.
@@ -576,7 +597,7 @@ describe("Handoffs", () => {
     await until(() => started.length === 1);
     expect(started[0]).toMatchObject({ chatId: "c1", harness: "grok-build", access: "auto" });
     expect(needs.open("c1")).toEqual([]);
-    expect(lines("c1")).toEqual(["Continued on Grok Build on Auto — Claude Code hit its limit"]);
+    expect(lines("c1")).toEqual(["Continued on Grok Build (Auto) — Claude Code hit its limit"]);
   });
 
   // The user, 2026-11-22 ("When an agent hits its limit": Wait): the chat waits for the reset without asking.
@@ -640,5 +661,78 @@ describe("Handoffs", () => {
     const followUp = vi.fn(async () => "run_follow");
     await new Decisions({ store, db, needs, followUp }).resume();
     expect(followUp).not.toHaveBeenCalled();
+  });
+
+  // Final review, 2026-11-23 (I1, security): in an ion thread the first message is the ion's own brief; Auto's judge
+  // must weigh the request the ion was given (the run's), kept for a wait across a restart, never the brief.
+  it("a handoff in an ion thread is judged with the request the ion was given, not its brief", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    add({
+      chatId: "t1",
+      runId: null,
+      type: EV.chatCreated,
+      data: { title: "t", projectId: "repo", by: "ion" },
+    });
+    requests = { run_t1: "Fix the login bug" };
+    hitLimit("t1", "claude-code", inAnHour());
+    const n = await vi.waitFor(() => {
+      const open = needs.open("t1")[0];
+      if (!open) throw new Error("not asked yet");
+      return open;
+    });
+    await handoffs.answer(n.needId, 1, "chat");
+    expect(started[0]?.request).toBe("Fix the login bug");
+    // A wait in another ion thread, restored after a restart (the run is long gone): still the ion's request.
+    add({
+      chatId: "t2",
+      runId: null,
+      type: EV.chatCreated,
+      data: { title: "t", projectId: "repo", by: "ion" },
+    });
+    requests = { run_t2: "Update the docs" };
+    hitLimit("t2", "claude-code", new Date(Date.now() + 60_000).toISOString());
+    const w = await vi.waitFor(() => {
+      const open = needs.open("t2")[0];
+      if (!open) throw new Error("not asked yet");
+      return open;
+    });
+    await handoffs.answer(w.needId, 2, "chat");
+    handoffs.stop();
+    requests = {};
+    waits = new Waits();
+    handoffs = make();
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(started[1]).toMatchObject({ chatId: "t2", request: "Update the docs" });
+  });
+
+  // Final review, 2026-11-23 (minor 2): Stop ending a wait is kept: a restart doesn't take it up again.
+  it("Stop ends a wait for good", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    hitLimit("c1", "claude-code", new Date(Date.now() + 60_000).toISOString());
+    const n = await vi.waitFor(() => {
+      const open = needs.open("c1")[0];
+      if (!open) throw new Error("not asked yet");
+      return open;
+    });
+    await handoffs.answer(n.needId, 2, "chat");
+    handoffs.stopWaiting("c1");
+    expect(lines("c1").at(-1)).toBe("Stopped waiting");
+    handoffs.stop();
+    waits = new Waits();
+    handoffs = make();
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(started).toEqual([]);
+  });
+
+  // Final review, 2026-11-23 (minor 6): no repeated words in the question's choices.
+  it("says may be free again once", async () => {
+    hitLimit("c0", "codex");
+    await until(() => needs.open("c0")[0]);
+    hitLimit("c9", "grok-build", inAnHour());
+    await until(() => needs.open("c9")[0]);
+    hitLimit("c1", "claude-code", inAnHour());
+    const n = await until(() => needs.open("c1")[0]);
+    const first = n.choices![0]!;
+    expect(`${first.label} ${first.consequence}`.match(/free again/g)).toHaveLength(1);
   });
 });

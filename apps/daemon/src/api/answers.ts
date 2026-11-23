@@ -53,6 +53,8 @@ function limitHandoffs(d: Deps): Handoffs {
         })
       ).runId,
     changed: async (chatId) => (await diffOfChat(d, chatId)).files,
+    // The request a limited run was given (an ion thread's is the ion's, never its brief): the judge's after it.
+    requestOf: (runId) => d.runs.requestOf(runId),
   });
 }
 

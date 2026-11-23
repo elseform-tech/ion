@@ -85,14 +85,22 @@ describe("Pick by usage", () => {
     });
   });
 
-  // Plan 20: a project's own agent is its fit while Pick by usage is on.
-  it("puts the project's own agent first", () => {
+  // Plan 20: a project's own agent is its fit for its ion's threads while Pick by usage is on.
+  it("puts the project's own agent first for its ion's threads", () => {
     const projects = [{ id: "web", path: "/w", starred: false, harness: "codex" }];
     const c = config({ byUsage: true }, { projects });
     const list = [usage("opencode", "opencode"), usage("codex", "Codex")];
-    expect(routeBy(c, list, { db: db(), projectId: "web" })).toEqual({
+    expect(routeBy(c, list, { db: db(), projectId: "web", thread: true })).toEqual({
       harness: "codex",
       reason: "On Codex — this project's agent",
     });
+  });
+
+  // Final review, 2026-11-23 (the user's ruling): your own new chats follow your agent order, not the project's agent.
+  it("your new chat goes by your order, whatever the project's agent", () => {
+    const projects = [{ id: "web", path: "/w", starred: false, harness: "claude-code" }];
+    const c = config({ byUsage: true, order: ["opencode", "claude-code"] }, { projects });
+    const list = [usage("opencode", "opencode"), usage("claude-code", "Claude Code")];
+    expect(routeBy(c, list, { db: db(), projectId: "web" })?.harness).toBe("opencode");
   });
 });

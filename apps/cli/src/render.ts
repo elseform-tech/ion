@@ -20,8 +20,11 @@ const VERB: Record<string, string> = {
 type D = Record<string, unknown>;
 
 export type RunEnd = { status: string; code: number };
-/** `soon`: the run ended, but ion may still ask what to do next (a limit): end unless its question comes. */
-type Rendered = { text: string; end?: RunEnd; soon?: RunEnd };
+/**
+ * `soon`: the run ended, but ion may still ask what to do next (a limit): end unless its question comes. `follow`:
+ * ion went on on another agent: follow the run it started.
+ */
+type Rendered = { text: string; end?: RunEnd; soon?: RunEnd; follow?: true };
 
 /** What the renderer remembers between events of one run. */
 type State = {
@@ -53,9 +56,19 @@ function endLine(s: State, status: string, ts: string): Rendered {
   if (status === "interrupted") return { text: line(s, "Stopped"), end: { status, code: 130 } };
   if (status === "capped")
     return { text: line(s, "Stopped: spending cap reached"), end: { status, code: 1 } };
-  const failed = line(s, `Failed: ${s.lastError ?? "the run stopped"}`);
-  if (s.limited) return { text: failed, soon: s.limited };
-  return { text: failed, end: { status, code: 1 } };
+  // A limit isn't a failure: ion asks, waits or goes on (final review, 2026-11-23).
+  if (s.limited) return { text: line(s, `· ${s.lastError ?? "Limit reached"}`), soon: s.limited };
+  return { text: line(s, `Failed: ${s.lastError ?? "the run stopped"}`), end: { status, code: 1 } };
+}
+
+/** ion's line after a limit: it went on (follow that run), waits (ends well: the chat goes on by itself), or not. */
+function handoffLine(s: State, d: D): Rendered {
+  if (d.kind === "routed") return quiet;
+  const text = line(s, `· ${clean(d.text)}`);
+  if (d.kind === "continued") return { text, follow: true };
+  if (d.kind === "waiting") return { text, end: { status: "waiting", code: 0 } };
+  if (d.kind === "failed") return { text, end: { status: "failed", code: 1 } };
+  return { text };
 }
 
 const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered>> = {
@@ -131,6 +144,7 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     return quiet;
   },
   [EV.runFinished]: (s, d, e) => endLine(s, String(d.status), e.ts),
+  [EV.chatHandoff]: handoffLine,
 };
 
 /** Turns one run's events into terminal text. */

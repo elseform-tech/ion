@@ -501,6 +501,20 @@ describe("a thread's end", () => {
     await vi.waitFor(() => expect(last()).toEqual({ text: "Fixed the cart total." }));
   });
 
+  // Final review, 2026-11-23: a thread that ended on its agent's limit didn't fail: ion asks, waits or continues it
+  // (the run that goes on reports). Its ion says nothing yet.
+  it("says nothing when a thread ended on its agent's limit", async () => {
+    const i = ions();
+    await started(i, "storefront");
+    const before = said("storefront").length;
+    const data = { code: "usage_limit", retryable: false, message: "Usage limit reached", limit: {} };
+    store.append({ chatId: "t1", runId: "r1", origin: "adapter", type: EV.error, data });
+    end("failed");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(turn).not.toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true });
+    expect(said("storefront")).toHaveLength(before);
+  });
+
   it("says plainly when a thread didn't finish and its ion can't say it", async () => {
     const i = ions();
     await started(i, "storefront");

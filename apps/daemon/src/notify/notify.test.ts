@@ -145,6 +145,16 @@ describe("the notifier", () => {
     expect(notified()).toEqual([]);
   });
 
+  // Final review, 2026-11-23: a run that ended on its agent's limit isn't a failure: ion asks, waits or continues.
+  it("a run that ended on its agent's limit isn't urgent", () => {
+    boot();
+    const runId = `r${++n}`;
+    const data = { code: "usage_limit", retryable: false, message: "Usage limit reached", limit: {} };
+    store.append({ chatId: "c1", runId, origin: "adapter", type: EV.error, data });
+    store.append({ chatId: "c1", runId, origin: "daemon", type: EV.runFinished, data: { status: "failed" } });
+    expect(notified()).toEqual([]);
+  });
+
   it("a run that gave up is urgent; one you stopped isn't news", () => {
     boot();
     finished("interrupted");

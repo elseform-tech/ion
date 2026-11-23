@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { type DecisionScope, EV, type IonEvent } from "@ion/schema";
+import { clockOf, type DecisionScope, EV, type HandoffLimit, type IonEvent } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Waits } from "../scheduler/index.js";
@@ -14,9 +14,20 @@ import { CHECK_FIRST, chatBrief, type FileStat } from "./brief.js";
 /** "Always continue on <agent> here": a decision for the project, kept with this key (the agent's id after it). */
 const ALWAYS = "handoff:";
 
-/** What ion's limit question is about: the agent that hit it, the one offered, and what "Wait" means. */
-type Limit = { from: string; to: string | null; waitOn: string; until: string; guessed?: true; maybe?: true };
-type Wake = { from: string; waitOn: string; until: string; guessed?: true };
+/** What ion's limit question is about: the agent that hit it, the one offered, what "Wait" means, the request. */
+type Limit = HandoffLimit;
+type Wake = { from: string; waitOn: string; until: string; guessed?: true; request?: string };
+/** A waiting chat.handoff, as kept (a restart takes it up again). */
+type Waiting = {
+  kind?: string;
+  to?: string;
+  until?: string;
+  guessed?: true;
+  tries?: number;
+  request?: string;
+};
+/** A limit a run hit: the reset the agent said, and the request the run was given (Auto's judge weighs it after). */
+type Hit = { resetsAt?: string; request?: string };
 
 /** A wait whose reset was a guess tries this many times (waiting again while still limited), then asks you. */
 const RECHECKS = 3;
@@ -43,6 +54,8 @@ type Deps = {
   released?: (chatId: string) => void;
   /** Settings → Agents, "When an agent hits its limit": ask you (the default), continue on the next agent, or wait. */
   onLimit?: () => "ask" | "continue" | "wait";
+  /** What a live run was given as your request (the judge's), read when it hits its limit. */
+  requestOf?: (runId: string) => string | null;
 };
 
 type Usage = Record<string, { limitedUntil: string | null; limitGuessed?: true }>;
@@ -54,12 +67,7 @@ const GUESS_MS = 30 * 60_000;
  * What to offer when `from` hit its limit: the first agent signed in and free (else one limited only by ion's guess:
  * it may be free again), and what Wait means: this agent's reset, or (none offered) the agent that resets first.
  */
-function pickLimit(
-  from: string,
-  ready: string[],
-  usage: Usage,
-  o: { said: { resetsAt?: string }; now: Date },
-): Limit {
+function pickLimit(from: string, ready: string[], usage: Usage, o: { said: Hit; now: Date }): Limit {
   // The reset `from` said wins when its mark is gone (another session on it ended well meanwhile: tour, 2026-11-23).
   const until = (h: string) => usage[h]?.limitedUntil ?? (h === from ? (o.said.resetsAt ?? null) : null);
   const others = ready.filter((h) => h !== from);
@@ -74,20 +82,12 @@ function pickLimit(
     ...{ from, to, waitOn: wait.h, until: wait.at },
     ...(guessed ? { guessed: true as const } : {}),
     ...(to && !free.includes(to) ? { maybe: true as const } : {}),
+    ...(o.said.request !== undefined ? { request: o.said.request } : {}),
   };
 }
 
 /** A handoff or a wait that couldn't go on: one line in the daemon's log (the chat's queue says why too). */
 const said = (x: unknown) => console.warn(`ion couldn't go on after a limit: ${(x as Error).message}`);
-
-/** A time as the chat says it: "16:00" today, "Tue 16:00" another day. */
-export function clockOf(iso: string, now: Date): string {
-  const t = new Date(iso);
-  const hm = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  return t.toDateString() === now.toDateString()
-    ? hm
-    : `${t.toLocaleDateString([], { weekday: "short" })} ${hm}`;
-}
 
 const continueLabel = (name: string) => `Continue on ${name}`;
 const alwaysLabel = (name: string) => `Always continue on ${name} here`;
@@ -104,7 +104,7 @@ const BACK = `You stopped at your usage limit; it has reset. ${CHECK_FIRST} Then
  */
 export class Handoffs {
   /** Runs that hit a limit, until their end (then the chat asks), with the reset the agent said. */
-  private readonly hit = new Map<string, { resetsAt?: string }>();
+  private readonly hit = new Map<string, Hit>();
   /**
    * Chats held from their limited run's end until ion has asked (or continued): set before the end is announced, so
    * nothing queued goes out on the limited agent meanwhile, and one chat can't ask twice.
@@ -139,12 +139,31 @@ export class Handoffs {
     // Your own message in a waiting chat (it goes on now), or the chat archived: the wait is off.
     if ((e.type === EV.messageSent && !d.handoff) || e.type === EV.chatArchived) this.cancel(chatId);
     if (!runId) return;
-    // The reset the agent said, as ion believes it (checked, and within the agent's windows): security scan, 2026-11-23.
-    if (e.type === EV.error && d.limit) {
-      const harness = runsView.rows(this.d.db).find((r) => r.runId === runId)?.harness ?? "";
-      const { resetsAt } = believedReset(this.d.db, harness, d.limit.resetsAt, Date.parse(e.ts));
-      this.hit.set(runId, resetsAt ? { resetsAt } : {});
-    } else if (e.type === EV.runFinished) this.ended(chatId, runId, d.status);
+    if (e.type === EV.error && d.limit) this.hit.set(runId, this.hitOf(runId, d.limit, e.ts));
+    else if (e.type === EV.runFinished) this.ended(chatId, runId, d.status);
+  }
+
+  /**
+   * A limit a run hit: the reset the agent said, as ion believes it (checked, and within the agent's windows: security
+   * scan, 2026-11-23); and the run's request while it's still live (an ion thread's is the ion's own, never the
+   * brief: final review, 2026-11-23).
+   */
+  private hitOf(runId: string, limit: { resetsAt?: string }, ts: string): Hit {
+    const harness = runsView.rows(this.d.db).find((r) => r.runId === runId)?.harness ?? "";
+    const { resetsAt } = believedReset(this.d.db, harness, limit.resetsAt, Date.parse(ts));
+    const request = this.d.requestOf?.(runId) ?? undefined;
+    return { ...(resetsAt ? { resetsAt } : {}), ...(request !== undefined ? { request } : {}) };
+  }
+
+  /** You stopped the chat while it waited (or tried again after a reset): the wait is off, and stays off. */
+  stopWaiting(chatId: string): void {
+    if (!this.d.waits.has(chatId) && !this.rechecks.has(chatId)) return;
+    this.cancel(chatId);
+    this.line(chatId, { kind: "stopped", text: "Stopped waiting" });
+  }
+
+  private line(chatId: string, data: Record<string, unknown>): void {
+    this.d.store.append({ chatId, runId: null, origin: "daemon", type: EV.chatHandoff, data });
   }
 
   /** The chat's wait is off (your message, Stop, the chat archived). */
@@ -192,7 +211,7 @@ export class Handoffs {
     return !!need?.open && this.limitOf(need.chatId, needId) !== null;
   }
 
-  private async limited(chatId: string, runId: string, limit: { resetsAt?: string }): Promise<void> {
+  private async limited(chatId: string, runId: string, limit: Hit): Promise<void> {
     try {
       if (this.waitAgain(chatId, runId, limit)) return;
       const from = runsView.rows(this.d.db).find((r) => r.runId === runId)?.harness;
@@ -200,7 +219,7 @@ export class Handoffs {
       const now = this.now();
       const [ready, usage] = [await this.d.ready(), usageView.agents(this.d.db, now)];
       const always = this.alwaysOn(chatId, from, ready, usage);
-      if (always) await this.continueOn(chatId, from, always, { auto: true });
+      if (always) await this.continueOn(chatId, from, always, { auto: true, request: limit.request });
       else await this.byChoice(chatId, runId, pickLimit(from, ready, usage, { said: limit, now }), limit);
     } finally {
       this.asking.delete(chatId);
@@ -212,18 +231,13 @@ export class Handoffs {
    * What Settings says to do at a limit (your "Always" for the project came first): continue on the next free agent
    * in your order (unattended: on Auto), wait for the reset, or ask you. With no agent free to continue on, ion asks.
    */
-  private async byChoice(
-    chatId: string,
-    runId: string,
-    l: Limit,
-    said: { resetsAt?: string },
-  ): Promise<void> {
+  private async byChoice(chatId: string, runId: string, l: Limit, said: Hit): Promise<void> {
     const choice = this.d.onLimit?.() ?? "ask";
     // One limited only by ion's guess is tried once (trying tells); still limited, ion asks (no going round).
     const once = !l.maybe || !this.triedGuess.has(chatId);
     if (choice === "continue" && l.to && once) {
       if (l.maybe) this.triedGuess.add(chatId);
-      return this.continueOn(chatId, l.from, l.to, {});
+      return this.continueOn(chatId, l.from, l.to, { request: l.request });
     }
     if (choice === "wait") return this.wait(chatId, l);
     this.ask(chatId, runId, l, said);
@@ -257,7 +271,7 @@ export class Handoffs {
     return chatsView.list(this.d.db).find((c) => c.chatId === chatId)?.projectId ?? "";
   }
 
-  private ask(chatId: string, runId: string, l: Limit, said: { resetsAt?: string }): void {
+  private ask(chatId: string, runId: string, l: Limit, said: Hit): void {
     const L = this.d.label;
     const now = this.now();
     const reset = said.resetsAt ? ` (resets ${clockOf(said.resetsAt, now)})` : "";
@@ -271,7 +285,7 @@ export class Handoffs {
           {
             label: continueLabel(L(l.to)) + (l.maybe ? " (may be free again)" : ""),
             consequence: l.maybe
-              ? "It may be free again: ion tries it, and asks again if it isn't."
+              ? "ion tries it, and asks again if it's still limited."
               : "It picks up where this left off, with a summary.",
             recommended: true,
           },
@@ -295,7 +309,11 @@ export class Handoffs {
     }
     const to = l.to;
     if (!to) throw new UserError("Pick Wait: no other agent is free");
-    await this.continueOn(need.chatId, l.from, to, { needId, ...(words ? { words } : {}) });
+    await this.continueOn(need.chatId, l.from, to, {
+      needId,
+      request: l.request,
+      ...(words ? { words } : {}),
+    });
     const always = !words && (label === alwaysLabel(this.d.label(to)) || scope !== "chat");
     this.d.needs.answered(needId, label, always ? "project" : "chat");
     if (always) this.keep({ chatId: need.chatId, needId, l, everywhere: scope === "everywhere" });
@@ -340,8 +358,13 @@ export class Handoffs {
     return access ? { access } : {};
   }
 
-  /** The chat's first message by you: the request the judge weighs in ion's runs. */
-  private request(events: IonEvent[]): string {
+  /**
+   * What Auto's judge weighs on the run that goes on: the limited run's request when ion has it; else your first
+   * message, but never in a thread ion started (its first message is the ion's own brief): none there, stricter.
+   */
+  private request(chatId: string, events: IonEvent[], had: string | undefined): string {
+    if (had !== undefined) return had;
+    if (chatsView.list(this.d.db).find((c) => c.chatId === chatId)?.by === "ion") return "";
     const first = events.find((e) => e.type === EV.messageSent && !(e.data as { handoff?: true }).handoff);
     return String((first?.data as { text?: string } | undefined)?.text ?? "");
   }
@@ -350,7 +373,7 @@ export class Handoffs {
     chatId: string,
     from: string,
     to: string,
-    o: { needId?: string; words?: string; auto?: true },
+    o: { needId?: string; words?: string; auto?: true; request?: string },
   ): Promise<void> {
     const L = this.d.label;
     const events = this.d.store.read({ chatId });
@@ -359,14 +382,14 @@ export class Handoffs {
     // yourself; a handoff nobody watched (Always, a wait going on on another agent) starts the new agent on Auto.
     const was = this.accessOf(events);
     const access = o.needId ? was : { access: "auto" as const };
-    const onAuto = !o.needId && was.access === "full" ? " on Auto" : "";
+    const onAuto = !o.needId && was.access === "full" ? " (Auto)" : "";
     const adds = o.words ? `\n\nThe user adds: ${JSON.stringify(o.words)}` : "";
     const text = `${chatBrief(events, files)}\n\n${L(from)} stopped at its usage limit; carry on with the work in this worktree.${adds}`;
     await this.d.start(
       { chatId, harness: to, text, ...access },
-      { request: this.request(events), ...(o.needId ? { answers: o.needId } : {}) },
+      { request: this.request(chatId, events, o.request), ...(o.needId ? { answers: o.needId } : {}) },
     );
-    const auto = o.auto ? " · always here" : "";
+    const auto = o.auto ? " · always" : "";
     const line = {
       ...{ kind: "continued", text: `Continued on ${L(to)}${onAuto} — ${L(from)} hit its limit${auto}`, to },
     };
@@ -381,8 +404,9 @@ export class Handoffs {
       to: l.waitOn,
       until: l.until,
       ...(l.guessed ? { guessed: true } : {}),
+      ...(l.request !== undefined ? { request: l.request } : {}),
     };
-    this.d.store.append({ chatId, runId: null, origin: "daemon", type: EV.chatHandoff, data });
+    this.line(chatId, data);
     this.schedule(chatId, l);
   }
 
@@ -401,16 +425,23 @@ export class Handoffs {
       // A guessed reset is checked by trying: a try that hits the limit again waits again (waitAgain).
       if (l.guessed) this.rechecks.set(chatId, (this.rechecks.get(chatId) ?? 0) + 1);
       void this.goOn(chatId, l)
-        .catch(said)
+        .catch((x) => this.couldNot(chatId, x))
         .finally(() => this.lifted(chatId));
     });
+  }
+
+  /** A wait whose run couldn't start: the chat says why, reads as failed again, and isn't taken up again. */
+  private couldNot(chatId: string, x: unknown): void {
+    said(x);
+    this.rechecks.delete(chatId);
+    this.line(chatId, { kind: "failed", text: `Couldn't go on: ${(x as Error).message}`.slice(0, 200) });
   }
 
   /**
    * A chat trying again after a guessed reset hit the limit again: it waits again (for the reset the agent says now,
    * else another guess), a few times, without asking; then it asks you. False when the chat isn't trying again.
    */
-  private waitAgain(chatId: string, runId: string, limit: { resetsAt?: string }): boolean {
+  private waitAgain(chatId: string, runId: string, limit: Hit): boolean {
     const tries = this.rechecks.get(chatId);
     if (tries === undefined) return false;
     const run = runsView.rows(this.d.db).find((r) => r.runId === runId);
@@ -429,25 +460,33 @@ export class Handoffs {
       until,
       tries,
       ...(limit.resetsAt ? {} : { guessed: true }),
+      ...(limit.request !== undefined ? { request: limit.request } : {}),
     };
-    this.d.store.append({ chatId, runId: null, origin: "daemon", type: EV.chatHandoff, data });
+    this.line(chatId, data);
     this.schedule(chatId, {
-      from: harness,
-      waitOn: harness,
-      until,
+      ...{ from: harness, waitOn: harness, until },
       ...(limit.resetsAt ? {} : { guessed: true }),
+      ...(limit.request !== undefined ? { request: limit.request } : {}),
     });
     return true;
   }
 
   /** The reset came: the chat goes on, on its own agent (its session resumes) or the one that reset first. */
   private async goOn(chatId: string, l: Wake): Promise<void> {
-    if (l.waitOn !== l.from) return this.continueOn(chatId, l.from, l.waitOn, {});
+    if (l.waitOn !== l.from) return this.continueOn(chatId, l.from, l.waitOn, { request: l.request });
     const events = this.d.store.read({ chatId });
     await this.d.start(
       { chatId, harness: l.from, text: BACK, ...this.accessOf(events) },
-      { request: this.request(events) },
+      { request: this.request(chatId, events, l.request) },
     );
+  }
+
+  /** The chat's wait, when its last word is one (nothing sent there since, not stopped, not failed). */
+  private waitingOf(chatId: string): (Waiting & { to: string; until: string }) | null {
+    const last = this.d.store.read({ chatId, types: [EV.chatHandoff, EV.messageSent] }).at(-1);
+    if (last?.type !== EV.chatHandoff) return null;
+    const d = last.data as Waiting;
+    return d.kind === "waiting" && d.to && d.until ? { ...d, to: d.to, until: d.until } : null;
   }
 
   /**
@@ -457,21 +496,18 @@ export class Handoffs {
   private resume(): void {
     const soonest = new Date(this.now().getTime() + START_GRACE_MS).toISOString();
     for (const c of chatsView.list(this.d.db).filter((x) => !x.archived)) {
-      const events = this.d.store.read({ chatId: c.chatId, types: [EV.chatHandoff, EV.messageSent] });
-      const last = events.at(-1);
-      const d = last?.data as
-        | { kind?: string; to?: string; until?: string; guessed?: true; tries?: number }
-        | undefined;
-      if (last?.type !== EV.chatHandoff || d?.kind !== "waiting" || !d.to || !d.until) continue;
-      const from = runsView.rows(this.d.db).findLast((r) => r.chatId === c.chatId)?.harness ?? d.to;
-      const until = d.until < soonest ? soonest : d.until;
-      if (d.tries) this.rechecks.set(c.chatId, d.tries);
-      this.schedule(c.chatId, {
-        from,
-        waitOn: d.to,
-        until,
-        ...(d.guessed ? { guessed: true as const } : {}),
-      });
+      const d = this.waitingOf(c.chatId);
+      if (d) this.takeUp(c.chatId, d, soonest);
     }
+  }
+
+  private takeUp(chatId: string, d: Waiting & { to: string; until: string }, soonest: string): void {
+    const from = runsView.rows(this.d.db).findLast((r) => r.chatId === chatId)?.harness ?? d.to;
+    if (d.tries) this.rechecks.set(chatId, d.tries);
+    this.schedule(chatId, {
+      ...{ from, waitOn: d.to, until: d.until < soonest ? soonest : d.until },
+      ...(d.guessed ? { guessed: true as const } : {}),
+      ...(d.request !== undefined ? { request: d.request } : {}),
+    });
   }
 }

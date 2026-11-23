@@ -23,7 +23,8 @@ describe("render", () => {
     r(ev("run.started", { harness: "fake" }));
     r(ev("error", { code: "usage_limit", message: "Fake usage limit reached", limit: {} }));
     const failed = r(ev("run.finished", { status: "failed" }));
-    expect(failed.text).toBe("Failed: Fake usage limit reached\n");
+    // Final review, 2026-11-23: a limit isn't a failure; it's said as what happened.
+    expect(failed.text).toBe("· Fake usage limit reached\n");
     expect(failed.end).toBeUndefined();
     expect(failed.soon).toEqual({ status: "failed", code: 1 });
     const asked = r(
@@ -36,6 +37,22 @@ describe("render", () => {
     );
     expect(asked.text).toContain("· Asked you: Fake hit its limit. Continue on opencode, or wait?");
     expect(asked.end).toEqual({ status: "failed", code: 1 });
+  });
+
+  // Final review, 2026-11-23: after a limit, ion's line says what happened; `ion ask` follows the run that continues,
+  // or ends well on a wait (the chat goes on by itself), instead of "Failed … exit 1".
+  it("shows ion's handoff lines: continued follows the new run, a wait ends well", () => {
+    const r = createRenderer();
+    r(ev("run.started", { harness: "fake" }));
+    r(ev("error", { code: "usage_limit", message: "Fake usage limit reached", limit: {} }));
+    r(ev("run.finished", { status: "failed" }));
+    const on = r(
+      ev("chat.handoff", { kind: "continued", text: "Continued on opencode — Fake hit its limit" }),
+    );
+    expect(on).toEqual({ text: "· Continued on opencode — Fake hit its limit\n", follow: true });
+    const w = createRenderer();
+    const waits = w(ev("chat.handoff", { kind: "waiting", text: "Waits for Fake — 16:00" }));
+    expect(waits).toEqual({ text: "· Waits for Fake — 16:00\n", end: { status: "waiting", code: 0 } });
   });
 
   it("shows an edit without line counts as just the path", () => {

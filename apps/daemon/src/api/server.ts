@@ -291,7 +291,7 @@ function startIons(
   });
   // Pick by usage, when it's on: a thread's agent by fit, your order, headroom and cost (the project's own is its fit).
   const route = async (projectId: string, o: { effort?: EffortLevel; text?: string }) =>
-    routed(d, agents, { projectId, ...o });
+    routed(d, agents, { projectId, ...o, thread: true });
   const ions = new Ions({ ...deps, turns, agents, agent, route });
   late.ions = ions;
   // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.

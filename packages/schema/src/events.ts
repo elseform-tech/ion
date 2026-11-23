@@ -138,6 +138,24 @@ export type EventType = (typeof EVENT_TYPES)[number];
 const daemonOnly: ReadonlySet<string> = new Set(DAEMON_EVENT_TYPES);
 export const isDaemonOnly = (t: EventType): boolean => daemonOnly.has(t);
 
+/**
+ * ion's own question when a chat's agent hit its limit (need.raised's `limit`): the agent (from), the one offered (to,
+ * null: none is free), and which agent "Wait" goes on with, at what time; `request`: what Auto's judge weighs on the
+ * run that goes on (the request the limited run was given).
+ */
+const HandoffLimitSchema = z.strictObject({
+  from: z.string().min(1),
+  to: z.string().min(1).nullable(),
+  waitOn: z.string().min(1),
+  until: z.iso.datetime(),
+  /** `until` is ion's guess (the limit didn't say): at that time ion tries, and waits again if still limited. */
+  guessed: z.literal(true).optional(),
+  /** `to` is limited by a guess only: it may be free again (trying it tells). */
+  maybe: z.literal(true).optional(),
+  request: z.string().optional(),
+});
+export type HandoffLimit = z.infer<typeof HandoffLimitSchema>;
+
 export const RUN_END_STATUSES = ["done", "failed", "interrupted", "capped"] as const;
 export type RunEndStatus = (typeof RUN_END_STATUSES)[number];
 
@@ -228,18 +246,7 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
      * ion's own question when a chat's agent hit its limit: the agent (from), the one offered (to, null: none is
      * free), and which agent "Wait" goes on with, at what time.
      */
-    limit: z
-      .strictObject({
-        from: z.string().min(1),
-        to: z.string().min(1).nullable(),
-        waitOn: z.string().min(1),
-        until: z.iso.datetime(),
-        /** `until` is ion's guess (the limit didn't say): at that time ion tries, and waits again if still limited. */
-        guessed: z.literal(true).optional(),
-        /** `to` is limited by a guess only: it may be free again (trying it tells). */
-        maybe: z.literal(true).optional(),
-      })
-      .optional(),
+    limit: HandoffLimitSchema.optional(),
     /** An agent's question (kind "ask"): its choices, each with what it leads to (ion's limit question: Wait alone). */
     choices: z
       .array(
@@ -373,7 +380,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
    * summary", "On Codex — Claude Code is near its limit"). `to`: the agent it goes on with; `until`: when a wait ends.
    */
   "chat.handoff": z.strictObject({
-    kind: z.enum(["continued", "waiting", "fresh", "routed"]),
+    /** failed: a wait couldn't go on; stopped: you stopped a wait (neither is taken up again). */
+    kind: z.enum(["continued", "waiting", "fresh", "routed", "failed", "stopped"]),
     text: z.string().min(1).max(200),
     to: z.string().min(1).optional(),
     until: z.iso.datetime().optional(),
@@ -381,6 +389,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     guessed: z.literal(true).optional(),
     /** How many times a guessed wait has tried so far (kept across a restart). */
     tries: z.number().int().min(0).optional(),
+    /** A wait's: what Auto's judge weighs on the run that goes on (the limited run's request). */
+    request: z.string().optional(),
   }),
   /**
    * A run waiting for a slot, with its access (a handoff on another agent keeps the chat's). `waiting`: a chat ion

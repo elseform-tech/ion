@@ -9,6 +9,7 @@ import { windowShares } from "./window-shares.js";
  * - Similar chats: the same project, the same agent, the same kind and a request of the same length band. Both are
  *   read from your first message the same way for past chats and for the new request (`kindOf`): a request ending in
  *   "?" is a question, anything else a change; its length is its trimmed characters, in LENGTH_BANDS.
+ * - A chat whose runs span agents (it went on on another after a limit) did only part of its work on each: left out.
  * - A chat's total is every token all its runs on that agent processed (cached context too). An agent whose count is
  *   partial (opencode over ACP: a turn's last step only) has no total, so it never shows a token estimate.
  * - The range is the median to the p90. Fewer than MIN_SIMILAR similar chats that can say: no estimate.
@@ -52,6 +53,7 @@ function pastChats(db: Db, q: EstimateAsk): Past[] {
            AS text
        FROM view_usage u JOIN view_chats c ON c.chat_id = u.chat_id
        WHERE u.harness = ? AND c.project_id = ? AND u.chat_id != ?
+         AND NOT EXISTS (SELECT 1 FROM view_usage o WHERE o.chat_id = u.chat_id AND o.harness != u.harness)
        GROUP BY u.chat_id`,
     )
     .all(q.harness, q.projectId, q.exclude ?? "") as Past[];

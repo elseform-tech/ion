@@ -247,6 +247,26 @@ describe("stalled-work suggestions", () => {
     expect(changes.mock.calls.map((c) => c[0])).toEqual(["clean"]);
   });
 
+  // Final review, 2026-11-23: a chat whose last run ended on its agent's limit isn't stalled work: ion asked (or waits,
+  // or went on) about it already.
+  it("skips a chat whose last run ended on its agent's limit", async () => {
+    append("lim", EV.chatCreated, { title: "Limited one", projectId: "storefront" }, at(10, 10));
+    const run = (type: string, data: Record<string, unknown>) =>
+      store.append({
+        chatId: "lim",
+        runId: "lim-r",
+        origin: "daemon",
+        type: type as never,
+        data,
+        ts: at(10, 10).toISOString(),
+      });
+    run(EV.error, { code: "usage_limit", retryable: false, message: "Usage limit reached", limit: {} });
+    run(EV.runFinished, { status: "failed" });
+    boot();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cards()).toEqual([]);
+  });
+
   it("resumes the chat when you take it; Not now is recorded", async () => {
     chatOf("c1", "storefront", "Tailwind 4 migration", { at: at(13, 10), status: "interrupted" });
     chatOf("c2", "storefront", "Old refactor", { at: at(12, 10), status: "failed" });

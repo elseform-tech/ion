@@ -9,13 +9,13 @@ import { type Ctx, handlers } from "./commands.js";
 it("Stop ends the chat's wait for its agent's reset", async () => {
   const store = new EventStore(openDb(":memory:"), allViews);
   store.append({ chatId: "c1", runId: "r1", origin: "daemon", type: EV.runQueued, data: {} });
-  const cancel = vi.fn();
+  const stopWaiting = vi.fn();
   const ctx = {
     store,
     queue: { hold: vi.fn() },
-    handoffs: { cancel },
+    handoffs: { stopWaiting },
     runs: { interrupt: vi.fn(async () => {}) },
   } as unknown as Ctx;
   await handlers["run.interrupt"]({ runId: "r1" }, ctx);
-  expect(cancel).toHaveBeenCalledWith("c1");
+  expect(stopWaiting).toHaveBeenCalledWith("c1");
 });

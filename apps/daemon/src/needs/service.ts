@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { EV, type NeedInfo } from "@ion/schema";
+import { EV, type HandoffLimit, type NeedInfo } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
 import { needsView } from "../views/needs.js";
@@ -26,7 +26,7 @@ export class NeedsService {
     via?: { note: string };
     heldFor?: string;
     /** ion's own question when the chat's agent hit its limit (runs/limit-handoff.ts). */
-    limit?: { from: string; to: string | null; waitOn: string; until: string; guessed?: true; maybe?: true };
+    limit?: HandoffLimit;
   }): string {
     const needId = `n${randomBytes(3).toString("hex")}`;
     this.store.append({

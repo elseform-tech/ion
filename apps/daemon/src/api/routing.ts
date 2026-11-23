@@ -51,7 +51,7 @@ function estimates(db: Db, usage: AgentUsage[], q: { projectId: string; text?: s
 export function routeBy(
   c: UserConfig,
   usage: AgentUsage[],
-  o: { db: Db; projectId?: string; effort?: EffortLevel; text?: string; now?: Date },
+  o: { db: Db; projectId?: string; effort?: EffortLevel; text?: string; now?: Date; thread?: boolean },
 ): { harness: string; reason: string; estimate?: TaskEstimate } | null {
   if (!c.routing.byUsage) return null;
   const now = o.now ?? new Date();
@@ -60,7 +60,8 @@ export function routeBy(
     ...{ id: u.harness, label: u.label, billing: u.billing, windows: u.windows },
     ...{ limitedUntil: u.limitedUntil, ...(rows[u.harness]?.limitGuessed ? { limitGuessed: true } : {}) },
   }));
-  const project = c.projects.find((p) => p.id === o.projectId)?.harness;
+  // The project's own agent is a fit only for its ion's threads; your own chats follow your order (the user, 2026-11-23).
+  const project = o.thread ? c.projects.find((p) => p.id === o.projectId)?.harness : undefined;
   const deepAgent = c.ion.deep.split(":")[0];
   // A task that usually takes more of an agent's window than it has left goes on another (the user, 2026-11-22).
   const estimate = estimates(o.db, usage, {
@@ -82,7 +83,7 @@ export function routeBy(
 export async function routed(
   d: { db: Db; configFile: string },
   known: () => Promise<HarnessInfo[]>,
-  o: { projectId?: string; effort?: EffortLevel; text?: string },
+  o: { projectId?: string; effort?: EffortLevel; text?: string; thread?: boolean },
 ): Promise<{ harness: string; reason: string } | null> {
   const c = loadUserConfig(d.configFile).config;
   if (!c.routing.byUsage) return null;

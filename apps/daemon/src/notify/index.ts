@@ -1,3 +1,4 @@
+import { endedOnLimit } from "../runs/limit-end.js";
 import {
   DEFAULT_CONFIG,
   DEFAULT_PROJECT,
@@ -61,7 +62,8 @@ function itemOf(d: Log, e: IonEvent): Item | null {
     if (d.heldFor) return null;
     return { ...base, kind: d.blocked ? "urgent" : "needs", body: line(d.summary) || "A question for you" };
   }
-  if (!chat || e.type !== EV.runFinished || endedByIon(d.store, e.runId)) return null;
+  if (!chat || e.type !== EV.runFinished || endedByIon(d.store, e.runId) || endedOnLimit(d.store, e.runId))
+    return null;
   return runEnd(base, chat.title, (e.data as { status: string }).status);
 }
 

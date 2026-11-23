@@ -44,6 +44,9 @@ export const chatsView: View & {
     } else if (e.type === EV.chatHandoff && d.kind === "waiting") {
       // Waiting for its agent's reset (Plan 20): it reads as waiting, not failed, until a run goes on.
       db.prepare("UPDATE view_chats SET waiting = ? WHERE chat_id = ?").run(String(d.text), e.chatId);
+    } else if (e.type === EV.chatHandoff && (d.kind === "failed" || d.kind === "stopped")) {
+      // The wait couldn't go on, or you stopped it: it reads as it ended again (final review, 2026-11-23).
+      db.prepare("UPDATE view_chats SET waiting = NULL WHERE chat_id = ?").run(e.chatId);
     } else if (e.type === EV.chatArchived) {
       db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
     } else {

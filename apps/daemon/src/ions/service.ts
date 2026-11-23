@@ -1,3 +1,4 @@
+import { endedOnLimit } from "../runs/limit-end.js";
 import type { ThreadPicks } from "../mcp/ion-tools.js";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
@@ -312,8 +313,11 @@ export class Ions {
       if (e.type !== EV.runFinished || !e.chatId) return;
       const chat = chatsView.list(this.d.db).find((c) => c.chatId === e.chatId);
       if (chat?.by !== "ion" || !chat.projectId) return;
+      const status = (e.data as { status: string }).status;
+      // Ended on its agent's limit: ion asks, waits or continues; the run that goes on reports (final review, 2026-11-23).
+      if (status === "failed" && endedOnLimit(this.d.store, e.runId)) return;
       // The report takes a turn; one that ends after ion stopped is dropped, never an error.
-      this.report(chat.projectId, chat, (e.data as { status: string }).status).catch(() => {});
+      this.report(chat.projectId, chat, status).catch(() => {});
     });
   }
 

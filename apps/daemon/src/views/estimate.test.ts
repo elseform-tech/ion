@@ -119,6 +119,17 @@ describe("estimateOf", () => {
     expect(estimateText(estimateOf(db, ask(QUESTION), FREE)!)).toBe("usually 4–6k tokens");
   });
 
+  // Final review, 2026-11-23: a chat that went on on another agent (a handoff) counts only part of its work on each:
+  // it's left out of both agents' estimates.
+  it("leaves out chats whose runs span agents", () => {
+    for (const t of [10_000, 20_000, 60_000, 100_000, 120_000]) {
+      const chatId = chat({ tokens: [t] });
+      start(chatId, `${chatId}-g`, "grok-build");
+      add([chatId, `${chatId}-g`], "usage.reported", usage({}, 5000, 0), "adapter");
+    }
+    expect(estimateOf(db, ask(), FREE)).toBeNull();
+  });
+
   // Review of fb615b0, 2026-11-23: the estimate counted a fragment of opencode's tokens (its last step only). An
   // agent whose counts are partial never shows a token estimate (verify, don't guess).
   it("an agent whose counts are partial shows no token estimate", () => {
