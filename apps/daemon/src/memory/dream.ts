@@ -103,7 +103,11 @@ function recentChats(db: Db, c: UserConfig, now: Date, pass: DreamPass): string 
   const since = new Date(now.getTime() - CHATS_DAYS * DAY_MS).toISOString();
   const chats = chatsView
     .list(db)
-    .filter((x) => !x.archived && (x.lastActivityAt ?? "") >= since && x.projectId === pass.project)
+    // A chat you said not to remember is never read (review of #34, 2026-11-23).
+    .filter(
+      (x) =>
+        !x.archived && !x.notRemembered && (x.lastActivityAt ?? "") >= since && x.projectId === pass.project,
+    )
     .sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""))
     .slice(0, CHATS_MAX);
   const lines = chats.flatMap((x) => {

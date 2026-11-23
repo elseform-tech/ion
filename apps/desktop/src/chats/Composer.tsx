@@ -170,6 +170,8 @@ type Props = {
   byUsage?: boolean;
   /** Why Pick by usage put the chat on its agent (its pill says so on hover). */
   why?: string | null;
+  /** A new chat you said not to remember (review of #34, 2026-11-23): its first message goes with noMemory. */
+  noMemory?: boolean;
 };
 
 /**
@@ -319,7 +321,8 @@ export function Composer(p: Props) {
   const canSend = !locked && Boolean(text.trim()) && agentReady;
   const { ref, onEdit } = useEditInto(setText);
   // What you picked goes with the message, sent or queued.
-  const go = () => canSend && void send(pk.take(askArgs(text, sent, to)), put);
+  const args = { ...askArgs(text, sent, to), ...(p.noMemory ? { noMemory: true } : {}) };
+  const go = () => canSend && void send(pk.take(args), put);
   const brainNow = () => (canSend ? pk.take(brainArgs(queued)) : null);
   const onEnterKey = onEnter({ q, working: Boolean(running), text, setText, send: go, brain: brainNow });
   const shown = error ?? q.error;

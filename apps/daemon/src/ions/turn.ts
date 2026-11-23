@@ -25,7 +25,7 @@ import { errLine, type IonLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, type 
 import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
 import { ionIndex, type MemoryFiles } from "../memory/index.js";
-import { ionCaller, ionMemory, ionRemembers, sessionProjects } from "../memory/switch.js";
+import { ionCaller, ionMemory, sessionProjects } from "../memory/switch.js";
 import { ownAgentStart } from "../access/runner.js";
 import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
@@ -400,7 +400,7 @@ export class IonTurns {
       cwd: t.cwd,
       model: brain.model,
       effort: brain.effort,
-      instructions: ionInstructions(t.ionId, ionRemembers(scope.memory)),
+      instructions: ionInstructions(t.ionId, scope),
       // ion's server first, then yours through ion's gateway (ion decides each call there: only what reads).
       mcpServers: [ionSpec(ion), ...yours],
       ...(gateKey ? { gate: { url: `${this.d.gateUrl()}/${gateKey}` } } : {}),

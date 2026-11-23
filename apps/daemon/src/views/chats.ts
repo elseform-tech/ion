@@ -7,19 +7,21 @@ type D = Record<string, unknown>;
 export const chatsView: View & {
   list(db: Db): ChatInfo[];
   worktree(db: Db, chatId: string): string | null;
-  session(db: Db, chatId: string): { harness: string; sessionId: string } | null;
+  /** The chat's session, and the memory it started with ("all" for one from before memory could be off). */
+  session(db: Db, chatId: string): { harness: string; sessionId: string; memory: string } | null;
   /** The agent the project's most recently active chat ran on, if any ran. */
   lastAgent(db: Db, projectId: string): string | null;
 } = {
   name: "chats",
-  // 6: why a chat ion started waits for a slot (waiting). 7: or for its agent's reset. 8: Don't remember.
-  version: 8,
+  // 6: why a chat ion started waits for a slot (waiting). 7: or for its agent's reset. 8: Don't remember. 9: the
+  // memory its session started with.
+  version: 9,
   tables: ["view_chats"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_chats (
       chat_id TEXT PRIMARY KEY, title TEXT NOT NULL, project_id TEXT, worktree TEXT, branch TEXT,
       archived INTEGER NOT NULL DEFAULT 0, last_run_status TEXT, harness TEXT, session_id TEXT, last_activity TEXT,
-      preview TEXT, by TEXT, waiting TEXT, not_remembered INTEGER NOT NULL DEFAULT 0)`);
+      preview TEXT, by TEXT, waiting TEXT, not_remembered INTEGER NOT NULL DEFAULT 0, session_memory TEXT)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_chats");
@@ -82,9 +84,12 @@ export const chatsView: View & {
   },
   session(db, chatId) {
     const r = db
-      .prepare("SELECT harness, session_id AS sessionId FROM view_chats WHERE chat_id = ?")
-      .get(chatId) as { harness: string | null; sessionId: string | null } | undefined;
-    return r?.harness && r.sessionId ? { harness: r.harness, sessionId: r.sessionId } : null;
+      .prepare(
+        "SELECT harness, session_id AS sessionId, session_memory AS memory FROM view_chats WHERE chat_id = ?",
+      )
+      .get(chatId) as { harness: string | null; sessionId: string | null; memory: string | null } | undefined;
+    if (!r?.harness || !r.sessionId) return null;
+    return { harness: r.harness, sessionId: r.sessionId, memory: r.memory ?? "all" };
   },
   worktree(db, chatId) {
     const r = db.prepare("SELECT worktree FROM view_chats WHERE chat_id = ?").get(chatId) as
@@ -144,9 +149,11 @@ function noteRun(db: Db, e: IonEvent, d: D): void {
 /** The chat's harness and session, from its latest run.started. */
 function noteSession(db: Db, chatId: string, d: Record<string, unknown>): void {
   const sessionId = typeof d.sessionId === "string" ? d.sessionId : null;
-  db.prepare("UPDATE view_chats SET harness = ?, session_id = ? WHERE chat_id = ?").run(
+  const memory = typeof d.memory === "string" ? d.memory : null;
+  db.prepare("UPDATE view_chats SET harness = ?, session_id = ?, session_memory = ? WHERE chat_id = ?").run(
     String(d.harness),
     sessionId,
+    memory,
     chatId,
   );
 }

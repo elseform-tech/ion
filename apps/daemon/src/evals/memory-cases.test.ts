@@ -88,7 +88,8 @@ describe("memory cases", () => {
       expect(index.split("\n").length, c.id).toBe(40);
       for (const s of c.seeds) expect(index, c.id).not.toContain(s.path);
     }
-  });
+    // Review of #34, 2026-11-23: it seeds 300 files per case, ~0.4s alone but past 5s under the full check's load.
+  }, 30_000);
 
   it("answers a to-do question both ways, and Mark done both ways", () => {
     const todo = MEMORY_CASES.filter((c) => c.measure === "todo");

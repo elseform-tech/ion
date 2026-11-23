@@ -13,6 +13,7 @@ import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { chatsView } from "../views/chats.js";
 import { RunManager } from "./manager.js";
+import { chatMemory } from "./ready.js";
 
 process.env.ION_ALLOW_FAKE = "1";
 
@@ -125,4 +126,34 @@ it("turning it back on brings everything back", async () => {
   expect([r.index, r.memory, r.first.text.includes("Vitest")]).toEqual([true, true, true]);
   expect(r.first.scope).not.toHaveProperty("memory");
   expect(readFileSync(join(s.dir, "data", "memory", "projects", "repo", "vitest.md"), "utf8")).toBe(before);
+});
+
+// Review of #34, 2026-11-23: a chat you said not to remember resumed the session that already held memory's index.
+// A session is resumed only with the memory it started with; else a fresh one gets the history, and no index.
+it("a chat you stop remembering starts a fresh session, without memory", async () => {
+  const s = setup();
+  const first = await s.reply("echo hi");
+  expect(first.text.includes("ion's memory index")).toBe(true);
+  // The same memory: the session goes on (only your new words go to it).
+  expect((await s.reply("echo again", { chatId: first.chatId })).text).toBe("echo again");
+  chatMemory(s.store, s.db, first.chatId, false);
+  const next = await s.reply("echo more", { chatId: first.chatId });
+  // (The fake agent's earlier replies echoed the index; what's new is that none starts this message.)
+  expect(next.text).not.toMatch(/^<ion-data[^>]*source="ion's memory index/);
+  expect(next.text).toContain("echo hi");
+  expect(next.text.endsWith("echo more")).toBe(true);
+  // Memory off everywhere: likewise for a remembered chat's session.
+  const other = await s.reply("echo one");
+  s.set((c) => setMemory(c, false));
+  const after = await s.reply("echo two", { chatId: other.chatId });
+  expect(after.text).not.toMatch(/^<ion-data[^>]*source="ion's memory index/);
+  expect(after.text).toContain("echo one");
+});
+
+// Review of #34, 2026-11-23: `ion ask --no-memory` wrote "Not remembered" after your first message; it comes first.
+it("a new chat you don't remember says so before your first message", async () => {
+  const s = setup();
+  const r = await s.reply("echo hi", { noMemory: true });
+  const types = s.store.read({ chatId: r.chatId }).map((e) => e.type);
+  expect(types.indexOf(EV.chatMemory)).toBeLessThan(types.indexOf(EV.messageSent));
 });

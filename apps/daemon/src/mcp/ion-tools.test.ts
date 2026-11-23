@@ -11,6 +11,7 @@ import { MemoryFiles } from "../memory/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import type { McpServer } from "../tools/index.js";
 import { allViews } from "../views/index.js";
+import { ionInstructions } from "../ions/instructions.js";
 import { createGrants, createMcpHandler, type Grants } from "./index.js";
 
 let db: Db;
@@ -186,6 +187,39 @@ describe("ion tools", () => {
     const mine = { scope: "you", name: "Later", description: "Later", type: "todo", text: "Later" };
     expect(await p.callTool({ name: "memory_write", arguments: mine })).toMatchObject({ isError: true });
     await p.close();
+  });
+
+  // Review of #34, 2026-11-23: an ion read a chat you said not to remember through search_chats and chat_history,
+  // and could keep what it said. Its words are left out for ions.
+  it("leaves a chat you don't remember out of an ion's lookups", async () => {
+    put({
+      chatId: "c9",
+      runId: null,
+      type: "chat.created",
+      data: { title: "Secret plan", projectId: "shop" },
+    });
+    put({ chatId: "c9", runId: null, type: "chat.memory", data: { on: false } });
+    put({ chatId: "c9", runId: "r7", type: "message.sent", data: { text: "kiwi vault code MAGPIE" } });
+    const c = await chief();
+    const found = text(await c.callTool({ name: "search_chats", arguments: { query: "kiwi" } }));
+    expect([found.includes("kiwi in the shop"), found.includes("MAGPIE")]).toEqual([true, false]);
+    expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c9" } })).toMatchObject({
+      isError: true,
+    });
+    expect(text(await c.callTool({ name: "projects", arguments: {} }))).not.toContain("Secret plan");
+    await c.close();
+  });
+
+  // Review of #34, 2026-11-23: ion chief wasn't told which projects' memory is off, nor that yours is.
+  it("tells ion chief where memory is off", () => {
+    const told = ionInstructions("chief", {
+      projects: ["app", "shop"],
+      memory: { you: false, projects: ["app"] },
+    });
+    expect(told).toContain("Memory is off in shop: pass nothing from memory into its threads.");
+    expect(told).not.toContain('scope "you"');
+    expect(told).not.toContain("Added to your to-dos");
+    expect(told).toContain("Added to <project>'s to-dos");
   });
 
   it("a project's ion sees only its project", async () => {

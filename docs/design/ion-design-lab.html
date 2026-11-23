@@ -1288,7 +1288,7 @@ details a{color:var(--accent)}
 
         <!-- new chat -->
         <section class="chat" data-screen="new" style="grid-template-rows:48px minmax(0,1fr)">
-          <div class="head"><span class="sp"></span><button class="ib" type="button" title="Temporary chat"><i data-lucide="ghost"></i></button></div>
+          <div class="head"><span class="sp"></span><!-- Don't remember (the user, 2026-11-23): this chat gets no memory and writes none --><button class="ib" type="button" title="Don't remember" aria-label="Don't remember" aria-pressed="false" data-ghost><i data-lucide="ghost"></i></button></div>
           <div class="empty"><div class="inner">
             <h3>What are we working on?</h3>
             <div class="cbox big">
@@ -1587,6 +1587,9 @@ export function sumLines(lines: Line[]) {
           <div class="split solo">
             <div class="convo">
               <div class="msgs"><div class="col">
+                <!-- Review of #34, 2026-11-23: a chat started with Don't remember says so once, quietly ("Remembered" when
+                     turned back on from its menu) -->
+                <div class="quiet"><i data-lucide="info"></i>Not remembered</div>
                 <div class="u">Product images load slowly on the category page. Cache them at the edge.</div>
                 <div class="quiet pending now" id="startWord" style="--strength:.2">Thinking</div>
               </div></div>
@@ -3093,7 +3096,8 @@ let memTab='all', memScope='you', memOpen=null, memHist=false, memAsk=null, memD
 /* Remember (the user, 2026-11-23): memory on or off everywhere (yours follow it), and per project in its view (absent:
    as everywhere). Off: agents and ions get none and nothing new is written; the files stay here. */
 let memOn=true; const MEMPROJ={};
-const remRow=(p)=>{ const on=p?(MEMPROJ[p]??memOn):memOn; return `<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="notebook-text"></i>Remember</span></div><button type="button" class="sw${on?' on':''}" role="switch" aria-checked="${on}" aria-label="Remember${p?' '+esc(p):''}" data-mrem="${p?esc(p):''}"></button></div></div>`; };
+const stillOn=()=>{ const on=Object.keys(MEMPROJ).filter(p=>MEMPROJ[p]); return !memOn&&on.length?`<span class="when">On in ${on.map(esc).join(', ')}</span>`:''; };
+const remRow=(p)=>{ const on=p?(MEMPROJ[p]??memOn):memOn; return `<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="notebook-text"></i>Remember</span></div>${p?'':stillOn()}<button type="button" class="sw${on?' on':''}" role="switch" aria-checked="${on}" aria-label="Remember${p?' '+esc(p):''}" data-mrem="${p?esc(p):''}"></button></div></div>`; };
 const openTodos=()=>MEMF.filter(f=>f.t==='todo'&&f.st==='open');
 const mib=(ic,l,a)=>`<button class="ib" type="button" title="${l}" aria-label="${l}" ${a}><i data-lucide="${ic}"></i></button>`;
 function memRow(f){
@@ -3137,6 +3141,7 @@ function renderMemory(){
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-mtab]'); if(t){ memTab=t.dataset.mtab; renderMemory(); return; }
   const dm=e.target.closest('[data-dream]'); if(dm){ dreamMode=dm.dataset.dream; renderMemory(); return; }
+  const gh=e.target.closest('[data-ghost]'); if(gh){ const on=gh.getAttribute('aria-pressed')!=='true'; gh.setAttribute('aria-pressed',on); gh.classList.toggle('on',on); return; }
   const rm=e.target.closest('[data-mrem]'); if(rm){ const p=rm.dataset.mrem; if(p){ const now=!(MEMPROJ[p]??memOn); if(now===memOn) delete MEMPROJ[p]; else MEMPROJ[p]=now; } else memOn=!memOn; renderMemory(); return; }
   const sc=e.target.closest('[data-mscope]'); if(sc){ memScope=sc.dataset.mscope; renderMemory(); return; }
   const sw=e.target.closest('[data-msee]'); if(sw){ const f=MEMF.find(x=>x.p===sw.dataset.msee); f.see=f.see==='chats'?'ions':'chats'; renderMemory(); return; }

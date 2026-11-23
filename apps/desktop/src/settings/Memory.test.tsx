@@ -203,6 +203,18 @@ describe("Settings → Memory", () => {
     expect(screen.getByText("Deploy")).toBeTruthy();
   });
 
+  // Review of #34, 2026-11-23: with memory off everywhere, a project you kept on was only seen in its own view. The
+  // top switch says where it's still on, in one quiet line.
+  it("says where memory is still on when it's off everywhere", async () => {
+    settings.memory = { on: false, projects: { shop: true } };
+    try {
+      await openMemory(memoryClient({ settings: true }));
+      expect((await screen.findByText("On in Shop")).closest(".srow")).not.toBeNull();
+    } finally {
+      settings.memory = { on: true, projects: { shop: true } };
+    }
+  });
+
   it("a row shows who changed it and when", async () => {
     await openMemory();
     expect(rowOf("Tabs, not spaces").textContent).toContain("Docs pass · 2h");

@@ -4,7 +4,8 @@ import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryFiles } from "../memory/index.js";
-import { chatCaller } from "../memory/switch.js";
+import { chatCaller, leastMemory } from "../memory/switch.js";
+import { memoryOfRun } from "../runs/ready.js";
 import { HISTORY_CHARS } from "../runs/history.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -16,7 +17,15 @@ import { registerMemoryTools } from "./memory-tools.js";
 import { guard, ok, q } from "./result.js";
 import type { Grants, RunScope } from "./grants.js";
 
-export type Deps = { store: EventStore; db: Db; grants: Grants; memory: MemoryFiles; decisions?: Decisions };
+export type Deps = {
+  store: EventStore;
+  db: Db;
+  grants: Grants;
+  memory: MemoryFiles;
+  decisions?: Decisions;
+  /** Your config: memory's switches, read again on every request. */
+  configFile?: string;
+};
 
 export const SEARCH_MAX = 20;
 const HIT_CHARS = 500;
@@ -85,9 +94,13 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
 /** A chat writes at most this many memory files in one run. */
 const WRITES_PER_RUN = 20;
 
-/** A run whose memory is off (its project, its chat) gets no memory tools (the user, 2026-11-23). */
+/**
+ * A run whose memory is off (its project, its chat) gets no memory tools (the user, 2026-11-23): as it was at its start,
+ * or as it is now, whichever is less (review of #34, 2026-11-23: "Don't remember" mid-run left memory_write open).
+ */
 function memoryTools(server: McpServer, scope: RunScope, d: Deps): void {
-  const caller = chatCaller(scope);
+  const now = d.configFile ? memoryOfRun(d.configFile, d.db, scope) : undefined;
+  const caller = chatCaller({ ...scope, ...leastMemory(scope.memory, now) });
   if (!caller) return;
   // An agent can't flood a project's memory.
   const limit = { id: scope.runId, max: WRITES_PER_RUN, tooMany: "That's enough memory for one run" };

@@ -139,6 +139,29 @@ describe("ion's MCP server", () => {
     await p.close();
   });
 
+  // Review of #34, 2026-11-23: a run's memory was fixed at its start, so "Don't remember" mid-run left memory_write
+  // open. Each request reads the switches and the chat's own again.
+  it("closes memory mid-run when you say not to remember the chat", async () => {
+    const c = await client();
+    expect((await c.listTools()).tools.some((t) => t.name === "memory_write")).toBe(true);
+    put({ chatId: "c1", runId: null, type: "chat.memory", data: { on: false } });
+    const note = { scope: "project", name: "Kiwi", description: "Kiwi", type: "fact", text: "Kiwi" };
+    expect(await c.callTool({ name: "memory_write", arguments: note })).toMatchObject({ isError: true });
+    expect((await c.listTools()).tools.filter((t) => t.name.startsWith("memory_"))).toEqual([]);
+    expect(memory.list(null, ["chats", "ions"]).some((m) => m.name === "Kiwi")).toBe(false);
+    await c.close();
+  });
+
+  // Review of #34, 2026-11-23: with your own memory off, memory_write still offered "you" as a scope.
+  it("offers no scope of yours when your memory is off", async () => {
+    const k = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r4", memory: "project" });
+    const c = await client(k);
+    const write = (await c.listTools()).tools.find((t) => t.name === "memory_write")!;
+    const scope = (write.inputSchema.properties as Record<string, { description?: string }>).scope;
+    expect(scope?.description).toBe('"project" (this project)');
+    await c.close();
+  });
+
   // The user, 2026-11-19: "Merge it?" with "Merge" / "Wait" read oddly. The ask tool asks for a question that
   // stands on its own as a full sentence, and options that are one-line sentences with their pros and cons.
   it("asks agents for a full-sentence question and one-line sentence options", async () => {

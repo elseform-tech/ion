@@ -32,6 +32,21 @@ export function ionMemory(c: UserConfig, projects: string[], own: boolean): IonM
   return you && on.length === projects.length ? undefined : { you, projects: on };
 }
 
+type RunMemory = "none" | "project" | undefined;
+const RANK: Record<string, number> = { none: 2, project: 1 };
+
+/** The less of two runs' memories ("none", then "project", then all of it), as `{ memory }` (absent: all). */
+export function leastMemory(a: RunMemory, b: RunMemory): { memory?: "none" | "project" } {
+  const m = (RANK[a ?? ""] ?? 0) >= (RANK[b ?? ""] ?? 0) ? a : b;
+  return m ? { memory: m } : {};
+}
+
+/** The less of two ions' memories: yours only if both have it, and the projects both have. */
+export function leastIonMemory(a?: IonMemory, b?: IonMemory): IonMemory | undefined {
+  if (!a || !b) return a ?? b;
+  return { you: a.you && b.you, projects: a.projects.filter((p) => b.projects.includes(p)) };
+}
+
 /** Whether an ion has any memory at all. */
 export const ionRemembers = (m: IonMemory | undefined): boolean => !m || m.you || m.projects.length > 0;
 

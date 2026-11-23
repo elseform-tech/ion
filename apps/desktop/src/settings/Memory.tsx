@@ -94,6 +94,16 @@ function Scopes(p: { scope: string; data: SettingsData; onPick: (s: string) => v
 }
 
 /**
+ * Off everywhere, the projects you kept on, in one quiet line ("On in Shop, Notes"; review of #34, 2026-11-23).
+ */
+function StillOn({ data }: { data: SettingsData }) {
+  const m = data.settings?.memory;
+  if (!m || m.on) return null;
+  const on = data.projects.filter((x) => m.projects[x.id]).map((x) => x.name ?? x.id);
+  return on.length ? <span className="when">{`On in ${on.join(", ")}`}</span> : null;
+}
+
+/**
  * Remember: memory on or off, everywhere (`projectId` absent; yours follow it) or in one project (the user,
  * 2026-11-23). Off, agents and ions get none and nothing new is written; the files stay here.
  */
@@ -120,6 +130,7 @@ function RememberRow(p: {
             Remember
           </span>
         </div>
+        {p.projectId === undefined && <StillOn data={p.data} />}
         <Switch label={p.name ? `Remember ${p.name}` : "Remember"} on={on} onPick={set} />
       </div>
     </div>

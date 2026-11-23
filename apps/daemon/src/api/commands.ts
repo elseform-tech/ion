@@ -177,7 +177,8 @@ export const handlers: Handlers = {
   },
   // Don't remember (off) or Remember (on) a chat, from its menu (the user, 2026-11-23).
   "chat.remember": (a, ctx) => {
-    chatMemory(ctx.store, ctx.db, String(a.chatId ?? ""), a.on === true);
+    if (typeof a.on !== "boolean") throw new UserError("Pick on or off");
+    chatMemory(ctx.store, ctx.db, String(a.chatId ?? ""), a.on);
     return { ok: true as const };
   },
   "chat.archive": async (a, ctx) => {

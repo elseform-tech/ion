@@ -1,19 +1,44 @@
 import { DREAM_ION } from "../memory/dream-rules.js";
+import { type IonMemory, ionRemembers } from "../memory/switch.js";
 import { dreamInstructions } from "./dream.js";
 
-/** What an ion with memory is told of it: where to look, how to keep a file, and when to add a to-do. */
-const MEMORY = [
-  "Look in ion's memory (its index is at the top of each message; memory_search, memory_read) before asking the user something you may already know.",
-  "Keep one topic per memory file; update a file (memory_read, then memory_write with its hash as expect) rather than adding a near-copy.",
-  'Add a to-do only when the user clearly asks for one ("remind me to…", "later we need to…") or a thread you started ends listing what\'s still to do: memory_write with type todo (scope "you", or the project\'s id for its work), and due as YYYY-MM-DD when a day is given (work out "Friday" from today\'s date); then say it in one line: "Added to your to-dos: <what> (<day>)" for yours, or "Added to <project>\'s to-dos: <what> (<day>)" for a project\'s. You may never add one nobody asked for, and never mark one done yourself.',
-];
+const TODO_WHEN =
+  'Add a to-do only when the user clearly asks for one ("remind me to…", "later we need to…") or a thread you started ends listing what\'s still to do:';
+const TODO_END = '(work out "Friday" from today\'s date); then say it in one line: ';
+const TODO_NEVER = " You may never add one nobody asked for, and never mark one done yourself.";
+
+/**
+ * What an ion with memory is told of it: where to look, how to keep a file, and when to add a to-do; with your own
+ * memory off, no scope of yours (review of #34, 2026-11-23); with some projects' off, to pass nothing into them.
+ */
+function memoryLines(you: boolean, off: string[]): string[] {
+  const todo = you
+    ? `${TODO_WHEN} memory_write with type todo (scope "you", or the project's id for its work), and due as YYYY-MM-DD when a day is given ${TODO_END}"Added to your to-dos: <what> (<day>)" for yours, or "Added to <project>'s to-dos: <what> (<day>)" for a project's.${TODO_NEVER}`
+    : `${TODO_WHEN} memory_write with type todo (scope: the project's id), and due as YYYY-MM-DD when a day is given ${TODO_END}"Added to <project>'s to-dos: <what> (<day>)".${TODO_NEVER}`;
+  return [
+    "Look in ion's memory (its index is at the top of each message; memory_search, memory_read) before asking the user something you may already know.",
+    "Keep one topic per memory file; update a file (memory_read, then memory_write with its hash as expect) rather than adding a near-copy.",
+    todo,
+    ...(off.length
+      ? [
+          `Memory is off in ${off.join(", ")}: pass nothing from memory into ${off.length > 1 ? "their" : "its"} threads.`,
+        ]
+      : []),
+  ];
+}
+
+/** An ion's memory for its instructions: the projects it sees, and what of its memory is off (absent: none). */
+type Sees = { projects: string[]; memory?: IonMemory };
 
 /**
  * What an ion is told for each turn it thinks (an agent session with ion's tools and a gate that only lets it read).
  * Both start "You are ion" (the fake agent tells an ion's turn from a run by it; packages/adapters/fake).
  */
-export function ionInstructions(ionId: "chief" | string, memory = true): string {
+export function ionInstructions(ionId: "chief" | string, sees: Sees = { projects: [] }): string {
   if (ionId === DREAM_ION) return dreamInstructions();
+  const m = sees.memory;
+  const memory = ionRemembers(m);
+  const off = m ? sees.projects.filter((p) => !m.projects.includes(p)) : [];
   // Its memory off (the user, 2026-11-23): not a word of it, nor of to-dos.
   const look = memory ? "open_needs, memory_search, decisions" : "open_needs, decisions";
   const who =
@@ -35,7 +60,7 @@ export function ionInstructions(ionId: "chief" | string, memory = true): string 
         ];
   return [
     ...who,
-    ...(memory ? MEMORY : []),
+    ...(memory ? memoryLines(!m || m.you, off) : []),
     "Start a thread (start_thread) only for work in a repo, with a short brief of what to do there; answer questions yourself.",
     "You only read: anything that installs, edits, sends or writes is a thread in that project (start_thread).",
     "Search the web when an answer needs it (read only pages it found or the user gave you); call tools to see the user's connections and skills.",

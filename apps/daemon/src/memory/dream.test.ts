@@ -523,4 +523,28 @@ describe("ion's dream", () => {
         .sort(),
     ).toEqual(["Bank deploys", "Health", "Shop deploys"]);
   });
+
+  // Review of #34, 2026-11-23: Dream read a "Don't remember" chat like any other and could write what it said into
+  // memory. Such a chat's words never reach a pass.
+  it("never reads a chat you said not to remember", async () => {
+    seed("Package manager", { scope: { projectId: "shop" }, type: "fact", text: "The shop uses npm." });
+    const put = (chatId: string, type: string, data: object) =>
+      store.append({ chatId, runId: null, origin: "daemon", type, data } as Parameters<
+        typeof store.append
+      >[0]);
+    put("c1", EV.chatCreated, { title: "Tooling", projectId: "shop" });
+    put("c1", EV.messageSent, { text: "We switched the shop to pnpm." });
+    put("c2", EV.chatCreated, { title: "Private", projectId: "shop" });
+    put("c2", EV.chatMemory, { on: false });
+    put("c2", EV.messageSent, { text: "The vault code is MAGPIE-7." });
+    const prompts: string[] = [];
+    await runDream(
+      deps(async (p) => {
+        prompts.push(p);
+        return done();
+      }),
+    );
+    expect(prompts.join("\n")).toContain("switched the shop to pnpm");
+    expect(prompts.join("\n")).not.toContain("MAGPIE");
+  });
 });

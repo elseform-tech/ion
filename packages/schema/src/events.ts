@@ -419,6 +419,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     authMethod: z.string().nullable(),
     /** The harness's own session id, to continue the chat later. */
     sessionId: z.string().nullable().optional(),
+    /** The memory the session started with (ion adds it): it's resumed only with the same (review of #34). */
+    memory: z.enum(["all", "project", "none"]).optional(),
   }),
   "message.delta": text,
   "message.completed": text,
