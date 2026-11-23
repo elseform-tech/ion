@@ -45,6 +45,9 @@ const LOGINS: [RegExp, string, Billing][] = [
   [/API key/i, "API key", "api"],
 ];
 
+const SIGNED_OUT: AuthStatus = { signedIn: false, method: "Not signed in" };
+const UNKNOWN: AuthStatus = { signedIn: false, unknown: true, method: "Couldn't tell" };
+
 /**
  * `codex login status` answers by its exit code. Only how you signed in is kept (ChatGPT or an API key), never
  * the account or the key it prints part of.
@@ -52,7 +55,8 @@ const LOGINS: [RegExp, string, Billing][] = [
 function loginStatus(l: Launch): Promise<AuthStatus> {
   return new Promise((resolve) =>
     execFile(l.bin, [...l.prefix, "login", "status"], { timeout: 10_000, env: agentEnv() }, (e, out, err) => {
-      if (e) return resolve({ signedIn: false, method: "Not signed in" });
+      // It exits non-zero when signed out; a check that timed out or couldn't start says nothing either way.
+      if (e) return resolve(typeof e.code === "number" && !e.killed ? SIGNED_OUT : UNKNOWN);
       // It prints to stderr; read both, keep only the kind of login.
       const text = `${out}${err}`;
       const login = LOGINS.find(([re]) => re.test(text));

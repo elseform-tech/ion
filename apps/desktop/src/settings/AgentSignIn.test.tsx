@@ -79,4 +79,42 @@ describe("Settings → Agents: signing in and out", () => {
     expect(await screen.findByText("opencode auth login")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
   });
+
+  // Review of #35, 2026-11-23: a second click while the first was still starting started a second sign-in.
+  it("Sign in can't be clicked again while it starts", async () => {
+    let started: (v: unknown) => void = () => {};
+    const c = client(codex({ signedIn: false, signIn: { command: "codex login", inApp: true } }), {
+      "harness.login": () => new Promise((r) => (started = r)),
+    });
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const button = (await screen.findByRole("button", { name: "Sign in" })) as HTMLButtonElement;
+    fireEvent.click(button);
+    await waitFor(() => expect(button.disabled).toBe(true));
+    fireEvent.click(button);
+    expect(c.call.mock.calls.filter(([cmd]) => cmd === "harness.login")).toHaveLength(1);
+    started({ kind: "started", url: null, code: null });
+  });
+
+  it("says so plainly when ion can't tell whether an agent is signed in", async () => {
+    render(
+      <Settings client={client(codex({ signedIn: false, signInUnknown: true }))} onOpenIon={() => {}} />,
+    );
+    expect(await screen.findByText("Couldn't tell if it's signed in")).toBeTruthy();
+  });
+
+  it("reads the agents again when the window comes back (a sign-in made elsewhere shows)", async () => {
+    const c = client(codex());
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    await screen.findByRole("button", { name: "Sign out of Codex" });
+    const lists = () => c.call.mock.calls.filter(([cmd]) => cmd === "harnesses.list").length;
+    const before = lists();
+    fireEvent.focus(window);
+    await waitFor(() => expect(lists()).toBeGreaterThan(before));
+  });
+
+  it("the waiting line says what to do in few words", async () => {
+    const page = { url: "https://example.test/device", code: null };
+    render(<Settings client={client(codex({ signedIn: false, signingIn: page }))} onOpenIon={() => {}} />);
+    expect(await screen.findByText("Finish in your browser")).toBeTruthy();
+  });
 });

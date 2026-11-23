@@ -121,3 +121,14 @@ describe("loginOnlyEnv", () => {
     expect(env).toEqual({ PATH: "/bin", HOME: "/h" });
   });
 });
+
+// Review of #35, 2026-11-23: `claude auth login` may ask for a pasted code ("Paste code here if prompted"), and ion
+// runs a login with no input, so a sign-in started from ion could never finish: ion shows the command instead.
+describe("signing in and out", () => {
+  it("shows Claude Code's login as a command, and runs its logout", () => {
+    const auth = createClaudeCodeAdapter({ which: () => "/x/claude" }).auth;
+    expect(auth.login).toEqual({ command: "claude auth login" });
+    expect(auth.logout.command).toBe("claude auth logout");
+    expect(typeof auth.logout.run).toBe("function");
+  });
+});

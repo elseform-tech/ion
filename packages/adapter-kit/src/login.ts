@@ -82,7 +82,12 @@ export function startLogin(
   args: string[],
   o: { env?: NodeJS.ProcessEnv; signal: AbortSignal },
 ): LoginRun {
-  const child = spawn(bin, args, { env: o.env ?? agentEnv(), stdio: ["ignore", "pipe", "pipe"] });
+  // Its own process group, so stopping it stops what it started too (a browser helper, its local server).
+  const child = spawn(bin, args, {
+    env: o.env ?? agentEnv(),
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+  });
   let seen = "";
   let settle: (p: LoginPrompt) => void = () => {};
   const prompt = new Promise<LoginPrompt>((resolve) => {
@@ -109,10 +114,31 @@ export function startLogin(
     settle(loginPromptOf(seen));
     return ok;
   });
-  const stop = () => child.kill("SIGTERM");
+  const stop = () => stopGroup(child.pid);
   if (o.signal.aborted) stop();
   else o.signal.addEventListener("abort", stop, { once: true });
   return { prompt, done };
+}
+
+/** How long a stopped login's group has to end before it's killed. */
+const KILL_AFTER_MS = 3000;
+
+/** Sends a signal to a process group; false when none of it is left. */
+function signal(pid: number, s: NodeJS.Signals | 0): boolean {
+  try {
+    process.kill(-pid, s);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** SIGTERM to a login's whole group, then SIGKILL if any of it is still there a little later. */
+function stopGroup(pid: number | undefined): void {
+  if (!pid || !signal(pid, "SIGTERM")) return;
+  setTimeout(() => {
+    if (signal(pid, 0)) signal(pid, "SIGKILL");
+  }, KILL_AFTER_MS).unref();
 }
 
 /** Runs an agent's own logout without a shell; what it prints is never kept. Throws when it didn't succeed. */

@@ -69,4 +69,27 @@ describe("an agent's own login", () => {
       "Sign-out didn't finish",
     );
   });
+
+  // Review of #35, 2026-11-23: stopping a login stopped only the agent's own process; what it started (a browser
+  // helper, a local server) could live on. It runs in its own process group, and the whole group is stopped.
+  it("stopping a login ends what it started too", async () => {
+    const helper = `require("child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })`;
+    const body = `const c = ${helper}; process.stdout.write("https://example.test/p?pid=" + c.pid + "\\n"); setInterval(() => {}, 1000);`;
+    const stop = new AbortController();
+    const run = startLogin(process.execPath, ["-e", body], { signal: stop.signal });
+    const pid = Number(new URL((await run.prompt).url!).searchParams.get("pid"));
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(alive()).toBe(true);
+    stop.abort();
+    expect(await run.done).toBe(false);
+    for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
+    expect(alive()).toBe(false);
+  }, 10_000);
 });

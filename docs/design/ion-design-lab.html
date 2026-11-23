@@ -3793,8 +3793,9 @@ function renderHarnesses(){
     const right=(c.st==='on'
       ? `<div class="meter${c.lim||c.use>=80?' hi':''}"><span>${c.line.split(' · ').map(x=>`<span class="mp">${esc(x)}</span>`).join(' · ')}</span>${c.use!=null?`<div class="tr"><i style="width:${c.use}%"></i></div>`:''}</div>`
       : '<span></span>')+`<span class="hacts">${act}${sw}</span>`
-      +(c.ask?`<div class="hsign"><span class="g">Sign out of ${esc(n)}? This signs ${esc(n)} out on this Mac, not just in ion.</span><button class="btn" type="button" data-hno="${h}">Cancel</button><button class="btn pri" type="button" data-hyes="${h}">Sign out</button></div>`
-      : c.st==='busy'?`<div class="hsign"><i class="spin"></i><span>Finish signing in in your browser</span><span class="hpart"><button class="ib" type="button" title="Open" aria-label="Open sign-in page"><i data-lucide="external-link"></i></button><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></span><span class="hpart"><code class="hcode">FNAS-DDR6</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></span></div>`
+      +(c.err?`<div class="hsign perr">${esc(c.err)}</div>`
+      : c.ask?`<div class="hsign"><span class="g">Sign out of ${esc(n)}? This signs ${esc(n)} out on this Mac, not just in ion.</span><button class="btn" type="button" data-hno="${h}">Cancel</button><button class="btn pri" type="button" data-hyes="${h}">Sign out</button></div>`
+      : c.st==='busy'?`<div class="hsign"><i class="spin"></i><span>Finish in your browser</span><span class="hpart"><button class="ib" type="button" title="Open" aria-label="Open sign-in page"><i data-lucide="external-link"></i></button><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></span><span class="hpart"><code class="hcode">FNAS-DDR6</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></span></div>`
       : c.cmd?`<div class="hsign"><code>${esc(c.cmd)}</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>`:'');
     /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.
        c.nosb: on a computer without an OS sandbox (Plan 18 Task 12), each agent's chats run without one: "Not sandboxed".
@@ -3820,7 +3821,9 @@ document.addEventListener('click',e=>{
     Object.assign(st,{st:'busy'}); renderHarnesses();
     setTimeout(()=>{ Object.assign(st,{st:'on',how:'Signed in',use:0,line:st.line||'Signed in'}); renderHarnesses(); paintPills(); },2400);
     return; }
-  const o=e.target.closest('[data-hout]'); if(o){ HCONN[o.dataset.hout].ask=1; renderHarnesses(); return; }
+  const o=e.target.closest('[data-hout]'); if(o){ const h=o.dataset.hout, st=HCONN[h];
+    /* An agent working in chats says so first, in the row's error line (review of #35, 2026-11-23): Codex here. */
+    if(h==='codex') st.err=`${LIB[h].name} is working in 2 chats. Sign out after they finish.`; else st.ask=1; renderHarnesses(); return; }
   const y=e.target.closest('[data-hyes]'); if(y){ Object.assign(HCONN[y.dataset.hyes],{ask:0,st:'off',how:'Not signed in'}); renderHarnesses(); paintPills(); return; }
   const no=e.target.closest('[data-hno]'); if(no){ const st=HCONN[no.dataset.hno]; if(st.st==='busy') Object.assign(st,{st:'off'}); st.ask=0; renderHarnesses(); return; }
   const sl=e.target.closest('[data-islot]'); if(sl){ IONBRAIN[sl.dataset.islot]=[sl.dataset.h,sl.dataset.m]; if(!ESUP[IONBRAIN.deep[0]].includes(IONBRAIN.eff)) IONBRAIN.eff=ESUP[IONBRAIN.deep[0]].find(x=>x!=='auto')||'high'; renderIonModels(); renderByIon(); return; }

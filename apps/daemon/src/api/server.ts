@@ -33,7 +33,7 @@ import { IonServers } from "../ions/servers.js";
 import { ownServerNames, pickSource } from "./tools-picks.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
-import { type Ctx, diffOfChat, handlers, harnessInfos, useAgentsHome } from "./commands.js";
+import { type Ctx, diffOfChat, handlers, harnessInfos, stopSignIns, useAgentsHome } from "./commands.js";
 import { routed } from "./routing.js";
 import type { EffortLevel } from "@ion/schema";
 import { PromptQueue } from "../queue/index.js";
@@ -372,6 +372,8 @@ function connectionsOf(
  * to ask them (each running one with all it started).
  */
 async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
+  // A sign-in ion started never outlives it (review of #35, 2026-11-23).
+  stopSignIns();
   ctx.ions.stop();
   ctx.handoffs?.stop();
   await ctx.oauth.close();

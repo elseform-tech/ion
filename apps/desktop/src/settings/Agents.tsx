@@ -14,6 +14,7 @@ import { useAgentSignIn, useSignInsWaiting } from "./AgentSignIn.js";
 /** An agent's state, in plain words. */
 function stateOf(h: HarnessInfo): string {
   if (ready(h)) return "Signed in";
+  if (h.installed && h.signInUnknown) return "Couldn't tell if it's signed in";
   return h.installed ? "Not signed in" : "Not installed";
 }
 

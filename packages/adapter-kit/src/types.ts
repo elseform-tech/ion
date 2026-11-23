@@ -127,8 +127,11 @@ export interface Session {
   close(): Promise<void>;
 }
 
-/** Signed in or not, how, and how that sign-in bills (absent: unknown, never taken as free). */
-export type AuthStatus = { signedIn: boolean; method: string; billing?: Billing };
+/**
+ * Signed in or not, how, and how that sign-in bills (absent: unknown, never taken as free). `unknown`: its check
+ * didn't answer (timed out, couldn't start), so it isn't known to be signed out either.
+ */
+export type AuthStatus = { signedIn: boolean; method: string; billing?: Billing; unknown?: true };
 
 /** By kind: whether an agent's switch turns its own off in ion's chats. */
 type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };

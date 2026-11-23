@@ -67,34 +67,44 @@ function fakeLogin(signal: AbortSignal): LoginRun {
   return { prompt: Promise.resolve({ url: "https://example.test/fake-sign-in", code: "FAKE-0001" }), done };
 }
 
+/** Its sign-in state (in ION_FAKE_SIGNED_OUT), and its scripted login and logout. */
+function fakeAuth(): HarnessAdapter["auth"] {
+  return {
+    // ION_FAKE_BILLING: how it bills (the tour's agent paid per use).
+    status: async () => {
+      // ION_FAKE_STATUS_UNKNOWN=1: its check doesn't answer.
+      if (process.env.ION_FAKE_STATUS_UNKNOWN === "1")
+        return { signedIn: false, unknown: true as const, method: "Couldn't tell" };
+      const signedIn = !signedOut();
+      const billing = BILLINGS.find((b) => b === process.env.ION_FAKE_BILLING);
+      return { signedIn, method: signedIn ? "Fake" : "Not signed in", ...(billing ? { billing } : {}) };
+    },
+    login: {
+      command: "ion fake login",
+      // ION_FAKE_LOGIN_CLEARS=1: starting it clears the sign-in it has (as Codex's does).
+      ...(process.env.ION_FAKE_LOGIN_CLEARS === "1" ? { clears: true as const } : {}),
+      ...(process.env.ION_FAKE_LOGIN === "command" ? {} : { start: fakeLogin }),
+    },
+    logout: {
+      command: "ion fake logout",
+      run: async () => {
+        process.env.ION_FAKE_SIGNED_OUT = "1";
+      },
+    },
+  };
+}
+
 export function createFakeAdapter(opts: { delayMs?: number } = {}): HarnessAdapter {
   const delayMs = opts.delayMs ?? 5;
   return {
     id: "fake",
     detect: async () => {
       if (process.env.ION_FAKE_DETECT_FAIL) throw new Error("The fake harness didn't answer");
+      // ION_FAKE_GONE=1: its binary went away.
+      if (process.env.ION_FAKE_GONE === "1") return { installed: false };
       return { installed: true, version: "0.0.0", path: "fake" };
     },
-    auth: {
-      // ION_FAKE_BILLING: how it bills (the tour's agent paid per use).
-      status: async () => {
-        const signedIn = !signedOut();
-        const billing = BILLINGS.find((b) => b === process.env.ION_FAKE_BILLING);
-        return { signedIn, method: signedIn ? "Fake" : "Not signed in", ...(billing ? { billing } : {}) };
-      },
-      login: {
-        command: "ion fake login",
-        // ION_FAKE_LOGIN_CLEARS=1: starting it clears the sign-in it has (as Codex's does).
-        ...(process.env.ION_FAKE_LOGIN_CLEARS === "1" ? { clears: true as const } : {}),
-        ...(process.env.ION_FAKE_LOGIN === "command" ? {} : { start: fakeLogin }),
-      },
-      logout: {
-        command: "ion fake logout",
-        run: async () => {
-          process.env.ION_FAKE_SIGNED_OUT = "1";
-        },
-      },
-    },
+    auth: fakeAuth(),
     capabilities: async () => CAPABILITIES,
     // ION_FAKE_NO_HTTP=1: an agent that takes local servers only.
     mcpTransports: { http: process.env.ION_FAKE_NO_HTTP !== "1" },

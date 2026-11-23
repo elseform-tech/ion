@@ -51,6 +51,27 @@ export function signInChanged(): void {
   signIns++;
 }
 
+/** Agents ion is signing out now: no ask starts on one meanwhile (review of #35, 2026-11-23). */
+const signingOut = new Set<string>();
+
+/** Runs a sign-out with no ask starting on the agent until it's done. */
+export async function whileSigningOut<T>(id: string, f: () => Promise<T>): Promise<T> {
+  signingOut.add(id);
+  try {
+    return await f();
+  } finally {
+    signingOut.delete(id);
+  }
+}
+
+/** Asks in progress on each agent before their run is queued: a sign-out counts them as work. */
+const asks = new Map<string, number>();
+export const agentAsks = {
+  begin: (id: string): void => void asks.set(id, (asks.get(id) ?? 0) + 1),
+  end: (id: string): void => void asks.set(id, Math.max(0, (asks.get(id) ?? 0) - 1)),
+  count: (id: string): number => asks.get(id) ?? 0,
+};
+
 /**
  * Whether an agent can take a message: installed, signed in, and (when one is named) the model is one it lists.
  * Asking its CLI costs seconds, so a check that passed holds for a while.
@@ -59,6 +80,7 @@ export class Readiness {
   private readonly until = new Map<string, number>();
 
   async check(h: HarnessEntry, model?: string): Promise<void> {
+    if (signingOut.has(h.adapter.id)) throw new UserError(`${h.label} is signing out`);
     const key = `${signIns}\u0000${h.label}\u0000${model ?? ""}`;
     if ((this.until.get(key) ?? 0) > Date.now()) return;
     await ask(h, model);

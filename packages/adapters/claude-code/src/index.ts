@@ -7,7 +7,6 @@ import {
   parseVersion,
   ResumeFailed,
   runLogout,
-  startLogin,
   whichOnPath,
 } from "@ion/adapter-kit";
 import { type Exec, execNoShell, loginOnlyEnv } from "./cli.js";
@@ -84,12 +83,9 @@ function claudeAuth(exec: Exec, binary: () => string | null): HarnessAdapter["au
       const r = await exec(path, ["auth", "status", "--json"], { env: loginOnlyEnv() });
       return parseAuthStatus(r.code, r.stdout);
     },
-    // `claude auth login` opens your browser and prints the page (Claude Code 2.1.330: its --help, and one start in a
-    // throwaway config folder). Never started against your real sign-in in a check (the user, 2026-11-23).
-    login: {
-      command: "claude auth login",
-      start: (signal) => startLogin(installed(binary()), ["auth", "login"], { env: loginOnlyEnv(), signal }),
-    },
+    // `claude auth login` opens your browser, and may then ask for a code pasted into it ("Paste code here if
+    // prompted"): ion runs a login with no input, so it shows the command instead (review of #35, 2026-11-23).
+    login: { command: "claude auth login" },
     logout: {
       command: "claude auth logout",
       run: () => runLogout(installed(binary()), ["auth", "logout"], loginOnlyEnv()),

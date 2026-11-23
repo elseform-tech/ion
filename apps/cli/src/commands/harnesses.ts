@@ -1,13 +1,15 @@
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
-import { ApiCallError, type IonClient } from "@ion/client";
-import type { HarnessInfo, SignInResult, SignOutResult } from "@ion/schema";
+import { ApiCallError } from "@ion/client";
+import type { HarnessInfo, SignOutResult } from "@ion/schema";
 import { withClient } from "../connect.js";
 import { fail, type Out, print } from "../output.js";
 import { clean } from "../sanitize.js";
+import { signInLines, waitForSignIn } from "./sign-in.js";
 
 const status = (h: HarnessInfo) => {
   if (!h.installed) return "Not installed";
+  if (h.signInUnknown) return "Couldn't tell if signed in";
   return h.signedIn ? "Signed in" : "Not signed in";
 };
 
@@ -42,22 +44,6 @@ async function withYes<T>(yes: boolean, call: (confirm: boolean) => Promise<T>):
   }
 }
 
-/** Waits for a sign-in ion started to end (10 minutes at most): the agent as ion reads it then. */
-async function signedInAfter(c: IonClient, id: string): Promise<HarnessInfo | undefined> {
-  for (let i = 0; i < 300; i++) {
-    const h = (await c.call("harnesses.list", {})).find((x) => x.id === id);
-    if (!h?.signingIn) return h;
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  return undefined;
-}
-
-/** What to do with a sign-in: open its page (and confirm its code), or type its command in a terminal. */
-const signInLines = (r: SignInResult) =>
-  r.kind === "command"
-    ? `Run in a terminal: ${clean(r.command)}`
-    : [r.url && `Open: ${clean(r.url)}`, r.code && `Code: ${clean(r.code)}`].filter(Boolean).join("\n");
-
 /** After a sign-out: the command to type, or whether the agent now reads signed in. */
 function signOutLine(r: SignOutResult): string {
   if (r.kind === "command") return `Run in a terminal: ${clean(r.command)}`;
@@ -89,8 +75,16 @@ export function harnessesCommand(program: Command, out: () => Out) {
         if (!r) return;
         print(out(), signInLines(r), r);
         if (r.kind !== "started" || out().json) return;
-        const h = await signedInAfter(c, id);
-        print(out(), h ? status(h) : "Still waiting", h ?? null);
+        // Ctrl-C stops the daemon's sign-in too, not only this wait.
+        const stop = new AbortController();
+        const onInt = () => stop.abort();
+        process.once("SIGINT", onInt);
+        // ion stopped meanwhile: its sign-in stopped with it.
+        c.onClose(() => fail("ion stopped"));
+        const h = await waitForSignIn(c, id, { stop: stop.signal }).finally(() =>
+          process.off("SIGINT", onInt),
+        );
+        print(out(), h ? status(h) : "Stopped", h ?? null);
       }),
     );
   h.command("logout <id>")

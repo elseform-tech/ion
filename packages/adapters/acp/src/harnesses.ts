@@ -115,7 +115,8 @@ export const GROK_BUILD: AcpHarness = {
   // The command line outranks the user's config.toml (where permission_mode may be "always-approve").
   args: ["--permission-mode", "default", "agent", "stdio"],
   versionArgs: ["--version"],
-  loginArgs: ["login"],
+  // Asked for by name: a device page and code, whatever Grok picks by default (review of #35, 2026-11-23).
+  loginArgs: ["login", "--device-auth"],
   loginHint: "grok login",
   // Without a terminal, `grok login` gives a page and a code to confirm there, and keeps the sign-in it has until the
   // new one is done (Grok 1.0.92, tried on a copy of its folder, 2026-11-23); `grok logout` asks nothing.

@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { EV, type HarnessInfo } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHarness } from "../adapters/registry.js";
-import { Readiness } from "../runs/ready.js";
+import { agentAsks, Readiness } from "../runs/ready.js";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { asListed, type Ctx, handlers, harnessInfos } from "./commands.js";
+import { AgentSignIns } from "./harness-auth.js";
+import { startServer } from "./server.js";
 
 // Everything here runs on the fake agent's scripted sign-in and sign-out: never a real agent's (AGENTS.md).
 const ENV = [
@@ -16,6 +18,8 @@ const ENV = [
   "ION_FAKE_LOGIN",
   "ION_FAKE_LOGIN_MS",
   "ION_FAKE_LOGIN_CLEARS",
+  "ION_FAKE_STATUS_UNKNOWN",
+  "ION_FAKE_GONE",
 ];
 let saved: Record<string, string | undefined>;
 let ctx: Ctx;
@@ -151,5 +155,99 @@ describe("signing in and out of an agent", () => {
     expect(said).not.toContain("example.test");
     log.mockRestore();
     info.mockRestore();
+  });
+});
+
+/** Waits this long (the fake's sign-in ends 60 ms after it starts, unless it was stopped). */
+const after = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const signedIn = async () => (await getHarness("fake")!.adapter.auth.status()).signedIn;
+
+// Review of #35, 2026-11-23: a sign-in ion started could outlive ion (nothing stopped it when the daemon stopped, and
+// it had no time limit), two clicks could start two, an agent whose state ion couldn't read could be signed in over
+// (Codex's login deletes the sign-in it has), and a sign-out raced asks that hadn't queued their run yet.
+describe("review of #35, 2026-11-23: sign-ins ion can't lose track of", () => {
+  it("daemon stop ends a login", async () => {
+    process.env.ION_FAKE_SIGNED_OUT = "1";
+    const home = mkdtempSync(join(tmpdir(), "ion-auth-stop-"));
+    const srv = await startServer({
+      dataDir: join(home, "data"),
+      configFile: join(home, "config.toml"),
+      port: 0,
+    });
+    expect((await call("harness.login", { id: "fake" })).kind).toBe("started");
+    await srv.close();
+    expect((await fake()).signingIn).toBeUndefined();
+    await after(200);
+    expect(await signedIn()).toBe(false);
+  });
+
+  it("a login past its limit is ended", async () => {
+    process.env.ION_FAKE_SIGNED_OUT = "1";
+    process.env.ION_FAKE_LOGIN_MS = "60000";
+    const sign = new AgentSignIns({ refresh: async () => {}, limitMs: 50 });
+    expect((await sign.login("fake", false)).kind).toBe("started");
+    expect(sign.pageOf("fake").signingIn).toBeTruthy();
+    await after(150);
+    expect(sign.pageOf("fake")).toEqual({});
+  });
+
+  it("two clicks start one sign-in, and Cancel stops one still starting", async () => {
+    process.env.ION_FAKE_SIGNED_OUT = "1";
+    process.env.ION_FAKE_LOGIN_MS = "100";
+    const sign = new AgentSignIns({ refresh: async () => {} });
+    const [a, b] = await Promise.all([sign.login("fake", false), sign.login("fake", false)]);
+    expect(a).toEqual(b);
+    sign.cancel("fake");
+    await after(300);
+    // A second sign-in nobody was shown would have signed the fake in by now.
+    expect(await signedIn()).toBe(false);
+    const starting = sign.login("fake", false);
+    sign.cancel("fake");
+    await starting.catch(() => {});
+    await after(300);
+    expect(await signedIn()).toBe(false);
+    expect(sign.pageOf("fake")).toEqual({});
+  });
+
+  it("an agent ion can't read isn't signed in over when its login clears the sign-in it has", async () => {
+    process.env.ION_FAKE_STATUS_UNKNOWN = "1";
+    process.env.ION_FAKE_LOGIN_CLEARS = "1";
+    await harnessInfos.refresh("fake");
+    expect(await fake()).toMatchObject({ signedIn: false, signInUnknown: true });
+    await expect(call("harness.login", { id: "fake", confirm: true })).rejects.toThrow(
+      "Couldn't tell whether Fake is signed in",
+    );
+  });
+
+  it("asks first only when it can sign out: a busy agent says so before the question", async () => {
+    store.append({
+      chatId: "c1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runQueued,
+      data: { harness: "fake" },
+    });
+    await expect(call("harness.logout", { id: "fake" })).rejects.toThrow(
+      "Fake is working in a chat. Sign out after they finish.",
+    );
+  });
+
+  it("an ask still starting counts as working, and no ask starts while the agent signs out", async () => {
+    agentAsks.begin("fake");
+    await expect(call("harness.logout", { id: "fake", confirm: true })).rejects.toThrow(
+      "Fake is working in a chat",
+    );
+    agentAsks.end("fake");
+    const ready = new Readiness();
+    const out = call("harness.logout", { id: "fake", confirm: true });
+    await expect(ready.check(getHarness("fake")!)).rejects.toThrow("Fake is signing out");
+    await out;
+  });
+
+  it("an agent that's gone says it isn't installed", async () => {
+    process.env.ION_FAKE_GONE = "1";
+    await expect(call("harness.logout", { id: "fake", confirm: true })).rejects.toThrow(
+      "Fake isn't installed",
+    );
   });
 });

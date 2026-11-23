@@ -10,7 +10,7 @@ import {
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
-import { type Chat, chatCreated, chatFor, Readiness } from "./ready.js";
+import { agentAsks, type Chat, chatCreated, chatFor, Readiness } from "./ready.js";
 import { UserError } from "../api/errors.js";
 import { ionDirsOf } from "../access/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -133,6 +133,8 @@ export class RunManager {
     const key = chat.chatId;
     if (key && this.busy(key)) throw new UserError("This chat is already running");
     if (key) this.reserved.add(key);
+    // Counted until its run is queued: a sign-out of this agent waits for it (review of #35, 2026-11-23).
+    agentAsks.begin(h.adapter.id);
     let launch: Launch;
     try {
       await this.ready.check(h, args.model);
@@ -144,6 +146,7 @@ export class RunManager {
       this.go(launch, !!how.ions);
     } finally {
       if (key) this.reserved.delete(key);
+      agentAsks.end(h.adapter.id);
     }
     return { chatId: launch.chatId, runId: launch.runId };
   }

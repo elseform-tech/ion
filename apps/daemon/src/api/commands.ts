@@ -332,6 +332,9 @@ export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs
 /** Sign-ins ion started, and each agent read again once one ends or it signs out. */
 const signIns = new AgentSignIns({ refresh: (id) => harnessInfos.refresh(id) });
 
+/** ion is stopping: every sign-in it started is stopped (review of #35, 2026-11-23). */
+export const stopSignIns = (): void => signIns.stopAll();
+
 /** An agent as the app lists it: how often its judge missed, and the sign-in ion is waiting on. */
 export const asListed = (h: HarnessInfo): HarnessInfo => ({
   ...h,
@@ -385,6 +388,7 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     ...(notSandboxed(h.adapter.sandbox, machineSandbox()) ? { notSandboxed: true as const } : {}),
     ...ownRulesOf(id),
     ...billingOf(auth),
+    ...(auth?.unknown ? { signInUnknown: true as const } : {}),
     ...signInOf(h.adapter.auth),
   };
 }

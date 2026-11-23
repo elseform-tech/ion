@@ -10,6 +10,8 @@ export type HarnessInfo = {
   label: string;
   installed: boolean;
   signedIn: boolean;
+  /** Its sign-in check didn't answer: not known to be signed in or out. */
+  signInUnknown?: true;
   /** From the harness itself when it's signed in; empty otherwise. */
   models: { id: string; label: string }[];
   defaultModel: string | null;

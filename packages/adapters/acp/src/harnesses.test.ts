@@ -591,3 +591,12 @@ describe("billing comes from the sign-in", () => {
     expect(await opencodeModelsBilling([], ask)).toBeUndefined();
   });
 });
+
+// Review of #35, 2026-11-23: Grok's login picks a device code without a terminal; ion asks for it by name, so a
+// change of Grok's default can't open a browser-only flow ion has no page for.
+describe("Grok's sign-in", () => {
+  it("asks for a device code", () => {
+    expect(GROK_BUILD.loginArgs).toEqual(["login", "--device-auth"]);
+    expect(GROK_BUILD.loginHint).toBe("grok login");
+  });
+});

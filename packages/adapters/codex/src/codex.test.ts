@@ -71,6 +71,13 @@ describe("codex adapter", () => {
     await expect(turn("hello")).rejects.toThrow("Codex isn't signed in. Run: codex login");
   });
 
+  // Review of #35, 2026-11-23: a status check that timed out or couldn't start read as signed out, and Codex's login
+  // (which deletes the sign-in it has) could then be started over a sign-in ion just couldn't see.
+  it("a status check that can't run is unknown, not signed out", async () => {
+    const gone = createCodexAdapter({ which: () => "/nonexistent/codex" });
+    expect(await gone.auth.status()).toEqual({ signedIn: false, unknown: true, method: "Couldn't tell" });
+  });
+
   it("streams text and thinking, reports the model and tokens, and never the account", async () => {
     const events = await turn("hello");
     expect(events[0]).toEqual({
