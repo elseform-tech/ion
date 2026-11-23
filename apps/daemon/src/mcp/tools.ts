@@ -61,7 +61,9 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
     },
     guard(({ chatId, limit }: { chatId?: string; limit?: number }) => {
       const id = chatId ?? scope.chatId;
-      if (chatsView.list(d.db).find((c) => c.chatId === id)?.projectId !== scope.projectId)
+      const chat = chatsView.list(d.db).find((c) => c.chatId === id);
+      // A chat you said not to remember is read by its own runs only (review of #34, 2026-11-23).
+      if (chat?.projectId !== scope.projectId || (chat.notRemembered && id !== scope.chatId))
         throw new UserError("Not allowed");
       return historyData(d.db, id, limit ?? 200);
     }),
@@ -79,7 +81,13 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
         query,
         Math.min(limit ?? SEARCH_MAX, SEARCH_MAX),
       );
-      return searchData(hits);
+      const hidden = new Set(
+        chatsView
+          .list(d.db)
+          .filter((c) => c.notRemembered && c.chatId !== scope.chatId)
+          .map((c) => c.chatId),
+      );
+      return searchData(hits.filter((h) => !hidden.has(h.chatId)));
     }),
   );
   server.registerTool(

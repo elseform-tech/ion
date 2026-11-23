@@ -152,6 +152,24 @@ describe("ion's MCP server", () => {
     await c.close();
   });
 
+  // Review of #34, 2026-11-23: another chat's agent in the project read a "Don't remember" chat in full through
+  // search_chats and chat_history. It's left out for them; its own run still reads it.
+  it("another chat can't read a chat you don't remember", async () => {
+    put({ chatId: "c3", runId: null, type: "chat.created", data: { title: "Private", projectId: "app" } });
+    put({ chatId: "c3", runId: null, type: "chat.memory", data: { on: false } });
+    put({ chatId: "c3", runId: "r5", type: "message.sent", data: { text: "kiwi vault code MAGPIE" } });
+    const c = await client();
+    const found = text(await c.callTool({ name: "search_chats", arguments: { query: "kiwi" } }));
+    expect([found.includes("Remember the word kiwi"), found.includes("MAGPIE")]).toEqual([true, false]);
+    expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c3" } })).toMatchObject({
+      isError: true,
+    });
+    await c.close();
+    const own = await client(grants.create({ kind: "run", projectId: "app", chatId: "c3", runId: "r6" }));
+    expect(text(await own.callTool({ name: "chat_history", arguments: {} }))).toContain("MAGPIE");
+    await own.close();
+  });
+
   // Review of #34, 2026-11-23: with your own memory off, memory_write still offered "you" as a scope.
   it("offers no scope of yours when your memory is off", async () => {
     const k = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r4", memory: "project" });
