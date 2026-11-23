@@ -4,7 +4,8 @@
 // hello | approve | command | mcp | ask | slow | fail | crash | whoami.
 // FAKE_CODEX_SIGNED_OUT=1: signed out. FAKE_CODEX_UNTRUSTED=1: never trusts a hook. FAKE_CODEX_LOG: argv log.
 // FAKE_CODEX_OWN_MCP: your own servers (JSON, as config/read shows them). FAKE_CODEX_OWN_HOOK=1: a hook of your own,
-// on unless a hooks.state override turns its key off.
+// on unless a hooks.state override turns its key off. FAKE_CODEX_CONFIG_MODEL: the model your config.toml names
+// (Codex uses it when a thread names none; one the sign-in can't use fails the turn as the real one does).
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -285,6 +286,18 @@ const SCRIPTS = {
     end("failed", error);
   },
   crash: () => process.exit(3),
+  /** The turn the real Codex 0.153.2 fails on a ChatGPT sign-in when the model isn't its (live, 2026-11-23). */
+  async modelgone() {
+    const detail = `The '${threadModel}' model is not supported when using Codex with a ChatGPT account.`;
+    const body = { type: "invalid_request_error", message: detail, code: "model_not_found" };
+    const error = {
+      message: JSON.stringify({ type: "error", status: 400, error: body }),
+      codexErrorInfo: "other",
+      additionalDetails: null,
+    };
+    notify("error", { ...T, error, willRetry: false });
+    end("failed", error);
+  },
   async whoami() {
     const turn = { ...turnParams, input: undefined };
     const env = { gate: process.env.ION_GATE_URL ?? null, chat: process.env.ION_CHAT ?? null };
@@ -305,10 +318,13 @@ const MODELS = [
   { id: "fake-hidden", model: "fake-hidden", displayName: "Hidden", hidden: true, isDefault: false },
 ];
 
-const threadOf = (id, p) => ({
-  thread: { id, cwd: p.cwd ?? null, turns: [] },
-  model: p.model ?? "fake-codex-1",
-});
+const configModel = process.env.FAKE_CODEX_CONFIG_MODEL || null;
+/** The thread's model: the one asked for, else your config's, else Codex's default. */
+let threadModel = "fake-codex-1";
+const threadOf = (id, p) => {
+  threadModel = p.model ?? configModel ?? "fake-codex-1";
+  return { thread: { id, cwd: p.cwd ?? null, turns: [] }, model: threadModel };
+};
 
 // Codex's rate-limit windows (account/rateLimits/read, codex-cli 0.153.2): unix seconds, minutes.
 let full = false;
@@ -352,10 +368,11 @@ const METHODS = {
   "config/read": () => {
     if (process.env.FAKE_CODEX_NO_CONFIG_READ === "1")
       throw { code: -32601, message: "unknown method config/read" };
-    return { config: { mcp_servers: JSON.parse(process.env.FAKE_CODEX_OWN_MCP ?? "{}") } };
+    const servers = JSON.parse(process.env.FAKE_CODEX_OWN_MCP ?? "{}");
+    return { config: { mcp_servers: servers, ...(configModel ? { model: configModel } : {}) } };
   },
   "hooks/list": (p) => ({ data: [{ cwd: p.cwds?.[0] ?? "", hooks: hooks(), warnings: [], errors: [] }] }),
-  "model/list": () => ({ data: MODELS, nextCursor: null }),
+  "model/list": (p) => ({ data: MODELS.filter((m) => p.includeHidden || !m.hidden), nextCursor: null }),
   "thread/start": (p) => {
     thread = p;
     return threadOf("thread-1", p);

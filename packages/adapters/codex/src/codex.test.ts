@@ -164,6 +164,46 @@ describe("codex adapter", () => {
     expect(caps).toMatchObject({ defaultModel: "fake-codex-1", modelsLive: true, approvals: "interactive" });
   });
 
+  // Plan 20 builder, 2026-11-22: a chat on Codex with no model picked failed with model_not_found. Codex uses your
+  // config.toml's model when a thread names none (gpt-6.1-sol there), and a ChatGPT sign-in can't use it; model/list
+  // (the account's models) had another default. ion sends the account's default instead, and keeps your config's
+  // pick when the account can use it.
+  describe("the model a thread gets", () => {
+    afterEach(() => delete process.env.FAKE_CODEX_CONFIG_MODEL);
+
+    it("no pick, and your config names a model this sign-in can't use: the account's default", async () => {
+      process.env.FAKE_CODEX_CONFIG_MODEL = "gpt-gone";
+      const events = await turn("hello");
+      expect(events[0]?.data).toMatchObject({ model: "fake-codex-1" });
+      expect(said(events)).toBe("Hi there");
+      expect((await make().capabilities()).defaultModel).toBe("fake-codex-1");
+    });
+
+    it("no pick, and your config's model is one it can use: Codex's own pick, shown as the default", async () => {
+      process.env.FAKE_CODEX_CONFIG_MODEL = "fake-codex-mini";
+      const { thread } = await whoami();
+      expect(thread).not.toHaveProperty("model");
+      expect((await make().capabilities()).defaultModel).toBe("fake-codex-mini");
+    });
+
+    it("a pick this sign-in can't use is refused before a turn, in plain words", async () => {
+      await expect(turn("hello", { model: "gpt-gone" })).rejects.toThrow(
+        "Codex can't use gpt-gone with this sign-in",
+      );
+    });
+
+    it("model_not_found is a real failure with a plain reason, never retried with more effort", async () => {
+      const events = await turn("modelgone");
+      expect(events.filter((e) => e.type === "error").map((e) => e.data)).toEqual([
+        {
+          code: "model_not_found",
+          retryable: false,
+          message: "Codex can't use fake-codex-1 with this sign-in",
+        },
+      ]);
+    });
+  });
+
   // Codex must ask ion before every tool, whatever your own Codex config says, and nobody can answer its own UI.
   it("opens threads that ask before tools, routed to ion, with ion's instructions, model and effort", async () => {
     const {
