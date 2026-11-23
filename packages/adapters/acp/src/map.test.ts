@@ -1,7 +1,11 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createAcpState, mapUpdate } from "./map.js";
 
-const s = () => createAcpState(["/repo"]);
+// The files under /repo are there already (made-up paths: nothing is read).
+const s = () => createAcpState(["/repo"], () => true);
 
 describe("mapUpdate", () => {
   it("message and thought chunks", () => {
@@ -305,5 +309,28 @@ describe("a tool of no known kind", () => {
       name: "ion__search_chats",
       summary: "login",
     });
+  });
+
+  // The controller's end-to-end check, 2026-11-23: opencode's new hello.txt showed as a modified file. A file that
+  // wasn't there when the step began is added.
+  it("says a file the step made is added, one already there is modified", () => {
+    const root = mkdtempSync(join(tmpdir(), "ion-acp-map-"));
+    writeFileSync(join(root, "old.md"), "old\n");
+    const st = createAcpState([root]);
+    const step = (id: string, file: string) => {
+      mapUpdate({ sessionUpdate: "tool_call", toolCallId: id, title: "write", kind: "edit" }, st);
+      const at = [{ path: join(root, file) }];
+      mapUpdate({ sessionUpdate: "tool_call_update", toolCallId: id, status: "in_progress", locations: at }, st);
+    };
+    step("a", "new.md");
+    step("b", "old.md");
+    writeFileSync(join(root, "new.md"), "new\n");
+    writeFileSync(join(root, "old.md"), "changed\n");
+    const done = (id: string) =>
+      mapUpdate({ sessionUpdate: "tool_call_update", toolCallId: id, status: "completed" }, st).find(
+        (e) => e.type === "file.changed",
+      )?.data;
+    expect(done("a")).toEqual({ path: "new.md", change: "add", added: null, removed: null });
+    expect(done("b")).toEqual({ path: "old.md", change: "modify", added: null, removed: null });
   });
 });

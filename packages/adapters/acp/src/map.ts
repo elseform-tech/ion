@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { isAbsolute, relative } from "node:path";
 import { type AdapterEvent, blocksText, TOOL_INPUT_MAX, TOOL_OUTPUT_MAX, toolText } from "@ion/adapter-kit";
 import { EV, stripControl, type ToolKind } from "@ion/schema";
@@ -11,13 +12,32 @@ type Json = Record<string, unknown>;
 type ToolInfo = {
   kind: string;
   locations: string[];
+  /** Its files that weren't there when ion first heard of them (an edit there adds the file). */
+  absent?: Set<string>;
   input?: string;
   inputSent?: boolean;
   command?: string;
   commandSent?: boolean;
 };
-export type AcpState = { roots: string[]; costUsd: number | null; tools: Map<string, ToolInfo> };
-export const createAcpState = (roots: string[]): AcpState => ({ roots, costUsd: null, tools: new Map() });
+/** `exists`: whether a file is there (an edited file that wasn't, before its step ran, is added). */
+export type AcpState = {
+  roots: string[];
+  costUsd: number | null;
+  tools: Map<string, ToolInfo>;
+  exists: (path: string) => boolean;
+};
+export const createAcpState = (roots: string[], exists: (path: string) => boolean = existsSync): AcpState => ({
+  ...{ roots, costUsd: null, tools: new Map() },
+  exists,
+});
+
+/** The files not there yet, as ion first hears of a step's files (before it ran, for agents that say so then). */
+function noteAbsent(t: ToolInfo, locs: string[], s: AcpState): void {
+  for (const p of locs) {
+    if (t.locations.includes(p) || t.absent?.has(p) || s.exists(p)) continue;
+    (t.absent ??= new Set()).add(p);
+  }
+}
 
 const locationsOf = (u: Json): string[] =>
   (Array.isArray(u.locations) ? u.locations : [])
@@ -30,6 +50,8 @@ function remember(u: Json, s: AcpState, toolId: string): ToolInfo | undefined {
   if (!t) return undefined;
   if (typeof u.kind === "string") t.kind = u.kind;
   const locs = locationsOf(u);
+  // Heard of only once completed, a file is there already: it stays "modify" (nothing tells it was new).
+  if (locs.length && u.status !== "completed") noteAbsent(t, locs, s);
   if (locs.length) t.locations = locs;
   const input = toolText(u.rawInput, TOOL_INPUT_MAX);
   if (input && !t.inputSent) t.input = input;
@@ -111,10 +133,10 @@ function toolUpdate(u: Json, s: AcpState): AdapterEvent[] {
   if (!ok) return out;
   const diffs = diffChanges(u, s);
   if (diffs.length || acpToolKind(tool.kind) !== "edit") return [...out, ...diffs];
-  // No diff (e.g. opencode): the edited files are the tool's locations.
+  // No diff (e.g. opencode): the edited files are the tool's locations; one that wasn't there before is added.
   const fromLocations: AdapterEvent[] = tool.locations.map((p) => ({
     type: EV.fileChanged,
-    data: { path: shorten(p, s.roots), change: "modify", added: null, removed: null },
+    data: { path: shorten(p, s.roots), change: tool.absent?.has(p) ? "add" : "modify", added: null, removed: null },
   }));
   return [...out, ...fromLocations];
 }
@@ -124,8 +146,10 @@ function toolCall(u: Json, s: AcpState): AdapterEvent {
   const toolId = String(u.toolCallId);
   const input = toolText(u.rawInput, TOOL_INPUT_MAX);
   const command = acpToolKind(u.kind) === "command" ? commandOf(u) : "";
+  const info: ToolInfo = { kind: String(u.kind ?? "other"), locations: [] };
+  noteAbsent(info, locationsOf(u), s);
   s.tools.set(toolId, {
-    kind: String(u.kind ?? "other"),
+    ...info,
     locations: locationsOf(u),
     inputSent: Boolean(input),
     commandSent: Boolean(command),
