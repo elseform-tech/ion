@@ -18,7 +18,8 @@ const config = (routing: Partial<UserConfig["routing"]>, more: Partial<UserConfi
 /** A database with ion's views (the store makes them). */
 const db = () => {
   const d = openDb(":memory:");
-  return new EventStore(d, allViews) && d;
+  new EventStore(d, allViews).rebuildViews();
+  return d;
 };
 
 /** Past chats in `default` on opencode, each a short change that took `tokens` in all. */

@@ -14,7 +14,8 @@ import { allLimited, ionBrain } from "./brain.js";
 /** A database with ion's views (the usage view marks limited agents). */
 const viewsDb = () => {
   const db = openDb(":memory:");
-  return new EventStore(db, allViews) && db;
+  new EventStore(db, allViews).rebuildViews();
+  return db;
 };
 
 describe("an ion's agent", () => {
