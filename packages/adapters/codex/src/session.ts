@@ -12,7 +12,7 @@ import {
   type StartOpts,
 } from "@ion/adapter-kit";
 import { EV, type UsageWindow } from "@ion/schema";
-import { type Connection, effortOf, SIGNED_OUT } from "./connection.js";
+import { cantUse, type Connection, effortOf, SIGNED_OUT } from "./connection.js";
 import { unwrapShell } from "./gate.js";
 import { type CodexState, createCodexState, mapNotification, type TurnError, windowsOf } from "./map.js";
 
@@ -36,12 +36,20 @@ function limitOf(windows: UsageWindow[] | null): { resetsAt?: string } {
   return full.length ? { resetsAt: full.sort().at(-1)! } : {};
 }
 
+/** Codex 0.153.2 on a ChatGPT sign-in, live: "The 'x' model is not supported…", code model_not_found. */
+const MODEL_GONE = /model_not_found|model is not supported/;
+
 /**
  * Codex's error kinds: a rate limit or a dropped connection is worth retrying; a used-up plan isn't, and is its
- * limit (until the full window resets).
+ * limit (until the full window resets); a model the sign-in can't use is a plain failure (Plan 20 builder,
+ * 2026-11-22: it was retried at another effort).
  */
-function failureOf(e: TurnError | null, windows: UsageWindow[] | null = null): Failure {
+function failureOf(e: TurnError | null, windows: UsageWindow[] | null, model: string): Failure {
   const message = e?.message || "Codex failed";
+  if (MODEL_GONE.test(message)) {
+    const named = /The '([^']+)' model/.exec(message)?.[1] ?? model;
+    return { code: "model_not_found", retryable: false, message: cantUse(named) };
+  }
   const info = e?.codexErrorInfo;
   const kind = typeof info === "string" ? info : Object.keys((info ?? {}) as object)[0];
   if (kind === "rateLimitExceeded" || kind === "serverOverloaded")
@@ -258,7 +266,7 @@ function watch(r: Run): void {
     r.ending = () => {
       if (turn.status === "completed") return r.finish("done");
       if (turn.status === "interrupted") return r.finish("interrupted");
-      r.finish("failed", failureOf(turn.error ?? state.error, state.windows));
+      r.finish("failed", failureOf(turn.error ?? state.error, state.windows, c.model));
     };
     void readWindows(r).then(() => r.ending?.());
   });

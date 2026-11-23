@@ -221,21 +221,65 @@ function mcpConfig(servers: StartOpts["mcpServers"] = [], own: string[] = []): R
   return { mcp_servers: Object.fromEntries([...servers.map((s) => [s.name, of(s)]), ...off]) };
 }
 
+type CodexConfig = { mcp_servers?: unknown; model?: unknown };
+
+/** Codex's own config for this folder (its config.toml, a project's); null when it can't say. */
+async function readConfig(rpc: Rpc, cwd: string | undefined): Promise<CodexConfig | null> {
+  const r = (await rpc.request("config/read", cwd ? { cwd } : {}).catch(() => null)) as {
+    config?: CodexConfig;
+  } | null;
+  return r ? (r.config ?? {}) : null;
+}
+
 /**
  * The servers Codex would load itself for this folder (its config.toml, a project's). Codex has no switch that turns
  * them all off, so when it can't say (config/read fails), a chat doesn't start (task review, 2026-11-21: it quietly
  * ran with your own servers); ion's judge (bare, read-only) goes on with none named.
  */
-async function ownServers(rpc: Rpc, opts: StartOpts): Promise<string[]> {
+function ownServers(config: CodexConfig | null, opts: StartOpts): string[] {
   // Codex brings its own: none turned off, nothing to read.
   if (opts.ownTools) return [];
-  const { cwd, bare } = opts;
-  const r = (await rpc.request("config/read", { cwd }).catch(() => null)) as {
-    config?: { mcp_servers?: unknown };
-  } | null;
-  if (!r && !bare) throw new Error("ion couldn't turn off Codex's own servers");
-  const servers = r?.config?.mcp_servers;
+  if (!config && !opts.bare) throw new Error("ion couldn't turn off Codex's own servers");
+  const servers = config?.mcp_servers;
   return servers && typeof servers === "object" ? Object.keys(servers) : [];
+}
+
+// ---- models: only those this sign-in can use ---------------------------------------------------------------
+
+type Listed = { id: string; displayName?: unknown; hidden?: unknown; isDefault?: unknown };
+
+export const cantUse = (model: string) => `Codex can't use ${model} with this sign-in`;
+
+/** The models this sign-in can use (`model/list` answers per account; hidden ones too, they work). */
+async function listModels(rpc: Rpc): Promise<Listed[]> {
+  const r = (await rpc.request("model/list", { includeHidden: true, limit: 100 })) as {
+    data?: { id?: unknown }[];
+  };
+  return (r.data ?? []).filter((m): m is Listed => typeof m.id === "string");
+}
+
+const listedHas = (listed: Listed[], model: unknown) => listed.some((m) => m.id === model);
+
+/** What Codex uses with no model named: your config's when this sign-in can use it, else the one it marks default. */
+function defaultOf(listed: Listed[], config: CodexConfig | null): string | null {
+  if (listedHas(listed, config?.model)) return String(config!.model);
+  return listed.find((m) => m.isDefault === true)?.id ?? null;
+}
+
+/**
+ * The model a thread is opened with; undefined leaves it to Codex. Plan 20 builder, 2026-11-22: with none named,
+ * Codex took your config.toml's model, which a ChatGPT sign-in couldn't use (model_not_found); ion names the
+ * account's default then. A pick it can't use is refused before any turn. When Codex can't list, as asked.
+ */
+async function modelFor(rpc: Rpc, opts: StartOpts, config: CodexConfig | null): Promise<string | undefined> {
+  const listed = await listModels(rpc).catch(() => null);
+  if (!listed?.length) return opts.model ?? undefined;
+  if (opts.model) {
+    if (!listedHas(listed, opts.model)) throw new Error(cantUse(opts.model));
+    return opts.model;
+  }
+  if (config?.model === undefined || listedHas(listed, config.model)) return undefined;
+  return defaultOf(listed, config) ?? undefined;
 }
 
 /**
@@ -269,7 +313,9 @@ function threadParams(opts: StartOpts, own: string[]): Record<string, unknown> {
 const sandboxedRun = (opts: StartOpts) => !opts.bare && !!opts.sandbox && opts.sandbox.kind !== "none";
 
 async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string; model: string }> {
-  const params = threadParams(opts, await ownServers(rpc, opts));
+  const config = await readConfig(rpc, opts.cwd);
+  const model = await modelFor(rpc, opts, config);
+  const params = threadParams({ ...opts, model: model ?? null }, ownServers(config, opts));
   let r: { thread?: { id?: unknown }; model?: unknown };
   try {
     r = (await (opts.resume
@@ -282,7 +328,7 @@ async function openThread(rpc: Rpc, opts: StartOpts): Promise<{ threadId: string
   }
   return {
     threadId: String(r.thread?.id),
-    model: typeof r.model === "string" ? r.model : (opts.model ?? "default"),
+    model: typeof r.model === "string" ? r.model : (model ?? "default"),
   };
 }
 
@@ -303,19 +349,20 @@ export async function connect(l0: Launch, opts: StartOpts): Promise<Connection> 
   });
 }
 
-/** Codex's models (`model/list`, hidden ones left out), from an app-server started without a thread. */
+/**
+ * Codex's models for this sign-in (`model/list`, hidden ones left out), from an app-server started without a thread;
+ * the default is the one a chat with no pick gets (modelFor).
+ */
 export async function probeModels(l: Launch): Promise<Catalog> {
   const io = spawnAppServer(l, [], {});
   try {
     return await within(l, io, async () => {
       await initialize(io.rpc);
-      const r = (await io.rpc.request("model/list", { includeHidden: false, limit: 100 })) as {
-        data?: { id?: unknown; displayName?: unknown; hidden?: unknown; isDefault?: unknown }[];
-      };
-      const shown = (r.data ?? []).filter((m) => typeof m.id === "string" && m.hidden !== true);
-      const models = shown.map((m) => ({ id: String(m.id), label: String(m.displayName ?? m.id) }));
-      const def = shown.find((m) => m.isDefault === true);
-      return { models, defaultModel: def ? String(def.id) : null };
+      const listed = await listModels(io.rpc);
+      const shown = listed.filter((m) => m.hidden !== true);
+      const models = shown.map((m) => ({ id: m.id, label: String(m.displayName ?? m.id) }));
+      const def = defaultOf(listed, await readConfig(io.rpc, undefined));
+      return { models, defaultModel: def && listedHas(shown, def) ? def : null };
     });
   } finally {
     io.child.kill();

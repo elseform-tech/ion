@@ -116,6 +116,19 @@ Types: `codex app-server generate-ts --out <dir>`.
 | Stream | `item/started`, `item/completed` (`agentMessage`, `reasoning`, `commandExecution`, `fileChange`, `mcpToolCall`, `webSearch` …), `item/agentMessage/delta`, `item/reasoning/summaryTextDelta`, `thread/tokenUsage/updated { tokenUsage: { last, total } }`, `error { error, willRetry }` | A command item's `command` is `/bin/zsh -lc '<command>'`; `aggregatedOutput`, `exitCode`. A file change has `changes[{ path, kind, diff }]`. |
 | Approvals | `item/commandExecution/requestApproval` → `{ decision: accept \| acceptForSession \| decline \| cancel }`; `item/fileChange/requestApproval` (same; the files are in the item that started just before); an MCP tool: `mcpServer/elicitation/request` with `_meta.codex_approval_kind: "mcp_tool_call"` → `{ action: accept \| decline, content: null, _meta: null }` | With `approvalPolicy: "untrusted"` every command asked, even `cat`, and every edit; `approvalsReviewer: "user"` sends them to ion, not Codex's auto-reviewer. |
 
+**Which model a thread gets (checked 2026-11-23, codex-cli 0.153.2, a ChatGPT Plus sign-in).** `model/list`
+answers per account: here `gpt-6-astra` (`isDefault`), `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, and with
+`includeHidden: true` also `gpt-reserve` and `codex-auto-review`. A thread that names no model doesn't get that
+default: it gets your `config.toml`'s `model` (`config/read` → `config.model`; here `gpt-6.1-sol`, not in the list).
+`thread/start` then answers `model: "gpt-6.1-sol"`, and the first turn fails with an `error` notification and a
+failed `turn/completed` whose message is the API's JSON: `"The 'gpt-6.1-sol' model is not supported when using Codex
+with a ChatGPT account."`, `code: "model_not_found"`, `codexErrorInfo: "other"` (so nothing in Codex's own kinds
+says it). An API-key sign-in wasn't checked (none here). So ion checks every start against `model/list` (hidden ones
+included): a pick the sign-in can't use is refused before any turn ("Codex can't use <model> with this sign-in");
+with no pick, your config's model is left to Codex when the account lists it, else ion names the listed default;
+the picker's default is the one a no-pick chat gets. A `model_not_found` that still comes back is a plain failure
+(code `model_not_found`), never retried at another effort.
+
 **MCP.** `thread/start`'s `config.mcp_servers.ion = { url, http_headers: { Authorization: "Bearer …" } }` works
 (the header reached the server). It goes over stdin, so the key never shows in `ps`. MCP tools show as
 `mcp__<server>__<tool>`; your own Codex MCP servers load too.
