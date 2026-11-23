@@ -60,7 +60,8 @@ function pickLimit(
   usage: Usage,
   o: { said: { resetsAt?: string }; now: Date },
 ): Limit {
-  const until = (h: string) => usage[h]?.limitedUntil ?? null;
+  // The reset `from` said wins when its mark is gone (another session on it ended well meanwhile: tour, 2026-11-23).
+  const until = (h: string) => usage[h]?.limitedUntil ?? (h === from ? (o.said.resetsAt ?? null) : null);
   const others = ready.filter((h) => h !== from);
   const free = others.filter((h) => !until(h));
   const to = free[0] ?? others.find((h) => usage[h]?.limitGuessed) ?? null;

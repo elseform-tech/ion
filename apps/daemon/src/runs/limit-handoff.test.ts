@@ -109,6 +109,19 @@ const lines = (chatId: string) =>
   store.read({ chatId, types: [EV.chatHandoff] }).map((e) => (e.data as { text: string }).text);
 
 describe("Handoffs", () => {
+  // Tour, 2026-11-23: another session on the agent ended well right after the limit (the judge's), clearing its mark;
+  // the question said "resets 16:50" but Wait said "ion goes on at 16:20" (ion's 30-minute guess). The reset the agent
+  // said wins over a guess.
+  it("Wait goes on at the reset the agent said, even when its mark was cleared meanwhile", async () => {
+    const resetsAt = inAnHour();
+    hitLimit("c1", "claude-code", resetsAt);
+    const done = { status: "done", harness: "claude-code", startedAt: new Date().toISOString() };
+    add({ chatId: null, runId: null, origin: "adapter", type: EV.runFinished, data: done });
+    const n = await until(() => needs.open("c1")[0]);
+    const wait = n.choices?.find((c) => c.label === "Wait");
+    expect(wait?.consequence).toBe(`ion goes on at ${clock(resetsAt)}.`);
+  });
+
   // The user, 2026-11-21: "figuring out a thread have reached rate limit and figuring a way to perform task handoff";
   // you decide by default: Continue / Wait / Always continue on <Other> here.
   it("a limit asks Continue or Wait", async () => {
