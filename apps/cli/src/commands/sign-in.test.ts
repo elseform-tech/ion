@@ -67,4 +67,14 @@ describe("review of #35, 2026-11-23: ion harnesses login", () => {
     expect(Date.now() - started).toBeLessThan(5000);
     expect(call).toHaveBeenCalledWith("harness.cancelLogin", { id: "fake" });
   }, 10_000);
+
+  // Coordinator's run, 2026-11-23 (review of #35): an agent the list doesn't show (the fake agent outside debug mode)
+  // printed "Stopped" at once and left the daemon's sign-in running.
+  it("an agent the list doesn't show is an error, and its sign-in is stopped", async () => {
+    const call = vi.fn(async (cmd: string) => (cmd === "harnesses.list" ? [] : { ok: true }));
+    await expect(
+      waitForSignIn({ call } as never, "fake", { stop: new AbortController().signal, everyMs: 1 }),
+    ).rejects.toThrow("Unknown agent: fake");
+    expect(call).toHaveBeenCalledWith("harness.cancelLogin", { id: "fake" });
+  });
 });

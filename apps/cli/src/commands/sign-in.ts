@@ -1,4 +1,4 @@
-import type { IonClient } from "@ion/client";
+import { ApiCallError, type IonClient } from "@ion/client";
 import type { HarnessInfo, SignInResult } from "@ion/schema";
 import { clean } from "../sanitize.js";
 
@@ -23,10 +23,16 @@ export async function waitForSignIn(
   id: string,
   o: { stop: AbortSignal; polls?: number; everyMs?: number },
 ): Promise<HarnessInfo | undefined> {
-  const read = async () => (await c.call("harnesses.list", {})).find((x) => x.id === id);
+  // An agent the list doesn't show (the fake one outside debug mode): its sign-in is stopped, and that's an error.
+  const read = async (): Promise<HarnessInfo> => {
+    const h = (await c.call("harnesses.list", {})).find((x) => x.id === id);
+    if (h) return h;
+    await c.call("harness.cancelLogin", { id });
+    throw new ApiCallError("invalid", `Unknown agent: ${id}`);
+  };
   for (let i = 0; i < (o.polls ?? POLLS) && !o.stop.aborted; i++) {
     // Read once more when it's over: a list that began while it ended may still hold the state from before.
-    if (!(await read())?.signingIn) return read();
+    if (!(await read()).signingIn) return read();
     await pause(o.everyMs ?? EVERY_MS, o.stop);
   }
   await c.call("harness.cancelLogin", { id });
