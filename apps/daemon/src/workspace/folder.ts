@@ -1,6 +1,6 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { lstat, mkdir, opendir, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { lstat, mkdir, mkdtemp, opendir, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { addProject, type UserConfig } from "@ion/config";
 import { git } from "./git.js";
@@ -68,6 +68,9 @@ const real = (p: string) => (existsSync(p) ? realpathSync.native(p) : p);
  */
 function homeRefusal(path: string, home: string): string | null {
   if (within(home, path)) return "Pick a project folder, not your home folder or one above it";
+  // Another person's home on this Mac (security scan of 3864449, 2026-11-23).
+  if (within(path, "/Users") && !within(path, home))
+    return "Pick a project folder, not another user's folder";
   if (within(path, home) && path.slice(home.length + 1).startsWith("."))
     return "Pick a project folder, not one in a hidden folder of your home";
   if (within(path, join(home, "Library", "Mobile Documents")))
@@ -178,6 +181,28 @@ async function writeExclude(path: string, big: string[]): Promise<void> {
 }
 
 /**
+ * The walk's files your own .gitignore files leave out, asked before anything is written: in the repo when there is
+ * one, else through a throwaway repo outside the folder (security scan of 3864449, 2026-11-23: the question's count
+ * didn't match what went in).
+ */
+async function ignoredOf(path: string, listed: string[], repo: boolean): Promise<Set<string>> {
+  if (!listed.length) return new Set();
+  const scratch = repo ? null : await mkdtemp(join(tmpdir(), "ion-check-"));
+  try {
+    const where = scratch ? ["--git-dir", scratch, "--work-tree", path] : [];
+    if (scratch) await mustGit(["init", "-q", "--bare", scratch], path);
+    const input = listed.join("\0");
+    const r = await git([...where, "check-ignore", "--stdin", "-z", "--no-index"], path, { input });
+    // 1: none ignored.
+    if (r.code > 1 || r.code < 0)
+      throw new Error(`git check-ignore failed: ${r.stderr.trim().split("\n")[0]}`);
+    return new Set(r.stdout.split("\0").filter(Boolean));
+  } finally {
+    if (scratch) await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
  * The walk's files that git would take too (your own .gitignore still counts): untracked and not ignored, exactly as
  * listed (letter case too).
  */
@@ -195,6 +220,8 @@ async function addable(path: string, listed: string[]): Promise<string[]> {
 async function firstCommit(path: string, w: Walked, hadGit: boolean): Promise<number> {
   try {
     if (!hadGit) await mustGit(["init", "-q", "-b", "main"], path);
+    // Nothing staged before rides along (security scan of 3864449, 2026-11-23): an empty index, your files untouched.
+    await mustGit(["read-tree", "--empty"], path);
     await writeExclude(path, w.big);
     const files = await addable(path, w.paths);
     const input = files.map((p) => `:(literal)${p}`).join("\0");
@@ -248,7 +275,9 @@ export async function addFolder(c: UserConfig, path: string, o: FolderOpts): Pro
   mustBeNew(c, at);
   if (top && (await hasCommit(at))) return { config: addProject(c, at) };
   const w = await walk(at, { maxFiles: o.maxFiles ?? MAX_FILES, maxBytes: o.maxBytes ?? MAX_BYTES });
-  const n = `${w.paths.length} ${w.paths.length === 1 ? "file" : "files"}`;
+  const ignored = await ignoredOf(at, w.paths, Boolean(top));
+  const count = w.paths.length - ignored.size;
+  const n = `${count} ${count === 1 ? "file" : "files"}`;
   if (!o.confirm) return { ask: `Set up git here? ion makes a first commit of ${n}` };
   const files = await firstCommit(at, w, Boolean(top));
   return { config: addProject(c, at), gitSetUp: { files, left: w.left + w.paths.length - files } };

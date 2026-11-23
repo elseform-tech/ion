@@ -1,6 +1,6 @@
-import { dirname } from "node:path";
 import { DEFAULT_PROJECT, ionPaths, loadUserConfig, saveUserConfig } from "@ion/config";
 import type { HarnessInfo } from "@ion/schema";
+import { ionDirsOf } from "../access/index.js";
 import { agentLabel } from "../adapters/registry.js";
 import { stepOf } from "../runs/agent-steps.js";
 import { chatsView } from "../views/chats.js";
@@ -43,8 +43,8 @@ export const startHandlers = (a: Agents): Pick<Handlers, "start.status" | "proje
   "projects.add": async (args, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
-    // ion's data folder and its config file's folder (ION_HOME, or ~/.config/ion).
-    const ionDirs = [ctx.dataDir ?? ionPaths().dataDir, dirname(ctx.configFile)];
+    // ion's own folders, from the one list the sandbox and the gate use too (security scan of 3864449, 2026-11-23).
+    const ionDirs = ionDirsOf({ dataDir: ctx.dataDir ?? ionPaths().dataDir, configFile: ctx.configFile });
     const added = await addFolder(config, String(args.path ?? ""), {
       ionDirs,
       confirm: args.confirm === true,

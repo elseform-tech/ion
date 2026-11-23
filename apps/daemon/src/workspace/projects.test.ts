@@ -8,7 +8,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DEFAULT_CONFIG } from "@ion/config";
 import { describe, expect, it } from "vitest";
@@ -131,6 +131,10 @@ describe("addFolder", () => {
     const path = plain();
     writeFileSync(join(path, ".gitignore"), "*.log\n");
     writeFileSync(join(path, "debug.log"), "x\n");
+    // Security scan of 3864449, 2026-11-23: the question's count ignored your .gitignore; it matches the result now.
+    expect(await addFolder(withRoot(), path, opts())).toEqual({
+      ask: "Set up git here? ion makes a first commit of 3 files",
+    });
     const r = await addFolder(withRoot(), path, opts({ confirm: true }));
     expect(await committed(path)).toEqual([".gitignore", "README.md", "src/tip.js"]);
     expect(r).toMatchObject({ gitSetUp: { files: 3, left: 1 } });
@@ -173,6 +177,25 @@ describe("addFolder", () => {
     expect(await addFolder(withRoot(), path, opts({ confirm: true }))).toMatchObject({
       gitSetUp: { files: 2 },
     });
+  });
+
+  // Security scan of 3864449, 2026-11-23: in a repo with no commits, a file already staged (.env) went into ion's
+  // first commit. Only what ion listed goes in.
+  it("a file staged before is never in the first commit", async () => {
+    const path = plain();
+    writeFileSync(join(path, ".env"), "TOKEN=x\n");
+    await git(["init", "-q", "-b", "main"], path);
+    await git(["add", ".env"], path);
+    await addFolder(withRoot(), path, opts({ confirm: true }));
+    expect(await committed(path)).toEqual(["README.md", "src/tip.js"]);
+    expect(readFileSync(join(path, ".env"), "utf8")).toBe("TOKEN=x\n");
+  });
+
+  // Security scan of 3864449, 2026-11-23: another person's folder on this Mac isn't yours to set up.
+  it.runIf(process.platform === "darwin")("refuses another user's folder", async () => {
+    await expect(addFolder(withRoot(), "/Users/Shared", opts({ home: homedir() }))).rejects.toThrow(
+      "Pick a project folder, not another user's folder",
+    );
   });
 
   it("a setup that fails removes the .git it made, and only that", async () => {

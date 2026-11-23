@@ -87,6 +87,30 @@ describe("start.status", () => {
 
   // Re-review of 2e7edd6, 2026-11-23: ion's own folders are its data folder and its config file's folder (ION_HOME
   // here), anything in them, and any folder that holds them.
+  // Security scan of 3864449, 2026-11-23: start.ts kept its own list of ion's folders; it uses the shared one now
+  // (ion's cache, Grok's home for ion, and any added later).
+  it("refuses every folder on ion's shared list (its cache, GROK_HOME)", async () => {
+    const saved = { cache: process.env.XDG_CACHE_HOME, grok: process.env.GROK_HOME };
+    const cache = mkdtempSync(join(tmpdir(), "ion-cache-"));
+    const grok = mkdtempSync(join(tmpdir(), "ion-grok-"));
+    mkdirSync(join(cache, "ion", "x"), { recursive: true });
+    process.env.XDG_CACHE_HOME = cache;
+    process.env.GROK_HOME = grok;
+    try {
+      for (const p of [join(cache, "ion", "x"), grok])
+        await expect(client.call("projects.add", { path: p })).rejects.toThrow(
+          "Pick a project folder, not one of ion's own",
+        );
+    } finally {
+      for (const [k, v] of [
+        ["XDG_CACHE_HOME", saved.cache],
+        ["GROK_HOME", saved.grok],
+      ] as const)
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+    }
+  });
+
   it("refuses ion's own folders: data, ION_HOME, what's in them, what holds them", async () => {
     const inHome = join(home, "work");
     mkdirSync(inHome);
