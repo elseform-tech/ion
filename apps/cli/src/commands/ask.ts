@@ -16,7 +16,7 @@ type AskOpts = {
 };
 
 /** How long `ion ask` stays after a limit for ion's question about it. */
-const QUESTION_WAIT_MS = 3000;
+const QUESTION_WAIT_MS = 10_000;
 
 /** Prints the run's events as they arrive and resolves when it finishes. */
 function follow(

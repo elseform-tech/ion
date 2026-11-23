@@ -141,3 +141,13 @@ describe("a thread open beside its ion's chat", () => {
     expect(container.querySelector(".qbox")).toBeNull();
   });
 });
+
+// Coordinator, 2026-11-23: a thread waiting for its agent's reset read as failed on ion's thread line. It says what it
+// waits for.
+it("a thread waiting for its agent's reset says so, not failed", async () => {
+  const fail = ev(EV.runFinished, { status: "failed" }, "2026-11-19T10:00:02Z");
+  const c = { ...chat("failed"), waiting: "Waits for Fake — 16:20" };
+  const { container } = line([started, fail], c);
+  await waitFor(() => expect(container.querySelector(".tt")?.textContent).toBe("Waits for Fake — 16:20"));
+  expect(container.querySelector(".lucide-circle-alert")).toBeNull();
+});

@@ -160,3 +160,17 @@ it("rebuilding from the log gives the same rows", () => {
   store.rebuildViews();
   expect([needsView.open(db), chatsView.list(db)]).toEqual(before);
 });
+
+// Coordinator, 2026-11-23: a chat waiting for its agent's reset read as Failed (sidebar, ion's thread line, `ion
+// chats`). It reads as waiting ("Waits for Fake — 16:20") until its run goes on.
+describe("chats view, waiting for a reset", () => {
+  it("says what it waits for after a limit, until a run goes on", () => {
+    store.append(d({ chatId: "c1", runId: "r9", type: "run.finished", data: { status: "failed" } }));
+    const text = "Waits for Fake — 16:20";
+    const line = { kind: "waiting", text, to: "fake", until: "2026-11-23T15:20:00.000Z" };
+    store.append(d({ chatId: "c1", runId: null, type: "chat.handoff", data: line }));
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBe(text);
+    store.append(d({ chatId: "c1", runId: "r10", type: "run.queued", data: { access: "auto" } }));
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBeUndefined();
+  });
+});

@@ -128,6 +128,11 @@ type D = Record<string, unknown>;
 /** A file a run changed, with its line counts. */
 export type FileChange = { path: string; added: number; removed: number };
 const str = (x: unknown) => (typeof x === "string" ? x : "");
+/** A queued run: why it waits for a slot, if it does, and the agent it will use. */
+const queuedAs = (d: D, was: string | null) => ({
+  waiting: str(d.waiting) || null,
+  harness: str(d.harness) || was,
+});
 const push = (t: Timeline, item: Item): Timeline => ({ ...t, items: [...t.items, item], streaming: null });
 const replace = (t: Timeline, i: number, item: Item): Timeline => {
   const items = t.items.slice();
@@ -355,7 +360,8 @@ const HANDLERS: Record<string, Handler> = {
   [EV.messageSent]: sent,
   [EV.messageDelta]: delta,
   [EV.messageCompleted]: completed,
-  [EV.runQueued]: (t, d, e) => ({ ...t, running: e.runId, waiting: str(d.waiting) || null }),
+  // With the agent the queued run will use (the composer shows it before the run starts).
+  [EV.runQueued]: (t, d, e) => ({ ...t, running: e.runId, ...queuedAs(d, t.harness) }),
   [EV.runStarted]: (t, d, e) => ({
     ...retried(t),
     running: e.runId,

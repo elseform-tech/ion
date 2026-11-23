@@ -275,3 +275,11 @@ it("a chat waiting for a slot says why under its title", () => {
   expect(screen.getByText(waiting)).toBeTruthy();
   expect(screen.queryByText("Old reply")).toBeNull();
 });
+
+// Coordinator, 2026-11-23: a chat waiting for its agent's reset showed the red Failed mark. It reads as waiting.
+it("a chat waiting for its agent's reset reads as waiting, not failed", () => {
+  const waiting = "Waits for Fake — 16:20";
+  side([chat("Checkout copy", "payments-api", { lastRunStatus: "failed", waiting })]);
+  expect(screen.getByText(waiting)).toBeTruthy();
+  expect(screen.queryByLabelText("Failed")).toBeNull();
+});

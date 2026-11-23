@@ -12,8 +12,8 @@ export const chatsView: View & {
   lastAgent(db: Db, projectId: string): string | null;
 } = {
   name: "chats",
-  // 6: why a chat ion started waits for a slot (waiting).
-  version: 6,
+  // 6: why a chat ion started waits for a slot (waiting). 7: or for its agent's reset.
+  version: 7,
   tables: ["view_chats"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_chats (
@@ -41,6 +41,9 @@ export const chatsView: View & {
       );
     } else if (e.type === EV.chatRenamed) {
       db.prepare("UPDATE view_chats SET title = ? WHERE chat_id = ?").run(String(d.title), e.chatId);
+    } else if (e.type === EV.chatHandoff && d.kind === "waiting") {
+      // Waiting for its agent's reset (Plan 20): it reads as waiting, not failed, until a run goes on.
+      db.prepare("UPDATE view_chats SET waiting = ? WHERE chat_id = ?").run(String(d.text), e.chatId);
     } else if (e.type === EV.chatArchived) {
       db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
     } else {

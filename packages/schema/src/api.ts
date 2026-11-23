@@ -421,7 +421,10 @@ export type ChatInfo = {
   preview: string | null;
   /** "ion": a thread ion started; null: your own chat. */
   by: "ion" | null;
-  /** Why a chat ion started waits for a slot ("Waiting — 4 ion chats running"), while it does. */
+  /**
+   * What the chat waits for, while it does: one of ion's slots ("Waiting — 4 ion chats running"), or its agent's
+   * reset after a limit ("Waits for Codex — 16:20").
+   */
   waiting?: string;
 };
 

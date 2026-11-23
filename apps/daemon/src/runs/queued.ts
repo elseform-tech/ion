@@ -54,6 +54,7 @@ export function queuedLines(
     const line = { kind: "routed", text: how.routed, to: r.harness };
     store.append({ chatId, runId: null, origin: "daemon", type: EV.chatHandoff, data: line });
   }
-  const queued = { access: r.access, ...(how.waiting ? { waiting: how.waiting } : {}) };
+  // Its agent too: the chat shows the agent the queued run will use, before it starts.
+  const queued = { access: r.access, harness: r.harness, ...(how.waiting ? { waiting: how.waiting } : {}) };
   store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: queued });
 }

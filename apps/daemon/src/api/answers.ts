@@ -8,6 +8,7 @@ import { Handoffs } from "../runs/limit-handoff.js";
 import { Waits } from "../scheduler/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { diffOfChat, harnessInfos } from "./commands.js";
+import type { HarnessInfos } from "./harness-infos.js";
 import { orderIn } from "./routing.js";
 
 /** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
@@ -17,8 +18,19 @@ export const followAsk = (chatId: string, m: { harness: string | null; text: str
   ...(m.harness ? { harness: m.harness } : {}),
 });
 
-/** How long ion's limit question waits on a first sign-in check still going (only just after ion starts). */
-const READY_WAIT_MS = 1500;
+/**
+ * How long ion's limit question waits on a first sign-in check still going (only just after ion starts). Live,
+ * 2026-11-23: opencode's first check took 4 s alone and over 5 s while every agent was checked at once, so the question
+ * offered the next agent; 8 s covers it. `ion ask` stays longer than this for the question.
+ */
+const READY_WAIT_MS = 8000;
+
+/**
+ * The agents signed in, for ion's limit question: what's known, waiting for a first sign-in check still going (just
+ * after ion starts) READY_WAIT_MS at most, so an agent isn't skipped for being slow to answer.
+ */
+export const readyForLimit = async (infos: Pick<HarnessInfos, "soon">): Promise<string[]> =>
+  (await infos.soon(READY_WAIT_MS)).filter((h) => h.installed && h.signedIn).map((h) => h.id);
 
 type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; configFile: string };
 
@@ -30,11 +42,7 @@ type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; 
 function limitHandoffs(d: Deps): Handoffs {
   return new Handoffs({
     ...{ store: d.store, db: d.db, needs: d.needs, label: agentLabel, waits: new Waits() },
-    ready: async () =>
-      byPreference(
-        (await harnessInfos.soon(READY_WAIT_MS)).filter((h) => h.installed && h.signedIn).map((h) => h.id),
-        orderIn(d.configFile),
-      ),
+    ready: async () => byPreference(await readyForLimit(harnessInfos), orderIn(d.configFile)),
     onLimit: () => loadUserConfig(d.configFile).config.routing.onLimit,
     start: async (a, o) =>
       (

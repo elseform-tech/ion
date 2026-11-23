@@ -70,6 +70,7 @@ it("your chat starts even when ion's slots are full", async () => {
   ]);
   expect(store.read({ runId: mine.runId }).find((e) => e.type === "run.queued")?.data).toEqual({
     access: "auto",
+    harness: "fake",
   });
   await runs.interrupt(a.runId);
   await finished(a.runId);
@@ -86,6 +87,7 @@ it("ion-started chats and routines wait for a slot", async () => {
   expect(typesOf(b.runId)).toEqual(["message.sent", "run.queued"]);
   expect(store.read({ runId: b.runId }).find((e) => e.type === "run.queued")?.data).toEqual({
     access: "auto",
+    harness: "fake",
     waiting: "Waiting — 1 ion chat running",
   });
   await runs.interrupt(mine.runId);
@@ -172,6 +174,7 @@ it("a handoff in an ion thread waits while slots are full; one in your own chat 
   expect(typesOf(inThread.runId)).toEqual(["message.sent", "run.queued"]);
   expect(store.read({ runId: inThread.runId }).find((e) => e.type === "run.queued")?.data).toEqual({
     access: "auto",
+    harness: "fake",
     waiting: "Waiting — 1 ion chat running",
   });
   await runs.interrupt(hold.runId);
@@ -195,4 +198,16 @@ it("a resume in an ion thread waits while slots are full; one in your own chat d
   expect(typesOf(inThread.runId)).toEqual(["message.sent", "run.queued"]);
   await runs.interrupt(hold.runId);
   expect((await finished(inThread.runId)).map((e) => e.type)).toContain("run.started");
+});
+
+// Coordinator, 2026-11-23: a queued chat's composer showed your first agent; the queued run says which it will use.
+it("a queued run says which agent it will use", async () => {
+  limitTo(1);
+  const a = await askIon("slow");
+  const b = await askIon("hello");
+  expect(store.read({ runId: b.runId }).find((e) => e.type === "run.queued")?.data).toMatchObject({
+    harness: "fake",
+  });
+  await runs.interrupt(a.runId);
+  await finished(b.runId);
 });

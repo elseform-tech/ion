@@ -3963,6 +3963,9 @@ const CHATROWS=[
   {t:'Postgres or SQLite?',p:'default',go:'chat',sub:'SQLite, until you need more than one writer.',tm:'Tue'},
   {t:'Fix 404 on /sale',p:'storefront',go:'code',sub:'The route was missing from the sitemap build.',tm:'Mon'},
   {t:'Refund rounding',p:'payments-api',go:'code',sub:'Tests failed on the partial-refund case.',tm:'Mon',failed:1},
+  /* Plan 20 (coordinator, 2026-11-23): a chat waiting for its agent's reset says what it waits for, with no Failed mark:
+     it goes on by itself at the reset (`ion chats` says "waiting"; an ion's thread line says the same words). */
+  {t:'Totals in cents',p:'payments-api',go:'code',sub:'Waits for Claude Code — 16:00',tm:'Mon'},
   {t:'Onboarding email ideas',p:'default',go:'chat',sub:'Five subject lines, shortest first.',tm:'Mon'},
   {t:'Bump Vite to 6',p:'storefront',go:'code',sub:'Builds are 18% faster. No config changes.',tm:'Sun'},
   {t:'v2.3 changelog',p:'docs',ion:'docs',go:'code',sub:'Drafted from 31 merged pull requests.',tm:'Sun'},

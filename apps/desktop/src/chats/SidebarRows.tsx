@@ -36,7 +36,8 @@ const MARKS: Record<string, { label: string; Icon: typeof CircleAlert }> = {
 
 /** When it was last active, after a mark if its last run failed or was stopped. */
 function When({ chat }: { chat: ChatInfo }) {
-  const mark = MARKS[chat.lastRunStatus ?? ""];
+  // A chat waiting (for its agent's reset) isn't marked failed: it goes on by itself.
+  const mark = chat.waiting ? undefined : MARKS[chat.lastRunStatus ?? ""];
   return (
     <span className="tm">
       {mark && <mark.Icon className="st" aria-label={mark.label} />}

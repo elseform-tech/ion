@@ -652,3 +652,8 @@ describe("timeline", () => {
     expect(t).toMatchObject({ harness: "grok-build", model: "grok-code-fast", effort: "high" });
   });
 });
+
+// Coordinator, 2026-11-23: a queued chat's composer showed your first agent, not the one its queued run will use.
+it("a queued run says which agent it will use", () => {
+  expect(play(ev("run.queued", { access: "auto", harness: "fake" })).harness).toBe("fake");
+});

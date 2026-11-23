@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { IonCardSchema, PICKED } from "./ion-cards.js";
 import { memoryEventSchemas } from "./memory.js";
+import { usageEventSchemas } from "./usage-events.js";
 
 export const SCHEMA_VERSION = 1;
 
@@ -136,13 +137,6 @@ export type EventType = (typeof EVENT_TYPES)[number];
 
 const daemonOnly: ReadonlySet<string> = new Set(DAEMON_EVENT_TYPES);
 export const isDaemonOnly = (t: EventType): boolean => daemonOnly.has(t);
-
-/** One of an agent's rate-limit windows: its name ("5 h", "week"), how much is used, and when it resets. */
-const UsageWindowSchema = z.object({
-  name: z.string().min(1).max(40),
-  usedPercent: z.number().min(0).max(100),
-  resetsAt: z.iso.datetime().nullable(),
-});
 
 export const RUN_END_STATUSES = ["done", "failed", "interrupted", "capped"] as const;
 export type RunEndStatus = (typeof RUN_END_STATUSES)[number];
@@ -392,7 +386,12 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
    * A run waiting for a slot, with its access (a handoff on another agent keeps the chat's). `waiting`: a chat ion
    * started waits for one of its slots, and says why ("Waiting — 4 ion chats running").
    */
-  "run.queued": z.object({ access: z.enum(["auto", "full"]).optional(), waiting: line.optional() }),
+  "run.queued": z.object({
+    access: z.enum(["auto", "full"]).optional(),
+    waiting: line.optional(),
+    /** The agent the run will use (the chat shows it while the run waits). */
+    harness: z.string().min(1).optional(),
+  }),
   "run.retrying": z.object({
     attempt: z.number().int().min(1),
     delayS: z.number().min(0),
@@ -454,24 +453,7 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     /** What Auto's judge said when it didn't allow the call: no, or that it wasn't sure (missing information). */
     judge: z.enum(["deny", "unsure"]).optional(),
   }),
-  "usage.reported": z.object({
-    model: z.string(),
-    inputTokens: count,
-    outputTokens: count,
-    /**
-     * Every token the run processed: its input with the cached context it read and wrote, and its output. Absent
-     * when the agent's count is known to be partial (opencode's covers only a turn's last step): no token estimate.
-     */
-    totalTokens: count.optional(),
-    costUsd: z.number().min(0).nullable().optional(),
-    /**
-     * The agent's own rate-limit windows, as it reported them with this run (Codex's, Claude's): absent when it
-     * reports none, so a gauge it stopped reporting goes away (docs/research/usage-signals.md).
-     */
-    windows: z.array(UsageWindowSchema).max(8).optional(),
-    /** The agent, for usage outside a chat's run (an ion's turn, the judge): ion stamps it. */
-    harness: z.string().optional(),
-  }),
+  ...usageEventSchemas,
   "run.finished": z.object({
     status: z.enum(RUN_END_STATUSES),
     /** An ion's turn or the judge's session (kept off any chat): its agent and when it started (views/usage.ts). */

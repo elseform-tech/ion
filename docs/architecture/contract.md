@@ -49,8 +49,9 @@ data. `chat.handoff` is one line in a chat: `kind` `continued` ("Continued on Gr
 limit", `to` the agent that went on), `waiting` ("Waits for Codex — 16:00", `until`, `guessed` when the reset was
 ion's guess, `tries`), `fresh` ("Started fresh with a summary") or `routed` (Pick by usage's reason, "On opencode —
 free and enough for this"). The message that hands a chat to another agent is `message.sent` with `handoff: true`
-(ion's brief; the chat shows the line instead). `run.queued` may carry `waiting` ("Waiting — 4 ion chats running"):
-a chat ion started waits for one of its slots. ion's limit question is a `need.raised` that carries the `limit` it
+(ion's brief; the chat shows the line instead). `run.queued` carries the agent the run will use (`harness`) and may
+carry `waiting` ("Waiting — 4 ion chats running"): a chat ion started waits for one of its slots. A chat waiting for
+a slot or for its agent's reset reads as waiting (`ChatInfo.waiting`), not failed. ion's limit question is a `need.raised` that carries the `limit` it
 offers (from, to, until); your "Always continue on X here" is a `decision.recorded` keyed `handoff:<agent>`.
 
 A memory file's change is `memory.written` (its path, scope, header, hash, `by`, and the text `before`) or

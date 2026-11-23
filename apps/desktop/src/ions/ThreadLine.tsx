@@ -31,7 +31,10 @@ function useThread(client: IonClient, chatId: string, c?: ChatInfo) {
   let say = c?.title ?? "A thread";
   if (waiting) say = "Waiting for you";
   else if (live) say = w?.steps.length ? current(w) : (t.waiting ?? "Delegating");
-  return { say, live: live && !waiting, waiting, failed: c?.lastRunStatus === "failed", secs, why: t.routed };
+  // Waiting for its agent's reset: it says so, and isn't failed (it goes on by itself).
+  else if (c?.waiting) say = c.waiting;
+  const failed = c?.lastRunStatus === "failed" && !c.waiting;
+  return { say, live: live && !waiting, waiting, failed, secs, why: t.routed };
 }
 
 type LineProps = {
