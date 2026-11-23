@@ -165,3 +165,53 @@ describe("an agent's reset time", () => {
     expect(Date.parse(agent("grok-build")!.limitedUntil!)).toBeLessThanOrEqual(Date.now() + 7 * 1440 * MIN);
   });
 });
+
+// Security scan follow-up, 2026-11-23: a reset an agent says could keep it out for up to 7 days. Verify, don't guess:
+// a stated reset is trusted within the agent's longest reported window (or 6 h when it reports none); a later one is
+// ion's guess (tried at the usual time), and it never pushes a stated mark later.
+describe("a stated reset ion can't verify", () => {
+  const windowsOf = (
+    runId: string,
+    harness: string,
+    windows: { name: string; usedPercent: number; resetsAt: string }[],
+  ) => {
+    start(runId, harness);
+    append(runId, "usage.reported", { model: "m", inputTokens: 1, outputTokens: 1, windows });
+  };
+  const near = (iso: string | null | undefined, ms: number) => Math.abs(Date.parse(iso ?? "") - ms) < 5 * MIN;
+
+  it("is a guess past the agent's only window", () => {
+    windowsOf("w1", "claude-code", [
+      { name: "5 h", usedPercent: 99, resetsAt: new Date(Date.now() + 120 * MIN).toISOString() },
+    ]);
+    start("l1", "claude-code");
+    limitError("l1", new Date(Date.now() + 7 * 1440 * MIN - MIN).toISOString());
+    expect(agent("claude-code")?.limitGuessed).toBe(true);
+    expect(near(agent("claude-code")?.limitedUntil, Date.now() + 30 * MIN)).toBe(true);
+  });
+
+  it("keeps Codex's real week reset", () => {
+    const week = new Date(Date.now() + 4 * 1440 * MIN).toISOString();
+    windowsOf("w2", "codex", [
+      { name: "5 h", usedPercent: 20, resetsAt: new Date(Date.now() + 120 * MIN).toISOString() },
+      { name: "week", usedPercent: 100, resetsAt: week },
+    ]);
+    start("l2", "codex");
+    limitError("l2", week);
+    expect(agent("codex")?.limitedUntil).toBe(week);
+    expect(agent("codex")?.limitGuessed).toBeUndefined();
+  });
+
+  it("trusts 6 h for an agent with no windows, and never pushes a stated mark later", () => {
+    const soon = new Date(Date.now() + 60 * MIN).toISOString();
+    start("l3", "grok-build");
+    limitError("l3", soon);
+    expect(agent("grok-build")?.limitedUntil).toBe(soon);
+    start("l4", "grok-build");
+    limitError("l4", new Date(Date.now() + 5 * 60 * MIN).toISOString());
+    expect(agent("grok-build")?.limitedUntil).toBe(soon);
+    start("l5", "opencode");
+    limitError("l5", new Date(Date.now() + 10 * 60 * MIN).toISOString());
+    expect(agent("opencode")?.limitGuessed).toBe(true);
+  });
+});

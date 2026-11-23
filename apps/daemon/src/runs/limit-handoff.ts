@@ -8,7 +8,7 @@ import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
 import { needsView } from "../views/needs.js";
 import { runsView } from "../views/runs.js";
-import { agentReset, usageView } from "../views/usage.js";
+import { believedReset, usageView } from "../views/usage.js";
 import { CHECK_FIRST, chatBrief, type FileStat } from "./brief.js";
 
 /** "Always continue on <agent> here": a decision for the project, kept with this key (the agent's id after it). */
@@ -139,9 +139,10 @@ export class Handoffs {
     // Your own message in a waiting chat (it goes on now), or the chat archived: the wait is off.
     if ((e.type === EV.messageSent && !d.handoff) || e.type === EV.chatArchived) this.cancel(chatId);
     if (!runId) return;
-    // The reset the agent said, checked (none when it isn't a date or is past; 7 days at most): security scan, 2026-11-23.
+    // The reset the agent said, as ion believes it (checked, and within the agent's windows): security scan, 2026-11-23.
     if (e.type === EV.error && d.limit) {
-      const resetsAt = agentReset(d.limit.resetsAt, Date.parse(e.ts));
+      const harness = runsView.rows(this.d.db).find((r) => r.runId === runId)?.harness ?? "";
+      const { resetsAt } = believedReset(this.d.db, harness, d.limit.resetsAt, Date.parse(e.ts));
       this.hit.set(runId, resetsAt ? { resetsAt } : {});
     } else if (e.type === EV.runFinished) this.ended(chatId, runId, d.status);
   }
@@ -385,8 +386,18 @@ export class Handoffs {
     this.schedule(chatId, l);
   }
 
+  /** A wake-up the scheduler refuses (a time that isn't a date) falls back to ion's guess, tried then. */
   private schedule(chatId: string, l: Wake): void {
-    this.d.waits.at(chatId, new Date(l.until), () => {
+    if (this.wake(chatId, l)) return;
+    this.wake(chatId, {
+      ...l,
+      until: new Date(this.now().getTime() + GUESS_MS).toISOString(),
+      guessed: true,
+    });
+  }
+
+  private wake(chatId: string, l: Wake): boolean {
+    return this.d.waits.at(chatId, new Date(l.until), () => {
       // A guessed reset is checked by trying: a try that hits the limit again waits again (waitAgain).
       if (l.guessed) this.rechecks.set(chatId, (this.rechecks.get(chatId) ?? 0) + 1);
       void this.goOn(chatId, l)

@@ -61,18 +61,56 @@ function reported(db: Db, e: IonEvent, harness: string, d: Data): void {
   ).run(harness, JSON.stringify(Array.isArray(d.windows) ? d.windows : []));
 }
 
+/** With no window to check against, a stated reset is believed this far ahead at most. */
+const NO_WINDOW_MAX_MS = 6 * 3_600_000;
+
+/** The latest reset among the agent's reported windows still ahead (ms), or null when it reports none. */
+function latestWindow(db: Db, harness: string, nowMs: number): number | null {
+  const r = db.prepare("SELECT windows FROM view_usage_agents WHERE harness = ?").get(harness) as
+    | { windows: string | null }
+    | undefined;
+  const windows = JSON.parse(r?.windows ?? "[]") as UsageWindow[];
+  const ends = windows
+    .map((w) => Date.parse(w.resetsAt ?? ""))
+    .filter((t) => Number.isFinite(t) && t > nowMs);
+  return ends.length ? Math.max(...ends) : null;
+}
+
 /**
- * The agent hit its limit: limited until its reset, else for LIMIT_DEFAULT_MS. One mark per agent: another thread
- * hitting the same limit meanwhile doesn't add one or push it later (only a reset the agent said replaces a guess).
+ * The reset an agent said, as ion believes it (security scan follow-up, 2026-11-23: verify, don't guess): checked
+ * (agentReset), then within the agent's longest reported window, or 6 hours when it reports none. Later than that,
+ * it's unknown (ion's guess, then a try). `inWindow`: it falls within a window the agent reported.
+ */
+export function believedReset(
+  db: Db,
+  harness: string,
+  said: unknown,
+  nowMs: number,
+): { resetsAt?: string; inWindow?: true } {
+  const resetsAt = agentReset(said, nowMs);
+  if (!resetsAt) return {};
+  const at = Date.parse(resetsAt);
+  const latest = latestWindow(db, harness, nowMs);
+  if (latest !== null) return at <= latest + 60_000 ? { resetsAt, inWindow: true } : {};
+  return at <= nowMs + NO_WINDOW_MAX_MS ? { resetsAt } : {};
+}
+
+/**
+ * The agent hit its limit: limited until the reset ion believes (believedReset), else for LIMIT_DEFAULT_MS. One mark
+ * per agent: another thread hitting the same limit meanwhile doesn't add one or push it later (a stated reset replaces
+ * a guess; it pushes a stated mark later only when it falls within a window the agent reported).
  */
 function limited(db: Db, e: IonEvent, harness: string, said: Limit): void {
-  const resetsAt = agentReset(said.resetsAt, Date.parse(e.ts));
-  const limit = resetsAt ? { resetsAt } : {};
-  const until = limit.resetsAt ?? new Date(Date.parse(e.ts) + LIMIT_DEFAULT_MS).toISOString();
+  const now = Date.parse(e.ts);
+  const limit = believedReset(db, harness, said.resetsAt, now);
+  const until = limit.resetsAt ?? new Date(now + LIMIT_DEFAULT_MS).toISOString();
   const was = db
-    .prepare("SELECT limited_until AS until FROM view_usage_agents WHERE harness = ?")
-    .get(harness) as { until: string | null } | undefined;
-  if (!limit.resetsAt && was?.until && Date.parse(was.until) > Date.parse(e.ts)) return;
+    .prepare("SELECT limited_until AS until, guessed FROM view_usage_agents WHERE harness = ?")
+    .get(harness) as { until: string | null; guessed: number | null } | undefined;
+  const marked = !!was?.until && Date.parse(was.until) > now;
+  if (marked && !limit.resetsAt) return;
+  const later = marked && was?.guessed === 0 && Date.parse(until) > Date.parse(was.until ?? "");
+  if (later && !limit.inWindow) return;
   db.prepare(
     `INSERT INTO view_usage_agents (harness, windows, limited_until, limited_at, guessed) VALUES (?, '[]', ?, ?, ?)
      ON CONFLICT (harness) DO UPDATE SET limited_until = excluded.limited_until, limited_at = excluded.limited_at,

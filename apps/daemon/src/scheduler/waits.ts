@@ -7,17 +7,20 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
  */
 export class Waits {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-  private refused = false;
+  private readonly refused = new Set<string>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  /** A time that isn't a date is refused (said once): it would wake at once, again and again (security scan, 2026-11-23). */
-  at(key: string, when: Date, fn: () => void): void {
+  /**
+   * False when refused: a time that isn't a date would wake at once, again and again (security scan, 2026-11-23); the
+   * caller falls back to its own guess. Said once per key.
+   */
+  at(key: string, when: Date, fn: () => void): boolean {
     this.cancel(key);
     if (!Number.isFinite(when.getTime())) {
-      if (!this.refused) console.warn(`ion didn't set a wait: its time isn't a date (${key})`);
-      this.refused = true;
-      return;
+      if (!this.refused.has(key)) console.warn(`ion didn't set a wait: its time isn't a date (${key})`);
+      this.refused.add(key);
+      return false;
     }
     const step = () => {
       const left = when.getTime() - this.now();
@@ -31,6 +34,7 @@ export class Waits {
       this.timers.set(key, t);
     };
     step();
+    return true;
   }
 
   /** Whether a wake-up is set for this key. */

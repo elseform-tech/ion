@@ -109,6 +109,23 @@ const lines = (chatId: string) =>
   store.read({ chatId, types: [EV.chatHandoff] }).map((e) => (e.data as { text: string }).text);
 
 describe("Handoffs", () => {
+  // Security scan follow-up, 2026-11-23: a wake-up the scheduler refused left the chat waiting forever. It falls back
+  // to ion's guess (30 minutes, tried then).
+  it("a refused wake-up falls back to ion's guess", async () => {
+    const at: number[] = [];
+    const real = waits.at.bind(waits);
+    waits.at = (key, when, fn) => {
+      at.push(when.getTime());
+      return at.length === 1 ? false : real(key, when, fn);
+    };
+    hitLimit("c1", "claude-code", inAnHour());
+    const n = await until(() => needs.open("c1")[0]);
+    await handoffs.answer(n.needId, 2, "chat");
+    expect(at).toHaveLength(2);
+    expect(Math.abs(at[1]! - (Date.now() + 30 * 60_000))).toBeLessThan(60_000);
+    expect(waits.has("c1")).toBe(true);
+  });
+
   // Security scan, 2026-11-23: the reset an agent said reached the question and the wait unchecked. One far off waits 7
   // days at most; one already past is unknown (ion's guess, tried).
   it("an agent's far or past reset is checked before ion waits on it", async () => {
