@@ -24,10 +24,15 @@ const lines = (source: string, rows: MemoryRow[]) => ok(wrapData(source, rows.ma
 const NAME_HELP = 'A few words, as you\'d say them ("Release branch"), not a file name';
 
 /** What a scope means to this caller, for the write tool's description. */
-const scopeHelp = (c: Caller) =>
-  c.kind === "chat"
-    ? '"project" (this project), or "you" for the user\'s preferences'
-    : '"you" (the user), or a project\'s id';
+const scopeHelp = (c: Caller) => {
+  // Your own memory off: no scope of yours is offered (review of #34, 2026-11-23).
+  const yours = c.kind === "you" || c.you !== false;
+  if (c.kind === "chat")
+    return yours
+      ? '"project" (this project), or "you" for the user\'s preferences'
+      : '"project" (this project)';
+  return yours ? '"you" (the user), or a project\'s id' : "A project's id";
+};
 
 /**
  * A to-do's day, with today's (local) so "Friday" can be worked out: the tools are registered for each request, so

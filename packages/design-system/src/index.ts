@@ -101,6 +101,7 @@ export {
   MessagesSquare,
   LogOut,
   ExternalLink,
+  Ghost,
 } from "lucide-react";
 export { Avatar, type BotState } from "./Avatar.js";
 export { botFor } from "./bots.js";

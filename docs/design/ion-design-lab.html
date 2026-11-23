@@ -1120,7 +1120,7 @@ button.arow:hover{background:var(--hover)}
 .u .catt,.bu .catt{margin:0 0 6px;justify-content:flex-end}.u .catt .chip{margin-left:0}.bu .chip.pick{background:rgba(255,255,255,.16);color:inherit}
 .stools{display:grid;padding-left:28px}.stools>.s{padding:6px 0 6px 10px}.stools .trow .s{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 /* settings: Memory: whose (you, each project), search, rows with who changed each and when; a file's text, its history; your to-dos, done ones folded; ion chief's open to-dos */
-.mscope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.group+.mscope{margin-top:12px}.mscope .chip{border:0;cursor:pointer}.msearch{margin:0 0 10px}
+.mscope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.group+.mscope{margin-top:12px}.mscope .chip{border:0;cursor:pointer}.msearch{margin:0 0 10px}.mscope+.group{margin-bottom:10px}
 .trow .mby{display:block;color:var(--faint);font-size:12px;margin-top:2px}.trow .mby .late{color:var(--del-ink)}.trow.done .tname{color:var(--faint);text-decoration:line-through}.trow.mrow2{cursor:pointer}.trow.mrow2:hover{background:var(--hover)}.trow button.tname{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}.msee{display:inline-flex;align-items:center;gap:8px;color:var(--faint)}.msee .lucide{width:15px;height:15px}
 .mhead{display:flex;align-items:center;gap:10px}.mhead .ti{width:30px;height:30px;border-radius:8px;background:var(--hover);display:grid;place-items:center;color:var(--muted)}.mhead .ti .lucide{width:16px;height:16px}.mhead h3{margin:0;flex:1;min-width:0;font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mhead+.s{color:var(--muted);font-size:13px;margin-top:-18px}
 .mtext{padding:12px 16px;font-size:13.5px;line-height:1.55;overflow-wrap:anywhere}.mtext>.md>:first-child{margin-top:0}.mtext>.md>:last-child{margin-bottom:0}
@@ -1289,7 +1289,7 @@ details a{color:var(--accent)}
 
         <!-- new chat -->
         <section class="chat" data-screen="new" style="grid-template-rows:48px minmax(0,1fr)">
-          <div class="head"><span class="sp"></span><button class="ib" type="button" title="Temporary chat"><i data-lucide="ghost"></i></button></div>
+          <div class="head"><span class="sp"></span><!-- Don't remember (the user, 2026-11-23): this chat gets no memory and writes none --><button class="ib" type="button" title="Don't remember" aria-label="Don't remember" aria-pressed="false" data-ghost><i data-lucide="ghost"></i></button></div>
           <div class="empty"><div class="inner">
             <h3>What are we working on?</h3>
             <div class="cbox big">
@@ -1588,6 +1588,9 @@ export function sumLines(lines: Line[]) {
           <div class="split solo">
             <div class="convo">
               <div class="msgs"><div class="col">
+                <!-- Review of #34, 2026-11-23: a chat started with Don't remember says so once, quietly ("Remembered" when
+                     turned back on from its menu) -->
+                <div class="quiet"><i data-lucide="info"></i>Not remembered</div>
                 <div class="u">Product images load slowly on the category page. Cache them at the edge.</div>
                 <div class="quiet pending now" id="startWord" style="--strength:.2">Thinking</div>
               </div></div>
@@ -3091,6 +3094,11 @@ const MBROKEN=['storefront/notes.md can’t be read'];
    with Restore; a file it changed says Tidied by ion for a day */
 let dreamMode='nightly'; const DREAM_GONE=[['you/old-launch.md','Old launch']], DREAM_NOTES=['“Sam” may be out of date: a chat said Sam moved to Porto.'];
 let memTab='all', memScope='you', memOpen=null, memHist=false, memAsk=null, memDoneOpen=false;
+/* Remember (the user, 2026-11-23): memory on or off everywhere (yours follow it), and per project in its view (absent:
+   as everywhere). Off: agents and ions get none and nothing new is written; the files stay here. */
+let memOn=true; const MEMPROJ={};
+const stillOn=()=>{ const on=Object.keys(MEMPROJ).filter(p=>MEMPROJ[p]); return !memOn&&on.length?`<span class="when">On in ${on.map(esc).join(', ')}</span>`:''; };
+const remRow=(p)=>{ const on=p?(MEMPROJ[p]??memOn):memOn; return `<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="notebook-text"></i>Remember</span></div>${p?'':stillOn()}<button type="button" class="sw${on?' on':''}" role="switch" aria-checked="${on}" aria-label="Remember${p?' '+esc(p):''}" data-mrem="${p?esc(p):''}"></button></div></div>`; };
 const openTodos=()=>MEMF.filter(f=>f.t==='todo'&&f.st==='open');
 const mib=(ic,l,a)=>`<button class="ib" type="button" title="${l}" aria-label="${l}" ${a}><i data-lucide="${ic}"></i></button>`;
 function memRow(f){
@@ -3128,12 +3136,14 @@ function renderMemory(){
   const scopes=[['you','You'],...PROJECTS.map(p=>[p,p])];
   const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Dream</span></div>${dreamMode!=='off'?'<div class="hpick" role="radiogroup" aria-label="Agent"><button type="button" role="radio" aria-checked="true" class="on" title="Grok" aria-label="Grok"><canvas class="av" data-bot="grok" aria-hidden="true"></canvas></button></div>':''}<span class="seg sm" role="group" aria-label="Dream">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
     +`<div class="group">${DREAM_GONE.map(([p,n])=>`<div class="srow"><div class="g">Forgot “${esc(n)}”</div><button class="btn" type="button">Restore</button></div>`).join('')}${DREAM_NOTES.map(n=>`<div class="srow"><div class="g s">${esc(n)}</div></div>`).join('')}</div>`;
-  el.innerHTML=`<div>${tabs}${broken}${dream}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div><input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
+  el.innerHTML=`<div>${tabs}${broken}${remRow()}${dream}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div>${memScope==='you'?'':remRow(memScope)}<input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
   hydrate(el); icons(el);
 }
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-mtab]'); if(t){ memTab=t.dataset.mtab; renderMemory(); return; }
   const dm=e.target.closest('[data-dream]'); if(dm){ dreamMode=dm.dataset.dream; renderMemory(); return; }
+  const gh=e.target.closest('[data-ghost]'); if(gh){ const on=gh.getAttribute('aria-pressed')!=='true'; gh.setAttribute('aria-pressed',on); gh.classList.toggle('on',on); return; }
+  const rm=e.target.closest('[data-mrem]'); if(rm){ const p=rm.dataset.mrem; if(p){ const now=!(MEMPROJ[p]??memOn); if(now===memOn) delete MEMPROJ[p]; else MEMPROJ[p]=now; } else memOn=!memOn; renderMemory(); return; }
   const sc=e.target.closest('[data-mscope]'); if(sc){ memScope=sc.dataset.mscope; renderMemory(); return; }
   const sw=e.target.closest('[data-msee]'); if(sw){ const f=MEMF.find(x=>x.p===sw.dataset.msee); f.see=f.see==='chats'?'ions':'chats'; renderMemory(); return; }
   const kp=e.target.closest('[data-mkeep]'); if(kp){ const f=MEMF.find(x=>x.p===kp.dataset.mkeep); delete f.sugg; f.by='You'; f.at='now'; renderMemory(); return; }
@@ -4000,7 +4010,7 @@ const rowHTML=(c,run)=>{
   if(renaming===c.id) return `<div class="r on rename" data-cid="${c.id}">${'<span></span>'}<input aria-label="Chat name" value="${esc(c.t)}"></div>`;
   const tm=run?'':`<span class="tm">${c.failed?'<i data-lucide="circle-alert" class="st" aria-label="Failed"></i>':''}${esc(c.tm)}</span>`;
   return `<div class="rw"><button class="r${c.row&&c.row===curScreen?' on':''}" type="button" data-go="${c.go}" data-proj="${esc(c.p)}"${c.row?` data-row="${c.row}"`:''}>${slot}<span><span class="tt${run?' now':''}">${esc(c.t)}</span>${c.sub?`<span class="sub">${esc(c.sub)}</span>`:''}</span>${tm}</button>`+
-    `<div class="rmore"><button class="ib" type="button" aria-label="More for ${esc(c.t)}" data-rmore="${c.id}"><i data-lucide="ellipsis"></i></button><div class="pmenu rmenu" role="menu" hidden><button type="button" role="menuitem" data-rren="${c.id}"><i data-lucide="pencil"></i>Rename</button><button type="button" role="menuitem" data-rarch="${c.id}"><i data-lucide="archive"></i>Archive</button></div></div></div>`;
+    `<div class="rmore"><button class="ib" type="button" aria-label="More for ${esc(c.t)}" data-rmore="${c.id}"><i data-lucide="ellipsis"></i></button><div class="pmenu rmenu" role="menu" hidden><button type="button" role="menuitem" data-rren="${c.id}"><i data-lucide="pencil"></i>Rename</button><button type="button" role="menuitem" data-rmem="${c.id}"><i data-lucide="notebook-text"></i>${c.nomem?'Remember':'Don\'t remember'}</button><button type="button" role="menuitem" data-rarch="${c.id}"><i data-lucide="archive"></i>Archive</button></div></div></div>`;
 };
 function renderChatRows(){
   const rg=document.getElementById('runGrp'), cg=document.getElementById('chatGrps');
@@ -4029,9 +4039,11 @@ document.addEventListener('click',e=>{
   const m=e.target.closest('[data-rmore]');
   if(m){ const menu=m.nextElementSibling, id=m.dataset.rmore; menu.hidden=openRmenu===id; openRmenu=menu.hidden?null:id; return; }
   openRmenu=null;
-  const t=e.target.closest('[data-rren],[data-rarch],[data-gfold],[data-gstar],[data-gmore],[data-qtog]'); if(!t) return;
+  const t=e.target.closest('[data-rren],[data-rmem],[data-rarch],[data-gfold],[data-gstar],[data-gmore],[data-qtog]'); if(!t) return;
   const d=t.dataset;
   if(d.rren){ renaming=d.rren; renderChatRows(); return; }
+  /* Don't remember (the user, 2026-11-23): the chat gets no memory and writes none; it says "Not remembered" once. */
+  if(d.rmem){ const [l,i]=findRow(d.rmem); l[i].nomem=!l[i].nomem; renderChatRows(); return; }
   if(d.rarch){ const [l,i]=findRow(d.rarch); l.splice(i,1); setProj(curProj); return; }
   if(d.gfold){ foldFlip.has(d.gfold)?foldFlip.delete(d.gfold):foldFlip.add(d.gfold); renderChatRows(); return; }
   if(d.gstar){ STARRED.has(d.gstar)?STARRED.delete(d.gstar):STARRED.add(d.gstar); setProj(curProj); return; }

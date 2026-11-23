@@ -733,7 +733,7 @@ button.arow:hover{background:var(--hover)}
 
 /* lab lines 1120-1126: settings: Memory (whose, search, rows, a file, history, to-dos); ion chief's open to-dos */
 /* settings: Memory: whose (you, each project), search, rows with who changed each and when; a file's text, its history; your to-dos, done ones folded; ion chief's open to-dos */
-.mscope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.group+.mscope{margin-top:12px}.mscope .chip{border:0;cursor:pointer}.msearch{margin:0 0 10px}
+.mscope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}.group+.mscope{margin-top:12px}.mscope .chip{border:0;cursor:pointer}.msearch{margin:0 0 10px}.mscope+.group{margin-bottom:10px}
 .trow .mby{display:block;color:var(--faint);font-size:12px;margin-top:2px}.trow .mby .late{color:var(--del-ink)}.trow.done .tname{color:var(--faint);text-decoration:line-through}.trow.mrow2{cursor:pointer}.trow.mrow2:hover{background:var(--hover)}.trow button.tname{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}.msee{display:inline-flex;align-items:center;gap:8px;color:var(--faint)}.msee .lucide{width:15px;height:15px}
 .mhead{display:flex;align-items:center;gap:10px}.mhead .ti{width:30px;height:30px;border-radius:8px;background:var(--hover);display:grid;place-items:center;color:var(--muted)}.mhead .ti .lucide{width:16px;height:16px}.mhead h3{margin:0;flex:1;min-width:0;font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mhead+.s{color:var(--muted);font-size:13px;margin-top:-18px}
 .mtext{padding:12px 16px;font-size:13.5px;line-height:1.55;overflow-wrap:anywhere}.mtext>.md>:first-child{margin-top:0}.mtext>.md>:last-child{margin-bottom:0}

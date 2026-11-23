@@ -8,11 +8,12 @@ import type { MemoryFile, MemoryFiles } from "./index.js";
 
 /**
  * Who's asking: a chat's run (its project), an ion over the projects it may see (ion chief: those shared with it; a
- * project's ion: its own), or you (everything).
+ * project's ion: its own), or you (everything). `you: false`: your own memory is off (the user, 2026-11-23): it neither
+ * sees nor writes your files.
  */
 export type Caller =
-  | { kind: "chat"; projectId: string; chatId: string; runId: string }
-  | { kind: "ion"; ionId: string; projects: string[]; dream?: DreamPass }
+  | { kind: "chat"; projectId: string; chatId: string; runId: string; you?: false }
+  | { kind: "ion"; ionId: string; projects: string[]; dream?: DreamPass; you?: false }
   | { kind: "you" };
 
 /** What a write gives: where ("you", "project": the caller's own, or a project's id), the header and the text. */
@@ -45,6 +46,7 @@ const ONLY_YOU_SHARE = "Only the user shares a file with chats";
 const SUGGEST_IT = "That file is shared with chats; suggest the change instead";
 type TodoFields = { type: MemoryType; status?: "open" | "done"; due?: string };
 const NEW_NEEDS = "A new memory needs a name, a description, a type and a text";
+const YOURS_OFF = "The user's own memory is off";
 /** Each line with its control characters (a bell, a stray escape) gone; line breaks and tabs kept. */
 const clean = (t: string) => t.replace(/[^\P{Cc}\n\t]/gu, "");
 const quoted = (s: string) => JSON.stringify(clean(s));
@@ -160,6 +162,11 @@ const ionSuggestion = (ionId: string) => `_${ionId}`;
  */
 function sightOf(c: Caller): Sight {
   if (c.kind === "you") return { scopes: "all", see: ["chats", "ions"] };
+  const s = callerSight(c);
+  return c.you === false && s.scopes !== "all" ? { ...s, scopes: s.scopes.filter((x) => x !== "you") } : s;
+}
+
+function callerSight(c: Exclude<Caller, { kind: "you" }>): Sight {
   if (c.kind === "chat")
     return { scopes: ["you", { projectId: c.projectId }], see: ["chats"], suggestedFor: [c.projectId] };
   // ion's dream: one project's files (and yours, which its chats and ion see) or yours alone; a chats pass, chats files.
@@ -407,6 +414,7 @@ export class ScopedMemory {
   /** Where a write goes: "you", "project" (the caller's own project), or a project it may see. */
   private scopeOf(s: string): MemoryScope {
     const c = this.caller;
+    if (s === "you" && c.kind !== "you" && c.you === false) throw new UserError(YOURS_OFF);
     if (s === "you" || c.kind === "you") return s === "you" ? "you" : { projectId: s };
     if (c.kind === "chat") {
       if (s !== "project" && s !== c.projectId) throw new UserError(CHAT_WRITES);

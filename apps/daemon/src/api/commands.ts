@@ -35,7 +35,7 @@ import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
 import { HarnessInfos } from "./harness-infos.js";
 import { AgentSignIns } from "./harness-auth.js";
-import { renameChat } from "../runs/ready.js";
+import { chatMemory, renameChat } from "../runs/ready.js";
 import { projectPath } from "../runs/projects.js";
 import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
@@ -182,6 +182,12 @@ export const handlers: Handlers = {
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
     renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));
+    return { ok: true as const };
+  },
+  // Don't remember (off) or Remember (on) a chat, from its menu (the user, 2026-11-23).
+  "chat.remember": (a, ctx) => {
+    if (typeof a.on !== "boolean") throw new UserError("Pick on or off");
+    chatMemory(ctx.store, ctx.db, String(a.chatId ?? ""), a.on);
     return { ok: true as const };
   },
   "chat.archive": async (a, ctx) => {

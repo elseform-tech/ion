@@ -27,6 +27,7 @@ export const DAEMON_EVENT_TYPES = [
   "chat.created",
   "chat.archived",
   "chat.renamed",
+  "chat.memory",
   "ion.heard",
   "ion.said",
   "ion.session",
@@ -89,6 +90,7 @@ export const EV = {
   chatCreated: "chat.created",
   chatArchived: "chat.archived",
   chatRenamed: "chat.renamed",
+  chatMemory: "chat.memory",
   ionHeard: "ion.heard",
   ionSaid: "ion.said",
   ionSession: "ion.session",
@@ -214,6 +216,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     .refine((d) => !(d.keep && d.mute), { message: "A suggestion you took isn't muted" }),
   /** You renamed the chat. */
   "chat.renamed": z.object({ title: z.string().min(1) }),
+  /** "Don't remember" (off) or "Remember" (on) in the chat's menu: off, it gets no memory and writes none. */
+  "chat.memory": z.strictObject({ on: z.boolean() }),
   /** What you asked: the text of an ask, stored before its run is queued. */
   "message.sent": z.object({
     text: z.string(),
@@ -415,6 +419,8 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     authMethod: z.string().nullable(),
     /** The harness's own session id, to continue the chat later. */
     sessionId: z.string().nullable().optional(),
+    /** The memory the session started with (ion adds it): it's resumed only with the same (review of #34). */
+    memory: z.enum(["all", "project", "none"]).optional(),
   }),
   "message.delta": text,
   "message.completed": text,

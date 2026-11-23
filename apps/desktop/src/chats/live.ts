@@ -60,6 +60,7 @@ const CHANGES = new Set<string>([
   EV.chatCreated,
   EV.chatArchived,
   EV.chatRenamed,
+  EV.chatMemory,
   EV.runQueued,
   EV.runStarted,
   EV.runFinished,

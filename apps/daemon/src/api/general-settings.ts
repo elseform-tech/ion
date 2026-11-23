@@ -1,5 +1,15 @@
 import { availableParallelism } from "node:os";
-import { CLOCK, MAX_RUNS, MIN_RUNS, NOTIFY_LEVELS, ON_LIMIT, type UserConfig } from "@ion/config";
+import {
+  CLOCK,
+  MAX_RUNS,
+  MIN_RUNS,
+  NOTIFY_LEVELS,
+  ON_LIMIT,
+  projectRemembered,
+  setMemory,
+  type UserConfig,
+  youRemembered,
+} from "@ion/config";
 import {
   DREAM_MODES,
   type NotifyLevel,
@@ -26,6 +36,10 @@ export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort" 
       projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? "needs"])),
     },
     dream: { mode: c.memory.dream, agent: c.memory.dreamAgent ?? null },
+    memory: {
+      on: youRemembered(c),
+      projects: Object.fromEntries(c.projects.map((p) => [p.id, projectRemembered(c, p.id)])),
+    },
     agentOrder: agentOrder(c.routing.order),
     onLimit: c.routing.onLimit,
     byUsage: c.routing.byUsage,
@@ -59,6 +73,20 @@ function dreamPatch(m: UserConfig["memory"], p: SettingsPatch["dream"]): UserCon
     next.dreamAgent = p.agent;
   }
   return next;
+}
+
+/**
+ * Memory on or off (the user, 2026-11-23): each project given (one set like everywhere follows it again), then
+ * everywhere (a project you turned off stays off).
+ */
+function memoryPatch(c: UserConfig, p: SettingsPatch["memory"]): UserConfig {
+  if (!p) return c;
+  let next = c;
+  for (const [id, on] of Object.entries(p.projects ?? {})) {
+    if (!next.projects.some((x) => x.id === id)) throw new UserError(`Unknown project: ${id}`);
+    next = setMemory(next, flag(on), id);
+  }
+  return p.on === undefined ? next : setMemory(next, flag(p.on));
 }
 
 function flag(v: unknown): boolean {
@@ -105,8 +133,9 @@ function projectLevels(
 }
 
 /** The config with the patch applied; the first bad value refuses the whole patch, in plain words. */
-export function applyGeneral(c: UserConfig, patch: SettingsPatch): UserConfig {
+export function applyGeneral(was: UserConfig, patch: SettingsPatch): UserConfig {
   const n = patch.notifications;
+  const c = memoryPatch(was, patch.memory);
   return {
     ...c,
     resources: patch.maxRuns === undefined ? c.resources : { ...c.resources, max_runs: runs(patch.maxRuns) },

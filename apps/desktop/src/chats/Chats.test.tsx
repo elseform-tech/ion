@@ -95,4 +95,38 @@ describe("Chats", () => {
     expect(container.querySelector(".msgs .u")?.textContent).toBe("Fix the totals");
     expect(container.querySelector(".msgs .pending")).not.toBeNull();
   });
+
+  // Review of #34, 2026-11-23: a private chat could only be made from the CLI. A new chat's head has Don't remember
+  // (the lab's ghost); on, the first message goes with noMemory.
+  it("starts a chat you don't remember", async () => {
+    const c = client([]);
+    const fake = {
+      id: "fake",
+      label: "Fake",
+      installed: true,
+      signedIn: true,
+      models: [],
+      defaultModel: null,
+    };
+    vi.mocked(c.call).mockImplementation(async (cmd: string) => {
+      if (cmd === "harnesses.list") return [fake];
+      if (cmd === "ask") return new Promise(() => {});
+      return [];
+    });
+    const { container } = render(<Chats client={c} openId={null} setOpenId={() => {}} />);
+    await waitFor(() => expect(container.querySelector(".bpill")?.textContent).toBe("Fake"));
+    const ghost = screen.getByRole("button", { name: "Don't remember" });
+    expect(ghost.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(ghost);
+    expect(ghost.getAttribute("aria-pressed")).toBe("true");
+    const box = screen.getByLabelText("Message");
+    fireEvent.change(box, { target: { value: "Keep this between us" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() =>
+      expect(c.call).toHaveBeenCalledWith(
+        "ask",
+        expect.objectContaining({ text: "Keep this between us", noMemory: true }),
+      ),
+    );
+  });
 });

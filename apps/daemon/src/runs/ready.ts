@@ -1,7 +1,9 @@
 import type { HarnessEntry } from "../adapters/registry.js";
+import { loadUserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import type { Db, EventStore } from "../store/index.js";
+import { runMemory } from "../memory/switch.js";
 import { chatsView } from "../views/chats.js";
 
 const TITLE_MAX = 60;
@@ -38,6 +40,29 @@ export function renameChat(store: EventStore, db: Db, chatId: string, title: str
   const name = title.trim().slice(0, 120);
   if (!name) throw new UserError("Give the chat a name");
   store.append({ chatId, runId: null, origin: "daemon", type: EV.chatRenamed, data: { title: name } });
+}
+
+/**
+ * Don't remember (off) or Remember (on) a chat (the user, 2026-11-23): said once in the chat, and kept for it; the
+ * same again says nothing.
+ */
+export function chatMemory(store: EventStore, db: Db, chatId: string, on: boolean): void {
+  const chat = chatsView.list(db).find((c) => c.chatId === chatId);
+  if (!chat) throw new UserError(`Unknown chat: ${chatId}`);
+  const remembered = !chat.notRemembered;
+  if (remembered === on) return;
+  store.append({ chatId, runId: null, origin: "daemon", type: EV.chatMemory, data: { on } });
+}
+
+/** `ion ask --no-memory` (`off`): the chat isn't remembered, from this message on. */
+export function notRemembered(store: EventStore, db: Db, chatId: string, off?: boolean): void {
+  if (off) chatMemory(store, db, chatId, false);
+}
+
+/** A run's memory, read at its start from your switches and the chat's own. */
+export function memoryOfRun(configFile: string, db: Db, l: { projectId: string; chatId: string }) {
+  const off = chatsView.list(db).find((c) => c.chatId === l.chatId)?.notRemembered === true;
+  return runMemory(loadUserConfig(configFile).config, l.projectId, off);
 }
 
 /** How long an agent that was ready counts as ready without asking again. A failed check is asked again. */

@@ -72,7 +72,7 @@ describe("messagesView", () => {
 
 describe("chatsView.session", () => {
   it("is the harness and session id of the chat's last run", () => {
-    expect(chatsView.session(db, "c1")).toEqual({ harness: "fake", sessionId: "s-2" });
+    expect(chatsView.session(db, "c1")).toEqual({ harness: "fake", sessionId: "s-2", memory: "all" });
     expect(chatsView.session(db, "c2")).toBeNull();
   });
 });

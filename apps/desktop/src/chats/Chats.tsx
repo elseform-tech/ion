@@ -1,6 +1,6 @@
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
-import { PanelRight } from "@ion/design-system";
+import { Ghost, PanelRight } from "@ion/design-system";
 import { useEffect, useState } from "react";
 import { type Focus, ToolsPanel, useDiff } from "./ToolsPanel.js";
 import { ChatView, Starting, useTimeline } from "./ChatView.js";
@@ -44,6 +44,7 @@ function sidebarActions(
         return made.id;
       }),
     onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
+    onRemember: (chatId: string, on: boolean) => act(() => client.call("chat.remember", { chatId, on })),
     onRenameProject: (projectId: string, name: string) =>
       act(() => client.call("project.rename", { projectId, name }).then(onProjects)),
     onRemoveProject: (projectId: string) =>
@@ -146,6 +147,31 @@ function useByUsage(client: IonClient): boolean {
   return on;
 }
 
+/** A new chat's head: Don't remember (the lab's ghost; review of #34, 2026-11-23), pressed while it's on. */
+function NewHead(p: { noMemory: boolean; onNoMemory: (on: boolean) => void }) {
+  return (
+    <header className="head" data-tauri-drag-region>
+      <span className="sp" />
+      <button
+        className={`ib${p.noMemory ? " on" : ""}`}
+        type="button"
+        title="Don't remember"
+        aria-label="Don't remember"
+        aria-pressed={p.noMemory}
+        onClick={() => p.onNoMemory(!p.noMemory)}
+      >
+        <Ghost />
+      </button>
+    </header>
+  );
+}
+
+/** The projects a new chat can go in: ion's `default` first. */
+const projectOptions = (projects: ProjectInfo[]) => [
+  { id: "default", name: "default" },
+  ...projects.filter((p) => p.id !== "default").map((p) => ({ id: p.id, name: p.name ?? p.id })),
+];
+
 /** A new chat: which project it's in (ion's `default` unless you pick one), then the message box. */
 function NewChat(props: {
   client: IonClient;
@@ -158,9 +184,11 @@ function NewChat(props: {
   const byUsage = useByUsage(props.client);
   // Your first message, shown at once while ion makes the chat (ion can take a moment).
   const [sending, setSending] = useState<string | null>(null);
+  // Don't remember: the chat gets no memory and writes none.
+  const [noMemory, setNoMemory] = useState(false);
   return (
     <>
-      <header className="head" data-tauri-drag-region />
+      <NewHead noMemory={noMemory} onNoMemory={setNoMemory} />
       {sending !== null && (
         <div className="msgs">
           <div className="col">
@@ -178,19 +206,11 @@ function NewChat(props: {
             onBrainOpen={props.onBrainOpen}
             to={{ projectId: projectId === "default" ? null : projectId }}
             running={null}
-            project={{
-              value: projectId,
-              options: [
-                { id: "default", name: "default" },
-                ...props.projects
-                  .filter((p) => p.id !== "default")
-                  .map((p) => ({ id: p.id, name: p.name ?? p.id })),
-              ],
-              onChange: setProjectId,
-            }}
+            project={{ value: projectId, options: projectOptions(props.projects), onChange: setProjectId }}
             onSending={setSending}
             onSent={props.onSent}
             byUsage={byUsage}
+            noMemory={noMemory}
           />
         </div>
       </div>

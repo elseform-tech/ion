@@ -55,6 +55,23 @@ export function memoryCommands(program: Command, out: () => Out) {
       const r = await withClient((c) => c.call("memory.keep", { path: name }));
       print(out(), "Kept for every project", r);
     });
+  memorySwitch(m, out);
+}
+
+/** `ion memory on|off [-p <project>]` and `ion memory open`. */
+function memorySwitch(m: Command, out: () => Out) {
+  // The user, 2026-11-23: "a way to disable memory". Off: agents and ions get none, and nothing new is written; your
+  // files stay.
+  for (const on of [true, false])
+    m.command(on ? "on" : "off")
+      .description(on ? "Turn it on" : "Turn it off")
+      .option("-p, --project <id>", "Project")
+      .action(async (o: { project?: string }) => {
+        const memory = o.project ? { projects: { [o.project]: on } } : { on };
+        const s = await withClient((c) => c.call("settings.set", { patch: { memory } }));
+        const where = o.project ? ` in ${clean(o.project)}` : "";
+        print(out(), `Memory ${on ? "on" : "off"}${where}`, s.memory);
+      });
   m.command("open")
     .description("Open the folder")
     .action(async () => {

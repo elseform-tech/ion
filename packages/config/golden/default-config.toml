@@ -35,6 +35,7 @@ ionUse = []
 on = []
 
 [memory]
+on = true
 dream = "off"
 
 [agents]

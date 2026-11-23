@@ -2,6 +2,7 @@ import { wrapData } from "../context/index.js";
 import { type HistoryMessage, messagesView } from "../views/messages.js";
 import type { Db } from "../store/index.js";
 import { type MemoryFiles, upFront } from "../memory/index.js";
+import { chatCaller } from "../memory/switch.js";
 
 export type { MemoryFiles };
 
@@ -85,9 +86,11 @@ function pastOf(l: Fresh): string {
  * history (or ion's summary and its last messages), then your message; `index`: whether the index is there.
  */
 export function freshText(
-  l: Fresh & { mcpKey?: string },
+  l: Fresh & { mcpKey?: string; memory?: "none" | "project" },
   memory: MemoryFiles | undefined,
 ): { text: string; index: boolean } {
-  const index = upFront(l.mcpKey ? memory : undefined, { kind: "chat", ...l });
+  // A run whose memory is off gets no index (the user, 2026-11-23).
+  const caller = chatCaller(l);
+  const index = caller && l.mcpKey ? upFront(memory, caller) : "";
   return { text: index + pastOf(l), index: index !== "" };
 }

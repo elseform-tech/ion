@@ -13,6 +13,8 @@ type AskOpts = {
   model?: string;
   effort?: EffortLevel;
   access?: string;
+  /** commander's `--no-memory`: false. */
+  memory?: boolean;
 };
 
 /** How long `ion ask` stays after a limit for ion's question about it. */
@@ -109,6 +111,7 @@ async function start(client: IonClient, text: string, o: AskOpts) {
       ...(o.model ? { model: o.model } : {}),
       ...(o.effort ? { effort: o.effort } : {}),
       ...(o.access === "auto" || o.access === "full" ? { access: o.access } : {}),
+      ...(o.memory === false ? { noMemory: true } : {}),
     });
   } catch (e) {
     client.close();
@@ -129,6 +132,7 @@ export function askCommand(program: Command, out: () => Out) {
     .option("--model <model>", "Model")
     .option("--effort <level>", "low, medium, high or max")
     .option("--access <mode>", "auto (ion decides) or full")
+    .option("--no-memory", "Don't remember this chat")
     .action(async (text: string, o: AskOpts) => {
       if (o.access !== undefined && o.access !== "auto" && o.access !== "full") fail("Pick auto or full");
       const up = await reach(ionPaths().dataDir);

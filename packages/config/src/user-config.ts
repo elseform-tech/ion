@@ -63,6 +63,8 @@ const Project = z.looseObject({
   effort: Effort.optional(),
   /** What may notify you from this project; absent: "needs". */
   notify: Notify.optional(),
+  /** Memory in this project (its chats and its ion); absent: as everywhere (`memory.on`). */
+  memory: z.boolean().optional(),
   /** What its ion does on a schedule. */
   routines: z.array(Routine).optional(),
   /** What the project is, in a line or two (its ion writes it); absent: its README's first paragraph. */
@@ -173,11 +175,13 @@ const UserConfigSchema = z.looseObject({
     .prefault({}),
   tools: Tools.prefault({}),
   /**
-   * ion's memory. `dream`: how often ion tidies it, in quiet hours (merges, rewrites, forgets; every change undoable);
+   * ion's memory. `on`: memory everywhere (your own memory follows it; the user, 2026-11-23: "a way to disable
+   * memory"); off, agents and ions get no memory and nothing new is written. `dream`: how often ion tidies it, in quiet hours (merges, rewrites, forgets; every change undoable);
    * `dreamAgent`: "<harness>[:<model>]" it does it on (absent: ion's quick model).
    */
   memory: z
     .looseObject({
+      on: z.boolean().default(true),
       dream: z.enum(["off", "nightly", "weekly"]).default("off"),
       dreamAgent: z.string().optional(),
     })
@@ -239,6 +243,7 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["tools", "skills"], z.looseObject({ on: z.array(z.string()).optional() })],
   [["agents"], z.looseObject({})],
   [["memory"], z.looseObject({})],
+  [["memory", "on"], z.boolean()],
   [["memory", "dream"], z.enum(["off", "nightly", "weekly"])],
   [["memory", "dreamAgent"], z.string()],
   [["routing"], z.looseObject({})],
@@ -251,14 +256,22 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
 export const ownToolsOn = (c: Pick<UserConfig, "agents">, agent: string): boolean =>
   c.agents?.[agent]?.ownTools !== false;
 
-/** A project's bad `notify` is dropped (its default applies); returns "<id>.notify" for each. */
-function dropBadNotify(raw: unknown): string[] {
+/** A project's bad `notify` or `memory` is dropped (its default applies); returns "<id>.<key>" for each. */
+function dropBadProjectKeys(raw: unknown): string[] {
   const projects = (raw as { projects?: unknown } | null)?.projects;
-  const bad = (Array.isArray(projects) ? projects : []).filter((p): p is Record<string, unknown> =>
-    isBadNotify(p),
+  const all = (Array.isArray(projects) ? projects : []).filter(
+    (p): p is Record<string, unknown> => typeof p === "object" && p !== null,
   );
-  for (const p of bad) delete p.notify;
-  return bad.map((p) => `${String(p.id)}.notify`);
+  const said: string[] = [];
+  for (const [key, schema] of [
+    ["notify", Notify],
+    ["memory", z.boolean()],
+  ] as const)
+    for (const p of all.filter((x) => key in x && !schema.safeParse(x[key]).success)) {
+      delete p[key];
+      said.push(`${String(p.id)}.${key}`);
+    }
+  return said;
 }
 
 /** A hook that isn't valid is dropped alone (the others still run); returns "hooks.<id>" for each. */
@@ -286,9 +299,6 @@ function dropBadAgents(raw: unknown): string[] {
   }
   return bad;
 }
-
-const isBadNotify = (p: unknown): boolean =>
-  typeof p === "object" && p !== null && "notify" in p && !Notify.safeParse(p.notify).success;
 
 /** Removes `path`'s value from `raw` when it's there and `schema` refuses it; true if it did. */
 function dropIfBad(raw: unknown, path: string[], schema: z.ZodType): boolean {
@@ -321,7 +331,7 @@ function dropBad(raw: unknown, file: string): string | null {
   const dropped = FALLBACKS.filter(([path, schema]) => dropIfBad(raw, path, schema)).map(([path]) =>
     path.length === 1 ? path[0]! : path.slice(1).join("."),
   );
-  dropped.push(...dropBadNotify(raw), ...dropBadHooks(raw), ...dropBadAgents(raw));
+  dropped.push(...dropBadProjectKeys(raw), ...dropBadHooks(raw), ...dropBadAgents(raw));
   const said = holdReservedProjects(raw).map(
     (id) => `${basename(file)}: rename project '${id}' (the name is ion's own; ion leaves it out until then)`,
   );
