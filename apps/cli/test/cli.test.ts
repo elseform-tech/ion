@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   rmSync,
   readFileSync,
+  realpathSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -49,7 +50,8 @@ const repo = (name: string) => {
   const git = (...a: string[]) => execFileSync("git", a, { cwd: p });
   git("init", "-q", "-b", "main");
   git("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init");
-  return p;
+  // ion keeps a folder's real path (review of Plan 21 Task 2, 2026-11-23): /tmp is /private/tmp on macOS.
+  return realpathSync.native(p);
 };
 
 const DAEMON_MAIN = fileURLToPath(new URL("../../daemon/dist/main.js", import.meta.url));
@@ -151,9 +153,16 @@ describe("ion cli", { timeout: 20_000 }, () => {
     const p = join(mkdtempSync(join(tmpdir(), "ion-plain-")), "tip-calc");
     mkdirSync(p);
     writeFileSync(join(p, "index.js"), "1\n");
+    // Review of Plan 21 Task 2, 2026-11-23: it asks first; without a terminal to ask in, it says to add --yes.
     expect(await ion("projects", "add", p)).toMatchObject({
+      code: 1,
+      err: "Set up git here? ion makes a first commit of 1 file\nRun it again with --yes",
+    });
+    expect(existsSync(join(p, ".git"))).toBe(false);
+    writeFileSync(join(p, ".env"), "TOKEN=x\n");
+    expect(await ion("projects", "add", p, "--yes")).toMatchObject({
       code: 0,
-      out: "Added tip-calc\nSet up git here: your files are its first commit",
+      out: "Added tip-calc\nSet up git here: 1 file in its first commit, 1 left out (secrets, dependencies, build output, big files)",
     });
     expect(existsSync(join(p, ".git"))).toBe(true);
   });
@@ -175,6 +184,26 @@ describe("ion cli", { timeout: 20_000 }, () => {
     // Set up: bare `ion` is its help again.
     await ion("projects", "add", repo("storefront"));
     expect((await ion()).out).toContain("Usage: ion [options] [command]");
+  });
+
+  // Review of Plan 21 Task 2, 2026-11-23: `ion answer` on ion's own limit question (Wait: nothing runs until the
+  // reset) ends with one line instead of waiting on a run that won't come.
+  // A fresh daemon reads its agents first (opencode takes up to 30 s): this one waits longer.
+  it("answer on ion's limit question ends when nothing runs", { timeout: 60_000 }, async () => {
+    await ion("daemon", "start");
+    await ion("projects", "add", repo("app"));
+    await ion("ask", "limited", "--harness", "fake", "-p", "app");
+    const needs = JSON.parse((await ion("needs", "--json")).out) as {
+      needId: string;
+      choices?: { label: string }[];
+    }[];
+    const need = needs.find((n) => n.choices?.some((c) => c.label === "Wait"))!;
+    const wait = need.choices!.findIndex((c) => c.label === "Wait") + 1;
+    const started = Date.now();
+    const env = { ION_ALLOW_FAKE: "1", ION_DEBUG: "1", ION_ANSWER_WAIT_MS: "300" };
+    const r = await ionWith(env, "answer", need.needId, String(wait));
+    expect(r).toMatchObject({ code: 0, out: "Answered\nThe chat goes on later." });
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 
   // Plan 21 audit, 2026-11-23: after `ion answer`, the chat went on but no command could show its reply. `ion answer`

@@ -20,6 +20,14 @@ function lineOf(s: AgentStep): string {
   return s.command ? `${what}: ${s.command}` : what;
 }
 
+/** The first agent in your order (`infos` come in it) that isn't ready, as "Set up Grok Build: grok login"; or null. */
+export function nextToSetUp(infos: HarnessInfo[]): string | null {
+  const h = infos.find((x) => !ready(x));
+  if (!h) return null;
+  const s = stepOf(h);
+  return s.command ? `Set up ${s.label}: ${s.command}` : `Set up ${s.label}`;
+}
+
 /**
  * With no agent ready, what to do in one line (Plan 21 audit, 2026-11-23: ion chief said "I couldn't reach my agent;
  * try again" and `ion ask` sent someone with no agent installed to Settings): sign in to the agents you have, else

@@ -17,8 +17,8 @@ type AskOpts = {
   memory?: boolean;
 };
 
-/** How long `ion answer` waits for the chat to go on before it ends. */
-const NEXT_RUN_WAIT_MS = 15_000;
+/** How long `ion answer` waits for the chat to go on before it ends (ION_ANSWER_WAIT_MS: tests). */
+const NEXT_RUN_WAIT_MS = Number(process.env.ION_ANSWER_WAIT_MS) || 15_000;
 
 /** How long `ion ask` stays after a limit for ion's question about it. */
 const QUESTION_WAIT_MS = 10_000;
@@ -42,7 +42,10 @@ class Watched {
 
   /** Whether to show this event now; another run's are kept, in case ion goes on with it. */
   mine(e: IonEvent): boolean {
-    if (this.runId === null && e.runId) this.runId = e.runId;
+    // The chat's next run starts (review of Plan 21 Task 2, 2026-11-23: the old run's answered question was taken for it).
+    if (this.runId === null && e.runId && (e.type === EV.runQueued || e.type === EV.runStarted))
+      this.runId = e.runId;
+    if (this.runId === null) return false;
     if (e.runId === this.runId) {
       this.live = true;
       return true;

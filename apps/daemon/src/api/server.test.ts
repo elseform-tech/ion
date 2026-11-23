@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { connect as tcp, Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +21,8 @@ const repo = (name: string) => {
   const git = (...a: string[]) => execFileSync("git", a, { cwd: p });
   git("init", "-q", "-b", "main");
   git("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init");
-  return p;
+  // ion keeps a folder's real path (review of Plan 21 Task 2, 2026-11-23): /tmp is /private/tmp on macOS.
+  return realpathSync.native(p);
 };
 
 describe("daemon api", () => {

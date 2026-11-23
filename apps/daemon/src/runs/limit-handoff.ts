@@ -56,6 +56,11 @@ type Deps = {
   onLimit?: () => "ask" | "continue" | "wait";
   /** What a live run was given as your request (the judge's), read when it hits its limit. */
   requestOf?: (runId: string) => string | null;
+  /**
+   * With no other agent free, the first one that isn't ready and its command ("Set up Grok Build: grok login"), or
+   * null (review of Plan 21 Task 2, 2026-11-23).
+   */
+  setUp?: () => Promise<string | null>;
 };
 
 type Usage = Record<string, { limitedUntil: string | null; limitGuessed?: true }>;
@@ -240,7 +245,8 @@ export class Handoffs {
       return this.continueOn(chatId, l.from, l.to, { request: l.request });
     }
     if (choice === "wait") return this.wait(chatId, l);
-    this.ask(chatId, runId, l, said);
+    const next = l.to ? null : await this.d.setUp?.().catch(() => null);
+    this.ask(chatId, runId, l, { ...said, setUp: next ?? null });
   }
 
   /** The chat's hold may have lifted: its queue hears of it (a run started meanwhile keeps the chat busy anyway). */
@@ -271,7 +277,8 @@ export class Handoffs {
     return chatsView.list(this.d.db).find((c) => c.chatId === chatId)?.projectId ?? "";
   }
 
-  private ask(chatId: string, runId: string, l: Limit, said: Hit): void {
+  /** ion's question; `said.setUp`: with no other agent free, the next one to set up and its command. */
+  private ask(chatId: string, runId: string, l: Limit, said: Hit & { setUp: string | null }): void {
     const L = this.d.label;
     const now = this.now();
     const reset = said.resetsAt ? ` (resets ${clockOf(said.resetsAt, now)})` : "";
@@ -279,7 +286,7 @@ export class Handoffs {
     const wait = { label: WAIT, consequence: `ion goes on at ${clockOf(l.until, now)}${on}.` };
     const question = l.to
       ? `${L(l.from)} hit its limit${reset}. Continue on ${L(l.to)}, or wait?`
-      : `${L(l.from)} hit its limit${reset}. No other agent is free.`;
+      : [`${L(l.from)} hit its limit${reset}. No other agent is free.`, said.setUp].filter(Boolean).join(" ");
     const choices = l.to
       ? [
           {

@@ -58,13 +58,13 @@ pub fn initial_of(name: Option<String>) -> String {
 }
 
 /// The daemon this app starts when ion isn't running (Plan 21 audit, 2026-11-23: the app opened on "ion daemon
-/// start"): `$ION_DAEMON_BIN`, else the one built beside this app in ion's repo (`apps/daemon/dist/main.js`), when
-/// it's there; None otherwise (the app then shows the command).
-pub fn daemon_script(env: impl Fn(&str) -> Option<String>, built: &std::path::Path) -> Option<PathBuf> {
+/// start"): `$ION_DAEMON_BIN`, else (a development build only) the one built beside this app in ion's repo
+/// (`apps/daemon/dist/main.js`), when it's there; None otherwise (the app then shows the command).
+pub fn daemon_script(env: impl Fn(&str) -> Option<String>, built: Option<&std::path::Path>) -> Option<PathBuf> {
     if let Some(bin) = env("ION_DAEMON_BIN").filter(|v| !v.is_empty()) {
         return Some(PathBuf::from(bin));
     }
-    built.is_file().then(|| built.to_path_buf())
+    built.filter(|b| b.is_file()).map(|b| b.to_path_buf())
 }
 
 /// How the daemon is started: through your login shell, so it has your PATH (an app opened from the Finder gets a
@@ -75,15 +75,19 @@ pub fn launch_args(env: impl Fn(&str) -> Option<String>, script: &std::path::Pat
     (shell, args)
 }
 
-/// The daemon built in ion's repo, beside this app's source (a development build).
-const BUILT_DAEMON: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../daemon/dist/main.js");
+/// The daemon built in ion's repo, beside this app's source: a development build only (review of Plan 21 Task 2,
+/// 2026-11-23: a release build must never run a file from where it was built).
+#[cfg(debug_assertions)]
+const BUILT_DAEMON: Option<&str> = Some(concat!(env!("CARGO_MANIFEST_DIR"), "/../../daemon/dist/main.js"));
+#[cfg(not(debug_assertions))]
+const BUILT_DAEMON: Option<&str> = None;
 
 /// Starts the daemon in the background, its output in `<data>/daemon.log`; false when there's none to start.
 #[tauri::command]
 fn start_daemon() -> bool {
     use std::os::unix::process::CommandExt;
     let env = |k: &str| std::env::var(k).ok();
-    let (Some(script), Some(data)) = (daemon_script(env, std::path::Path::new(BUILT_DAEMON)), data_dir(env)) else {
+    let (Some(script), Some(data)) = (daemon_script(env, BUILT_DAEMON.map(std::path::Path::new)), data_dir(env)) else {
         return false;
     };
     if std::fs::create_dir_all(&data).is_err() {
@@ -184,10 +188,13 @@ mod tests {
     #[test]
     fn starts_the_daemon_named_else_the_one_built_beside_it() {
         let built = std::env::temp_dir().join(format!("ion-built-{}.js", std::process::id()));
-        assert_eq!(daemon_script(env(&[("ION_DAEMON_BIN", "/x/main.js")]), &built), Some(PathBuf::from("/x/main.js")));
-        assert_eq!(daemon_script(env(&[]), &built), None);
+        let named = env(&[("ION_DAEMON_BIN", "/x/main.js")]);
+        assert_eq!(daemon_script(named, Some(&built)), Some(PathBuf::from("/x/main.js")));
+        assert_eq!(daemon_script(env(&[]), Some(&built)), None);
         std::fs::write(&built, "").unwrap();
-        assert_eq!(daemon_script(env(&[]), &built), Some(built.clone()));
+        assert_eq!(daemon_script(env(&[]), Some(&built)), Some(built.clone()));
+        // A release build has none beside it (review of Plan 21 Task 2, 2026-11-23).
+        assert_eq!(daemon_script(env(&[]), None), None);
         std::fs::remove_file(&built).unwrap();
     }
 

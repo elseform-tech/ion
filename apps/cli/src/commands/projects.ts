@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import { ApiCallError, type IonClient } from "@ion/client";
 import { connect } from "../connect.js";
@@ -17,6 +18,37 @@ async function call(f: (c: IonClient) => Promise<void>): Promise<void> {
   }
 }
 
+/** ion's git setup, in one line (Plan 21): what went in the first commit, and that some files were left out. */
+function setUpLine(s: { files: number; left: number } | undefined): string {
+  if (!s) return "";
+  const files = `${s.files} ${s.files === 1 ? "file" : "files"}`;
+  const left = s.left ? `, ${s.left} left out (secrets, dependencies, build output, big files)` : "";
+  return `\nSet up git here: ${files} in its first commit${left}`;
+}
+
+/** Your yes to ion's question: in the terminal when there is one, else only with --yes. */
+async function yes(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const a = await rl.question(`${question} [y/N] `);
+  rl.close();
+  return /^y(es)?$/i.test(a.trim());
+}
+
+/**
+ * Adds a folder, answering ion's question first (review of Plan 21 Task 2, 2026-11-23: git was set up without
+ * asking): --yes, or y at the prompt; with no terminal, how to say yes.
+ */
+async function addAsking(c: IonClient, path: string, sure: boolean) {
+  try {
+    return await c.call("projects.add", { path, ...(sure ? { confirm: true } : {}) });
+  } catch (e) {
+    if (!(e instanceof ApiCallError) || e.code !== "confirm") throw e;
+    if (!(await yes(e.message))) return fail(`${e.message}\nRun it again with --yes`);
+    return c.call("projects.add", { path, confirm: true });
+  }
+}
+
 export function projectCommands(program: Command, out: () => Out) {
   const p = program.command("projects").description("Your projects");
   p.command("ls", { isDefault: true })
@@ -32,13 +64,12 @@ export function projectCommands(program: Command, out: () => Out) {
     );
   p.command("add <path>")
     .description("Add a folder")
-    .action((path: string) =>
+    .option("--yes", "Set up git in it without asking")
+    .action((path: string, o: { yes?: boolean }) =>
       call(async (c) => {
         // Resolve here: the daemon's working folder isn't yours.
-        const added = await c.call("projects.add", { path: path.startsWith("/") ? path : resolve(path) });
-        // Plan 21 audit, 2026-11-23: a folder that isn't a git repo gets ion's git setup, said in one line.
-        const setUp = added.gitSetUp ? "\nSet up git here: your files are its first commit" : "";
-        print(out(), `Added ${added.id}${setUp}`, added);
+        const added = await addAsking(c, path.startsWith("/") ? path : resolve(path), o.yes === true);
+        print(out(), `Added ${added.id}${setUpLine(added.gitSetUp)}`, added);
       }),
     );
   p.command("new <name>")

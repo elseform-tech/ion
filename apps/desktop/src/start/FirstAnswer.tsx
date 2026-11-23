@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { openMemory } from "../goto.js";
 
 /**
- * After your first answer, one quiet line on what ion now remembers, linking to Settings → Memory (Plan 21; the audit,
- * 2026-11-23: nothing told a beginner that ion remembers). Nothing more.
+ * After a first run's first answer, one quiet line on what ion now remembers, linking to Settings → Memory (Plan 21;
+ * the audit, 2026-11-23: nothing told a beginner that ion remembers). Nothing more. Once (review of Plan 21 Task 2,
+ * 2026-11-23): it goes when you leave the chat (`onSeen`), and a first run never comes back.
  */
-export function FirstAnswer({ client }: { client: IonClient }) {
+export function FirstAnswer({ client, onSeen }: { client: IonClient; onSeen: () => void }) {
   const [notes, setNotes] = useState<number | null>(null);
   useEffect(() => {
     void client.call("memory.list", {}).then(
@@ -15,6 +16,7 @@ export function FirstAnswer({ client }: { client: IonClient }) {
       () => setNotes(0),
     );
   }, [client]);
+  useEffect(() => onSeen, [onSeen]);
   if (notes === null) return null;
   const noun = notes === 1 ? "note" : "notes";
   return (

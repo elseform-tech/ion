@@ -9,7 +9,6 @@ import { EXAMPLES } from "./steps.js";
 type Props = {
   client: IonClient;
   harnesses: HarnessInfo[];
-  onCheck: () => Promise<unknown>;
   onReload: () => void;
   onSent: (chatId: string) => void;
 };
@@ -63,7 +62,6 @@ function Ask(p: Props & { project: ProjectInfo | null }) {
         project={{ value: projectId, options, onChange: setChosen }}
         onSent={p.onSent}
         agentsAbove
-        onCheck={p.onCheck}
         seed={seed}
       />
       <Examples onPick={(text) => setSeed((s) => ({ text, n: (s?.n ?? 0) + 1 }))} />
@@ -87,16 +85,15 @@ export function FirstRun(p: Props) {
         <div className="inner">
           <h3>Start here</h3>
           <div className="fstep">
-            <AgentSteps
-              client={p.client}
-              harnesses={p.harnesses}
-              onCheck={p.onCheck}
-              onReload={p.onReload}
-              n={1}
-            />
+            <AgentSteps client={p.client} harnesses={p.harnesses} onReload={p.onReload} n={1} />
           </div>
           <Step n={2} name="Pick a folder">
-            <PickFolder add={(path) => p.client.call("projects.add", { path })} onAdded={setProject} />
+            <PickFolder
+              add={(path, confirm) =>
+                p.client.call("projects.add", { path, ...(confirm ? { confirm } : {}) })
+              }
+              onAdded={setProject}
+            />
           </Step>
           <Step n={3} name="Ask">
             {/* A new folder starts the box anew, on that folder. */}

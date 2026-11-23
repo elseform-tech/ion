@@ -87,12 +87,10 @@ export function useLive(client: IonClient) {
     setIons(i ?? []);
   }, [client]);
   // Who's installed and signed in changes outside ion (you sign in in a terminal): read again when asked.
-  // `fresh` (Check again, Plan 21): every agent read again now, not what ion read a minute ago.
-  const readHarnesses = useCallback(
-    (fresh = false) => client.call("harnesses.list", fresh ? { fresh } : {}).then(setHarnesses, () => {}),
+  const refreshHarnesses = useCallback(
+    () => void client.call("harnesses.list", {}).then(setHarnesses, () => {}),
     [client],
   );
-  const refreshHarnesses = useCallback(() => void readHarnesses(), [readHarnesses]);
   useEffect(() => {
     const quiet = () => {}; // a dropped connection shows as "ion isn't running"; nothing to add here
     void client.call("projects.list", {}).then(setProjects, quiet);
@@ -120,6 +118,5 @@ export function useLive(client: IonClient) {
     () => void client.call("projects.list", {}).then(setProjects, () => {}),
     [client],
   );
-  const checkHarnesses = () => readHarnesses(true);
-  return { chats, needs, projects, harnesses, ions, refreshHarnesses, refreshProjects, checkHarnesses };
+  return { chats, needs, projects, harnesses, ions, refreshHarnesses, refreshProjects };
 }

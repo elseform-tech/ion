@@ -124,6 +124,8 @@ export type Ctx = {
   /** When a chat's agent hits its limit: ion's question, the handoff or the wait. */
   handoffs?: Handoffs;
   configFile: string;
+  /** ion's data folder (a folder of yours is never added inside it). */
+  dataDir?: string;
   startedAt: number;
   version: string;
   /** Your servers for ions' turns, and each server's tools for "Ions can use". */

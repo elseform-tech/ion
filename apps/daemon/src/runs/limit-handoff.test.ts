@@ -53,7 +53,10 @@ const depsOf = () => ({
   released: (chatId: string) => void released.push(chatId),
   onLimit: () => onLimit,
   requestOf: (runId: string) => requests[runId] ?? null,
+  setUp: async () => setUpLine,
 });
+/** The next agent to set up, as ion's question names it (none: no such agent). */
+let setUpLine: string | null = null;
 const make = () => new Handoffs(depsOf());
 
 beforeEach(() => {
@@ -66,6 +69,7 @@ beforeEach(() => {
   released = [];
   waits = new Waits();
   onLimit = "ask";
+  setUpLine = null;
   handoffs = make();
 });
 
@@ -236,6 +240,16 @@ describe("Handoffs", () => {
     expect(w.summary).toBe(`Grok Build hit its limit (resets ${clock(soon)}). No other agent is free.`);
     expect(w.choices?.map((c) => c.label)).toEqual(["Wait"]);
     expect(w.choices?.[0]?.consequence).toBe(`ion goes on at ${clock(soon)}.`);
+  });
+
+  // Review of Plan 21 Task 2, 2026-11-23 (Review Focus 2): with opencode's quota out and no other agent, ion said only
+  // "No other agent is free." It names the first agent that isn't ready, with its install or sign-in command.
+  it("with no agent free, suggests the next one to set up", async () => {
+    ready = ["opencode"];
+    setUpLine = "Set up Grok Build: grok login";
+    hitLimit("c1", "opencode", inAnHour());
+    const w = await until(() => needs.open("c1")[0]);
+    expect(w.summary).toMatch(/No other agent is free\. Set up Grok Build: grok login$/);
   });
 
   // The user, 2026-11-21: Wait re-queues the chat for the reset time.

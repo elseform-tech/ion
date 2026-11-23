@@ -1,11 +1,11 @@
-import { DEFAULT_PROJECT, loadUserConfig, saveUserConfig } from "@ion/config";
+import { DEFAULT_PROJECT, ionPaths, loadUserConfig, saveUserConfig } from "@ion/config";
 import type { HarnessInfo } from "@ion/schema";
 import { agentLabel } from "../adapters/registry.js";
 import { stepOf } from "../runs/agent-steps.js";
 import { chatsView } from "../views/chats.js";
 import { addFolder } from "../workspace/index.js";
 import type { Handlers } from "./commands.js";
-import { UserError } from "./errors.js";
+import { AskFirst, UserError } from "./errors.js";
 
 /** `fresh`: each agent read again now; `waitMs`: what's known, waiting that long at most for first reads. */
 export type ListOpts = { fresh?: boolean; waitMs?: number };
@@ -37,15 +37,21 @@ export const startHandlers = (a: Agents): Pick<Handlers, "start.status" | "proje
     });
     return { agents: steps, projects, chats, firstRun: !projects && !chats };
   },
-  // Plan 21 audit, 2026-11-23: a folder that isn't a git repo was refused with no fix; it gets ion's git setup now.
+  // Plan 21 audit, 2026-11-23: a folder that isn't a git repo was refused with no fix; it gets ion's git setup now,
+  // once you say yes (review of Plan 21 Task 2, 2026-11-23).
   "projects.add": async (args, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
-    const added = await addFolder(config, String(args.path ?? "")).catch((e: Error) => {
+    const ionDirs = [ctx.dataDir ?? ionPaths().dataDir];
+    const added = await addFolder(config, String(args.path ?? ""), {
+      ionDirs,
+      confirm: args.confirm === true,
+    }).catch((e: Error) => {
       throw new UserError(e.message);
     });
+    if ("ask" in added) throw new AskFirst(added.ask);
     saveUserConfig(ctx.configFile, added.config);
     const project = added.config.projects[added.config.projects.length - 1]!;
-    return added.gitSetUp ? { ...project, gitSetUp: true as const } : project;
+    return added.gitSetUp ? { ...project, gitSetUp: added.gitSetUp } : project;
   },
 });

@@ -495,7 +495,7 @@ function openState(
   });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines, memory });
   const base0 = {
-    ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
+    ...{ configFile: opts.configFile, dataDir: opts.dataDir, startedAt: Date.now(), version: VERSION },
     ...{ tools, oauth, unsure, ionServers, memory, dreams, handoffs },
   };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };

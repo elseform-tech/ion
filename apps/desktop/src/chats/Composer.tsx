@@ -173,8 +173,6 @@ type Props = {
   why?: string | null;
   /** A new chat you said not to remember (review of #34, 2026-11-23): its first message goes with noMemory. */
   noMemory?: boolean;
-  /** Reads every agent again now (Check again, with no agent ready). */
-  onCheck?: () => Promise<unknown>;
   /** Your agents are listed above the box (the first run): with none ready, one line says so instead. */
   agentsAbove?: boolean;
   /** Words put in the box (the first run's first messages; `n` counts picks, so the same one goes in again). */
@@ -192,7 +190,6 @@ function NoAgent(p: Props) {
       <AgentSteps
         client={p.client}
         harnesses={p.harnesses}
-        onCheck={p.onCheck ?? (() => p.onBrainOpen?.())}
         onReload={p.onBrainOpen}
         title="No agent is ready"
       />

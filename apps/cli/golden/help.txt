@@ -55,7 +55,7 @@ Options:
 
 Commands:
   ls                     List your projects
-  add <path>             Add a folder
+  add [options] <path>   Add a folder
   new <name>             Make a new project
   rename <id> <name...>  Show a project under a new name
   remove <id>            Take a project out of ion (its folder stays)

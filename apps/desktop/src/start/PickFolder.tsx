@@ -1,13 +1,14 @@
+import { ApiCallError } from "@ion/client/browser";
 import { Folder, FolderOpen, Info } from "@ion/design-system";
 import type { ProjectInfo } from "@ion/schema";
 import { open } from "@tauri-apps/plugin-dialog";
 import { type KeyboardEvent, useState } from "react";
 import { why } from "../callError.js";
 
-/** A folder ion added: `gitSetUp` when it set up git there first. */
-export type Added = ProjectInfo & { gitSetUp?: true };
-/** Adds a folder (`projects.add`). */
-export type AddFolderFn = (path: string) => Promise<Added>;
+/** A folder ion added: `gitSetUp` when it set up git there first (the files in its first commit; how many were left out). */
+export type Added = ProjectInfo & { gitSetUp?: { files: number; left: number } };
+/** Adds a folder (`projects.add`); `confirm`: you said yes to ion's question. */
+export type AddFolderFn = (path: string, confirm?: boolean) => Promise<Added>;
 
 const inTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -17,21 +18,44 @@ async function pickFolder(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
-/** Adding a folder: a typed path (a browser), the folder picker (the app), what was added, and why it wasn't. */
+/** ion's git setup in one line: the files in its first commit, and that some were left out. */
+function setUpLine(s: { files: number; left: number }): string {
+  const files = `${s.files} ${s.files === 1 ? "file" : "files"}`;
+  const left = s.left ? `, ${s.left} left out (secrets, dependencies, build output, big files)` : "";
+  return `Set up git here: ${files} in its first commit${left}`;
+}
+
+/** ion's question before it sets up git (or adds the repo a folder is in), with its path. */
+type Asking = { question: string; path: string };
+
+/**
+ * Adding a folder: a typed path (a browser), the folder picker (the app), ion's question and your yes (review of Plan
+ * 21 Task 2, 2026-11-23: git was set up without asking), while it works, what was added, and why it wasn't.
+ */
 function useAddFolder(add: AddFolderFn, onAdded: (p: Added) => void) {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState<Asking | null>(null);
+  const [working, setWorking] = useState(false);
   const [added, setAdded] = useState<Added | null>(null);
-  const go = (p: string) =>
-    add(p).then(
-      (r) => {
-        setAdded(r);
-        setError(null);
-        setPath("");
-        onAdded(r);
-      },
-      (e: unknown) => setError(why(e)),
-    );
+  const go = (p: string, confirm = false) => {
+    setWorking(confirm);
+    setAsking(null);
+    return add(p, confirm)
+      .then(
+        (r) => {
+          setAdded(r);
+          setError(null);
+          setPath("");
+          onAdded(r);
+        },
+        (e: unknown) =>
+          e instanceof ApiCallError && e.code === "confirm"
+            ? setAsking({ question: e.message, path: p })
+            : setError(why(e)),
+      )
+      .finally(() => setWorking(false));
+  };
   const browse = () =>
     void pickFolder().then(
       (p) => (p ? go(p) : undefined),
@@ -44,21 +68,47 @@ function useAddFolder(add: AddFolderFn, onAdded: (p: Added) => void) {
     setPath(t);
     setError(null);
   };
-  return { path, edit, error, added, browse, onKey };
+  const yes = () => asking && void go(asking.path, true);
+  const clear = () => setAdded(null);
+  return { path, edit, error, added, browse, onKey, asking, working, yes, no: () => setAsking(null), clear };
 }
 
-/** ion's git setup, in one line. */
-const SetUp = () => (
-  <div className="quiet">
-    <Info />
-    Set up git here: your files are its first commit
-  </div>
-);
+/** What adding a folder says under it: ion's question, that it's working, or what it set up. */
+function Status({ f }: { f: ReturnType<typeof useAddFolder> }) {
+  if (f.working)
+    return (
+      <div className="fwait">
+        <i className="spin" />
+        Setting up git…
+      </div>
+    );
+  if (f.asking) {
+    const setUp = f.asking.question.startsWith("Set up git");
+    return (
+      <div className="hsign">
+        <span className="g">{f.asking.question}</span>
+        <button className="btn" type="button" onClick={f.no}>
+          Cancel
+        </button>
+        <button className="btn pri" type="button" onClick={f.yes}>
+          {setUp ? "Set up git" : "Add repo"}
+        </button>
+      </div>
+    );
+  }
+  if (!f.added?.gitSetUp) return null;
+  return (
+    <div className="quiet">
+      <Info />
+      {setUpLine(f.added.gitSetUp)}
+    </div>
+  );
+}
 
 /**
  * Pick a folder of yours (Plan 21 audit, 2026-11-23: the app couldn't add one; only `ion projects add` could): the
- * system's folder picker in the app, a typed path in a browser. One that isn't a git repo gets ion's git setup, said
- * in one line.
+ * system's folder picker in the app, a typed path in a browser. One that isn't a git repo gets ion's git setup once
+ * you say yes, said in one line.
  */
 export function PickFolder({ add, onAdded }: { add: AddFolderFn; onAdded: (p: Added) => void }) {
   const f = useAddFolder(add, onAdded);
@@ -88,19 +138,20 @@ export function PickFolder({ add, onAdded }: { add: AddFolderFn; onAdded: (p: Ad
         )}
         {f.error && <div className="perr">{f.error}</div>}
       </div>
-      {f.added?.gitSetUp && <SetUp />}
+      <Status f={f} />
     </>
   );
 }
 
 /**
  * The project menu's Add folder (beside New project): the folder picker in the app; in a browser, a path typed in
- * its place. ion's git setup is said under it.
+ * its place. ion's question and its git setup are said under it.
  */
 export function AddFolder({ add, onAdded }: { add: AddFolderFn; onAdded: (p: Added) => void }) {
   const f = useAddFolder(add, onAdded);
   const [typing, setTyping] = useState(false);
-  if (typing && !inTauri())
+  // Typing until ion asks, works or has added it; then what it says.
+  if (typing && !inTauri() && !f.asking && !f.working && !f.added)
     return (
       <div className="pmi pnew">
         <FolderOpen />
@@ -118,12 +169,20 @@ export function AddFolder({ add, onAdded }: { add: AddFolderFn; onAdded: (p: Add
     );
   return (
     <>
-      <button type="button" className="pnew" onClick={() => (inTauri() ? f.browse() : setTyping(true))}>
+      <button
+        type="button"
+        className="pnew"
+        onClick={() => {
+          f.clear();
+          if (inTauri()) f.browse();
+          else setTyping(true);
+        }}
+      >
         <FolderOpen />
         Add folder
       </button>
-      {f.error && inTauri() && <div className="perr">{f.error}</div>}
-      {f.added?.gitSetUp && <SetUp />}
+      {f.error && <div className="perr">{f.error}</div>}
+      <Status f={f} />
     </>
   );
 }

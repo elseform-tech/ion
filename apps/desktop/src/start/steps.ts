@@ -1,13 +1,4 @@
-import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
-
-/** One agent's first step: ready, else the command that installs it or signs it in (as `start.status` says). */
-export type Step = { state: "ready" | "install" | "signIn"; command?: string };
-
-export function stepOf(h: HarnessInfo): Step {
-  if (h.installed && h.signedIn) return { state: "ready" };
-  if (!h.installed) return { state: "install", ...(h.install ? { command: h.install } : {}) };
-  return { state: "signIn", ...(h.signIn ? { command: h.signIn.command } : {}) };
-}
+import type { ChatInfo, ProjectInfo } from "@ion/schema";
 
 /** Three first messages for a folder you just picked (Plan 21). */
 export const EXAMPLES = [

@@ -54,7 +54,7 @@ describe("start.status", () => {
   });
 
   it("an existing user never sees it: a project of your own, or any chat (even in default)", async () => {
-    await client.call("projects.add", { path: folder("site") });
+    await client.call("projects.add", { path: folder("site"), confirm: true });
     expect(await client.call("start.status", {})).toMatchObject({ projects: 1, firstRun: false });
     const other = mkdtempSync(join(tmpdir(), "ion-start-"));
     const srv2 = await startServer({
@@ -72,11 +72,23 @@ describe("start.status", () => {
     }
   });
 
-  it("picking a non-git folder sets up git and says so", async () => {
+  // Review of Plan 21 Task 2, 2026-11-23: git was set up without asking. ion asks first (code `confirm`).
+  it("picking a non-git folder sets up git and says so, once you say yes", async () => {
     const path = folder("tip-calc");
-    const added = await client.call("projects.add", { path });
-    expect(added).toMatchObject({ id: "tip-calc", path, gitSetUp: true });
+    await expect(client.call("projects.add", { path })).rejects.toMatchObject({
+      code: "confirm",
+      message: "Set up git here? ion makes a first commit of 1 file",
+    });
+    expect(existsSync(join(path, ".git"))).toBe(false);
+    const added = await client.call("projects.add", { path, confirm: true });
+    expect(added).toMatchObject({ id: "tip-calc", gitSetUp: { files: 1, left: 0 } });
     expect(existsSync(join(path, ".git"))).toBe(true);
+  });
+
+  it("refuses ion's own data folder", async () => {
+    await expect(client.call("projects.add", { path: join(home, "data") })).rejects.toThrow(
+      "Pick a project folder, not one of ion's own",
+    );
   });
 });
 

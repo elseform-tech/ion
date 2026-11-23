@@ -1800,6 +1800,31 @@ export function sumLines(lines: Line[]) {
     </div>
   </section>
 
+  <!-- Plan 21 (review of Task 2, 2026-11-23): the first run's other states, drawn with the window's own parts -->
+  <section class="sec" aria-labelledby="h-first">
+    <h2 id="h-first">First run: the other states</h2>
+    <div class="win" style="min-height:0;display:block;padding:20px 28px">
+      <div class="first" style="padding:0"><div class="inner">
+        <!-- a new chat with no agent ready: the agents above the box, with Check again (never a silent grey Send) -->
+        <div class="fstep">
+          <div class="fh2">No agent is ready<span class="sp"></span><button class="ib" type="button" title="Check again" aria-label="Check again"><i data-lucide="rotate-cw"></i></button></div>
+          <div class="fagents">
+            <div class="farow"><span class="nm">opencode</span><span class="g">Install:</span><code>npm i -g opencode-ai</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>
+            <div class="farow"><span class="nm">Grok Build</span><span class="g">Sign in:</span><code>grok login</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button><span class="sp"></span><button class="btn" type="button">Sign in</button></div>
+          </div>
+        </div>
+        <!-- Pick a folder: ion asks before its git setup, then says it's working, then what went in and what was left out -->
+        <div class="hsign"><span class="g">Set up git here? ion makes a first commit of 12 files</span><button class="btn" type="button">Cancel</button><button class="btn pri" type="button">Set up git</button></div>
+        <div class="fwait"><i class="spin"></i>Setting up git…</div>
+        <div class="quiet"><i data-lucide="info"></i>Set up git here: 12 files in its first commit, 3 left out (secrets, dependencies, build output, big files)</div>
+        <!-- after a first run's first answer, once: what ion remembers, linking to Settings → Memory -->
+        <div class="quiet"><i data-lucide="brain"></i>ion keeps notes as you work <button type="button" class="link" style="padding:0;color:var(--muted)">Memory</button></div>
+        <!-- the app starting ion itself (the browser build keeps "ion isn't running" with its command) -->
+        <h3 style="font-size:20px;display:inline-flex;align-items:center;gap:10px;justify-content:center"><i class="spin"></i> Starting ion…</h3>
+      </div></div>
+    </div>
+  </section>
+
   <section class="sec" aria-labelledby="h-av">
     <h2 id="h-av">Avatars</h2>
     <canvas id="lineup" aria-label="Original avatar set, used for ions"></canvas>

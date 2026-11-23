@@ -1,5 +1,6 @@
 import { loadUserConfig } from "@ion/config";
-import { agentLabel, byPreference } from "../adapters/registry.js";
+import { agentLabel, byPreference, listedHarnessIds } from "../adapters/registry.js";
+import { nextToSetUp } from "../runs/agent-steps.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { IonQuestions } from "../ions/questions.js";
 import type { NeedsService } from "../needs/index.js";
@@ -55,6 +56,12 @@ function limitHandoffs(d: Deps): Handoffs {
     changed: async (chatId) => (await diffOfChat(d, chatId)).files,
     // The request a limited run was given (an ion thread's is the ion's, never its brief): the judge's after it.
     requestOf: (runId) => d.runs.requestOf(runId),
+    // No other agent free: the next one to set up, by your order (review of Plan 21 Task 2, 2026-11-23).
+    setUp: async () => {
+      const known = harnessInfos.cached();
+      const ids = byPreference(listedHarnessIds(), orderIn(d.configFile));
+      return nextToSetUp(ids.flatMap((id) => known.filter((h) => h.id === id)));
+    },
   });
 }
 

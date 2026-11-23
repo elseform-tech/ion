@@ -194,10 +194,15 @@ export interface Commands extends ToolsCommands, AgentCommands {
   status: { args: Record<string, never>; result: StatusResult };
   "projects.list": { args: Record<string, never>; result: ProjectInfo[] };
   /**
-   * Adds a folder. One that isn't a git repo gets ion's git setup first (`gitSetUp`): a new repo, your files its
-   * first commit. Refused for your home folder and for one too big to set up.
+   * Adds a folder, by its real path. One inside a repo offers that repo; one that isn't a repo (or a repo with no
+   * commits) gets ion's git setup (`gitSetUp`: the files in its first commit, and how many were left out: secrets,
+   * dependencies, build output, big files). Both ask first (code `confirm`), and go ahead with `confirm`. Refused for
+   * your home, above it, its hidden folders, secrets and system folders, ion's own, and one too big to set up.
    */
-  "projects.add": { args: { path: string }; result: ProjectInfo & { gitSetUp?: true } };
+  "projects.add": {
+    args: { path: string; confirm?: boolean };
+    result: ProjectInfo & { gitSetUp?: { files: number; left: number } };
+  };
   "project.create": { args: { name: string }; result: ProjectInfo };
   "project.star": { args: { projectId: string; starred: boolean }; result: { ok: true } };
   /** Shows the project under a new name (its id stays). */
