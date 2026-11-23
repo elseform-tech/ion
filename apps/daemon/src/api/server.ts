@@ -256,7 +256,7 @@ function chiefSuggestions(c: Pick<Ctx, "store" | "db" | "configFile" | "runs" | 
     addRoutine: (projectId, r) => void addRoutineTo(c, projectId, r),
     resume: async (chatId) => {
       const harness = chatsView.session(c.db, chatId)?.harness ?? null;
-      await c.runs.ask(followAsk(chatId, { harness, text: RESUME }));
+      await c.runs.ask(followAsk(chatId, { harness, text: RESUME }), { resume: true });
     },
   });
 }

@@ -19,6 +19,8 @@ export type AskOpts = {
   by?: "ion";
   title?: string;
   handoff?: true;
+  /** "Pick up where you left off" (ion chief's resume of a stalled chat). */
+  resume?: true;
   routed?: string;
 };
 
@@ -34,11 +36,11 @@ export function waitLine(queue: Queue): string | undefined {
 /**
  * How this run came. The user, 2026-11-22: only ion's own work waits for one of its slots, and says why: chats ion
  * starts (its threads, routines), and a handoff or a wait going on inside one of its threads (review of bf69fe1,
- * 2026-11-23). Yours start at once.
+ * 2026-11-23), or a resume ion chief offered there (Task 3 re-review, 2026-11-23). Yours start at once.
  */
 export const howOf = (o: AskOpts, inIonThread: boolean): How => ({
   ...{ by: o.by, handoff: o.handoff, routed: o.routed },
-  ions: o.by === "ion" || (!!o.handoff && inIonThread),
+  ions: o.by === "ion" || ((!!o.handoff || !!o.resume) && inIonThread),
 });
 
 /** After your message: why Pick by usage picked the agent (one line), then the run queued (and why it waits). */

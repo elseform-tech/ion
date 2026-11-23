@@ -177,3 +177,22 @@ it("a handoff in an ion thread waits while slots are full; one in your own chat 
   await runs.interrupt(hold.runId);
   expect((await finished(inThread.runId)).map((e) => e.type)).toContain("run.started");
 });
+
+// Task 3 re-review, 2026-11-23: "Pick up where you left off" (ion chief's resume of a stalled chat) in an ion's
+// thread skipped "Chats ion runs at once"; it counts like any run ion starts. In your own chat it still starts.
+it("a resume in an ion thread waits while slots are full; one in your own chat doesn't", async () => {
+  limitTo(1);
+  const thread = await askIon("hello");
+  await finished(thread.runId);
+  const mine = await ask("hello");
+  await finished(mine.runId);
+  const hold = await askIon("slow");
+  const resume = { text: "Pick up where you left off.", harness: "fake" };
+  const inThread = await runs.ask({ ...resume, chatId: thread.chatId }, { resume: true });
+  const inMine = await runs.ask({ ...resume, chatId: mine.chatId }, { resume: true });
+  await finished(inMine.runId);
+  await new Promise((r) => setTimeout(r, 50));
+  expect(typesOf(inThread.runId)).toEqual(["message.sent", "run.queued"]);
+  await runs.interrupt(hold.runId);
+  expect((await finished(inThread.runId)).map((e) => e.type)).toContain("run.started");
+});
