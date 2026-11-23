@@ -1,23 +1,11 @@
-import {
-  Archive,
-  Avatar,
-  CircleAlert,
-  Ellipsis,
-  Pencil,
-  Square,
-} from "@ion/design-system";
+import { Archive, Avatar, CircleAlert, Ellipsis, Pencil, Square } from "@ion/design-system";
 import type { ChatInfo, IonInfo, NeedInfo } from "@ion/schema";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useDismiss } from "./dismiss.js";
 import { relTime } from "./live.js";
 
 /** `ion`: the chat's project ion, when ion started the chat (its avatar fills the first slot). */
-export type RowProps = {
-  chat: ChatInfo;
-  open: boolean;
-  onOpen: () => void;
-  ion?: IonInfo;
-};
+export type RowProps = { chat: ChatInfo; open: boolean; onOpen: () => void; ion?: IonInfo };
 
 /** The first slot: the project's ion for a thread ion started; empty for your own chats. */
 const Slot = ({ ion }: { ion?: IonInfo }) =>
@@ -28,13 +16,7 @@ export type RowActions = {
 };
 
 /** A Needs-you row: the question, its project under it, the wait dot. */
-export const NeedRow = ({
-  chat,
-  open,
-  onOpen,
-  need,
-  ion,
-}: RowProps & { need: NeedInfo }) => (
+export const NeedRow = ({ chat, open, onOpen, need, ion }: RowProps & { need: NeedInfo }) => (
   <button className={`r${open ? " on" : ""}`} type="button" onClick={onOpen}>
     <Slot ion={ion} />
     <span>
@@ -64,13 +46,7 @@ function When({ chat }: { chat: ChatInfo }) {
 }
 
 /** The chat's name in an input, saved on Enter or when you leave it; Escape leaves it as it was. */
-function RenameBox({
-  chat,
-  onDone,
-}: {
-  chat: ChatInfo;
-  onDone: (title: string | null) => void;
-}) {
+function RenameBox({ chat, onDone }: { chat: ChatInfo; onDone: (title: string | null) => void }) {
   const [title, setTitle] = useState(chat.title);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") onDone(title);
@@ -93,15 +69,7 @@ function RenameBox({
 }
 
 /** The row's menu: Rename and Archive. */
-function RowMenu({
-  chat,
-  acts,
-  onRename,
-}: {
-  chat: ChatInfo;
-  acts: RowActions;
-  onRename: () => void;
-}) {
+function RowMenu({ chat, acts, onRename }: { chat: ChatInfo; acts: RowActions; onRename: () => void }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   useDismiss(open, wrap, () => setOpen(false));
@@ -125,11 +93,7 @@ function RowMenu({
             <Pencil />
             Rename
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={pick(() => acts.onArchive(chat.chatId))}
-          >
+          <button type="button" role="menuitem" onClick={pick(() => acts.onArchive(chat.chatId))}>
             <Archive />
             Archive
           </button>
@@ -162,18 +126,13 @@ export function ChatRow({
         chat={chat}
         onDone={(title) => {
           setRenaming(false);
-          if (title?.trim() && title.trim() !== chat.title)
-            acts.onRename(chat.chatId, title.trim());
+          if (title?.trim() && title.trim() !== chat.title) acts.onRename(chat.chatId, title.trim());
         }}
       />
     );
   return (
     <div className="rw">
-      <button
-        className={`r${open ? " on" : ""}`}
-        type="button"
-        onClick={onOpen}
-      >
+      <button className={`r${open ? " on" : ""}`} type="button" onClick={onOpen}>
         <Slot ion={ion} />
         <span>
           <span className={`tt${running ? " now" : ""}`}>{chat.title}</span>

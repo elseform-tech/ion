@@ -7,10 +7,7 @@ import { needsView } from "./needs.js";
 
 let db: Db;
 let store: EventStore;
-const d = (e: Omit<NewEvent, "origin">): NewEvent => ({
-  origin: "daemon",
-  ...e,
-});
+const d = (e: Omit<NewEvent, "origin">): NewEvent => ({ origin: "daemon", ...e });
 
 beforeEach(() => {
   db = openDb(":memory:");
@@ -20,12 +17,7 @@ beforeEach(() => {
       chatId: "c1",
       runId: null,
       type: "chat.created",
-      data: {
-        title: "Fix it",
-        projectId: "app",
-        worktree: "/w/c1",
-        branch: "ion/fix-it-abc123",
-      },
+      data: { title: "Fix it", projectId: "app", worktree: "/w/c1", branch: "ion/fix-it-abc123" },
     }),
   );
   store.append({
@@ -79,13 +71,7 @@ describe("needs view", () => {
       }),
     );
     expect(needsView.open(db)).toMatchObject([
-      {
-        needId: "n2",
-        chatId: "c1",
-        runId: "r1",
-        projectId: "app",
-        kind: "edit",
-      },
+      { needId: "n2", chatId: "c1", runId: "r1", projectId: "app", kind: "edit" },
     ]);
     expect(needsView.open(db, "other-chat")).toEqual([]);
   });
@@ -120,22 +106,11 @@ describe("chats view", () => {
 // Plan 08: the sidebar sorts and labels chats by their last activity.
 describe("chats view, activity", () => {
   it("keeps when each chat last had a message or a run", () => {
-    const at = chatsView
-      .list(db)
-      .find((c) => c.chatId === "c1")?.lastActivityAt;
+    const at = chatsView.list(db).find((c) => c.chatId === "c1")?.lastActivityAt;
     expect(typeof at).toBe("string");
     const before = Date.parse(at!);
-    store.append(
-      d({
-        chatId: "c1",
-        runId: "r2",
-        type: "message.sent",
-        data: { text: "again" },
-      }),
-    );
-    const after = chatsView
-      .list(db)
-      .find((c) => c.chatId === "c1")!.lastActivityAt!;
+    store.append(d({ chatId: "c1", runId: "r2", type: "message.sent", data: { text: "again" } }));
+    const after = chatsView.list(db).find((c) => c.chatId === "c1")!.lastActivityAt!;
     expect(Date.parse(after)).toBeGreaterThanOrEqual(before);
   });
 });
@@ -146,33 +121,18 @@ describe("chats view, preview", () => {
   it("strips control and bidi characters from the preview", () => {
     const text = "ok\u001b[31m red\u202e evil\u0007 end";
     store.append(
-      d({
-        chatId: "c1",
-        runId: "r4",
-        type: "message.completed",
-        data: { messageId: "m2", text },
-      }),
+      d({ chatId: "c1", runId: "r4", type: "message.completed", data: { messageId: "m2", text } }),
     );
-    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.preview).toBe(
-      "ok[31m red evil end",
-    );
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.preview).toBe("ok[31m red evil end");
   });
 
   it("keeps the start of the agent's last reply, on one line", () => {
     const text = `Done.\n\nI changed **three** files and ran the tests; ${"all green ".repeat(20)}`;
     store.append(
-      d({
-        chatId: "c1",
-        runId: "r3",
-        type: "message.completed",
-        data: { messageId: "m1", text },
-      }),
+      d({ chatId: "c1", runId: "r3", type: "message.completed", data: { messageId: "m1", text } }),
     );
-    const preview =
-      chatsView.list(db).find((c) => c.chatId === "c1")?.preview ?? "";
-    expect(
-      preview.startsWith("Done. I changed three files and ran the tests;"),
-    ).toBe(true);
+    const preview = chatsView.list(db).find((c) => c.chatId === "c1")?.preview ?? "";
+    expect(preview.startsWith("Done. I changed three files and ran the tests;")).toBe(true);
     expect(preview.length).toBeLessThanOrEqual(120);
   });
 });
@@ -182,17 +142,8 @@ describe("chats view, preview", () => {
 describe("chats view, waiting", () => {
   it("says why a chat waits for a slot, until its run starts", () => {
     const waiting = "Waiting — 1 ion chat running";
-    store.append(
-      d({
-        chatId: "c1",
-        runId: "r9",
-        type: "run.queued",
-        data: { access: "auto", waiting },
-      }),
-    );
-    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBe(
-      waiting,
-    );
+    store.append(d({ chatId: "c1", runId: "r9", type: "run.queued", data: { access: "auto", waiting } }));
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBe(waiting);
     store.append({
       chatId: "c1",
       runId: "r9",
@@ -200,9 +151,7 @@ describe("chats view, waiting", () => {
       type: "run.started",
       data: { harness: "fake", model: "m", effort: null, authMethod: null },
     });
-    expect(
-      chatsView.list(db).find((c) => c.chatId === "c1")?.waiting,
-    ).toBeUndefined();
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBeUndefined();
   });
 });
 
