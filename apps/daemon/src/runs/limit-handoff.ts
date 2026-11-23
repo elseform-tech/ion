@@ -109,6 +109,8 @@ export class Handoffs {
    * nothing queued goes out on the limited agent meanwhile, and one chat can't ask twice.
    */
   private readonly asking = new Set<string>();
+  /** Chats that went on, unattended, on an agent limited only by ion's guess: the next limit asks you. */
+  private readonly triedGuess = new Set<string>();
   /** Chats trying their agent again after a guessed reset: how many tries so far. */
   private readonly rechecks = new Map<string, number>();
 
@@ -143,6 +145,7 @@ export class Handoffs {
   /** The chat's wait is off (your message, Stop, the chat archived). */
   cancel(chatId: string): void {
     this.d.waits.cancel(chatId);
+    this.triedGuess.delete(chatId);
     this.rechecks.delete(chatId);
   }
 
@@ -156,7 +159,10 @@ export class Handoffs {
     const limit = this.hit.get(runId);
     this.hit.delete(runId);
     // A try that ended any other way than on the limit ends the re-checking.
-    if (!limit || status !== "failed") return void this.rechecks.delete(chatId);
+    if (!limit || status !== "failed") {
+      this.triedGuess.delete(chatId);
+      return void this.rechecks.delete(chatId);
+    }
     if (this.asking.has(chatId) || this.openQuestion(chatId)) return;
     this.asking.add(chatId); // held now: the queue hears of the run's end right after this
     queueMicrotask(() => void this.limited(chatId, runId, limit).catch(said));
@@ -208,7 +214,12 @@ export class Handoffs {
     said: { resetsAt?: string },
   ): Promise<void> {
     const choice = this.d.onLimit?.() ?? "ask";
-    if (choice === "continue" && l.to && !l.maybe) return this.continueOn(chatId, l.from, l.to, {});
+    // One limited only by ion's guess is tried once (trying tells); still limited, ion asks (no going round).
+    const once = !l.maybe || !this.triedGuess.has(chatId);
+    if (choice === "continue" && l.to && once) {
+      if (l.maybe) this.triedGuess.add(chatId);
+      return this.continueOn(chatId, l.from, l.to, {});
+    }
     if (choice === "wait") return this.wait(chatId, l);
     this.ask(chatId, runId, l, said);
   }

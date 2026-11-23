@@ -566,4 +566,21 @@ describe("Handoffs", () => {
     const n = await until(() => needs.open("c1")[0]);
     expect(n.choices?.map((c) => c.label)).toEqual(["Wait"]);
   });
+
+  // Review of bf69fe1, 2026-11-23: with Continue on the next agent, one limited only by ion's guess is tried (trying
+  // tells, as its choice says); if it's still limited, ion asks rather than going round the agents.
+  it("Continue on the next agent tries one limited only by a guess, then asks", async () => {
+    ready = ["claude-code", "codex"];
+    hitLimit("c0", "codex"); // no reset said: a guess
+    await until(() => needs.open("c0")[0]);
+    onLimit = "continue";
+    hitLimit("c1", "claude-code"); // a guess too: each may be free again
+    await until(() => started.length === 1);
+    expect(started[0]).toMatchObject({ chatId: "c1", harness: "codex", access: "auto" });
+    expect(needs.open("c1")).toEqual([]);
+    hitLimit("c1", "codex", undefined, { runId: "run_c1_2", byIon: true });
+    const n = await until(() => needs.open("c1")[0]);
+    expect(n.choices?.map((c) => c.label)).toContain("Wait");
+    expect(started).toHaveLength(1);
+  });
 });

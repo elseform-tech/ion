@@ -422,6 +422,24 @@ describe("timeline", () => {
     expect(t.items).toEqual([]);
   });
 
+  // Review of bf69fe1, 2026-11-23: the header kept "On Codex — …" after the chat went on on another agent.
+  it("drops Pick by usage's reason once the chat goes on on another agent", () => {
+    const routed = ev("chat.handoff", {
+      kind: "routed",
+      text: "On Codex — first in your order",
+      to: "codex",
+    });
+    expect(play(routed, ev("run.started", { harness: "codex" })).routed).toBe(
+      "On Codex — first in your order",
+    );
+    expect(play(routed, ev("run.started", { harness: "opencode" })).routed).toBeNull();
+    const handoff = ev("chat.handoff", {
+      kind: "continued",
+      text: "Continued on Grok Build — Codex hit its limit",
+    });
+    expect(play(routed, handoff).routed).toBeNull();
+  });
+
   it("counts file changes and finished runs, so the changes panel knows to look again", () => {
     expect(play().changes).toBe(0);
     const t = play(ev("file.changed", { path: "a" }), ev("run.finished", { status: "done" }));

@@ -96,6 +96,9 @@
   2. **Your preference:** save Claude unless the task needs it.
   3. **Headroom:** Codex's windows; others from recent errors.
   4. **Billing:** subscription and free before api.
+  
+  As built (review of bf69fe1, 2026-11-23): headroom is weighed first, so an agent near a window's end (or limited only by ion's guess, which is tried last) goes after the rest, even the project's agent; then fit, then the deep model's agent kept back (not when you put it first in your agent order), then billing, then your order.
+- **Deep work = Max effort (conservative, saves Claude).**
 - **The reason is one line:** "On Codex — Claude is near its limit", or "On opencode — free and enough for this". It shows in the thread line and the chat header.
 - **Two settings in Settings → Agents (the user, 2026-11-22: "sure"):**
   - **Agent order:** a drag list (default opencode, Grok Build, Codex, Claude Code). It is the one preference list used by handoff targets, Pick by usage, and an ion's chats when the project names no agent. It replaces the order fixed in code.

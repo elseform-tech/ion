@@ -39,7 +39,9 @@ const isNear = (c: Candidate, now: Date) =>
   );
 const limited = (c: Candidate) => !!c.limitedUntil && !c.limitGuessed;
 const fits = (c: Candidate, t: Task) => (t.deep && c.id === t.deepAgent) || c.id === t.project;
-const kept = (c: Candidate, t: Task) => !t.deep && c.id === t.deepAgent && c.id !== t.project;
+/** The deep model's agent is kept for deep work, unless you put it first in your order (or it's the project's). */
+const kept = (c: Candidate, t: Task) =>
+  !t.deep && c.id === t.deepAgent && c.id !== t.project && t.order[0] !== c.id;
 
 /** Where an agent is in your order (one not in it after all that are). */
 const rank = (c: Candidate, t: Task) => {

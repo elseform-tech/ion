@@ -77,6 +77,8 @@ export type Timeline = {
   waiting: string | null;
   /** Why Pick by usage picked the chat's agent, in one line ("On Codex — Claude Code is near its limit"). */
   routed: string | null;
+  /** The agent that reason is about: the reason goes once the chat goes on on another. */
+  routedTo: string | null;
   /** The agent the chat last ran on, and its model and effort: the next message's defaults. */
   harness: string | null;
   model: string | null;
@@ -105,6 +107,7 @@ export const empty = (): Timeline => ({
   running: null,
   waiting: null,
   routed: null,
+  routedTo: null,
   harness: null,
   model: null,
   effort: null,
@@ -357,6 +360,9 @@ const HANDLERS: Record<string, Handler> = {
     ...retried(t),
     running: e.runId,
     waiting: null,
+    ...(t.routedTo && str(d.harness) && str(d.harness) !== t.routedTo
+      ? { routed: null, routedTo: null }
+      : {}),
     harness: str(d.harness) || t.harness,
     model: str(d.model) || null,
     effort: str(d.effort) || null,
@@ -397,10 +403,7 @@ const HANDLERS: Record<string, Handler> = {
   [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
   // A chat's agent hit its limit (it continued on another, or waits), or a long chat started fresh: one quiet line.
   // Pick by usage's reason shows in the chat's header, not as a line of its own.
-  [EV.chatHandoff]: (t, d) =>
-    d.kind === "routed"
-      ? { ...t, routed: str(d.text) }
-      : push(t, { kind: "ion", tone: "note", text: str(d.text) }),
+  [EV.chatHandoff]: handoff,
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
   // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once, with a link
   // to Memory (Task 5, 2026-11-22: a question here had no answer).
@@ -412,6 +415,16 @@ const HANDLERS: Record<string, Handler> = {
     return h.suggested ? push(t, { kind: "suggested", name: str(h.name) }) : t;
   },
 };
+
+/**
+ * A chat.handoff: Pick by usage's reason (kept for the header, not a line), else one quiet line. Going on on another
+ * agent drops the reason (review of bf69fe1, 2026-11-23: the header went stale).
+ */
+function handoff(t: Timeline, d: D): Timeline {
+  if (d.kind === "routed") return { ...t, routed: str(d.text), routedTo: str(d.to) || null };
+  const now = d.kind === "continued" ? { ...t, routed: null, routedTo: null } : t;
+  return push(now, { kind: "ion", tone: "note", text: str(d.text) });
+}
 
 /** Adds one event to the chat's timeline. Pure: the same events always give the same items. */
 export function reduce(t: Timeline, e: IonEvent): Timeline {

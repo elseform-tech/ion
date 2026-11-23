@@ -2,8 +2,11 @@ import { EV } from "@ion/schema";
 import type { createRunQueue } from "../scheduler/index.js";
 import type { EventStore } from "../store/index.js";
 
-/** How a run came: started by an ion, a handoff, the agent Pick by usage picked, and why it waits for a slot. */
-export type How = { by?: "ion"; handoff?: true; routed?: string; waiting?: string };
+/**
+ * How a run came: started by an ion, a handoff, the agent Pick by usage picked; `ions`: it's ion's own work (it
+ * waits for one of ion's slots).
+ */
+export type How = { by?: "ion"; handoff?: true; routed?: string; ions?: boolean };
 
 /**
  * What a run is asked with besides its args. `request`: what the judge treats as your request, when the message
@@ -22,26 +25,27 @@ export type AskOpts = {
 type Queue = ReturnType<typeof createRunQueue>;
 
 /** Why a chat ion starts now would wait ("Waiting — 4 ion chats running"), or undefined when a slot is free. */
-function waitLine(queue: Queue): string | undefined {
+export function waitLine(queue: Queue): string | undefined {
   if (!queue.full()) return undefined;
   const n = queue.running();
   return `Waiting — ${n} ion ${n === 1 ? "chat" : "chats"} running`;
 }
 
 /**
- * How this run came. The user, 2026-11-22: only chats ion starts (its threads, routines) wait for one of its slots,
- * and say why; yours start at once.
+ * How this run came. The user, 2026-11-22: only ion's own work waits for one of its slots, and says why: chats ion
+ * starts (its threads, routines), and a handoff or a wait going on inside one of its threads (review of bf69fe1,
+ * 2026-11-23). Yours start at once.
  */
-export const howOf = (o: AskOpts, queue: Queue): How => ({
+export const howOf = (o: AskOpts, inIonThread: boolean): How => ({
   ...{ by: o.by, handoff: o.handoff, routed: o.routed },
-  waiting: o.by === "ion" ? waitLine(queue) : undefined,
+  ions: o.by === "ion" || (!!o.handoff && inIonThread),
 });
 
 /** After your message: why Pick by usage picked the agent (one line), then the run queued (and why it waits). */
 export function queuedLines(
   store: EventStore,
   r: { chatId: string; runId: string; access: string; harness: string },
-  how: How,
+  how: { routed?: string; waiting?: string },
 ): void {
   const { chatId, runId } = r;
   if (how.routed) {

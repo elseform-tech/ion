@@ -16,7 +16,7 @@ import { ionDirsOf } from "../access/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
-import { type AskOpts, type How, howOf, queuedLines } from "./queued.js";
+import { type AskOpts, type How, howOf, queuedLines, waitLine } from "./queued.js";
 import { chatsView } from "../views/chats.js";
 import type { HistoryMessage } from "../views/messages.js";
 import { freshText, historyOf } from "./history.js";
@@ -135,15 +135,20 @@ export class RunManager {
     try {
       await this.ready.check(h, args.model);
       const picks = await picksOfRun(this.ctx.picks, h.adapter.id, args, projectId);
-      const how = howOf(opts, this.queue);
+      const how = howOf(opts, this.ionThread(key));
       const more = { shown: opts.shown, answers: opts.answers, picks, ...how };
       launch = await this.prepare(h, { ...args, ...more }, chat, repo);
       if (opts.request !== undefined) launch.request = opts.request;
-      this.go(launch, opts.by === "ion");
+      this.go(launch, !!how.ions);
     } finally {
       if (key) this.reserved.delete(key);
     }
     return { chatId: launch.chatId, runId: launch.runId };
+  }
+
+  /** Whether this chat is one an ion started (its handoffs are ion's work too). */
+  private ionThread(chatId: string | null): boolean {
+    return !!chatId && chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
   }
 
   /** A chat ion started waits for one of its slots (resources.max_runs); yours starts at once (the user, 2026-11-22). */
@@ -165,7 +170,7 @@ export class RunManager {
     chat: Chat,
     repo: string,
   ): Promise<Launch> {
-    const { shown, answers, by, handoff, picks, routed, waiting, ...args } = ask;
+    const { shown, answers, by, handoff, picks, routed, ions, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
@@ -184,6 +189,8 @@ export class RunManager {
     };
     const sent = { ...data, ...shownPicks(picks) };
     this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: sent });
+    // Why it waits is decided now, once the worktree is made (the slots may have freed meanwhile).
+    const waiting = ions ? waitLine(this.queue) : undefined;
     queuedLines(this.store, { chatId, runId, access, harness: h.adapter.id }, { routed, waiting });
     // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
     const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };

@@ -154,3 +154,26 @@ it("interrupting a queued run finishes it without starting the harness", async (
   await runs.interrupt(a.runId);
   await finished(a.runId);
 });
+
+// Review of bf69fe1, 2026-11-23: a handoff (or a wait going on) inside an ion's thread skipped the limit; it's ion's
+// own work, so it waits for a slot. One in your own chat still starts at once.
+it("a handoff in an ion thread waits while slots are full; one in your own chat doesn't", async () => {
+  limitTo(1);
+  const thread = await askIon("hello");
+  await finished(thread.runId);
+  const mine = await ask("hello");
+  await finished(mine.runId);
+  const hold = await askIon("slow");
+  const brief = { text: "ion's brief", harness: "fake" };
+  const inThread = await runs.ask({ ...brief, chatId: thread.chatId }, { handoff: true });
+  const inMine = await runs.ask({ ...brief, chatId: mine.chatId }, { handoff: true });
+  await finished(inMine.runId);
+  await new Promise((r) => setTimeout(r, 50));
+  expect(typesOf(inThread.runId)).toEqual(["message.sent", "run.queued"]);
+  expect(store.read({ runId: inThread.runId }).find((e) => e.type === "run.queued")?.data).toEqual({
+    access: "auto",
+    waiting: "Waiting — 1 ion chat running",
+  });
+  await runs.interrupt(hold.runId);
+  expect((await finished(inThread.runId)).map((e) => e.type)).toContain("run.started");
+});

@@ -37,7 +37,7 @@ describe("pickAgent", () => {
   // The user, 2026-11-21: save Claude quota; Claude only when needed (ion's deep model's agent is kept for deep work).
   it("Claude is saved unless deep work needs it", () => {
     const all = [agent("claude"), agent("codex")];
-    const order = ["claude", "codex"];
+    const order = ["opencode", "claude", "codex"];
     expect(pickAgent(all, task({ order, deepAgent: "claude" }))).toEqual({
       agent: "codex",
       reason: "On Codex — Claude Code is kept for deep work",
@@ -45,6 +45,15 @@ describe("pickAgent", () => {
     expect(pickAgent(all, task({ order, deepAgent: "claude", deep: true }))).toEqual({
       agent: "claude",
       reason: "On Claude Code — deep work",
+    });
+  });
+
+  // Review of bf69fe1, 2026-11-23: you put Claude Code first in your order on purpose; it isn't held back.
+  it("the deep model's agent first in your order isn't held back", () => {
+    const all = [agent("claude"), agent("codex")];
+    expect(pickAgent(all, task({ order: ["claude", "codex"], deepAgent: "claude" }))).toEqual({
+      agent: "claude",
+      reason: "On Claude Code — first in your order",
     });
   });
 
