@@ -75,3 +75,32 @@ describe("ownText", () => {
     expect(ownText("hello")).toBe("hello");
   });
 });
+
+// Plan 20 Task 5, 2026-11-23: the tour needs an agent paid per use (its line shows this week's cost); none of the real
+// ones bills that way on the tour's computer. ION_FAKE_BILLING says how the fake bills.
+describe("the fake's billing", () => {
+  it("is what ION_FAKE_BILLING says, else none", async () => {
+    expect((await createFakeAdapter().auth.status()).billing).toBeUndefined();
+    process.env.ION_FAKE_BILLING = "api";
+    try {
+      expect((await createFakeAdapter().auth.status()).billing).toBe("api");
+    } finally {
+      delete process.env.ION_FAKE_BILLING;
+    }
+  });
+});
+
+// Plan 20 Task 5, 2026-11-23: the tour's ion chat that holds the only slot ran 30 s, so the chat queued behind it
+// ("Waiting — 1 ion chat running") started before anyone could look. ION_FAKE_SLOW_S sets how long "slow" runs.
+describe("the fake's slow", () => {
+  it("runs as long as ION_FAKE_SLOW_S says", async () => {
+    process.env.ION_FAKE_SLOW_S = "0.05";
+    try {
+      const t0 = Date.now();
+      expect((await turn("slow")).at(-1)).toBe("run.finished:done");
+      expect(Date.now() - t0).toBeLessThan(5000);
+    } finally {
+      delete process.env.ION_FAKE_SLOW_S;
+    }
+  });
+});

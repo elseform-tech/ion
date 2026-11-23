@@ -421,9 +421,10 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   async overloaded(s) {
     return transient(s);
   },
+  /** Runs 30 s; ION_FAKE_SLOW_S: that many seconds instead (the tour's ion chat holding the only slot). */
   async slow(s) {
     tool(s, { toolId: "t1", name: "Bash", kind: "command", summary: "sleep 30" });
-    const r = await s.wait(30_000);
+    const r = await s.wait(Number(process.env.ION_FAKE_SLOW_S ?? 30) * 1000);
     done(s, "t1", r === "ok");
     return r === "ok" ? "done" : "interrupted";
   },

@@ -31,6 +31,8 @@ const CAPABILITIES: Capabilities = {
   usage: "none",
 };
 
+const BILLINGS = ["subscription", "api", "free"] as const;
+
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
 
@@ -55,7 +57,11 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       return { installed: true, version: "0.0.0", path: "fake" };
     },
     auth: {
-      status: async () => ({ signedIn, method: signedIn ? "Fake" : "Not signed in" }),
+      // ION_FAKE_BILLING: how it bills (the tour's agent paid per use).
+      status: async () => {
+        const billing = BILLINGS.find((b) => b === process.env.ION_FAKE_BILLING);
+        return { signedIn, method: signedIn ? "Fake" : "Not signed in", ...(billing ? { billing } : {}) };
+      },
       login: async () => {},
     },
     capabilities: async () => CAPABILITIES,
