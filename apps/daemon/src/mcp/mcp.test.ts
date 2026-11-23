@@ -113,6 +113,90 @@ describe("ion's MCP server", () => {
     await c.close();
   });
 
+  // The user, 2026-11-23: memory off: no tools, no list, nothing written. A run whose memory is off (everywhere, its
+  // project, or its chat) gets no memory tools; one whose project alone has memory sees and writes only its files.
+  it("memory off: no tools, no list, nothing written", async () => {
+    const off = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r2", memory: "none" });
+    const c = await client(off);
+    const names = (await c.listTools()).tools.map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("memory_"))).toEqual([]);
+    expect(names).toContain("ask");
+    await c.close();
+    const mine = grants.create({
+      kind: "run",
+      projectId: "app",
+      chatId: "c1",
+      runId: "r3",
+      memory: "project",
+    });
+    const p = await client(mine);
+    memory.note({ projectId: "app" }, "Ours", "you");
+    const listed = text(await p.callTool({ name: "memory_index", arguments: {} }));
+    expect([listed.includes("projects/app/ours.md"), listed.includes("Mine")]).toEqual([true, false]);
+    const pref = { scope: "you", name: "Tabs", description: "Tabs", type: "preference", text: "Tabs" };
+    expect(await p.callTool({ name: "memory_write", arguments: pref })).toMatchObject({ isError: true });
+    expect(memory.list(null, ["chats", "ions"]).some((m) => m.name === "Tabs")).toBe(false);
+    await p.close();
+  });
+
+  // Review of #34, 2026-11-23: a run's memory was fixed at its start, so "Don't remember" mid-run left memory_write
+  // open. Each request reads the switches and the chat's own again.
+  it("closes memory mid-run when you say not to remember the chat", async () => {
+    const c = await client();
+    expect((await c.listTools()).tools.some((t) => t.name === "memory_write")).toBe(true);
+    put({ chatId: "c1", runId: null, type: "chat.memory", data: { on: false } });
+    const note = { scope: "project", name: "Kiwi", description: "Kiwi", type: "fact", text: "Kiwi" };
+    expect(await c.callTool({ name: "memory_write", arguments: note })).toMatchObject({ isError: true });
+    expect((await c.listTools()).tools.filter((t) => t.name.startsWith("memory_"))).toEqual([]);
+    expect(memory.list(null, ["chats", "ions"]).some((m) => m.name === "Kiwi")).toBe(false);
+    await c.close();
+  });
+
+  // Review of #34, 2026-11-23: another chat's agent in the project read a "Don't remember" chat in full through
+  // search_chats and chat_history. It's left out for them; its own run still reads it.
+  it("another chat can't read a chat you don't remember", async () => {
+    put({ chatId: "c3", runId: null, type: "chat.created", data: { title: "Private", projectId: "app" } });
+    put({ chatId: "c3", runId: null, type: "chat.memory", data: { on: false } });
+    put({ chatId: "c3", runId: "r5", type: "message.sent", data: { text: "kiwi vault code MAGPIE" } });
+    const c = await client();
+    const found = text(await c.callTool({ name: "search_chats", arguments: { query: "kiwi" } }));
+    expect([found.includes("Remember the word kiwi"), found.includes("MAGPIE")]).toEqual([true, false]);
+    expect(await c.callTool({ name: "chat_history", arguments: { chatId: "c3" } })).toMatchObject({
+      isError: true,
+    });
+    await c.close();
+    const own = await client(grants.create({ kind: "run", projectId: "app", chatId: "c3", runId: "r6" }));
+    expect(text(await own.callTool({ name: "chat_history", arguments: {} }))).toContain("MAGPIE");
+    await own.close();
+  });
+
+  // Security scan of #34, 2026-11-23: hidden chats were filtered after the limit, so a search came back short and the
+  // shortfall said a private chat matched. The limit counts visible chats' messages only.
+  it("a search never comes back short because a chat you don't remember matched", async () => {
+    for (let i = 0; i < 25; i++)
+      put({ chatId: "c1", runId: `rv${i}`, type: "message.sent", data: { text: `heron ${i}` } });
+    put({ chatId: "c3", runId: null, type: "chat.created", data: { title: "Private", projectId: "app" } });
+    put({ chatId: "c3", runId: null, type: "chat.memory", data: { on: false } });
+    for (let i = 0; i < 5; i++)
+      put({ chatId: "c3", runId: `rh${i}`, type: "message.sent", data: { text: `heron secret ${i}` } });
+    const other = await client(grants.create({ kind: "run", projectId: "app", chatId: "c2x", runId: "r8" }));
+    const out = text(await other.callTool({ name: "search_chats", arguments: { query: "heron" } }));
+    const lines = out.split("\n").slice(1, -1);
+    expect(lines).toHaveLength(20);
+    expect(out).not.toContain("secret");
+    await other.close();
+  });
+
+  // Review of #34, 2026-11-23: with your own memory off, memory_write still offered "you" as a scope.
+  it("offers no scope of yours when your memory is off", async () => {
+    const k = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r4", memory: "project" });
+    const c = await client(k);
+    const write = (await c.listTools()).tools.find((t) => t.name === "memory_write")!;
+    const scope = (write.inputSchema.properties as Record<string, { description?: string }>).scope;
+    expect(scope?.description).toBe('"project" (this project)');
+    await c.close();
+  });
+
   // The user, 2026-11-19: "Merge it?" with "Merge" / "Wait" read oddly. The ask tool asks for a question that
   // stands on its own as a full sentence, and options that are one-line sentences with their pros and cons.
   it("asks agents for a full-sentence question and one-line sentence options", async () => {

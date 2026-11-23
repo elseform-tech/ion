@@ -1,4 +1,5 @@
 import type { EffortLevel } from "./capabilities.js";
+import type { ActivityInfo } from "./activity.js";
 import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
 import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
@@ -39,44 +40,6 @@ export type RoutineInfo = {
   effort?: EffortLevel;
   /** The due time (ISO) of the one run you skipped. */
   skip?: string;
-};
-
-/** A routine's next run, for Activity. `next` is null while it, or every routine, is paused. */
-export type UpcomingRun = {
-  projectId: string;
-  routineId: string;
-  name: string;
-  when: string;
-  /** Its ion's name (the project's). */
-  ion: string;
-  next: string | null;
-  /** The effort it runs at: its own, else its project's; null: the agent's default. */
-  effort: EffortLevel | null;
-  on: boolean;
-  /** You skipped its next run (`next` is the one after). */
-  skipped: boolean;
-};
-
-/** One run of an ion's thread: its title, ion, how it went, what it cost and when it started. */
-export type RecentRun = {
-  runId: string;
-  chatId: string;
-  title: string;
-  projectId: string;
-  ion: string;
-  /** The routine that started it, if one did. */
-  routine: string | null;
-  status: string;
-  costUsd: number | null;
-  at: string;
-};
-
-/** Activity: pause all, what's next (soonest first), and ion threads' runs today and yesterday (newest first). */
-export type ActivityInfo = {
-  paused: boolean;
-  upcoming: UpcomingRun[];
-  today: RecentRun[];
-  yesterday: RecentRun[];
 };
 
 /**
@@ -145,6 +108,8 @@ export type SettingsInfo = IonSettings & {
   ownTools: Record<string, boolean>;
   /** ion tidies your memory overnight: how often, and on which agent (null: ion's own model's). */
   dream: { mode: DreamMode; agent: string | null };
+  /** Memory everywhere (yours follows it), and in each project, by id (as it is: its own, else everywhere's). */
+  memory: { on: boolean; projects: Record<string, boolean> };
   /**
    * Your agent order, best first (every agent ion knows): handoff targets, Pick by usage, and an ion's chats when the
    * project names no agent.
@@ -163,6 +128,8 @@ export type SettingsPatch = Partial<
   Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools" | "agentOrder" | "onLimit" | "byUsage">
 > & {
   dream?: { mode?: DreamMode; agent?: string | null };
+  /** Memory on or off everywhere, or in a project (set like everywhere, it follows everywhere again). */
+  memory?: { on?: boolean; projects?: Record<string, boolean> };
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
     quiet?: Partial<SettingsInfo["notifications"]["quiet"]>;
@@ -269,6 +236,8 @@ export type Commands = ToolsCommands & {
       skills?: string[];
       /** MCP servers or resources picked with "@" (by name). */
       mentions?: string[];
+      /** Don't remember this chat: it gets no memory and writes none (`ion ask --no-memory`). */
+      noMemory?: boolean;
     };
     result: { chatId: string; runId: string };
   };
@@ -288,6 +257,8 @@ export type Commands = ToolsCommands & {
   "chats.list": { args: Record<string, never>; result: ChatInfo[] };
   "chat.archive": { args: { chatId: string }; result: { ok: true } };
   "chat.rename": { args: { chatId: string; title: string }; result: { ok: true } };
+  /** Remember (on) or Don't remember (off) the chat. */
+  "chat.remember": { args: { chatId: string; on: boolean }; result: { ok: true } };
   "ions.list": { args: Record<string, never>; result: IonInfo[] };
   /** `skills`, `mentions`: what you picked with "/" and "@" (the ion reads them, or passes them to a thread). */
   "ion.message": {
@@ -421,6 +392,8 @@ export type ChatInfo = {
   preview: string | null;
   /** "ion": a thread ion started; null: your own chat. */
   by: "ion" | null;
+  /** You picked Don't remember: it gets no memory and writes none. */
+  notRemembered?: true;
   /**
    * What the chat waits for, while it does: one of ion's slots ("Waiting — 4 ion chats running"), or its agent's
    * reset after a limit ("Waits for Codex — 16:20").
@@ -497,6 +470,7 @@ export const COMMANDS = [
   "chats.list",
   "chat.archive",
   "chat.rename",
+  "chat.remember",
   "ions.list",
   "ion.message",
   "ion.stop",

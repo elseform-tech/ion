@@ -10,7 +10,7 @@ import {
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
-import { type Chat, chatCreated, chatFor, Readiness } from "./ready.js";
+import { type Chat, chatCreated, chatFor, memoryOfRun, notRemembered, Readiness } from "./ready.js";
 import { UserError } from "../api/errors.js";
 import { ionDirsOf } from "../access/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -20,11 +20,13 @@ import { type AskOpts, type How, howOf, queuedLines, waitLine } from "./queued.j
 import { chatsView } from "../views/chats.js";
 import type { HistoryMessage } from "../views/messages.js";
 import { freshText, historyOf } from "./history.js";
+import { resumable, withMemory } from "./session-memory.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
 import { summarize } from "./brief.js";
 import type { GateAnswer } from "../gate/index.js";
 import { Approvals } from "./approvals.js";
 import type { RunCtx } from "./run-ctx.js";
+import type { Between } from "./retry.js";
 import { keep, type Retry, type RetryState, type RunError, retryPlan, type TryEnd } from "./retry.js";
 import { defaultProject, projectPath } from "./projects.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
@@ -54,6 +56,8 @@ type Launch = {
   resume?: string | null;
   /** This try's first message starts with ion's memory index (its instructions say so only then). */
   index?: boolean;
+  /** Its memory, read at its start: "none" (off in its project, or a chat you said not to remember), "project". */
+  memory?: "none" | "project";
   projectId: string;
   /** Full access, or Auto (ion decides each action outside the worktree). */
   access: "auto" | "full";
@@ -70,15 +74,6 @@ type Launch = {
 } & Partial<Given & { own: OwnForRun }> &
   RunKeys &
   LaunchSandbox;
-type Between = {
-  chatId: string;
-  interrupt: boolean;
-  wake?: () => void;
-  /** The chat's session resumed but then failed for real: later tries start a new session with the history. */
-  noResume?: boolean;
-  /** The chat said "Started fresh with a summary" for this run (once). */
-  summarized?: boolean;
-};
 
 const limitIn = (file: string) =>
   maxRuns(loadUserConfig(file).config.resources.max_runs, availableParallelism());
@@ -178,6 +173,8 @@ export class RunManager {
       throw new UserError(e.message);
     });
     if (!chat.chatId) chatCreated(this.store, { chatId, chat, wt, by });
+    // `ion ask --no-memory`, Don't remember on a new chat: said before your message (review of #34, 2026-11-23).
+    notRemembered(this.store, this.db, chatId, args.noMemory);
     const { history, ...long } = historyOf(this.db, chat.chatId ?? null, h.adapter.contextTokens);
     const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
     // A thread ion started runs in Auto every time: every action there still goes through ion's checks.
@@ -211,6 +208,8 @@ export class RunManager {
    */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
+    const memory = memoryOfRun(this.ctx.configFile, this.db, l);
+    if (memory) l.memory = memory;
     Object.assign(l, runKeys(this.ctx.mcp?.grants, l, !!(this.ctx.gate && l.h.adapter.gateCall)));
     this.launches.set(l.runId, l);
     const b: Between = { chatId: l.chatId, interrupt: false };
@@ -288,8 +287,9 @@ export class RunManager {
   }
 
   /** ion's own MCP server for a run: its URL and the run's key (also the key for ion's gateway). */
-  private ionServer(l: Launch): { url: string; key: string; index: boolean } | null {
-    return this.ctx.mcp && l.mcpKey ? { url: this.ctx.mcp.url(), key: l.mcpKey, index: !!l.index } : null;
+  private ionServer(l: Launch): { url: string; key: string; index: boolean; memory: boolean } | null {
+    if (!this.ctx.mcp || !l.mcpKey) return null;
+    return { url: this.ctx.mcp.url(), key: l.mcpKey, index: !!l.index, memory: l.memory !== "none" };
   }
 
   /** A daemon-side error for a run; nothing is stored once ion is stopping (the run's end is already written). */
@@ -320,8 +320,7 @@ export class RunManager {
    * the history right away (not a try of its own, and no error stored).
    */
   private async tryInContext(l: Launch, b: Between): Promise<TryEnd> {
-    const s = chatsView.session(this.db, l.chatId);
-    const resume = !b.noResume && s && s.harness === l.h.adapter.id ? s.sessionId : null;
+    const resume = b.noResume ? null : resumable(chatsView.session(this.db, l.chatId), l);
     // A long chat's new session (not a handoff's: its message is a brief already) gets ion's summary of the chat.
     const brief = () => summarize({ store: this.store, configFile: this.ctx.configFile }, l, b);
     const fresh = async () => {
@@ -365,7 +364,7 @@ export class RunManager {
       this.daemonError(l.chatId, l.runId, error);
       return { status: "failed", error };
     }
-    return this.pump(session, l.chatId, l.runId);
+    return this.pump(session, l);
   }
 
   async interrupt(runId: string): Promise<void> {
@@ -482,13 +481,16 @@ export class RunManager {
   }
 
   /** Stores what a session emits, except its run.finished: whether the run ends or retries is decided above. */
-  private async pump(session: Session, chatId: string, runId: string): Promise<TryEnd> {
+  private async pump(session: Session, l: Launch): Promise<TryEnd> {
+    const { chatId, runId } = l;
     const end: TryEnd = { status: "failed", error: null };
     try {
       for await (const e of session.events()) {
         if (this.stopping) break;
         if (keep(e, end))
-          this.approvals.noteStored(this.store.append({ ...e, chatId, runId, origin: "adapter" }));
+          this.approvals.noteStored(
+            this.store.append({ ...withMemory(e, l.memory), chatId, runId, origin: "adapter" }),
+          );
       }
     } catch (e) {
       // The harness stream broke (a crashed CLI): transient.

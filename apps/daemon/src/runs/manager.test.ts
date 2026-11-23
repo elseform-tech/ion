@@ -174,6 +174,7 @@ describe("RunManager", () => {
     expect(chatsView.session(db, chatId)).toEqual({
       harness: "fake",
       sessionId: expect.stringMatching(/^fake-/),
+      memory: "all",
     });
   });
 

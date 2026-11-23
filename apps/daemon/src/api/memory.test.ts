@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryFiles } from "../memory/index.js";
@@ -8,9 +9,10 @@ import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import type { Ctx } from "./commands.js";
 import { memoryHandlers, todoHandlers } from "./memory.js";
+import { settingsHandlers } from "./settings.js";
 import { runRefusal } from "./run-calls.js";
 
-const handlers = { ...memoryHandlers, ...todoHandlers };
+const handlers = { ...memoryHandlers, ...todoHandlers, ...settingsHandlers };
 type H = typeof handlers;
 
 // The user, 2026-11-21: "use it as hybrid, sqlite for indexes and history (quick search) and memory for details".
@@ -31,7 +33,8 @@ describe("memory in Settings", () => {
     store = new EventStore(db, allViews);
     const root = mkdtempSync(join(tmpdir(), "ion-mem-api-"));
     memory = new MemoryFiles({ root: join(root, "memory"), store, db });
-    ctx = { db, store, memory, configFile: join(root, "config.toml") } as unknown as Ctx;
+    const runs = { limitChanged: () => {} };
+    ctx = { db, store, memory, runs, configFile: join(root, "config.toml") } as unknown as Ctx;
   });
 
   const read = async (name: string) => client.call("memory.read", { name });
@@ -76,6 +79,36 @@ describe("memory in Settings", () => {
     });
     const tabs = (await client.call("memory.list", {})).find((m) => m.name === "Tabs");
     expect(tabs).toMatchObject({ source: "c1", sourceTitle: "Docs pass" });
+  });
+
+  // The user, 2026-11-23: existing files stay and are yours to read. With memory off everywhere and in a project,
+  // Settings and the CLI still list, read and change every file; the switches say what's off.
+  it("existing files stay and are yours to read", async () => {
+    saveUserConfig(ctx.configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [{ id: "shop", path: "/p/shop", starred: false }],
+    });
+    const mine = await client.call("todo.add", { text: "Renew the passport" });
+    memory.note({ projectId: "shop" }, "Ship on Fridays", "you");
+    const s = await client.call("settings.set", {
+      patch: { memory: { on: false, projects: { shop: false } } },
+    });
+    expect(s.memory).toEqual({ on: false, projects: { shop: false } });
+    expect((await client.call("memory.list", {})).map((m) => m.name).sort()).toEqual([
+      "Renew the passport",
+      "Ship on Fridays",
+    ]);
+    const f = await read(mine.memoryId);
+    await client.call("memory.write", { path: f.path, text: "Renew it in March", expect: f.hash });
+    expect((await read(f.path)).text).toBe("Renew it in March");
+    const back = await client.call("settings.set", { patch: { memory: { on: true } } });
+    // Back on everywhere, the project you turned off stays off.
+    expect(back.memory).toEqual({ on: true, projects: { shop: false } });
+    const shop = await client.call("settings.set", { patch: { memory: { projects: { shop: true } } } });
+    expect(shop.memory).toEqual({ on: true, projects: { shop: true } });
+    await expect(
+      client.call("settings.set", { patch: { memory: { projects: { nope: true } } } }),
+    ).rejects.toThrow("Unknown project: nope");
   });
 
   it("says which files can't be read", async () => {

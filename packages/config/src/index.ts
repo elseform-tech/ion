@@ -1,3 +1,4 @@
+export { projectRemembered, setMemory, youRemembered } from "./memory.js";
 export { ionPaths, mcpFileOf } from "./paths.js";
 export {
   addProject,

@@ -632,6 +632,20 @@ describe("daemon api", () => {
     );
   });
 
+  // Review of #34, 2026-11-23: chat.remember took anything for `on` ("no" turned memory off as if false).
+  it("doesn't remember a chat, and takes only true or false", async () => {
+    const { chatId } = await client.call("chat.create", { title: "Private" });
+    await client.call("chat.remember", { chatId, on: false });
+    expect((await client.call("chats.list", {})).find((c) => c.chatId === chatId)?.notRemembered).toBe(true);
+    await expect(client.call("chat.remember", { chatId, on: "yes" as unknown as boolean })).rejects.toThrow(
+      "Pick on or off",
+    );
+    await client.call("chat.remember", { chatId, on: true });
+    expect((await client.call("chats.list", {})).find((c) => c.chatId === chatId)).not.toHaveProperty(
+      "notRemembered",
+    );
+  });
+
   // Final review, 2026-11-19: Stop on a chat's run sent its next queued message right after, so the work went on.
   // What's queued waits ("Stopped") until you send a message (or deal with a queued one).
   it("Stop holds the chat's queue until you send a message", async () => {

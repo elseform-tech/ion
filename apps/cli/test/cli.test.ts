@@ -479,6 +479,24 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(await ion("memory", "forget", "nope")).toMatchObject({ code: 1, err: "Unknown memory: nope" });
     });
 
+    // The user, 2026-11-23: "a way to disable memory": everywhere or in a project (`ion memory on|off [-p]`), and a
+    // chat ion doesn't remember (`ion ask --no-memory`).
+    it("turns memory off and on, and asks without memory", async () => {
+      await setup();
+      expect((await ion("memory", "off")).out).toBe("Memory off");
+      expect((await ion("memory", "on", "-p", "app")).out).toBe("Memory on in app");
+      expect((await ion("memory", "on")).out).toBe("Memory on");
+      expect((await ion("memory", "off", "-p", "app")).out).toBe("Memory off in app");
+      expect(await ion("memory", "off", "-p", "nope")).toMatchObject({
+        code: 1,
+        err: "Unknown project: nope",
+      });
+      const r = await ion("ask", "hello", "-p", "app", "--harness", "fake", "--no-memory");
+      expect(r.code).toBe(0);
+      const chats = JSON.parse((await ion("chats", "--json")).out) as { notRemembered?: boolean }[];
+      expect(chats.map((c) => c.notRemembered)).toEqual([true]);
+    });
+
     // The user, 2026-11-21: memory is a folder of small files you can read and fix yourself; the CLI lists, shows,
     // searches and forgets them, and opens the folder.
     it("the CLI lists, shows, searches and forgets", async () => {

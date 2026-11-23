@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { loadUserConfig } from "@ion/config";
+import { loadUserConfig, projectRemembered, youRemembered } from "@ion/config";
 import { EV, type IonEvent, type MemoryScope } from "@ion/schema";
 import type { MemoryFiles } from "../memory/index.js";
 import { closeTodo, sharedIds } from "../memory/todos.js";
@@ -139,7 +139,7 @@ export class TodoOffers {
     const chat = chatsView.list(this.d.db).find((c) => c.chatId === chatId);
     if (!chat?.projectId) return;
     const projectId = chat.projectId;
-    const todos = this.todosFor(projectId);
+    const todos = this.todosFor(projectId, chat.notRemembered === true);
     if (!todos.length) return;
     const reply = runId
       ? (this.d.store.read({ runId, types: [EV.messageCompleted] }).at(-1)?.data as
@@ -172,9 +172,14 @@ export class TodoOffers {
     }
   }
 
-  /** Open to-dos a chat in this project may close: its project's, and yours while the project is shared with ion chief. */
-  private todosFor(projectId: string): MemoryRow[] {
-    const shared = sharedIds(loadUserConfig(this.d.configFile).config).includes(projectId);
+  /**
+   * Open to-dos a chat in this project may close: its project's, and yours while the project is shared with ion chief;
+   * none from a scope whose memory is off, or from a chat you said not to remember (the user, 2026-11-23).
+   */
+  private todosFor(projectId: string, chatOff: boolean): MemoryRow[] {
+    const c = loadUserConfig(this.d.configFile).config;
+    if (chatOff || !projectRemembered(c, projectId)) return [];
+    const shared = sharedIds(c).includes(projectId) && youRemembered(c);
     const scopes: MemoryScope[] = [{ projectId }, ...(shared ? ["you" as const] : [])];
     const q = { scopes, see: ["chats", "ions"] as const, type: "todo" as const, status: "open" as const };
     return this.d.memory.find({ ...q, see: [...q.see], limit: Number.MAX_SAFE_INTEGER });

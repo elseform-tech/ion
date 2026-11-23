@@ -13,6 +13,7 @@ import { wrapData } from "../context/index.js";
 import { contextOf } from "../ions/route.js";
 import { cleanProfile, profileOf, rankProjects } from "../ions/profiles.js";
 import { PER_TURN } from "../ions/turn.js";
+import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { decisionsView } from "../views/decisions.js";
 import { messagesView } from "../views/messages.js";
@@ -23,6 +24,7 @@ import { registerYourTools, type YourTools } from "./ion-your-tools.js";
 import { guard, ok, q } from "./result.js";
 import { registerMemoryTools } from "./memory-tools.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
+import { ionCaller, ionMemory, leastIonMemory } from "../memory/switch.js";
 import { type Deps, historyData, needsData, SEARCH_MAX, searchData } from "./tools.js";
 
 /** Skills and servers a thread starts with, by name (the user, 2026-11-21: "/" and "@" for ions too). */
@@ -92,6 +94,17 @@ export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps)
   if (scope.ionId !== "chief") profileTool(server, ion);
 }
 
+/**
+ * Your chats but those you said not to remember: an ion never reads those (review of #34, 2026-11-23: it could keep
+ * what they said).
+ */
+const rememberedChats = (db: Db) => chatsView.list(db).filter((c) => !c.notRemembered);
+const forgotten = (db: Db) =>
+  chatsView
+    .list(db)
+    .filter((c) => c.notRemembered)
+    .map((c) => c.chatId);
+
 /** A project's chats, most recent first. */
 const chatsOf = (chats: ChatInfo[], projectId: string) =>
   chats
@@ -108,7 +121,7 @@ function projectsTool(server: McpServer, ion: Ion): void {
       inputSchema: { query: z.string().min(1).max(500).optional() },
     },
     guard(({ query }: { query?: string }) => {
-      const chats = chatsView.list(db);
+      const chats = rememberedChats(db);
       // Most recently active first: the order ties keep when ranking.
       const latest = (id: string) => chatsOf(chats, id)[0]?.lastActivityAt ?? "";
       const list = ion.projects().sort((a, b) => latest(b.id).localeCompare(latest(a.id)));
@@ -149,7 +162,7 @@ function chatTools(server: McpServer, ion: Ion): void {
     guard(({ query, projectId }: { query: string; projectId?: string }) =>
       searchData(
         idsOf(ion, projectId)
-          .flatMap((p) => messagesView.search(db, p, query, SEARCH_MAX))
+          .flatMap((p) => messagesView.search(db, p, query, { limit: SEARCH_MAX, hidden: forgotten(db) }))
           .sort((a, b) => b.ts.localeCompare(a.ts))
           .slice(0, SEARCH_MAX),
       ),
@@ -159,7 +172,8 @@ function chatTools(server: McpServer, ion: Ion): void {
     "chat_history",
     { description: "A chat's messages, oldest first.", inputSchema: { chatId: z.string().min(1) } },
     guard(({ chatId }: { chatId: string }) => {
-      ion.need(chatsView.list(db).find((c) => c.chatId === chatId)?.projectId ?? "");
+      const chat = rememberedChats(db).find((c) => c.chatId === chatId);
+      ion.need(chat?.projectId ?? "");
       return historyData(db, chatId, HISTORY_MAX);
     }),
   );
@@ -193,9 +207,11 @@ function needsTools(server: McpServer, ion: Ion): void {
   );
 }
 
+/** An ion whose memory is off gets no memory tools; one with some off, only what's on (the user, 2026-11-23). */
 function memoryTools(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;
-  const caller = { kind: "ion" as const, ionId: scope.ionId, projects: ion.projects().map((p) => p.id) };
+  const caller = ionCaller(liveMemory(ion));
+  if (!caller) return;
   const limit = {
     ...{ id: scope.turnId, max: PER_TURN, tooMany: "That's enough memory for one turn" },
     refuse: () => notInReport(scope),
@@ -203,16 +219,27 @@ function memoryTools(server: McpServer, ion: Ion): void {
   registerMemoryTools(server, caller, d, limit);
 }
 
+/**
+ * What an ion's memory is now: as at its turn's start, or as your switches say now, whichever is less (review of #34,
+ * 2026-11-23: a switch took effect only at the next turn).
+ */
+function liveMemory(ion: Ion) {
+  const { scope, d } = ion;
+  const projects = ion.projects().map((p) => p.id);
+  const own = scope.ionId !== "chief" && scope.ionId !== DREAM_ION;
+  const now = ionMemory(loadUserConfig(d.configFile).config, projects, own);
+  const memory = leastIonMemory(scope.memory, now);
+  return { ...scope, projects, ...(memory ? { memory } : {}) };
+}
+
 /** ion's dream gets memory's tools only, for its pass, and what's left of its changes for the night. */
 function dreamTools(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;
   const { max, ...pass } = scope.dream ?? { see: "ions" as const, max: 0 };
-  const caller = {
-    kind: "ion" as const,
-    ionId: DREAM_ION,
-    projects: ion.projects().map((p) => p.id),
-    dream: pass,
-  };
+  // Your files are context to its passes only while your memory is on (the user, 2026-11-23).
+  const sees = ionCaller(liveMemory(ion));
+  if (!sees) return;
+  const caller = { ...sees, dream: pass };
   const tooMany = `That's ${DREAM_CHANGES} changes, the most for one night; stop here`;
   registerMemoryTools(server, caller, d, { id: scope.turnId, max, tooMany });
 }

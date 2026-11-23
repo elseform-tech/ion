@@ -4,6 +4,8 @@ import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryFiles } from "../memory/index.js";
+import { chatCaller, leastMemory } from "../memory/switch.js";
+import { memoryOfRun } from "../runs/ready.js";
 import { HISTORY_CHARS } from "../runs/history.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -15,7 +17,15 @@ import { registerMemoryTools } from "./memory-tools.js";
 import { guard, ok, q } from "./result.js";
 import type { Grants, RunScope } from "./grants.js";
 
-export type Deps = { store: EventStore; db: Db; grants: Grants; memory: MemoryFiles; decisions?: Decisions };
+export type Deps = {
+  store: EventStore;
+  db: Db;
+  grants: Grants;
+  memory: MemoryFiles;
+  decisions?: Decisions;
+  /** Your config: memory's switches, read again on every request. */
+  configFile?: string;
+};
 
 export const SEARCH_MAX = 20;
 const HIT_CHARS = 500;
@@ -51,7 +61,9 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
     },
     guard(({ chatId, limit }: { chatId?: string; limit?: number }) => {
       const id = chatId ?? scope.chatId;
-      if (chatsView.list(d.db).find((c) => c.chatId === id)?.projectId !== scope.projectId)
+      const chat = chatsView.list(d.db).find((c) => c.chatId === id);
+      // A chat you said not to remember is read by its own runs only (review of #34, 2026-11-23).
+      if (chat?.projectId !== scope.projectId || (chat.notRemembered && id !== scope.chatId))
         throw new UserError("Not allowed");
       return historyData(d.db, id, limit ?? 200);
     }),
@@ -63,13 +75,13 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
       inputSchema: { query: z.string().min(1).max(500), limit: z.number().int().min(1).optional() },
     },
     guard(({ query, limit }: { query: string; limit?: number }) => {
-      const hits = messagesView.search(
-        d.db,
-        scope.projectId,
-        query,
-        Math.min(limit ?? SEARCH_MAX, SEARCH_MAX),
-      );
-      return searchData(hits);
+      // Chats you said not to remember (but its own) are left out before the limit counts.
+      const hidden = chatsView
+        .list(d.db)
+        .filter((c) => c.notRemembered && c.chatId !== scope.chatId)
+        .map((c) => c.chatId);
+      const max = Math.min(limit ?? SEARCH_MAX, SEARCH_MAX);
+      return searchData(messagesView.search(d.db, scope.projectId, query, { limit: max, hidden }));
     }),
   );
   server.registerTool(
@@ -84,11 +96,14 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
 /** A chat writes at most this many memory files in one run. */
 const WRITES_PER_RUN = 20;
 
+/**
+ * A run whose memory is off (its project, its chat) gets no memory tools (the user, 2026-11-23): as it was at its start,
+ * or as it is now, whichever is less (review of #34, 2026-11-23: "Don't remember" mid-run left memory_write open).
+ */
 function memoryTools(server: McpServer, scope: RunScope, d: Deps): void {
-  const caller = {
-    kind: "chat" as const,
-    ...{ projectId: scope.projectId, chatId: scope.chatId, runId: scope.runId },
-  };
+  const now = d.configFile ? memoryOfRun(d.configFile, d.db, scope) : undefined;
+  const caller = chatCaller({ ...scope, ...leastMemory(scope.memory, now) });
+  if (!caller) return;
   // An agent can't flood a project's memory.
   const limit = { id: scope.runId, max: WRITES_PER_RUN, tooMany: "That's enough memory for one run" };
   registerMemoryTools(server, caller, d, limit);

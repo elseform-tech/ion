@@ -1,8 +1,19 @@
 import type { DreamPass } from "../memory/dream-rules.js";
+import type { IonMemory } from "../memory/switch.js";
 import { createHash, randomBytes } from "node:crypto";
 
-/** What a run's key may see: its own project (and chat, as the default for history). */
-export type RunScope = { kind: "run"; projectId: string; chatId: string; runId: string };
+/**
+ * What a run's key may see: its own project (and chat, as the default for history). `memory` (the user, 2026-11-23):
+ * "none", no memory at all (off in its project, or a chat you said not to remember); "project", its project's files
+ * only (your own memory is off); absent, both.
+ */
+export type RunScope = {
+  kind: "run";
+  projectId: string;
+  chatId: string;
+  runId: string;
+  memory?: "none" | "project";
+};
 
 /** What an ion's key may see for one turn: the projects it looks after (ion chief: those shared with it). */
 /** An ion's turn; `report`: a turn the daemon asked for (a thread's report), which writes nothing and starts nothing. */
@@ -14,6 +25,8 @@ export type IonScope = {
   report?: true;
   /** ion's dream's pass: which files it sees and changes, and how many changes it has left. */
   dream?: DreamPass & { max: number };
+  /** Some of its memory is off (the user, 2026-11-23): yours, or projects'; absent, all of it is on. */
+  memory?: IonMemory;
 };
 
 export type Scope = RunScope | IonScope;

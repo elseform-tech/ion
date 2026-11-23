@@ -143,10 +143,11 @@ export function redactor(values: (string | undefined)[]): Redact {
 
 /**
  * A run's MCP servers: ion's own first (with the run's key) and its instructions, then yours; and what the agent's
- * process may not inherit (your keys). `ion.index`: the session's first message starts with ion's memory index.
+ * process may not inherit (your keys). `ion.index`: the session's first message starts with ion's memory index;
+ * `ion.memory`: false when the run's memory is off.
  */
 export function runMcp(
-  ion: { url: string; key: string; index?: boolean } | null,
+  ion: { url: string; key: string; index?: boolean; memory?: boolean } | null,
   yours: HttpMcpSpec[] = [],
   envDrop?: EnvDrop,
 ): { mcpServers?: HttpMcpSpec[]; instructions?: string; envDrop?: EnvDrop } {
@@ -156,7 +157,7 @@ export function runMcp(
   const all = [...own, ...yours];
   return {
     ...(all.length ? { mcpServers: all } : {}),
-    ...(ion ? { instructions: ionInstructions({ index: !!ion.index }) } : {}),
+    ...(ion ? { instructions: ionInstructions({ index: !!ion.index, memory: ion.memory !== false }) } : {}),
     ...(envDrop ? { envDrop } : {}),
   };
 }

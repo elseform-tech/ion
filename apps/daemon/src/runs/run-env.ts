@@ -10,11 +10,14 @@ export type RunKeys = { mcpKey?: string; gateKey?: string; cliKey?: string };
  */
 export function runKeys(
   grants: Grants | undefined,
-  l: { projectId: string; chatId: string; runId: string },
+  l: { projectId: string; chatId: string; runId: string; memory?: "none" | "project" },
   gate: boolean,
 ): RunKeys {
   if (!grants) return {};
-  const scope = { kind: "run" as const, projectId: l.projectId, chatId: l.chatId, runId: l.runId };
+  const scope = {
+    ...{ kind: "run" as const, projectId: l.projectId, chatId: l.chatId, runId: l.runId },
+    ...(l.memory ? { memory: l.memory } : {}),
+  };
   return {
     mcpKey: grants.create(scope),
     ...(gate ? { gateKey: grants.create(scope, "gate") } : {}),

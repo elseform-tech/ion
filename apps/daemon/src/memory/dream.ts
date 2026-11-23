@@ -1,4 +1,10 @@
-import { DEFAULT_PROJECT, loadUserConfig, type UserConfig } from "@ion/config";
+import {
+  DEFAULT_PROJECT,
+  loadUserConfig,
+  projectRemembered,
+  type UserConfig,
+  youRemembered,
+} from "@ion/config";
 import { type DreamInfo, EV, type IonEvent, type MemoryBy, type MemoryScope } from "@ion/schema";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
@@ -8,7 +14,7 @@ import { chatsView } from "../views/chats.js";
 import { messagesView } from "../views/messages.js";
 import { DREAM_ION, type DreamPass } from "./dream-rules.js";
 import type { MemoryFile, MemoryFiles } from "./index.js";
-import { lineOf, ScopedMemory } from "./scoped.js";
+import { type Caller, lineOf, ScopedMemory } from "./scoped.js";
 import { sharedIds } from "./todos.js";
 
 /** How a dream's turn ended: its reply, and whether it ran out of time or couldn't reach its agent. */
@@ -97,7 +103,11 @@ function recentChats(db: Db, c: UserConfig, now: Date, pass: DreamPass): string 
   const since = new Date(now.getTime() - CHATS_DAYS * DAY_MS).toISOString();
   const chats = chatsView
     .list(db)
-    .filter((x) => !x.archived && (x.lastActivityAt ?? "") >= since && x.projectId === pass.project)
+    // A chat you said not to remember is never read (review of #34, 2026-11-23).
+    .filter(
+      (x) =>
+        !x.archived && !x.notRemembered && (x.lastActivityAt ?? "") >= since && x.projectId === pass.project,
+    )
     .sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""))
     .slice(0, CHATS_MAX);
   const lines = chats.flatMap((x) => {
@@ -122,9 +132,22 @@ function passLine(pass: DreamPass): string {
   return `This pass changes only ${whose} files ${kind}; the others are context.`;
 }
 
+/**
+ * The dream ion over what it may tidy: the projects shared with ion whose memory is on, and yours while it's on (the
+ * user, 2026-11-23: Dream skips a scope that's off, and reads nothing of it).
+ */
+function dreamIon(c: UserConfig): Caller & { kind: "ion" } {
+  const ion = {
+    kind: "ion" as const,
+    ionId: DREAM_ION,
+    projects: sharedIds(c).filter((p) => projectRemembered(c, p)),
+  };
+  return youRemembered(c) ? ion : { ...ion, you: false };
+}
+
 /** The dream ion as one pass of it sees memory. */
 const passMemory = (d: Pick<DreamDeps, "memory">, c: UserConfig, pass: DreamPass) =>
-  new ScopedMemory(d.memory, { kind: "ion", ionId: DREAM_ION, projects: sharedIds(c), dream: pass });
+  new ScopedMemory(d.memory, { ...dreamIon(c), dream: pass });
 
 /** A pass's message: today's date, the files it may see, and the chats it may read, both as data. */
 function dreamPrompt(d: Pick<DreamDeps, "db" | "memory">, c: UserConfig, now: Date, pass: DreamPass): string {
@@ -245,12 +268,13 @@ async function passes(d: DreamDeps, c: UserConfig, since: string): Promise<Dream
 
 /** Which passes a night has: only those with files to tidy. */
 function passesOf(d: DreamDeps, c: UserConfig): DreamPass[] {
-  const ion = { kind: "ion" as const, ionId: DREAM_ION, projects: sharedIds(c) };
+  const ion = dreamIon(c);
   // Suggestions aren't the dream's: they never make a pass (final review, 2026-11-22).
   const all = new ScopedMemory(d.memory, ion).index({ limit: ALL }).filter((r) => !r.suggested);
   const have = new Set(all.map((r) => `${r.scope === "you" ? "" : r.scope.projectId}\n${r.see}`));
   const projects = [...new Set(all.flatMap((r) => (r.scope === "you" ? [] : [r.scope.projectId])))].sort();
-  return [...projects, null].flatMap((project) =>
+  const yours = youRemembered(c) ? [null] : [];
+  return [...projects, ...yours].flatMap((project) =>
     (["chats", "ions"] as const)
       .filter((see) => have.has(`${project ?? ""}\n${see}`))
       .map((see) => ({ see, project })),

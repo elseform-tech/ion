@@ -237,7 +237,7 @@ export function Sidebar(p: Props) {
     const ion = c.by === "ion" ? ions.find((x) => x.ionId === c.projectId) : undefined;
     return { chat: c, open: open === c.chatId, onOpen: () => onOpen(c.chatId), ...(ion ? { ion } : {}) };
   };
-  const acts = { onRename, onArchive };
+  const acts = { onRename, onArchive, onRemember: p.onRemember };
   const row = (c: ChatInfo) => <ChatRow key={c.chatId} {...props(c)} acts={acts} />;
   return (
     <>

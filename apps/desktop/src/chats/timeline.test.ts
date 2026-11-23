@@ -41,6 +41,20 @@ describe("timeline", () => {
     expect(t.items.at(-1)).toEqual({ kind: "ion", tone: "note", text });
   });
 
+  // The user, 2026-11-23: a chat you said not to remember says so once, quietly; Remember says so too.
+  it("says Not remembered once, quietly", () => {
+    const t = play(
+      ev("chat.memory", { on: false }, undefined, null as unknown as string),
+      ev("message.sent", { text: "Hi" }),
+      ev("chat.memory", { on: true }, undefined, null as unknown as string),
+    );
+    expect(t.items).toEqual([
+      { kind: "ion", tone: "note", text: "Not remembered" },
+      { kind: "you", text: "Hi" },
+      { kind: "ion", tone: "note", text: "Remembered" },
+    ]);
+  });
+
   // The user, 2026-11-21 (Plan 20): a limit handed to another agent shows one line, never ion's brief as your message;
   // your choice shows under ion's question.
   it("shows a handoff as one line, with your choice under the question and no brief", () => {

@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentEnv, sandboxKind, type StartOpts } from "@ion/adapter-kit";
-import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig } from "@ion/config";
+import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig, setMemory } from "@ion/config";
 import { clockOf, EV, type HarnessInfo, type IonEvent, type MemoryScope, type MemoryType } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGateHandler } from "../gate/index.js";
@@ -308,6 +308,45 @@ describe("an ion's turn", () => {
     expect(text).toContain("projects/storefront/deploy-day.md");
     expect(text).not.toContain("payments-api");
     expect(text.endsWith("\n\nhello")).toBe(true);
+  });
+
+  // The user, 2026-11-23: memory off: no tools, no list, nothing written; per project off hides your personal memory
+  // from that project too. An ion's turn gets no index and no word of memory in its instructions when its memory is
+  // off; ion chief's index leaves out a project that's off; a session given memory isn't resumed without it.
+  it("memory off: no tools, no list, nothing written", async () => {
+    const memory = new MemoryFiles({ root: join(home, "data", "memory"), store, db });
+    const w = (scope: MemoryScope, name: string) =>
+      memory.write({ scope, header: { name, description: name, type: "fact" }, text: name, by: "you" });
+    w("you", "Home city");
+    w({ projectId: "storefront" }, "Deploy day");
+    w({ projectId: "payments-api" }, "Rate limits");
+    const file = join(home, "config.toml");
+    const c = loadUserConfig(file).config;
+    const scopes: unknown[] = [];
+    const create = grants.create.bind(grants);
+    grants.create = (s, k) => (scopes.push(s), create(s, k));
+    const t = turns(undefined, { memory });
+    sent.length = 0;
+    await t.turn("storefront", "hello");
+    expect(sent.at(-1)?.startsWith("<ion-data")).toBe(true);
+    saveUserConfig(file, setMemory(c, false, "storefront"));
+    await t.turn("storefront", "remind me to ship on 2026-12-01");
+    expect(sent.at(-1)).toBe("remind me to ship on 2026-12-01");
+    expect(starts.at(-1)?.instructions).not.toMatch(/memory|to-dos/i);
+    expect(starts.at(-1)?.resume).toBeUndefined();
+    expect(scopes.at(-1)).toMatchObject({ memory: { you: false, projects: [] } });
+    expect(memory.list(null, ["chats", "ions"]).some((m) => m.type === "todo")).toBe(false);
+    await t.turn("chief", "hello");
+    const chief = sent.at(-1) ?? "";
+    expect([
+      chief.includes("home-city"),
+      chief.includes("rate-limits"),
+      chief.includes("deploy-day"),
+    ]).toEqual([true, true, false]);
+    saveUserConfig(file, setMemory(c, false));
+    await t.turn("chief", "hello");
+    expect(sent.at(-1)).toBe("hello");
+    expect(starts.at(-1)?.instructions).not.toMatch(/memory/i);
   });
 
   // Task review, 2026-11-22 (M-5): every turn repeated the index into a resumed session. It goes in once per session,

@@ -82,3 +82,14 @@ export function keep(e: AdapterEvent, end: TryEnd): boolean {
   end.error = e.data as RunError;
   return end.error.code !== "resume_failed";
 }
+
+/** A run between its tries: whether it was interrupted, and how to cut a retry's wait short. */
+export type Between = {
+  chatId: string;
+  interrupt: boolean;
+  wake?: () => void;
+  /** The chat's session resumed but then failed for real: later tries start a new session with the history. */
+  noResume?: boolean;
+  /** The chat said "Started fresh with a summary" for this run (once). */
+  summarized?: boolean;
+};
