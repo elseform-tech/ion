@@ -46,7 +46,8 @@ child processes only in `apps/daemon/src/workspace`, `apps/daemon/src/secrets` (
   `docs/research/acp-and-harnesses.md`; the judge evals (`judge.test.ts`) run Auto's judge on labelled cases, see
   `docs/research/judge-evals.md`; the memory evals (`memory.test.ts`) score memory on each agent, see
   `docs/research/memory-evals.md` (a change to memory, its tools or what chats and ions are told about it runs them
-  on Grok and opencode first).
+  on Grok and opencode first); the ion evals (`ions.test.ts`) score ion chief and the project ions as orchestrators,
+  see `docs/research/ion-evals.md`.
 - UI and CLI copy: short, plain words, no jargon, no explanatory hints. Prefer an icon (with its name on hover)
   to a word, and fewer boxes.
 - **Run a tour before every PR that changes what people see** (the desktop app, CLI output). `scripts/tour.sh`
