@@ -38,7 +38,20 @@ Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `app
 `briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
 `decision.recorded`, `decision.outcome`, `decision.forgotten`, `queue.added`, `queue.removed`, `queue.sent`,
 `queue.failed`, `notify`, `briefing.posted`, `tool.signedIn`, `tool.signedOut`, `tool.needsSignIn`,
-`memory.dreamed`, `todo.reminded`.
+`memory.dreamed`, `todo.reminded`, `chat.handoff`.
+
+Usage and limits (Plan 20): `usage.reported` carries `inputTokens`, `outputTokens`, `totalTokens` (every token the run
+processed, cached context too; absent when the agent's count is partial, as opencode's over ACP), `costUsd`, and
+`windows` (`{ name, usedPercent, resetsAt }`, the agent's own rate-limit windows; absent when it reports none, so a
+gauge it stopped reporting goes away). An `error` from an agent at its usage limit carries `limit { resetsAt? }`.
+Usage and limits of ion's own sessions (ions' turns, the judge) are stored with `chatId` null and `harness` in the
+data. `chat.handoff` is one line in a chat: `kind` `continued` ("Continued on Grok Build — Claude Code hit its
+limit", `to` the agent that went on), `waiting` ("Waits for Codex — 16:00", `until`, `guessed` when the reset was
+ion's guess, `tries`), `fresh` ("Started fresh with a summary") or `routed` (Pick by usage's reason, "On opencode —
+free and enough for this"). The message that hands a chat to another agent is `message.sent` with `handoff: true`
+(ion's brief; the chat shows the line instead). `run.queued` may carry `waiting` ("Waiting — 4 ion chats running"):
+a chat ion started waits for one of its slots. ion's limit question is a `need.raised` that carries the `limit` it
+offers (from, to, until); your "Always continue on X here" is a `decision.recorded` keyed `handoff:<agent>`.
 
 A memory file's change is `memory.written` (its path, scope, header, hash, `by`, and the text `before`) or
 `memory.forgotten` (`path`, `by`, `before`, and `into`: the file ion's dream merged it into). A header's `suggested`

@@ -7,6 +7,9 @@
 set -e
 cd "$(dirname "$0")/.."
 export ION_HOME="${ION_TOUR_HOME:-/tmp/ion-tour}" ION_ALLOW_FAKE=1 ION_TOUR=1
+# Plan 20: the fake agent is listed (ION_DEBUG) and paid per use, so Settings → Agents has a line with this week's cost;
+# "slow" runs an hour, so an ion chat waiting for its slot stays waiting while you look.
+export ION_DEBUG=1 ION_FAKE_BILLING=api ION_FAKE_SLOW_S=3600
 ion() { node apps/cli/dist/index.js "$@"; }
 if [ "$1" = stop ]; then
   ion daemon stop >/dev/null 2>&1 || true
@@ -180,6 +183,88 @@ put({ projectId: "storefront" }, { name: "Deploy", description: "pnpm deploy fro
 put({ projectId: "storefront" }, { name: "Check the headline on mobile", description: "Check the headline on mobile", type: "todo", status: "open", due: day(3) }, "Check the headline on mobile.", byChat);
 fs.writeFileSync(process.env.ION_HOME + "/data/memory/projects/storefront/notes.md", "no header here\n");
 db.close();'
+# Plan 20 (made up): each agent's usage line, a limit handed to another agent (one asked, one on Auto after your
+# "Always"), a chat Pick by usage routed, and past chats in storefront, so a short request there has an estimate.
+node --input-type=module -e '
+const { EventStore, openDb } = await import("./apps/daemon/dist/store/index.js");
+const { allViews } = await import("./apps/daemon/dist/views/index.js");
+const db = openDb(process.env.ION_HOME + "/data/ion.db");
+const store = new EventStore(db, allViews);
+const now = Date.now();
+const at = (min) => new Date(now + min * 60_000).toISOString();
+const { isDaemonOnly } = await import("./packages/schema/dist/index.js");
+const add = (chatId, runId, type, data, min) =>
+  store.append({ chatId, runId, origin: isDaemonOnly(type) ? "daemon" : "adapter", type, data, ts: at(min) });
+const chat = (id, title, min, projectId = "storefront") => add(id, null, "chat.created", { title, projectId }, min);
+const run = (chatId, runId, harness, text, min, o = {}) => {
+  add(chatId, runId, "message.sent", { text, ...(o.handoff ? { handoff: true } : {}) }, min);
+  add(chatId, runId, "run.queued", { access: "auto" }, min);
+  if (o.before) o.before();
+  add(chatId, runId, "run.started", { harness, model: "tour", effort: null, authMethod: "Signed in" }, min + 0.1);
+};
+const reply = (chatId, runId, text, tokens, min, costUsd) => {
+  add(chatId, runId, "message.completed", { text }, min);
+  add(chatId, runId, "usage.reported", { model: "tour", inputTokens: tokens - 900, outputTokens: 900, totalTokens: tokens,
+    ...(costUsd ? { costUsd } : {}) }, min);
+  add(chatId, runId, "run.finished", { status: "done" }, min);
+};
+const limit = (chatId, runId, who, resetsAt, min) => {
+  add(chatId, runId, "error", { code: "usage_limit", retryable: false, message: `${who} usage limit reached`, limit: { resetsAt } }, min);
+  add(chatId, runId, "run.finished", { status: "failed" }, min);
+};
+// Asked, then Continue: Claude Code hit its limit 20 minutes ago (limited until its reset); Grok Build went on.
+const a = "chat_tour-handoff";
+chat(a, "Make the pricing table responsive", -25);
+run(a, "tour-ho-1", "claude-code", "Make the pricing table stack its columns on small screens", -25);
+add(a, "tour-ho-1", "tool.started", { toolId: "r1", name: "Read", kind: "read", summary: "src/pricing.css" }, -24);
+add(a, "tour-ho-1", "tool.finished", { toolId: "r1", ok: true, summary: null }, -24);
+limit(a, "tour-ho-1", "Claude", at(70), -20);
+run(a, "tour-ho-2", "grok-build", "ion’s brief: the request, what was done, the last error. Check git status and the tests before continuing.", -19, {
+  handoff: true,
+  before: () => add(a, null, "chat.handoff", { kind: "continued", text: "Continued on Grok Build — Claude Code hit its limit", to: "grok-build" }, -19),
+});
+reply(a, "tour-ho-2", "git status showed the earlier step changed nothing, so I made the change: the pricing table stacks its columns under 640px. The tests pass.", 46_000, -15);
+// Yesterday, after your "Always continue on opencode here": Codex hit its limit and opencode went on, on Auto.
+const b = "chat_tour-always";
+chat(b, "Fix the coupon rounding", -1500);
+add(b, null, "decision.recorded", { decisionId: "dtour01", needId: "ntour01", projectId: "storefront", question: "When an agent hits its limit here", choice: "Always continue on opencode", scope: "project", by: "you", allowKey: "handoff:opencode" }, -1499);
+add(b, "tour-al-1", "message.sent", { text: "Round coupon discounts to the cent, half up" }, -1440);
+add(b, "tour-al-1", "run.queued", { access: "full" }, -1440);
+add(b, "tour-al-1", "run.started", { harness: "codex", model: "tour", effort: null, authMethod: "ChatGPT" }, -1440);
+limit(b, "tour-al-1", "Codex", at(-1300), -1438);
+run(b, "tour-al-2", "opencode", "ion’s brief: the request, what was done, the last error. Check git status and the tests before continuing.", -1437, {
+  handoff: true,
+  before: () => add(b, null, "chat.handoff", { kind: "continued", text: "Continued on opencode on Auto — Codex hit its limit · always here", to: "opencode" }, -1437),
+});
+add(b, "tour-al-2", "message.completed", { text: "Coupon discounts now round half up to the cent; added a test for 0.005." }, -1430);
+add(b, "tour-al-2", "run.finished", { status: "done" }, -1430);
+// Pick by usage picked the agent, and says why.
+const c = "chat_tour-routed";
+chat(c, "Tidy the footer links", -90);
+add(c, "tour-ro-1", "message.sent", { text: "Tidy the footer links: one column on phones" }, -90);
+add(c, null, "chat.handoff", { kind: "routed", text: "On opencode — free and enough for this", to: "opencode" }, -90);
+add(c, "tour-ro-1", "run.queued", { access: "auto" }, -90);
+add(c, "tour-ro-1", "run.started", { harness: "opencode", model: "tour", effort: null, authMethod: "Signed in" }, -90);
+add(c, "tour-ro-1", "message.completed", { text: "The footer links are one column under 640px." }, -88);
+add(c, "tour-ro-1", "run.finished", { status: "done" }, -88);
+// Five past chats in storefront (short changes) on the fake agent, paid per use there: a short change in storefront
+// (By usage picks the project’s agent) says what it usually costs; and three on Grok Build, which say nothing yet.
+const past = [["Rename the cart button to Checkout", 28_000, 0.18], ["Add alt text to the hero image", 31_000, 0.21],
+  ["Fix the typo in the FAQ", 24_000, 0.12], ["Make the promo banner dismissible", 52_000, 0.41],
+  ["Sort the size picker small to large", 37_000, 0.26], ["Lazy-load the review photos", 44_000],
+  ["Trim the checkout page’s bundle", 61_000], ["Add a skeleton to the product grid", 39_000]];
+past.forEach(([text, tokens, cost], i) => {
+  const id = `chat_tour-past-${i}`;
+  const min = -(2 + i) * 1440;
+  chat(id, text, min);
+  run(id, `tour-past-${i}`, cost ? "fake" : "grok-build", text, min);
+  reply(id, `tour-past-${i}`, "Done.", tokens, min + 2, cost);
+});
+// Usage the agents reported: Codex’s windows; the fake agent (paid per use on the tour) with this week’s cost.
+add(null, null, "usage.reported", { harness: "codex", model: "tour", inputTokens: 52_000, outputTokens: 3_000,
+  windows: [{ name: "5 h", usedPercent: 62, resetsAt: at(140) }, { name: "week", usedPercent: 28, resetsAt: at(4 * 1440) }] }, -30);
+add(null, null, "usage.reported", { harness: "fake", model: "fake", inputTokens: 210_000, outputTokens: 12_000, costUsd: 0.06 }, -300);
+db.close();'
 ion daemon start >/dev/null
 # Plan 09, 14: a thread storefront's ion started, and ion chief routing a message to two projects (each a turn of
 # the fake agent, starting threads with ion's start_thread tool).
@@ -223,6 +308,28 @@ if (tools?.tools?.some((t) => t.name === "echo")) await c.call("tools.setIonUse"
 c.close();'
 (ion ask "gated npm install unsure-me" -p storefront --harness fake >/dev/null 2>&1 &) # waits on you 4 minutes
 (ion ask "slow" -p payments-api --harness fake >/dev/null 2>&1 &) # running while you look
+# Plan 20: a chat that waits for its agent's reset (the fake's limit, you picked Wait); one ion chat at a time, so a
+# routine's chat waits behind another ("Waiting — 1 ion chat running"); then Pick by usage on (the By usage pill).
+ion ask "limited — tidy the checkout copy" -p payments-api --harness fake >/dev/null 2>&1 || true
+node --input-type=module -e '
+const { connect, readDaemonInfo } = await import("./packages/client/dist/index.js");
+const c = await connect(readDaemonInfo(process.env.ION_HOME + "/data"));
+const chat = (await c.call("chats.list", {})).find((x) => x.title.startsWith("limited"));
+const need = chat && (await c.call("needs.list", { chatId: chat.chatId }))[0];
+if (need) await c.call("need.answer", { needId: need.needId, choice: 2 });
+if (chat) await c.call("chat.rename", { chatId: chat.chatId, title: "Tidy the checkout copy" });
+await c.call("settings.set", { patch: { maxRuns: 1 } });
+c.close();'
+ion routines add "Hold" -p storefront -w "sun 3:00" -d "slow" >/dev/null
+(ion routines run hold >/dev/null 2>&1 &)
+sleep 2
+(ion routines run dependency-update >/dev/null 2>&1 &)
+sleep 2
+node --input-type=module -e '
+const { connect, readDaemonInfo } = await import("./packages/client/dist/index.js");
+const c = await connect(readDaemonInfo(process.env.ION_HOME + "/data"));
+await c.call("settings.set", { patch: { byUsage: true } });
+c.close();'
 pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
 sleep 3
 # ION_TOUR_APP: the app's address when your vite runs elsewhere (another worktree's port).

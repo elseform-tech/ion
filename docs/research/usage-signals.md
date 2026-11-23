@@ -122,3 +122,25 @@ run has no total and that agent never shows a token estimate. Checked 2026-11-23
   run or ion turn that started after a mark and ended well clears it.
 - Billing comes from each adapter's sign-in check (`AuthStatus.billing`); unknown stays unknown and is never shown as
   free.
+- A reset an agent states is checked before ion marks or waits on it (security scan, 2026-11-23): one that isn't a
+  date or is past is unknown; it's believed only within the agent's longest reported window (Codex's or Claude's
+  week), or 6 hours for an agent that reports none. Later than that it counts as ion's guess (tried after 30 minutes),
+  and it never pushes a stated mark later. A wake-up the scheduler refuses falls back to the guess.
+- At a limit (Plan 20 Task 2), ion holds the chat and asks: Continue on the next free agent in your order, Wait for
+  the reset, or Always continue on it here. The question comes at once (it doesn't wait on a slow agent's first sign-in
+  check) and `ion ask` shows it before it exits. Continue starts a new run in the same worktree with ion's brief (your
+  request, the files changed, the last steps and error, "check git status and the tests"); the chat shows one line.
+- Pick by usage (Task 3, off at first) picks a new chat's agent from these signals: never a limited one; room in its
+  windows first, then what fits, then subscription and free before api, then your order; with one line of why.
+- Estimates (Task 4) come from `totalTokens` of similar past chats in the project (at least 5), shown as cost for an
+  agent paid per use, a share of a window when the agent reports one, else tokens.
+
+## Checked end to end (2026-11-23)
+
+- opencode (big-pickle): its free quota didn't run out this time, so the limit came from the fake agent and was
+  handed to Grok Build for real: "Continued on Grok Build — Fake hit its limit"; Grok ran `git status` first, found the
+  earlier step had changed nothing, made the change and said so. A file opencode or Grok made shows as added.
+- Grok Build: no windows and no limit over ACP still. A tiny chat (one file, one line) cost $0.09–$0.17; with a
+  handoff brief and a few checks, $0.36 (about 41k input tokens). Five such chats in one project gave "usually
+  31k–42k tokens".
+- Pick by usage, with nothing limited: "On opencode — free and enough for this".
