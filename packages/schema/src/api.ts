@@ -421,6 +421,8 @@ export type ChatInfo = {
   preview: string | null;
   /** "ion": a thread ion started; null: your own chat. */
   by: "ion" | null;
+  /** Why a chat ion started waits for a slot ("Waiting — 4 ion chats running"), while it does. */
+  waiting?: string;
 };
 
 /** An ion: ion chief ("chief") or a project's ion (its id is the project's). */

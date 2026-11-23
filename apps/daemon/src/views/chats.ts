@@ -7,18 +7,22 @@ type D = Record<string, unknown>;
 export const chatsView: View & {
   list(db: Db): ChatInfo[];
   worktree(db: Db, chatId: string): string | null;
-  session(db: Db, chatId: string): { harness: string; sessionId: string } | null;
+  session(
+    db: Db,
+    chatId: string,
+  ): { harness: string; sessionId: string } | null;
   /** The agent the project's most recently active chat ran on, if any ran. */
   lastAgent(db: Db, projectId: string): string | null;
 } = {
   name: "chats",
-  version: 5,
+  // 6: why a chat ion started waits for a slot (waiting).
+  version: 6,
   tables: ["view_chats"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_chats (
       chat_id TEXT PRIMARY KEY, title TEXT NOT NULL, project_id TEXT, worktree TEXT, branch TEXT,
       archived INTEGER NOT NULL DEFAULT 0, last_run_status TEXT, harness TEXT, session_id TEXT, last_activity TEXT,
-      preview TEXT, by TEXT)`);
+      preview TEXT, by TEXT, waiting TEXT)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_chats");
@@ -39,9 +43,14 @@ export const chatsView: View & {
         d.by ?? null,
       );
     } else if (e.type === EV.chatRenamed) {
-      db.prepare("UPDATE view_chats SET title = ? WHERE chat_id = ?").run(String(d.title), e.chatId);
+      db.prepare("UPDATE view_chats SET title = ? WHERE chat_id = ?").run(
+        String(d.title),
+        e.chatId,
+      );
     } else if (e.type === EV.chatArchived) {
-      db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
+      db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(
+        e.chatId,
+      );
     } else {
       noteRun(db, e, d);
     }
@@ -51,10 +60,17 @@ export const chatsView: View & {
       db
         .prepare(
           `SELECT chat_id AS chatId, title, project_id AS projectId, branch, archived, last_run_status AS lastRunStatus,
-             last_activity AS lastActivityAt, preview, by FROM view_chats ORDER BY rowid`,
+             last_activity AS lastActivityAt, preview, by, waiting FROM view_chats ORDER BY rowid`,
         )
-        .all() as (Omit<ChatInfo, "archived"> & { archived: number })[]
-    ).map((r) => ({ ...r, archived: r.archived === 1 }));
+        .all() as (Omit<ChatInfo, "archived" | "waiting"> & {
+        archived: number;
+        waiting: string | null;
+      })[]
+    ).map(({ waiting, ...r }) => ({
+      ...r,
+      archived: r.archived === 1,
+      ...(waiting ? { waiting } : {}),
+    }));
   },
   lastAgent(db, projectId) {
     const r = db
@@ -66,14 +82,19 @@ export const chatsView: View & {
   },
   session(db, chatId) {
     const r = db
-      .prepare("SELECT harness, session_id AS sessionId FROM view_chats WHERE chat_id = ?")
-      .get(chatId) as { harness: string | null; sessionId: string | null } | undefined;
-    return r?.harness && r.sessionId ? { harness: r.harness, sessionId: r.sessionId } : null;
+      .prepare(
+        "SELECT harness, session_id AS sessionId FROM view_chats WHERE chat_id = ?",
+      )
+      .get(chatId) as
+      { harness: string | null; sessionId: string | null } | undefined;
+    return r?.harness && r.sessionId
+      ? { harness: r.harness, sessionId: r.sessionId }
+      : null;
   },
   worktree(db, chatId) {
-    const r = db.prepare("SELECT worktree FROM view_chats WHERE chat_id = ?").get(chatId) as
-      | { worktree: string | null }
-      | undefined;
+    const r = db
+      .prepare("SELECT worktree FROM view_chats WHERE chat_id = ?")
+      .get(chatId) as { worktree: string | null } | undefined;
     return r?.worktree ?? null;
   },
 };
@@ -87,11 +108,17 @@ export function previewOf(text: string): string {
     .replace(/[*`#>]+/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return plain.length > PREVIEW_MAX ? `${plain.slice(0, PREVIEW_MAX - 1).trimEnd()}…` : plain;
+  return plain.length > PREVIEW_MAX
+    ? `${plain.slice(0, PREVIEW_MAX - 1).trimEnd()}…`
+    : plain;
 }
 
 /** What counts as a chat being active: a message, or a run starting or ending. */
-const ACTIVITY = new Set<string>([EV.messageSent, EV.runStarted, EV.runFinished]);
+const ACTIVITY = new Set<string>([
+  EV.messageSent,
+  EV.runStarted,
+  EV.runFinished,
+]);
 
 /** The chat's last run status from a run event, or null for other events. */
 function runStatus(type: string, d: Record<string, unknown>): string | null {
@@ -106,19 +133,35 @@ function noteRun(db: Db, e: IonEvent, d: D): void {
   const chatId = e.chatId!;
   if (e.type === EV.runStarted) noteSession(db, chatId, d);
   if (e.type === EV.messageCompleted)
-    db.prepare("UPDATE view_chats SET preview = ? WHERE chat_id = ?").run(previewOf(String(d.text)), chatId);
+    db.prepare("UPDATE view_chats SET preview = ? WHERE chat_id = ?").run(
+      previewOf(String(d.text)),
+      chatId,
+    );
   if (ACTIVITY.has(e.type))
-    db.prepare("UPDATE view_chats SET last_activity = ? WHERE chat_id = ?").run(e.ts, chatId);
+    db.prepare("UPDATE view_chats SET last_activity = ? WHERE chat_id = ?").run(
+      e.ts,
+      chatId,
+    );
   const status = runStatus(e.type, d);
-  if (status) db.prepare("UPDATE view_chats SET last_run_status = ? WHERE chat_id = ?").run(status, chatId);
+  if (status)
+    db.prepare(
+      "UPDATE view_chats SET last_run_status = ? WHERE chat_id = ?",
+    ).run(status, chatId);
+  // Why it waits for a slot, while it's queued.
+  if (status) {
+    const waiting =
+      status === "queued" && typeof d.waiting === "string" ? d.waiting : null;
+    db.prepare("UPDATE view_chats SET waiting = ? WHERE chat_id = ?").run(
+      waiting,
+      chatId,
+    );
+  }
 }
 
 /** The chat's harness and session, from its latest run.started. */
 function noteSession(db: Db, chatId: string, d: Record<string, unknown>): void {
   const sessionId = typeof d.sessionId === "string" ? d.sessionId : null;
-  db.prepare("UPDATE view_chats SET harness = ?, session_id = ? WHERE chat_id = ?").run(
-    String(d.harness),
-    sessionId,
-    chatId,
-  );
+  db.prepare(
+    "UPDATE view_chats SET harness = ?, session_id = ? WHERE chat_id = ?",
+  ).run(String(d.harness), sessionId, chatId);
 }
