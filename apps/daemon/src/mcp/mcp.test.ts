@@ -170,6 +170,23 @@ describe("ion's MCP server", () => {
     await own.close();
   });
 
+  // Security scan of #34, 2026-11-23: hidden chats were filtered after the limit, so a search came back short and the
+  // shortfall said a private chat matched. The limit counts visible chats' messages only.
+  it("a search never comes back short because a chat you don't remember matched", async () => {
+    for (let i = 0; i < 25; i++)
+      put({ chatId: "c1", runId: `rv${i}`, type: "message.sent", data: { text: `heron ${i}` } });
+    put({ chatId: "c3", runId: null, type: "chat.created", data: { title: "Private", projectId: "app" } });
+    put({ chatId: "c3", runId: null, type: "chat.memory", data: { on: false } });
+    for (let i = 0; i < 5; i++)
+      put({ chatId: "c3", runId: `rh${i}`, type: "message.sent", data: { text: `heron secret ${i}` } });
+    const other = await client(grants.create({ kind: "run", projectId: "app", chatId: "c2x", runId: "r8" }));
+    const out = text(await other.callTool({ name: "search_chats", arguments: { query: "heron" } }));
+    const lines = out.split("\n").slice(1, -1);
+    expect(lines).toHaveLength(20);
+    expect(out).not.toContain("secret");
+    await other.close();
+  });
+
   // Review of #34, 2026-11-23: with your own memory off, memory_write still offered "you" as a scope.
   it("offers no scope of yours when your memory is off", async () => {
     const k = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r4", memory: "project" });

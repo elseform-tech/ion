@@ -16,7 +16,13 @@ export const messagesView: View & {
   size(db: Db, chatId: string): number;
   /** A chat's last message by you or by its agent, if any. */
   last(db: Db, chatId: string, role: "you" | "agent"): string | undefined;
-  search(db: Db, projectId: string, query: string, limit: number): SearchHit[];
+  /** `o.hidden`: chats left out before the limit counts (security scan of #34: a short result told they matched). */
+  search(
+    db: Db,
+    projectId: string,
+    query: string,
+    o: number | { limit: number; hidden?: string[] },
+  ): SearchHit[];
 } = {
   name: "messages",
   // 2: ion's handoff briefs left out.
@@ -69,7 +75,8 @@ export const messagesView: View & {
       .get(chatId) as { n: number };
     return r.n;
   },
-  search(db, projectId, query, limit) {
+  search(db, projectId, query, o) {
+    const { limit, hidden = [] } = typeof o === "number" ? { limit: o } : o;
     // Each word is quoted, so the query is plain words, never FTS syntax.
     const words = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
     if (!words.length) return [];
@@ -77,8 +84,9 @@ export const messagesView: View & {
     return db
       .prepare(
         `SELECT m.chat_id AS chatId, m.role, m.text, m.ts FROM messages_fts f JOIN view_messages m ON m.id = f.rowid
-         WHERE messages_fts MATCH ? AND m.project_id = ? ORDER BY m.id DESC LIMIT ?`,
+         WHERE messages_fts MATCH ? AND m.project_id = ?
+           AND m.chat_id NOT IN (SELECT value FROM json_each(?)) ORDER BY m.id DESC LIMIT ?`,
       )
-      .all(match, projectId, limit) as SearchHit[];
+      .all(match, projectId, JSON.stringify(hidden), limit) as SearchHit[];
   },
 };

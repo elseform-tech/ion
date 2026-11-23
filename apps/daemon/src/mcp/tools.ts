@@ -75,19 +75,13 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
       inputSchema: { query: z.string().min(1).max(500), limit: z.number().int().min(1).optional() },
     },
     guard(({ query, limit }: { query: string; limit?: number }) => {
-      const hits = messagesView.search(
-        d.db,
-        scope.projectId,
-        query,
-        Math.min(limit ?? SEARCH_MAX, SEARCH_MAX),
-      );
-      const hidden = new Set(
-        chatsView
-          .list(d.db)
-          .filter((c) => c.notRemembered && c.chatId !== scope.chatId)
-          .map((c) => c.chatId),
-      );
-      return searchData(hits.filter((h) => !hidden.has(h.chatId)));
+      // Chats you said not to remember (but its own) are left out before the limit counts.
+      const hidden = chatsView
+        .list(d.db)
+        .filter((c) => c.notRemembered && c.chatId !== scope.chatId)
+        .map((c) => c.chatId);
+      const max = Math.min(limit ?? SEARCH_MAX, SEARCH_MAX);
+      return searchData(messagesView.search(d.db, scope.projectId, query, { limit: max, hidden }));
     }),
   );
   server.registerTool(

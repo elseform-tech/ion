@@ -100,12 +100,10 @@ export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps)
  */
 const rememberedChats = (db: Db) => chatsView.list(db).filter((c) => !c.notRemembered);
 const forgotten = (db: Db) =>
-  new Set(
-    chatsView
-      .list(db)
-      .filter((c) => c.notRemembered)
-      .map((c) => c.chatId),
-  );
+  chatsView
+    .list(db)
+    .filter((c) => c.notRemembered)
+    .map((c) => c.chatId);
 
 /** A project's chats, most recent first. */
 const chatsOf = (chats: ChatInfo[], projectId: string) =>
@@ -164,8 +162,7 @@ function chatTools(server: McpServer, ion: Ion): void {
     guard(({ query, projectId }: { query: string; projectId?: string }) =>
       searchData(
         idsOf(ion, projectId)
-          .flatMap((p) => messagesView.search(db, p, query, SEARCH_MAX))
-          .filter((h) => !forgotten(db).has(h.chatId))
+          .flatMap((p) => messagesView.search(db, p, query, { limit: SEARCH_MAX, hidden: forgotten(db) }))
           .sort((a, b) => b.ts.localeCompare(a.ts))
           .slice(0, SEARCH_MAX),
       ),

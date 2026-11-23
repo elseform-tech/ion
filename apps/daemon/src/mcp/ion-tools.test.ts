@@ -210,6 +210,21 @@ describe("ion tools", () => {
     await c.close();
   });
 
+  // Security scan of #34, 2026-11-23: an ion's search came back short when a chat you don't remember matched.
+  it("an ion's search never comes back short because a chat you don't remember matched", async () => {
+    for (let i = 0; i < 25; i++)
+      put({ chatId: "c2", runId: `rv${i}`, type: "message.sent", data: { text: `heron ${i}` } });
+    put({ chatId: "c9", runId: null, type: "chat.created", data: { title: "Private", projectId: "shop" } });
+    put({ chatId: "c9", runId: null, type: "chat.memory", data: { on: false } });
+    for (let i = 0; i < 5; i++)
+      put({ chatId: "c9", runId: `rh${i}`, type: "message.sent", data: { text: `heron secret ${i}` } });
+    const c = await shopIon();
+    const out = text(await c.callTool({ name: "search_chats", arguments: { query: "heron" } }));
+    expect(out.split("\n").slice(1, -1)).toHaveLength(20);
+    expect(out).not.toContain("secret");
+    await c.close();
+  });
+
   // Review of #34, 2026-11-23: ion chief wasn't told which projects' memory is off, nor that yours is.
   it("tells ion chief where memory is off", () => {
     const told = ionInstructions("chief", {
