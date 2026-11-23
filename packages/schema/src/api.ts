@@ -3,6 +3,7 @@ import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
 import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
 import type { MemorySee, MemoryType } from "./memory.js";
+import type { AgentUsage, HarnessInfo, TaskEstimate } from "./agents.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -123,6 +124,9 @@ export type ProjectPatch = {
 /** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
 export type IonSettings = { quick: string; effort: EffortLevel | null };
 
+/** What ion does when a chat's agent hits its limit (Settings → Agents). */
+export type OnLimit = "ask" | "continue" | "wait";
+
 /** How much a project may notify: everything, what needs you, only urgent things, nothing. */
 export type NotifyLevel = "all" | "needs" | "digest" | "muted";
 
@@ -141,12 +145,23 @@ export type SettingsInfo = IonSettings & {
   ownTools: Record<string, boolean>;
   /** ion tidies your memory overnight: how often, and on which agent (null: ion's own model's). */
   dream: { mode: DreamMode; agent: string | null };
+  /**
+   * Your agent order, best first (every agent ion knows): handoff targets, Pick by usage, and an ion's chats when the
+   * project names no agent.
+   */
+  agentOrder: string[];
+  /** When a chat's agent hits its limit: ask you, continue on the next agent, or wait for the reset. */
+  onLimit: OnLimit;
+  /** Pick by usage: a new chat you picked no agent for goes on the one with room, by fit and cost. */
+  byUsage: boolean;
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
-export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools">> & {
+export type SettingsPatch = Partial<
+  Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools" | "agentOrder" | "onLimit" | "byUsage">
+> & {
   dream?: { mode?: DreamMode; agent?: string | null };
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;
@@ -345,30 +360,16 @@ export type Commands = ToolsCommands & {
   /** Pause all: no routine runs until you resume. */
   "routines.pause": { args: { paused: boolean }; result: { ok: true } };
   "activity.list": { args: Record<string, never>; result: ActivityInfo };
-};
-
-export type HarnessInfo = {
-  id: string;
-  label: string;
-  installed: boolean;
-  signedIn: boolean;
-  /** From the harness itself when it's signed in; empty otherwise. */
-  models: { id: string; label: string }[];
-  defaultModel: string | null;
-  /** With "Use its own tools" off, it still loads MCP servers, hooks or plugins of its own (no switch for them all). */
-  ownTools?: true;
-  /** Its own hooks run in ion's chats too (no switch for them). */
-  ownHooks?: true;
-  /** What "Use its own tools" off really turns off, by kind. Absent: all of it. */
-  ownOff?: { servers: boolean; skills: boolean; plugins: boolean };
-  /** It trusts a project's own tools by its own list. */
-  ownTrust?: true;
-  /** Its chats run without the OS sandbox here (no sandbox on this computer): ion's folders are only word-guarded. */
-  notSandboxed?: true;
-  /** How many of its own allow and deny rules (your settings for it) its chats go by: deny wins, in every mode. */
-  ownRules?: number;
-  /** How often its judge didn't answer (too slow, or failed) in the last 7 days; absent when it always did. */
-  judgeMisses?: number;
+  /** Each listed agent's usage: tokens and cost, its windows, its limit, how it bills. */
+  "usage.list": { args: Record<string, never>; result: AgentUsage[] };
+  /**
+   * What a task usually takes, from similar past chats in its project: a new chat's request (on the agent named, else
+   * the one it would go on), or a chat already started (left out of its own history). Null with too few to say.
+   */
+  "usage.estimate": {
+    args: { chatId: string } | { projectId: string | null; harness?: string; text: string };
+    result: TaskEstimate | null;
+  };
 };
 
 export type NeedInfo = {
@@ -420,6 +421,11 @@ export type ChatInfo = {
   preview: string | null;
   /** "ion": a thread ion started; null: your own chat. */
   by: "ion" | null;
+  /**
+   * What the chat waits for, while it does: one of ion's slots ("Waiting — 4 ion chats running"), or its agent's
+   * reset after a limit ("Waits for Codex — 16:20").
+   */
+  waiting?: string;
 };
 
 /** An ion: ion chief ("chief") or a project's ion (its id is the project's). */
@@ -522,6 +528,8 @@ export const COMMANDS = [
   "routine.run",
   "routines.pause",
   "activity.list",
+  "usage.list",
+  "usage.estimate",
   "tools.list",
   "tools.setOn",
   "tools.setKey",

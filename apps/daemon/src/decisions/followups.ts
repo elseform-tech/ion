@@ -1,5 +1,6 @@
 import { EV } from "@ion/schema";
 import { UserError } from "../api/errors.js";
+import { endedOnLimit } from "../runs/limit-end.js";
 import type { EventStore } from "../store/index.js";
 
 const BUSY = "This chat is already running";
@@ -42,7 +43,9 @@ export class FollowUps {
       const status = (e.data as { status: string }).status;
       if (decisionId && e.runId) {
         this.runs.delete(e.runId);
-        if (status === "done" || status === "failed")
+        // One that ended on its agent's limit isn't an outcome: ion asks, waits or continues (final review, 2026-11-23).
+        const limited = status === "failed" && endedOnLimit(store, e.runId);
+        if ((status === "done" || status === "failed") && !limited)
           this.ended(e.chatId, decisionId, { ok: status === "done" });
       }
       const chatId = e.chatId;

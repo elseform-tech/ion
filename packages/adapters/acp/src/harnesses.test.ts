@@ -12,7 +12,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OPENCODE_PLUGIN } from "./gate.js";
-import { GROK_BUILD, OPENCODE, opencodeFailure, opencodeGiveUp } from "./harnesses.js";
+import {
+  GROK_BUILD,
+  OPENCODE,
+  opencodeBilling,
+  opencodeFailure,
+  opencodeGiveUp,
+  opencodeModelsBilling,
+} from "./harnesses.js";
 
 // Regression (final review I8): a repo's opencode.json could set permissions back to "allow".
 describe("opencode environment", () => {
@@ -538,5 +545,49 @@ describe("ion's judge on ACP agents", () => {
     expect(GROK_BUILD.forgetArgs?.("abc")).toEqual(["sessions", "delete", "abc"]);
     expect(OPENCODE.forgetArgs?.("ses_1")).toEqual(["session", "delete", "ses_1"]);
     expect(OPENCODE.bare?.effort).toBe("low");
+  });
+});
+
+// The user, 2026-11-21: how an agent bills comes from its sign-in. Grok's sign-in is a Grok plan ("Sign in with
+// Grok": its plan's usage limit, `grok usage`). Review, 2026-11-22: opencode was called free whatever model ion runs;
+// it's free only when opencode itself prices that model at 0 (`opencode models --verbose`, opencode 1.18.8), else
+// unknown (a Go plan or a provider key: ion can't tell which).
+describe("billing comes from the sign-in", () => {
+  const listing = [
+    "opencode/big-pickle",
+    JSON.stringify(
+      {
+        id: "big-pickle",
+        providerID: "opencode",
+        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+      },
+      null,
+      2,
+    ),
+    "opencode-go/glm-5.3",
+    JSON.stringify({ id: "glm-5.3", providerID: "opencode-go", cost: { input: 1.4, output: 4.4 } }, null, 2),
+    "",
+  ].join("\n");
+
+  it("Grok is a subscription", () => {
+    expect(GROK_BUILD.billing).toBe("subscription");
+  });
+
+  it("opencode is free only on a model it prices at 0", () => {
+    expect(opencodeBilling(listing, "opencode/big-pickle")).toBe("free");
+    expect(opencodeBilling(listing, "opencode-go/glm-5.3")).toBeUndefined();
+    expect(opencodeBilling(listing, "opencode/unlisted")).toBeUndefined();
+    expect(opencodeBilling("not json", "opencode/big-pickle")).toBeUndefined();
+    expect(OPENCODE.billing).toBeUndefined();
+    expect(OPENCODE.billingOf).toBeTypeOf("function");
+  });
+
+  // Re-review, 2026-11-22: "Free" followed ion's default model only; a paid model ion ran (its quick model, a project's,
+  // a chat's) still showed Free. Free only when every model it ran is free-priced.
+  it("a paid model over a free default isn't Free", async () => {
+    const ask = async () => listing;
+    expect(await opencodeModelsBilling(["opencode/big-pickle"], ask)).toBe("free");
+    expect(await opencodeModelsBilling(["opencode/big-pickle", "opencode-go/glm-5.3"], ask)).toBeUndefined();
+    expect(await opencodeModelsBilling([], ask)).toBeUndefined();
   });
 });

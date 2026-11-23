@@ -167,6 +167,76 @@ describe("mapSdkMessage", () => {
     });
   });
 
+  // The user, 2026-11-21: Claude's limit carries its reset (rate_limit_info.resetsAt), so ion marks it limited until then.
+  it("a limit error marks the agent limited until its reset", () => {
+    const s = state();
+    const resetsAt = Math.floor(Date.now() / 1000) + 3 * 3600;
+    mapSdkMessage(
+      { type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt } } as never,
+      s,
+    );
+    expect(errorOf(mapSdkMessage(result("error_during_execution"), s))).toMatchObject({
+      code: "usage_limit",
+      limit: { resetsAt: new Date(resetsAt * 1000).toISOString() },
+    });
+  });
+
+  // The user, 2026-11-21: a 5-hour or weekly limit that names no reset is still the limit (30 min, then one retry).
+  it("no reset → limited for 30 min, then one retry", () => {
+    const s = state();
+    const info = { status: "rejected", rateLimitType: "five_hour" };
+    mapSdkMessage({ type: "rate_limit_event", rate_limit_info: info } as never, s);
+    expect(errorOf(mapSdkMessage(result("error_during_execution"), s))).toMatchObject({
+      code: "usage_limit",
+      retryable: false,
+      limit: {},
+    });
+  });
+
+  // Probed on Claude Code 2.1.326 (docs/research/usage-signals.md): each request's rate_limit_info has its windows
+  // (unifiedWindows: utilization 0–1, resetsAt in unix seconds), reported with the run's usage.
+  it("a window snapshot is stored and shown", () => {
+    const s = state();
+    const unifiedWindows = {
+      five_hour: { utilization: 0.03, resetsAt: 1795393200, status: "allowed" },
+      seven_day: { utilization: 0.64, resetsAt: 1795834800, status: "allowed" },
+    };
+    const info = { status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.64, unifiedWindows };
+    mapSdkMessage({ type: "rate_limit_event", rate_limit_info: info } as never, s);
+    const usage = mapSdkMessage(result("success"), s)[0]?.data as { windows: unknown };
+    expect(usage.windows).toEqual([
+      { name: "5 h", usedPercent: 3, resetsAt: new Date(1795393200 * 1000).toISOString() },
+      { name: "week", usedPercent: 64, resetsAt: new Date(1795834800 * 1000).toISOString() },
+    ]);
+  });
+
+  // Review, 2026-11-22: a unifiedWindows entry that isn't an object threw; it's left out, the others kept.
+  it("leaves out a window entry that isn't an object", () => {
+    const s = state();
+    const unifiedWindows = { five_hour: null, seven_day: { utilization: 0.5, resetsAt: 1795834800 } };
+    expect(() =>
+      mapSdkMessage(
+        { type: "rate_limit_event", rate_limit_info: { status: "allowed", unifiedWindows } } as never,
+        s,
+      ),
+    ).not.toThrow();
+    expect([...s.windows.keys()]).toEqual(["week"]);
+  });
+
+  // Review, 2026-11-22: a rejected window with no top-level reset still has its own in unifiedWindows; that one is
+  // used, not ion's 30-minute guess.
+  it("a rejected window without a top-level reset uses its own window's reset", () => {
+    const s = state();
+    const resetsAt = Math.floor(Date.now() / 1000) + 4 * 3600;
+    const unifiedWindows = { five_hour: { utilization: 1, resetsAt, status: "rejected" } };
+    const info = { status: "rejected", rateLimitType: "five_hour", unifiedWindows };
+    mapSdkMessage({ type: "rate_limit_event", rate_limit_info: info } as never, s);
+    expect(errorOf(mapSdkMessage(result("error_during_execution"), s))).toMatchObject({
+      code: "usage_limit",
+      limit: { resetsAt: new Date(resetsAt * 1000).toISOString() },
+    });
+  });
+
   it("overloaded and server errors are retryable; account errors aren't", () => {
     const after = (error: string) => {
       const s = state();
@@ -178,11 +248,30 @@ describe("mapSdkMessage", () => {
     expect(after("billing_error")).toMatchObject({ code: "billing_error", retryable: false });
   });
 
+  // Review of fb615b0, 2026-11-23: estimates counted 706 tokens for a turn that processed 78,428 (the fixture
+  // denied.jsonl): Claude's input_tokens leave out the cached context it read and wrote.
+  it("tokens include cached context", () => {
+    const usage = {
+      input_tokens: 4,
+      cache_creation_input_tokens: 28858,
+      cache_read_input_tokens: 48864,
+      output_tokens: 702,
+    };
+    const [u] = mapSdkMessage(result("success", { usage }), state());
+    expect(u?.data).toMatchObject({ inputTokens: 4, outputTokens: 702, totalTokens: 78428 });
+  });
+
   it("success → usage then done", () => {
     expect(mapSdkMessage(result("success"), state())).toEqual([
       {
         type: "usage.reported",
-        data: { model: "claude-haiku-5-5", inputTokens: 120, outputTokens: 40, costUsd: 0.0031 },
+        data: {
+          model: "claude-haiku-5-5",
+          inputTokens: 120,
+          outputTokens: 40,
+          totalTokens: 160,
+          costUsd: 0.0031,
+        },
       },
       { type: "run.finished", data: { status: "done" } },
     ]);

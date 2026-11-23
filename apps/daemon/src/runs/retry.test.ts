@@ -88,3 +88,15 @@ describe("retryPlan", () => {
     expect(retryPlan({ tries: 1, effortRetried: false, effort: null }, null, () => 0)).toBeNull();
   });
 });
+
+// The user, 2026-11-21: an agent at its limit isn't retried in place (not a backoff, nor more effort): ion marks it
+// limited (30 min when it says no reset) and its next run after that is the one retry. Never a loop of retries.
+describe("no reset → limited for 30 min, then one retry", () => {
+  const state = { tries: 1, effortRetried: false, effort: null };
+  it("a limit failure is never retried in place", () => {
+    const limit = { code: "quota", retryable: false, message: "Usage limit reached", limit: {} };
+    expect(retryPlan(state, limit, () => 0.5)).toBeNull();
+    // Even one an agent called transient: a limit is a limit.
+    expect(retryPlan(state, { ...limit, code: "rate_limit", retryable: true }, () => 0.5)).toBeNull();
+  });
+});

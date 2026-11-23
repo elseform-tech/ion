@@ -20,7 +20,11 @@ const VERB: Record<string, string> = {
 type D = Record<string, unknown>;
 
 export type RunEnd = { status: string; code: number };
-type Rendered = { text: string; end?: RunEnd };
+/**
+ * `soon`: the run ended, but ion may still ask what to do next (a limit): end unless its question comes. `follow`:
+ * ion went on on another agent: follow the run it started.
+ */
+type Rendered = { text: string; end?: RunEnd; soon?: RunEnd; follow?: true };
 
 /** What the renderer remembers between events of one run. */
 type State = {
@@ -29,6 +33,8 @@ type State = {
   cost: number | null;
   lastError: string | null;
   asks: Map<string, string>;
+  /** The run failed on a limit: ion's question about it ends the run's output. */
+  limited?: RunEnd;
 };
 
 /** A full line, starting on a fresh line if streamed text left one open. */
@@ -50,7 +56,19 @@ function endLine(s: State, status: string, ts: string): Rendered {
   if (status === "interrupted") return { text: line(s, "Stopped"), end: { status, code: 130 } };
   if (status === "capped")
     return { text: line(s, "Stopped: spending cap reached"), end: { status, code: 1 } };
+  // A limit isn't a failure: ion asks, waits or goes on (final review, 2026-11-23).
+  if (s.limited) return { text: line(s, `· ${s.lastError ?? "Limit reached"}`), soon: s.limited };
   return { text: line(s, `Failed: ${s.lastError ?? "the run stopped"}`), end: { status, code: 1 } };
+}
+
+/** ion's line after a limit: it went on (follow that run), waits (ends well: the chat goes on by itself), or not. */
+function handoffLine(s: State, d: D): Rendered {
+  if (d.kind === "routed") return quiet;
+  const text = line(s, `· ${clean(d.text)}`);
+  if (d.kind === "continued") return { text, follow: true };
+  if (d.kind === "waiting") return { text, end: { status: "waiting", code: 0 } };
+  if (d.kind === "failed") return { text, end: { status: "failed", code: 1 } };
+  return { text };
 }
 
 const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered>> = {
@@ -96,6 +114,7 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     const ask = line(s, `· Asked you: ${clean(d.summary)}`);
     return {
       text: `${ask}${choices.join("")}  Answer: ion answer ${clean(d.needId)} <number, or your own words>\n`,
+      ...(s.limited ? { end: s.limited } : {}),
     };
   },
   [EV.needResolved]: (s, d) =>
@@ -121,9 +140,11 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
   },
   [EV.error]: (s, d) => {
     s.lastError = clean(d.message);
+    if (d.limit) s.limited = { status: "failed", code: 1 };
     return quiet;
   },
   [EV.runFinished]: (s, d, e) => endLine(s, String(d.status), e.ts),
+  [EV.chatHandoff]: handoffLine,
 };
 
 /** Turns one run's events into terminal text. */

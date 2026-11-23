@@ -15,13 +15,15 @@ describe("Settings → General", () => {
     const c = settingsClient({ now: { ...settings, maxRuns: 2 } });
     render(<Settings client={c} onOpenIon={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
-    expect(await screen.findByText("Chats at once")).toBeTruthy();
-    expect(screen.getByLabelText("Chats at once").textContent).toBe("2");
+    expect(await screen.findByText("Chats ion runs at once")).toBeTruthy();
+    expect(screen.getByLabelText("Chats ion runs at once").textContent).toBe("2");
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { maxRuns: 3 } });
     fireEvent.click(screen.getByRole("button", { name: "Less" }));
     expect(c.call).toHaveBeenLastCalledWith("settings.set", { patch: { maxRuns: 2 } });
-    for (const gone of [/folder/i, /debug/i, /runs/i, /max/i]) expect(screen.queryByText(gone)).toBeNull();
+    // "runs" as a thing (chats, not runs); the user, 2026-11-22: "Chats ion runs at once" is its name.
+    for (const gone of [/folder/i, /debug/i, /\bruns\b(?! at once)/i, /max/i])
+      expect(screen.queryByText(gone)).toBeNull();
   });
 
   // The user, 2026-11-20: "auto-approval should not be allowed to be disabled in settings, never settings, only
@@ -29,7 +31,7 @@ describe("Settings → General", () => {
   it("General has no Default access", async () => {
     render(<Settings client={settingsClient()} onOpenIon={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
-    await screen.findByText("Chats at once");
+    await screen.findByText("Chats ion runs at once");
     expect(screen.queryByText("Default access")).toBeNull();
     expect(screen.queryByRole("group", { name: "Default access" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Full access" })).toBeNull();
@@ -42,7 +44,7 @@ describe("Settings → General", () => {
     lastClient = c;
     render(<Settings client={c} onOpenIon={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "General" }));
-    await screen.findByLabelText("Chats at once");
+    await screen.findByLabelText("Chats ion runs at once");
     const step = (name: "Less" | "More") => fireEvent.click(screen.getByRole("button", { name }));
     const button = (name: "Less" | "More") => screen.getByRole("button", { name }) as HTMLButtonElement;
     const saved = (maxRuns: number | "auto") =>
@@ -53,10 +55,10 @@ describe("Settings → General", () => {
   // Tour, 2026-11-20: More from Auto went to 1, fewer than Auto's own (half the cores); quick clicks lost steps.
   it("steps from the number Auto means, through Auto, and keeps quick clicks", async () => {
     let g = await general("auto");
-    expect(screen.getByLabelText("Chats at once").textContent).toBe("Auto");
+    expect(screen.getByLabelText("Chats ion runs at once").textContent).toBe("Auto");
     g.step("More");
     g.saved(5);
-    expect(screen.getByLabelText("Chats at once").textContent).toBe("5"); // before the daemon answers
+    expect(screen.getByLabelText("Chats ion runs at once").textContent).toBe("5"); // before the daemon answers
     g.step("More");
     g.saved(6);
     g = await general("auto");
@@ -78,11 +80,11 @@ describe("Settings → General", () => {
     c.mockRejectedValueOnce(new ApiCallError("invalid", "Between 1 and 32 chats"));
     g.step("More");
     expect(await screen.findByText("Between 1 and 32 chats")).toBeTruthy();
-    expect(screen.getByLabelText("Chats at once").textContent).toBe("Auto");
+    expect(screen.getByLabelText("Chats ion runs at once").textContent).toBe("Auto");
     c.mockImplementationOnce(() => new Promise(() => {})); // the daemon hasn't answered yet
     g.step("More");
     await act(async () => {});
-    expect(screen.getByLabelText("Chats at once").textContent).toBe("5");
+    expect(screen.getByLabelText("Chats ion runs at once").textContent).toBe("5");
   });
 
   it("shows the daemon's reason when it refuses", async () => {

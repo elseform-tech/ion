@@ -1,3 +1,4 @@
+import { endedOnLimit } from "../runs/limit-end.js";
 import type { ThreadPicks } from "../mcp/ion-tools.js";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
@@ -7,7 +8,7 @@ import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { brainOf, projectAgent } from "./brain.js";
 import { plainReport } from "./project.js";
-import { type IonTurns, NO_AGENT, noAgent, PER_TURN, STOPPED, TOO_LONG } from "./turn.js";
+import { type IonTurns, NO_AGENT, PER_TURN } from "./turn.js";
 
 type Ask = (
   args: {
@@ -18,7 +19,7 @@ type Ask = (
     effort?: Effort;
     access: "auto";
   },
-  opts: { by: "ion"; request?: string; title?: string },
+  opts: { by: "ion"; request?: string; title?: string; routed?: string },
 ) => Promise<{ chatId: string; runId: string }>;
 
 /** A title without its closing stops or spaces ("Fix the cart." → "Fix the cart"), to quote it in a sentence. */
@@ -74,6 +75,11 @@ export type IonsDeps = {
   agents?: () => Promise<HarnessInfo[]>;
   /** One agent, asked alone. */
   agent?: (id: string) => Promise<HarnessInfo | undefined>;
+  /** Pick by usage (when it's on): a thread's agent, and why in one line; null to go on the project's. */
+  route?: (
+    projectId: string,
+    o: { effort?: Effort; text?: string },
+  ) => Promise<{ harness: string; reason: string } | null>;
 };
 
 type Thread = { chatId: string; projectId: string };
@@ -258,6 +264,14 @@ export class Ions {
     return t;
   }
 
+  /** A thread's agent: Pick by usage's (when it's on), with why; else the project's ion's. */
+  private async threadAgent(projectId: string, effort: Effort | undefined, text: string) {
+    const e = effort ?? brainOf(this.d.configFile, projectId, undefined).effort;
+    const route =
+      (await this.d.route?.(projectId, { text, ...(e ? { effort: e } : {}) }).catch(() => null)) ?? null;
+    return { harness: route?.harness ?? (await projectAgent(this.d, projectId)), route };
+  }
+
   /**
    * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `o.request` is what the
    * judge treats as your request: your own message, never a brief an ion's agent wrote. `o.title`: the thread's
@@ -268,7 +282,7 @@ export class Ions {
     text: string,
     o: { request?: string; title?: string; effort?: Effort } & ThreadPicks = {},
   ): Promise<Thread | { why: string }> {
-    const harness = await projectAgent(this.d, projectId);
+    const { harness, route } = await this.threadAgent(projectId, o.effort, text);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
       const args = {
@@ -281,7 +295,10 @@ export class Ions {
         ...(o.mentions?.length ? { mentions: o.mentions } : {}),
         access: "auto" as const,
       };
-      const opts = { by: "ion" as const, ...(o.request ? { request: o.request } : {}) };
+      const opts = {
+        ...{ by: "ion" as const, ...(o.request ? { request: o.request } : {}) },
+        ...(route ? { routed: route.reason } : {}),
+      };
       const { chatId } = await this.d.runs.ask(args, o.title ? { ...opts, title: o.title } : opts);
       return { chatId, projectId };
     } catch (e) {
@@ -296,8 +313,11 @@ export class Ions {
       if (e.type !== EV.runFinished || !e.chatId) return;
       const chat = chatsView.list(this.d.db).find((c) => c.chatId === e.chatId);
       if (chat?.by !== "ion" || !chat.projectId) return;
+      const status = (e.data as { status: string }).status;
+      // Ended on its agent's limit: ion asks, waits or continues; the run that goes on reports (final review, 2026-11-23).
+      if (status === "failed" && endedOnLimit(this.d.store, e.runId)) return;
       // The report takes a turn; one that ends after ion stopped is dropped, never an error.
-      this.report(chat.projectId, chat, (e.data as { status: string }).status).catch(() => {});
+      this.report(chat.projectId, chat, status).catch(() => {});
     });
   }
 
@@ -315,7 +335,7 @@ export class Ions {
       .turn(projectId, reportPrompt(chat, { status, reply, changed }), { noThreads: true })
       .catch(() => null);
     // A report that was stopped (or found no agent, or ran too long) is the agent's own reply instead.
-    const failed = !r || noAgent(r.reply) || [TOO_LONG, STOPPED].includes(r.reply);
+    const failed = !r || !!r.ionLine;
     const text = failed ? plainReport(title, status, reply) : capped(r.reply);
     this.say(projectId, text, undefined, r?.turnId);
     this.ended(projectId);

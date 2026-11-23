@@ -389,6 +389,28 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     });
     return "failed";
   },
+  /** Reports its usage and a 5 h window at 62% that resets in 2 hours (Plan 20: an agent's usage line). */
+  async usage(s) {
+    say(s, "Used some.");
+    const resetsAt = new Date(Date.now() + 2 * 3600_000).toISOString();
+    const windows = [{ name: "5 h", usedPercent: 62, resetsAt }];
+    s.emit({ type: EV.usageReported, data: { model: "fake", inputTokens: 1200, outputTokens: 80, windows } });
+    return "done";
+  },
+  /** At its usage limit until an hour from now (Plan 20); ION_FAKE_RESET_S: that many seconds instead. */
+  async limited(s) {
+    const resetsAt = new Date(Date.now() + Number(process.env.ION_FAKE_RESET_S ?? 3600) * 1000).toISOString();
+    s.emit({
+      type: EV.error,
+      data: {
+        code: "usage_limit",
+        retryable: false,
+        message: "Fake usage limit reached",
+        limit: { resetsAt },
+      },
+    });
+    return "failed";
+  },
   /** Rate-limited twice, then fine: retries should get it through. */
   async flaky(s) {
     if (s.tries() < 3) return transient(s);
@@ -399,9 +421,10 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
   async overloaded(s) {
     return transient(s);
   },
+  /** Runs 30 s; ION_FAKE_SLOW_S: that many seconds instead (the tour's ion chat holding the only slot). */
   async slow(s) {
     tool(s, { toolId: "t1", name: "Bash", kind: "command", summary: "sleep 30" });
-    const r = await s.wait(30_000);
+    const r = await s.wait(Number(process.env.ION_FAKE_SLOW_S ?? 30) * 1000);
     done(s, "t1", r === "ok");
     return r === "ok" ? "done" : "interrupted";
   },

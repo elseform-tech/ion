@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { defaultAgent, getHarness, listedHarnessIds } from "./registry.js";
+import { agentOrder, byPreference, defaultAgent, getHarness, listedHarnessIds } from "./registry.js";
 
 const env = { ...process.env };
 afterEach(() => {
@@ -31,5 +31,22 @@ describe("the default agent", () => {
     expect(defaultAgent(["claude-code", "grok-build"], "opencode")).toBe("grok-build");
     expect(defaultAgent(["claude-code", "opencode"], null)).toBe("opencode");
     expect(defaultAgent([], null)).toBeUndefined();
+  });
+});
+
+// The user, 2026-11-22: one agent order (Settings → Agents, default opencode, Grok Build, Codex, Claude Code) replaces
+// the order fixed in code: it decides handoff targets, routing, and an ion's chats when the project names none.
+describe("the agent order", () => {
+  it("the agent order decides handoff targets and routing", () => {
+    const order = agentOrder(["codex", "nope", "opencode"]);
+    expect(order).toEqual(["codex", "opencode", "grok-build", "claude-code"]);
+    expect(agentOrder([])).toEqual(["opencode", "grok-build", "codex", "claude-code"]);
+    expect(byPreference(["claude-code", "opencode", "codex"], order)).toEqual([
+      "codex",
+      "opencode",
+      "claude-code",
+    ]);
+    expect(defaultAgent(["claude-code", "opencode", "codex"], null, order)).toBe("codex");
+    expect(defaultAgent(["claude-code", "opencode"], "claude-code", order)).toBe("claude-code");
   });
 });

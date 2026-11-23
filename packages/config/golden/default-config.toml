@@ -38,3 +38,7 @@ on = []
 dream = "off"
 
 [agents]
+[routing]
+order = []
+onLimit = "ask"
+byUsage = false

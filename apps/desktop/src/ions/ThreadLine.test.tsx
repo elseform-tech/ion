@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { IonClient } from "@ion/client/browser";
 import { type ChatInfo, EV, type IonEvent } from "@ion/schema";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadLine } from "./ThreadLine.js";
 
@@ -23,14 +23,14 @@ const chat = (lastRunStatus: string): ChatInfo => ({
   by: "ion",
 });
 
-const line = (events: IonEvent[], c: ChatInfo) => {
+const line = (events: IonEvent[], c: ChatInfo, call = vi.fn()) => {
   const subscribe = vi.fn(async (_q: unknown, fn: (e: IonEvent) => void) => {
     for (const e of events) fn(e);
     return () => {};
   });
   return render(
     <ThreadLine
-      client={{ subscribe, call: vi.fn() } as unknown as IonClient}
+      client={{ subscribe, call } as unknown as IonClient}
       chatId="t1"
       projectId="storefront"
       chat={c}
@@ -75,6 +75,35 @@ describe("a thread's line", () => {
   });
 });
 
+// The user, 2026-11-21: an ion's thread line says what such a task usually takes, on hover, from past chats. Review
+// of fb615b0, 2026-11-23: asked on the first hover (not for every line drawn), and only while the thread is at work.
+describe("a thread's estimate", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("is asked on the first hover of a thread at work, and shows on hover", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const call = vi.fn(async () => ({ unit: "tokens", low: 40_000, high: 120_000 }));
+    const { container } = line([started, tool], chat("running"), call);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(call).not.toHaveBeenCalledWith("usage.estimate", expect.anything());
+    fireEvent.mouseEnter(container.querySelector(".tl")!);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(call).toHaveBeenCalledWith("usage.estimate", { chatId: "t1" });
+    expect(container.querySelector(".tl")?.getAttribute("title")).toBe("usually 40–120k tokens");
+  });
+
+  it("isn't shown once the thread is done", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const done = ev(EV.runFinished, { status: "done" }, "2026-11-19T10:01:04Z");
+    const call = vi.fn(async () => ({ unit: "tokens", low: 40_000, high: 120_000 }));
+    const { container } = line([started, done], chat("done"), call);
+    fireEvent.mouseEnter(container.querySelector(".tl")!);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(call).not.toHaveBeenCalledWith("usage.estimate", expect.anything());
+    expect(container.querySelector(".tl")?.getAttribute("title")).toBeNull();
+  });
+});
+
 // The user, 2026-11-21: answered questions stay in the conversation, "the same in ion threads".
 describe("a thread open beside its ion's chat", () => {
   it("the same in an ion thread: the question and your answer stay where it was asked", async () => {
@@ -111,4 +140,14 @@ describe("a thread open beside its ion's chat", () => {
     expect(container.querySelector(".u")?.textContent).toBe("Yes");
     expect(container.querySelector(".qbox")).toBeNull();
   });
+});
+
+// Coordinator, 2026-11-23: a thread waiting for its agent's reset read as failed on ion's thread line. It says what it
+// waits for.
+it("a thread waiting for its agent's reset says so, not failed", async () => {
+  const fail = ev(EV.runFinished, { status: "failed" }, "2026-11-19T10:00:02Z");
+  const c = { ...chat("failed"), waiting: "Waits for Fake — 16:20" };
+  const { container } = line([started, fail], c);
+  await waitFor(() => expect(container.querySelector(".tt")?.textContent).toBe("Waits for Fake — 16:20"));
+  expect(container.querySelector(".lucide-circle-alert")).toBeNull();
 });

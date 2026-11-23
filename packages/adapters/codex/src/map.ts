@@ -1,6 +1,13 @@
 import { isAbsolute, relative } from "node:path";
-import { type AdapterEvent, blocksText, TOOL_INPUT_MAX, TOOL_OUTPUT_MAX, toolText } from "@ion/adapter-kit";
-import { EV } from "@ion/schema";
+import {
+  type AdapterEvent,
+  blocksText,
+  TOOL_INPUT_MAX,
+  TOOL_OUTPUT_MAX,
+  toolText,
+  usageWindow,
+} from "@ion/adapter-kit";
+import { EV, type UsageWindow } from "@ion/schema";
 import { unwrapShell } from "./gate.js";
 
 type Json = Record<string, unknown>;
@@ -15,6 +22,8 @@ export type CodexState = {
   /** Each MCP tool call still running, by item id, for the approval Codex asks without naming the call. */
   mcp: Map<string, { server: string; tool: string; arguments: unknown }>;
   usage: { inputTokens: number; outputTokens: number } | null;
+  /** Its plan's rate-limit windows, as Codex last said (account/rateLimits); null when it hasn't. */
+  windows: UsageWindow[] | null;
   error: TurnError | null;
 };
 
@@ -24,8 +33,23 @@ export const createCodexState = (roots: string[]): CodexState => ({
   edits: new Map(),
   mcp: new Map(),
   usage: null,
+  windows: null,
   error: null,
 });
+
+type RateWindow = { usedPercent?: unknown; windowDurationMins?: unknown; resetsAt?: unknown } | null;
+
+/**
+ * Codex's rate-limit snapshot (`account/rateLimits/read` and `/updated`, codex-cli 0.153.2) as ion's windows: its
+ * primary (5 h) and secondary (week) windows; null when it names neither.
+ */
+export function windowsOf(snapshot: unknown): UsageWindow[] | null {
+  const s = (snapshot ?? {}) as { primary?: RateWindow; secondary?: RateWindow };
+  const windows = [s.primary, s.secondary]
+    .map((w) => (w ? usageWindow(w.windowDurationMins, w.usedPercent, w.resetsAt) : null))
+    .filter((w): w is UsageWindow => w !== null);
+  return windows.length ? windows : null;
+}
 
 const str = (x: unknown) => (typeof x === "string" ? x : "");
 
@@ -154,6 +178,14 @@ function noteUsage(p: Json, s: CodexState): void {
   };
 }
 
+/** A sparse update's windows over the last ones, by name: one it doesn't name stays as it was. */
+function mergeWindows(was: UsageWindow[] | null, now: UsageWindow[] | null): UsageWindow[] | null {
+  if (!now) return was;
+  const byName = new Map((was ?? []).map((w) => [w.name, w]));
+  for (const w of now) byName.set(w.name, w);
+  return [...byName.values()];
+}
+
 /** Translates one app-server notification into ion events. Pure apart from `state`. */
 export function mapNotification(method: string, p: Json, s: CodexState): AdapterEvent[] {
   switch (method) {
@@ -167,6 +199,9 @@ export function mapNotification(method: string, p: Json, s: CodexState): Adapter
       return itemCompleted((p.item ?? {}) as Json, s);
     case "thread/tokenUsage/updated":
       noteUsage(p, s);
+      return [];
+    case "account/rateLimits/updated":
+      s.windows = mergeWindows(s.windows, windowsOf(p.rateLimits));
       return [];
     case "error":
       // Codex retries some errors itself (willRetry); only the last one that ends the turn counts.

@@ -208,7 +208,10 @@ export function ChatView({ timeline, onFile }: { timeline: Timeline; onFile?: (p
         {timeline.items.map((item, i) => (
           <Row key={i} item={item} onFile={onFile} />
         ))}
-        {timeline.running && last?.kind === "you" && <Starting />}
+        {timeline.running &&
+          last?.kind === "you" &&
+          // A chat ion started, waiting for one of ion's slots, says so (the user, 2026-11-22).
+          (timeline.waiting ? <div className="quiet pending">{timeline.waiting}</div> : <Starting />)}
       </div>
     </div>
   );

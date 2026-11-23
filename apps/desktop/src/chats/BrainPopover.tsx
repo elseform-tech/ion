@@ -1,4 +1,4 @@
-import { Avatar, Check, ChevronUp, Layers, Search } from "@ion/design-system";
+import { Avatar, Check, ChevronUp, Gauge, Layers, Search } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { hit } from "../hotkeys.js";
@@ -42,17 +42,35 @@ function pillModel(h: HarnessInfo | undefined, model: string): string | null {
   return name === h.label ? null : name;
 }
 
+/** What the pill names: the agent (none: "By usage" when Pick by usage picks it), its model, and all of it in words. */
+function pillNames(harnesses: HarnessInfo[], brain: Brain, byUsage?: boolean) {
+  const effort = `${effortLabel(brain.effort)} effort`;
+  if (byUsage) return { h: undefined, model: null, label: "By usage", name: `By usage · ${effort}` };
+  const h = harnesses.find((x) => x.id === brain.harness);
+  const model = pillModel(h, brain.model);
+  // An agent the app doesn't list (the fake one in the tour) shows by its own name.
+  const label = h?.label ?? (brain.harness || null);
+  const name = [label ?? "none", model ?? modelLabel(h, brain.model), effort].join(" · ");
+  return { h, model, label, name };
+}
+
 /**
  * The lab's brain pill, in few words: the agent's avatar and name, the model when it says something, and effort as
  * its bars (all of it named for screen readers). A spinner while the agents are being read.
  */
-export function BrainPill(p: { harnesses: HarnessInfo[]; brain: Brain; open: boolean; onClick: () => void }) {
-  const h = p.harnesses.find((x) => x.id === p.brain.harness);
-  const model = pillModel(h, p.brain.model);
-  const effort = `${effortLabel(p.brain.effort)} effort`;
-  // An agent the app doesn't list (the fake one in the tour) shows by its own name.
-  const label = h?.label ?? (p.brain.harness || null);
-  const name = [label ?? "none", model ?? modelLabel(h, p.brain.model), effort].join(" · ");
+export function BrainPill(p: {
+  harnesses: HarnessInfo[];
+  brain: Brain;
+  open: boolean;
+  onClick: () => void;
+  /** Pick by usage picks the agent when this goes (the user, 2026-11-22): its gauge, "By usage". */
+  byUsage?: boolean;
+  /** Why Pick by usage put the chat on its agent, on hover. */
+  why?: string | null;
+  /** What this usually takes, from your past chats ("usually 40–120k tokens"), on hover. */
+  estimate?: string | null;
+}) {
+  const { h, model, label, name } = pillNames(p.harnesses, p.brain, p.byUsage);
   return (
     <button
       type="button"
@@ -60,10 +78,11 @@ export function BrainPill(p: { harnesses: HarnessInfo[]; brain: Brain; open: boo
       aria-haspopup="dialog"
       aria-expanded={p.open}
       aria-label={`Harness, model and effort: ${name}`}
-      title={name}
+      title={[name, p.why, p.estimate].filter(Boolean).join("\n")}
       onClick={p.onClick}
     >
       {h && <Avatar harness={h.id} />}
+      {p.byUsage && <Gauge />}
       {p.harnesses.length ? <span>{label ?? "No agent"}</span> : <span className="now">Agents</span>}
       {model && (
         <>

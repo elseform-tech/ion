@@ -8,6 +8,10 @@ export type Queued = { id: number; cancel(): boolean };
 export function createRunQueue(limit: number): {
   enqueue(start: () => Promise<void>): Queued;
   size(): number;
+  /** How many starts are going now. */
+  running(): number;
+  /** Whether a start enqueued now would wait for a slot. */
+  full(): boolean;
   /** A new limit: starts what now fits; a start that's going is never stopped. */
   setLimit(n: number): void;
 } {
@@ -43,6 +47,8 @@ export function createRunQueue(limit: number): {
       };
     },
     size: () => waiting.length,
+    running: () => running,
+    full: () => running >= limit || waiting.length > 0,
     setLimit: (n) => {
       limit = n;
       pump();

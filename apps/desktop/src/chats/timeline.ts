@@ -73,6 +73,12 @@ export type Timeline = {
   streaming: number | null;
   /** The run that's queued or going, if any. */
   running: string | null;
+  /** Why the chat's run waits for a slot ("Waiting — 4 ion chats running"), until it starts. */
+  waiting: string | null;
+  /** Why Pick by usage picked the chat's agent, in one line ("On Codex — Claude Code is near its limit"). */
+  routed: string | null;
+  /** The agent that reason is about: the reason goes once the chat goes on on another. */
+  routedTo: string | null;
   /** The agent the chat last ran on, and its model and effort: the next message's defaults. */
   harness: string | null;
   model: string | null;
@@ -99,6 +105,9 @@ export const empty = (): Timeline => ({
   items: [],
   streaming: null,
   running: null,
+  waiting: null,
+  routed: null,
+  routedTo: null,
   harness: null,
   model: null,
   effort: null,
@@ -119,6 +128,11 @@ type D = Record<string, unknown>;
 /** A file a run changed, with its line counts. */
 export type FileChange = { path: string; added: number; removed: number };
 const str = (x: unknown) => (typeof x === "string" ? x : "");
+/** A queued run: why it waits for a slot, if it does, and the agent it will use. */
+const queuedAs = (d: D, was: string | null) => ({
+  waiting: str(d.waiting) || null,
+  harness: str(d.harness) || was,
+});
 const push = (t: Timeline, item: Item): Timeline => ({ ...t, items: [...t.items, item], streaming: null });
 const replace = (t: Timeline, i: number, item: Item): Timeline => {
   const items = t.items.slice();
@@ -250,6 +264,8 @@ function pickedOf(d: D) {
 }
 
 function sent(t: Timeline, d: D): Timeline {
+  // ion's brief to the next agent (a limit): the chat shows its line instead, and your choice under its question.
+  if (d.handoff === true) return d.answers ? { ...t, named: [...t.named, str(d.answers)] } : t;
   const shown = str(d.shown);
   const text = shown || str(d.text);
   const answers = str(d.answers);
@@ -309,7 +325,8 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
     ...(last && str(d.status) === "failed" ? { reason: last } : {}),
     ...(t.files[runId] ? { files: Object.values(t.files[runId]) } : {}),
   });
-  return { ...ended, running: t.running === runId ? null : t.running, changes: t.changes + 1 };
+  const running = t.running === runId ? null : t.running;
+  return { ...ended, running, waiting: running ? t.waiting : null, changes: t.changes + 1 };
 }
 
 /** A new try started: any retry still counting down is done. */
@@ -343,10 +360,15 @@ const HANDLERS: Record<string, Handler> = {
   [EV.messageSent]: sent,
   [EV.messageDelta]: delta,
   [EV.messageCompleted]: completed,
-  [EV.runQueued]: (t, _d, e) => ({ ...t, running: e.runId }),
+  // With the agent the queued run will use (the composer shows it before the run starts).
+  [EV.runQueued]: (t, d, e) => ({ ...t, running: e.runId, ...queuedAs(d, t.harness) }),
   [EV.runStarted]: (t, d, e) => ({
     ...retried(t),
     running: e.runId,
+    waiting: null,
+    ...(t.routedTo && str(d.harness) && str(d.harness) !== t.routedTo
+      ? { routed: null, routedTo: null }
+      : {}),
     harness: str(d.harness) || t.harness,
     model: str(d.model) || null,
     effort: str(d.effort) || null,
@@ -385,6 +407,9 @@ const HANDLERS: Record<string, Handler> = {
   [EV.error]: error,
   // A run went without one of your MCP servers: ion says why, once per chat.
   [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
+  // A chat's agent hit its limit (it continued on another, or waits), or a long chat started fresh: one quiet line.
+  // Pick by usage's reason shows in the chat's header, not as a line of its own.
+  [EV.chatHandoff]: handoff,
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
   // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once, with a link
   // to Memory (Task 5, 2026-11-22: a question here had no answer).
@@ -396,6 +421,16 @@ const HANDLERS: Record<string, Handler> = {
     return h.suggested ? push(t, { kind: "suggested", name: str(h.name) }) : t;
   },
 };
+
+/**
+ * A chat.handoff: Pick by usage's reason (kept for the header, not a line), else one quiet line. Going on on another
+ * agent drops the reason (review of bf69fe1, 2026-11-23: the header went stale).
+ */
+function handoff(t: Timeline, d: D): Timeline {
+  if (d.kind === "routed") return { ...t, routed: str(d.text), routedTo: str(d.to) || null };
+  const now = d.kind === "continued" ? { ...t, routed: null, routedTo: null } : t;
+  return push(now, { kind: "ion", tone: "note", text: str(d.text) });
+}
 
 /** Adds one event to the chat's timeline. Pure: the same events always give the same items. */
 export function reduce(t: Timeline, e: IonEvent): Timeline {

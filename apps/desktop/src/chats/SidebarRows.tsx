@@ -36,7 +36,8 @@ const MARKS: Record<string, { label: string; Icon: typeof CircleAlert }> = {
 
 /** When it was last active, after a mark if its last run failed or was stopped. */
 function When({ chat }: { chat: ChatInfo }) {
-  const mark = MARKS[chat.lastRunStatus ?? ""];
+  // A chat waiting (for its agent's reset) isn't marked failed: it goes on by itself.
+  const mark = chat.waiting ? undefined : MARKS[chat.lastRunStatus ?? ""];
   return (
     <span className="tm">
       {mark && <mark.Icon className="st" aria-label={mark.label} />}
@@ -104,7 +105,8 @@ function RowMenu({ chat, acts, onRename }: { chat: ChatInfo; acts: RowActions; o
 }
 
 /**
- * A chat row: its title (shimmering while it runs) with the start of the agent's last reply under it, then when
+ * A chat row: its title (shimmering while it runs) with the start of the agent's last reply (or why it waits for a
+ * slot) under it, then when
  * it was last active, and its menu on hover. The first slot stays empty: an avatar there marks a thread ion
  * started, not yours.
  */
@@ -117,6 +119,8 @@ export function ChatRow({
   ion,
 }: RowProps & { running?: boolean; acts: RowActions }) {
   const [renaming, setRenaming] = useState(false);
+  // A chat ion started, waiting for one of its slots, says why (the lab's queued row).
+  const sub = chat.waiting ?? chat.preview;
   if (renaming)
     return (
       <RenameBox
@@ -133,7 +137,7 @@ export function ChatRow({
         <Slot ion={ion} />
         <span>
           <span className={`tt${running ? " now" : ""}`}>{chat.title}</span>
-          {chat.preview && <span className="sub">{chat.preview}</span>}
+          {sub && <span className="sub">{sub}</span>}
         </span>
         {!running && <When chat={chat} />}
       </button>

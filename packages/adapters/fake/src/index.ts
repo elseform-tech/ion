@@ -31,6 +31,8 @@ const CAPABILITIES: Capabilities = {
   usage: "none",
 };
 
+const BILLINGS = ["subscription", "api", "free"] as const;
+
 /** Sessions started per working folder, so scenarios can behave differently on a retry. */
 const triesByCwd = new Map<string, number>();
 
@@ -55,12 +57,20 @@ export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean }
       return { installed: true, version: "0.0.0", path: "fake" };
     },
     auth: {
-      status: async () => ({ signedIn, method: signedIn ? "Fake" : "Not signed in" }),
+      // ION_FAKE_BILLING: how it bills (the tour's agent paid per use).
+      status: async () => {
+        const billing = BILLINGS.find((b) => b === process.env.ION_FAKE_BILLING);
+        return { signedIn, method: signedIn ? "Fake" : "Not signed in", ...(billing ? { billing } : {}) };
+      },
       login: async () => {},
     },
     capabilities: async () => CAPABILITIES,
     // ION_FAKE_NO_HTTP=1: an agent that takes local servers only.
     mcpTransports: { http: process.env.ION_FAKE_NO_HTTP !== "1" },
+    // ION_FAKE_CONTEXT_TOKENS: a small context, so a chat's history outgrows it in tests.
+    ...(process.env.ION_FAKE_CONTEXT_TOKENS
+      ? { contextTokens: Number(process.env.ION_FAKE_CONTEXT_TOKENS) }
+      : {}),
     // No web on request (ion's dream): it has no web.
     ...(process.env.ION_FAKE_HAS_WEB === "1" ? {} : { noWeb: true as const }),
     // The fake hook already sends ion's own shape.

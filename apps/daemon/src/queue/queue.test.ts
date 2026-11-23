@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UserError } from "../api/errors.js";
 import { Decisions } from "../decisions/index.js";
 import { NeedsService } from "../needs/index.js";
+import { Handoffs } from "../runs/limit-handoff.js";
 import { RunManager } from "../runs/manager.js";
+import { Waits } from "../scheduler/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { PromptQueue, type QueueDeps } from "./index.js";
@@ -65,6 +67,9 @@ function fakeIons() {
   return { ions, heard, end, stopped, known };
 }
 
+/** ion's hold after a chat's agent hit its limit (Handoffs), when a test has one. */
+let holding: (chatId: string) => boolean = (_chatId) => false;
+
 /** How a chat's queued message goes out (the run manager's ask, unless a test breaks it). */
 let askVia: (a: { chatId?: string; text: string }) => unknown = (a) => runs.ask({ ...fake, ...a });
 
@@ -77,7 +82,7 @@ function makeQueue(ions = fakeIons().ions): PromptQueue {
       busy: (id) => runs.busy(id),
       stop: (id) => runs.stopChat(id),
       onEnded: (fn) => runs.onEnded(fn),
-      answersWaiting: (id) => decisions.hasWaiting(id),
+      answersWaiting: (id) => decisions.hasWaiting(id) || holding(id),
       dropQuestions: (id) => needs.supersedeChat(id),
     },
     ions,
@@ -520,5 +525,42 @@ describe("a queued message's agent", () => {
     await runs.interrupt(runId);
     await until(() => asked.length === 1);
     expect(asked[0]?.harness).toBe("fake");
+  });
+});
+
+describe("a chat whose agent hit its limit", () => {
+  // Review of 5d5785c, 2026-11-22: a queued message went out on the limited agent before ion's question existed
+  // (the question waits on reading the agents; the queue drains at the run's end).
+  it("holds what's queued from the run's end until you answer ion's question, and through a wait", async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const handoffs = new Handoffs({
+      ...{ store, db, needs, waits: new Waits(), label: (h: string) => h },
+      ready: async () => (await slow, ["fake", "codex"]),
+      start: async () => "run_x",
+      changed: async () => [],
+    });
+    holding = (id) => handoffs.holding(id);
+    process.env.ION_FAKE_START_MS = "150";
+    try {
+      const { chatId } = await runs.ask({ text: "limited", projectId: "repo", ...fake });
+      queue.add({ chatId }, "hello after", fake);
+      await until(() => store.read({ chatId }).some((e) => e.type === EV.runFinished));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(sent(chatId)).toEqual(["limited"]);
+      release();
+      await until(() => needs.open(chatId)[0]);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(sent(chatId)).toEqual(["limited"]);
+      expect(queue.list({ chatId })).toMatchObject([{ text: "hello after", held: "answer" }]);
+      // Wait: the chat waits for the reset, and so does what's queued (live check, 2026-11-22).
+      await handoffs.answer(needs.open(chatId)[0]!.needId, 2, "chat");
+      await new Promise((r) => setTimeout(r, 100));
+      expect(sent(chatId)).toEqual(["limited"]);
+    } finally {
+      delete process.env.ION_FAKE_START_MS;
+      handoffs.stop();
+      holding = (_chatId) => false;
+    }
   });
 });

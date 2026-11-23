@@ -1,8 +1,9 @@
 import { closeSync, constants, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { GateCall, SandboxPaths } from "@ion/adapter-kit";
-import type { EffortLevel } from "@ion/schema";
+import { execFile } from "node:child_process";
+import { agentEnv, type GateCall, type SandboxPaths } from "@ion/adapter-kit";
+import type { Billing, EffortLevel } from "@ion/schema";
 import { type GateEnv, grokGateEnv, grokToCall, OPENCODE_PLUGIN, opencodeToCall } from "./gate.js";
 import {
   carriedConfig,
@@ -23,6 +24,8 @@ export type AcpHarness = {
   loginArgs: string[];
   loginHint: string;
   defaultModel: string | null;
+  /** About how many tokens its default model's context holds (HarnessAdapter.contextTokens). */
+  contextTokens?: number;
   /** Extra environment for the agent (e.g. making it ask before editing); with a gate, its hook too. */
   env?: (gate?: GateEnv, own?: boolean) => Record<string, string>;
   /** The agent's gate-hook payload as one tool call. */
@@ -83,6 +86,15 @@ export type AcpHarness = {
   };
   /** Its own command that deletes a session from its history (ion's judge sessions don't pile up among yours). */
   forgetArgs?: (sessionId: string) => string[];
+  /**
+   * Its prompt result counts every token the turn processed (cached context too), so ion keeps a total for the run.
+   * Absent: the count is partial (opencode's covers only the turn's last step) and the run has no total.
+   */
+  fullTokens?: true;
+  /** How its sign-in bills, when ion knows (docs/research/usage-signals.md); absent: unknown, never free. */
+  billing?: Billing;
+  /** Asks the agent how these models bill (opencode: its own price for each); undefined: unknown. */
+  billingOf?: (bin: string, models: string[]) => Promise<Billing | undefined>;
 };
 
 /** Grok's folder: `$GROK_HOME`, else `~/.grok`. */
@@ -91,6 +103,8 @@ const grokHome = () => process.env.GROK_HOME ?? join(homedir(), ".grok");
 export const GROK_BUILD: AcpHarness = {
   id: "grok-build",
   label: "Grok Build",
+  // Its prompt result's _meta counts the whole turn (docs/research/usage-signals.md).
+  fullTokens: true,
   bin: "grok",
   // The command line outranks the user's config.toml (where permission_mode may be "always-approve").
   args: ["--permission-mode", "default", "agent", "stdio"],
@@ -98,6 +112,8 @@ export const GROK_BUILD: AcpHarness = {
   loginArgs: ["login"],
   loginHint: "grok login",
   defaultModel: null,
+  // grok-code-fast-1, its default model: 256k tokens.
+  contextTokens: 256_000,
   // Always ask ion before tools run, whatever the user's own Grok permission mode is.
   sessionMeta: { yoloMode: false, autoMode: false },
   env: (gate, own) => ({ ...grokAskEnv(), ...grokOwnToolsEnv(own), ...(gate ? grokGateEnv(gate) : {}) }),
@@ -123,6 +139,8 @@ export const GROK_BUILD: AcpHarness = {
   // ion's dream: a profile with no tool of its own (no web), ion's MCP server found with search_tool.
   noWeb: ({ dir }) => ({ args: grokDreamArgs(dir), read: [dir] }),
   forgetArgs: (id) => ["sessions", "delete", id],
+  // "Sign in with Grok" (its ACP auth method grok.com): a Grok plan, with its plan's usage limit (`grok usage`).
+  billing: "subscription",
 };
 
 /**
@@ -234,6 +252,66 @@ export function opencodeGiveUp(line: string): { why: string; sessionId?: string 
   return sessionId ? { why, sessionId } : { why };
 }
 
+/**
+ * How a model bills, from `opencode models <provider> --verbose` (opencode 1.18.8: each model's id line, then its JSON
+ * with `cost.input` and `cost.output` per million tokens): free when opencode prices it at 0, else undefined (a Go
+ * plan's model and a provider key's both list a price; ion can't tell which bills).
+ */
+export function opencodeBilling(listing: string, model: string): Billing | undefined {
+  const at = listing.split("\n").indexOf(model);
+  if (at < 0) return undefined;
+  const rest = listing.split("\n").slice(at + 1);
+  const end = rest.findIndex((l) => l === "}");
+  try {
+    const cost = (
+      JSON.parse(rest.slice(0, end + 1).join("\n")) as { cost?: { input?: unknown; output?: unknown } }
+    ).cost;
+    return cost?.input === 0 && cost.output === 0 ? "free" : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * How these models bill together: free only when opencode prices every one at 0 (re-review, 2026-11-22: a paid model
+ * ion ran beside a free default isn't free); undefined otherwise, or with none.
+ */
+export async function opencodeModelsBilling(
+  models: string[],
+  listing: (provider: string) => Promise<string>,
+): Promise<Billing | undefined> {
+  const distinct = [...new Set(models)];
+  if (!distinct.length) return undefined;
+  const lists = new Map<string, Promise<string>>();
+  for (const m of distinct) {
+    const provider = m.split("/")[0]!;
+    if (!lists.has(provider))
+      lists.set(
+        provider,
+        listing(provider).catch(() => ""),
+      );
+  }
+  const each = await Promise.all(
+    distinct.map(async (m) => opencodeBilling(await lists.get(m.split("/")[0]!)!, m)),
+  );
+  return each.every((b) => b === "free") ? "free" : undefined;
+}
+
+/** A provider's models as opencode lists them (`opencode models <provider> --verbose`); "" when it doesn't say in 10 s. */
+function opencodeListing(bin: string, provider: string): Promise<string> {
+  return new Promise((resolve) =>
+    execFile(
+      bin,
+      ["models", provider, "--verbose"],
+      { timeout: 10_000, env: agentEnv(), maxBuffer: 8 << 20 },
+      (e, out) => resolve(e ? "" : String(out)),
+    ),
+  );
+}
+
+/** The model ion runs opencode on when none is picked. */
+const OPENCODE_MODEL = "opencode/big-pickle";
+
 export const OPENCODE: AcpHarness = {
   id: "opencode",
   label: "opencode",
@@ -244,7 +322,9 @@ export const OPENCODE: AcpHarness = {
   loginArgs: ["auth", "login"],
   loginHint: "opencode auth login",
   // A free model, so trying ion costs nothing.
-  defaultModel: "opencode/big-pickle",
+  defaultModel: OPENCODE_MODEL,
+  // Its free models differ; the smallest common context, to be safe.
+  contextTokens: 128_000,
   env: opencodeAskEnv,
   toCall: opencodeToCall,
   // ~/.opencode/plugin and the plugins listed in ~/.opencode's config still load: opencode has no switch for that
@@ -271,6 +351,8 @@ export const OPENCODE: AcpHarness = {
   bare: { effort: "low" },
   noWeb: ({ own }) => opencodeNoWeb(own),
   forgetArgs: (id) => ["session", "delete", id],
+  // Free only when opencode prices the model ion runs at 0 (its Zen free models; review, 2026-11-22: not assumed).
+  billingOf: (bin, models) => opencodeModelsBilling(models, (provider) => opencodeListing(bin, provider)),
 };
 
 /**

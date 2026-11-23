@@ -5,8 +5,9 @@ import {
   TOOL_INPUT_MAX,
   TOOL_OUTPUT_MAX,
   toolText,
+  usageWindow,
 } from "@ion/adapter-kit";
-import { EV, type EffortLevel } from "@ion/schema";
+import { EV, type EffortLevel, type UsageWindow } from "@ion/schema";
 import { fileChange, toolKind, toolSummary } from "./tools.js";
 
 type Obj = Record<string, unknown>;
@@ -23,9 +24,17 @@ export type MapState = {
   tools: Map<string, { name: string; input: Obj }>;
   /** Why the run is failing, when Claude Code said so before its result (rate limit, overload, account). */
   failure: Failure | null;
+  /** Its plan's windows as its requests said (rate_limit_info), by name; empty when it said none. */
+  windows: Map<string, UsageWindow>;
 };
 
-type Failure = { code: string; retryable: boolean; message: string; retryAfterS?: number };
+type Failure = {
+  code: string;
+  retryable: boolean;
+  message: string;
+  retryAfterS?: number;
+  limit?: { resetsAt?: string };
+};
 
 export const createMapState = (o: {
   cwd: string;
@@ -40,26 +49,62 @@ export const createMapState = (o: {
   interrupted: false,
   tools: new Map(),
   failure: null,
+  windows: new Map(),
 });
 
 /** Waits longer than this aren't retried: they're a usage limit, not a blip. */
 const MAX_WAIT_S = 120;
 const TRANSIENT = new Set(["rate_limit", "overloaded", "server_error"]);
 
+type WindowInfo = { utilization?: unknown; resetsAt?: unknown };
+type RateInfo = WindowInfo & {
+  status?: string;
+  rateLimitType?: string;
+  /** Every window at once (Claude Code 2.1.326; not in the SDK's types): docs/research/usage-signals.md. */
+  unifiedWindows?: Record<string, WindowInfo>;
+};
+
+/** Claude's plan windows ion shows, by their length in minutes. */
+const WINDOW_MINS: Record<string, number> = { five_hour: 300, seven_day: 10_080 };
+
+/** The windows a request reported, kept by name (a request that names one window leaves the others as they were). */
+function noteWindows(info: RateInfo, s: MapState): void {
+  const one = info.rateLimitType ? { [info.rateLimitType]: info } : {};
+  for (const [kind, w] of Object.entries(info.unifiedWindows ?? one)) {
+    if (!w || typeof w !== "object") continue;
+    const mins = WINDOW_MINS[kind];
+    const used = typeof w.utilization === "number" ? Math.round(w.utilization * 1000) / 10 : undefined;
+    const window = mins ? usageWindow(mins, used, w.resetsAt) : null;
+    if (window) s.windows.set(window.name, window);
+  }
+}
+
+/** The reset it said, else the rejected window's own (unifiedWindows), before ion would have to guess one. */
+function resetOf(info: RateInfo): number | undefined {
+  const own = info.rateLimitType ? info.unifiedWindows?.[info.rateLimitType]?.resetsAt : undefined;
+  const said = typeof info.resetsAt === "number" ? info.resetsAt : own;
+  return typeof said === "number" ? said : undefined;
+}
+
 function mapRateLimit(msg: Obj, s: MapState): AdapterEvent[] {
-  const info = (msg.rate_limit_info ?? {}) as { status?: string; resetsAt?: number };
+  const info = (msg.rate_limit_info ?? {}) as RateInfo;
+  noteWindows(info, s);
   if (info.status !== "rejected") return [];
-  const waitS =
-    typeof info.resetsAt === "number" ? Math.max(0, info.resetsAt - Date.now() / 1000) : undefined;
-  s.failure =
-    waitS !== undefined && waitS > MAX_WAIT_S
-      ? { code: "usage_limit", retryable: false, message: "Claude usage limit reached" }
-      : {
-          code: "rate_limit",
-          retryable: true,
-          message: "Rate limited",
-          ...(waitS === undefined ? {} : { retryAfterS: Math.ceil(waitS) }),
-        };
+  const resetsAt = resetOf(info);
+  const waitS = resetsAt === undefined ? undefined : Math.max(0, resetsAt - Date.now() / 1000);
+  // A plan window that's full is the limit even when it names no reset (ion then waits a cautious while).
+  const planWindow = waitS === undefined && !!info.rateLimitType && info.rateLimitType in WINDOW_MINS;
+  if (planWindow || (waitS !== undefined && waitS > MAX_WAIT_S)) {
+    const limit = resetsAt === undefined ? {} : { resetsAt: new Date(resetsAt * 1000).toISOString() };
+    s.failure = { code: "usage_limit", retryable: false, message: "Claude usage limit reached", limit };
+    return [];
+  }
+  s.failure = {
+    code: "rate_limit",
+    retryable: true,
+    message: "Rate limited",
+    ...(waitS === undefined ? {} : { retryAfterS: Math.ceil(waitS) }),
+  };
   return [];
 }
 
@@ -171,7 +216,14 @@ function mapResult(msg: Obj, s: MapState): AdapterEvent[] {
         model,
         inputTokens: num(usage.input_tokens),
         outputTokens: num(usage.output_tokens),
+        // Every token the turn processed: its input_tokens leave out the cached context it read and wrote.
+        totalTokens:
+          num(usage.input_tokens) +
+          num(usage.cache_creation_input_tokens) +
+          num(usage.cache_read_input_tokens) +
+          num(usage.output_tokens),
         costUsd: typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : null,
+        ...(s.windows.size ? { windows: [...s.windows.values()] } : {}),
       },
     },
   ];

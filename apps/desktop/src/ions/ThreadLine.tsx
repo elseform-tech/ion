@@ -2,11 +2,13 @@ import type { IonClient } from "@ion/client/browser";
 import { ChevronRight, CircleAlert, Maximize2, X } from "@ion/design-system";
 import type { ChatInfo, IonInfo } from "@ion/schema";
 import { ChatView, useTimeline } from "../chats/ChatView.js";
+import { useEstimate } from "../chats/estimate.js";
 import { QuestionBar } from "../chats/QuestionBar.js";
 import { Resizer } from "../chats/Resizer.js";
 import { workSeconds } from "../chats/steps.js";
 import type { Item, Timeline } from "../chats/timeline.js";
 import { current, duration, useNow } from "../chats/Work.js";
+import { useState } from "react";
 import { IonAvatar } from "./IonAvatar.js";
 
 type Work = Extract<Item, { kind: "work" }>;
@@ -28,8 +30,11 @@ function useThread(client: IonClient, chatId: string, c?: ChatInfo) {
   const secs = w ? workSeconds(w, now) : 0;
   let say = c?.title ?? "A thread";
   if (waiting) say = "Waiting for you";
-  else if (live) say = w?.steps.length ? current(w) : "Delegating";
-  return { say, live: live && !waiting, waiting, failed: c?.lastRunStatus === "failed", secs };
+  else if (live) say = w?.steps.length ? current(w) : (t.waiting ?? "Delegating");
+  // Waiting for its agent's reset: it says so, and isn't failed (it goes on by itself).
+  else if (c?.waiting) say = c.waiting;
+  const failed = c?.lastRunStatus === "failed" && !c.waiting;
+  return { say, live: live && !waiting, waiting, failed, secs, why: t.routed };
 }
 
 type LineProps = {
@@ -49,8 +54,21 @@ type LineProps = {
  */
 export function ThreadLine(p: LineProps) {
   const s = useThread(p.client, p.chatId, p.chat);
+  // What such a task usually takes: asked on the first hover, and only while the thread is at work.
+  const [hovered, setHovered] = useState(false);
+  const atWork = s.live || s.waiting;
+  const estimate = useEstimate(p.client, hovered && atWork ? { chatId: p.chatId } : null);
   return (
-    <button className={`tl${p.on ? " on" : ""}`} type="button" aria-pressed={p.on} onClick={p.onOpen}>
+    <button
+      className={`tl${p.on ? " on" : ""}`}
+      type="button"
+      aria-pressed={p.on}
+      onClick={p.onOpen}
+      onMouseEnter={() => setHovered(true)}
+      // Why Pick by usage put the thread on its agent (the user, 2026-11-22) and what such a task usually takes, on
+      // hover.
+      title={[s.why, atWork ? estimate : null].filter(Boolean).join("\n") || undefined}
+    >
       {p.ion ? <IonAvatar ion={p.ion} /> : null}
       <b>{p.projectId}</b>
       {s.failed && !s.live ? <CircleAlert /> : null}

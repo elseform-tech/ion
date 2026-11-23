@@ -21,14 +21,20 @@ const ACCEPT: Record<Decision, string[]> = {
   allow_always: ["allow_always", "allow_once"],
   deny: ["reject_once", "reject_always"],
 };
-type Usage = { inputTokens: number; outputTokens: number };
+type Usage = { inputTokens: number; outputTokens: number; costUsd?: number };
 
-/** Token counts from a prompt result: `usage` (ACP unstable) or `_meta` (Grok). */
+/** Grok's cost unit (`_meta.usage.costUsdTicks`, Grok 1.0.92): 1e-10 USD. */
+const USD_PER_TICK = 1e-10;
+
+/** Token counts from a prompt result: `usage` (ACP unstable) or `_meta` (Grok, with its cost in ticks). */
 function usageOf(r: unknown): Usage | null {
   const o = (r ?? {}) as { usage?: Record<string, unknown>; _meta?: Record<string, unknown> };
   for (const src of [o.usage, o._meta]) {
-    if (src && typeof src.inputTokens === "number" && typeof src.outputTokens === "number")
-      return { inputTokens: src.inputTokens, outputTokens: src.outputTokens };
+    if (src && typeof src.inputTokens === "number" && typeof src.outputTokens === "number") {
+      const ticks = (src.usage as { costUsdTicks?: unknown } | undefined)?.costUsdTicks;
+      const cost = typeof ticks === "number" && ticks >= 0 ? { costUsd: ticks * USD_PER_TICK } : {};
+      return { inputTokens: src.inputTokens, outputTokens: src.outputTokens, ...cost };
+    }
   }
   return null;
 }
@@ -78,13 +84,17 @@ export function promptOf(text: string, instructions?: string): { type: "text"; t
 }
 
 /** One ACP prompt turn mapped to ion events. The agent process lives as long as the turn. */
-type Failure = { code: string; retryable: boolean; message: string };
+type Failure = { code: string; retryable: boolean; message: string; limit?: { resetsAt?: string } };
 const CRASH: Failure = { code: "crash", retryable: true, message: "The agent stopped" };
+/** Its usage limit, as opencode 1.18.8 words it ("Free usage limit reached", live 2026-11-22): no reset said. */
+const USAGE_LIMIT = /\busage limit reached\b/i;
 const RATE_LIMIT = /rate.?limit|\b429\b|overloaded|too many requests|timed? ?out/i;
 
 /** A transport error (the agent died) or a rate limit is transient; any other agent error is a real failure. */
 function failureOf(e: Error): Failure {
   if (!(e instanceof RpcError)) return { ...CRASH, message: e.message };
+  if (USAGE_LIMIT.test(e.message))
+    return { code: "usage_limit", retryable: false, message: e.message, limit: {} };
   if (RATE_LIMIT.test(e.message)) return { code: "rate_limit", retryable: true, message: e.message };
   return { code: "agent", retryable: false, message: e.message };
 }
@@ -117,17 +127,17 @@ const PROGRESS = new Set([
 /**
  * The silence check (task review, 2026-11-21): rolling, reset by each bit of progress, paused while ion holds a
  * permission; past its time the turn fails with the agent's own logged reason when it gave one, else `why`. A log
- * line saying the agent can't go on fails it at once.
+ * line saying the agent can't go on fails it at once, as its limit (`limited`).
  */
 export function silence(
   silent: { ms: number; why: string } | undefined,
   c: Connection,
-  fail: (why: string) => void,
+  fail: (why: string, limited?: boolean) => void,
 ) {
   // The agent's log says it can't go on (opencode out of quota, which then retries quietly): the turn fails now, with
   // its reason, not at the check (Judge eval, 2026-11-22: every judge verdict on opencode waited its 30 s). The
   // listener goes with the agent's process (a warm agent's session: when it ends).
-  c.giveUp?.(fail);
+  c.giveUp?.((why) => fail(why, true));
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** Why the check is paused: a call ion holds, a tool still running (re-review, 2026-11-21). */
   const paused = new Set<string>();
@@ -183,10 +193,38 @@ function trackTools(u: Record<string, unknown>, quiet: Quiet): void {
   else if (u.sessionUpdate === "tool_call") quiet.pause(id, TOOL_PAUSE_MS);
 }
 
+/**
+ * The turn's usage: tokens from the prompt result, cost from its updates (opencode) or its result (Grok). A total only
+ * for an agent whose result counts the whole turn (`full`; opencode's counts only its last step).
+ */
+function usageEvent(
+  run: { model: string; full?: boolean },
+  costUsd: number | null,
+  usage: Usage | null,
+): AdapterEvent {
+  const total = run.full && usage ? { totalTokens: usage.inputTokens + usage.outputTokens } : {};
+  return {
+    type: EV.usageReported,
+    data: {
+      model: run.model,
+      inputTokens: usage?.inputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+      ...total,
+      costUsd: costUsd ?? usage?.costUsd ?? null,
+    },
+  };
+}
+
+/** A turn the agent went quiet on; what its log says it can't get past is its limit (opencode's names no reset). */
+const quietFailure = (why: string, limited?: boolean): Failure =>
+  limited
+    ? { code: "usage_limit", retryable: false, message: why, limit: {} }
+    : { code: "agent", retryable: false, message: why };
+
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
-  run: { harness: string; model: string; silent?: { ms: number; why: string } },
+  run: { harness: string; model: string; silent?: { ms: number; why: string }; fullTokens?: boolean },
 ): Session {
   const events = createEventQueue<AdapterEvent>();
   const state = createAcpState(projectRoots(opts.cwd));
@@ -201,24 +239,14 @@ export function startAcpSession(
     if (finished) return;
     if (failure) emit({ type: EV.error, data: failure });
     if (state.costUsd !== null || usage)
-      emit({
-        type: EV.usageReported,
-        data: {
-          model: run.model,
-          inputTokens: usage?.inputTokens ?? 0,
-          outputTokens: usage?.outputTokens ?? 0,
-          costUsd: state.costUsd,
-        },
-      });
+      emit(usageEvent({ model: run.model, full: run.fullTokens }, state.costUsd, usage));
     emit({ type: EV.runFinished, data: { status } });
     finished = true;
     events.end();
     setTimeout(() => c.child.kill(), 100).unref();
   };
 
-  const quiet = silence(run.silent, c, (why) =>
-    finish("failed", { code: "agent", retryable: false, message: why }),
-  );
+  const quiet = silence(run.silent, c, (why, limited) => finish("failed", quietFailure(why, limited)));
   c.rpc.onNotification("session/update", (p) => {
     const u = (p.update ?? {}) as Record<string, unknown>;
     if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") trackTools(u, quiet);

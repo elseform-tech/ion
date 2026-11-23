@@ -122,6 +122,23 @@ describe("loadUserConfig", () => {
     expect(loadUserConfig(file).warning).toContain("max_runs");
   });
 
+  // The user, 2026-11-22: the agent order, what ion does at a limit and Pick by usage live in config.toml; a bad
+  // value alone falls back to its default (Ask; off).
+  it("keeps the agent order, the limit choice and Pick by usage; a bad one falls back", () => {
+    expect(DEFAULT_CONFIG.routing).toEqual({ order: [], onLimit: "ask", byUsage: false });
+    const file = join(mkdtempSync(join(tmpdir(), "ion-cfg-")), "config.toml");
+    writeFileSync(file, '[routing]\norder = ["codex", "opencode"]\nonLimit = "wait"\nbyUsage = true\n');
+    expect(loadUserConfig(file).config.routing).toEqual({
+      order: ["codex", "opencode"],
+      onLimit: "wait",
+      byUsage: true,
+    });
+    writeFileSync(file, '[routing]\nonLimit = "later"\n');
+    const bad = loadUserConfig(file);
+    expect(bad.config.routing.onLimit).toBe("ask");
+    expect(bad.warning).toContain("onLimit");
+  });
+
   it("leaves the models to each harness by default", () => {
     expect(DEFAULT_CONFIG.ion).toMatchObject({ quick: "claude-code", deep: "claude-code" });
   });

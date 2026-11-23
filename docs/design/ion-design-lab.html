@@ -93,7 +93,7 @@ button{font:inherit;color:inherit}
 .chat{display:grid;grid-template-rows:48px minmax(0,1fr);min-height:0;min-width:0}
 .head{display:flex;align-items:center;gap:8px;padding:0 10px 0 20px;border-bottom:1px solid var(--line)}
 .head .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.head .muted{color:var(--faint);font-size:12.5px;white-space:nowrap}
+.head .muted{color:var(--faint);font-size:12.5px;white-space:nowrap}.head .why{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .head .sp{flex:1}
 .head canvas{width:22px;height:22px}
 .split{display:grid;grid-template-columns:minmax(0,1fr) 400px;min-height:0}
@@ -222,6 +222,7 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .meter .tr{height:4px;border-radius:999px;background:var(--hover);overflow:hidden}
 .meter .tr i{display:block;height:100%;background:var(--ink);border-radius:inherit}
 .meter.hi .tr i{background:var(--wait)}
+.meter .mp{white-space:nowrap}.hrow.ord{grid-template-columns:20px 30px minmax(0,1fr) 150px auto;gap:12px;padding-left:6px}.grip{width:20px;cursor:grab;color:var(--faint)}.grip .lucide{width:14px;height:14px}
 .srow{display:flex;align-items:center;gap:12px;padding:12px 14px}
 .srow .g{flex:1}
 .sw{width:30px;height:18px;border-radius:999px;background:var(--line);position:relative;flex-shrink:0}
@@ -1244,6 +1245,8 @@ details a{color:var(--accent)}
       <button type="button" data-go="new"><i data-lucide="square-pen"></i>New chat</button>
       <button type="button" data-go="code"><i data-lucide="code-xml"></i>Coding chat</button>
       <button type="button" data-go="chat"><i data-lucide="message-square"></i>Plain chat</button>
+      <button type="button" data-go="byusage"><i data-lucide="gauge"></i>By usage</button>
+      <button type="button" data-go="queued"><i data-lucide="hourglass"></i>Queued</button>
       <button type="button" data-go="ions"><i data-lucide="orbit"></i>Ions</button>
       <button type="button" data-go="settings"><i data-lucide="settings"></i>Settings</button>
       <button type="button" data-pal><i data-lucide="search"></i>Search</button>
@@ -1293,7 +1296,8 @@ details a{color:var(--accent)}
               <div class="bar">
                 <button class="ib" type="button" title="Attach"><i data-lucide="plus"></i></button>
                 <button class="pill" type="button"><i data-lucide="folder"></i>storefront</button>
-                <button class="pill bpill" type="button" data-brain="new" aria-haspopup="dialog"></button>
+                <!-- Plan 20 Task 4: once you've typed, the hover also says what such a task usually takes (5+ similar past chats) -->
+                <button class="pill bpill" type="button" data-brain="new" aria-haspopup="dialog" title="Claude Code · Opus 5.5 · Medium effort&#10;usually 40–120k tokens"></button>
                 <span class="sp"></span>
                 <button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>
               </div>
@@ -1469,6 +1473,18 @@ export function sumLines(lines: Line[]) {
                 <div class="quiet"><i data-lucide="list-todo"></i>Added to your to-dos: Check the headline on mobile<button class="lnk" type="button" title="Open in Settings" data-gotodos><i data-lucide="list-todo"></i>To-dos</button></div>
                 <!-- Task 5, 2026-11-22: a preference a chat saved waits for you; the chat says so, with a link to Memory (Keep is there). -->
                 <div class="quiet"><i data-lucide="heart"></i>Suggested for every project: Short replies<button class="lnk" type="button" title="Open in Settings" data-gomem><i data-lucide="notebook-text"></i>Memory</button></div>
+                <!-- Plan 20, Task 2 (2026-11-22): a chat's agent hit its limit. ion asks (Continue on <other> / Wait / Always
+                     continue on <other> here) in the question box; the answer shows under the question, and the chat says what
+                     happened in one quiet line: the handoff, the wait, or a long chat that started fresh with ion's summary. -->
+                <div class="qa"><button class="qq" type="button" aria-expanded="false" title="opencode hit its limit. Continue on Grok Build, or wait?" data-qa><i data-lucide="message-circle-question"></i>opencode hit its limit. Continue on Grok Build, or wait?</button></div>
+                <div class="quiet"><i data-lucide="info"></i>Continued on Grok Build — opencode hit its limit</div>
+                <!-- Fix round 2 (the user, 2026-11-23, "Auto when unattended"): a handoff nobody clicked (Always, a wait going on
+                     on another agent) starts the new agent on Auto, and the line says "(Auto)"; Full is back with the access pill. -->
+                <div class="quiet"><i data-lucide="info"></i>Continued on Grok Build (Auto) — opencode hit its limit · always</div>
+                <!-- Final review, 2026-11-23: a wait that couldn't go on, and one you stopped, each say so once. -->
+                <div class="quiet"><i data-lucide="info"></i>Couldn't go on: Claude Code isn't signed in</div>
+                <div class="quiet"><i data-lucide="info"></i>Waits for Claude Code — 16:00</div>
+                <div class="quiet"><i data-lucide="info"></i>Started fresh with a summary</div>
               </div></div>
               <div class="foot"><div class="fcol">
                 <div class="cbox">
@@ -1588,6 +1604,46 @@ export function sumLines(lines: Line[]) {
             </div>
           </div>
         </section>
+        <!-- Plan 20 (the user, 2026-11-22): a new chat with Pick by usage on and no agent picked: its pill is a gauge, "By usage".
+             Task 4: once you've typed, its hover also says what such a task usually takes, from 5+ similar past chats -->
+        <section class="chat" data-screen="byusage" style="grid-template-rows:48px minmax(0,1fr)" hidden>
+          <div class="head"><span class="sp"></span></div>
+          <div class="empty"><div class="inner">
+            <h3>What are we working on?</h3>
+            <div class="cbox big">
+              <span class="ph">Ask anything, or describe a change…</span>
+              <div class="bar">
+                <button class="pill" type="button"><i data-lucide="folder"></i>storefront</button>
+                <button class="pill bpill" type="button" data-brain="usage" aria-haspopup="dialog" title="By usage · Default effort&#10;usually 40–120k tokens"></button>
+                <span class="sp"></span>
+                <button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>
+              </div>
+            </div>
+          </div></div>
+        </section>
+        <!-- Plan 20 (the user, 2026-11-22): a chat an ion started, waiting for one of ion's slots (your own never wait);
+             Pick by usage's reason in its header, and on the pill on hover -->
+        <section class="chat" data-screen="queued" hidden>
+          <div class="head"><span class="title">Totals rounding check</span><span class="muted">payments-api's ion</span><span class="muted why">On Codex — Claude Code is near its limit</span><span class="sp"></span></div>
+          <div class="split solo">
+            <div class="convo">
+              <div class="msgs"><div class="col">
+                <div class="u">Check totals rounding in src/money/round.ts against the cart's cents.</div>
+                <div class="quiet pending">Waiting — 4 ion chats running</div>
+              </div></div>
+              <div class="foot"><div class="fcol">
+                <div class="cbox">
+                  <textarea aria-label="Message" placeholder="Reply…" rows="1"></textarea>
+                  <div class="bar">
+                    <button class="pill bpill" type="button" data-brain="routed" aria-haspopup="dialog" title="On Codex — Claude Code is near its limit"></button>
+                    <span class="sp"></span>
+                    <button class="send" type="button" aria-label="Stop" title="Stop"><i data-lucide="square"></i></button>
+                  </div>
+                </div>
+              </div></div>
+            </div>
+          </div>
+        </section>
         <!-- library: every file, image, recording and artifact on a project -->
         <section class="chat" data-screen="library" hidden>
           <div class="head"><i data-lucide="images" style="color:var(--faint)"></i><span class="title">Library</span><span class="muted projLbl">All projects</span><span class="sp"></span>
@@ -1623,7 +1679,7 @@ export function sumLines(lines: Line[]) {
           <div class="spage" data-spage="projects" hidden id="sProj"></div>
           <div class="spage" data-spage="general" hidden>
             <div><h4>Chats</h4><div class="group">
-              <div class="srow"><div class="g">Chats at once</div><div class="stepper"><button class="ib" type="button" title="Less"><i data-lucide="minus"></i></button><span class="n">Auto</span><button class="ib" type="button" title="More"><i data-lucide="plus"></i></button></div></div>
+              <div class="srow"><div class="g">Chats ion runs at once</div><div class="stepper"><button class="ib" type="button" title="Less"><i data-lucide="minus"></i></button><span class="n">Auto</span><button class="ib" type="button" title="More"><i data-lucide="plus"></i></button></div></div>
             </div></div>
           </div>
           <div class="spage" data-spage="keys" hidden id="sKeys"></div>
@@ -1642,7 +1698,13 @@ export function sumLines(lines: Line[]) {
           </div>
           <div class="spage" data-spage="ion" id="sIon" hidden></div>
           <div class="spage" data-spage="harness">
-          <div><h4>Coding agents</h4><div class="group" id="hList"></div></div>
+          <div><h4>Coding agents</h4><div class="group" id="hList"></div>
+            <!-- Plan 20 (the user, 2026-11-22): the rows above are your agent order (drag a grip); what ion does at a limit; Pick by usage, off at first -->
+            <div class="group">
+              <div class="srow"><div class="g">When an agent hits its limit</div><span class="seg sm" role="group" aria-label="When an agent hits its limit"><button type="button" class="on">Ask</button><button type="button">Continue on the next agent</button><button type="button">Wait</button></span></div>
+              <div class="srow"><div class="g">Pick by usage</div><button type="button" class="sw" role="switch" aria-checked="false" aria-label="Pick by usage"></button></div>
+            </div>
+          </div>
           <div><h4>ion’s models</h4><div class="group" id="ionModels"></div></div>
           <div class="hby"><h4>Usage by model</h4><div class="group" id="hByModel"></div></div>
           <div class="hby"><h4>Usage by ion</h4><div class="group" id="hByIon"></div></div>
@@ -2855,7 +2917,7 @@ const IONS={
       {f:'i',t:'Morning. 4 things need you across 3 projects. They’re pinned above, most urgent first.',meta:'deep',work:'brief'},
       {sugg:'friday'},{sugg:'tw4'},
       {f:'u',t:'The checkout rounding bug might be in other services too. Check.'},
-      {work:'fan',fanout:[['payments-api','run','Read src/money/round.ts','42s'],['billing','ok','Not affected: already sums in cents','1m 12s'],['mobile-app','ok','Not affected: uses payments-api totals','38s']]},
+      {work:'fan',fanout:[['payments-api','run','Read src/money/round.ts','42s','usually 40–120k tokens'],['billing','ok','Not affected: already sums in cents','1m 12s'],['mobile-app','ok','Not affected: uses payments-api totals','38s'],['storefront','run','Waiting — 4 ion chats running','']]},
       {f:'u',t:'Every Monday, update storefront’s dependencies and open a PR if the tests pass.'},
       {routineAdded:{k:'storefront',ri:1}},
       {f:'u',t:'Do the same CI triage on payments-api.'},
@@ -2906,8 +2968,10 @@ const who=k=>k==='lead'?'ion':IONS[k].name;
 const EFF=[['low','Low','~0.3× quota'],['medium','Medium','1×'],['high','High','~2×'],['max','Max','~4×'],['auto','Auto','ion decides per task']];
 const effLabel=e=>EFF.find(x=>x[0]===e)[1];
 /* one place for connections: each harness signs in with its own CLI login; ion thinks with a connected harness */
-const HCONN={claude:{st:'on',how:'Signed in',use:62,rules:3},grok:{st:'on',how:'Signed in',use:88},codex:{st:'on',how:'Signed in',use:31},
-  gemini:{st:'on',how:'Signed in',spend:'$4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
+/* line: each ready agent's usage in one quiet line (Plan 20, the user 2026-11-21), the same in `ion status`; use: the
+   window's percent when the agent reports one (a bar), lim: limited until its reset. Never a gauge ion made up. */
+const HCONN={claude:{st:'on',how:'Signed in',line:'limited until 16:00',lim:1,rules:3},grok:{st:'on',how:'Signed in',line:'Learned from errors'},codex:{st:'on',how:'Signed in',line:'62% of 5 h · resets 14:20',use:62},
+  gemini:{st:'on',how:'Signed in',line:'this week $4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
 const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],eff:'high',when:'auto',use:4,week:1.8};
 const S2WHEN=[['auto','When needed'],['always','Always'],['never','Never']];
 let NEEDS=[
@@ -3175,9 +3239,10 @@ function newIonCard(k){
 /* the frame's sidebar button (and ⌘B): hide or show the screen's left panel */
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-sidebar]'); if(!b) return; const off=document.getElementById('win').classList.toggle('side-off'); b.title=(off?'Show':'Hide')+' sidebar  ⌘B'; });
 document.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='b'){ e.preventDefault(); document.querySelector('[data-sidebar]')?.click(); } });
-function tlHTML(pk,st,txt,time){
+function tlHTML(pk,st,txt,time,est){
   const say=st==='wait'?'Waiting for you':txt;
-  return `<button class="tl" type="button" data-peek="${esc(pk)}" data-pt="${esc(txt)}" data-ps="${st}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b>${st==='err'?'<i data-lucide="circle-alert"></i>':''}<span class="tt${st==='run'?' now':''}">${esc(say)}</span>${st==='wait'?'<i class="wd"></i>':time?`<span class="wn">· ${esc(time)}</span>`:''}<i data-lucide="chevron-right"></i></button>`;
+  /* Plan 20 Task 4: what such a task usually takes, from past chats, on hover only (none with under 5 similar chats) */
+  return `<button class="tl" type="button"${est?` title="${esc(est)}"`:''} data-peek="${esc(pk)}" data-pt="${esc(txt)}" data-ps="${st}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b>${st==='err'?'<i data-lucide="circle-alert"></i>':''}<span class="tt${st==='run'?' now':''}">${esc(say)}</span>${st==='wait'?'<i class="wd"></i>':time?`<span class="wn">· ${esc(time)}</span>`:''}<i data-lucide="chevron-right"></i></button>`;
 }
 function peekHTML(pk,txt,st){
   const steps=st==='run'?[['file-text','Read','package.json','ok'],['search','Grep','round(','ok'],['file-text','Read',txt.replace(/^\S+ /,''),'run']]:[['file-text','Read','package.json','ok'],['square-terminal','Bash','pnpm test','ok']];
@@ -3654,16 +3719,16 @@ const EFFN={low:1,medium:2,high:3,max:4};
 /* which effort levels each harness supports, and its native name for the setting */
 const ESUP={claude:['low','medium','high','max','auto'],codex:['low','medium','high','auto'],grok:['low','high','auto'],gemini:['auto'],pi:['auto'],cursor:['auto']};
 const ENATIVE={claude:'effort',codex:'model_reasoning_effort',grok:'reasoning_effort',gemini:'not configurable',pi:'not configurable',cursor:'not configurable'};
-const HUSE=new Proxy({},{get:(_,h)=>{ const c=HCONN[h]; return !c?'':c.st==='on'?(c.use!=null?c.use+'% this week':c.spend+' this week'):c.st==='missing'?'Not installed · connect in Settings':'Not connected · connect in Settings'; }});
+const HUSE=new Proxy({},{get:(_,h)=>{ const c=HCONN[h]; return !c?'':c.st==='on'?c.line:c.st==='missing'?'Not installed · connect in Settings':'Not connected · connect in Settings'; }});
 const ebars=e=>`<span class="ebars" aria-hidden="true">${[1,2,3,4].map(n=>`<i class="${e==='auto'?'a':n<=(EFFN[e]||0)?'on':''}"></i>`).join('')}</span>`;
-const BRAIN={new:{h:'claude',m:'Opus 5.5',e:'medium',src:'storefront default'},code:{h:'claude',m:'Opus 5.5',e:'high',src:'storefront default',started:'claude'},chat:{h:'claude',m:'Sonnet 5.5',e:'auto',src:'your default',started:'claude'}};
+const BRAIN={new:{h:'claude',m:'Opus 5.5',e:'medium',src:'storefront default'},code:{h:'claude',m:'Opus 5.5',e:'high',src:'storefront default',started:'claude'},chat:{h:'claude',m:'Sonnet 5.5',e:'auto',src:'your default',started:'claude'},routed:{h:'codex',m:'gpt-codex',e:'medium',src:'Pick by usage',started:'codex'}};
 const BDEF=JSON.parse(JSON.stringify(BRAIN));
-function brainPill(id){ const b=BRAIN[id]; return `<canvas class="av" data-bot="${b.h}" aria-hidden="true"></canvas><span>${esc(LIB[b.h].name)}</span><span class="bsep">·</span><span>${esc(b.m)}</span><span class="bsep">·</span>${ebars(b.e)}<span>${effLabel(b.e)}</span><i data-lucide="chevron-up" class="bchev"></i>`; }
+function brainPill(id){ if(id==='usage') return `<i data-lucide="gauge"></i><span>By usage</span>${ebars('')}<i data-lucide="chevron-up" class="bchev"></i>`; const b=BRAIN[id]; return `<canvas class="av" data-bot="${b.h}" aria-hidden="true"></canvas><span>${esc(LIB[b.h].name)}</span><span class="bsep">·</span><span>${esc(b.m)}</span><span class="bsep">·</span>${ebars(b.e)}<span>${effLabel(b.e)}</span><i data-lucide="chevron-up" class="bchev"></i>`; }
 function paintPills(){ document.querySelectorAll('[data-brain]').forEach(p=>{ p.innerHTML=brainPill(p.dataset.brain); hydrate(p); icons(p); }); }
 const bpop=document.createElement('div'); bpop.className='bpop'; bpop.hidden=true; bpop.setAttribute('role','dialog'); bpop.setAttribute('aria-label','Harness, model and effort'); document.getElementById('win').append(bpop);
 let bpFor=null;
 function renderBpop(){
-  const b=BRAIN[bpFor], sup=ESUP[b.h];
+  const b=BRAIN[bpFor]||BRAIN.new, sup=ESUP[b.h];
   bpop.innerHTML=`<div class="bp-cols">
     <div class="bp-col"><div class="bp-h">Harness</div>${HARNESSES.map(h=>`<button type="button" class="bp-row${h===b.h?' on':''}" data-bh="${h}"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas><span class="g">${esc(LIB[h].name)}<small class="${h==='grok'?'warn':''}">${esc(HUSE[h]||'')}</small></span></button>`).join('')}</div>
     <div class="bp-col"><div class="bp-h">Model</div>${MODELS[b.h].map(([m,d])=>`<button type="button" class="bp-row${m===b.m?' on':''}" data-bm="${esc(m)}"><span class="g">${esc(m)}<small>${esc(d)}</small></span>${m===b.m?'<i data-lucide="check" class="ck"></i>':''}</button>`).join('')}</div>
@@ -3717,13 +3782,13 @@ function renderHarnesses(){
   const el=document.getElementById('hList');
   el.innerHTML=HARNESSES.map(h=>{ const c=HCONN[h], n=LIB[h].name;
     const right=c.st==='on'
-      ? `<div class="meter${c.use>=80?' hi':''}">${c.use!=null?`<span>${c.use}% this week</span><div class="tr"><i style="width:${c.use}%"></i></div>`:`<span>${c.spend} this week</span><div class="tr"><i style="width:21%"></i></div>`}</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`
+      ? `<div class="meter${c.lim||c.use>=80?' hi':''}"><span>${c.line.split(' · ').map(x=>`<span class="mp">${esc(x)}</span>`).join(' · ')}</span>${c.use!=null?`<div class="tr"><i style="width:${c.use}%"></i></div>`:''}</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`
       : c.st==='busy' ? `<span class="cbusy"><i class="spin"></i>${esc(c.msg)}</span><span></span>`
       : `<span></span><button class="btn${c.st==='off'?' pri':''}" type="button" data-hconnect="${h}">${c.st==='missing'?'Install and connect':'Connect'}</button>`;
     /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.
        c.nosb: on a computer without an OS sandbox (Plan 18 Task 12), each agent's chats run without one: "Not sandboxed".
        c.rules: its own allow/deny rules ion goes by in its chats (Plan 18 Task 14), with how many. */
-    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}</div>${right}</div>`; }).join('');
+    return `<div class="hrow ord"><button type="button" class="ib grip" draggable="true" aria-label="Move ${esc(n)}" title="Drag to reorder"><i data-lucide="grip-vertical"></i></button><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}</div>${right}</div>`; }).join('');
   hydrate(el); icons(el); renderIonModels();
 }
 function renderIonModels(){
@@ -3763,7 +3828,7 @@ document.addEventListener('click',e=>{
 });
 
 /* navigation */
-const SCREEN_MODE={new:'chats',code:'chats',chat:'chats',ask:'chats',wary:'chats',start:'chats',library:'chats',ions:'ions',settings:'settings'};
+const SCREEN_MODE={new:'chats',code:'chats',chat:'chats',ask:'chats',wary:'chats',start:'chats',byusage:'chats',queued:'chats',library:'chats',ions:'ions',settings:'settings'};
 function go(id){
   if(id==='start'&&curScreen!=='start') startFrom=Date.now(); curScreen=id;
   const mode=SCREEN_MODE[id]; railMode=mode;
@@ -3890,7 +3955,8 @@ let curScreen='', startFrom=Date.now();
 const RUNROWS=[
   {t:'Idempotency keys',p:'payments-api',ion:'lead',go:'code',sub:'Adding a unique index on key and merchant'},
   {t:'Webhook retry backoff',p:'payments-api',ion:'payments-api',go:'code',sub:'Backoff doubles now, up to 10 minutes'},
-  {t:'Cache product images',p:'storefront',go:'start',row:'start'}];
+  {t:'Cache product images',p:'storefront',go:'start',row:'start'},
+  {t:'Totals rounding check',p:'payments-api',ion:'payments-api',go:'queued',row:'queued',sub:'Waiting — 4 ion chats running'}];
 const CHATROWS=[
   {t:'Pricing page headline',p:'default',go:'chat',row:'chat',sub:'Done. I started a coding chat on storefront for it.',tm:'1h'},
   {t:'Search filters on mobile',p:'storefront',go:'code',sub:'Filters open in a bottom sheet under 640px now.',tm:'3h'},
@@ -3899,6 +3965,9 @@ const CHATROWS=[
   {t:'Postgres or SQLite?',p:'default',go:'chat',sub:'SQLite, until you need more than one writer.',tm:'Tue'},
   {t:'Fix 404 on /sale',p:'storefront',go:'code',sub:'The route was missing from the sitemap build.',tm:'Mon'},
   {t:'Refund rounding',p:'payments-api',go:'code',sub:'Tests failed on the partial-refund case.',tm:'Mon',failed:1},
+  /* Plan 20 (coordinator, 2026-11-23): a chat waiting for its agent's reset says what it waits for, with no Failed mark:
+     it goes on by itself at the reset (`ion chats` says "waiting"; an ion's thread line says the same words). */
+  {t:'Totals in cents',p:'payments-api',go:'code',sub:'Waits for Claude Code — 16:00',tm:'Mon'},
   {t:'Onboarding email ideas',p:'default',go:'chat',sub:'Five subject lines, shortest first.',tm:'Mon'},
   {t:'Bump Vite to 6',p:'storefront',go:'code',sub:'Builds are 18% faster. No config changes.',tm:'Sun'},
   {t:'v2.3 changelog',p:'docs',ion:'docs',go:'code',sub:'Drafted from 31 merged pull requests.',tm:'Sun'},

@@ -137,8 +137,40 @@ describe("chats view, preview", () => {
   });
 });
 
+// Tour, 2026-11-23: a chat ion started, waiting for one of its slots, showed nothing under its title in Running; the
+// lab's row says why it waits ("Waiting — 4 ion chats running"), until it starts.
+describe("chats view, waiting", () => {
+  it("says why a chat waits for a slot, until its run starts", () => {
+    const waiting = "Waiting — 1 ion chat running";
+    store.append(d({ chatId: "c1", runId: "r9", type: "run.queued", data: { access: "auto", waiting } }));
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBe(waiting);
+    store.append({
+      chatId: "c1",
+      runId: "r9",
+      origin: "adapter",
+      type: "run.started",
+      data: { harness: "fake", model: "m", effort: null, authMethod: null },
+    });
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBeUndefined();
+  });
+});
+
 it("rebuilding from the log gives the same rows", () => {
   const before = [needsView.open(db), chatsView.list(db)];
   store.rebuildViews();
   expect([needsView.open(db), chatsView.list(db)]).toEqual(before);
+});
+
+// Coordinator, 2026-11-23: a chat waiting for its agent's reset read as Failed (sidebar, ion's thread line, `ion
+// chats`). It reads as waiting ("Waits for Fake — 16:20") until its run goes on.
+describe("chats view, waiting for a reset", () => {
+  it("says what it waits for after a limit, until a run goes on", () => {
+    store.append(d({ chatId: "c1", runId: "r9", type: "run.finished", data: { status: "failed" } }));
+    const text = "Waits for Fake — 16:20";
+    const line = { kind: "waiting", text, to: "fake", until: "2026-11-23T15:20:00.000Z" };
+    store.append(d({ chatId: "c1", runId: null, type: "chat.handoff", data: line }));
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBe(text);
+    store.append(d({ chatId: "c1", runId: "r10", type: "run.queued", data: { access: "auto" } }));
+    expect(chatsView.list(db).find((c) => c.chatId === "c1")?.waiting).toBeUndefined();
+  });
 });

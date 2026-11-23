@@ -27,6 +27,34 @@ describe("HarnessInfos", () => {
     expect((await infos.list())[0]!.label).toBe("a 2");
   });
 
+  // The user, 2026-11-21: `ion status` shows each agent's usage line, and never waits on an agent's CLI for it.
+  it("says what it knows now without waiting, and starts a first read", async () => {
+    const load = vi.fn(async (id: string) => info(id, 1));
+    const infos = new HarnessInfos(["a"], load);
+    expect(infos.cached()).toEqual([]);
+    await vi.waitFor(() => expect(infos.cached().map((h) => h.id)).toEqual(["a"]));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  // Review, 2026-11-22: the first `ion status` after a daemon start had no agent lines (nothing read yet). It waits for
+  // the first reads, a few seconds at most.
+  it("waits a little for the first reads, never longer", async () => {
+    const quick = new HarnessInfos(["a"], async (id) => {
+      await new Promise((r) => setTimeout(r, 50));
+      return info(id, 1);
+    });
+    expect((await quick.settled(2000)).map((h) => h.id)).toEqual(["a"]);
+    const stuck = new HarnessInfos(["b"], () => new Promise<HarnessInfo>(() => {}));
+    const t0 = Date.now();
+    expect(await stuck.settled(100)).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    // Only a fresh start waits: once its few seconds are over, every later ask answers at once (pnpm check,
+    // 2026-11-22: each `ion status` waited again on a slow agent).
+    const t1 = Date.now();
+    expect(await stuck.settled(100)).toEqual([]);
+    expect(Date.now() - t1).toBeLessThan(150);
+  });
+
   it("doesn't wait on a slow agent once it knows it", async () => {
     let slow: (v: HarnessInfo) => void = () => {};
     const load = vi.fn((id: string) =>
@@ -53,5 +81,18 @@ describe("HarnessInfos", () => {
     done(info("claude", 1));
     expect((await listed)[0]!.label).toBe("claude 1");
     expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  // The controller's end-to-end check, 2026-11-23: the limit question came ~5 s after the run failed (the agents
+  // offered waited on opencode's slow first sign-in check), so `ion needs` was empty meanwhile. What's known answers
+  // at once; a first read still going is waited on briefly, never longer.
+  it("answers soon with what it knows, not waiting on a slow first read", async () => {
+    const infos = new HarnessInfos(["a", "slow"], (id) =>
+      id === "slow" ? new Promise<HarnessInfo>(() => {}) : Promise.resolve(info(id, 1)),
+    );
+    infos.warm();
+    const t0 = Date.now();
+    expect((await infos.soon(100)).map((h) => h.id)).toEqual(["a"]);
+    expect(Date.now() - t0).toBeLessThan(500);
   });
 });

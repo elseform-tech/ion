@@ -47,7 +47,7 @@ function ChatsAtOnce({
   return (
     <div className="stepper">
       {button(-1)}
-      <span className="n" aria-label="Chats at once">
+      <span className="n" aria-label="Chats ion runs at once">
         {value === "auto" ? "Auto" : value}
       </span>
       {button(1)}
@@ -72,7 +72,10 @@ function useHeldRuns(saved: MaxRuns | undefined) {
   return [held ?? saved, hold] as const;
 }
 
-/** Settings → General: how many chats work at once (new chats start on Auto; the composer's access icon switches it). */
+/**
+ * Settings → General: how many chats ion runs at once, its threads and routines (the user, 2026-11-22: yours never
+ * wait). New chats start on Auto; the composer's access icon switches it.
+ */
 export function General({ client, data }: { client: IonClient; data: SettingsData }) {
   const [error, run] = useCallError();
   const s = data.settings;
@@ -82,7 +85,7 @@ export function General({ client, data }: { client: IonClient; data: SettingsDat
     <div>
       <h4>Chats</h4>
       <div className="group">
-        <Row label="Chats at once">
+        <Row label="Chats ion runs at once">
           <ChatsAtOnce
             value={maxRuns}
             auto={s.autoRuns}

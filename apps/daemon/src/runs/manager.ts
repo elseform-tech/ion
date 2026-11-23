@@ -12,27 +12,26 @@ import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { type Chat, chatCreated, chatFor, Readiness } from "./ready.js";
 import { UserError } from "../api/errors.js";
-import { type Access, ionDirsOf } from "../access/index.js";
-import type { Grants } from "../mcp/index.js";
+import { ionDirsOf } from "../access/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
+import { type AskOpts, type How, howOf, queuedLines, waitLine } from "./queued.js";
 import { chatsView } from "../views/chats.js";
-import { type HistoryMessage, messagesView } from "../views/messages.js";
-import { freshText, HISTORY_CHARS, type MemoryFiles } from "./history.js";
+import type { HistoryMessage } from "../views/messages.js";
+import { freshText, historyOf } from "./history.js";
 import { createWorktree, removeWorktree } from "../workspace/index.js";
+import { summarize } from "./brief.js";
 import type { GateAnswer } from "../gate/index.js";
-import { type AskBlocked, type AskingRun, Approvals, type BeforeTool } from "./approvals.js";
-import type { TheirRules } from "../access/agent-rules.js";
+import { Approvals } from "./approvals.js";
+import type { RunCtx } from "./run-ctx.js";
 import { keep, type Retry, type RetryState, type RunError, retryPlan, type TryEnd } from "./retry.js";
 import { defaultProject, projectPath } from "./projects.js";
-import type { RunAgent, RunServers } from "../tools/run-servers.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
 import { type RunKeys, runEnv, runKeys } from "./run-env.js";
-import { type LaunchSandbox, launchSandbox, type SandboxCtx } from "./sandbox.js";
-import type { RunSkills } from "../skills/run.js";
-import { agentText, type PickSource, picksOfRun, type RunPicks, shownPicks } from "../skills/picks.js";
-import { type OwnForRun, ownOpts, type RunOwn, skillsAndOwn, withOwnServers } from "../tools/own-run.js";
+import { type LaunchSandbox, launchSandbox } from "./sandbox.js";
+import { agentText, picksOfRun, type RunPicks, shownPicks } from "../skills/picks.js";
+import { type OwnForRun, ownOpts, skillsAndOwn, withOwnServers } from "../tools/own-run.js";
 
 type AskArgs = Commands["ask"]["args"];
 
@@ -45,10 +44,16 @@ type Launch = {
   chatId: string;
   runId: string;
   cwd: string;
-  /** The chat's earlier messages, for a new session that can't resume the old one. */
+  /** The chat's earlier messages, for a new session that can't resume the old one (the newest, up to its budget). */
   history: HistoryMessage[];
+  /** The history is longer than the agent's budget: a new session gets ion's summary and the last messages. */
+  long?: { budget: number; brief?: string };
+  /** ion's brief handing the chat to this agent (a limit): its text is the summary already. */
+  handoff?: true;
   /** The harness session to continue on this try, if any. */
   resume?: string | null;
+  /** This try's first message starts with ion's memory index (its instructions say so only then). */
+  index?: boolean;
   projectId: string;
   /** Full access, or Auto (ion decides each action outside the worktree). */
   access: "auto" | "full";
@@ -71,6 +76,8 @@ type Between = {
   wake?: () => void;
   /** The chat's session resumed but then failed for real: later tries start a new session with the history. */
   noResume?: boolean;
+  /** The chat said "Started fresh with a summary" for this run (once). */
+  summarized?: boolean;
 };
 
 const limitIn = (file: string) =>
@@ -83,7 +90,7 @@ export class RunManager {
   /** Chats with an ask in progress (before their run is active), so two asks can't race. */
   private readonly reserved = new Set<string>();
   private readonly ready = new Readiness();
-  /** Runs waiting for a free slot (resources.max_runs). */
+  /** Chats ion starts waiting for a free slot (resources.max_runs: yours never wait). */
   private readonly queued = new Map<string, { chatId: string; item: Queued }>();
   private readonly queue: ReturnType<typeof createRunQueue>;
   /** Runs that left the queue and haven't ended: interrupt flags, and how to cut a retry's wait short. */
@@ -96,36 +103,7 @@ export class RunManager {
 
   constructor(
     private readonly store: EventStore,
-    private readonly ctx: {
-      configFile: string;
-      dataDir: string;
-      random?: () => number;
-      /** Auto access: rules, then the judge (a quick model). Without it, Auto denies. */
-      access?: Access;
-      /**
-       * ion's MCP server: each run gets a key for its own project, revoked when the run ends; and ion's memory: a new
-       * session starts with the index of what its chat may see.
-       */
-      mcp?: { grants: Grants; url: () => string; memory?: MemoryFiles };
-      ionBin?: string; // ion's own `ion` launcher's folder, first on every run's PATH
-
-      /** ion's gate (`<base>/<key>`): harnesses with a hook report every tool call there before it runs. */
-      gate?: { url: () => string };
-      /** Asks you about a tool call ion stopped (the call waits for the answer). */
-      askBlocked?: AskBlocked;
-      /** Your "Before a tool runs" hooks (Settings → Tools → Hooks). */
-      beforeTool?: BeforeTool;
-      /** A run's agent's own allow and deny rules, from your settings for it (they count as your decisions). */
-      theirs?: (r: AskingRun) => TheirRules | null;
-      /** Your MCP servers for a chat's run on this agent, and the ones it goes without (Settings → Tools). */
-      servers?: (agent: RunAgent) => Promise<RunServers>;
-      /** Your skills for a chat's run: a plugin folder made for it (null: none, or its agent doesn't take them). */
-      skills?: RunSkills;
-      /** What a chat's run brings of its agent's own (its servers, skills and plugins; "Use its own tools"). */
-      own?: RunOwn;
-      /** What "/" and "@" can pick for a chat on this agent in this project (a message's picks resolve here). */
-      picks?: (agent: string, projectId: string) => Promise<PickSource>;
-    } & SandboxCtx,
+    private readonly ctx: RunCtx,
     private readonly needs: NeedsService,
     private readonly db: Db,
   ) {
@@ -141,10 +119,7 @@ export class RunManager {
    * `opts.request`: what the judge treats as your request, when the message isn't yours as typed (the run your
    * answer to an agent's question starts is judged by your request from the run that asked).
    */
-  async ask(
-    args: AskArgs,
-    opts: { request?: string; shown?: string; answers?: string; by?: "ion"; title?: string } = {},
-  ): Promise<{ chatId: string; runId: string }> {
+  async ask(args: AskArgs, opts: AskOpts = {}): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     // A new chat with no project goes to `default` (made the first time): every thread has a project.
@@ -162,19 +137,26 @@ export class RunManager {
     try {
       await this.ready.check(h, args.model);
       const picks = await picksOfRun(this.ctx.picks, h.adapter.id, args, projectId);
-      launch = await this.prepare(
-        h,
-        { ...args, shown: opts.shown, answers: opts.answers, by: opts.by, picks },
-        chat,
-        repo,
-      );
+      const how = howOf(opts, this.ionThread(key));
+      const more = { shown: opts.shown, answers: opts.answers, picks, ...how };
+      launch = await this.prepare(h, { ...args, ...more }, chat, repo);
       if (opts.request !== undefined) launch.request = opts.request;
-      const l = launch;
-      this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
+      this.go(launch, !!how.ions);
     } finally {
       if (key) this.reserved.delete(key);
     }
     return { chatId: launch.chatId, runId: launch.runId };
+  }
+
+  /** Whether this chat is one an ion started (its handoffs are ion's work too). */
+  private ionThread(chatId: string | null): boolean {
+    return !!chatId && chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
+  }
+
+  /** A chat ion started waits for one of its slots (resources.max_runs); yours starts at once (the user, 2026-11-22). */
+  private go(l: Launch, ions: boolean): void {
+    if (ions) this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
+    else void this.launch(l).catch(() => {});
   }
 
   /** resources.max_runs changed: start the waiting runs that now fit. */
@@ -186,33 +168,37 @@ export class RunManager {
   /** `ask.shown`: what the chat shows as yours, when the text is ion's wording (your answer to a question). */
   private async prepare(
     h: HarnessEntry,
-    ask: AskArgs & { shown?: string; answers?: string; by?: "ion"; picks?: RunPicks },
+    ask: AskArgs & { shown?: string; answers?: string; picks?: RunPicks } & How,
     chat: Chat,
     repo: string,
   ): Promise<Launch> {
-    const { shown, answers, by, picks, ...args } = ask;
+    const { shown, answers, by, handoff, picks, routed, ions, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
     });
     if (!chat.chatId) chatCreated(this.store, { chatId, chat, wt, by });
-    // History is read before your message is stored: it's what came before.
-    const history = chat.chatId ? messagesView.history(this.db, chatId, HISTORY_CHARS) : [];
+    const { history, ...long } = historyOf(this.db, chat.chatId ?? null, h.adapter.contextTokens);
     const projectId = (chat.chatId ? chat.projectId : args.projectId) ?? "";
     // A thread ion started runs in Auto every time: every action there still goes through ion's checks.
     const ionThread =
       by === "ion" || chatsView.list(this.db).some((c) => c.chatId === chatId && c.by === "ion");
     const access = ionThread ? "auto" : (args.access ?? "auto");
     const runId = `run_${randomUUID()}`;
-    const data = { text: args.text, ...(shown ? { shown } : {}), ...(answers ? { answers } : {}) };
+    const data = {
+      ...{ text: args.text, ...(shown ? { shown } : {}), ...(answers ? { answers } : {}) },
+      ...(handoff ? { handoff } : {}),
+    };
     const sent = { ...data, ...shownPicks(picks) };
     this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: sent });
-    this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: {} });
+    // Why it waits is decided now, once the worktree is made (the slots may have freed meanwhile).
+    const waiting = ions ? waitLine(this.queue) : undefined;
+    queuedLines(this.store, { chatId, runId, access, harness: h.adapter.id }, { routed, waiting });
     // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
     const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };
     const l = {
       ...{ h, harness: h.adapter.id, args: a, chatId, runId, cwd: wt.path, history, projectId, access },
-      request: args.text,
+      ...{ request: args.text, ...long, ...(handoff ? { handoff } : {}) },
     };
     // The judge is told what you picked, in ion's words.
     const picked = shownPicks(picks).skills;
@@ -302,8 +288,8 @@ export class RunManager {
   }
 
   /** ion's own MCP server for a run: its URL and the run's key (also the key for ion's gateway). */
-  private ionServer(l: Launch): { url: string; key: string } | null {
-    return this.ctx.mcp && l.mcpKey ? { url: this.ctx.mcp.url(), key: l.mcpKey } : null;
+  private ionServer(l: Launch): { url: string; key: string; index: boolean } | null {
+    return this.ctx.mcp && l.mcpKey ? { url: this.ctx.mcp.url(), key: l.mcpKey, index: !!l.index } : null;
   }
 
   /** A daemon-side error for a run; nothing is stored once ion is stopping (the run's end is already written). */
@@ -336,8 +322,13 @@ export class RunManager {
   private async tryInContext(l: Launch, b: Between): Promise<TryEnd> {
     const s = chatsView.session(this.db, l.chatId);
     const resume = !b.noResume && s && s.harness === l.h.adapter.id ? s.sessionId : null;
-    const fresh = { ...l, resume: null, args: { ...l.args, text: freshText(l, this.ctx.mcp?.memory) } };
-    if (!resume) return this.tryOnce(fresh, b);
+    // A long chat's new session (not a handoff's: its message is a brief already) gets ion's summary of the chat.
+    const brief = () => summarize({ store: this.store, configFile: this.ctx.configFile }, l, b);
+    const fresh = async () => {
+      const first = freshText(await brief(), this.ctx.mcp?.memory);
+      return { ...l, resume: null, index: first.index, args: { ...l.args, text: first.text } };
+    };
+    if (!resume) return this.tryOnce(await fresh(), b);
     const end = await this.tryOnce({ ...l, resume }, b);
     if (end.error?.code !== "resume_failed") {
       // A resumed session that fails for real (e.g. its context is too long) isn't resumed again.
@@ -345,7 +336,7 @@ export class RunManager {
       return end;
     }
     if (b.interrupt || this.stopping) return { status: b.interrupt ? "interrupted" : "failed", error: null };
-    return this.tryOnce(fresh, b);
+    return this.tryOnce(await fresh(), b);
   }
 
   /** One try: start a session, send the text, store what it emits. A failed start is a failed try. */

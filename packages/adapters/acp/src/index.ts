@@ -9,7 +9,7 @@ import {
   whichOnPath,
   withPaths,
 } from "@ion/adapter-kit";
-import type { Capabilities } from "@ion/schema";
+import type { Billing, Capabilities } from "@ion/schema";
 import {
   type ConnectOpts,
   connect,
@@ -63,6 +63,7 @@ const ownOf = (h: AcpHarness) => ({
   ...(h.ownHooks ? { ownHooks: true as const } : {}),
   ...(h.ownOff ? { ownOff: h.ownOff } : {}),
   ...(h.ownTrust ? { ownTrust: true as const } : {}),
+  ...(h.contextTokens ? { contextTokens: h.contextTokens } : {}),
 });
 
 /** One adapter for any agent that speaks ACP over stdio (Grok Build, opencode, …). */
@@ -89,7 +90,8 @@ export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdap
         });
         const slow = h.notResponding?.() ?? "Not responding";
         const method = { yes: "Signed in", no: "Not signed in", "not-responding": slow }[probe];
-        return { signedIn: probe === "yes", method };
+        const billing = probe === "yes" ? h.billing : undefined;
+        return { signedIn: probe === "yes", method, ...(billing ? { billing } : {}) };
       },
       login: () =>
         new Promise<void>((resolve, reject) => {
@@ -101,10 +103,27 @@ export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdap
         }),
     },
     ...(h.toCall ? { gateCall: h.toCall } : {}),
+    ...(h.billingOf ? { billingOf: billingWith(h, binary) } : {}),
     capabilities: capabilitiesWith(CAPABILITIES, acpCatalog(h, binary, deps)),
     mcpTransports: { http: h.mcpHttp ?? true },
     ...ownOf(h),
     start: (opts) => startAcp(h, binary(), deps, opts),
+  };
+}
+
+/** How the models ion ran on it bill (null: its default), as the agent says, kept 10 minutes per set of models. */
+function billingWith(h: AcpHarness, binary: () => string | null) {
+  const kept = new Map<string, { at: number; billing: Promise<Billing | undefined> }>();
+  return (models: (string | null)[]): Promise<Billing | undefined> => {
+    const path = binary();
+    const named = [...new Set(models.map((m) => m ?? h.defaultModel).filter((m): m is string => !!m))].sort();
+    if (!path || !h.billingOf || !named.length) return Promise.resolve(undefined);
+    const key = named.join("\n");
+    const k = kept.get(key);
+    if (k && Date.now() - k.at < 600_000) return k.billing;
+    const billing = h.billingOf(path, named).catch(() => undefined);
+    kept.set(key, { at: Date.now(), billing });
+    return billing;
   };
 }
 
@@ -122,7 +141,14 @@ async function startAcp(h: AcpHarness, path: string | null, deps: AcpDeps, opts:
   const want = wanted(h, opts);
   const model = (await setOption(c, "model", want.model)) ?? h.defaultModel ?? "default";
   await setOption(c, "thought_level", want.effort === "max" ? "high" : want.effort);
-  return startAcpSession(c, { ...opts, effort: want.effort }, { harness: h.id, model, silent: silenceOf(h) });
+  return startAcpSession(
+    c,
+    { ...opts, effort: want.effort },
+    {
+      ...{ harness: h.id, model, silent: silenceOf(h) },
+      ...(h.fullTokens ? { fullTokens: true } : {}),
+    },
+  );
 }
 
 /** A start with no web (ion's dream): the harness's way to turn its web off, or an error when it has none. */

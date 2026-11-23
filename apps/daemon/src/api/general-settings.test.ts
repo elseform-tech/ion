@@ -42,6 +42,28 @@ describe("General and notification settings", () => {
     expect(got.autoRuns).toBe(Math.max(1, Math.floor(availableParallelism() / 2)));
   });
 
+  // The user, 2026-11-22: Settings → Agents keeps your agent order, what ion does at a limit, and Pick by usage.
+  it("saves the agent order, the limit choice and Pick by usage", async () => {
+    const first = await client.call("settings.get", {});
+    expect(first).toMatchObject({
+      agentOrder: ["opencode", "grok-build", "codex", "claude-code"],
+      onLimit: "ask",
+      byUsage: false,
+    });
+    await client.call("settings.set", {
+      patch: { agentOrder: ["codex", "opencode"], onLimit: "continue", byUsage: true },
+    });
+    const got = await client.call("settings.get", {});
+    expect(got.agentOrder).toEqual(["codex", "opencode", "grok-build", "claude-code"]);
+    expect(got).toMatchObject({ onLimit: "continue", byUsage: true });
+    await expect(client.call("settings.set", { patch: { agentOrder: ["nope"] } })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
+    await expect(client.call("settings.set", { patch: { onLimit: "later" as never } })).rejects.toThrow(
+      "Pick ask, continue or wait",
+    );
+  });
+
   it("saves each General setting and reads it back", async () => {
     const first = await client.call("settings.get", {});
     expect(first).toMatchObject({

@@ -1,3 +1,4 @@
+import { endedOnLimit } from "../runs/limit-end.js";
 import { randomBytes } from "node:crypto";
 import { DEFAULT_PROJECT, loadUserConfig, type ProjectEntry } from "@ion/config";
 import { type ChatInfo, EV, type SuggestionInfo, whenLabel } from "@ion/schema";
@@ -158,6 +159,15 @@ export class Suggestions {
     }
   }
 
+  /**
+   * A chat waiting for its agent's reset, or whose last run ended on its agent's limit: ion asked, waits or went on
+   * already; it isn't stalled work (final review, 2026-11-23).
+   */
+  private atLimit(c: ChatInfo): boolean {
+    const last = this.d.store.read({ chatId: c.chatId, types: [EV.runFinished] }).at(-1);
+    return !!c.waiting || endedOnLimit(this.d.store, last?.runId ?? null);
+  }
+
   /** Your chats whose last run failed or was stopped, untouched for 3 days, with changes in their worktree. */
   private async stalled(shared: Set<string>, now: number): Promise<void> {
     const stale = (c: ChatInfo) =>
@@ -167,7 +177,8 @@ export class Suggestions {
       STALLED_RUNS.has(c.lastRunStatus ?? "") &&
       !!c.lastActivityAt &&
       now - Date.parse(c.lastActivityAt) >= STALLED_MS &&
-      !suggestionsView.muted(this.d.db, c.projectId ?? "", "stalled");
+      !suggestionsView.muted(this.d.db, c.projectId ?? "", "stalled") &&
+      !this.atLimit(c);
     for (const c of chatsView.list(this.d.db).filter(stale)) {
       const card: ChiefCard = {
         ...{ kind: "stalled", suggestionId: newId(), chatId: c.chatId, projectId: c.projectId ?? "" },

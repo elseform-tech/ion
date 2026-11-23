@@ -41,6 +41,43 @@ describe("timeline", () => {
     expect(t.items.at(-1)).toEqual({ kind: "ion", tone: "note", text });
   });
 
+  // The user, 2026-11-21 (Plan 20): a limit handed to another agent shows one line, never ion's brief as your message;
+  // your choice shows under ion's question.
+  it("shows a handoff as one line, with your choice under the question and no brief", () => {
+    const choices = [
+      { label: "Continue on Grok Build", consequence: "" },
+      { label: "Wait", consequence: "" },
+    ];
+    const t = play(
+      ev("message.sent", { text: "Add a dark mode" }),
+      ev("need.raised", {
+        needId: "n1",
+        kind: "ask",
+        summary: "opencode hit its limit. Continue on Grok Build, or wait?",
+        detail: null,
+        choices,
+      }),
+      ev("message.sent", { text: "<ion-data …> brief", handoff: true, answers: "n1" }, undefined, "r2"),
+      ev("need.resolved", {
+        needId: "n1",
+        decision: "answered",
+        by: "you",
+        choice: "Continue on Grok Build",
+        scope: "chat",
+      }),
+      ev("chat.handoff", { kind: "continued", text: "Continued on Grok Build — opencode hit its limit" }),
+    );
+    expect(t.items.filter((x) => x.kind === "you")).toEqual([{ kind: "you", text: "Add a dark mode" }]);
+    const q = t.items.find((x) => x.kind === "question");
+    expect(q).toMatchObject({ outcome: { by: "you", choice: "Continue on Grok Build" } });
+    expect(q).not.toHaveProperty("replied");
+    expect(t.items.at(-1)).toEqual({
+      kind: "ion",
+      tone: "note",
+      text: "Continued on Grok Build — opencode hit its limit",
+    });
+  });
+
   // Security review, 2026-11-22: a chat's preference waits for you to keep it; the chat says so in one quiet line.
   it("says a chat's preference was saved as a suggestion", () => {
     const header = { name: "Tabs", description: "d", type: "preference", see: "chats", suggested: "app" };
@@ -363,6 +400,46 @@ describe("timeline", () => {
     expect(play(ev("run.queued", {}), ev("run.finished", { status: "done" })).running).toBeNull();
   });
 
+  // The user, 2026-11-22: a chat ion started that waits for a slot says why, until it starts.
+  it("says why an ion chat waits for a slot, until it starts", () => {
+    const queued = ev("run.queued", { access: "auto", waiting: "Waiting — 4 ion chats running" });
+    expect(play(queued).waiting).toBe("Waiting — 4 ion chats running");
+    expect(play(queued, ev("run.started", {})).waiting).toBeNull();
+    expect(play(queued, ev("run.finished", { status: "interrupted" })).waiting).toBeNull();
+  });
+
+  // The user, 2026-11-22: Pick by usage says why it picked the chat's agent, in one line, in the chat's header.
+  it("keeps why Pick by usage picked the chat's agent", () => {
+    const t = play(
+      ev(
+        "chat.handoff",
+        { kind: "routed", text: "On Codex — Claude Code is near its limit", to: "codex" },
+        undefined,
+        null as never,
+      ),
+    );
+    expect(t.routed).toBe("On Codex — Claude Code is near its limit");
+    expect(t.items).toEqual([]);
+  });
+
+  // Review of bf69fe1, 2026-11-23: the header kept "On Codex — …" after the chat went on on another agent.
+  it("drops Pick by usage's reason once the chat goes on on another agent", () => {
+    const routed = ev("chat.handoff", {
+      kind: "routed",
+      text: "On Codex — first in your order",
+      to: "codex",
+    });
+    expect(play(routed, ev("run.started", { harness: "codex" })).routed).toBe(
+      "On Codex — first in your order",
+    );
+    expect(play(routed, ev("run.started", { harness: "opencode" })).routed).toBeNull();
+    const handoff = ev("chat.handoff", {
+      kind: "continued",
+      text: "Continued on Grok Build — Codex hit its limit",
+    });
+    expect(play(routed, handoff).routed).toBeNull();
+  });
+
   it("counts file changes and finished runs, so the changes panel knows to look again", () => {
     expect(play().changes).toBe(0);
     const t = play(ev("file.changed", { path: "a" }), ev("run.finished", { status: "done" }));
@@ -574,4 +651,9 @@ describe("timeline", () => {
     const t = play(ev("run.started", { harness: "grok-build", model: "grok-code-fast", effort: "high" }));
     expect(t).toMatchObject({ harness: "grok-build", model: "grok-code-fast", effort: "high" });
   });
+});
+
+// Coordinator, 2026-11-23: a queued chat's composer showed your first agent, not the one its queued run will use.
+it("a queued run says which agent it will use", () => {
+  expect(play(ev("run.queued", { access: "auto", harness: "fake" })).harness).toBe("fake");
 });

@@ -8,7 +8,7 @@ import {
   readVersion,
   whichOnPath,
 } from "@ion/adapter-kit";
-import type { Capabilities } from "@ion/schema";
+import type { Billing, Capabilities } from "@ion/schema";
 import { connect, type Launch, probeModels } from "./connection.js";
 import { codexGateCall } from "./gate.js";
 import { startCodexSession } from "./session.js";
@@ -37,9 +37,10 @@ export type CodexDeps = {
   startTimeoutMs?: number;
 };
 
-const LOGINS: [RegExp, string][] = [
-  [/ChatGPT/, "ChatGPT"],
-  [/API key/i, "API key"],
+/** How you signed in, and how that bills: ChatGPT is its plan (a subscription), an API key is paid per token. */
+const LOGINS: [RegExp, string, Billing][] = [
+  [/ChatGPT/, "ChatGPT", "subscription"],
+  [/API key/i, "API key", "api"],
 ];
 
 /**
@@ -52,17 +53,21 @@ function loginStatus(l: Launch): Promise<AuthStatus> {
       if (e) return resolve({ signedIn: false, method: "Not signed in" });
       // It prints to stderr; read both, keep only the kind of login.
       const text = `${out}${err}`;
-      const method = LOGINS.find(([re]) => re.test(text))?.[1] ?? "Signed in";
-      resolve({ signedIn: true, method });
+      const login = LOGINS.find(([re]) => re.test(text));
+      resolve(
+        login
+          ? { signedIn: true, method: login[1], billing: login[2] }
+          : { signedIn: true, method: "Signed in" },
+      );
     }),
   );
 }
 
 /**
  * What it takes from ion: MCP servers by url (Codex's mcp_servers is Streamable HTTP), and a start with no web (ion's
- * dream: its web search off in the thread's config).
+ * dream: its web search off in the thread's config); its default model's context (272k input tokens).
  */
-const TAKES = { mcpTransports: { http: true }, noWeb: true } as const;
+const TAKES = { mcpTransports: { http: true }, noWeb: true, contextTokens: 272_000 } as const;
 
 /** OpenAI's Codex CLI, driven through its app-server (JSON-RPC on stdio): `codex app-server`. */
 export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {

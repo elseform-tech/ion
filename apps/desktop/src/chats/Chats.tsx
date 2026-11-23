@@ -1,7 +1,7 @@
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
 import { PanelRight } from "@ion/design-system";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type Focus, ToolsPanel, useDiff } from "./ToolsPanel.js";
 import { ChatView, Starting, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
@@ -58,11 +58,14 @@ function sidebarActions(
 }
 
 /** The lab's chat header: title, project, and the panel toggle when there's a worktree (`panel` not null). */
-function ChatHead({ chat, panel, onPanel }: { chat: ChatInfo; panel: boolean | null; onPanel: () => void }) {
+function ChatHead(p: { chat: ChatInfo; panel: boolean | null; onPanel: () => void; why: string | null }) {
+  const { chat, panel, onPanel } = p;
   return (
     <header className="head" data-tauri-drag-region>
       <span className="title">{chat.title}</span>
       <span className="muted">{chat.by === "ion" ? `${chat.projectId}'s ion` : chat.projectId}</span>
+      {/* Why Pick by usage put the chat on its agent, in one line (the user, 2026-11-22). */}
+      {p.why && <span className="muted why">{p.why}</span>}
       <span className="sp" />
       {panel !== null && (
         <button
@@ -103,7 +106,7 @@ function OpenChat({
   const showPanel = hasWorktree && panel.open;
   return (
     <>
-      <ChatHead chat={chat} panel={hasWorktree ? panel.open : null} onPanel={panel.toggle} />
+      <ChatHead chat={chat} panel={hasWorktree ? panel.open : null} onPanel={panel.toggle} why={t.routed} />
       <div className={`split${showPanel ? "" : " solo"}`}>
         <div className="convo">
           <ChatView timeline={t} onFile={hasWorktree ? panel.show : undefined} />
@@ -119,6 +122,7 @@ function OpenChat({
                 locked={Boolean(open)}
                 harness={t.harness}
                 current={{ model: t.model, effort: t.effort }}
+                why={t.routed}
                 onSent={() => {}}
               />
             </div>
@@ -130,6 +134,18 @@ function OpenChat({
   );
 }
 
+/** Whether Pick by usage is on (Settings → Agents), read when a new chat opens. */
+function useByUsage(client: IonClient): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    void client.call("settings.get", {}).then(
+      (s) => setOn(s.byUsage === true),
+      () => {},
+    );
+  }, [client]);
+  return on;
+}
+
 /** A new chat: which project it's in (ion's `default` unless you pick one), then the message box. */
 function NewChat(props: {
   client: IonClient;
@@ -139,6 +155,7 @@ function NewChat(props: {
   onBrainOpen: () => void;
 }) {
   const [projectId, setProjectId] = useState<string>("default");
+  const byUsage = useByUsage(props.client);
   // Your first message, shown at once while ion makes the chat (ion can take a moment).
   const [sending, setSending] = useState<string | null>(null);
   return (
@@ -173,6 +190,7 @@ function NewChat(props: {
             }}
             onSending={setSending}
             onSent={props.onSent}
+            byUsage={byUsage}
           />
         </div>
       </div>

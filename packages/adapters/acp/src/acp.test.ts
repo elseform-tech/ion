@@ -441,9 +441,69 @@ describe("acp adapter", () => {
     expect(Date.now() - t0).toBeLessThan(10_000);
     expect(quota.at(-2)).toMatchObject({
       type: "error",
-      data: { code: "agent", retryable: false, message: "Fake ACP is out of quota" },
+      data: { code: "usage_limit", retryable: false, message: "Fake ACP is out of quota" },
     });
     expect(quota.at(-1)).toEqual({ type: "run.finished", data: { status: "failed" } });
+  });
+
+  // The user, 2026-11-21: what the agent's log says it can't get past (opencode's free usage, which names no reset)
+  // is its limit: ion marks it limited for 30 min, then tries it once more.
+  it("no reset → limited for 30 min, then one retry", { timeout: 20_000 }, async () => {
+    const h = {
+      ...fake,
+      silenceMs: 60_000,
+      logGiveUp: (line: string) => (line.includes("Free usage") ? { why: "Fake ACP is out of quota" } : null),
+    };
+    const quota = await turn(h, "quota");
+    expect(quota.at(-2)).toEqual({
+      type: "error",
+      data: { code: "usage_limit", retryable: false, message: "Fake ACP is out of quota", limit: {} },
+    });
+  });
+
+  // Probed on Grok 1.0.92, 2026-11-22 (docs/research/usage-signals.md): its cost comes in the prompt result's
+  // _meta.usage.costUsdTicks, 1e-10 USD each.
+  it("reads Grok's cost from its prompt result", async () => {
+    const events = await turn(fake, "grokusage");
+    expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({
+      inputTokens: 28175,
+      outputTokens: 28,
+      costUsd: 0.053254,
+    });
+  });
+
+  // Review of fb615b0, 2026-11-23 (probed on opencode 1.18.8): a run's total is every token it processed. Grok's
+  // _meta counts the whole turn; opencode's prompt result counts only the turn's last step (5 steps: 13,957 of
+  // 68,235), so it has no total and never makes a token estimate.
+  it("tokens include cached context", async () => {
+    const grok = await turn({ ...fake, fullTokens: true }, "grokusage");
+    expect(grok.find((e) => e.type === "usage.reported")?.data).toMatchObject({ totalTokens: 28203 });
+    const opencode = await turn(fake, "laststep");
+    const u = opencode.find((e) => e.type === "usage.reported")?.data;
+    expect(u).toMatchObject({ inputTokens: 357, outputTokens: 32 });
+    expect(u).not.toHaveProperty("totalTokens");
+  });
+
+  // The user, 2026-11-21: how an agent bills comes from its sign-in, said by its harness; none said is unknown.
+  it("billing comes from the sign-in", async () => {
+    expect(
+      await createAcpAdapter({ ...fake, billing: "free" }, { which: () => process.execPath }).auth.status(),
+    ).toEqual({ signedIn: true, method: "Signed in", billing: "free" });
+    expect(await make().auth.status()).not.toHaveProperty("billing");
+    // A harness that asks its agent how the models ion ran bill (opencode: their price) is asked with them; a model
+    // not named is the agent's default (re-review, 2026-11-22).
+    const seen: string[][] = [];
+    const billingOf = async (_bin: string, models: string[]) => {
+      seen.push(models);
+      return models.includes("paid") ? undefined : ("free" as const);
+    };
+    const asked = createAcpAdapter(
+      { ...fake, defaultModel: "free-1", billingOf },
+      { which: () => process.execPath },
+    );
+    expect(await asked.billingOf?.([null])).toBe("free");
+    expect(await asked.billingOf?.([null, "paid"])).toBeUndefined();
+    expect(seen).toEqual([["free-1"], ["free-1", "paid"]]);
   });
 
   // Re-review, 2026-11-21: a long tool run, or ion holding a call for your answer through its gate (not only a
@@ -472,6 +532,20 @@ describe("acp adapter", () => {
     expect(await errorOf("crash")).toMatchObject({ code: "crash", retryable: true });
     expect(await errorOf("ratelimit")).toMatchObject({ code: "rate_limit", retryable: true });
     expect(await errorOf("badinput")).toMatchObject({ code: "agent", retryable: false });
+  });
+
+  // Review, 2026-11-22: an agent's error saying its usage limit is reached was retried as a rate limit (its "429"). It's
+  // the agent's limit (no reset said). Wording as opencode 1.18.8 says it (live, 2026-11-22: "Free usage limit
+  // reached"); a plain 429 is still a rate limit.
+  it("an error that says the usage limit is reached is the agent's limit, not a rate limit", async () => {
+    const errorOf = async (text: string) => (await turn(fake, text)).find((e) => e.type === "error")?.data;
+    expect(await errorOf("usagelimit")).toEqual({
+      code: "usage_limit",
+      retryable: false,
+      message: "AI_APICallError: Free usage limit reached (429)",
+      limit: {},
+    });
+    expect(await errorOf("ratelimit")).toMatchObject({ code: "rate_limit", retryable: true });
   });
 
   // Regression (final review I5): an agent that never answers startup used to hang ion forever.

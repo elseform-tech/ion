@@ -1,7 +1,14 @@
 import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
-import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
+import {
+  byPreference,
+  defaultAgent,
+  getHarness,
+  harnessIds,
+  listedHarnessIds,
+} from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
+import type { AuthStatus } from "@ion/adapter-kit";
 import type { Dreams } from "../scheduler/index.js";
 import type { MemoryFiles } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
@@ -48,8 +55,14 @@ import { toolsImportHandlers } from "./tools-import.js";
 import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
 import { missesOf } from "../access/misses.js";
 import { readAgentRules, ruleCount } from "../access/agent-rules.js";
+import { orderIn, routed, usageNow } from "./routing.js";
+import { estimateFor } from "./estimate.js";
+import type { Handoffs } from "../runs/limit-handoff.js";
 
 export { UserError } from "./errors.js";
+
+/** How long `usage.list` waits on agents still being read (a fresh daemon). */
+const USAGE_WAIT_MS = 4000;
 
 /** What a chat changed in its worktree since it started (nothing once archived). */
 export async function diffOfChat(ctx: { db: Db; configFile: string }, chatId: string) {
@@ -61,12 +74,22 @@ export async function diffOfChat(ctx: { db: Db; configFile: string }, chatId: st
   return chatDiff(project.path, worktree);
 }
 
-/** ask on the agent named, else the chat's own while it's ready, else the first ready one (never one signed out). */
+/**
+ * ask on the agent named, else the chat's own while it's ready; a new chat on the one Pick by usage picks (when it's
+ * on; the chat says why), else the first ready in your agent order (never one signed out).
+ */
 async function askOn(a: Commands["ask"]["args"], ctx: Ctx) {
   if (a.harness) return ctx.runs.ask(a);
+  const where = {
+    ...(a.projectId ? { projectId: a.projectId } : {}),
+    ...(a.effort ? { effort: a.effort } : {}),
+    text: a.text,
+  };
+  const route = a.chatId ? null : await routed(ctx, () => harnessInfos.list(), where);
+  if (route) return ctx.runs.ask({ ...a, harness: route.harness }, { routed: route.reason });
   const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
   const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
-  const harness = defaultAgent(ready, own);
+  const harness = defaultAgent(ready, own, orderIn(ctx.configFile));
   if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
   return ctx.runs.ask({ ...a, harness });
 }
@@ -100,6 +123,8 @@ export type Ctx = {
   seen: Seen;
   /** A chat's agent making this call (with its run's key); none: you. */
   caller?: RunScope;
+  /** When a chat's agent hits its limit: ion's question, the handoff or the wait. */
+  handoffs?: Handoffs;
   configFile: string;
   startedAt: number;
   version: string;
@@ -131,12 +156,20 @@ export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
-  "harnesses.list": async () => {
-    const listed = listedHarnessIds();
-    return (await harnessInfos.list())
-      .filter((h) => listed.includes(h.id))
+  // In your agent order (Settings → Agents): the app's default agent is the first ready one.
+  "harnesses.list": async (_a, ctx) => {
+    const listed = byPreference(listedHarnessIds(), orderIn(ctx.configFile));
+    const infos = await harnessInfos.list();
+    return listed
+      .map((id) => infos.find((h) => h.id === id))
+      .filter((h) => !!h)
       .map((h) => ({ ...h, ...missesOf(h.id) }));
   },
+  // The ready agents ion knows, waiting a few seconds at most on ones still being read (`ion status` stays quick).
+  // A fresh daemon's agents are still being read: a few seconds for them, never longer (review, 2026-11-22).
+  "usage.list": async (_a, ctx) => usageNow(ctx, await harnessInfos.settled(USAGE_WAIT_MS)),
+  // What a task usually takes, from your past chats in its project (the brain pill's hover, an ion's thread line).
+  "usage.estimate": async (a, ctx) => estimateFor(ctx, a, await harnessInfos.settled(USAGE_WAIT_MS)),
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
     renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));
@@ -150,7 +183,10 @@ export const handlers: Handlers = {
     const scope = a.scope ?? "chat";
     if (!DECISION_SCOPES.includes(scope)) throw new UserError("Pick chat, project or everywhere");
     const pick = typeof a.text === "string" ? a.text : Number(a.choice);
-    await ctx.decisions.answer(String(a.needId ?? ""), pick, scope);
+    const needId = String(a.needId ?? "");
+    // ion's own question when a chat's agent hit its limit: Continue, Wait or Always.
+    if (ctx.handoffs?.owns(needId)) await ctx.handoffs.answer(needId, pick, scope);
+    else await ctx.decisions.answer(needId, pick, scope);
     return { ok: true as const };
   },
   "decisions.list": (a, ctx) => decisionsView.list(ctx.db, a.projectId),
@@ -176,6 +212,7 @@ export const handlers: Handlers = {
     // You stopped it (Stop, Esc twice): what's queued for the chat waits for you.
     const chatId = ctx.store.read({ runId, limit: 1 })[0]?.chatId;
     if (chatId) ctx.queue.hold({ chatId });
+    if (chatId) ctx.handoffs?.stopWaiting(chatId); // a chat waiting for its agent's reset stops waiting, for good
     await ctx.runs.interrupt(runId);
     return { ok: true as const };
   },
@@ -312,7 +349,8 @@ function ownRulesOf(id: string): { ownRules?: number } {
 
 async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness>>): Promise<HarnessInfo> {
   const installed = (await h.adapter.detect()).installed;
-  const signedIn = installed && (await h.adapter.auth.status()).signedIn;
+  const auth = installed ? await h.adapter.auth.status() : null;
+  const signedIn = !!auth?.signedIn;
   const caps = signedIn ? await h.adapter.capabilities() : null;
   return {
     id,
@@ -327,5 +365,11 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     ...(h.adapter.ownTrust ? { ownTrust: true as const } : {}),
     ...(notSandboxed(h.adapter.sandbox, machineSandbox()) ? { notSandboxed: true as const } : {}),
     ...ownRulesOf(id),
+    ...billingOf(auth),
   };
+}
+
+/** How it bills, from its sign-in (only when signed in: a sign-in that isn't there bills nothing). */
+function billingOf(auth: AuthStatus | null): Pick<HarnessInfo, "billing"> {
+  return auth?.signedIn && auth.billing ? { billing: auth.billing } : {};
 }

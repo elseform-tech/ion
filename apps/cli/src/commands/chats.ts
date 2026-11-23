@@ -10,7 +10,7 @@ export function chatsCommands(program: Command, out: () => Out) {
     .action(async () => {
       const list = (await withClient((c) => c.call("chats.list", {}))).filter((x) => !x.archived);
       const rows = list.map((x) =>
-        [x.chatId, x.lastRunStatus ?? "-", x.projectId ?? "-", x.title].map(clean),
+        [x.chatId, x.waiting ? "waiting" : (x.lastRunStatus ?? "-"), x.projectId ?? "-", x.title].map(clean),
       );
       print(out(), rows.length ? table(rows) : "No chats", list);
     });

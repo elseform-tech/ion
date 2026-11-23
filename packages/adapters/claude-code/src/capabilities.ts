@@ -1,5 +1,5 @@
 import type { AuthStatus } from "@ion/adapter-kit";
-import type { Capabilities } from "@ion/schema";
+import type { Billing, Capabilities } from "@ion/schema";
 
 /** When Claude Code can't list its models: aliases that always point at the current ones. */
 export const FALLBACK_MODELS = [
@@ -29,6 +29,15 @@ const METHOD_LABELS: Record<string, string> = {
   third_party: "Cloud provider",
 };
 
+/** How each sign-in bills: Claude's own login is its plan; a key or a cloud provider is paid per token. */
+const BILLING: Record<string, Billing> = {
+  "claude.ai": "subscription",
+  oauth_token: "subscription",
+  api_key: "api",
+  api_key_helper: "api",
+  third_party: "api",
+};
+
 /** Only Claude's own login counts; an API key or cloud provider doesn't (ion uses the user's Claude account). */
 const LOGIN_METHODS = new Set(["claude.ai", "oauth_token"]);
 
@@ -42,5 +51,6 @@ export function parseAuthStatus(code: number, stdout: string): AuthStatus {
   }
   const method = typeof parsed.authMethod === "string" ? parsed.authMethod : "none";
   const signedIn = code === 0 && parsed.loggedIn === true && LOGIN_METHODS.has(method);
-  return { signedIn, method: METHOD_LABELS[method] ?? "Not signed in" };
+  const billing = BILLING[method];
+  return { signedIn, method: METHOD_LABELS[method] ?? "Not signed in", ...(billing ? { billing } : {}) };
 }

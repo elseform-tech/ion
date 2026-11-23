@@ -50,6 +50,7 @@ afterEach(() => {
   delete process.env.FAKE_CODEX_OWN_HOOK;
   delete process.env.FAKE_CODEX_NO_CONFIG_READ;
   delete process.env.FAKE_CODEX_MCP_SERVER;
+  delete process.env.FAKE_CODEX_NO_LIMITS;
 });
 
 describe("codex adapter", () => {
@@ -60,7 +61,11 @@ describe("codex adapter", () => {
 
   // `codex login status` answers by its exit code; ion keeps only how you signed in, never account details.
   it("tells signed in from signed out without account details", async () => {
-    expect(await make().auth.status()).toEqual({ signedIn: true, method: "ChatGPT" });
+    expect(await make().auth.status()).toEqual({
+      signedIn: true,
+      method: "ChatGPT",
+      billing: "subscription",
+    });
     process.env.FAKE_CODEX_SIGNED_OUT = "1";
     expect(await make().auth.status()).toEqual({ signedIn: false, method: "Not signed in" });
     await expect(turn("hello")).rejects.toThrow("Codex isn't signed in. Run: codex login");
@@ -85,7 +90,7 @@ describe("codex adapter", () => {
       { text: "thinking" },
     ]);
     expect(said(events)).toBe("Hi there");
-    expect(events.find((e) => e.type === "usage.reported")?.data).toEqual({
+    expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({
       model: "fake-codex-1",
       inputTokens: 120,
       outputTokens: 8,
@@ -93,6 +98,61 @@ describe("codex adapter", () => {
     });
     expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
     expect(JSON.stringify(events)).not.toContain("example.com");
+  });
+
+  // The user, 2026-11-21: Codex's own rate-limit windows (account/rateLimits on codex-cli 0.153.2:
+  // docs/research/usage-signals.md), reported with each run, so ion can say "62% of 5 h · resets 14:20".
+  it("a Codex window snapshot is stored and shown", async () => {
+    const events = await turn("hello");
+    expect((events.find((e) => e.type === "usage.reported")?.data as { windows: unknown }).windows).toEqual([
+      { name: "5 h", usedPercent: 62, resetsAt: "2026-11-21T14:20:00.000Z" },
+      { name: "week", usedPercent: 12, resetsAt: "2026-11-25T09:00:00.000Z" },
+    ]);
+  });
+
+  // Review of fb615b0, 2026-11-23: a run's total is every token it processed. Codex's inputTokens already include
+  // the cached input (cachedInputTokens is a part of them), so the total is input plus output.
+  it("tokens include cached context", async () => {
+    const events = await turn("hello");
+    expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({
+      inputTokens: 120,
+      outputTokens: 8,
+      totalTokens: 128,
+    });
+  });
+
+  // The user, 2026-11-21: a Codex that doesn't say (an older one, or a read that failed) shows no gauge at all.
+  it("a missing gauge shows Learned from errors", async () => {
+    process.env.FAKE_CODEX_NO_LIMITS = "1";
+    const events = await turn("hello");
+    const usage = events.find((e) => e.type === "usage.reported")?.data as Record<string, unknown>;
+    expect(usage).toMatchObject({ inputTokens: 120 });
+    expect(usage).not.toHaveProperty("windows");
+  });
+
+  // Review, 2026-11-22: a turn Codex completed ended as a crash when its app-server exited while ion read its windows.
+  it("a completed turn stays done when Codex exits while its windows are read", async () => {
+    const events = await turn("completeexit");
+    expect(events.filter((e) => e.type === "error")).toEqual([]);
+    expect(events.at(-1)).toEqual({ type: "run.finished", data: { status: "done" } });
+  });
+
+  // The user, 2026-11-21: Codex's used-up plan is its limit, with the reset of the window that's full.
+  it("a limit error marks the agent limited until its reset", async () => {
+    const events = await turn("usagelimit");
+    expect(events.filter((e) => e.type === "error").map((e) => e.data)).toEqual([
+      {
+        code: "quota",
+        retryable: false,
+        message: "You've hit your usage limit",
+        limit: { resetsAt: "2026-11-21T14:20:00.000Z" },
+      },
+    ]);
+  });
+
+  // The user, 2026-11-21: how an agent bills comes from its sign-in (ChatGPT: its plan; an API key: per token).
+  it("billing comes from the sign-in", async () => {
+    expect(await make().auth.status()).toMatchObject({ billing: "subscription" });
   });
 
   it("lists Codex's own models, without hidden ones", async () => {

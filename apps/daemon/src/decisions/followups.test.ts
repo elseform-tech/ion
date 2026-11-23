@@ -18,6 +18,24 @@ const msg = { harness: "fake", text: "You chose Bankers.", request: "", shown: "
 // for the run to end, but at that moment the run manager still counted the run, so sending it read "busy", and
 // nothing tried again: the answer never reached the agent.
 describe("FollowUps", () => {
+  // Final review, 2026-11-23: the run your answer started ended on its agent's limit: ion handles that (asks, waits
+  // or continues); the decision's outcome isn't "failed".
+  it("a run that ended on its agent's limit isn't a failed outcome", async () => {
+    const ended = vi.fn();
+    const f = new FollowUps(store, async () => "r1", ended);
+    f.started(await f.tryNow("c1", msg), "d1");
+    const data = { code: "usage_limit", retryable: false, message: "Usage limit reached", limit: {} };
+    store.append({ chatId: "c1", runId: "r1", origin: "adapter", type: EV.error, data });
+    store.append({
+      chatId: "c1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "failed" },
+    });
+    expect(ended).not.toHaveBeenCalled();
+  });
+
   it("sends a waiting answer once the chat is free, even if it still reads busy as its run ends", async () => {
     let busy = 2;
     const start = vi.fn(async () => {

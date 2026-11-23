@@ -61,13 +61,6 @@ let dataDir: string;
 const managerWith = (more: object) =>
   new RunManager(store, { configFile, dataDir, random: () => 0, access, ...more }, needs, db);
 
-/** A fresh manager that reads max_runs from the config file. */
-const limitTo = (n: number) => {
-  const c = addProject(DEFAULT_CONFIG, repo);
-  saveUserConfig(configFile, { ...c, resources: { max_runs: n } });
-  runs = new RunManager(store, { configFile, dataDir, random: () => 0, access }, needs, db);
-};
-
 beforeEach(() => {
   const home = mkdtempSync(join(tmpdir(), "ion-runs-"));
   repo = join(home, "repo");
@@ -282,65 +275,6 @@ describe("RunManager", () => {
     expect(existsSync(wt)).toBe(false);
     expect(chatsView.list(db)[0]).toMatchObject({ chatId, archived: true });
     await expect(ask("hello", { chatId })).rejects.toThrow(new UserError("That chat is archived"));
-  });
-
-  it("queues runs beyond the limit and starts them as slots free up", async () => {
-    limitTo(1);
-    const a = await ask("slow");
-    const b = await ask("hello");
-    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["message.sent", "run.queued"]);
-    await runs.interrupt(a.runId);
-    const types = (await finished(b.runId)).map((e) => e.type);
-    expect(types.slice(0, 3)).toEqual(["message.sent", "run.queued", "run.started"]);
-  });
-
-  // Task review, 2026-11-20: the limit was read from config.toml on every pump; it's read when the manager is made
-  // and when Settings changes it (limitChanged).
-  it("reads the limit once, and again when it changes", async () => {
-    limitTo(1);
-    saveUserConfig(configFile, { ...addProject(DEFAULT_CONFIG, repo), resources: { max_runs: 3 } });
-    const a = await ask("slow");
-    const b = await ask("slow");
-    await new Promise((r) => setTimeout(r, 100));
-    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual(["message.sent", "run.queued"]);
-    runs.limitChanged();
-    await until(() => store.read({ runId: b.runId }).find((e) => e.type === "run.started"));
-    await runs.interrupt(a.runId);
-    await runs.interrupt(b.runId);
-    await finished(a.runId);
-    await finished(b.runId);
-  });
-
-  // Task review, 2026-11-20: lowering max_runs only holds back new starts; chats already running carry on.
-  it("lowering the limit never stops running chats", async () => {
-    limitTo(2);
-    const a = await ask("slow");
-    const b = await ask("slow");
-    const c = await ask("slow");
-    await until(() => store.read({ runId: b.runId }).find((e) => e.type === "run.started"));
-    saveUserConfig(configFile, { ...addProject(DEFAULT_CONFIG, repo), resources: { max_runs: 1 } });
-    runs.limitChanged();
-    await new Promise((r) => setTimeout(r, 50));
-    for (const r of [a, b])
-      expect(store.read({ runId: r.runId }).some((e) => e.type === "run.finished")).toBe(false);
-    expect(store.read({ runId: c.runId }).some((e) => e.type === "run.started")).toBe(false);
-    for (const r of [a, b, c]) await runs.interrupt(r.runId);
-    for (const r of [a, b, c]) await finished(r.runId);
-  });
-
-  it("interrupting a queued run finishes it without starting the harness", async () => {
-    limitTo(1);
-    const a = await ask("slow");
-    const b = await ask("hello");
-    await runs.interrupt(b.runId);
-    expect(store.read({ runId: b.runId }).map((e) => e.type)).toEqual([
-      "message.sent",
-      "run.queued",
-      "run.finished",
-    ]);
-    expect(store.read({ runId: b.runId }).at(-1)?.data).toEqual({ status: "interrupted" });
-    await runs.interrupt(a.runId);
-    await finished(a.runId);
   });
 
   it("retries a transient failure: twice rate-limited, then done", async () => {

@@ -12,12 +12,15 @@ export type SearchHit = { chatId: string; role: "you" | "agent"; text: string; t
 /** Your messages (`message.sent`) and the agent's (`message.completed`), per chat, with full-text search. */
 export const messagesView: View & {
   history(db: Db, chatId: string, maxChars: number): HistoryMessage[];
+  /** How many characters a chat's messages hold in all. */
+  size(db: Db, chatId: string): number;
   /** A chat's last message by you or by its agent, if any. */
   last(db: Db, chatId: string, role: "you" | "agent"): string | undefined;
   search(db: Db, projectId: string, query: string, limit: number): SearchHit[];
 } = {
   name: "messages",
-  version: 1,
+  // 2: ion's handoff briefs left out.
+  version: 2,
   tables: ["view_messages", "messages_fts"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_messages (
@@ -30,7 +33,8 @@ export const messagesView: View & {
   },
   apply(db, e: IonEvent) {
     const role = ROLE[e.type];
-    if (!role || !e.chatId) return;
+    // ion's brief handing the chat to another agent isn't one of your messages (history, search, size).
+    if (!role || !e.chatId || (e.data as { handoff?: unknown }).handoff === true) return;
     const text = String((e.data as { text: unknown }).text ?? "");
     const r = db
       .prepare(
@@ -58,6 +62,12 @@ export const messagesView: View & {
       kept.unshift(m);
     }
     return kept;
+  },
+  size(db, chatId) {
+    const r = db
+      .prepare("SELECT coalesce(sum(length(text)), 0) AS n FROM view_messages WHERE chat_id = ?")
+      .get(chatId) as { n: number };
+    return r.n;
   },
   search(db, projectId, query, limit) {
     // Each word is quoted, so the query is plain words, never FTS syntax.

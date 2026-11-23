@@ -1,4 +1,4 @@
-import type { Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
+import type { Billing, Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
 import type { PickStyle } from "./picks.js";
 import type { EnvDrop } from "./run-env.js";
 import type { RunSandbox } from "./sandbox.js";
@@ -126,7 +126,8 @@ export interface Session {
   close(): Promise<void>;
 }
 
-export type AuthStatus = { signedIn: boolean; method: string };
+/** Signed in or not, how, and how that sign-in bills (absent: unknown, never taken as free). */
+export type AuthStatus = { signedIn: boolean; method: string; billing?: Billing };
 
 /** By kind: whether an agent's switch turns its own off in ion's chats. */
 type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };
@@ -156,10 +157,20 @@ export interface HarnessAdapter {
   /** It reads an MCP server's resources (so "@" lists them for it). */
   mcpResources?: true;
   /**
+   * About how many tokens its default model's context holds: a chat's history longer than a quarter of it (at most
+   * 100,000 characters) reaches a new session as ion's summary and the last messages (runs/history.ts). Absent: 128,000.
+   */
+  contextTokens?: number;
+  /**
    * How its runs are sandboxed (docs/research/sandbox.md): "own", its own sandbox told to keep ion's folders out
    * (Codex); "ion", ion's wrapper around its process (the rest). Absent: never (the fake agent starts no process).
    */
   sandbox?: "own" | "ion";
+  /**
+   * How it bills for these models (null: its default), asked of the agent itself (opencode: its own price list);
+   * undefined when it can't tell. Absent: its sign-in says (`auth.status`).
+   */
+  billingOf?(models: (string | null)[]): Promise<Billing | undefined>;
   start(opts: StartOpts): Promise<Session>;
   /** The harness's hook payload as one tool call (null if it isn't one). Only harnesses that install a gate hook. */
   gateCall?(payload: unknown): GateCall | null;

@@ -1,7 +1,11 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createAcpState, mapUpdate } from "./map.js";
 
-const s = () => createAcpState(["/repo"]);
+// The files under /repo are there already (made-up paths: nothing is read).
+const s = () => createAcpState(["/repo"], () => true);
 
 describe("mapUpdate", () => {
   it("message and thought chunks", () => {
@@ -207,11 +211,7 @@ describe("a tool of no known kind", () => {
     const grep = { sessionUpdate: "tool_call", toolCallId: "g", title: "grep", kind: "other" };
     expect(
       mapUpdate({ ...grep, rawInput: { pattern: "tip", glob: "**/split.js" } }, st)[0]?.data,
-    ).toMatchObject({
-      name: "Grep",
-      kind: "other",
-      summary: "tip",
-    });
+    ).toMatchObject({ name: "Grep", kind: "other", summary: "tip" });
     const find = { sessionUpdate: "tool_call", toolCallId: "f", title: "search_tool", kind: "other" };
     expect(mapUpdate({ ...find, rawInput: { query: "ion decisions ask" } }, st)[0]?.data).toMatchObject({
       name: "Find tool",
@@ -304,6 +304,57 @@ describe("a tool of no known kind", () => {
     expect(call({ tool_name: "ion__search_chats", query: "login" })).toMatchObject({
       name: "ion__search_chats",
       summary: "login",
+    });
+  });
+
+  // The controller's end-to-end check, 2026-11-23: opencode's new hello.txt showed as a modified file. A file that
+  // wasn't there when the step began is added.
+  it("says a file the step made is added, one already there is modified", () => {
+    const root = mkdtempSync(join(tmpdir(), "ion-acp-map-"));
+    writeFileSync(join(root, "old.md"), "old\n");
+    const st = createAcpState([root]);
+    const step = (id: string, file: string) => {
+      mapUpdate({ sessionUpdate: "tool_call", toolCallId: id, title: "write", kind: "edit" }, st);
+      const at = [{ path: join(root, file) }];
+      mapUpdate(
+        { sessionUpdate: "tool_call_update", toolCallId: id, status: "in_progress", locations: at },
+        st,
+      );
+    };
+    step("a", "new.md");
+    step("b", "old.md");
+    writeFileSync(join(root, "new.md"), "new\n");
+    writeFileSync(join(root, "old.md"), "changed\n");
+    const done = (id: string) =>
+      mapUpdate({ sessionUpdate: "tool_call_update", toolCallId: id, status: "completed" }, st).find(
+        (e) => e.type === "file.changed",
+      )?.data;
+    expect(done("a")).toEqual({ path: "new.md", change: "add", added: null, removed: null });
+    expect(done("b")).toEqual({ path: "old.md", change: "modify", added: null, removed: null });
+  });
+
+  // Live (Grok), 2026-11-23: Grok's diff for a file it made has oldText "" and showed as modified (+3 −0). Empty old
+  // text for a file that wasn't there when the step began is an added file.
+  it("says a diff with empty old text for a file that wasn't there is added", () => {
+    const root = mkdtempSync(join(tmpdir(), "ion-acp-diff-"));
+    const st = createAcpState([root]);
+    const path = join(root, "hello.txt");
+    const at = [{ path }];
+    mapUpdate(
+      { sessionUpdate: "tool_call", toolCallId: "g", title: "edit", kind: "edit", locations: at },
+      st,
+    );
+    writeFileSync(path, "hi\n");
+    const diff = { type: "diff", path, oldText: "", newText: "hi" };
+    const done = mapUpdate(
+      { sessionUpdate: "tool_call_update", toolCallId: "g", status: "completed", content: [diff] },
+      st,
+    );
+    expect(done.find((e) => e.type === "file.changed")?.data).toEqual({
+      path: "hello.txt",
+      change: "add",
+      added: 1,
+      removed: null,
     });
   });
 });

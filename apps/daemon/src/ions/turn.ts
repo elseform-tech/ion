@@ -19,9 +19,9 @@ import { UserError } from "../api/errors.js";
 import type { GateAnswer } from "../gate/index.js";
 import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
-import { type IonBrain, ionBrain, nextBrain } from "./brain.js";
-import { forgetSession, type Kept, keepSession, resumeOf, startSession } from "./sessions.js";
-import { errLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, TOO_LONG, type Tried } from "./fallback.js";
+import { allLimited, type IonBrain, ionBrain, limitedUntil, nextBrain } from "./brain.js";
+import { forgetSession, resumeOf, startSession } from "./sessions.js";
+import { errLine, type IonLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, type Tried } from "./fallback.js";
 import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
 import { ionIndex, type MemoryFiles } from "../memory/index.js";
@@ -32,7 +32,8 @@ import { type IonGateCall as GateCall, IonServers } from "./servers.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import { DREAM_SKIPPED, dreamVerdict } from "./dream.js";
 import type { DreamPass } from "../memory/dream-rules.js";
-import { CLOSE_MS, closing, type Ended, note } from "./turn-end.js";
+import { CLOSE_MS, closing, type Ended, NONE, note, type Said, settle } from "./turn-end.js";
+import { ledgerEvent } from "../views/usage.js";
 import type { Verdict } from "./web.js";
 
 /** A turn's hard limit: past it the agent is stopped and the ion says it couldn't finish. */
@@ -73,7 +74,13 @@ export type DreamTurn = { pass: DreamPass; max: number; ms: number };
  * A turn's reply and the threads it started; `turnId`: the turn whose work its chat keeps (none when no session
  * started), which its reply carries so the app puts that work above it.
  */
-export type TurnResult = { reply: string; threads: Thread[]; turnId?: string };
+export type TurnResult = {
+  reply: string;
+  threads: Thread[];
+  turnId?: string;
+  /** The reply is ion's own line (no agent, too long, stopped), not its agent's words: set by ion only. */
+  ionLine?: IonLine;
+};
 
 export type IonTurnsDeps = {
   store: EventStore;
@@ -234,7 +241,7 @@ export class IonTurns {
   }
 
   private async run(ionId: string, text: string, o: TurnOpts): Promise<TurnResult> {
-    if (this.stopping) return { reply: NO_AGENT, threads: [] };
+    if (this.stopping) return { ...NONE, threads: [] };
     const request = o.noThreads ? null : (o.request ?? text);
     this.starting.set(ionId, request !== null);
     try {
@@ -253,16 +260,22 @@ export class IonTurns {
   private async think(ionId: string, text: string, o: Pick<Live, "request" | "dream">): Promise<TurnResult> {
     const cwd = this.folderOf(ionId);
     const brain = await ionBrain(this.d, ionId).catch(() => null);
-    if (this.stopAsked.delete(ionId)) return { reply: STOPPED, threads: [] };
-    if (!brain) return { reply: NO_AGENT, threads: [] };
+    if (this.stopAsked.delete(ionId)) return { reply: STOPPED, ionLine: "stopped", threads: [] };
+    // No agent: when every ready one is limited with a stated reset, which frees up first (review, 2026-11-22).
+    if (!brain) {
+      const reply = (await allLimited(this.d).catch(() => null)) ?? NO_AGENT;
+      return { reply, ionLine: "no-agent", threads: [] };
+    }
     // Every try is one turn (security review, 2026-11-22): its id, and so its caps on memory and threads.
     const turnId = `turn_${randomUUID()}`;
     const r = await onReadyAgents(brain, {
       once: (b) => this.once(ionId, text, { ...o, cwd, turnId }, b),
       next: (not) => nextBrain(this.d, ionId, not),
+      limitedUntil: (h) => limitedUntil(this.d.db, h),
+      none: () => allLimited(this.d),
       stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,
     });
-    return o.dream && noAgent(r.reply) ? { ...r, reply: NO_AGENT } : r;
+    return o.dream && noAgent(r) ? { ...r, reply: NO_AGENT } : r;
   }
 
   /** One try of a turn on this agent; `failed` when it said nothing (why: its agent's own words, when it said). */
@@ -274,10 +287,10 @@ export class IonTurns {
   ): Promise<Tried<TurnResult>> {
     const { request, cwd, turnId } = o;
     const h = getHarness(brain.harness);
-    if (!h || this.stopping) return { reply: NO_AGENT, threads: [] };
+    if (!h || this.stopping) return { ...NONE, threads: [] };
     // A dream never searches the web (task review, 2026-11-22): on an agent that can't turn its web off, none.
     if (o.dream && !h.adapter.noWeb)
-      return { reply: `${DREAM_SKIPPED} ${h.label} can't turn its web off`, threads: [] };
+      return { reply: `${DREAM_SKIPPED} ${h.label} can't turn its web off`, ionLine: "skipped", threads: [] };
     const rules = this.rulesFor(cwd);
     // Only your own words seed what it may read: a report's prompt is an agent's.
     const live: Live = { ionId, request, adapter: h.adapter, rules, web: new WebFound(request), threads: [] };
@@ -286,21 +299,13 @@ export class IonTurns {
     try {
       const t = { ionId, turnId, text, cwd, rules, report: request === null, dream: o.dream };
       const { end, projects } = await this.session(t, brain, h.adapter);
-      const reply = this.settle(ionId, { harness: brain.harness, projects }, end);
-      if (reply !== NO_AGENT || this.stopping) return { reply, threads: live.threads, turnId };
-      // Said once in ion's log: why the agent failed (Plan 19's checks, 2026-11-22: nothing was).
-      console.error(`ion's agent (${brain.harness}): ${end.error ?? "it said nothing"}`);
-      return {
-        reply,
-        threads: live.threads,
-        turnId,
-        failed: { why: end.error ?? null, did: this.did(turnId) },
-      };
+      const said = this.stopping ? NONE : settle(this.d, ionId, { harness: brain.harness, projects }, end);
+      return this.tried(said, end, { harness: brain.harness, turnId, threads: live.threads });
     } catch (e) {
       console.error(`ion's agent (${brain.harness}): ${errLine(e)}`);
       if (!this.stopping) forgetSession(this.d, ionId);
       return {
-        reply: NO_AGENT,
+        ...NONE,
         threads: live.threads,
         turnId,
         ...(this.stopping ? {} : { failed: { why: null, did: this.did(turnId) } }),
@@ -312,29 +317,22 @@ export class IonTurns {
     }
   }
 
+  /** A try's result; `failed` when its agent said nothing (said once in ion's log, with why when it said). */
+  private tried(
+    said: Said,
+    end: Ended,
+    t: { harness: string; turnId: string; threads: Thread[] },
+  ): Tried<TurnResult> {
+    const r = { ...said, threads: t.threads, turnId: t.turnId };
+    if (said.ionLine !== "no-agent" || this.stopping) return r;
+    // Plan 19's checks, 2026-11-22: why the agent failed was said nowhere.
+    console.error(`ion's agent (${t.harness}): ${end.error ?? "it said nothing"}`);
+    return { ...r, failed: { why: end.error ?? null, did: this.did(t.turnId) } };
+  }
+
   /** Whether this try wrote memory or started a thread: a try that did isn't tried again. */
   private did(turnId: string): boolean {
     return this.d.grants.used(turnId) || !!this.live.get(turnId)?.threads.length;
-  }
-
-  /** A turn's reply from how its session ended; its session kept for the next turn, or forgotten when broken. */
-  private settle(ionId: string, kept: Omit<Kept, "nativeId">, end: Ended): string {
-    if (this.stopping) return NO_AGENT;
-    if (end.stopped) return this.stoppedReply(ionId, kept, end);
-    const reply = end.late ? TOO_LONG : end.last.trim() || NO_AGENT;
-    // A session that failed or said nothing is forgotten: resuming it would likely fail again (its context too long).
-    // One that didn't close is too: the agent may still hold it, and two sessions would resume one id.
-    const broken = end.stuck || (!end.late && (end.failed || reply === NO_AGENT));
-    if (broken) forgetSession(this.d, ionId);
-    else if (end.nativeId) keepSession(this.d, ionId, { ...kept, nativeId: end.nativeId });
-    return reply;
-  }
-
-  /** A turn you stopped: its session kept if it closed (resuming it is fine), else forgotten. */
-  private stoppedReply(ionId: string, kept: Omit<Kept, "nativeId">, end: Ended): string {
-    if (end.stuck) forgetSession(this.d, ionId);
-    else if (end.nativeId) keepSession(this.d, ionId, { ...kept, nativeId: end.nativeId });
-    return STOPPED;
   }
 
   /** ion chief (and its dream): an empty folder of its own (made now); a project's ion: its project's folder. */
@@ -426,7 +424,13 @@ export class IonTurns {
     turnId: string,
     work: (end: Ended, hold: (s: Session) => void) => Promise<void>,
   ): Promise<Ended> {
-    const end: Ended = { last: "", nativeId: null, late: false, failed: false };
+    const end: Ended = {
+      startedAt: new Date().toISOString(),
+      last: "",
+      nativeId: null,
+      late: false,
+      failed: false,
+    };
     let session: Session | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<void>((r) => {
@@ -494,12 +498,15 @@ export class IonTurns {
   }
 
   /** Keeps the turn's work on the ion's chat (until its limit), its last message, and its native session id. */
-  private async pump(session: Session, t: TurnRef, end: Ended): Promise<void> {
+  private async pump(session: Session, t: TurnRef & { adapter: HarnessAdapter }, end: Ended): Promise<void> {
     for await (const e of session.events()) {
       if (end.late) return;
       if (KEPT.has(e.type) && t.ionId !== DREAM_ION)
         this.d.store.append({ ...e, chatId: `ion:${t.ionId}`, runId: t.turnId, origin: "adapter" });
       this.live.get(t.turnId)?.web.note(e);
+      // What the turn spends, and a limit it hits, go in its agent's usage (never on the ion's chat).
+      const kept = ledgerEvent(t.adapter.id, e, { runId: t.turnId, startedAt: end.startedAt });
+      if (kept) this.d.store.append(kept);
       note(e, end);
     }
   }

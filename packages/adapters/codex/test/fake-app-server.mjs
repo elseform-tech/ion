@@ -272,6 +272,18 @@ const SCRIPTS = {
     notify("error", { ...T, error, willRetry: false });
     end("failed", error);
   },
+  async completeexit() {
+    say("Done.");
+    slowLimits = true;
+    end("completed");
+    setTimeout(() => process.exit(0), 300);
+  },
+  async usagelimit() {
+    full = true;
+    const error = { message: "You've hit your usage limit", codexErrorInfo: "usageLimitExceeded" };
+    notify("error", { ...T, error, willRetry: false });
+    end("failed", error);
+  },
   crash: () => process.exit(3),
   async whoami() {
     const turn = { ...turnParams, input: undefined };
@@ -298,7 +310,32 @@ const threadOf = (id, p) => ({
   model: p.model ?? "fake-codex-1",
 });
 
+// Codex's rate-limit windows (account/rateLimits/read, codex-cli 0.153.2): unix seconds, minutes.
+let full = false;
+/** The windows read never answers (the app-server exits first). */
+let slowLimits = false;
+const NO_ANSWER = Symbol("no answer");
+const at = (iso) => Date.parse(iso) / 1000;
+const rateLimits = () => ({
+  rateLimits: {
+    limitId: "codex",
+    limitName: null,
+    primary: { usedPercent: full ? 100 : 62, windowDurationMins: 300, resetsAt: at("2026-11-21T14:20:00Z") },
+    secondary: { usedPercent: 12, windowDurationMins: 10080, resetsAt: at("2026-11-25T09:00:00Z") },
+    credits: null,
+    planType: "plus",
+    rateLimitReachedType: full ? "rate_limit_reached" : null,
+  },
+  rateLimitsByLimitId: null,
+});
+
 const METHODS = {
+  "account/rateLimits/read": () => {
+    if (slowLimits) return NO_ANSWER;
+    if (process.env.FAKE_CODEX_NO_LIMITS === "1")
+      throw { code: -32601, message: "unknown method account/rateLimits/read" };
+    return rateLimits();
+  },
   initialize: () => ({
     userAgent: "fake",
     codexHome: "/nowhere",
@@ -358,7 +395,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const handler = METHODS[m.method];
   if (!handler) return out({ id: m.id, error: { code: -32601, message: `unknown method ${m.method}` } });
   try {
-    out({ id: m.id, result: handler(m.params ?? {}) });
+    const result = handler(m.params ?? {});
+    if (result !== NO_ANSWER) out({ id: m.id, result });
   } catch (e) {
     out({ id: m.id, error: e });
   }

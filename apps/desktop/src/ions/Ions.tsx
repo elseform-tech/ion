@@ -2,6 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import { type ActivityInfo, EV, type IonInfo } from "@ion/schema";
 import { useCallback, useEffect, useState } from "react";
 import { useLive } from "../chats/live.js";
+import { useEvents } from "../events.js";
 import { NewProject, ProjectMenu } from "../chats/ProjectMenu.js";
 import { Star } from "@ion/design-system";
 import { Resizer } from "../chats/Resizer.js";
@@ -32,26 +33,11 @@ const IONS_CHANGE = new Set<string>([
 function useIons(client: IonClient): [IonInfo[], () => void] {
   const [ions, setIons] = useState<IonInfo[]>([]);
   const read = useCallback(() => void client.call("ions.list", {}).then(setIons, () => {}), [client]);
-  useEffect(() => {
-    read();
-    let stop: (() => void) | undefined;
-    let gone = false;
-    void client
-      .subscribe({ fromNow: true }, (e) => {
-        if (!gone && IONS_CHANGE.has(e.type)) read();
-      })
-      .then(
-        (s) => {
-          if (gone) s();
-          else stop = s;
-        },
-        () => {},
-      );
-    return () => {
-      gone = true;
-      stop?.();
-    };
-  }, [client, read]);
+  useEffect(read, [read]);
+  useEvents(
+    client,
+    useCallback((e) => IONS_CHANGE.has(e.type) && read(), [read]),
+  );
   return [ions, read];
 }
 

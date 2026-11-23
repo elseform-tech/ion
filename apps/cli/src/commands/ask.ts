@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { ApiCallError, type IonClient } from "@ion/client";
 import { ionPaths } from "@ion/config";
-import type { EffortLevel } from "@ion/schema";
+import { type EffortLevel, EV, type IonEvent } from "@ion/schema";
 import { reach } from "../daemon-control.js";
 import { fail, NOT_RUNNING, type Out } from "../output.js";
 import { createRenderer, type RunEnd } from "../render.js";
@@ -15,32 +15,85 @@ type AskOpts = {
   access?: string;
 };
 
+/** How long `ion ask` stays after a limit for ion's question about it. */
+const QUESTION_WAIT_MS = 10_000;
+
+/**
+ * The run `ion ask` shows: its own events, and ion's lines after a limit (they have no run). When ion goes on on
+ * another agent it follows that run, replaying what it already sent (its run starts just before ion's line).
+ */
+class Watched {
+  runId: string;
+  render = createRenderer();
+  private readonly others = new Map<string, IonEvent[]>();
+
+  constructor(runId: string) {
+    this.runId = runId;
+  }
+
+  /** Seen this run's first event: what comes before it is the chat's past (a subscription replays it). */
+  private live = false;
+
+  /** Whether to show this event now; another run's are kept, in case ion goes on with it. */
+  mine(e: IonEvent): boolean {
+    if (e.runId === this.runId) {
+      this.live = true;
+      return true;
+    }
+    if (!this.live) return false;
+    if (e.runId === null) return e.type === EV.chatHandoff;
+    this.others.set(e.runId, [...(this.others.get(e.runId) ?? []), e]);
+    return false;
+  }
+
+  /** ion went on: the newest other run is the one it started; its events so far come back to be shown. */
+  switch(): IonEvent[] {
+    const runId = [...this.others.keys()].at(-1);
+    if (!runId) return [];
+    this.runId = runId;
+    this.render = createRenderer();
+    return this.others.get(runId) ?? [];
+  }
+}
+
 /** Prints the run's events as they arrive and resolves when it finishes. */
 function follow(
   client: IonClient,
   started: { chatId: string; runId: string },
   json: boolean,
 ): Promise<RunEnd> {
-  const render = createRenderer();
+  const w = new Watched(started.runId);
   return new Promise((resolve) => {
     let done = false;
-    const lost = () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (end: RunEnd) => {
       if (done) return;
       done = true;
+      resolve(end);
+    };
+    const lost = () => {
+      if (done) return;
       process.stderr.write("\nLost the connection to ion. The run may have stopped.\n");
-      resolve({ status: "failed", code: 1 });
+      finish({ status: "failed", code: 1 });
+    };
+    const show = (e: IonEvent) => {
+      if (done) return;
+      if (json) process.stdout.write(`${JSON.stringify(e)}\n`);
+      const r = w.render(e);
+      if (!json && r.text) process.stdout.write(r.text);
+      if (r.end) finish(r.end);
+      if (r.follow) {
+        clearTimeout(timer);
+        for (const x of w.switch()) show(x);
+      }
+      // A limit: ion asks, waits or goes on right after; the run's output ends with that, or soon after.
+      const soon = r.soon;
+      if (soon) timer = setTimeout(() => finish(soon), QUESTION_WAIT_MS);
     };
     client.onClose(lost);
     client
       .subscribe({ chatId: started.chatId }, (e) => {
-        if (done || e.runId !== started.runId) return;
-        if (json) process.stdout.write(`${JSON.stringify(e)}\n`);
-        const r = render(e);
-        if (!json && r.text) process.stdout.write(r.text);
-        if (r.end) {
-          done = true;
-          resolve(r.end);
-        }
+        if (!done && w.mine(e)) show(e);
       })
       .catch(lost);
   });

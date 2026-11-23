@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
+import type { AdapterEvent, SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
 import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { getHarness, placeProbes } from "../adapters/registry.js";
@@ -32,7 +32,13 @@ export function sweepTmp(tmp: string = tmpdir()): void {
 }
 
 /** Where the runner's config is, where it works, and how this computer sandboxes (default: as it can). */
-export type RunnerOpts = { configFile: string; dataDir: string; sandbox?: SandboxKind };
+export type RunnerOpts = {
+  configFile: string;
+  dataDir: string;
+  sandbox?: SandboxKind;
+  /** Hears each event of a session with its agent's id (the daemon keeps its usage and limits: views/usage.ts). */
+  record?: (harness: string, e: AdapterEvent, startedAt: string) => void;
+};
 
 /**
  * The agent, model and effort a prompt runs on: ion's quick model at the effort you picked (`agent` overrides the
@@ -75,7 +81,8 @@ export function harnessRunner(
         signal,
         decide: async () => "deny",
       });
-      return await lastMessage(session, prompt, signal);
+      const startedAt = new Date().toISOString();
+      return await lastMessage(session, prompt, signal, (e) => o.record?.(id, e, startedAt));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -108,7 +115,12 @@ export function clearScratch(dataDir: string): void {
  * Sends the prompt and returns the session's last message (throws the agent's error when its run failed without one);
  * closes the session (also when the judge gives up).
  */
-async function lastMessage(session: Session, prompt: string, signal: AbortSignal): Promise<string> {
+async function lastMessage(
+  session: Session,
+  prompt: string,
+  signal: AbortSignal,
+  heard: (e: AdapterEvent) => void,
+): Promise<string> {
   const stop = () => void session.close().catch(() => {});
   if (signal.aborted) stop();
   signal.addEventListener("abort", stop, { once: true });
@@ -117,6 +129,7 @@ async function lastMessage(session: Session, prompt: string, signal: AbortSignal
     let last = "";
     let failed = "";
     for await (const e of session.events()) {
+      heard(e);
       if (e.type === EV.messageCompleted) last = String((e.data as { text: unknown }).text);
       if (e.type === EV.error) failed = String((e.data as { message?: unknown }).message ?? "");
     }
