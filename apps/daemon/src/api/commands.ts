@@ -333,7 +333,7 @@ export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs
 const signIns = new AgentSignIns({ refresh: (id) => harnessInfos.refresh(id) });
 
 /** ion is stopping: every sign-in it started is stopped (review of #35, 2026-11-23). */
-export const stopSignIns = (): void => signIns.stopAll();
+export const stopSignIns = (): Promise<void> => signIns.stopAll();
 
 /** An agent as the app lists it: how often its judge missed, and the sign-in ion is waiting on. */
 export const asListed = (h: HarnessInfo): HarnessInfo => ({

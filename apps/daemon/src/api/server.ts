@@ -373,7 +373,7 @@ function connectionsOf(
  */
 async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
   // A sign-in ion started never outlives it (review of #35, 2026-11-23).
-  stopSignIns();
+  await stopSignIns();
   ctx.ions.stop();
   ctx.handoffs?.stop();
   await ctx.oauth.close();

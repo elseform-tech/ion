@@ -9,6 +9,7 @@ const EVERY_MS = 2000;
 /** Resolves after `ms`, or at once when `stop` aborts. */
 const pause = (ms: number, stop: AbortSignal) =>
   new Promise<void>((r) => {
+    if (stop.aborted) return r();
     const t = setTimeout(r, ms);
     stop.addEventListener("abort", () => (clearTimeout(t), r()), { once: true });
   });

@@ -64,7 +64,14 @@ function fakeLogin(signal: AbortSignal): LoginRun {
     }, ms);
     signal.addEventListener("abort", () => (clearTimeout(t), resolve(false)), { once: true });
   });
-  return { prompt: Promise.resolve({ url: "https://example.test/fake-sign-in", code: "FAKE-0001" }), done };
+  return {
+    prompt: Promise.resolve({ url: "https://example.test/fake-sign-in", code: "FAKE-0001" }),
+    done,
+    // No process: done ends with its signal.
+    stopped: async () => {
+      await done;
+    },
+  };
 }
 
 /** Its sign-in state (in ION_FAKE_SIGNED_OUT), and its scripted login and logout. */

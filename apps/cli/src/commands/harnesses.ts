@@ -79,11 +79,13 @@ export function harnessesCommand(program: Command, out: () => Out) {
         const stop = new AbortController();
         const onInt = () => stop.abort();
         process.once("SIGINT", onInt);
-        // ion stopped meanwhile: its sign-in stopped with it.
-        c.onClose(() => fail("ion stopped"));
-        const h = await waitForSignIn(c, id, { stop: stop.signal }).finally(() =>
-          process.off("SIGINT", onInt),
-        );
+        // ion stopped meanwhile: its sign-in stopped with it. Not this command's own close once it's done.
+        let done = false;
+        c.onClose(() => done || fail("ion stopped"));
+        const h = await waitForSignIn(c, id, { stop: stop.signal }).finally(() => {
+          done = true;
+          process.off("SIGINT", onInt);
+        });
         print(out(), h ? status(h) : "Stopped", h ?? null);
       }),
     );

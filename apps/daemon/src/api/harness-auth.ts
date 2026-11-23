@@ -1,3 +1,4 @@
+import type { LoginRun } from "@ion/adapter-kit";
 import type { HarnessInfo, LoginPage, SignInResult, SignOutResult } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
 import { agentAsks, signInChanged, whileSigningOut } from "../runs/ready.js";
@@ -32,7 +33,7 @@ function plainly(e: unknown): UserError {
 }
 
 /** A sign-in ion started: how to stop it, its page once it has one, and the answer every caller gets. */
-type Going = { stop: AbortController; page?: LoginPage; started: Promise<SignInResult> };
+type Going = { stop: AbortController; page?: LoginPage; run?: LoginRun; started: Promise<SignInResult> };
 
 /**
  * Signing in and out of each coding agent from ion (the user, 2026-11-23): its own login and logout, which ion runs
@@ -78,6 +79,7 @@ export class AgentSignIns {
       throw new AskFirst(`Sign in to ${h.label}? Starting it clears any ${h.label} sign-in on this Mac.`);
     if (entry.stop.signal.aborted) throw new UserError("Sign-in stopped");
     const run = login.start!(entry.stop.signal);
+    entry.run = run;
     entry.page = await run.prompt;
     const limit = setTimeout(() => this.cancel(h.adapter.id), this.deps.limitMs ?? LIMIT_MS);
     limit.unref?.();
@@ -95,9 +97,11 @@ export class AgentSignIns {
     g?.stop.abort();
   }
 
-  /** ion is stopping: every sign-in it started stops with it. */
-  stopAll(): void {
+  /** ion is stopping: every sign-in it started stops with it, all of each one gone before this resolves. */
+  async stopAll(): Promise<void> {
+    const runs = [...this.going.values()].map((g) => g.run);
     for (const id of [...this.going.keys()]) this.cancel(id);
+    await Promise.all(runs.map((r) => r?.stopped()));
   }
 
   async logout(id: string, confirm: boolean, db: Db): Promise<SignOutResult> {

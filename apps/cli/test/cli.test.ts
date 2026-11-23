@@ -473,6 +473,21 @@ describe("ion cli", { timeout: 20_000 }, () => {
       }
     });
 
+    // Re-review of #35, 2026-11-23: a sign-in that finished still exited 1 with "ion stopped" (the CLI's own close
+    // of its connection read as ion stopping).
+    it("a finished sign-in exits cleanly with how it ended", async () => {
+      process.env.ION_FAKE_LOGIN_MS = "50";
+      try {
+        await setup();
+        expect((await ion("harnesses", "logout", "fake", "--yes")).out).toBe("Not signed in");
+        const r = await ion("harnesses", "login", "fake");
+        expect(r).toMatchObject({ code: 0, err: "" });
+        expect(r.out.split("\n").at(-1)).toBe("Signed in");
+      } finally {
+        delete process.env.ION_FAKE_LOGIN_MS;
+      }
+    }, 60_000);
+
     it("lists memory and says so for one it doesn't know", async () => {
       await setup();
       expect((await ion("memory", "ls", "-p", "app")).out).toBe("No memory");

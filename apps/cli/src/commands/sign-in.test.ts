@@ -52,4 +52,19 @@ describe("review of #35, 2026-11-23: ion harnesses login", () => {
       "Open: https://example.test/p\nCode: AB12-CD34",
     );
   });
+
+  // Re-review of #35, 2026-11-23: Ctrl-C during a read made the next wait sleep its whole length (an aborted signal's
+  // listener never fires).
+  it("Ctrl-C during a read doesn't wait out the pause", async () => {
+    const stop = new AbortController();
+    const call = vi.fn(async (cmd: string) => {
+      if (cmd !== "harnesses.list") return { ok: true };
+      stop.abort();
+      return [agent(true)];
+    });
+    const started = Date.now();
+    await waitForSignIn({ call } as never, "fake", { stop: stop.signal, everyMs: 60_000 });
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(call).toHaveBeenCalledWith("harness.cancelLogin", { id: "fake" });
+  }, 10_000);
 });

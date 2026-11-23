@@ -7,8 +7,11 @@ import { agentEnv } from "./run-env.js";
  */
 export type LoginPrompt = { url: string | null; code: string | null };
 
-/** An agent's own sign-in that ion started: what to show, and whether it ended signed in (exit code 0). */
-export type LoginRun = { prompt: Promise<LoginPrompt>; done: Promise<boolean> };
+/**
+ * An agent's own sign-in that ion started: what to show, whether it ended signed in (exit code 0), and stopping it
+ * with all it started (it resolves once all of it is gone: killed when it won't stop).
+ */
+export type LoginRun = { prompt: Promise<LoginPrompt>; done: Promise<boolean>; stopped(): Promise<void> };
 
 /** How you sign in to an agent: its own command, and whether ion can run it and show its page and code. */
 export type AgentLogin = {
@@ -114,10 +117,16 @@ export function startLogin(
     settle(loginPromptOf(seen));
     return ok;
   });
-  const stop = () => stopGroup(child.pid);
-  if (o.signal.aborted) stop();
-  else o.signal.addEventListener("abort", stop, { once: true });
-  return { prompt, done };
+  // The group's id stays the leader's pid after it exits: what it left running is stopped then too.
+  const pid = child.pid;
+  let stopping: Promise<void> | undefined;
+  const stopped = () => (stopping ??= stopGroup(pid));
+  child.on("exit", () => {
+    if (pid && signal(pid, 0)) void stopped();
+  });
+  if (o.signal.aborted) void stopped();
+  else o.signal.addEventListener("abort", () => void stopped(), { once: true });
+  return { prompt, done, stopped };
 }
 
 /** How long a stopped login's group has to end before it's killed. */
@@ -133,12 +142,21 @@ function signal(pid: number, s: NodeJS.Signals | 0): boolean {
   }
 }
 
-/** SIGTERM to a login's whole group, then SIGKILL if any of it is still there a little later. */
-function stopGroup(pid: number | undefined): void {
+/** Whether the group is gone within `ms` (checked every 100 ms). */
+async function goneWithin(pid: number, ms: number): Promise<boolean> {
+  for (let t = 0; t < ms && signal(pid, 0); t += 100) await new Promise((r) => setTimeout(r, 100));
+  return !signal(pid, 0);
+}
+
+/**
+ * SIGTERM to a login's whole group, then SIGKILL if any of it is still there a little later; resolves once it's gone
+ * (or a second after the SIGKILL). Its timers keep ion running until then (review of #35: ion stopping waits for it).
+ */
+async function stopGroup(pid: number | undefined): Promise<void> {
   if (!pid || !signal(pid, "SIGTERM")) return;
-  setTimeout(() => {
-    if (signal(pid, 0)) signal(pid, "SIGKILL");
-  }, KILL_AFTER_MS).unref();
+  if (await goneWithin(pid, KILL_AFTER_MS)) return;
+  signal(pid, "SIGKILL");
+  await goneWithin(pid, 1000);
 }
 
 /** Runs an agent's own logout without a shell; what it prints is never kept. Throws when it didn't succeed. */

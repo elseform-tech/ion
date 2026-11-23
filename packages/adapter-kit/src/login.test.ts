@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { loginPromptOf, runLogout, startLogin } from "./login.js";
 
 /** A stand-in login: Node printing what a real agent's login prints, then exiting with `code` after `ms`. */
+/** Whether a process is still there. */
+const aliveOf = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const script = (out: string, code = 0, ms = 50) => [
   "-e",
   `process.stdout.write(${JSON.stringify(out)}); setTimeout(() => process.exit(${code}), ${ms});`,
@@ -78,18 +88,30 @@ describe("an agent's own login", () => {
     const stop = new AbortController();
     const run = startLogin(process.execPath, ["-e", body], { signal: stop.signal });
     const pid = Number(new URL((await run.prompt).url!).searchParams.get("pid"));
-    const alive = () => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    expect(alive()).toBe(true);
+    expect(aliveOf(pid)).toBe(true);
     stop.abort();
     expect(await run.done).toBe(false);
-    for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
-    expect(alive()).toBe(false);
+    for (let i = 0; i < 50 && aliveOf(pid); i++) await new Promise((r) => setTimeout(r, 100));
+    expect(aliveOf(pid)).toBe(false);
+  }, 10_000);
+
+  // Re-review of #35, 2026-11-23: a login that ignored SIGTERM could outlive the daemon (the SIGKILL timer was unref'd,
+  // and nothing waited for it), and helpers a finished login left behind were never stopped.
+  it("a login that ignores SIGTERM is killed, and stopping it waits until it's gone", async () => {
+    const body = `process.on("SIGTERM", () => {}); process.stdout.write("https://example.test/t\\n"); setInterval(() => {}, 1000);`;
+    const run = startLogin(process.execPath, ["-e", body], { signal: new AbortController().signal });
+    await run.prompt;
+    await run.stopped();
+    expect(await run.done).toBe(false);
+  }, 15_000);
+
+  it("what a finished login left running is stopped too", async () => {
+    const helper = `require("child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })`;
+    const body = `const c = ${helper}; process.stdout.write("https://example.test/p?pid=" + c.pid + "\\n"); setTimeout(() => process.exit(0), 200);`;
+    const run = startLogin(process.execPath, ["-e", body], { signal: new AbortController().signal });
+    const pid = Number(new URL((await run.prompt).url!).searchParams.get("pid"));
+    expect(await run.done).toBe(true);
+    for (let i = 0; i < 50 && aliveOf(pid); i++) await new Promise((r) => setTimeout(r, 100));
+    expect(aliveOf(pid)).toBe(false);
   }, 10_000);
 });
