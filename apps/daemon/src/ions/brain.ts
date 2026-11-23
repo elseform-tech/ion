@@ -1,6 +1,7 @@
 import { loadUserConfig } from "@ion/config";
 import { clockOf, type EffortLevel as Effort, type HarnessInfo } from "@ion/schema";
-import { agentOrder, defaultAgent, getHarness } from "../adapters/registry.js";
+import { agentOrder, byPreference, defaultAgent, getHarness } from "../adapters/registry.js";
+import { noAgentLine } from "../runs/agent-steps.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -77,6 +78,19 @@ export async function allLimited(d: BrainDeps): Promise<string | null> {
   if (!ready.length || ready.some((id) => !marks[id]?.limitedUntil || marks[id]?.limitGuessed)) return null;
   const first = ready.reduce((a, b) => (marks[b]!.limitedUntil! < marks[a]!.limitedUntil! ? b : a));
   return limitedLine(getHarness(first)?.label ?? first, clockOf(marks[first]!.limitedUntil!, new Date()));
+}
+
+/**
+ * With no agent ready at all, what to do in one line, by your agent order (Plan 21 audit, 2026-11-23: ion chief said
+ * "I couldn't reach my agent; try again" with none installed, and trying again couldn't help); null otherwise.
+ */
+export async function noneReady(d: BrainDeps): Promise<string | null> {
+  const all = (await d.agents?.().catch(() => [])) ?? [];
+  const ids = byPreference(
+    all.map((h) => h.id),
+    orderOf(d),
+  );
+  return noAgentLine(ids.map((id) => all.find((h) => h.id === id)!));
 }
 
 /**

@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "@ion/config";
 import { describe, expect, it } from "vitest";
 import { git } from "./git.js";
-import { createProject, ensureDefaultProject } from "./projects.js";
+import { addFolder, createProject, ensureDefaultProject } from "./projects.js";
 
 const withRoot = () => {
   const root = join(mkdtempSync(join(tmpdir(), "ion-root-")), "projects");
@@ -58,5 +58,50 @@ describe("ensureDefaultProject", () => {
     const twice = await ensureDefaultProject(once);
     expect(twice.projects).toHaveLength(1);
     expect(twice.projects[0]).toMatchObject({ id: "default", shareWithIon: false });
+  });
+});
+
+// Plan 21 audit, 2026-11-23: `ion projects add ~/tip-calc` said "Not a git repository" and stopped, though `git init`
+// was all it needed; the app couldn't add a folder at all. A folder that isn't a git repo now gets ion's git setup: a
+// new repo with your files in its first commit (a chat's worktree starts from it), and ion says so.
+describe("addFolder", () => {
+  const plain = () => {
+    const p = join(mkdtempSync(join(tmpdir(), "ion-plain-")), "tip-calc");
+    mkdirSync(join(p, "src"), { recursive: true });
+    writeFileSync(join(p, "README.md"), "tip calculator\n");
+    writeFileSync(join(p, "src", "tip.js"), "export const tip = (x) => x * 0.2;\n");
+    return p;
+  };
+
+  it("picking a non-git folder sets up git and says so", async () => {
+    const path = plain();
+    const { config, gitSetUp } = await addFolder(withRoot(), path);
+    expect(gitSetUp).toBe(true);
+    expect(config.projects).toEqual([{ id: "tip-calc", path, starred: false }]);
+    const files = (await git(["ls-tree", "-r", "--name-only", "HEAD"], path)).stdout.trim().split("\n");
+    expect(files.sort()).toEqual(["README.md", "src/tip.js"]);
+  });
+
+  it("adds a git repo as it is", async () => {
+    const path = plain();
+    await git(["init", "-q", "-b", "main"], path);
+    const { gitSetUp } = await addFolder(withRoot(), path);
+    expect(gitSetUp).toBe(false);
+    expect((await git(["rev-parse", "--verify", "HEAD"], path)).code).not.toBe(0);
+  });
+
+  // Plan 21 Review Focus 4: a home-folder-sized folder works or says plainly why not; it never hangs.
+  it("refuses your home folder and one too big to set up, touching nothing", async () => {
+    await expect(addFolder(withRoot(), homedir())).rejects.toThrow(
+      "Pick a project folder, not your home folder",
+    );
+    const path = plain();
+    await expect(addFolder(withRoot(), path, { maxFiles: 1 })).rejects.toThrow(
+      "Too many files to set up git here (over 1). Pick a project folder, or run git init in it yourself",
+    );
+    expect(existsSync(join(path, ".git"))).toBe(false);
+    await expect(addFolder(withRoot(), join(path, "nope"))).rejects.toThrow(
+      `No folder at ${join(path, "nope")}`,
+    );
   });
 });

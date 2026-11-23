@@ -288,10 +288,10 @@ describe("daemon api", () => {
     expect(readFileSync(join(home, "config.toml"), "utf8")).toContain(p);
   });
 
-  it("rejects a folder that isn't a git repo", async () => {
-    await expect(client.call("projects.add", { path: "/nope" })).rejects.toThrow(
-      "Not a git repository: /nope",
-    );
+  // Plan 21 audit, 2026-11-23: a folder that isn't a git repo gets ion's git setup now (start.test.ts); one that isn't
+  // there is still refused, plainly.
+  it("rejects a folder that isn't there", async () => {
+    await expect(client.call("projects.add", { path: "/nope" })).rejects.toThrow("No folder at /nope");
   });
 
   it("answers unknown commands with unknown_command", async () => {

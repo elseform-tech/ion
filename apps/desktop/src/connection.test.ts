@@ -53,4 +53,41 @@ describe("IonConnection", () => {
     expect(states).toContain("down");
     c.stop();
   });
+
+  // Plan 21 audit, 2026-11-23: the app opened on "ion isn't running. Start it with: ion daemon start", a terminal
+  // command a beginner doesn't know. The app starts ion itself where it can (once), and says so while it waits.
+  it("starts ion itself once when it isn't running, and says Starting while it waits", async () => {
+    let info: { port: number; token: string } | null = null;
+    const start = vi.fn(async () => {
+      setTimeout(() => {
+        info = { port: 4100, token: "t" };
+      }, 300);
+      return true;
+    });
+    const c = new IonConnection({
+      info: async () => info,
+      connect: async () => fakeClient(),
+      start,
+      retryMs: 5,
+    });
+    c.start();
+    await vi.waitFor(() => expect(c.state).toBe("starting"));
+    await vi.waitFor(() => expect(c.state).toBe("up"));
+    expect(start).toHaveBeenCalledTimes(1);
+    c.stop();
+  });
+
+  it("is down, with the command, when ion couldn't be started", async () => {
+    const c = new IonConnection({
+      info: async () => null,
+      connect: async () => fakeClient(),
+      start: async () => false,
+      retryMs: 5,
+    });
+    c.start();
+    await vi.waitFor(() => expect(c.state).toBe("down"));
+    await tick();
+    expect(c.state).toBe("down");
+    c.stop();
+  });
 });

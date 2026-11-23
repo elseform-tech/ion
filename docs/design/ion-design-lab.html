@@ -1126,6 +1126,11 @@ button.arow:hover{background:var(--hover)}
 .mtext{padding:12px 16px;font-size:13.5px;line-height:1.55;overflow-wrap:anywhere}.mtext>.md>:first-child{margin-top:0}.mtext>.md>:last-child{margin-bottom:0}
 .srow .when{color:var(--faint);font-size:12px;white-space:nowrap}.srow.ask .g{font-size:13px}.mfold{width:100%;border:0;background:transparent;font:inherit;color:var(--muted);cursor:pointer;text-align:left}.mfold:hover{color:var(--ink)}.mfold .lucide{width:14px;height:14px}
 .head .todos{width:auto;padding:0 8px;gap:5px;display:inline-flex;align-items:center}.head .todos .ct{font-size:12px;font-variant-numeric:tabular-nums}
+/* first run (Plan 21): no projects and no chats yet; your agents, pick a folder, ask: three steps on one screen */
+.first{display:grid;place-items:center;padding:20px 28px 56px;overflow:auto}.first .inner{width:100%;max-width:640px;display:grid;gap:22px}.first h3{margin:0;font-family:var(--display);font-weight:600;font-size:24px;letter-spacing:-.02em;text-align:center}
+.fstep{display:grid;gap:8px}.fh2{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--muted);min-height:28px}.fh2 .n{width:18px;height:18px;border-radius:50%;background:var(--hover);display:grid;place-items:center;font-size:11px;color:var(--ink)}.fh2 .sp{flex:1}
+.fagents{border-radius:12px;box-shadow:inset 0 0 0 1px var(--line)}.farow{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:8px 12px;font-size:13.5px;min-height:40px;box-sizing:border-box}.farow+.farow{border-top:1px solid var(--line)}.farow .nm{flex:0 0 104px;font-weight:500}.farow .ok{color:var(--good);display:inline-flex;align-items:center;gap:6px;font-size:13px}.farow .g{color:var(--muted);font-size:13px}.farow code{font:12.5px var(--mono);color:var(--ink);background:var(--hover);padding:2px 6px;border-radius:6px;overflow-wrap:anywhere}.farow .sp{flex:1}.farow .hsign{flex-basis:100%;padding-left:112px}
+.ffolder{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.ffolder .fin{flex:1;min-width:200px}.ffolder .perr{flex-basis:100%;font-size:12.5px;color:var(--del-ink)}.fex{display:flex;flex-wrap:wrap;gap:6px}.fex .chip{cursor:pointer;color:var(--muted)}.fex .chip:hover{color:var(--ink)}.fwait{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px}.fwait .lucide{width:14px;height:14px}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1243,6 +1248,7 @@ details a{color:var(--accent)}
     <canvas id="mark" aria-label="ion mark"></canvas>
     <span class="brand">i<i>o</i>n</span>
     <nav class="switch" id="switch" aria-label="Screens">
+      <button type="button" data-go="first"><i data-lucide="sparkles"></i>First run</button>
       <button type="button" data-go="new"><i data-lucide="square-pen"></i>New chat</button>
       <button type="button" data-go="code"><i data-lucide="code-xml"></i>Coding chat</button>
       <button type="button" data-go="chat"><i data-lucide="message-square"></i>Plain chat</button>
@@ -1286,6 +1292,44 @@ details a{color:var(--accent)}
             <div id="chatGrps"></div>
           </div>
         </aside>
+
+        <!-- Plan 21 (the user, 2026-11-22: "easier to use even for beginners"): the first run. Only with no projects and no
+             chats (an existing user never sees it): your agents (ready, Install: or Sign in: with its command, Check
+             again), pick a folder (one that isn't a git repo gets ion's git setup, said in one line), then ask, with three
+             first messages. With no agent ready the box waits and says why. -->
+        <section class="chat" data-screen="first" style="grid-template-rows:48px minmax(0,1fr)" hidden>
+          <div class="head"><span class="sp"></span></div>
+          <div class="first"><div class="inner">
+            <h3>Start here</h3>
+            <div class="fstep">
+              <div class="fh2"><span class="n">1</span>Your agents<span class="sp"></span><button class="ib" type="button" title="Check again" aria-label="Check again"><i data-lucide="rotate-cw"></i></button></div>
+              <div class="fagents">
+                <div class="farow"><span class="nm">opencode</span><span class="g">Install:</span><code>npm i -g opencode-ai</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>
+                <div class="farow"><span class="nm">Grok Build</span><span class="g">Sign in:</span><code>grok login</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button><span class="sp"></span><button class="btn" type="button">Sign in</button></div>
+                <div class="farow"><span class="nm">Codex</span><span class="g">Install:</span><code>npm i -g @openai/codex</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>
+                <div class="farow"><span class="nm">Claude Code</span><span class="ok"><i data-lucide="circle-check"></i>Ready</span></div>
+              </div>
+            </div>
+            <div class="fstep">
+              <div class="fh2"><span class="n">2</span>Pick a folder</div>
+              <div class="ffolder"><button class="btn" type="button"><i data-lucide="folder-open"></i>Pick a folder</button><span class="chip"><i data-lucide="folder"></i>tip-calc</span></div>
+              <div class="quiet"><i data-lucide="info"></i>Set up git here: your files are its first commit</div>
+            </div>
+            <div class="fstep">
+              <div class="fh2"><span class="n">3</span>Ask</div>
+              <div class="cbox big">
+                <span class="ph">Ask anything, or describe a change…</span>
+                <div class="bar">
+                  <button class="pill" type="button"><i data-lucide="folder"></i>tip-calc</button>
+                  <button class="pill bpill" type="button" data-brain="new" aria-haspopup="dialog" title="Claude Code · Opus 5.5 · Medium effort"></button>
+                  <span class="sp"></span>
+                  <button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>
+                </div>
+              </div>
+              <div class="fex"><button class="chip" type="button">What does this project do?</button><button class="chip" type="button">Find a small bug and fix it</button><button class="chip" type="button">Add a test for the code that has none</button></div>
+            </div>
+          </div></div>
+        </section>
 
         <!-- new chat -->
         <section class="chat" data-screen="new" style="grid-template-rows:48px minmax(0,1fr)">
@@ -3523,7 +3567,7 @@ function setProj(p){
 /* one project context for the whole app: the Chats and Ions switchers share it */
 const closeMenus=()=>document.querySelectorAll('.pmenu').forEach(m=>{ m.hidden=true; document.querySelector(`[data-pm="${m.id}"]`)?.setAttribute('aria-expanded','false'); });
 function renderPMenu(m,q=''){
-  if(!m.querySelector('.pmi')){ m.innerHTML=`<div class="pmi"><i data-lucide="search"></i><input type="text" placeholder="Find a project" aria-label="Find a project" autocomplete="off"></div><div class="pml"></div>`; icons(m);
+  if(!m.querySelector('.pmi')){ m.innerHTML=`<div class="pmi"><i data-lucide="search"></i><input type="text" placeholder="Find a project" aria-label="Find a project" autocomplete="off"></div><div class="pml"></div><button type="button" class="pnew"><i data-lucide="folder-plus"></i>New project</button><button type="button" class="pnew"><i data-lucide="folder-open"></i>Add folder</button>`; icons(m);
     const inp=m.querySelector('input'); inp.addEventListener('input',()=>renderPMenu(m,inp.value)); inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const b=m.querySelector('.pml [data-setproj]'); if(b) b.click(); } }); }
   const ql=q.trim().toLowerCase(), list=[...PROJECTS].sort((a,b)=>STARRED.has(b)-STARRED.has(a)).filter(p=>!ql||p.includes(ql));
   m.querySelector('.pml').innerHTML=(ql?'':`<button type="button" data-setproj="*" class="${curProj==='*'?'on':''}"><i data-lucide="layers"></i>All projects${curProj==='*'?'<i data-lucide="check" class="ck"></i>':''}</button>`)+
@@ -3855,7 +3899,7 @@ document.addEventListener('click',e=>{
 });
 
 /* navigation */
-const SCREEN_MODE={new:'chats',code:'chats',chat:'chats',ask:'chats',wary:'chats',start:'chats',byusage:'chats',queued:'chats',library:'chats',ions:'ions',settings:'settings'};
+const SCREEN_MODE={first:'chats',new:'chats',code:'chats',chat:'chats',ask:'chats',wary:'chats',start:'chats',byusage:'chats',queued:'chats',library:'chats',ions:'ions',settings:'settings'};
 function go(id){
   if(id==='start'&&curScreen!=='start') startFrom=Date.now(); curScreen=id;
   const mode=SCREEN_MODE[id]; railMode=mode;

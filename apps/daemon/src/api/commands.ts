@@ -13,14 +13,7 @@ import type { AuthStatus } from "@ion/adapter-kit";
 import type { Dreams } from "../scheduler/index.js";
 import type { MemoryFiles } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
-import {
-  addProject,
-  loadUserConfig,
-  removeProject,
-  renameProject,
-  saveUserConfig,
-  setProjectStarred,
-} from "@ion/config";
+import { loadUserConfig, removeProject, renameProject, saveUserConfig, setProjectStarred } from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
 import { decisionsView } from "../views/decisions.js";
@@ -41,6 +34,8 @@ import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
 import { changeConfig, settingsHandlers } from "./settings.js";
 import { workspaceHandlers } from "./workspace.js";
+import { type ListOpts, startHandlers } from "./start.js";
+import { noAgentLine } from "../runs/agent-steps.js";
 import { routineHandlers } from "./routines.js";
 import { queueHandlers } from "./queue.js";
 import { memoryHandlers, todoHandlers } from "./memory.js";
@@ -92,7 +87,8 @@ async function askOn(a: Commands["ask"]["args"], ctx: Ctx) {
   const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
   const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
   const harness = defaultAgent(ready, own, orderIn(ctx.configFile));
-  if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
+  // Plan 21 audit, 2026-11-23: "No agent is signed in. See Settings → Agents." to someone with none installed.
+  if (!harness) throw new UserError(noAgentLine(await listedAgents(ctx.configFile)) ?? "No agent is ready");
   return ctx.runs.ask({ ...a, harness });
 }
 
@@ -157,16 +153,8 @@ export const handlers: Handlers = {
   ...toolsImportHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
-  // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
-  // In your agent order (Settings → Agents): the app's default agent is the first ready one.
-  "harnesses.list": async (_a, ctx) => {
-    const listed = byPreference(listedHarnessIds(), orderIn(ctx.configFile));
-    const infos = await harnessInfos.list();
-    return listed
-      .map((id) => infos.find((h) => h.id === id))
-      .filter((h) => !!h)
-      .map(asListed);
-  },
+  "harnesses.list": (a, ctx) => listedAgents(ctx.configFile, { fresh: a.fresh === true }),
+  ...startHandlers({ agents: listedAgents, ids: listedIds }),
   // The user, 2026-11-23: sign in and out of each agent from ion (its own login and logout).
   "harness.login": (a) => signIns.login(String(a.id ?? ""), a.confirm === true),
   "harness.logout": (a, ctx) => signIns.logout(String(a.id ?? ""), a.confirm === true, ctx.db),
@@ -266,18 +254,6 @@ export const handlers: Handlers = {
     return { ok: true as const };
   },
   "suggestions.list": (_a, ctx) => ctx.suggestions.list(),
-  "projects.add": (a, ctx) => {
-    const { config, error } = loadUserConfig(ctx.configFile);
-    if (error) throw new UserError(`Fix your config first. ${error}`);
-    let next: typeof config;
-    try {
-      next = addProject(config, String(a.path ?? ""));
-    } catch (e) {
-      throw new UserError((e as Error).message);
-    }
-    saveUserConfig(ctx.configFile, next);
-    return next.projects[next.projects.length - 1]!;
-  },
   "project.create": async (a, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
@@ -348,6 +324,26 @@ export const asListed = (h: HarnessInfo): HarnessInfo => ({
   ...signIns.pageOf(h.id),
 });
 
+/** The ids of the agents the app lists, in your agent order. */
+function listedIds(configFile: string): string[] {
+  return byPreference(listedHarnessIds(), orderIn(configFile));
+}
+
+/**
+ * The agents the app lists, in your agent order (the app's default agent is the first ready one): the fake agent only
+ * in debug mode. `fresh`: each read again now (Check again: you just installed or signed in to one); `waitMs`: what's
+ * known, waiting that long at most for a fresh daemon's first reads (bare `ion` can't wait on a slow agent).
+ */
+async function listedAgents(configFile: string, o: ListOpts = {}): Promise<HarnessInfo[]> {
+  const listed = listedIds(configFile);
+  if (o.fresh) await Promise.all(listed.map((id) => harnessInfos.refresh(id)));
+  const infos = o.waitMs && !o.fresh ? await harnessInfos.settled(o.waitMs) : await harnessInfos.list();
+  return listed
+    .map((id) => infos.find((h) => h.id === id))
+    .filter((h) => !!h)
+    .map(asListed);
+}
+
 /** A harness, whether it's ready, and (only when it is) its own model list. */
 
 async function harnessInfo(id: string): Promise<HarnessInfo> {
@@ -360,6 +356,7 @@ async function harnessInfo(id: string): Promise<HarnessInfo> {
     signedIn: false,
     models: [],
     defaultModel: null,
+    ...(h.install ? { install: h.install } : {}),
   }));
 }
 
@@ -395,13 +392,15 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     ...ownRulesOf(id),
     ...billingOf(auth),
     ...(auth?.unknown ? { signInUnknown: true as const } : {}),
-    ...signInOf(h.adapter.auth),
+    ...signInOf(h),
   };
 }
 
-/** How you sign in and out: its own commands, and whether ion runs them. */
-function signInOf(auth: HarnessEntry["adapter"]["auth"]): Pick<HarnessInfo, "signIn" | "signOut"> {
+/** How you install it, and sign in and out: its own commands, and whether ion runs them. */
+function signInOf(h: HarnessEntry): Pick<HarnessInfo, "signIn" | "signOut" | "install"> {
+  const auth = h.adapter.auth;
   return {
+    ...(h.install ? { install: h.install } : {}),
     signIn: {
       command: auth.login.command,
       inApp: !!auth.login.start,

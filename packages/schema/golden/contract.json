@@ -115,6 +115,7 @@
     "todo.add",
     "todo.done",
     "harnesses.list",
+    "start.status",
     "harness.login",
     "harness.logout",
     "harness.cancelLogin",

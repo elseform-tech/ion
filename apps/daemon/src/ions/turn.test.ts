@@ -561,10 +561,11 @@ describe("an ion's turn", () => {
     expect(onIon("storefront").filter((e: IonEvent) => e.type === EV.ionSession)).toHaveLength(1);
   }, 10_000);
 
-  // Review Focus 4: nothing hangs on "Thinking".
+  // Review Focus 4: nothing hangs on "Thinking". Plan 21 audit, 2026-11-23: the line was "I couldn't reach my agent;
+  // try again", which trying again can't fix; it says what to do instead.
   it("an agent that isn't signed in gives one plain line", async () => {
     signedIn = false;
-    const none = { reply: NO_AGENT, ionLine: "no-agent", threads: [] };
+    const none = { reply: "No agent is signed in. Sign in to Fake", ionLine: "no-agent", threads: [] };
     expect(await turns().turn("chief", "hello")).toEqual(none);
     expect(await turns().turn("storefront", "hello")).toEqual(none);
   });

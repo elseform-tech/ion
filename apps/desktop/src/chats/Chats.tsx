@@ -9,6 +9,9 @@ import { QuestionBar } from "./QuestionBar.js";
 import { Resizer } from "./Resizer.js";
 import { Sidebar } from "./Sidebar.js";
 import { useLive } from "./live.js";
+import { FirstRun } from "../start/FirstRun.js";
+import { lastProject } from "../start/steps.js";
+import { FirstAnswer } from "../start/FirstAnswer.js";
 import type { Item } from "./timeline.js";
 
 type Question = Extract<Item, { kind: "question" }>;
@@ -42,6 +45,11 @@ function sidebarActions(
       client.call("project.create", { name }).then((made) => {
         onProjects();
         return made.id;
+      }),
+    onAddFolder: (path: string) =>
+      client.call("projects.add", { path }).then((added) => {
+        onProjects();
+        return added;
       }),
     onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
     onRemember: (chatId: string, on: boolean) => act(() => client.call("chat.remember", { chatId, on })),
@@ -93,12 +101,15 @@ function OpenChat({
   harnesses,
   onBrainOpen,
   panel,
+  only,
 }: {
   client: IonClient;
   chat: ChatInfo;
   harnesses: HarnessInfo[];
   onBrainOpen: () => void;
   panel: Panel;
+  /** Your only chat so far: after its first answer, one line points to what ion remembers. */
+  only: boolean;
 }) {
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
@@ -113,6 +124,7 @@ function OpenChat({
           <ChatView timeline={t} onFile={hasWorktree ? panel.show : undefined} />
           <div className="foot">
             <div className="fcol">
+              {only && !t.running && chat.lastRunStatus === "done" && <FirstAnswer client={client} />}
               {open && <QuestionBar key={open.needId} client={client} question={open} />}
               <Composer
                 client={client}
@@ -172,15 +184,21 @@ const projectOptions = (projects: ProjectInfo[]) => [
   ...projects.filter((p) => p.id !== "default").map((p) => ({ id: p.id, name: p.name ?? p.id })),
 ];
 
-/** A new chat: which project it's in (ion's `default` unless you pick one), then the message box. */
+/**
+ * A new chat: which project it's in (the one you used last until you pick one: Plan 21 audit, 2026-11-23), then the
+ * message box.
+ */
 function NewChat(props: {
   client: IonClient;
   projects: ProjectInfo[];
+  chats: ChatInfo[];
   harnesses: HarnessInfo[];
   onSent: (chatId: string) => void;
   onBrainOpen: () => void;
+  onCheck: () => Promise<unknown>;
 }) {
-  const [projectId, setProjectId] = useState<string>("default");
+  const [picked, setProjectId] = useState<string | null>(null);
+  const projectId = picked ?? lastProject(props.chats, props.projects);
   const byUsage = useByUsage(props.client);
   // Your first message, shown at once while ion makes the chat (ion can take a moment).
   const [sending, setSending] = useState<string | null>(null);
@@ -211,6 +229,7 @@ function NewChat(props: {
             onSent={props.onSent}
             byUsage={byUsage}
             noMemory={noMemory}
+            onCheck={props.onCheck}
           />
         </div>
       </div>
@@ -218,7 +237,59 @@ function NewChat(props: {
   );
 }
 
-/** The Chats screen: the sidebar, and the open chat or a new one. */
+/** No chat open: the first run's three steps (the first time), else a new chat. */
+function Fresh(p: {
+  client: IonClient;
+  live: ReturnType<typeof useLive>;
+  first: boolean;
+  onSent: (chatId: string) => void;
+}) {
+  const { client, live } = p;
+  if (p.first)
+    return (
+      <FirstRun
+        client={client}
+        harnesses={live.harnesses}
+        onCheck={live.checkHarnesses}
+        onReload={live.refreshHarnesses}
+        onSent={p.onSent}
+      />
+    );
+  return (
+    <NewChat
+      client={client}
+      projects={live.projects}
+      chats={live.chats}
+      harnesses={live.harnesses}
+      onBrainOpen={live.refreshHarnesses}
+      onCheck={live.checkHarnesses}
+      onSent={p.onSent}
+    />
+  );
+}
+
+/**
+ * Whether this is a first run (Plan 21: no projects and no chats), asked once when the screen opens and kept until
+ * your first message: adding a folder on the way doesn't end it.
+ */
+function useFirstRun(client: IonClient, onEnd: () => void): [boolean, () => void] {
+  const [first, setFirst] = useState(false);
+  useEffect(() => {
+    void client.call("start.status", {}).then(
+      (s) => setFirst(s?.firstRun === true),
+      () => {},
+    );
+  }, [client]);
+  // Your first message ends it; the folder you added shows in the sidebar.
+  const end = () => {
+    if (!first) return;
+    setFirst(false);
+    onEnd();
+  };
+  return [first, end];
+}
+
+/** The Chats screen: the sidebar, and the open chat or a new one (the first run's three steps, the first time). */
 export function Chats({
   client,
   openId,
@@ -231,8 +302,13 @@ export function Chats({
 }) {
   const live = useLive(client);
   const panel = usePanel();
+  const [first, endFirst] = useFirstRun(client, live.refreshProjects);
 
   const chat = live.chats.find((c) => c.chatId === openId);
+  const sent = (chatId: string) => {
+    endFirst();
+    setOpenId(chatId);
+  };
   return (
     <>
       <aside className="side" aria-label="Chats">
@@ -256,15 +332,10 @@ export function Chats({
             harnesses={live.harnesses}
             onBrainOpen={live.refreshHarnesses}
             panel={panel}
+            only={live.chats.filter((c) => c.by !== "ion").length === 1}
           />
         ) : (
-          <NewChat
-            client={client}
-            projects={live.projects}
-            harnesses={live.harnesses}
-            onBrainOpen={live.refreshHarnesses}
-            onSent={setOpenId}
-          />
+          <Fresh client={client} live={live} first={first} onSent={sent} />
         )}
       </main>
     </>

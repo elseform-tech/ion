@@ -35,6 +35,21 @@ number below (`[03]` = `p21-t1-03-*.png`).
 | CLI, opencode (quota out) | **No way to read it.** `ask` exits 1 with a question; `ion answer <id> 1` says "Answered"; the chat then finishes on Grok, but no command prints its answer (`ion chats <id>` fails with "too many arguments"). | 9 s to the question | none | 4, then a dead end |
 | CLI, no agent | **Never.** "No agent is signed in. See Settings → Agents." The agents aren't installed (not "not signed in"), and the CLI sends you to the app. | none | none | 4, then a dead end |
 
+## After Task 2 (2026-11-23)
+
+The same fresh homes and PATHs, built from Task 2. Screenshots `p21-t2-*.png`. The app ran in a browser (Vite), which
+can't start ion itself, so `ion daemon start` still counts as one command there; the desktop app (Tauri, debug build)
+started the daemon itself in 7 s from a Finder-like PATH (`/usr/bin:/bin`), through your login shell.
+
+| Path | First finished answer | Time | Clicks | Commands |
+|---|---|---|---|---|
+| App, Grok Build, your own folder (not a git repo) | Yes, about the folder: "tip-calc is a tiny tip calculator…" | 91 s (35 s of work) | 3 (folder path + Enter, a first message, Send) | 1 in a browser, 0 in the app (was 102 s / 5 / 4) |
+| App, opencode (free quota still out) | ion's question, "opencode hit its limit. No other agent is free." with Wait; no bare error | — | 3 | 1 |
+| App, no agent | Never, but every screen says what to do: the first run lists each agent's install command; ion chief says "No agent is installed. Install opencode: npm i -g opencode-ai" | — | — | 1 |
+| CLI, no agent | `ion` prints the first steps with each install command; `ion ask` says "No agent is installed. Install opencode: npm i -g opencode-ai" | — | — | 3 |
+| CLI, Grok, a question | `ion answer n3968d9 2` prints "Answered", then the chat's reply and "Done · 15.8s" | — | — | no dead end |
+| Existing user (a copied home with chats) | No first run; the new chat is in `tip-calc`, the project used last | — | — | — |
+
 ## Each path, screen by screen
 
 ### Opening ion (every path)

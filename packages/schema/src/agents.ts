@@ -40,7 +40,27 @@ export type HarnessInfo = {
   signOut?: { command: string; inApp: boolean };
   /** Its sign-in ion started and waits on: the page to open and the code to confirm there, nothing else it printed. */
   signingIn?: LoginPage;
+  /** The command that installs it (Plan 21: a beginner without it is told how). */
+  install?: string;
 };
+
+/** One agent on the first run: ready, or the command that gets it there (install it, or sign in). */
+export type AgentStep = {
+  id: string;
+  label: string;
+  /** `checking`: ion is still reading it (a fresh start). */
+  state: "ready" | "install" | "signIn" | "checking";
+  /** The command to type: its install, or its sign-in. */
+  command?: string;
+  /** ion can run its sign-in itself (Settings → Agents' Sign in). */
+  inApp?: boolean;
+};
+
+/**
+ * `start.status`: your agents, your own projects (not ion's `default`) and your chats (archived too). `firstRun`: none
+ * of either, so the app opens on its first-run screen and bare `ion` prints the first steps.
+ */
+export type StartStatus = { agents: AgentStep[]; projects: number; chats: number; firstRun: boolean };
 
 /** An agent's sign-in page and the code to confirm there (either may be missing). */
 export type LoginPage = { url: string | null; code: string | null };
@@ -54,6 +74,7 @@ export type SignOutResult = { kind: "done"; signedIn: boolean } | { kind: "comma
 /** The agents' commands, in the contract's order: the list, and signing in and out (the user, 2026-11-23). */
 export const AGENT_COMMANDS = [
   "harnesses.list",
+  "start.status",
   "harness.login",
   "harness.logout",
   "harness.cancelLogin",
@@ -61,7 +82,10 @@ export const AGENT_COMMANDS = [
 
 /** The coding agents: each one's state, and signing in and out of it from ion (the user, 2026-11-23). */
 export type AgentCommands = {
-  "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
+  /** `fresh`: each agent is read again now (Check again), not answered from what ion read a minute ago. */
+  "harnesses.list": { args: { fresh?: boolean }; result: HarnessInfo[] };
+  /** What a first run needs (Plan 21): each agent's state and its one-line fix, and how much you have in ion. */
+  "start.status": { args: { fresh?: boolean }; result: StartStatus };
   /**
    * Starts an agent's own sign-in where it needs no terminal (its page and code), else gives its command. Refused while
    * it's signed in or the agent isn't installed; one whose sign-in clears the one it has (`signIn.clears`) needs

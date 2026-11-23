@@ -138,10 +138,57 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect((await ion("projects", "ls")).out).toBe(`storefront  ${p}`);
   });
 
-  it("rejects a folder that isn't a git repo, with exit 1", async () => {
+  it("rejects a folder that isn't there, with exit 1", async () => {
     await ion("daemon", "start");
     const r = await ion("projects", "add", "/nope");
-    expect(r).toMatchObject({ code: 1, err: "Not a git repository: /nope" });
+    expect(r).toMatchObject({ code: 1, err: "No folder at /nope" });
+  });
+
+  // Plan 21 audit, 2026-11-23: `ion projects add ~/tip-calc` said "Not a git repository" and exited 1, though `git
+  // init` was all it needed. ion sets up git itself and says so in one line.
+  it("adds a folder that isn't a git repo: ion sets up git and says so", async () => {
+    await ion("daemon", "start");
+    const p = join(mkdtempSync(join(tmpdir(), "ion-plain-")), "tip-calc");
+    mkdirSync(p);
+    writeFileSync(join(p, "index.js"), "1\n");
+    expect(await ion("projects", "add", p)).toMatchObject({
+      code: 0,
+      out: "Added tip-calc\nSet up git here: your files are its first commit",
+    });
+    expect(existsSync(join(p, ".git"))).toBe(true);
+  });
+
+  // Plan 21 (the user, 2026-11-22: easier even for beginners): bare `ion` printed 18 commands and exited 1. With
+  // nothing set up it prints the three first steps as commands.
+  it("bare ion with nothing set up prints the first steps", async () => {
+    const down = await ion();
+    expect(down.code).toBe(0);
+    expect(down.out.split("\n")[0]).toBe("ion isn't running. Start it with: ion daemon start");
+    await ion("daemon", "start");
+    const r = await ion();
+    expect(r.code).toBe(0);
+    const lines = r.out.split("\n");
+    expect(lines[0]).toBe("Start here:");
+    expect(lines[1]).toMatch(/^1\. Your agents\b/);
+    expect(lines).toContain("2. Pick a folder: ion projects add <folder>");
+    expect(lines).toContain('3. Ask: ion ask "What does this project do?" -p <project>');
+    // Set up: bare `ion` is its help again.
+    await ion("projects", "add", repo("storefront"));
+    expect((await ion()).out).toContain("Usage: ion [options] [command]");
+  });
+
+  // Plan 21 audit, 2026-11-23: after `ion answer`, the chat went on but no command could show its reply. `ion answer`
+  // follows the chat now, to the end of its next reply.
+  it("answer shows the chat's reply", async () => {
+    await ion("daemon", "start");
+    await ion("projects", "add", repo("app"));
+    await ion("ask", "asks", "--harness", "fake", "-p", "app");
+    const [need] = JSON.parse((await ion("needs", "--json")).out) as { needId: string }[];
+    const r = await ion("answer", need!.needId, "2");
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Answered");
+    expect(r.out).toContain("Hi from the fake harness.");
+    expect(r.out).toMatch(/Done · /);
   });
 
   it("treats a leftover daemon.json from a dead process as not running", async () => {

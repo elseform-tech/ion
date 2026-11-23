@@ -17,6 +17,9 @@ type AskOpts = {
   memory?: boolean;
 };
 
+/** How long `ion answer` waits for the chat to go on before it ends. */
+const NEXT_RUN_WAIT_MS = 15_000;
+
 /** How long `ion ask` stays after a limit for ion's question about it. */
 const QUESTION_WAIT_MS = 10_000;
 
@@ -25,11 +28,12 @@ const QUESTION_WAIT_MS = 10_000;
  * another agent it follows that run, replaying what it already sent (its run starts just before ion's line).
  */
 class Watched {
-  runId: string;
+  /** Null: the chat's next run, whichever it is (after `ion answer`). */
+  runId: string | null;
   render = createRenderer();
   private readonly others = new Map<string, IonEvent[]>();
 
-  constructor(runId: string) {
+  constructor(runId: string | null) {
     this.runId = runId;
   }
 
@@ -38,6 +42,7 @@ class Watched {
 
   /** Whether to show this event now; another run's are kept, in case ion goes on with it. */
   mine(e: IonEvent): boolean {
+    if (this.runId === null && e.runId) this.runId = e.runId;
     if (e.runId === this.runId) {
       this.live = true;
       return true;
@@ -58,11 +63,15 @@ class Watched {
   }
 }
 
-/** Prints the run's events as they arrive and resolves when it finishes. */
-function follow(
+/**
+ * Prints the run's events as they arrive and resolves when it finishes. With no run yet (`runId` null), the chat's
+ * next one from now on, once `act` is done (`ion answer`: the answer it goes on with).
+ */
+export function follow(
   client: IonClient,
-  started: { chatId: string; runId: string },
+  started: { chatId: string; runId: string | null },
   json: boolean,
+  act?: () => Promise<unknown>,
 ): Promise<RunEnd> {
   const w = new Watched(started.runId);
   return new Promise((resolve) => {
@@ -94,8 +103,18 @@ function follow(
     };
     client.onClose(lost);
     client
-      .subscribe({ chatId: started.chatId }, (e) => {
+      .subscribe({ chatId: started.chatId, ...(started.runId ? {} : { fromNow: true }) }, (e) => {
         if (!done && w.mine(e)) show(e);
+      })
+      .then(async () => {
+        if (!act) return;
+        await act();
+        // Nothing started (a wait until the agent's reset, say): `ion answer` ends instead of hanging.
+        setTimeout(() => {
+          if (w.runId !== null || done) return;
+          process.stdout.write("The chat goes on later.\n");
+          finish({ status: "done", code: 0 });
+        }, NEXT_RUN_WAIT_MS);
       })
       .catch(lost);
   });

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core, plus dragging the window by its header and bringing it forward; showing system notifications and hearing their clicks; opening sign-in pages (https only) in your browser. Opening your mcp.json in your editor, and ion's memory folder and its Markdown files, is granted at start, for those paths only (lib.rs). No shell, no file system; the UI reaches the daemon over WebSocket.",
+  "description": "The main window: core, plus dragging the window by its header and bringing it forward; showing system notifications and hearing their clicks; opening sign-in pages (https only) in your browser; the system's folder picker (Pick a folder: Plan 21). Opening your mcp.json in your editor, and ion's memory folder and its Markdown files, is granted at start, for those paths only (lib.rs). No shell, no file system; the UI reaches the daemon over WebSocket.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -13,6 +13,7 @@
     "notification:allow-notify",
     "notification:allow-register-listener",
     "notification:allow-remove-listener",
+    "dialog:allow-open",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

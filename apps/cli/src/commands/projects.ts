@@ -31,12 +31,14 @@ export function projectCommands(program: Command, out: () => Out) {
       }),
     );
   p.command("add <path>")
-    .description("Add a git repo")
+    .description("Add a folder")
     .action((path: string) =>
       call(async (c) => {
         // Resolve here: the daemon's working folder isn't yours.
         const added = await c.call("projects.add", { path: path.startsWith("/") ? path : resolve(path) });
-        print(out(), `Added ${added.id}`, added);
+        // Plan 21 audit, 2026-11-23: a folder that isn't a git repo gets ion's git setup, said in one line.
+        const setUp = added.gitSetUp ? "\nSet up git here: your files are its first commit" : "";
+        print(out(), `Added ${added.id}${setUp}`, added);
       }),
     );
   p.command("new <name>")

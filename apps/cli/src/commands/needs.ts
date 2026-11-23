@@ -1,7 +1,29 @@
 import type { Command } from "commander";
-import { withClient } from "../connect.js";
+import { ApiCallError, type IonClient } from "@ion/client";
+import { connect, withClient } from "../connect.js";
 import { fail, type Out, print } from "../output.js";
 import { needText } from "../render.js";
+import { follow } from "./ask.js";
+
+type Pick = { choice: number } | { text: string };
+type Scope = "chat" | "project" | "everywhere";
+
+/** A refused call exits 1 with ion's own message. */
+const refused = (e: unknown): never => fail(e instanceof ApiCallError ? e.message : "Something went wrong");
+
+/**
+ * Answers, then shows the chat's reply as it comes, to its end (Plan 21 audit, 2026-11-23: after `ion answer` no
+ * command could show what the chat said next). A question ion doesn't know is refused as before.
+ */
+async function answerAndFollow(c: IonClient, needId: string, pick: Pick, scope: Scope): Promise<number> {
+  const need = (await c.call("needs.list", {}).catch(refused)).find((n) => n.needId === needId);
+  const answer = async () => {
+    await c.call("need.answer", { needId, ...pick, scope }).catch(refused);
+    process.stdout.write("Answered\n");
+  };
+  if (!need) return answer().then(() => 0);
+  return (await follow(c, { chatId: need.chatId, runId: null }, false, answer)).code;
+}
 
 const WHERE = ["project", "everywhere"];
 
@@ -24,7 +46,13 @@ export function needsCommands(program: Command, out: () => Out) {
       const scope = (o.remember ? "project" : (o.always ?? "chat")) as "chat" | "project" | "everywhere";
       const answer = words.join(" ");
       const pick = /^\d+$/.test(answer) ? { choice: Number(answer) } : { text: answer };
-      await withClient((c) => c.call("need.answer", { needId: id, ...pick, scope }));
-      print(out(), "Answered", { ok: true });
+      if (out().json) {
+        await withClient((c) => c.call("need.answer", { needId: id, ...pick, scope }));
+        return print(out(), "Answered", { ok: true });
+      }
+      const c = await connect();
+      const code = await answerAndFollow(c, id, pick, scope);
+      c.close();
+      process.exit(code);
     });
 }

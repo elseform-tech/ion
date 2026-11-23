@@ -56,7 +56,8 @@ export function App() {
   const go = { setIonId, setOpenId, setMode };
   useSystemNotifications(client, (chatId) => openChat(chatId, go), watching);
   if (state === "connecting") return <div className="app--empty" />;
-  if (state === "down" || !client) return <Down onRetry={() => window.location.reload()} />;
+  if (state === "down" || state === "starting" || !client)
+    return <Down onRetry={() => window.location.reload()} starting={state === "starting"} />;
   return (
     <div className={`win${sidebar ? "" : " side-off"}`}>
       <Rail mode={mode} setMode={setMode} initial={initial} needs={needs} />

@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { addProject, DEFAULT_PROJECT, projectIdOf, projectNameError, type UserConfig } from "@ion/config";
 import { git } from "./git.js";
 
@@ -15,13 +15,73 @@ async function mustGit(args: string[], cwd: string): Promise<string> {
   return r.stdout.trim();
 }
 
-/** A new git repo with one empty commit (worktrees need one). ion signs it only when you have no git identity. */
+/** ion signs a commit only when you have no git identity. */
+async function identity(path: string): Promise<string[]> {
+  const email = (await git(["config", "user.email"], path, yours)).stdout.trim();
+  return email ? [] : ["-c", "user.name=ion", "-c", "user.email=ion@localhost"];
+}
+
+/** A new git repo with one empty commit (worktrees need one). */
 async function initRepo(path: string): Promise<void> {
   mkdirSync(path, { recursive: true, mode: 0o755 });
   await mustGit(["init", "-q", "-b", "main"], path);
-  const email = (await git(["config", "user.email"], path, yours)).stdout.trim();
-  const who = email ? [] : ["-c", "user.name=ion", "-c", "user.email=ion@localhost"];
-  await mustGit([...who, "commit", "-q", "--allow-empty", "-m", "Start"], path);
+  await mustGit([...(await identity(path)), "commit", "-q", "--allow-empty", "-m", "Start"], path);
+}
+
+/** At most this many files get ion's git setup: a bigger folder is refused at once, never committed for minutes. */
+const MAX_FILES = 20_000;
+
+/** Whether the folder holds more than `max` files (stops counting there; links aren't followed). */
+function tooMany(dir: string, max: number): boolean {
+  let n = 0;
+  const walk = (d: string): boolean => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory()) {
+        if (walk(join(d, e.name))) return true;
+      } else if (++n > max) return true;
+    }
+    return false;
+  };
+  return walk(dir);
+}
+
+/**
+ * ion's git setup for a folder of yours that isn't a git repo (Plan 21): a new repo with your files in its first
+ * commit, so a chat's worktree has them. Refused before anything is written when it's too big.
+ */
+async function setUpGit(path: string, maxFiles: number): Promise<void> {
+  if (tooMany(path, maxFiles))
+    throw new Error(
+      `Too many files to set up git here (over ${maxFiles.toLocaleString("en-US")}). Pick a project folder, or run git init in it yourself`,
+    );
+  await mustGit(["init", "-q", "-b", "main"], path);
+  await mustGit(["add", "-A"], path);
+  await mustGit(
+    [...(await identity(path)), "commit", "-q", "--allow-empty", "-m", "Start (ion's git setup)"],
+    path,
+  );
+}
+
+/**
+ * Adds a folder of yours (the app's Pick a folder, `ion projects add`). One that isn't a git repo gets ion's git
+ * setup first (`gitSetUp`). Your home folder, or one above it, is refused: it isn't a project.
+ */
+export async function addFolder(
+  c: UserConfig,
+  path: string,
+  o: { maxFiles?: number } = {},
+): Promise<{ config: UserConfig; gitSetUp: boolean }> {
+  const abs = resolve(expandHome(path.trim()));
+  if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`No folder at ${path}`);
+  const home = homedir();
+  if (abs === home || home.startsWith(abs.endsWith(sep) ? abs : `${abs}${sep}`))
+    throw new Error("Pick a project folder, not your home folder");
+  const gitSetUp = !existsSync(join(abs, ".git"));
+  if (gitSetUp) {
+    if (c.projects.some((p) => p.path === abs)) throw new Error(`Already added: ${abs}`);
+    await setUpGit(abs, o.maxFiles ?? MAX_FILES);
+  }
+  return { config: addProject(c, abs), gitSetUp };
 }
 
 /**
