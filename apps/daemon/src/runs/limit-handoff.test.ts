@@ -1,5 +1,6 @@
 import { EV, type NewEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Decisions } from "../decisions/index.js";
 import { NeedsService } from "../needs/index.js";
 import { Waits } from "../scheduler/index.js";
 import { type Db, EventStore, openDb } from "../store/index.js";
@@ -582,5 +583,17 @@ describe("Handoffs", () => {
     const n = await until(() => needs.open("c1")[0]);
     expect(n.choices?.map((c) => c.label)).toContain("Wait");
     expect(started).toHaveLength(1);
+  });
+
+  // Coordinator's live check, 2026-11-23: after a restart, ion's restore sent "You asked: \"When an agent hits its
+  // limit here\". The user chose: \"Always continue on opencode\"." into the chat as a message, and the agent ran a
+  // whole turn on it. A kept handoff choice is never a follow-up message.
+  it("a kept Always isn't sent to the chat after a restart", async () => {
+    hitLimit("c1", "claude-code", inAnHour());
+    const n = await until(() => needs.open("c1")[0]);
+    await handoffs.answer(n.needId, 3, "chat");
+    const followUp = vi.fn(async () => "run_follow");
+    await new Decisions({ store, db, needs, followUp }).resume();
+    expect(followUp).not.toHaveBeenCalled();
   });
 });

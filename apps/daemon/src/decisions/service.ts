@@ -338,8 +338,11 @@ export class Decisions {
         by: string;
         custom?: boolean;
         blocked?: boolean;
+        allowKey?: string;
       };
-      if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId || d.blocked) return [];
+      // Only answers to an agent's question go back as a message: never a call ion stopped, nor a kept action or
+      // handoff choice (an allowKey; the handoff sends its own brief), which no agent asked.
+      if (e.type !== EV.decisionRecorded || d.by !== "you" || !d.needId || d.blocked || d.allowKey) return [];
       const text = followText(d.question, d.choice, d.custom === true);
       if (sent(d.needId, text)) return [];
       const harness = this.harnessOf(e.runId, chatId);
