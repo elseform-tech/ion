@@ -29,11 +29,11 @@ const MAX_FILES = 20_000;
 const MAX_BYTES = 50 * 1024 * 1024;
 
 /** Folders that hold keys and settings, refused wherever they are. */
-const SECRET_DIRS = [".ssh", ".aws", ".gnupg", ".config", ".local", "Library"];
+const SECRET_DIRS = [".ssh", ".aws", ".gnupg", ".config", ".local"];
 /** System folders: refused with all inside them. */
 const SYSTEM_TREES = ["/etc", "/private/etc", "/System", "/bin", "/sbin", "/usr"];
 /** System folders refused themselves (what's inside, like a temp folder under /var, may be yours). */
-const SYSTEM_ROOTS = ["/var", "/private/var", "/private", "/Library", "/Applications", "/Users", "/opt"];
+const SYSTEM_ROOTS = ["/var", "/private/var", "/private", "/Applications", "/Users", "/opt"];
 
 /** Never in the first commit: dependencies and build output (folders), keys and secrets (files). */
 const LEFT_DIRS = [
@@ -62,16 +62,31 @@ const within = (p: string, dir: string) =>
 /** A path's real form (links resolved, the disk's letter case), or the path itself when it isn't there. */
 const real = (p: string) => (existsSync(p) ? realpathSync.native(p) : p);
 
-/** Why ion won't add this folder, or null. */
-function refusal(path: string, home: string, ionDirs: string[]): string | null {
+/**
+ * Why a folder in or around your home isn't a project: home, above it, under one of its hidden folders (any depth),
+ * iCloud Drive (its sync can damage a .git: re-review of 2e7edd6, 2026-11-23), or your Library; else null.
+ */
+function homeRefusal(path: string, home: string): string | null {
   if (within(home, path)) return "Pick a project folder, not your home folder or one above it";
-  if (same(dirname(path), home) && basename(path).startsWith("."))
-    return "Pick a project folder, not a hidden folder in your home";
+  if (within(path, home) && path.slice(home.length + 1).startsWith("."))
+    return "Pick a project folder, not one in a hidden folder of your home";
+  if (within(path, join(home, "Library", "Mobile Documents")))
+    return "iCloud Drive can damage a git repo; move the project out of iCloud Drive first";
+  if (within(path, join(home, "Library")) || within(path, "/Library"))
+    return "Pick a project folder, not one in Library";
+  return null;
+}
+
+/** Why ion won't add this folder, or null. ion's own: its folders, and any folder that holds one. */
+function refusal(path: string, home: string, ionDirs: string[]): string | null {
+  const near = homeRefusal(path, home);
+  if (near) return near;
   const secret = path.split(sep).find((part) => SECRET_DIRS.some((d) => same(d, part)));
   if (secret) return `Pick a project folder, not one in ${secret}`;
   if (SYSTEM_TREES.some((d) => within(path, d)) || SYSTEM_ROOTS.some((d) => same(path, d)))
     return "Pick a project folder, not a system folder";
-  if (ionDirs.some((d) => within(path, real(d)))) return "Pick a project folder, not one of ion's own";
+  if (ionDirs.some((d) => within(path, real(d)) || within(real(d), path)))
+    return "Pick a project folder, not one of ion's own";
   return null;
 }
 
@@ -91,8 +106,11 @@ async function repoOf(path: string): Promise<string | null> {
 const hasCommit = async (path: string) =>
   (await git(["rev-parse", "--verify", "--quiet", "HEAD"], path)).code === 0;
 
-/** What a walk of the folder found: files for the first commit, things left out, files too big to commit. */
-type Walked = { files: number; left: number; big: string[] };
+/**
+ * What a walk of the folder found: the files for the first commit (paths from it, with "/"), how many things were
+ * left out, the files too big to commit. The same rule decides both (security scan of 2e7edd6, 2026-11-23).
+ */
+type Walked = { paths: string[]; left: number; big: string[] };
 type Limits = { maxFiles: number; maxBytes: number };
 
 /** An error reading the folder, in a plain line. */
@@ -101,18 +119,23 @@ function unreadable(e: unknown, dir: string): Error {
   return new Error(code === "EACCES" || code === "EPERM" ? `ion can't read ${dir}` : `Couldn't read ${dir}`);
 }
 
-/** One file: counted, or left out (a secret, or too big). */
+/** A name ion never commits: a key or secret (any letter case), or one with a line break in it. */
+const leftName = (name: string) => LEFT_FILE.test(name) || /[\r\n]/.test(name);
+
+/** One file: listed for the first commit, or left out (a secret, an odd name, or too big). */
 async function countFile(path: string, root: string, w: Walked, l: Limits): Promise<void> {
-  if (LEFT_FILE.test(basename(path))) {
+  if (leftName(basename(path))) {
     w.left++;
     return;
   }
+  const rel = relative(root, path).split(sep).join("/");
   if ((await lstat(path)).size > l.maxBytes) {
     w.left++;
-    w.big.push(relative(root, path));
+    w.big.push(rel);
     return;
   }
-  if (++w.files > l.maxFiles)
+  w.paths.push(rel);
+  if (w.paths.length > l.maxFiles)
     throw new Error(
       `Too many files to set up git here (over ${l.maxFiles.toLocaleString("en-US")}). Pick a project folder, or run git init in it yourself`,
     );
@@ -120,7 +143,7 @@ async function countFile(path: string, root: string, w: Walked, l: Limits): Prom
 
 /** Walks the folder without blocking ion (links aren't followed), stopping at the file limit. */
 async function walk(root: string, l: Limits): Promise<Walked> {
-  const w: Walked = { files: 0, left: 0, big: [] };
+  const w: Walked = { paths: [], left: 0, big: [] };
   const visit = async (dir: string): Promise<void> => {
     const d = await opendir(dir).catch((e: unknown) => {
       throw unreadable(e, dir);
@@ -129,7 +152,7 @@ async function walk(root: string, l: Limits): Promise<Walked> {
       const path = join(dir, e.name);
       if (!e.isDirectory()) await countFile(path, root, w, l);
       else if (e.name === ".git") continue;
-      else if (LEFT_DIRS.includes(e.name)) w.left++;
+      else if (LEFT_DIRS.includes(e.name) || /[\r\n]/.test(e.name)) w.left++;
       else await visit(path);
     }
   };
@@ -138,11 +161,7 @@ async function walk(root: string, l: Limits): Promise<Walked> {
 }
 
 /** A path as a gitignore line matching only that file. */
-const exact = (rel: string) =>
-  `/${rel
-    .split(sep)
-    .join("/")
-    .replace(/([\\*?[\]!# ])/g, "\\$1")}`;
+const exact = (rel: string) => `/${rel.replace(/([\\*?[\]!# ])/g, "\\$1")}`;
 
 /** ion's lines in the repo's own exclude file (never committed; your files unchanged). */
 async function writeExclude(path: string, big: string[]): Promise<void> {
@@ -158,18 +177,42 @@ async function writeExclude(path: string, big: string[]): Promise<void> {
   await writeFile(file, `${before}${before && !before.endsWith("\n") ? "\n" : ""}${ours.join("\n")}\n`);
 }
 
-/** git init (unless the repo is there), ion's excludes, then the first commit; a failure removes the .git ion made. */
-async function firstCommit(path: string, w: Walked, hadGit: boolean): Promise<void> {
+/**
+ * The walk's files that git would take too (your own .gitignore still counts): untracked and not ignored, exactly as
+ * listed (letter case too).
+ */
+async function addable(path: string, listed: string[]): Promise<string[]> {
+  const r = await git(["ls-files", "--others", "--exclude-standard", "-z"], path);
+  if (r.code !== 0) throw new Error(`git ls-files failed: ${r.stderr.trim().split("\n")[0]}`);
+  const untracked = new Set(r.stdout.split("\0"));
+  return listed.filter((p) => untracked.has(p));
+}
+
+/**
+ * git init (unless the repo is there), ion's excludes (for later only), then the first commit of exactly the files
+ * listed, each by its literal path, never `git add -A`; how many went in. A failure removes the .git ion made.
+ */
+async function firstCommit(path: string, w: Walked, hadGit: boolean): Promise<number> {
   try {
     if (!hadGit) await mustGit(["init", "-q", "-b", "main"], path);
     await writeExclude(path, w.big);
-    await mustGit(["add", "-A"], path);
+    const files = await addable(path, w.paths);
+    const input = files.map((p) => `:(literal)${p}`).join("\0");
+    const add = ["add", "--pathspec-from-file=-", "--pathspec-file-nul"];
+    if (files.length) await mustGit(add, path, input);
     const who = await identity(path);
     await mustGit([...who, "commit", "-q", "--allow-empty", "-m", "Start (ion's git setup)"], path);
+    return files.length;
   } catch (e) {
     if (!hadGit) await rm(join(path, ".git"), { recursive: true, force: true });
     throw new Error(`Couldn't set up git here: ${(e as Error).message}`);
   }
+}
+
+/** Added already, under this real path or a link to it (re-review of 2e7edd6, 2026-11-23). */
+function mustBeNew(c: UserConfig, path: string): void {
+  const dup = c.projects.find((p) => same(real(p.path), path));
+  if (dup) throw new Error(`Already added: ${dup.id}`);
 }
 
 /** A folder inside a repo: that repo, once you say so (never a repo inside a repo). */
@@ -182,6 +225,7 @@ function addRepoAbove(
   if (!o.confirm) return { ask: `This folder is in the git repo at ${top}. Add that repo?` };
   const why = refusal(top, home, o.ionDirs);
   if (why) throw new Error(why);
+  mustBeNew(c, top);
   return hasCommit(top).then((yes) => {
     if (!yes) throw new Error(`The git repo at ${top} has no commits yet. Make one there, then add it`);
     return { config: addProject(c, top) };
@@ -201,11 +245,11 @@ export async function addFolder(c: UserConfig, path: string, o: FolderOpts): Pro
   if (why) throw new Error(why);
   const top = await repoOf(at);
   if (top && !same(top, at)) return addRepoAbove(c, top, o, home);
+  mustBeNew(c, at);
   if (top && (await hasCommit(at))) return { config: addProject(c, at) };
-  if (c.projects.some((p) => same(p.path, at))) throw new Error(`Already added: ${at}`);
   const w = await walk(at, { maxFiles: o.maxFiles ?? MAX_FILES, maxBytes: o.maxBytes ?? MAX_BYTES });
-  const n = `${w.files} ${w.files === 1 ? "file" : "files"}`;
+  const n = `${w.paths.length} ${w.paths.length === 1 ? "file" : "files"}`;
   if (!o.confirm) return { ask: `Set up git here? ion makes a first commit of ${n}` };
-  await firstCommit(at, w, Boolean(top));
-  return { config: addProject(c, at), gitSetUp: { files: w.files, left: w.left } };
+  const files = await firstCommit(at, w, Boolean(top));
+  return { config: addProject(c, at), gitSetUp: { files, left: w.left + w.paths.length - files } };
 }

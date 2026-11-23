@@ -85,10 +85,15 @@ describe("start.status", () => {
     expect(existsSync(join(path, ".git"))).toBe(true);
   });
 
-  it("refuses ion's own data folder", async () => {
-    await expect(client.call("projects.add", { path: join(home, "data") })).rejects.toThrow(
-      "Pick a project folder, not one of ion's own",
-    );
+  // Re-review of 2e7edd6, 2026-11-23: ion's own folders are its data folder and its config file's folder (ION_HOME
+  // here), anything in them, and any folder that holds them.
+  it("refuses ion's own folders: data, ION_HOME, what's in them, what holds them", async () => {
+    const inHome = join(home, "work");
+    mkdirSync(inHome);
+    for (const p of [join(home, "data"), home, inHome])
+      await expect(client.call("projects.add", { path: p })).rejects.toThrow(
+        "Pick a project folder, not one of ion's own",
+      );
   });
 });
 

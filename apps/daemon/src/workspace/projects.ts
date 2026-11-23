@@ -9,8 +9,8 @@ export const expandHome = (p: string) => (p === "~" || p.startsWith("~/") ? join
 /** A repo ion makes for you: your git identity applies (nothing a run wrote is in a folder that's just been made). */
 const yours = { yours: true };
 
-export async function mustGit(args: string[], cwd: string): Promise<string> {
-  const r = await git(args, cwd, yours);
+export async function mustGit(args: string[], cwd: string, input?: string): Promise<string> {
+  const r = await git(args, cwd, { ...yours, ...(input === undefined ? {} : { input }) });
   if (r.code !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr.trim().split("\n")[0]}`);
   return r.stdout.trim();
 }

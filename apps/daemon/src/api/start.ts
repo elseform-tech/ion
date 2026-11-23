@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { DEFAULT_PROJECT, ionPaths, loadUserConfig, saveUserConfig } from "@ion/config";
 import type { HarnessInfo } from "@ion/schema";
 import { agentLabel } from "../adapters/registry.js";
@@ -42,7 +43,8 @@ export const startHandlers = (a: Agents): Pick<Handlers, "start.status" | "proje
   "projects.add": async (args, ctx) => {
     const { config, error } = loadUserConfig(ctx.configFile);
     if (error) throw new UserError(`Fix your config first. ${error}`);
-    const ionDirs = [ctx.dataDir ?? ionPaths().dataDir];
+    // ion's data folder and its config file's folder (ION_HOME, or ~/.config/ion).
+    const ionDirs = [ctx.dataDir ?? ionPaths().dataDir, dirname(ctx.configFile)];
     const added = await addFolder(config, String(args.path ?? ""), {
       ionDirs,
       confirm: args.confirm === true,

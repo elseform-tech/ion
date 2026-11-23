@@ -112,6 +112,30 @@ describe("addFolder", () => {
     expect((await git(["status", "--porcelain"], path)).stdout.trim()).toBe("");
   });
 
+  // Security scan of 2e7edd6, 2026-11-23: the walk left out .ENV and SECRET.PEM (any case), but `git add -A` went by
+  // .git/info/exclude, case-sensitive, and committed them; a file name with a newline could add an exclude line. ion
+  // commits exactly the files its walk listed, by literal path.
+  it("commits exactly the files it listed: secrets in any case and odd names stay out", async () => {
+    const path = plain();
+    writeFileSync(join(path, "SECRET.PEM"), "key\n");
+    writeFileSync(join(path, ".ENV"), "TOKEN=x\n");
+    writeFileSync(join(path, "a\n!*.pem"), "x\n");
+    writeFileSync(join(path, "notes*.md"), "glob-like but literal\n");
+    const r = await addFolder(withRoot(), path, opts({ confirm: true }));
+    expect(await committed(path)).toEqual(["README.md", "notes*.md", "src/tip.js"]);
+    expect(r).toMatchObject({ gitSetUp: { files: 3, left: 3 } });
+    expect(readFileSync(join(path, ".git", "info", "exclude"), "utf8")).not.toContain("!*.pem");
+  });
+
+  it("leaves out what your own .gitignore ignores, and counts it", async () => {
+    const path = plain();
+    writeFileSync(join(path, ".gitignore"), "*.log\n");
+    writeFileSync(join(path, "debug.log"), "x\n");
+    const r = await addFolder(withRoot(), path, opts({ confirm: true }));
+    expect(await committed(path)).toEqual([".gitignore", "README.md", "src/tip.js"]);
+    expect(r).toMatchObject({ gitSetUp: { files: 3, left: 1 } });
+  });
+
   it("adds a git repo as it is", async () => {
     const path = plain();
     await git(["init", "-q", "-b", "main"], path);
@@ -199,6 +223,50 @@ describe("addFolder", () => {
     await refused(link);
     if (process.platform === "darwin") await refused(home.toUpperCase());
     for (const d of ["", ".cache", "Library/x"]) expect(existsSync(join(home, d, ".git"))).toBe(false);
+  });
+
+  // Re-review of 2e7edd6, 2026-11-23: iCloud Drive's sync can damage a .git, so it stays refused, saying why; only
+  // ~/Library (and /Library) is refused, not any folder named Library; hidden folders of home at any depth; ion's
+  // folders and any folder holding one; a project already added under a link is found.
+  it("refuses iCloud Drive saying why, and Library only where it's ~/Library", async () => {
+    const home = realpathSync.native(root());
+    const cloud = join(home, "Library", "Mobile Documents", "com~apple~CloudDocs");
+    const p = plain(cloud);
+    const o = opts({ home, confirm: true });
+    await expect(addFolder(withRoot(), p, o)).rejects.toThrow(
+      "iCloud Drive can damage a git repo; move the project out of iCloud Drive first",
+    );
+    mkdirSync(join(home, "Library", "Mail"), { recursive: true });
+    await expect(addFolder(withRoot(), join(home, "Library", "Mail"), o)).rejects.toThrow(
+      /^Pick a project folder/,
+    );
+    const code = plain(join(home, "code", "Library"));
+    expect(await addFolder(withRoot(), code, o)).toMatchObject({ gitSetUp: { files: 2 } });
+  });
+
+  it("refuses anything under a hidden folder of home, at any depth", async () => {
+    const home = realpathSync.native(root());
+    for (const d of [".cache/foo", ".kube/x"]) {
+      const p = plain(join(home, d));
+      await expect(addFolder(withRoot(), p, opts({ home }))).rejects.toThrow(/^Pick a project folder/);
+    }
+  });
+
+  it("refuses ion's folders and any folder that holds one", async () => {
+    const ionHome = join(realpathSync.native(root()), "a", "ion-home");
+    mkdirSync(join(ionHome, "data"), { recursive: true });
+    const inside = plain(ionHome);
+    const o = opts({ ionDirs: [join(ionHome, "data"), ionHome] });
+    for (const p of [inside, ionHome, dirname(ionHome), join(ionHome, "data")])
+      await expect(addFolder(withRoot(), p, o)).rejects.toThrow(/^Pick a project folder/);
+  });
+
+  it("finds a project already added under a link", async () => {
+    const path = plain();
+    const link = join(root(), "link");
+    symlinkSync(path, link);
+    const c = { ...withRoot(), projects: [{ id: "tip-calc", path: link, starred: false }] };
+    await expect(addFolder(c, path, opts({ confirm: true }))).rejects.toThrow("Already added: tip-calc");
   });
 
   it("refuses a folder too big to set up, touching nothing", async () => {
