@@ -1601,7 +1601,8 @@ export function sumLines(lines: Line[]) {
             </div>
           </div>
         </section>
-        <!-- Plan 20 (the user, 2026-11-22): a new chat with Pick by usage on and no agent picked: its pill is a gauge, "By usage" -->
+        <!-- Plan 20 (the user, 2026-11-22): a new chat with Pick by usage on and no agent picked: its pill is a gauge, "By usage".
+             Task 4: once you've typed, its hover also says what such a task usually takes, from 5+ similar past chats -->
         <section class="chat" data-screen="byusage" style="grid-template-rows:48px minmax(0,1fr)" hidden>
           <div class="head"><span class="sp"></span></div>
           <div class="empty"><div class="inner">
@@ -1610,7 +1611,7 @@ export function sumLines(lines: Line[]) {
               <span class="ph">Ask anything, or describe a change…</span>
               <div class="bar">
                 <button class="pill" type="button"><i data-lucide="folder"></i>storefront</button>
-                <button class="pill bpill" type="button" data-brain="usage" aria-haspopup="dialog" title="By usage · Default effort"></button>
+                <button class="pill bpill" type="button" data-brain="usage" aria-haspopup="dialog" title="By usage · Default effort&#10;usually 40–120k tokens"></button>
                 <span class="sp"></span>
                 <button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>
               </div>
@@ -2913,7 +2914,7 @@ const IONS={
       {f:'i',t:'Morning. 4 things need you across 3 projects. They’re pinned above, most urgent first.',meta:'deep',work:'brief'},
       {sugg:'friday'},{sugg:'tw4'},
       {f:'u',t:'The checkout rounding bug might be in other services too. Check.'},
-      {work:'fan',fanout:[['payments-api','run','Read src/money/round.ts','42s'],['billing','ok','Not affected: already sums in cents','1m 12s'],['mobile-app','ok','Not affected: uses payments-api totals','38s'],['storefront','run','Waiting — 4 ion chats running','']]},
+      {work:'fan',fanout:[['payments-api','run','Read src/money/round.ts','42s','usually 40–120k tokens'],['billing','ok','Not affected: already sums in cents','1m 12s'],['mobile-app','ok','Not affected: uses payments-api totals','38s'],['storefront','run','Waiting — 4 ion chats running','']]},
       {f:'u',t:'Every Monday, update storefront’s dependencies and open a PR if the tests pass.'},
       {routineAdded:{k:'storefront',ri:1}},
       {f:'u',t:'Do the same CI triage on payments-api.'},
@@ -3235,9 +3236,10 @@ function newIonCard(k){
 /* the frame's sidebar button (and ⌘B): hide or show the screen's left panel */
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-sidebar]'); if(!b) return; const off=document.getElementById('win').classList.toggle('side-off'); b.title=(off?'Show':'Hide')+' sidebar  ⌘B'; });
 document.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='b'){ e.preventDefault(); document.querySelector('[data-sidebar]')?.click(); } });
-function tlHTML(pk,st,txt,time){
+function tlHTML(pk,st,txt,time,est){
   const say=st==='wait'?'Waiting for you':txt;
-  return `<button class="tl" type="button" data-peek="${esc(pk)}" data-pt="${esc(txt)}" data-ps="${st}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b>${st==='err'?'<i data-lucide="circle-alert"></i>':''}<span class="tt${st==='run'?' now':''}">${esc(say)}</span>${st==='wait'?'<i class="wd"></i>':time?`<span class="wn">· ${esc(time)}</span>`:''}<i data-lucide="chevron-right"></i></button>`;
+  /* Plan 20 Task 4: what such a task usually takes, from past chats, on hover only (none with under 5 similar chats) */
+  return `<button class="tl" type="button"${est?` title="${esc(est)}"`:''} data-peek="${esc(pk)}" data-pt="${esc(txt)}" data-ps="${st}"><canvas class="av" data-ion="${esc(pk)}" aria-hidden="true"></canvas><b>${esc(pk)}</b>${st==='err'?'<i data-lucide="circle-alert"></i>':''}<span class="tt${st==='run'?' now':''}">${esc(say)}</span>${st==='wait'?'<i class="wd"></i>':time?`<span class="wn">· ${esc(time)}</span>`:''}<i data-lucide="chevron-right"></i></button>`;
 }
 function peekHTML(pk,txt,st){
   const steps=st==='run'?[['file-text','Read','package.json','ok'],['search','Grep','round(','ok'],['file-text','Read',txt.replace(/^\S+ /,''),'run']]:[['file-text','Read','package.json','ok'],['square-terminal','Bash','pnpm test','ok']];

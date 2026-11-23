@@ -1,4 +1,4 @@
-import type { Billing, UsageWindow } from "@ion/schema";
+import type { Billing, TaskEstimate, UsageWindow } from "@ion/schema";
 
 /** One agent signed in now: how it bills, the windows it reports (none: learned from errors), its limit mark. */
 export type Candidate = {
@@ -25,6 +25,8 @@ export type Task = {
   deep?: boolean;
   /** ion's deep model's agent: kept for deep work. */
   deepAgent?: string;
+  /** What this task usually takes on each agent, from your past chats (none: too few to say). */
+  estimate?: Record<string, TaskEstimate>;
 };
 
 /** The agent, and why in one line ("On Codex — Claude Code is near its limit"); null when you picked it. */
@@ -37,6 +39,15 @@ const isNear = (c: Candidate, now: Date) =>
   c.windows.some(
     (w) => w.usedPercent >= NEAR_PERCENT && (w.resetsAt === null || Date.parse(w.resetsAt) > now.getTime()),
   );
+/** The task usually takes more of a window than the agent has left (the high end of its estimate). */
+const tooBig = (c: Candidate, t: Task) => {
+  const e = t.estimate?.[c.id];
+  if (e?.unit !== "percent") return false;
+  const w = c.windows.find(
+    (x) => x.name === e.window && (x.resetsAt === null || Date.parse(x.resetsAt) > t.now.getTime()),
+  );
+  return !!w && e.high > 100 - w.usedPercent;
+};
 const limited = (c: Candidate) => !!c.limitedUntil && !c.limitGuessed;
 const fits = (c: Candidate, t: Task) => (t.deep && c.id === t.deepAgent) || c.id === t.project;
 /** The deep model's agent is kept for deep work, unless you put it first in your order (or it's the project's). */
@@ -53,11 +64,12 @@ const rank = (c: Candidate, t: Task) => {
 const expected = (c: Candidate, t: Task): number[] => [fits(c, t) ? 0 : 1, rank(c, t)];
 
 /**
- * Best first: room left (a guessed limit is tried last), what fits, the deep model's agent kept back, subscription
+ * Best first: room left (a guessed limit is tried last; a task that usually takes more than an agent's window has left
+ * goes elsewhere), what fits, the deep model's agent kept back, subscription
  * and free before api, then your order.
  */
 const weight = (c: Candidate, t: Task): number[] => [
-  isNear(c, t.now) || c.limitGuessed ? 1 : 0,
+  isNear(c, t.now) || c.limitGuessed || tooBig(c, t) ? 1 : 0,
   fits(c, t) ? 0 : 1,
   kept(c, t) ? 1 : 0,
   c.billing === "api" ? 1 : 0,
@@ -74,6 +86,7 @@ const byWeight = (w: (c: Candidate) => number[]) => (a: Candidate, b: Candidate)
 function passedOver(top: Candidate, t: Task): string {
   if (limited(top)) return `${top.label} hit its limit`;
   if (isNear(top, t.now)) return `${top.label} is near its limit`;
+  if (tooBig(top, t)) return `${top.label} has too little left for this`;
   if (top.limitGuessed) return `${top.label} may still be at its limit`;
   if (kept(top, t)) return `${top.label} is kept for deep work`;
   return `${top.label} is paid per use`;

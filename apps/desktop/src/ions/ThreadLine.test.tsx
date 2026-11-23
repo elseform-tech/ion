@@ -23,14 +23,14 @@ const chat = (lastRunStatus: string): ChatInfo => ({
   by: "ion",
 });
 
-const line = (events: IonEvent[], c: ChatInfo) => {
+const line = (events: IonEvent[], c: ChatInfo, call = vi.fn()) => {
   const subscribe = vi.fn(async (_q: unknown, fn: (e: IonEvent) => void) => {
     for (const e of events) fn(e);
     return () => {};
   });
   return render(
     <ThreadLine
-      client={{ subscribe, call: vi.fn() } as unknown as IonClient}
+      client={{ subscribe, call } as unknown as IonClient}
       chatId="t1"
       projectId="storefront"
       chat={c}
@@ -72,6 +72,27 @@ describe("a thread's line", () => {
     await waitFor(() => expect(container.querySelector(".tt")?.textContent).toBe("Waiting for you"));
     expect(container.querySelector(".now")).toBeNull();
     expect(container.querySelector(".wd")).not.toBeNull();
+  });
+});
+
+// The user, 2026-11-21: an ion's thread line says what such a task usually takes, on hover, from past chats.
+describe("a thread's estimate", () => {
+  it("shows on hover, and nothing when there are too few past chats", async () => {
+    const done = ev(EV.runFinished, { status: "done" }, "2026-11-19T10:01:04Z");
+    const call = vi.fn(async () => ({ unit: "tokens", low: 40_000, high: 120_000 }));
+    const { container } = line([started, done], chat("done"), call);
+    await waitFor(() =>
+      expect(container.querySelector(".tl")?.getAttribute("title")).toBe("usually 40–120k tokens"),
+    );
+    expect(call).toHaveBeenCalledWith("usage.estimate", { chatId: "t1" });
+    cleanup();
+    const none = line(
+      [started, done],
+      chat("done"),
+      vi.fn(async () => null),
+    );
+    await new Promise((r) => setTimeout(r, 500));
+    expect(none.container.querySelector(".tl")?.getAttribute("title")).toBeNull();
   });
 });
 

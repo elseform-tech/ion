@@ -120,6 +120,7 @@
     "routines.pause",
     "activity.list",
     "usage.list",
+    "usage.estimate",
     "tools.list",
     "tools.setOn",
     "tools.setKey",

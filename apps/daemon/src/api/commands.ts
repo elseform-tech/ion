@@ -56,6 +56,7 @@ import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
 import { missesOf } from "../access/misses.js";
 import { readAgentRules, ruleCount } from "../access/agent-rules.js";
 import { orderIn, routed, usageNow } from "./routing.js";
+import { estimateFor } from "./estimate.js";
 import type { Handoffs } from "../runs/limit-handoff.js";
 
 export { UserError } from "./errors.js";
@@ -82,6 +83,7 @@ async function askOn(a: Commands["ask"]["args"], ctx: Ctx) {
   const where = {
     ...(a.projectId ? { projectId: a.projectId } : {}),
     ...(a.effort ? { effort: a.effort } : {}),
+    text: a.text,
   };
   const route = a.chatId ? null : await routed(ctx, () => harnessInfos.list(), where);
   if (route) return ctx.runs.ask({ ...a, harness: route.harness }, { routed: route.reason });
@@ -166,6 +168,8 @@ export const handlers: Handlers = {
   // The ready agents ion knows, waiting a few seconds at most on ones still being read (`ion status` stays quick).
   // A fresh daemon's agents are still being read: a few seconds for them, never longer (review, 2026-11-22).
   "usage.list": async (_a, ctx) => usageNow(ctx, await harnessInfos.settled(USAGE_WAIT_MS)),
+  // What a task usually takes, from your past chats in its project (the brain pill's hover, an ion's thread line).
+  "usage.estimate": async (a, ctx) => estimateFor(ctx, a, await harnessInfos.settled(USAGE_WAIT_MS)),
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
     renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));

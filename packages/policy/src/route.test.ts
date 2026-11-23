@@ -106,4 +106,17 @@ describe("pickAgent", () => {
       reason: "On Codex — this project's agent",
     });
   });
+  // The user, 2026-11-22: a task that usually takes more of an agent's window than it has left goes on another.
+  it("a task that won't fit what's left of an agent's window goes on another", () => {
+    const codex = agent("codex", { windows: [{ name: "5 h", usedPercent: 70, resetsAt: later(60) }] });
+    const order = ["codex", "claude"];
+    const estimate = { codex: { unit: "percent" as const, low: 20, high: 40, window: "5 h" } };
+    expect(pickAgent([codex, agent("claude")], task({ order, estimate }))).toEqual({
+      agent: "claude",
+      reason: "On Claude Code — Codex has too little left for this",
+    });
+    // One that fits stays put.
+    const small = { codex: { unit: "percent" as const, low: 5, high: 10, window: "5 h" } };
+    expect(pickAgent([codex, agent("claude")], task({ order, estimate: small })).agent).toBe("codex");
+  });
 });

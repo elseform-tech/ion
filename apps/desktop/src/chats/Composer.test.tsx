@@ -168,6 +168,22 @@ describe("Composer", () => {
     await waitFor(() => expect(call).toHaveBeenCalledWith("ask", { text: "hi" }));
   });
 
+  // The user, 2026-11-21: before you send, the brain pill's hover says what this usually takes ("usually 40–120k
+  // tokens"), from your past chats; with too few, nothing.
+  it("the brain pill says what a task usually takes, on hover", async () => {
+    const call = vi.fn(async (cmd: string) =>
+      cmd === "usage.estimate" ? { unit: "tokens", low: 40_000, high: 120_000 } : null,
+    );
+    compose([grok], call as never);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Rename the helper" } });
+    await waitFor(() => expect(pill().getAttribute("title")).toContain("usually 40–120k tokens"));
+    expect(call).toHaveBeenCalledWith("usage.estimate", {
+      projectId: null,
+      harness: "grok-build",
+      text: "Rename the helper",
+    });
+  });
+
   // The user, 2026-11-22: why Pick by usage picked the chat's agent shows on its pill, on hover.
   it("says why ion picked the chat's agent on hover", () => {
     render(

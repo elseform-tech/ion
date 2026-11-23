@@ -75,7 +75,10 @@ export type IonsDeps = {
   /** One agent, asked alone. */
   agent?: (id: string) => Promise<HarnessInfo | undefined>;
   /** Pick by usage (when it's on): a thread's agent, and why in one line; null to go on the project's. */
-  route?: (projectId: string, o: { effort?: Effort }) => Promise<{ harness: string; reason: string } | null>;
+  route?: (
+    projectId: string,
+    o: { effort?: Effort; text?: string },
+  ) => Promise<{ harness: string; reason: string } | null>;
 };
 
 type Thread = { chatId: string; projectId: string };
@@ -261,9 +264,10 @@ export class Ions {
   }
 
   /** A thread's agent: Pick by usage's (when it's on), with why; else the project's ion's. */
-  private async threadAgent(projectId: string, effort: Effort | undefined) {
+  private async threadAgent(projectId: string, effort: Effort | undefined, text: string) {
     const e = effort ?? brainOf(this.d.configFile, projectId, undefined).effort;
-    const route = (await this.d.route?.(projectId, e ? { effort: e } : {}).catch(() => null)) ?? null;
+    const route =
+      (await this.d.route?.(projectId, { text, ...(e ? { effort: e } : {}) }).catch(() => null)) ?? null;
     return { harness: route?.harness ?? (await projectAgent(this.d, projectId)), route };
   }
 
@@ -277,7 +281,7 @@ export class Ions {
     text: string,
     o: { request?: string; title?: string; effort?: Effort } & ThreadPicks = {},
   ): Promise<Thread | { why: string }> {
-    const { harness, route } = await this.threadAgent(projectId, o.effort);
+    const { harness, route } = await this.threadAgent(projectId, o.effort, text);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
       const args = {

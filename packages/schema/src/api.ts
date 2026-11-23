@@ -3,7 +3,7 @@ import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
 import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
 import type { MemorySee, MemoryType } from "./memory.js";
-import type { AgentUsage, HarnessInfo } from "./agents.js";
+import type { AgentUsage, HarnessInfo, TaskEstimate } from "./agents.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -362,6 +362,14 @@ export type Commands = ToolsCommands & {
   "activity.list": { args: Record<string, never>; result: ActivityInfo };
   /** Each listed agent's usage: tokens and cost, its windows, its limit, how it bills. */
   "usage.list": { args: Record<string, never>; result: AgentUsage[] };
+  /**
+   * What a task usually takes, from similar past chats in its project: a new chat's request (on the agent named, else
+   * the one it would go on), or a chat already started (left out of its own history). Null with too few to say.
+   */
+  "usage.estimate": {
+    args: { chatId: string } | { projectId: string | null; harness?: string; text: string };
+    result: TaskEstimate | null;
+  };
 };
 
 export type NeedInfo = {
@@ -516,6 +524,7 @@ export const COMMANDS = [
   "routines.pause",
   "activity.list",
   "usage.list",
+  "usage.estimate",
   "tools.list",
   "tools.setOn",
   "tools.setKey",

@@ -4,6 +4,7 @@ import type { HarnessInfo } from "@ion/schema";
 import { useCallback, useRef, useState } from "react";
 import { type Brain, BrainPill, BrainPopover, useEffortKey } from "./BrainPopover.js";
 import { useDismiss } from "./dismiss.js";
+import { useEstimate } from "./estimate.js";
 import { PickedBox, usePicker } from "./Picks.js";
 import { onEnter, type Queue, QueueLines, useDoubleEsc, useEditInto, useQueue } from "./Queue.js";
 
@@ -59,6 +60,7 @@ function BrainPick(p: {
   onChange: (b: Brain) => void;
   byUsage?: boolean;
   why?: string | null;
+  estimate?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
@@ -73,6 +75,7 @@ function BrainPick(p: {
         open={open}
         byUsage={p.byUsage}
         why={p.why}
+        estimate={p.estimate}
         onClick={() => {
           if (!open) p.onOpen?.();
           setOpen(!open);
@@ -285,6 +288,15 @@ function useSendBrain(p: Props) {
   };
 }
 
+/**
+ * What a new chat's estimate is asked for: its project, the agent it goes on (none while Pick by usage picks), your
+ * words. Nothing until the agents are known and you've typed something; none for a reply.
+ */
+function estimateAsk(p: Props, harness: string, byUsage: boolean, text: string) {
+  if ("chatId" in p.to || !p.harnesses.length || !text.trim()) return null;
+  return { projectId: p.to.projectId, ...(byUsage || !harness ? {} : { harness }), text: text.trim() };
+}
+
 /** A new chat's big box, or a reply's one line. */
 const boxLook = (project?: ProjectPick) =>
   project
@@ -302,6 +314,7 @@ export function Composer(p: Props) {
   const { brain, setBrain, access, setAccess, b, sent, queued, byUsage, agentReady } = useSendBrain(p);
   const { text, setText, edit, put } = useBoxText(q, p.onSending);
   const { error, pending, send } = useSend(client, onSent);
+  const estimate = useEstimate(client, estimateAsk(p, b.harness, byUsage, text));
   const pk = usePicker({ client, args: { harness: b.harness, ...where(to) }, text, setText: edit });
   const canSend = !locked && Boolean(text.trim()) && agentReady;
   const { ref, onEdit } = useEditInto(setText);
@@ -331,6 +344,7 @@ export function Composer(p: Props) {
             onChange={setBrain}
             byUsage={byUsage}
             why={p.why}
+            estimate={estimate}
           />
           <AccessPill access={access} onChange={setAccess} />
           <span className="sp" />

@@ -47,6 +47,40 @@ export type AgentUsage = {
   limitedUntil: string | null;
 };
 
+/**
+ * What a task usually takes, from similar past chats (median to p90): tokens, its cost for an agent paid per token
+ * (`usd`), or its share of one of the agent's windows (`percent`, only from windows it really reports).
+ */
+export type TaskEstimate =
+  | { unit: "tokens" | "usd"; low: number; high: number }
+  | { unit: "percent"; low: number; high: number; window: string };
+
+/** Tokens in few figures, with the unit only on the high end when both share it: "40", "120k", "1.2M". */
+function tokens(n: number): { n: string; unit: string } {
+  if (n >= 1_000_000) return { n: String(Math.round(n / 100_000) / 10), unit: "M" };
+  if (n >= 1000) return { n: String(Math.round(n / 1000)), unit: "k" };
+  return { n: String(n), unit: "" };
+}
+
+/** Low to high, or one figure when they're the same: "40–120k", "5–10%". */
+const span = (low: string, high: string) => (low === high ? high : `${low}–${high}`);
+
+/**
+ * What a task usually takes, in words: "usually 40–120k tokens", "usually $0.20–$0.60", "usually 5–10% of 5 h".
+ * A share rounds to whole percent, never below 1.
+ */
+export function estimateText(e: TaskEstimate): string {
+  const usd = (n: number) => "$" + n.toFixed(2);
+  if (e.unit === "usd") return `usually ${span(usd(e.low), usd(e.high))}`;
+  if (e.unit === "percent") {
+    const pct = (n: number) => String(Math.max(1, Math.round(n)));
+    return `usually ${span(pct(e.low), pct(e.high))}% of ${e.window}`;
+  }
+  const [lo, hi] = [tokens(e.low), tokens(e.high)];
+  const low = lo.unit === hi.unit ? lo.n : `${lo.n}${lo.unit}`;
+  return `usually ${span(low, hi.n)}${hi.unit} tokens`;
+}
+
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const pad = (n: number) => String(n).padStart(2, "0");
 

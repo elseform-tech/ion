@@ -2,6 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import { ChevronRight, CircleAlert, Maximize2, X } from "@ion/design-system";
 import type { ChatInfo, IonInfo } from "@ion/schema";
 import { ChatView, useTimeline } from "../chats/ChatView.js";
+import { useEstimate } from "../chats/estimate.js";
 import { QuestionBar } from "../chats/QuestionBar.js";
 import { Resizer } from "../chats/Resizer.js";
 import { workSeconds } from "../chats/steps.js";
@@ -49,14 +50,16 @@ type LineProps = {
  */
 export function ThreadLine(p: LineProps) {
   const s = useThread(p.client, p.chatId, p.chat);
+  const estimate = useEstimate(p.client, { chatId: p.chatId });
   return (
     <button
       className={`tl${p.on ? " on" : ""}`}
       type="button"
       aria-pressed={p.on}
       onClick={p.onOpen}
-      // Why Pick by usage put the thread on its agent, on hover (the user, 2026-11-22).
-      title={s.why ?? undefined}
+      // Why Pick by usage put the thread on its agent (the user, 2026-11-22) and what such a task usually takes, on
+      // hover.
+      title={[s.why, estimate].filter(Boolean).join("\n") || undefined}
     >
       {p.ion ? <IonAvatar ion={p.ion} /> : null}
       <b>{p.projectId}</b>

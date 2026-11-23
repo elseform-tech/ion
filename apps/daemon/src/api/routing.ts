@@ -1,8 +1,9 @@
-import { loadUserConfig, type UserConfig } from "@ion/config";
+import { DEFAULT_PROJECT, loadUserConfig, type UserConfig } from "@ion/config";
 import { type Candidate, pickAgent } from "@ion/policy";
-import type { AgentUsage, EffortLevel, HarnessInfo } from "@ion/schema";
+import type { AgentUsage, EffortLevel, HarnessInfo, TaskEstimate } from "@ion/schema";
 import { agentOrder, getHarness, listedHarnessIds } from "../adapters/registry.js";
 import type { Db } from "../store/index.js";
+import { estimateOf } from "../views/estimate.js";
 import { usageView } from "../views/usage.js";
 import { agentUsages, billings, configuredModels } from "./usage.js";
 
@@ -30,6 +31,17 @@ export async function usageNow(
 /** Deep work: what needs ion's deep model (its agent is kept for it otherwise). */
 const isDeep = (effort: EffortLevel | undefined) => effort === "max";
 
+/** What the request usually takes on each agent, from the project's past chats (none for an agent with too few). */
+function estimates(db: Db, usage: AgentUsage[], q: { projectId: string; text?: string }) {
+  const out: Record<string, TaskEstimate> = {};
+  if (!q.text?.trim()) return out;
+  for (const u of usage) {
+    const e = estimateOf(db, { projectId: q.projectId, harness: u.harness, text: q.text }, u);
+    if (e) out[u.harness] = e;
+  }
+  return out;
+}
+
 /**
  * Pick by usage (the user, 2026-11-22: off at first): the agent a new chat you picked none for goes on, and why in one
  * line; null when it's off or no agent is free (ion's usual default applies). "Verify, don't guess": headroom only
@@ -38,7 +50,7 @@ const isDeep = (effort: EffortLevel | undefined) => effort === "max";
 export function routeBy(
   c: UserConfig,
   usage: AgentUsage[],
-  o: { db: Db; projectId?: string; effort?: EffortLevel; now?: Date },
+  o: { db: Db; projectId?: string; effort?: EffortLevel; text?: string; now?: Date },
 ): { harness: string; reason: string } | null {
   if (!c.routing.byUsage) return null;
   const now = o.now ?? new Date();
@@ -49,7 +61,12 @@ export function routeBy(
   }));
   const project = c.projects.find((p) => p.id === o.projectId)?.harness;
   const deepAgent = c.ion.deep.split(":")[0];
-  const task = { order: agentOrder(c.routing.order), now, deep: isDeep(o.effort) };
+  // A task that usually takes more of an agent's window than it has left goes on another (the user, 2026-11-22).
+  const estimate = estimates(o.db, usage, {
+    projectId: o.projectId ?? DEFAULT_PROJECT,
+    ...(o.text ? { text: o.text } : {}),
+  });
+  const task = { order: agentOrder(c.routing.order), now, deep: isDeep(o.effort), estimate };
   const r = pickAgent(candidates, {
     ...task,
     ...(project ? { project } : {}),
@@ -62,7 +79,7 @@ export function routeBy(
 export async function routed(
   d: { db: Db; configFile: string },
   known: () => Promise<HarnessInfo[]>,
-  o: { projectId?: string; effort?: EffortLevel },
+  o: { projectId?: string; effort?: EffortLevel; text?: string },
 ): Promise<{ harness: string; reason: string } | null> {
   const c = loadUserConfig(d.configFile).config;
   if (!c.routing.byUsage) return null;

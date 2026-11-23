@@ -290,7 +290,7 @@ function startIons(
         : Promise.resolve({ why: "ion is starting" }),
   });
   // Pick by usage, when it's on: a thread's agent by fit, your order, headroom and cost (the project's own is its fit).
-  const route = async (projectId: string, o: { effort?: EffortLevel }) =>
+  const route = async (projectId: string, o: { effort?: EffortLevel; text?: string }) =>
     routed(d, agents, { projectId, ...o });
   const ions = new Ions({ ...deps, turns, agents, agent, route });
   late.ions = ions;

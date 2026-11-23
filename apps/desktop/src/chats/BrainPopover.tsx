@@ -67,6 +67,8 @@ export function BrainPill(p: {
   byUsage?: boolean;
   /** Why Pick by usage put the chat on its agent, on hover. */
   why?: string | null;
+  /** What this usually takes, from your past chats ("usually 40–120k tokens"), on hover. */
+  estimate?: string | null;
 }) {
   const { h, model, label, name } = pillNames(p.harnesses, p.brain, p.byUsage);
   return (
@@ -76,7 +78,7 @@ export function BrainPill(p: {
       aria-haspopup="dialog"
       aria-expanded={p.open}
       aria-label={`Harness, model and effort: ${name}`}
-      title={p.why ? `${name}\n${p.why}` : name}
+      title={[name, p.why, p.estimate].filter(Boolean).join("\n")}
       onClick={p.onClick}
     >
       {h && <Avatar harness={h.id} />}
