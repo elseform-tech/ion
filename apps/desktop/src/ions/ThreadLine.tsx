@@ -28,8 +28,8 @@ function useThread(client: IonClient, chatId: string, c?: ChatInfo) {
   const secs = w ? workSeconds(w, now) : 0;
   let say = c?.title ?? "A thread";
   if (waiting) say = "Waiting for you";
-  else if (live) say = w?.steps.length ? current(w) : "Delegating";
-  return { say, live: live && !waiting, waiting, failed: c?.lastRunStatus === "failed", secs };
+  else if (live) say = w?.steps.length ? current(w) : (t.waiting ?? "Delegating");
+  return { say, live: live && !waiting, waiting, failed: c?.lastRunStatus === "failed", secs, why: t.routed };
 }
 
 type LineProps = {
@@ -50,7 +50,14 @@ type LineProps = {
 export function ThreadLine(p: LineProps) {
   const s = useThread(p.client, p.chatId, p.chat);
   return (
-    <button className={`tl${p.on ? " on" : ""}`} type="button" aria-pressed={p.on} onClick={p.onOpen}>
+    <button
+      className={`tl${p.on ? " on" : ""}`}
+      type="button"
+      aria-pressed={p.on}
+      onClick={p.onOpen}
+      // Why Pick by usage put the thread on its agent, on hover (the user, 2026-11-22).
+      title={s.why ?? undefined}
+    >
       {p.ion ? <IonAvatar ion={p.ion} /> : null}
       <b>{p.projectId}</b>
       {s.failed && !s.live ? <CircleAlert /> : null}

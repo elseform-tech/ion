@@ -18,7 +18,7 @@ type Ask = (
     effort?: Effort;
     access: "auto";
   },
-  opts: { by: "ion"; request?: string; title?: string },
+  opts: { by: "ion"; request?: string; title?: string; routed?: string },
 ) => Promise<{ chatId: string; runId: string }>;
 
 /** A title without its closing stops or spaces ("Fix the cart." → "Fix the cart"), to quote it in a sentence. */
@@ -74,6 +74,8 @@ export type IonsDeps = {
   agents?: () => Promise<HarnessInfo[]>;
   /** One agent, asked alone. */
   agent?: (id: string) => Promise<HarnessInfo | undefined>;
+  /** Pick by usage (when it's on): a thread's agent, and why in one line; null to go on the project's. */
+  route?: (projectId: string, o: { effort?: Effort }) => Promise<{ harness: string; reason: string } | null>;
 };
 
 type Thread = { chatId: string; projectId: string };
@@ -258,6 +260,13 @@ export class Ions {
     return t;
   }
 
+  /** A thread's agent: Pick by usage's (when it's on), with why; else the project's ion's. */
+  private async threadAgent(projectId: string, effort: Effort | undefined) {
+    const e = effort ?? brainOf(this.d.configFile, projectId, undefined).effort;
+    const route = (await this.d.route?.(projectId, e ? { effort: e } : {}).catch(() => null)) ?? null;
+    return { harness: route?.harness ?? (await projectAgent(this.d, projectId)), route };
+  }
+
   /**
    * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `o.request` is what the
    * judge treats as your request: your own message, never a brief an ion's agent wrote. `o.title`: the thread's
@@ -268,7 +277,7 @@ export class Ions {
     text: string,
     o: { request?: string; title?: string; effort?: Effort } & ThreadPicks = {},
   ): Promise<Thread | { why: string }> {
-    const harness = await projectAgent(this.d, projectId);
+    const { harness, route } = await this.threadAgent(projectId, o.effort);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
       const args = {
@@ -281,7 +290,10 @@ export class Ions {
         ...(o.mentions?.length ? { mentions: o.mentions } : {}),
         access: "auto" as const,
       };
-      const opts = { by: "ion" as const, ...(o.request ? { request: o.request } : {}) };
+      const opts = {
+        ...{ by: "ion" as const, ...(o.request ? { request: o.request } : {}) },
+        ...(route ? { routed: route.reason } : {}),
+      };
       const { chatId } = await this.d.runs.ask(args, o.title ? { ...opts, title: o.title } : opts);
       return { chatId, projectId };
     } catch (e) {

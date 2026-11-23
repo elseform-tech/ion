@@ -242,6 +242,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["memory"],
         ["todo"],
         ["harnesses"],
+        ["harnesses", "order"],
         ["routines"],
         ["routines", "add"],
         ["suggestions"],
@@ -449,6 +450,15 @@ describe("ion cli", { timeout: 20_000 }, () => {
         err: "Unknown model for Fake: nope",
       });
     }, 60_000); // it asks each real agent CLI; slow under load
+
+    // The user, 2026-11-22: the agent order is yours to set from the CLI too; the rest follow in ion's own order.
+    it("puts agents in order", async () => {
+      await setup();
+      expect((await ion("harnesses", "order", "codex", "opencode")).out).toBe(
+        "codex, opencode, grok-build, claude-code",
+      );
+      expect(await ion("harnesses", "order", "nope")).toMatchObject({ code: 1, err: "Unknown agent: nope" });
+    });
 
     // Final review minor 8: one harness that fails to answer doesn't break the list.
     it("lists the other harnesses when one fails to answer", async () => {

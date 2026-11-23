@@ -117,6 +117,9 @@ const Tools = z.looseObject({
   ionUse: z.array(z.string()).default([]),
 });
 
+/** routing.onLimit: what ion does when a chat's agent hits its limit. */
+export const ON_LIMIT = ["ask", "continue", "wait"] as const;
+
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
 const MaxRuns = z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]);
 
@@ -185,6 +188,19 @@ const UserConfigSchema = z.looseObject({
    * can turn them off.
    */
   agents: z.record(z.string(), z.looseObject({ ownTools: z.boolean().optional() })).default({}),
+  /**
+   * How ion picks a chat's agent (Plan 20). `order`: your agent order, best first (empty: ion's own, opencode, Grok
+   * Build, Codex, Claude Code); it decides handoff targets, Pick by usage, and an ion's chats when the project names
+   * no agent. `onLimit`: when a chat's agent hits its limit, ask you, continue on the next agent, or wait for the
+   * reset. `byUsage`: Pick by usage fills in a new chat's agent when you picked none.
+   */
+  routing: z
+    .looseObject({
+      order: z.array(z.string()).default([]),
+      onLimit: z.enum(ON_LIMIT).default("ask"),
+      byUsage: z.boolean().default(false),
+    })
+    .prefault({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -225,6 +241,10 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["memory"], z.looseObject({})],
   [["memory", "dream"], z.enum(["off", "nightly", "weekly"])],
   [["memory", "dreamAgent"], z.string()],
+  [["routing"], z.looseObject({})],
+  [["routing", "order"], z.array(z.string())],
+  [["routing", "onLimit"], z.enum(ON_LIMIT)],
+  [["routing", "byUsage"], z.boolean()],
 ];
 
 /** Whether this agent brings its own servers, skills and plugins into ion's chats (on unless you turned it off). */

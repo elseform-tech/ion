@@ -124,6 +124,9 @@ export type ProjectPatch = {
 /** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
 export type IonSettings = { quick: string; effort: EffortLevel | null };
 
+/** What ion does when a chat's agent hits its limit (Settings → Agents). */
+export type OnLimit = "ask" | "continue" | "wait";
+
 /** How much a project may notify: everything, what needs you, only urgent things, nothing. */
 export type NotifyLevel = "all" | "needs" | "digest" | "muted";
 
@@ -142,12 +145,23 @@ export type SettingsInfo = IonSettings & {
   ownTools: Record<string, boolean>;
   /** ion tidies your memory overnight: how often, and on which agent (null: ion's own model's). */
   dream: { mode: DreamMode; agent: string | null };
+  /**
+   * Your agent order, best first (every agent ion knows): handoff targets, Pick by usage, and an ion's chats when the
+   * project names no agent.
+   */
+  agentOrder: string[];
+  /** When a chat's agent hits its limit: ask you, continue on the next agent, or wait for the reset. */
+  onLimit: OnLimit;
+  /** Pick by usage: a new chat you picked no agent for goes on the one with room, by fit and cost. */
+  byUsage: boolean;
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
-export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools">> & {
+export type SettingsPatch = Partial<
+  Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools" | "agentOrder" | "onLimit" | "byUsage">
+> & {
   dream?: { mode?: DreamMode; agent?: string | null };
   notifications?: {
     briefing?: Partial<SettingsInfo["notifications"]["briefing"]>;

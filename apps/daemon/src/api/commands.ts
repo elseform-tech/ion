@@ -1,6 +1,12 @@
 import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
-import { defaultAgent, getHarness, harnessIds, listedHarnessIds } from "../adapters/registry.js";
+import {
+  byPreference,
+  defaultAgent,
+  getHarness,
+  harnessIds,
+  listedHarnessIds,
+} from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
 import type { AuthStatus } from "@ion/adapter-kit";
 import type { Dreams } from "../scheduler/index.js";
@@ -49,8 +55,7 @@ import { toolsImportHandlers } from "./tools-import.js";
 import { machineSandbox, notSandboxed } from "../runs/sandbox.js";
 import { missesOf } from "../access/misses.js";
 import { readAgentRules, ruleCount } from "../access/agent-rules.js";
-import { usageView } from "../views/usage.js";
-import { agentUsages, billings, configuredModels } from "./usage.js";
+import { orderIn, routed, usageNow } from "./routing.js";
 import type { Handoffs } from "../runs/limit-handoff.js";
 
 export { UserError } from "./errors.js";
@@ -68,12 +73,21 @@ export async function diffOfChat(ctx: { db: Db; configFile: string }, chatId: st
   return chatDiff(project.path, worktree);
 }
 
-/** ask on the agent named, else the chat's own while it's ready, else the first ready one (never one signed out). */
+/**
+ * ask on the agent named, else the chat's own while it's ready; a new chat on the one Pick by usage picks (when it's
+ * on; the chat says why), else the first ready in your agent order (never one signed out).
+ */
 async function askOn(a: Commands["ask"]["args"], ctx: Ctx) {
   if (a.harness) return ctx.runs.ask(a);
+  const where = {
+    ...(a.projectId ? { projectId: a.projectId } : {}),
+    ...(a.effort ? { effort: a.effort } : {}),
+  };
+  const route = a.chatId ? null : await routed(ctx, () => harnessInfos.list(), where);
+  if (route) return ctx.runs.ask({ ...a, harness: route.harness }, { routed: route.reason });
   const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
   const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
-  const harness = defaultAgent(ready, own);
+  const harness = defaultAgent(ready, own, orderIn(ctx.configFile));
   if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
   return ctx.runs.ask({ ...a, harness });
 }
@@ -140,24 +154,18 @@ export const handlers: Handlers = {
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   // What the app lists: the fake agent only in debug mode (ion itself still sees it, for tests and the tour).
-  "harnesses.list": async () => {
-    const listed = listedHarnessIds();
-    return (await harnessInfos.list())
-      .filter((h) => listed.includes(h.id))
+  // In your agent order (Settings → Agents): the app's default agent is the first ready one.
+  "harnesses.list": async (_a, ctx) => {
+    const listed = byPreference(listedHarnessIds(), orderIn(ctx.configFile));
+    const infos = await harnessInfos.list();
+    return listed
+      .map((id) => infos.find((h) => h.id === id))
+      .filter((h) => !!h)
       .map((h) => ({ ...h, ...missesOf(h.id) }));
   },
   // The ready agents ion knows, waiting a few seconds at most on ones still being read (`ion status` stays quick).
-  "usage.list": async (_a, ctx) => {
-    const listed = listedHarnessIds();
-    // A fresh daemon's agents are still being read: a few seconds for them, never longer (review, 2026-11-22).
-    const known = await harnessInfos.settled(USAGE_WAIT_MS);
-    const infos = known.filter((h) => listed.includes(h.id) && h.installed && h.signedIn);
-    const rows = usageView.agents(ctx.db, new Date());
-    const c = loadUserConfig(ctx.configFile).config;
-    const ran = Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, r.models]));
-    const agents = infos.map((h) => getHarness(h.id)?.adapter).filter((a) => !!a);
-    return agentUsages(infos, rows, await billings(agents, ran, (h) => configuredModels(c, h)));
-  },
+  // A fresh daemon's agents are still being read: a few seconds for them, never longer (review, 2026-11-22).
+  "usage.list": async (_a, ctx) => usageNow(ctx, await harnessInfos.settled(USAGE_WAIT_MS)),
   "chat.diff": (a, ctx) => diffOfChat(ctx, String(a.chatId ?? "")),
   "chat.rename": (a, ctx) => {
     renameChat(ctx.store, ctx.db, String(a.chatId ?? ""), String(a.title ?? ""));

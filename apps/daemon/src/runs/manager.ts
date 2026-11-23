@@ -16,6 +16,7 @@ import { ionDirsOf } from "../access/index.js";
 import type { NeedsService } from "../needs/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { createRunQueue, maxRuns, type Queued } from "../scheduler/index.js";
+import { type AskOpts, type How, howOf, queuedLines } from "./queued.js";
 import { chatsView } from "../views/chats.js";
 import type { HistoryMessage } from "../views/messages.js";
 import { freshText, historyOf } from "./history.js";
@@ -87,7 +88,7 @@ export class RunManager {
   /** Chats with an ask in progress (before their run is active), so two asks can't race. */
   private readonly reserved = new Set<string>();
   private readonly ready = new Readiness();
-  /** Runs waiting for a free slot (resources.max_runs). */
+  /** Chats ion starts waiting for a free slot (resources.max_runs: yours never wait). */
   private readonly queued = new Map<string, { chatId: string; item: Queued }>();
   private readonly queue: ReturnType<typeof createRunQueue>;
   /** Runs that left the queue and haven't ended: interrupt flags, and how to cut a retry's wait short. */
@@ -116,17 +117,7 @@ export class RunManager {
    * `opts.request`: what the judge treats as your request, when the message isn't yours as typed (the run your
    * answer to an agent's question starts is judged by your request from the run that asked).
    */
-  async ask(
-    args: AskArgs,
-    opts: {
-      request?: string;
-      shown?: string;
-      answers?: string;
-      by?: "ion";
-      title?: string;
-      handoff?: true;
-    } = {},
-  ): Promise<{ chatId: string; runId: string }> {
+  async ask(args: AskArgs, opts: AskOpts = {}): Promise<{ chatId: string; runId: string }> {
     const h = getHarness(args.harness ?? "claude-code");
     if (!h) throw new UserError(`Unknown harness: ${args.harness}`);
     // A new chat with no project goes to `default` (made the first time): every thread has a project.
@@ -144,19 +135,21 @@ export class RunManager {
     try {
       await this.ready.check(h, args.model);
       const picks = await picksOfRun(this.ctx.picks, h.adapter.id, args, projectId);
-      launch = await this.prepare(
-        h,
-        { ...args, shown: opts.shown, answers: opts.answers, by: opts.by, handoff: opts.handoff, picks },
-        chat,
-        repo,
-      );
+      const how = howOf(opts, this.queue);
+      const more = { shown: opts.shown, answers: opts.answers, picks, ...how };
+      launch = await this.prepare(h, { ...args, ...more }, chat, repo);
       if (opts.request !== undefined) launch.request = opts.request;
-      const l = launch;
-      this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
+      this.go(launch, opts.by === "ion");
     } finally {
       if (key) this.reserved.delete(key);
     }
     return { chatId: launch.chatId, runId: launch.runId };
+  }
+
+  /** A chat ion started waits for one of its slots (resources.max_runs); yours starts at once (the user, 2026-11-22). */
+  private go(l: Launch, ions: boolean): void {
+    if (ions) this.queued.set(l.runId, { chatId: l.chatId, item: this.queue.enqueue(() => this.launch(l)) });
+    else void this.launch(l).catch(() => {});
   }
 
   /** resources.max_runs changed: start the waiting runs that now fit. */
@@ -168,11 +161,11 @@ export class RunManager {
   /** `ask.shown`: what the chat shows as yours, when the text is ion's wording (your answer to a question). */
   private async prepare(
     h: HarnessEntry,
-    ask: AskArgs & { shown?: string; answers?: string; by?: "ion"; handoff?: true; picks?: RunPicks },
+    ask: AskArgs & { shown?: string; answers?: string; picks?: RunPicks } & How,
     chat: Chat,
     repo: string,
   ): Promise<Launch> {
-    const { shown, answers, by, handoff, picks, ...args } = ask;
+    const { shown, answers, by, handoff, picks, routed, waiting, ...args } = ask;
     const chatId = chat.chatId ?? `chat_${randomUUID()}`;
     const wt = await createWorktree(repo, this.ctx.dataDir, chatId, chat.title).catch((e: Error) => {
       throw new UserError(e.message);
@@ -191,7 +184,7 @@ export class RunManager {
     };
     const sent = { ...data, ...shownPicks(picks) };
     this.store.append({ chatId, runId, origin: "daemon", type: EV.messageSent, data: sent });
-    this.store.append({ chatId, runId, origin: "daemon", type: EV.runQueued, data: { access } });
+    queuedLines(this.store, { chatId, runId, access, harness: h.adapter.id }, { routed, waiting });
     // The agent gets your words with what you picked, its way; the judge and the chat keep your words.
     const a = { ...args, text: agentText(args.text, h.adapter.picks, picks) };
     const l = {

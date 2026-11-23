@@ -15,6 +15,9 @@ export const settings: SettingsInfo = {
   },
   ownTools: { "claude-code": true, "grok-build": true },
   dream: { mode: "off", agent: null },
+  agentOrder: ["opencode", "grok-build", "codex", "claude-code"],
+  onLimit: "ask",
+  byUsage: false,
 };
 
 /** A daemon that answers Settings; `refuse`: settings.set says no with this reason. */

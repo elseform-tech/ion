@@ -1,3 +1,4 @@
+import { loadUserConfig } from "@ion/config";
 import { agentLabel, byPreference } from "../adapters/registry.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { IonQuestions } from "../ions/questions.js";
@@ -7,6 +8,7 @@ import { Handoffs } from "../runs/limit-handoff.js";
 import { Waits } from "../scheduler/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { diffOfChat, harnessInfos } from "./commands.js";
+import { orderIn } from "./routing.js";
 
 /** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
 export const followAsk = (chatId: string, m: { harness: string | null; text: string }) => ({
@@ -19,14 +21,18 @@ type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; 
 
 /**
  * When a chat's agent hits its limit: ion's question, the run on another agent (or the wait) your answer starts.
- * The agents offered are the ones signed in now, quota-friendly first; ion's message to the agent is hidden in the
+ * The agents offered are the ones signed in now, in your agent order; Settings says whether ion asks; ion's message to the agent is hidden in the
  * chat, which shows its one line.
  */
 function limitHandoffs(d: Deps): Handoffs {
   return new Handoffs({
     ...{ store: d.store, db: d.db, needs: d.needs, label: agentLabel, waits: new Waits() },
     ready: async () =>
-      byPreference((await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id)),
+      byPreference(
+        (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id),
+        orderIn(d.configFile),
+      ),
+    onLimit: () => loadUserConfig(d.configFile).config.routing.onLimit,
     start: async (a, o) =>
       (
         await d.runs.ask(a, {

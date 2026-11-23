@@ -1,7 +1,8 @@
 import type { IonClient } from "@ion/client/browser";
 import { Avatar, Brain, Zap } from "@ion/design-system";
 import { type AgentUsage, EV, type EffortLevel, type HarnessInfo, usageLine } from "@ion/schema";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, type HTMLAttributes, type ReactNode, useCallback, useEffect, useState } from "react";
+import { inOrder, PickingAgents, useAgentOrder } from "./AgentOrder.js";
 import { useEvents } from "../events.js";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
@@ -48,11 +49,20 @@ function UsageMeter({ u }: { u: AgentUsage | undefined }) {
  * plugins in ion's chats, on by default). On: one whose own hooks can't be turned off says they run too. Off: one that
  * has no switch to leave out all its own tools says it loads them too.
  */
-function AgentRow(p: { h: HarnessInfo; usage?: AgentUsage; own: boolean; onOwn: (on: boolean) => void }) {
+function AgentRow(p: {
+  h: HarnessInfo;
+  usage?: AgentUsage;
+  own: boolean;
+  onOwn: (on: boolean) => void;
+  /** Its grip in your agent order, and where a drag lands. */
+  grip: ReactNode;
+  row: HTMLAttributes<HTMLDivElement>;
+}) {
   const { h, own, onOwn } = p;
   const chip = own ? h.ownHooks && "Its own hooks run too" : h.ownTools && "Also loads its own";
   return (
-    <div className="hrow">
+    <div className="hrow ord" {...p.row}>
+      {p.grip}
       <Avatar harness={h.id} />
       <div>
         {h.label}
@@ -174,18 +184,26 @@ function useUsage(client: IonClient, harnesses: HarnessInfo[]): AgentUsage[] {
   return usage;
 }
 
-/** Settings → Agents: each coding agent and whether it's ready; the model ion thinks with, and how hard. */
+/**
+ * Settings → Agents: each coding agent and whether it's ready, in your order (drag to change it); what ion does when
+ * one hits its limit, and Pick by usage; the model ion thinks with, and how hard.
+ */
 export function Agents({ client, data }: { client: IonClient; data: SettingsData }) {
   const quick = data.settings?.quick ?? "";
   const [error, run] = useCallError();
   const pick = (spec: string) => run(client.call("settings.set", { patch: { quick: spec } }), data.reload);
   const usage = useUsage(client, data.harnesses);
+  const agents = inOrder(data.harnesses, data.settings?.agentOrder);
+  const order = useAgentOrder(
+    agents.map((h) => h.id),
+    (ids) => run(client.call("settings.set", { patch: { agentOrder: ids } }), data.reload),
+  );
   return (
     <>
       <div>
         <h4>Coding agents</h4>
         <div className="group">
-          {data.harnesses.map((h) => (
+          {agents.map((h, i) => (
             <AgentRow
               key={h.id}
               h={h}
@@ -194,9 +212,19 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
               onOwn={(on) =>
                 run(client.call("settings.set", { patch: { ownTools: { [h.id]: on } } }), data.reload)
               }
+              grip={order.grip(i, h.label)}
+              row={order.rowProps(i)}
             />
           ))}
         </div>
+        {data.settings && (
+          <PickingAgents
+            client={client}
+            onLimit={data.settings.onLimit ?? "ask"}
+            byUsage={data.settings.byUsage ?? false}
+            run={(call) => run(call, data.reload)}
+          />
+        )}
       </div>
       <QuickModel data={data} quick={quick} onPick={pick} error={error}>
         <QuickEffort

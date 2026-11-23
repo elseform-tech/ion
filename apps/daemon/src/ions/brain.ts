@@ -1,6 +1,6 @@
 import { loadUserConfig } from "@ion/config";
 import { clockOf, type EffortLevel as Effort, type HarnessInfo } from "@ion/schema";
-import { defaultAgent, getHarness } from "../adapters/registry.js";
+import { agentOrder, defaultAgent, getHarness } from "../adapters/registry.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -15,6 +15,9 @@ export type BrainDeps = {
   /** One agent (its CLI asked alone): checking a chosen agent never waits on every other's. */
   agent?: (id: string) => Promise<HarnessInfo | undefined>;
 };
+
+/** Your agent order (Settings → Agents). */
+const orderOf = (d: BrainDeps) => agentOrder(loadUserConfig(d.configFile).config.routing.order);
 
 /** Whether this one agent is ready: asked alone when ion can, else read from the list. */
 async function isReady(d: BrainDeps, id: string): Promise<boolean> {
@@ -46,9 +49,11 @@ export const limitedUntil = (db: Db, id: string): string | null =>
 async function pick(d: BrainDeps, o: { not: string[]; own?: string; ok?: (id: string) => boolean }) {
   const ready = (await readyAgents(d.agents)).filter(o.ok ?? (() => true));
   const marks = usageView.agents(d.db, new Date());
+  const order = orderOf(d);
   const open = defaultAgent(
     ready.filter((id) => !marks[id]?.limitedUntil && !o.not.includes(id)),
     null,
+    order,
   );
   if (open) return open;
   const guessed = ready.filter((id) => marks[id]?.limitGuessed);
@@ -57,6 +62,7 @@ async function pick(d: BrainDeps, o: { not: string[]; own?: string; ok?: (id: st
     defaultAgent(
       guessed.filter((id) => !o.not.includes(id)),
       null,
+      order,
     ) ?? null
   );
 }
@@ -75,14 +81,14 @@ export async function allLimited(d: BrainDeps): Promise<string | null> {
 
 /**
  * A project's agent: its own, else the one its last chat ran on (while still ready: a key can expire; you set the
- * project's own on purpose), else the first ready (opencode, Grok, Codex, Claude).
+ * project's own on purpose), else the first ready in your agent order.
  */
 export async function projectAgent(d: BrainDeps, projectId: string): Promise<string | undefined> {
   const own = loadUserConfig(d.configFile).config.projects.find((p) => p.id === projectId)?.harness;
   if (own) return own;
   const last = chatsView.lastAgent(d.db, projectId);
   if (last && (!d.agents || (await isReady(d, last)))) return last;
-  return defaultAgent(await readyAgents(d.agents), null);
+  return defaultAgent(await readyAgents(d.agents), null, orderOf(d));
 }
 
 /**
@@ -170,7 +176,7 @@ async function pastLimited(next: Promise<IonBrain | null>, limited?: string): Pr
 }
 
 /**
- * The first ready agent but these (opencode, Grok, Codex, Claude), for an ion whose own agent isn't ready or failed;
+ * The first ready agent but these (in your agent order), for an ion whose own agent isn't ready or failed;
  * on its default model (a project's own model only on the agent it was set for), or null when none is left.
  */
 export async function nextBrain(

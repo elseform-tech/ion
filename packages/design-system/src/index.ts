@@ -24,6 +24,7 @@ export {
   Ellipsis,
   Archive,
   GripVertical,
+  Gauge,
   Loader,
   ShieldOff,
   ShieldCheck,

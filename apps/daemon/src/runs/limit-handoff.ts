@@ -41,6 +41,8 @@ type Deps = {
   now?: () => Date;
   /** A chat's hold lifted without a run going on (a handoff that couldn't start): its queue may go on. */
   released?: (chatId: string) => void;
+  /** Settings → Agents, "When an agent hits its limit": ask you (the default), continue on the next agent, or wait. */
+  onLimit?: () => "ask" | "continue" | "wait";
 };
 
 type Usage = Record<string, { limitedUntil: string | null; limitGuessed?: true }>;
@@ -188,11 +190,27 @@ export class Handoffs {
       const [ready, usage] = [await this.d.ready(), usageView.agents(this.d.db, now)];
       const always = this.alwaysOn(chatId, from, ready, usage);
       if (always) await this.continueOn(chatId, from, always, { auto: true });
-      else this.ask(chatId, runId, pickLimit(from, ready, usage, { said: limit, now }), limit);
+      else await this.byChoice(chatId, runId, pickLimit(from, ready, usage, { said: limit, now }), limit);
     } finally {
       this.asking.delete(chatId);
       this.lifted(chatId);
     }
+  }
+
+  /**
+   * What Settings says to do at a limit (your "Always" for the project came first): continue on the next free agent
+   * in your order (unattended: on Auto), wait for the reset, or ask you. With no agent free to continue on, ion asks.
+   */
+  private async byChoice(
+    chatId: string,
+    runId: string,
+    l: Limit,
+    said: { resetsAt?: string },
+  ): Promise<void> {
+    const choice = this.d.onLimit?.() ?? "ask";
+    if (choice === "continue" && l.to && !l.maybe) return this.continueOn(chatId, l.from, l.to, {});
+    if (choice === "wait") return this.wait(chatId, l);
+    this.ask(chatId, runId, l, said);
   }
 
   /** The chat's hold may have lifted: its queue hears of it (a run started meanwhile keeps the chat busy anyway). */
@@ -238,7 +256,7 @@ export class Handoffs {
             label: continueLabel(L(l.to)) + (l.maybe ? " (may be free again)" : ""),
             consequence: l.maybe
               ? "It may be free again: ion tries it, and asks again if it isn't."
-              : "It picks up in this worktree with a summary of the work.",
+              : "It picks up where this left off, with a summary.",
             recommended: true,
           },
           wait,

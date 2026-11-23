@@ -148,6 +148,42 @@ describe("Composer", () => {
     );
   });
 
+  // The user, 2026-11-22: with Pick by usage on, a new chat you picked no agent for goes without one (ion picks it and
+  // says why); one you picked goes on it.
+  it("leaves a new chat's agent to Pick by usage until you pick one", async () => {
+    const call = vi.fn(async () => ({ chatId: "c1", runId: "r1" }));
+    render(
+      <Composer
+        client={{ call } as unknown as IonClient}
+        harnesses={[fake, grok]}
+        to={{ projectId: null }}
+        running={null}
+        byUsage
+        onSent={() => {}}
+      />,
+    );
+    expect(pill().textContent).toContain("By usage");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hi" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    await waitFor(() => expect(call).toHaveBeenCalledWith("ask", { text: "hi" }));
+  });
+
+  // The user, 2026-11-22: why Pick by usage picked the chat's agent shows on its pill, on hover.
+  it("says why ion picked the chat's agent on hover", () => {
+    render(
+      <Composer
+        client={chatClient(vi.fn())}
+        harnesses={[fake, grok]}
+        to={{ chatId: "c1" }}
+        harness="grok-build"
+        why="On Grok Build — free and enough for this"
+        running={null}
+        onSent={() => {}}
+      />,
+    );
+    expect(pill().getAttribute("title")).toContain("On Grok Build — free and enough for this");
+  });
+
   // Review Focus 3: an agent that isn't signed in can't be picked, and nothing sends to it.
   it("shows a signed-out agent as a disabled row, and Send stays off with no agent ready", () => {
     compose([out]);

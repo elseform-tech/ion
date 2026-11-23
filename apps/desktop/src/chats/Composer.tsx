@@ -57,6 +57,8 @@ function BrainPick(p: {
   brain: Brain;
   picked: boolean;
   onChange: (b: Brain) => void;
+  byUsage?: boolean;
+  why?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
@@ -69,6 +71,8 @@ function BrainPick(p: {
         harnesses={p.harnesses}
         brain={p.brain}
         open={open}
+        byUsage={p.byUsage}
+        why={p.why}
         onClick={() => {
           if (!open) p.onOpen?.();
           setOpen(!open);
@@ -159,6 +163,10 @@ type Props = {
   /** The brain popover opened: read the agents again. */
   onBrainOpen?: () => void;
   onSent: (chatId: string) => void;
+  /** Pick by usage is on: a new chat you pick no agent for goes on the one ion picks. */
+  byUsage?: boolean;
+  /** Why Pick by usage put the chat on its agent (its pill says so on hover). */
+  why?: string | null;
 };
 
 /**
@@ -258,7 +266,11 @@ function useSendBrain(p: Props) {
   const [access, setAccess] = useState<Access>("");
   const b = withAgent(brain, own, first);
   const keep = unlisted && !brain.harness;
-  const sent = { ...b, access, harness: keep ? "" : b.harness };
+  // Pick by usage fills in a new chat's agent only when you picked none (the user, 2026-11-22).
+  const byUsage = Boolean(p.byUsage && "projectId" in p.to && !brain.harness);
+  const sent = byUsage
+    ? { ...b, access, harness: "", model: "" }
+    : { ...b, access, harness: keep ? "" : b.harness };
   const queued = brain.harness ? sent : { ...brain, access };
   return {
     brain,
@@ -268,6 +280,7 @@ function useSendBrain(p: Props) {
     b,
     sent,
     queued,
+    byUsage,
     agentReady: keep || ready.some((h) => h.id === b.harness),
   };
 }
@@ -286,7 +299,7 @@ export function Composer(p: Props) {
   const { client, harnesses, to, running, onSent, project, onBrainOpen, locked } = p;
   useDoubleEsc(running, (runId) => void client.call("run.interrupt", { runId }).catch(() => {}));
   const q = useQueue(client, "chatId" in to ? to : null);
-  const { brain, setBrain, access, setAccess, b, sent, queued, agentReady } = useSendBrain(p);
+  const { brain, setBrain, access, setAccess, b, sent, queued, byUsage, agentReady } = useSendBrain(p);
   const { text, setText, edit, put } = useBoxText(q, p.onSending);
   const { error, pending, send } = useSend(client, onSent);
   const pk = usePicker({ client, args: { harness: b.harness, ...where(to) }, text, setText: edit });
@@ -316,6 +329,8 @@ export function Composer(p: Props) {
             brain={b}
             picked={Boolean(brain.harness || brain.model || brain.effort)}
             onChange={setBrain}
+            byUsage={byUsage}
+            why={p.why}
           />
           <AccessPill access={access} onChange={setAccess} />
           <span className="sp" />

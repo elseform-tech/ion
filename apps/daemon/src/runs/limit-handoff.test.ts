@@ -22,6 +22,7 @@ let started: { chatId: string; harness: string; text: string; answers?: string; 
 let waits: Waits;
 let released: string[];
 let handoffs: Handoffs;
+let onLimit: "ask" | "continue" | "wait";
 
 const depsOf = () => ({
   store,
@@ -39,6 +40,7 @@ const depsOf = () => ({
   changed: async () => [{ path: "src/theme.ts", added: 12, removed: 3 }],
   waits,
   released: (chatId: string) => void released.push(chatId),
+  onLimit: () => onLimit,
 });
 const make = () => new Handoffs(depsOf());
 
@@ -50,6 +52,7 @@ beforeEach(() => {
   started = [];
   released = [];
   waits = new Waits();
+  onLimit = "ask";
   handoffs = make();
 });
 
@@ -509,5 +512,58 @@ describe("Handoffs", () => {
     handoffs = make();
     await vi.advanceTimersByTimeAsync(61_000);
     expect(started).toEqual([]);
+  });
+
+  // The user, 2026-11-23 (end-to-end check): "worktree" is jargon in the question; plain words instead.
+  it("Continue says in plain words that it picks up where this left off", async () => {
+    hitLimit("c1", "claude-code", inAnHour());
+    const n = await until(() => needs.open("c1")[0]);
+    expect(n.choices?.[0]?.consequence).toBe("It picks up where this left off, with a summary.");
+  });
+
+  // The user, 2026-11-22 ("When an agent hits its limit": Continue on the next agent): ion goes on without asking,
+  // on the first free agent in your order, unattended, so on Auto (the same rule as Always).
+  it("Continue on the next agent goes on without asking, on Auto", async () => {
+    onLimit = "continue";
+    ready = ["grok-build", "codex", "claude-code"];
+    hitLimit("c1", "claude-code", inAnHour());
+    await until(() => started.length === 1);
+    expect(started[0]).toMatchObject({ chatId: "c1", harness: "grok-build", access: "auto" });
+    expect(needs.open("c1")).toEqual([]);
+    expect(lines("c1")).toEqual(["Continued on Grok Build on Auto — Claude Code hit its limit"]);
+  });
+
+  // The user, 2026-11-22 ("When an agent hits its limit": Wait): the chat waits for the reset without asking.
+  it("Wait waits for the reset without asking", async () => {
+    onLimit = "wait";
+    const resetsAt = inAnHour();
+    hitLimit("c1", "claude-code", resetsAt);
+    await until(() => lines("c1").length === 1);
+    expect(lines("c1")).toEqual([`Waits for Claude Code — ${clock(resetsAt)}`]);
+    expect(needs.open("c1")).toEqual([]);
+    expect(handoffs.holding("c1")).toBe(true);
+    expect(started).toEqual([]);
+  });
+
+  // The user, 2026-11-22: "Always continue on X here" still wins for its project, whatever the setting says.
+  it("an Always decision wins over Wait", async () => {
+    onLimit = "wait";
+    const data = {
+      ...{ decisionId: "d1", needId: "n0", projectId: "repo", question: "When an agent hits its limit here" },
+      ...{ choice: "Always continue on Codex", scope: "project", by: "you", allowKey: "handoff:codex" },
+    };
+    add({ chatId: null, runId: null, type: EV.decisionRecorded, data });
+    hitLimit("c1", "claude-code", inAnHour());
+    await until(() => started.length === 1);
+    expect(started[0]).toMatchObject({ chatId: "c1", harness: "codex" });
+  });
+
+  // With no other agent free, Continue on the next agent can't: ion asks (Wait alone), as it would.
+  it("Continue on the next agent with none free asks", async () => {
+    onLimit = "continue";
+    ready = ["claude-code"];
+    hitLimit("c1", "claude-code", inAnHour());
+    const n = await until(() => needs.open("c1")[0]);
+    expect(n.choices?.map((c) => c.label)).toEqual(["Wait"]);
   });
 });

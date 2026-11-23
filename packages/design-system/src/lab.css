@@ -66,7 +66,7 @@
 .chat{display:grid;grid-template-rows:48px minmax(0,1fr);min-height:0;min-width:0}
 .head{display:flex;align-items:center;gap:8px;padding:0 10px 0 20px;border-bottom:1px solid var(--line)}
 .head .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.head .muted{color:var(--faint);font-size:12.5px;white-space:nowrap}
+.head .muted{color:var(--faint);font-size:12.5px;white-space:nowrap}.head .why{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .head .sp{flex:1}
 .head canvas{width:22px;height:22px}
 .split{display:grid;grid-template-columns:minmax(0,1fr) 400px;min-height:0}
@@ -193,7 +193,7 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--hover);padding:1p
 .meter .tr{height:4px;border-radius:999px;background:var(--hover);overflow:hidden}
 .meter .tr i{display:block;height:100%;background:var(--ink);border-radius:inherit}
 .meter.hi .tr i{background:var(--wait)}
-.meter .mp{white-space:nowrap}
+.meter .mp{white-space:nowrap}.hrow.ord{grid-template-columns:20px 30px minmax(0,1fr) 150px auto;gap:12px;padding-left:6px}.grip{width:20px;cursor:grab;color:var(--faint)}.grip .lucide{width:14px;height:14px}
 .srow{display:flex;align-items:center;gap:12px;padding:12px 14px}
 .srow .g{flex:1}
 .sw{width:30px;height:18px;border-radius:999px;background:var(--line);position:relative;flex-shrink:0}

@@ -1,7 +1,13 @@
 import { availableParallelism } from "node:os";
-import { CLOCK, MAX_RUNS, MIN_RUNS, NOTIFY_LEVELS, type UserConfig } from "@ion/config";
-import { DREAM_MODES, type NotifyLevel, type SettingsInfo, type SettingsPatch } from "@ion/schema";
-import { harnessIds } from "../adapters/registry.js";
+import { CLOCK, MAX_RUNS, MIN_RUNS, NOTIFY_LEVELS, ON_LIMIT, type UserConfig } from "@ion/config";
+import {
+  DREAM_MODES,
+  type NotifyLevel,
+  type OnLimit,
+  type SettingsInfo,
+  type SettingsPatch,
+} from "@ion/schema";
+import { agentOrder, harnessIds } from "../adapters/registry.js";
 import { maxRuns } from "../scheduler/index.js";
 import { UserError } from "./errors.js";
 
@@ -20,7 +26,24 @@ export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort" 
       projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? "needs"])),
     },
     dream: { mode: c.memory.dream, agent: c.memory.dreamAgent ?? null },
+    agentOrder: agentOrder(c.routing.order),
+    onLimit: c.routing.onLimit,
+    byUsage: c.routing.byUsage,
   };
+}
+
+/** Your agent order: agents ion knows, each once (the rest follow in ion's own order). */
+function order(v: unknown): string[] {
+  if (!Array.isArray(v) || !v.length) throw new UserError("Name the agents in order");
+  const ids = v.map(String);
+  const unknown = ids.find((id) => !harnessIds().includes(id));
+  if (unknown) throw new UserError(`Unknown agent: ${unknown}`);
+  return [...new Set(ids)];
+}
+
+function onLimit(v: unknown): OnLimit {
+  if (!ON_LIMIT.includes(v as OnLimit)) throw new UserError("Pick ask, continue or wait");
+  return v as OnLimit;
 }
 
 /** ion's dream changed: how often (checked), and its agent (one ion knows; null: ion's own model's again). */
@@ -94,5 +117,10 @@ export function applyGeneral(c: UserConfig, patch: SettingsPatch): UserConfig {
     },
     projects: projectLevels(c, n?.projects),
     memory: dreamPatch(c.memory, patch.dream),
+    routing: merged(
+      c.routing,
+      { order: patch.agentOrder, onLimit: patch.onLimit, byUsage: patch.byUsage },
+      { order, onLimit, byUsage: flag },
+    ),
   };
 }

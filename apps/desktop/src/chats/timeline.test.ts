@@ -400,6 +400,28 @@ describe("timeline", () => {
     expect(play(ev("run.queued", {}), ev("run.finished", { status: "done" })).running).toBeNull();
   });
 
+  // The user, 2026-11-22: a chat ion started that waits for a slot says why, until it starts.
+  it("says why an ion chat waits for a slot, until it starts", () => {
+    const queued = ev("run.queued", { access: "auto", waiting: "Waiting — 4 ion chats running" });
+    expect(play(queued).waiting).toBe("Waiting — 4 ion chats running");
+    expect(play(queued, ev("run.started", {})).waiting).toBeNull();
+    expect(play(queued, ev("run.finished", { status: "interrupted" })).waiting).toBeNull();
+  });
+
+  // The user, 2026-11-22: Pick by usage says why it picked the chat's agent, in one line, in the chat's header.
+  it("keeps why Pick by usage picked the chat's agent", () => {
+    const t = play(
+      ev(
+        "chat.handoff",
+        { kind: "routed", text: "On Codex — Claude Code is near its limit", to: "codex" },
+        undefined,
+        null as never,
+      ),
+    );
+    expect(t.routed).toBe("On Codex — Claude Code is near its limit");
+    expect(t.items).toEqual([]);
+  });
+
   it("counts file changes and finished runs, so the changes panel knows to look again", () => {
     expect(play().changes).toBe(0);
     const t = play(ev("file.changed", { path: "a" }), ev("run.finished", { status: "done" }));

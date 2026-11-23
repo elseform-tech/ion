@@ -162,6 +162,8 @@ export const DECISION_SCOPES = ["chat", "project", "everywhere"] as const;
 
 const text = z.object({ text: z.string() });
 const count = z.number().int().min(0);
+/** One line ion says in a chat. */
+const line = z.string().min(1).max(200);
 
 export type { IonCard } from "./ion-cards.js";
 
@@ -372,12 +374,12 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     tail: z.string().max(2000),
   }),
   /**
-   * A chat's agent hit its limit, or a long chat started a new session: one line in the chat ("Continued on Codex —
-   * Claude hit its limit", "Waits for Claude — 16:00", "Started fresh with a summary"). `to`: the agent it goes on
-   * with; `until`: when a wait ends.
+   * A chat's agent hit its limit, or a long chat started a new session, or Pick by usage picked its agent: one line
+   * in the chat ("Continued on Codex — Claude hit its limit", "Waits for Claude — 16:00", "Started fresh with a
+   * summary", "On Codex — Claude Code is near its limit"). `to`: the agent it goes on with; `until`: when a wait ends.
    */
   "chat.handoff": z.strictObject({
-    kind: z.enum(["continued", "waiting", "fresh"]),
+    kind: z.enum(["continued", "waiting", "fresh", "routed"]),
     text: z.string().min(1).max(200),
     to: z.string().min(1).optional(),
     until: z.iso.datetime().optional(),
@@ -386,8 +388,11 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     /** How many times a guessed wait has tried so far (kept across a restart). */
     tries: z.number().int().min(0).optional(),
   }),
-  /** A run waiting for a slot, with its access (a handoff on another agent keeps the chat's). */
-  "run.queued": z.object({ access: z.enum(["auto", "full"]).optional() }),
+  /**
+   * A run waiting for a slot, with its access (a handoff on another agent keeps the chat's). `waiting`: a chat ion
+   * started waits for one of its slots, and says why ("Waiting — 4 ion chats running").
+   */
+  "run.queued": z.object({ access: z.enum(["auto", "full"]).optional(), waiting: line.optional() }),
   "run.retrying": z.object({
     attempt: z.number().int().min(1),
     delayS: z.number().min(0),

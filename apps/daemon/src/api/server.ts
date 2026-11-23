@@ -34,6 +34,8 @@ import { ownServerNames, pickSource } from "./tools-picks.js";
 import { IonQuestions } from "../ions/questions.js";
 import { createSame } from "../ions/same.js";
 import { type Ctx, diffOfChat, handlers, harnessInfos, useAgentsHome } from "./commands.js";
+import { routed } from "./routing.js";
+import type { EffortLevel } from "@ion/schema";
 import { PromptQueue } from "../queue/index.js";
 import { Dreams, dreamThink, Routines } from "../scheduler/index.js";
 import { Suggestions } from "../ions/suggestions.js";
@@ -287,7 +289,10 @@ function startIons(
         ? late.ions.startThread(projectId, brief, turn, picks)
         : Promise.resolve({ why: "ion is starting" }),
   });
-  const ions = new Ions({ ...deps, turns, agents, agent });
+  // Pick by usage, when it's on: a thread's agent by fit, your order, headroom and cost (the project's own is its fit).
+  const route = async (projectId: string, o: { effort?: EffortLevel }) =>
+    routed(d, agents, { projectId, ...o });
+  const ions = new Ions({ ...deps, turns, agents, agent, route });
   late.ions = ions;
   // A message ion stopped before answering is answered now, so no ion chat shows "Thinking" forever.
   ions.answerUnanswered();

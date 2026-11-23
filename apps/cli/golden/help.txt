@@ -132,9 +132,21 @@ Commands:
 
 ---
 
-Usage: ion harnesses [options]
+Usage: ion harnesses [options] [command]
 
 Coding agents and their models
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  order <ids...>  Put agents in order, best first
+
+---
+
+Usage: ion harnesses order [options] <ids...>
+
+Put agents in order, best first
 
 Options:
   -h, --help  display help for command

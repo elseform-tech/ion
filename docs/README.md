@@ -47,6 +47,7 @@
 |---|---|
 | `@ion/schema` | `packages/schema/README.md` |
 | `@ion/config` | `packages/config/README.md` |
+| `@ion/policy` | `packages/policy/README.md` |
 | `@ion/client` | `packages/client/README.md` |
 | `@ion/design-system` | `packages/design-system/README.md` |
 | `@ion/desktop` | `apps/desktop/README.md` |

@@ -72,19 +72,29 @@ const refuseInTests = (): never => {
   throw new Error("real agents are off in tests");
 };
 
-/** Without one chosen: the first ready of these (quota-friendly first), else any ready one. */
+/** ion's own agent order, when you set none (quota-friendly first). */
 const PREFERRED = ["opencode", "grok-build", "codex", "claude-code"];
 
-/** The agent to use when none is named: the chat's own while it's ready, else the first ready one. */
-export function defaultAgent(ready: string[], own: string | null): string | undefined {
-  if (own && ready.includes(own)) return own;
-  return PREFERRED.find((id) => ready.includes(id)) ?? ready[0];
+/**
+ * Your agent order (Settings → Agents; the user, 2026-11-22): the agents you put in order (ones ion knows), then the
+ * rest in ion's own order.
+ */
+export function agentOrder(saved: string[]): string[] {
+  const known = new Set([...PREFERRED, ...harnessIds()]);
+  const yours = [...new Set(saved)].filter((id) => known.has(id));
+  return [...yours, ...PREFERRED.filter((id) => !yours.includes(id))];
 }
 
-/** These agents best first: the quota-friendly ones first (PREFERRED), then the rest as given. */
-export const byPreference = (ids: string[]): string[] => [
-  ...PREFERRED.filter((id) => ids.includes(id)),
-  ...ids.filter((id) => !PREFERRED.includes(id)),
+/** The agent to use when none is named: the chat's own while it's ready, else the first ready in your order. */
+export function defaultAgent(ready: string[], own: string | null, order = PREFERRED): string | undefined {
+  if (own && ready.includes(own)) return own;
+  return order.find((id) => ready.includes(id)) ?? ready[0];
+}
+
+/** These agents best first: in your order, then the rest as given. */
+export const byPreference = (ids: string[], order = PREFERRED): string[] => [
+  ...order.filter((id) => ids.includes(id)),
+  ...ids.filter((id) => !order.includes(id)),
 ];
 
 /** An agent's name as ion says it ("Claude Code"), else its id. */

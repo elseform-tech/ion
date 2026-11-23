@@ -73,6 +73,10 @@ export type Timeline = {
   streaming: number | null;
   /** The run that's queued or going, if any. */
   running: string | null;
+  /** Why the chat's run waits for a slot ("Waiting — 4 ion chats running"), until it starts. */
+  waiting: string | null;
+  /** Why Pick by usage picked the chat's agent, in one line ("On Codex — Claude Code is near its limit"). */
+  routed: string | null;
   /** The agent the chat last ran on, and its model and effort: the next message's defaults. */
   harness: string | null;
   model: string | null;
@@ -99,6 +103,8 @@ export const empty = (): Timeline => ({
   items: [],
   streaming: null,
   running: null,
+  waiting: null,
+  routed: null,
   harness: null,
   model: null,
   effort: null,
@@ -311,7 +317,8 @@ function finished(t: Timeline, d: D, e: IonEvent): Timeline {
     ...(last && str(d.status) === "failed" ? { reason: last } : {}),
     ...(t.files[runId] ? { files: Object.values(t.files[runId]) } : {}),
   });
-  return { ...ended, running: t.running === runId ? null : t.running, changes: t.changes + 1 };
+  const running = t.running === runId ? null : t.running;
+  return { ...ended, running, waiting: running ? t.waiting : null, changes: t.changes + 1 };
 }
 
 /** A new try started: any retry still counting down is done. */
@@ -345,10 +352,11 @@ const HANDLERS: Record<string, Handler> = {
   [EV.messageSent]: sent,
   [EV.messageDelta]: delta,
   [EV.messageCompleted]: completed,
-  [EV.runQueued]: (t, _d, e) => ({ ...t, running: e.runId }),
+  [EV.runQueued]: (t, d, e) => ({ ...t, running: e.runId, waiting: str(d.waiting) || null }),
   [EV.runStarted]: (t, d, e) => ({
     ...retried(t),
     running: e.runId,
+    waiting: null,
     harness: str(d.harness) || t.harness,
     model: str(d.model) || null,
     effort: str(d.effort) || null,
@@ -388,7 +396,11 @@ const HANDLERS: Record<string, Handler> = {
   // A run went without one of your MCP servers: ion says why, once per chat.
   [EV.toolSkipped]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
   // A chat's agent hit its limit (it continued on another, or waits), or a long chat started fresh: one quiet line.
-  [EV.chatHandoff]: (t, d) => push(t, { kind: "ion", tone: "note", text: str(d.text) }),
+  // Pick by usage's reason shows in the chat's header, not as a line of its own.
+  [EV.chatHandoff]: (t, d) =>
+    d.kind === "routed"
+      ? { ...t, routed: str(d.text) }
+      : push(t, { kind: "ion", tone: "note", text: str(d.text) }),
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
   // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once, with a link
   // to Memory (Task 5, 2026-11-22: a question here had no answer).
