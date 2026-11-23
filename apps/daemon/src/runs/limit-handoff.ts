@@ -39,6 +39,8 @@ type Deps = {
   changed: (chatId: string) => Promise<FileStat[]>;
   waits: Waits;
   now?: () => Date;
+  /** A chat's hold lifted without a run going on (a handoff that couldn't start): its queue may go on. */
+  released?: (chatId: string) => void;
 };
 
 type Usage = Record<string, { limitedUntil: string | null; limitGuessed?: true }>;
@@ -71,6 +73,9 @@ function pickLimit(
     ...(to && !free.includes(to) ? { maybe: true as const } : {}),
   };
 }
+
+/** A handoff or a wait that couldn't go on: one line in the daemon's log (the chat's queue says why too). */
+const said = (x: unknown) => console.warn(`ion couldn't go on after a limit: ${(x as Error).message}`);
 
 /** A time as the chat says it: "16:00" today, "Tue 16:00" another day. */
 export function clockOf(iso: string, now: Date): string {
@@ -152,7 +157,7 @@ export class Handoffs {
     if (!limit || status !== "failed") return void this.rechecks.delete(chatId);
     if (this.asking.has(chatId) || this.openQuestion(chatId)) return;
     this.asking.add(chatId); // held now: the queue hears of the run's end right after this
-    queueMicrotask(() => void this.limited(chatId, runId, limit).catch((x) => console.warn(x)));
+    queueMicrotask(() => void this.limited(chatId, runId, limit).catch(said));
   }
 
   /** The chat's open limit question, if any. */
@@ -186,7 +191,22 @@ export class Handoffs {
       else this.ask(chatId, runId, pickLimit(from, ready, usage, { said: limit, now }), limit);
     } finally {
       this.asking.delete(chatId);
+      this.lifted(chatId);
     }
+  }
+
+  /** The chat's hold may have lifted: its queue hears of it (a run started meanwhile keeps the chat busy anyway). */
+  private lifted(chatId: string): void {
+    if (this.holding(chatId)) return;
+    this.d.released?.(chatId);
+    for (const fn of this.releases) fn(chatId);
+  }
+
+  private readonly releases: ((chatId: string) => void)[] = [];
+
+  /** `fn` hears when a chat's hold lifts without a run going on (its queue may go on now). */
+  onReleased(fn: (chatId: string) => void): void {
+    this.releases.push(fn);
   }
 
   /**
@@ -301,14 +321,21 @@ export class Handoffs {
     const L = this.d.label;
     const events = this.d.store.read({ chatId });
     const files = await this.d.changed(chatId).catch(() => []);
+    // The user, 2026-11-23 ("Auto when unattended"): the chat's access carries over only when you said Continue
+    // yourself; a handoff nobody watched (Always, a wait going on on another agent) starts the new agent on Auto.
+    const was = this.accessOf(events);
+    const access = o.needId ? was : { access: "auto" as const };
+    const onAuto = !o.needId && was.access === "full" ? " on Auto" : "";
     const adds = o.words ? `\n\nThe user adds: ${JSON.stringify(o.words)}` : "";
     const text = `${chatBrief(events, files)}\n\n${L(from)} stopped at its usage limit; carry on with the work in this worktree.${adds}`;
     await this.d.start(
-      { chatId, harness: to, text, ...this.accessOf(events) },
+      { chatId, harness: to, text, ...access },
       { request: this.request(events), ...(o.needId ? { answers: o.needId } : {}) },
     );
     const auto = o.auto ? " · always here" : "";
-    const line = { kind: "continued", text: `Continued on ${L(to)} — ${L(from)} hit its limit${auto}`, to };
+    const line = {
+      ...{ kind: "continued", text: `Continued on ${L(to)}${onAuto} — ${L(from)} hit its limit${auto}`, to },
+    };
     this.d.store.append({ chatId, runId: null, origin: "daemon", type: EV.chatHandoff, data: line });
   }
 
@@ -329,7 +356,9 @@ export class Handoffs {
     this.d.waits.at(chatId, new Date(l.until), () => {
       // A guessed reset is checked by trying: a try that hits the limit again waits again (waitAgain).
       if (l.guessed) this.rechecks.set(chatId, (this.rechecks.get(chatId) ?? 0) + 1);
-      void this.goOn(chatId, l).catch((x) => console.warn(x));
+      void this.goOn(chatId, l)
+        .catch(said)
+        .finally(() => this.lifted(chatId));
     });
   }
 

@@ -315,6 +315,8 @@ function promptQueue(c: Omit<Ctx, "queue">): PromptQueue {
       dropQuestions: (chatId) => c.needs.supersedeChat(chatId),
     },
   });
+  // A hold after a limit lifted with no run going on (a handoff that couldn't start): what's queued goes on.
+  c.handoffs?.onReleased((chatId) => void queue.drain({ chatId }).catch(() => {}));
   late.ctx = { ...c, queue };
   return queue;
 }

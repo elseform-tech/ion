@@ -20,6 +20,7 @@ let needs: NeedsService;
 let ready: string[];
 let started: { chatId: string; harness: string; text: string; answers?: string; access?: string }[];
 let waits: Waits;
+let released: string[];
 let handoffs: Handoffs;
 
 const depsOf = () => ({
@@ -37,6 +38,7 @@ const depsOf = () => ({
   },
   changed: async () => [{ path: "src/theme.ts", added: 12, removed: 3 }],
   waits,
+  released: (chatId: string) => void released.push(chatId),
 });
 const make = () => new Handoffs(depsOf());
 
@@ -46,6 +48,7 @@ beforeEach(() => {
   needs = new NeedsService(store, db);
   ready = ["claude-code", "codex", "grok-build"];
   started = [];
+  released = [];
   waits = new Waits();
   handoffs = make();
 });
@@ -149,7 +152,9 @@ describe("Handoffs", () => {
     await until(() => started.length === 2);
     expect(started[1]).toMatchObject({ chatId: "c2", harness: "codex" });
     expect(needs.open("c2")).toEqual([]);
-    expect(lines("c2")).toEqual(["Continued on Codex — Claude Code hit its limit · always here"]);
+    // The user, 2026-11-23 ("Auto when unattended"): an Always handoff starts on Auto, and says so.
+    expect(started[1]?.access).toBe("auto");
+    expect(lines("c2")).toEqual(["Continued on Codex on Auto — Claude Code hit its limit · always here"]);
   });
 
   // The user, 2026-11-21 (Review Focus 5): only agents that aren't limited are offered; none left, Wait alone, with
@@ -189,6 +194,8 @@ describe("Handoffs", () => {
     await vi.advanceTimersByTimeAsync(61_000);
     expect(started.map((s) => [s.chatId, s.harness])).toEqual([["c1", "claude-code"]]);
     expect(started[0]!.text).toContain("Check git status and the tests before continuing");
+    // The user, 2026-11-23: a wait that goes on on the same agent keeps the chat's access (nothing new runs).
+    expect(started[0]?.access).toBe("full");
   });
 
   // The user, 2026-11-21 (Review Focus 3): two threads on one limit: one mark, each thread asks once, no storm.
@@ -308,7 +315,8 @@ describe("Handoffs", () => {
     await until(() => started.length === 1);
     expect(started[0]).toMatchObject({ chatId: "c1", harness: "codex" });
     expect(needs.open("c1")).toEqual([]);
-    expect(lines("c1")).toEqual(["Continued on Codex — Claude Code hit its limit · always here"]);
+    expect(started[0]?.access).toBe("auto");
+    expect(lines("c1")).toEqual(["Continued on Codex on Auto — Claude Code hit its limit · always here"]);
   });
 
   // Review of 5d5785c, 2026-11-22: a wait that went on on another agent said "· always here" without any Always.
@@ -329,7 +337,9 @@ describe("Handoffs", () => {
     await handoffs.answer(n.needId, 1, "chat");
     await vi.advanceTimersByTimeAsync(121_000);
     expect(started.map((s) => [s.chatId, s.harness])).toEqual([["c1", "codex"]]);
-    expect(lines("c1").at(-1)).toBe("Continued on Codex — Claude Code hit its limit");
+    // The user, 2026-11-23: a wait that goes on on another agent, unattended, starts it on Auto.
+    expect(started[0]?.access).toBe("auto");
+    expect(lines("c1").at(-1)).toBe("Continued on Codex on Auto — Claude Code hit its limit");
   });
 
   // Review of 5d5785c, 2026-11-22: the kept decision named the agent that hit the limit, yet it applies to any.
@@ -438,5 +448,66 @@ describe("Handoffs", () => {
       if (!needs.open("c1")[0]) throw new Error("not asked yet");
     });
     expect(needs.open("c1")).toHaveLength(1);
+  });
+
+  // Re-review, 2026-11-23: a hold that lifts after a handoff fails to start must wake the chat's queue, or what's
+  // queued stalls.
+  it("a handoff that fails to start lifts the hold and wakes the queue", async () => {
+    const data = {
+      ...{ decisionId: "d1", needId: "n0", projectId: "repo", question: "When an agent hits its limit here" },
+      ...{ choice: "Always continue on Codex", scope: "project", by: "you", allowKey: "handoff:codex" },
+    };
+    add({ chatId: null, runId: null, type: EV.decisionRecorded, data });
+    handoffs.stop();
+    handoffs = new Handoffs({
+      ...depsOf(),
+      start: async () => {
+        throw new Error("Codex isn't signed in");
+      },
+    });
+    hitLimit("c1", "claude-code", inAnHour());
+    await until(() => released.includes("c1"));
+    expect(handoffs.holding("c1")).toBe(false);
+  });
+
+  // Re-review, 2026-11-23: a wait whose run can't start (the agent signed out meanwhile) wakes the queue too.
+  it("a wait that fails to go on wakes the queue", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    hitLimit("c1", "claude-code", new Date(Date.now() + 60_000).toISOString());
+    const n = await vi.waitFor(() => {
+      const open = needs.open("c1")[0];
+      if (!open) throw new Error("not asked yet");
+      return open;
+    });
+    handoffs.stop();
+    waits = new Waits();
+    handoffs = new Handoffs({
+      ...depsOf(),
+      start: async () => {
+        throw new Error("Claude Code isn't signed in");
+      },
+    });
+    await handoffs.answer(n.needId, 2, "chat");
+    released = [];
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(released).toEqual(["c1"]);
+  });
+
+  // Re-review, 2026-11-23 (untested before): a chat archived while ion was stopped doesn't go on at its reset.
+  it("a waiting chat archived while ion was stopped doesn't go on", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    hitLimit("c1", "claude-code", new Date(Date.now() + 60_000).toISOString());
+    const n = await vi.waitFor(() => {
+      const open = needs.open("c1")[0];
+      if (!open) throw new Error("not asked yet");
+      return open;
+    });
+    await handoffs.answer(n.needId, 2, "chat");
+    handoffs.stop(); // ion stopped; then the chat was archived (its event, with no Handoffs listening)
+    add({ chatId: "c1", runId: null, type: EV.chatArchived, data: {} });
+    waits = new Waits();
+    handoffs = make();
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(started).toEqual([]);
   });
 });
