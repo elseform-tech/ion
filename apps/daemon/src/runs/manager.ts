@@ -52,6 +52,8 @@ type Launch = {
   handoff?: true;
   /** The harness session to continue on this try, if any. */
   resume?: string | null;
+  /** This try's first message starts with ion's memory index (its instructions say so only then). */
+  index?: boolean;
   projectId: string;
   /** Full access, or Auto (ion decides each action outside the worktree). */
   access: "auto" | "full";
@@ -286,8 +288,8 @@ export class RunManager {
   }
 
   /** ion's own MCP server for a run: its URL and the run's key (also the key for ion's gateway). */
-  private ionServer(l: Launch): { url: string; key: string } | null {
-    return this.ctx.mcp && l.mcpKey ? { url: this.ctx.mcp.url(), key: l.mcpKey } : null;
+  private ionServer(l: Launch): { url: string; key: string; index: boolean } | null {
+    return this.ctx.mcp && l.mcpKey ? { url: this.ctx.mcp.url(), key: l.mcpKey, index: !!l.index } : null;
   }
 
   /** A daemon-side error for a run; nothing is stored once ion is stopping (the run's end is already written). */
@@ -322,11 +324,10 @@ export class RunManager {
     const resume = !b.noResume && s && s.harness === l.h.adapter.id ? s.sessionId : null;
     // A long chat's new session (not a handoff's: its message is a brief already) gets ion's summary of the chat.
     const brief = () => summarize({ store: this.store, configFile: this.ctx.configFile }, l, b);
-    const fresh = async () => ({
-      ...l,
-      resume: null,
-      args: { ...l.args, text: freshText(await brief(), this.ctx.mcp?.memory) },
-    });
+    const fresh = async () => {
+      const first = freshText(await brief(), this.ctx.mcp?.memory);
+      return { ...l, resume: null, index: first.index, args: { ...l.args, text: first.text } };
+    };
     if (!resume) return this.tryOnce(await fresh(), b);
     const end = await this.tryOnce({ ...l, resume }, b);
     if (end.error?.code !== "resume_failed") {

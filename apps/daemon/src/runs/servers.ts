@@ -7,7 +7,7 @@ import { type LocalUpstream, type Upstream, upstreamOf } from "../gateway/index.
 import { bridgesFor, type RunBridges, type StdioSpec, type Why } from "../workspace/mcp-bridge.js";
 import { type RunAgent, type RunServers, SECRET_MIN } from "../tools/run-servers.js";
 import { MCP_GROUPS } from "../workspace/server-groups.js";
-import { ION_INSTRUCTIONS } from "./instructions.js";
+import { ionInstructions } from "./instructions.js";
 import { serverSandbox } from "./sandbox.js";
 
 /** Each line about a server the chat goes without, unless the chat already says it. */
@@ -143,10 +143,10 @@ export function redactor(values: (string | undefined)[]): Redact {
 
 /**
  * A run's MCP servers: ion's own first (with the run's key) and its instructions, then yours; and what the agent's
- * process may not inherit (your keys).
+ * process may not inherit (your keys). `ion.index`: the session's first message starts with ion's memory index.
  */
 export function runMcp(
-  ion: { url: string; key: string } | null,
+  ion: { url: string; key: string; index?: boolean } | null,
   yours: HttpMcpSpec[] = [],
   envDrop?: EnvDrop,
 ): { mcpServers?: HttpMcpSpec[]; instructions?: string; envDrop?: EnvDrop } {
@@ -156,7 +156,7 @@ export function runMcp(
   const all = [...own, ...yours];
   return {
     ...(all.length ? { mcpServers: all } : {}),
-    ...(ion ? { instructions: ION_INSTRUCTIONS } : {}),
+    ...(ion ? { instructions: ionInstructions({ index: !!ion.index }) } : {}),
     ...(envDrop ? { envDrop } : {}),
   };
 }

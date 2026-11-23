@@ -82,8 +82,12 @@ function pastOf(l: Fresh): string {
 
 /**
  * A new session's first message: the chat's memory index (when its run has ion's tools, `mcpKey`, to read more), its
- * history (or ion's summary and its last messages), then your message.
+ * history (or ion's summary and its last messages), then your message; `index`: whether the index is there.
  */
-export function freshText(l: Fresh & { mcpKey?: string }, memory: MemoryFiles | undefined): string {
-  return upFront(l.mcpKey ? memory : undefined, { kind: "chat", ...l }) + pastOf(l);
+export function freshText(
+  l: Fresh & { mcpKey?: string },
+  memory: MemoryFiles | undefined,
+): { text: string; index: boolean } {
+  const index = upFront(l.mcpKey ? memory : undefined, { kind: "chat", ...l });
+  return { text: index + pastOf(l), index: index !== "" };
 }
