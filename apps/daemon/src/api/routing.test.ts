@@ -78,7 +78,9 @@ describe("Pick by usage", () => {
   // The user, 2026-11-21: save Claude unless the work needs it (ion's deep model's agent, at Max effort).
   it("keeps ion's deep model's agent for Max effort", () => {
     const list = [usage("claude-code", "Claude Code"), usage("codex", "Codex")];
-    const c = config({ byUsage: true, order: ["opencode", "claude-code", "codex"] });
+    // Plan 21 audit, 2026-11-23: no deep model is set by default now; this one is yours.
+    const deep = { ion: { ...DEFAULT_CONFIG.ion, deep: "claude-code" } };
+    const c = config({ byUsage: true, order: ["opencode", "claude-code", "codex"] }, deep);
     expect(routeBy(c, list, { db: db() })?.harness).toBe("codex");
     expect(routeBy(c, list, { db: db(), effort: "max" })).toEqual({
       harness: "claude-code",

@@ -113,13 +113,14 @@ function ownPatch(given: Record<string, boolean> | undefined) {
 function settingsOf(file: string): SettingsInfo {
   const { config: c, error } = loadUserConfig(file);
   const settings = {
-    ...{ quick: c.ion.quick, effort: c.ion.quickEffort ?? null, ...generalOf(c) },
+    ...{ quick: c.ion.quick ?? "", effort: c.ion.quickEffort ?? null, judge: c.access.judge ?? "" },
+    ...generalOf(c),
     ownTools: ownSwitches(c),
   };
   return error ? { ...settings, problem: error } : settings;
 }
 
-/** Settings: a project ion's setup and rules, and ion's own quick model. */
+/** Settings: a project ion's setup and rules, ion's own quick model, and Auto's judge. */
 export const settingsHandlers: Pick<
   Handlers,
   "project.update" | "settings.get" | "settings.set" | "ion.stats"
@@ -145,11 +146,13 @@ export const settingsHandlers: Pick<
   "settings.set": (a, ctx) => {
     const p = a.patch ?? {};
     const quick = p.quick === undefined ? undefined : checkAgent(String(p.quick));
+    const judge = p.judge === undefined ? undefined : checkAgent(String(p.judge));
     if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
     const own = ownPatch(p.ownTools);
     changeConfig(ctx.configFile, (c) => ({
       ...applyGeneral(c, p),
       ion: ionPatch(c.ion, quick, p.effort),
+      access: judge ? { ...c.access, judge } : c.access,
       agents: own(c.agents),
     }));
     // A higher limit lets waiting runs start now.

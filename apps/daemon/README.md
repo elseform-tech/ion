@@ -19,8 +19,10 @@ The always-on service that owns all state.
   access mode (`ion ask --access`, else the project's `access`, else `[access] default`, which is `"auto"`).
   **Full access** allows it. **Auto** never pauses: your secrets (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, gh,
   gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
-  by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (default `claude-code:haiku`, a bare session
-  with no tools), which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
+  by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (unset: the first ready agent in your
+  agent order, at its quick model; a bare session with no tools), which answers allow or deny with a reason. When its
+  agent fails or is slow it goes once on the next agent in your order that's ready and not limited (Claude Code only
+  when it's first there or the only one ready); with none left it's unsure and asks you (deny after 30 s). One judge call
   per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
   says no (or can't decide), ion asks you instead: Allow or Don't allow (Remember keeps either for that exact action in the project), or your
   own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes

@@ -83,9 +83,11 @@ export type ProjectPatch = {
   profileSuggestion?: null;
 };
 
-/** ion's own models: "quick" thinks for ion chief and the project ions ("<agent>" or "<agent>:<model>"). */
-/** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
-export type IonSettings = { quick: string; effort: EffortLevel | null };
+/**
+ * ion's own models, each "<agent>" or "<agent>:<model>" ("": none set, the first ready agent in your agent order):
+ * `quick` thinks for ion chief and the project ions, at `effort` (null: the agent's default); `judge` decides in Auto.
+ */
+export type IonSettings = { quick: string; effort: EffortLevel | null; judge: string };
 
 /** What ion does when a chat's agent hits its limit (Settings → Agents). */
 export type OnLimit = "ask" | "continue" | "wait";
@@ -125,7 +127,10 @@ export type SettingsInfo = IonSettings & {
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
 export type SettingsPatch = Partial<
-  Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools" | "agentOrder" | "onLimit" | "byUsage">
+  Pick<
+    SettingsInfo,
+    "maxRuns" | "quick" | "effort" | "judge" | "ownTools" | "agentOrder" | "onLimit" | "byUsage"
+  >
 > & {
   dream?: { mode?: DreamMode; agent?: string | null };
   /** Memory on or off everywhere, or in a project (set like everywhere, it follows everywhere again). */

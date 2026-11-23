@@ -6,9 +6,16 @@ export function ModelMenu(p: {
   models: HarnessInfo["models"];
   value: string;
   onChange: (model: string) => void;
+  /** Its name for screen readers (default "Model"). */
+  label?: string;
 }) {
   return (
-    <select className="val" aria-label="Model" value={p.value} onChange={(e) => p.onChange(e.target.value)}>
+    <select
+      className="val"
+      aria-label={p.label ?? "Model"}
+      value={p.value}
+      onChange={(e) => p.onChange(e.target.value)}
+    >
       <option value="">Default</option>
       {p.models.map((m) => (
         <option key={m.id} value={m.id}>
@@ -25,9 +32,11 @@ export function AgentPicker(p: {
   value: string | null | undefined;
   color?: string | null;
   onPick: (id: string) => void;
+  /** Its name for screen readers (default "Agent"). */
+  label?: string;
 }) {
   return (
-    <div className="hpick" role="radiogroup" aria-label="Agent">
+    <div className="hpick" role="radiogroup" aria-label={p.label ?? "Agent"}>
       {p.agents.map((h) => (
         <button
           key={h.id}

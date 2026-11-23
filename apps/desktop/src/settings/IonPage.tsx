@@ -19,7 +19,7 @@ import {
 } from "@ion/schema";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useCallError } from "../callError.js";
-import { ready, type SettingsData } from "./data.js";
+import { ownSpec, ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { Routines } from "./Routines.js";
 
@@ -335,7 +335,7 @@ export function IonPage(p: PageProps) {
               <BrainPick {...setup} project={project} />
             </>
           ) : (
-            <ChiefSetup quick={p.data.settings?.quick ?? ""} onAgents={p.onAgents} />
+            <ChiefSetup quick={ownSpec(p.data.settings?.quick ?? "", p.data)} onAgents={p.onAgents} />
           )}
           {shown("setup")}
         </div>

@@ -1,8 +1,7 @@
+version = 2
 projects = []
 
 [ion]
-quick = "claude-code"
-deep = "claude-code"
 deepEffort = "high"
 useDeep = "auto"
 
@@ -10,8 +9,6 @@ useDeep = "auto"
 projects = "~/ion/projects"
 
 [access]
-judge = "claude-code:haiku"
-
 [resources]
 max_runs = "auto"
 

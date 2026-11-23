@@ -2976,7 +2976,7 @@ const effLabel=e=>EFF.find(x=>x[0]===e)[1];
    window's percent when the agent reports one (a bar), lim: limited until its reset. Never a gauge ion made up. */
 const HCONN={claude:{st:'on',how:'Signed in',line:'limited until 16:00',lim:1,rules:3},grok:{st:'on',how:'Signed in',line:'Learned from errors'},codex:{st:'on',how:'Signed in',line:'62% of 5 h · resets 14:20',use:62},
   gemini:{st:'on',how:'Signed in',line:'this week $4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
-const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],eff:'high',when:'auto',use:4,week:1.8};
+const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],judge:['grok','grok-code-fast'],eff:'high',when:'auto',use:4,week:1.8};
 const S2WHEN=[['auto','When needed'],['always','Always'],['never','Never']];
 let NEEDS=[
   {id:'mig',k:'payments-api',t:'Approve migration 0042?',p:'payments-api',sub:'Adds the idempotency_keys table',urgent:1,acts:[['Review','open'],['Approve','done']]},
@@ -3820,6 +3820,9 @@ function renderIonModels(){
   const seg=(items,cur,attr,dis=()=>false)=>`<span class="seg sm">${items.map(([id,l])=>`<button type="button" class="${cur===id?'on':''}" data-${attr}="${id}"${dis(id)?' disabled':''}>${l}</button>`).join('')}</span>`;
   el.innerHTML=row('<span class="slot"><i data-lucide="zap"></i>Quick</span>','For sorting and short replies',chips('fast'))
     +row('<span class="slot"><i data-lucide="brain"></i>Deep</span>','For planning and the briefing',chips('deep'))
+    /* Auto's judge (Plan 21 audit, 2026-11-23): shown and picked like Quick; unset, it's the first ready agent in your
+       order, and when its agent fails it goes on the next one there, never quietly to Claude Code. */
+    +row('<span class="slot"><i data-lucide="shield-check"></i>Judge</span>','Decides in Auto',chips('judge'))
     +`<div class="srow"><div class="g">Deep effort</div>${seg(EFF.filter(([id])=>id!=='auto'),IONBRAIN.eff,'ieff',id=>!ESUP[IONBRAIN.deep[0]].includes(id))}</div>`
     +`<div class="srow"><div class="g">Use Deep</div>${seg(S2WHEN,IONBRAIN.when,'iwhen')}</div>`;
   hydrate(el); icons(el);

@@ -137,12 +137,27 @@ describe("Settings", () => {
     expect(await screen.findByText("Not signed in")).toBeTruthy();
     expect(screen.getByText("Signed in")).toBeTruthy();
     // An agent (its shape), then one of its models from a menu: a long model list stays one line.
+    const quick = () => within(screen.getByRole("radiogroup", { name: "Quick" }));
     await waitFor(() =>
-      expect(screen.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
+      expect(quick().getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
     );
-    expect(screen.queryByRole("radio", { name: "Claude Code" })).toBeNull(); // not signed in
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
+    expect(quick().queryByRole("radio", { name: "Claude Code" })).toBeNull(); // not signed in
+    fireEvent.change(screen.getByLabelText("Quick model"), { target: { value: "grok-code-fast" } });
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { quick: "grok-build:grok-code-fast" } });
+  });
+
+  // Plan 21 audit, 2026-11-23: Auto's judge ran on Claude Code and Settings never showed it. It's picked like Quick;
+  // none set shows the agent it follows (the first ready in your order).
+  it("shows the judge's agent and picks it like the quick model", async () => {
+    const c = client();
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const judge = () => within(screen.getByRole("radiogroup", { name: "Judge" }));
+    await waitFor(() =>
+      expect(judge().getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
+    );
+    expect((screen.getByLabelText("Judge model") as HTMLSelectElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("Judge model"), { target: { value: "grok-code-fast" } });
+    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { judge: "grok-build:grok-code-fast" } });
   });
 
   // The user, 2026-11-21: "Only ion's, plus Import". Grok has no switch for its own servers, hooks and plugins, so
@@ -423,10 +438,11 @@ describe("Settings, reviewed", () => {
   it("says why ion's model didn't change", async () => {
     const c = client({ fail: ["settings.set"] });
     render(<Settings client={c} onOpenIon={() => {}} />);
+    const quick = () => within(screen.getByRole("radiogroup", { name: "Quick" }));
     await waitFor(() =>
-      expect(screen.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
+      expect(quick().getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
     );
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
+    fireEvent.change(screen.getByLabelText("Quick model"), { target: { value: "grok-code-fast" } });
     expect(await screen.findByText("Fix your config first.")).toBeTruthy();
   });
 

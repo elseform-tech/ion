@@ -170,6 +170,11 @@ export interface HarnessAdapter {
    */
   contextTokens?: number;
   /**
+   * Its model for ion's own quick one-off calls (the judge going on another agent) when its bare start would otherwise
+   * take its big default (Claude Code: Opus). Absent: its bare start already picks a fast one, or it has none to name.
+   */
+  quickModel?: string;
+  /**
    * How its runs are sandboxed (docs/research/sandbox.md): "own", its own sandbox told to keep ion's folders out
    * (Codex); "ion", ion's wrapper around its process (the rest). Absent: never (the fake agent starts no process).
    */

@@ -316,33 +316,34 @@ describe("judge", () => {
     const tried: (string | undefined)[] = [];
     const missed: string[] = [];
     const others = {
-      first: () => "grok-build",
-      ready: async () => ["grok-build", "opencode"],
+      first: async () => "grok-build",
+      next: async (failed: string) => (failed === "grok-build" ? "opencode" : undefined),
       missed: (a: string) => void missed.push(a),
     };
     const hangsFirst = (_p: string, _s: AbortSignal, agent?: string) => {
       tried.push(agent);
-      return agent
+      return agent === "opencode"
         ? Promise.resolve('{"verdict": "allow", "reason": "fine"}')
         : new Promise<string>(() => {});
     };
     const t0 = Date.now();
     expect(await createJudge(hangsFirst, 300, others)(input)).toEqual({ verdict: "allow", reason: "fine" });
     expect(Date.now() - t0).toBeLessThan(400);
-    expect(tried).toEqual([undefined, "opencode"]);
+    expect(tried).toEqual(["grok-build", "opencode"]);
     expect(missed).toEqual(["grok-build"]);
     const failsFirst = async (_p: string, _s: AbortSignal, agent?: string) => {
-      if (!agent) throw new Error("Grok Build isn't signed in");
+      if (agent === "grok-build") throw new Error("Grok Build isn't signed in");
       return '{"verdict": "deny", "reason": "no"}';
     };
     expect(await createJudge(failsFirst, 300, others)(input)).toEqual({ verdict: "deny", reason: "no" });
   });
 
-  it("couldn't decide in time when the other agent is slow too, or when no other agent is ready", async () => {
+  // Plan 21 audit, 2026-11-23: with no other agent to go on, the judge is unsure (you're asked), not a deny.
+  it("couldn't decide in time when the other agent is slow too, or is unsure when no other agent is ready", async () => {
     const input = { projectId: "app", text: "x", req: cmd("pnpm test") };
     const never = () => new Promise<string>(() => {});
     const t0 = Date.now();
-    const both = { first: () => "a", ready: async () => ["a", "b"] };
+    const both = { first: async () => "a", next: async () => "b" };
     expect(await createJudge(never, 300, both)(input)).toEqual({
       verdict: "deny",
       reason: "ion couldn't decide in time",
@@ -350,10 +351,14 @@ describe("judge", () => {
     });
     expect(Date.now() - t0).toBeLessThan(400);
     const tried: (string | undefined)[] = [];
-    const alone = { first: () => "a", ready: async () => ["a"] };
+    const alone = { first: async () => "a", next: async () => undefined };
     const once = (_p: string, _s: AbortSignal, agent?: string) => (tried.push(agent), never());
-    expect((await createJudge(once, 100, alone)(input)).decided).toBe(false);
-    expect(tried).toEqual([undefined]);
+    expect(await createJudge(once, 100, alone)(input)).toEqual({
+      verdict: "unsure",
+      reason: "ion couldn't decide in time",
+      decided: false,
+    });
+    expect(tried).toEqual(["a"]);
   });
 
   // Review Focus 2: a judge that fails, hangs or answers nonsense denies, with a reason.
@@ -489,6 +494,7 @@ describe("what ion's model runs on", () => {
   const config = {
     ...DEFAULT_CONFIG,
     ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build:grok-4.7", quickEffort: "low" as const },
+    access: { judge: "claude-code:haiku" },
   };
   it("thinks at the effort you picked, on the model you picked", () => {
     expect(startOf(config, "quick")).toEqual({ id: "grok-build", model: "grok-4.7", effort: "low" });
@@ -534,7 +540,8 @@ describe("harnessRunner", () => {
 
 // pnpm check, 2026-11-22: another test's daemon swept this test's config away and the judge fell back to its default,
 // claude-code:haiku: a real model call in a test (AGENTS.md: none). Under tests, without ION_LIVE*, no real agent
-// starts: a judge with no config fails closed, saying so.
+// starts: a judge with no config fails closed, saying so. Plan 21 audit, 2026-11-23: with no config the judge
+// follows your agent order and no agent is ready here, so nothing starts at all.
 describe("a judge with no config, in tests", () => {
   it("fails closed without starting Claude", async () => {
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-jtest-")), "gone", "config.toml");
@@ -545,7 +552,7 @@ describe("a judge with no config, in tests", () => {
     });
     expect(v).toEqual({
       verdict: "deny",
-      reason: "ion couldn't decide: real agents are off in tests",
+      reason: "ion couldn't decide: no agent is ready",
       decided: false,
     });
   });

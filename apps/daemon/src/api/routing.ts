@@ -62,7 +62,7 @@ export function routeBy(
   }));
   // The project's own agent is a fit only for its ion's threads; your own chats follow your order (the user, 2026-11-23).
   const project = o.thread ? c.projects.find((p) => p.id === o.projectId)?.harness : undefined;
-  const deepAgent = c.ion.deep.split(":")[0];
+  const deepAgent = c.ion.deep?.split(":")[0];
   // A task that usually takes more of an agent's window than it has left goes on another (the user, 2026-11-22).
   const estimate = estimates(o.db, usage, {
     projectId: o.projectId ?? DEFAULT_PROJECT,

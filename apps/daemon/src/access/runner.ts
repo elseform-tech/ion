@@ -6,8 +6,6 @@ import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { getHarness, placeProbes } from "../adapters/registry.js";
 import { ownAgentSandbox, runSandbox } from "../runs/sandbox.js";
-import type { JudgeOthers } from "./judge.js";
-import { useJudgeMisses } from "./misses.js";
 import { envDropOf } from "../tools/env-drop.js";
 
 /** Where ion's own agent processes (the judge, ion's quick model, sign-in and model checks) work: in its data folder. */
@@ -38,6 +36,11 @@ export type RunnerOpts = {
   sandbox?: SandboxKind;
   /** Hears each event of a session with its agent's id (the daemon keeps its usage and limits: views/usage.ts). */
   record?: (harness: string, e: AdapterEvent, startedAt: string) => void;
+  /**
+   * The agent to run on when your config names none ("": a fresh ion follows your agent order; Plan 21 audit,
+   * 2026-11-23: it was Claude Code), as "<agent>[:<model>]"; undefined when none is ready.
+   */
+  firstOwn?: () => Promise<string | undefined>;
 };
 
 /**
@@ -45,11 +48,23 @@ export type RunnerOpts = {
  * agent, on its default model), or the judge at its agent's default effort.
  */
 export function startOf(c: UserConfig, which: "judge" | "quick", agent?: string) {
-  const spec = agent ?? (which === "quick" ? c.ion.quick : c.access.judge);
+  const spec = agent ?? (which === "quick" ? c.ion.quick : c.access.judge) ?? "";
   const id = spec.split(":")[0]!;
   const model = spec.includes(":") ? spec.slice(spec.indexOf(":") + 1) : null;
   const effort = which === "quick" ? (c.ion.quickEffort ?? null) : null;
   return { id, model, effort };
+}
+
+/** The judge's or ion's quick model's "<agent>[:<model>]": yours, else the first ready in your order. */
+async function specOf(
+  c: UserConfig,
+  which: "judge" | "quick",
+  firstOwn: RunnerOpts["firstOwn"],
+): Promise<string> {
+  const set = which === "quick" ? c.ion.quick : c.access.judge;
+  const spec = set || (await firstOwn?.());
+  if (!spec) throw new Error("no agent is ready");
+  return spec;
 }
 
 /**
@@ -64,7 +79,8 @@ export function harnessRunner(
   which: "judge" | "quick" = "judge",
 ): (prompt: string, signal: AbortSignal, agent?: string) => Promise<string> {
   return async (prompt, signal, agent) => {
-    const { id, model, effort } = startOf(loadUserConfig(o.configFile).config, which, agent);
+    const c = loadUserConfig(o.configFile).config;
+    const { id, model, effort } = startOf(c, which, agent ?? (await specOf(c, which, o.firstOwn)));
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
     const f = foldersOf(o.dataDir, which, id);
@@ -178,22 +194,6 @@ export function startOwnAgents(o: { dataDir: string; configFile: string }, kind:
   sweepTmp();
   clearScratch(o.dataDir);
   return kind;
-}
-
-/**
- * The agents a judge that didn't answer may ask once more (final review, 2026-11-22): any other ready one; each miss is
- * counted for its agent (Settings → Agents).
- */
-export function judgeOthers(
-  o: { dataDir: string; configFile: string },
-  ready: () => Promise<string[]>,
-): JudgeOthers {
-  const misses = useJudgeMisses(join(o.dataDir, "judge-misses.json"));
-  return {
-    first: () => startOf(loadUserConfig(o.configFile).config, "judge").id,
-    ready,
-    missed: (agent) => misses.add(agent),
-  };
 }
 
 /** What one of ion's own agent processes starts with: your keys kept from it, and its sandbox (none where there's none). */

@@ -1,6 +1,6 @@
 import { loadUserConfig } from "@ion/config";
 import { clockOf, type EffortLevel as Effort, type HarnessInfo } from "@ion/schema";
-import { agentOrder, defaultAgent, getHarness } from "../adapters/registry.js";
+import { agentOrder, defaultAgent, getHarness, nextInOrder, savingClaude } from "../adapters/registry.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -42,29 +42,27 @@ export const limitedUntil = (db: Db, id: string): string | null =>
   usageView.agents(db, new Date())[id]?.limitedUntil ?? null;
 
 /**
- * The agent an ion goes on among the ready ones `ok` lets through, but `not`: the first that isn't limited; with none,
- * one whose limit is only ion's guess (no stated reset: it may be free again, and one turn tells; `own` first), never
- * one with a stated reset (review, 2026-11-22).
+ * The agent an ion goes on among the ready ones `ok` lets through, but `not`: the first in your order that isn't
+ * limited; with none, one whose limit is only ion's guess (no stated reset: it may be free again, and one turn tells;
+ * `own` first), never one with a stated reset (review, 2026-11-22). Claude Code only when it's first in your order or
+ * the only one ready (Plan 21 audit, 2026-11-23).
  */
 async function pick(d: BrainDeps, o: { not: string[]; own?: string; ok?: (id: string) => boolean }) {
-  const ready = (await readyAgents(d.agents)).filter(o.ok ?? (() => true));
+  const signedIn = await readyAgents(d.agents);
+  const ready = signedIn.filter(o.ok ?? (() => true));
   const marks = usageView.agents(d.db, new Date());
   const order = orderOf(d);
-  const open = defaultAgent(
-    ready.filter((id) => !marks[id]?.limitedUntil && !o.not.includes(id)),
-    null,
-    order,
-  );
+  const limited = (id: string) => !!marks[id]?.limitedUntil;
+  const open = nextInOrder({ order, ready, limited, not: o.not, signedIn });
   if (open) return open;
   const guessed = ready.filter((id) => marks[id]?.limitGuessed);
   if (o.own && guessed.includes(o.own)) return o.own;
-  return (
-    defaultAgent(
-      guessed.filter((id) => !o.not.includes(id)),
-      null,
-      order,
-    ) ?? null
+  const others = savingClaude(
+    guessed.filter((id) => !o.not.includes(id)),
+    order,
+    signedIn,
   );
+  return defaultAgent(others, null, order) ?? null;
 }
 
 /**
@@ -113,6 +111,13 @@ const webOff = (id: string) => !!getHarness(id)?.adapter.noWeb;
  * ion's dream's agent: Settings → Memory's (else ion's quick model's) while it's ready and can turn its web off, else
  * the first ready one that can (task review, 2026-11-22); with none, the chosen one (its turn says it was skipped).
  */
+async function dreamOn(d: BrainDeps, spec: string, effort: IonBrain["effort"]): Promise<IonBrain | null> {
+  if (spec) return dreamBrain(d, spec, effort);
+  const first = await pick(d, { not: [], ok: webOff });
+  return first ? { harness: first, model: null, effort } : null;
+}
+
+/** The dream's chosen agent while it can (see dreamOn). */
 async function dreamBrain(d: BrainDeps, spec: string, effort: IonBrain["effort"]): Promise<IonBrain | null> {
   const [set, ...rest] = spec.split(":");
   const ready = await isReady(d, set!);
@@ -143,8 +148,9 @@ export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | 
   const c = loadUserConfig(d.configFile).config;
   const ion = c.ion;
   const quickEffort = ion.quickEffort ?? null;
-  if (ionId === DREAM_ION) return dreamBrain(d, c.memory.dreamAgent || ion.quick, quickEffort);
-  if (ionId === "chief") return chiefBrain(d, ion.quick, quickEffort);
+  // None set (a fresh ion): the first ready agent in your order (Plan 21 audit, 2026-11-23: it was Claude Code).
+  if (ionId === DREAM_ION) return dreamOn(d, c.memory.dreamAgent || ion.quick || "", quickEffort);
+  if (ionId === "chief") return chiefBrain(d, ion.quick ?? "", quickEffort);
   // A project's own agent that isn't ready (signed out, gone) or is limited gives way to the next ready one (Plan 19's
   // checks; the user, 2026-11-22).
   const harness = await projectAgent(d, ionId);
@@ -159,6 +165,7 @@ export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | 
 
 /** ion chief's: [ion] quick while it's ready and not limited, else the next ready one (saying it went past a limit). */
 async function chiefBrain(d: BrainDeps, quick: string, effort: Effort | null): Promise<IonBrain | null> {
+  if (!quick) return nextBrain(d, "chief", []);
   const [set, ...rest] = quick.split(":");
   const ready = await isReady(d, set!);
   if (ready && !isLimited(d, set!)) return { harness: set!, model: rest.join(":") || null, effort };

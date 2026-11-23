@@ -410,9 +410,16 @@ describe("daemon api", () => {
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
   // Task review, 2026-11-20: one call (settings.set) saves every setting, the model and effort included.
   it("reads and sets ion's quick model, refusing an unknown agent", async () => {
-    expect(await client.call("settings.get", {})).toMatchObject({ quick: "claude-code", effort: null });
+    // Plan 21 audit, 2026-11-23: none set at first (it follows your agent order), the judge too.
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "", effort: null, judge: "" });
     await client.call("settings.set", { patch: { quick: "grok-build" } });
     expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", effort: null });
+    // Plan 21 audit, 2026-11-23: Settings shows and sets the judge's agent too, with the same picker.
+    await client.call("settings.set", { patch: { judge: "opencode" } });
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", judge: "opencode" });
+    await expect(client.call("settings.set", { patch: { judge: "nope" } })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
     await expect(client.call("settings.set", { patch: { quick: "nope:x" } })).rejects.toThrow(
       "Unknown agent: nope",
     );

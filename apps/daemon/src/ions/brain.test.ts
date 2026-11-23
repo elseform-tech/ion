@@ -6,7 +6,7 @@ import { clockOf, type HarnessInfo, type NewEvent } from "@ion/schema";
 import { describe, expect, it } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
-import { allLimited, ionBrain } from "./brain.js";
+import { allLimited, ionBrain, nextBrain } from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
 // test run past a test's wait), even when the agent was already chosen. Only the chosen one is checked; every agent
@@ -59,14 +59,41 @@ describe("an ion's agent", () => {
       const both = {
         configFile,
         db: viewsDb(),
-        agents: async () => [info("fake", true), info("claude-code", true)],
+        agents: async () => [info("fake", true), info("opencode", true)],
       };
-      expect(await ionBrain(both, "_dream")).toMatchObject({ harness: "claude-code" });
+      expect(await ionBrain(both, "_dream")).toMatchObject({ harness: "opencode" });
       const alone = { ...both, agents: async () => [info("fake", true)] };
       expect(await ionBrain(alone, "_dream")).toMatchObject({ harness: "fake" });
     } finally {
       delete process.env.ION_FAKE_HAS_WEB;
     }
+  });
+
+  // Plan 21 audit, 2026-11-23: ion chief's agent was Claude Code unless you set one, and an ion whose agent failed
+  // went on Claude Code too. With none set it's the first ready in your agent order; Claude Code only when it's first
+  // in your order or the only one ready.
+  it("follows your agent order when no agent is set, and saves Claude Code", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, memory: { dream: "nightly" } });
+    const d = (ids: string[]) => ({
+      configFile,
+      db: viewsDb(),
+      agents: async () => ids.map((id) => info(id, true)),
+    });
+    expect(await ionBrain(d(["claude-code", "grok-build"]), "chief")).toMatchObject({
+      harness: "grok-build",
+    });
+    expect(await ionBrain(d(["claude-code", "fake"]), "_dream")).toMatchObject({ harness: "fake" });
+    expect(await ionBrain(d(["claude-code"]), "chief")).toMatchObject({ harness: "claude-code" });
+    expect(await nextBrain(d(["claude-code", "opencode"]), "chief", ["opencode"])).toBeNull();
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      routing: { ...DEFAULT_CONFIG.routing, order: ["claude-code"] },
+    });
+    expect(await nextBrain(d(["claude-code", "opencode"]), "chief", ["opencode"])).toMatchObject({
+      harness: "claude-code",
+    });
   });
 
   // Plan 19's checks, 2026-11-22: a project's ion whose agent wasn't ready had no agent at all ("I couldn't reach my

@@ -1,11 +1,18 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar, Brain, Zap } from "@ion/design-system";
-import { type AgentUsage, EV, type EffortLevel, type HarnessInfo, usageLine } from "@ion/schema";
+import { Avatar, Brain, type LucideIcon, ShieldCheck, Zap } from "@ion/design-system";
+import {
+  type AgentUsage,
+  EV,
+  type EffortLevel,
+  type HarnessInfo,
+  type SettingsPatch,
+  usageLine,
+} from "@ion/schema";
 import { Fragment, type HTMLAttributes, type ReactNode, useCallback, useEffect, useState } from "react";
 import { inOrder, PickingAgents, useAgentOrder } from "./AgentOrder.js";
 import { useEvents } from "../events.js";
 import { useCallError } from "../callError.js";
-import { ready, type SettingsData } from "./data.js";
+import { ownSpec, ready, type SettingsData } from "./data.js";
 import { EFFORTS } from "./IonPage.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { Switch } from "./Switch.js";
@@ -101,41 +108,35 @@ function AgentRow(p: {
 }
 
 /**
- * The model ion thinks with: an agent (its shape), then one of its models from a menu ("Default": the agent's
- * own). Only agents that are ready.
+ * One of ion's own models: an agent (its shape), then one of its models from a menu ("Default": the agent's own).
+ * Only agents that are ready; none set shows the one it follows (the first ready in your order).
  */
-function QuickModel(p: {
+function ModelRow(p: {
   data: SettingsData;
-  quick: string;
+  icon: LucideIcon;
+  label: string;
+  spec: string;
   onPick: (spec: string) => void;
-  error: string | null;
-  /** More rows of ion's model (its effort). */
-  children?: React.ReactNode;
 }) {
-  const [agent, model = ""] = p.quick.split(/:(.*)/);
+  const [agent, model = ""] = ownSpec(p.spec, p.data).split(/:(.*)/);
   const ok = p.data.harnesses.filter(ready);
   const models = ok.find((h) => h.id === agent)?.models ?? [];
+  const Icon = p.icon;
   return (
-    <div>
-      <h4>ion’s model</h4>
-      <div className="group">
-        <div className="srow">
-          <div className="g">
-            <span className="slot">
-              <Zap />
-              Quick
-            </span>
-          </div>
-          <AgentPicker agents={ok} value={agent} onPick={p.onPick} />
-          <ModelMenu
-            models={models}
-            value={model}
-            onChange={(m) => p.onPick(m ? `${agent}:${m}` : String(agent))}
-          />
-        </div>
-        {p.children}
-        {p.error && <div className="perr">{p.error}</div>}
+    <div className="srow">
+      <div className="g">
+        <span className="slot">
+          <Icon />
+          {p.label}
+        </span>
       </div>
+      <AgentPicker agents={ok} value={agent} onPick={p.onPick} label={p.label} />
+      <ModelMenu
+        label={`${p.label} model`}
+        models={models}
+        value={p.spec ? model : ""}
+        onChange={(m) => p.onPick(m ? `${agent}:${m}` : String(agent))}
+      />
     </div>
   );
 }
@@ -172,6 +173,28 @@ function QuickEffort({
   );
 }
 
+/** ion's own models: Quick and its effort, and Auto's judge (Plan 21 audit, 2026-11-23: it was Claude Code, unseen). */
+function IonModels(p: { data: SettingsData; set: (patch: SettingsPatch) => void; error: string | null }) {
+  const s = p.data.settings;
+  return (
+    <div>
+      <h4>ion’s models</h4>
+      <div className="group">
+        <ModelRow
+          {...{ data: p.data, icon: Zap, label: "Quick", spec: s?.quick ?? "" }}
+          onPick={(quick) => p.set({ quick })}
+        />
+        <QuickEffort value={s?.effort ?? null} onPick={(effort) => p.set({ effort })} />
+        <ModelRow
+          {...{ data: p.data, icon: ShieldCheck, label: "Judge", spec: s?.judge ?? "" }}
+          onPick={(judge) => p.set({ judge })}
+        />
+        {p.error && <div className="perr">{p.error}</div>}
+      </div>
+    </div>
+  );
+}
+
 /** What changes an agent's usage line: its usage, a limit it hit, a run or turn that ended (it may clear one). */
 const changesUsage = (e: { type: string; data: unknown }) =>
   e.type === EV.usageReported ||
@@ -198,9 +221,8 @@ function useUsage(client: IonClient, harnesses: HarnessInfo[]): AgentUsage[] {
  * one hits its limit, and Pick by usage; the model ion thinks with, and how hard.
  */
 export function Agents({ client, data }: { client: IonClient; data: SettingsData }) {
-  const quick = data.settings?.quick ?? "";
   const [error, run] = useCallError();
-  const pick = (spec: string) => run(client.call("settings.set", { patch: { quick: spec } }), data.reload);
+  const set = (patch: SettingsPatch) => run(client.call("settings.set", { patch }), data.reload);
   const usage = useUsage(client, data.harnesses);
   useSignInsWaiting(data.harnesses, data.reload);
   const agents = inOrder(data.harnesses, data.settings?.agentOrder);
@@ -238,12 +260,7 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
           />
         )}
       </div>
-      <QuickModel data={data} quick={quick} onPick={pick} error={error}>
-        <QuickEffort
-          value={data.settings?.effort ?? null}
-          onPick={(effort) => run(client.call("settings.set", { patch: { effort } }), data.reload)}
-        />
-      </QuickModel>
+      <IonModels data={data} set={set} error={error} />
     </>
   );
 }

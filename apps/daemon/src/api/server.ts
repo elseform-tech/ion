@@ -17,8 +17,9 @@ import { RunManager } from "../runs/manager.js";
 import { startSandbox } from "../runs/sandbox.js";
 import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
-import { createAccess, createJudge, harnessRunner, ionDirsOf } from "../access/index.js";
-import { judgeOthers, startOwnAgents } from "../access/runner.js";
+import { createAccess, harnessRunner, ionDirsOf } from "../access/index.js";
+import { startOwnAgents } from "../access/runner.js";
+import { type AgentsNow, judgeOn, ownAgents } from "../access/judge-agents.js";
 import { theirRulesOf } from "../access/agent-rules.js";
 import { UnsureLog } from "../access/unsure.js";
 import type { Decisions } from "../decisions/index.js";
@@ -215,7 +216,7 @@ function httpServer(ctx: Ctx, turns: IonTurns) {
  * where ion's gate hook lives; ~/.grok is covered by name) are always denied; the judge weighs your decisions.
  */
 function autoAccess(
-  opts: { dataDir: string; configFile: string },
+  opts: { dataDir: string; configFile: string; now: AgentsNow },
   quick: ReturnType<typeof harnessRunner>,
   late: { decisions?: Decisions },
   unsure: UnsureLog,
@@ -232,10 +233,6 @@ function autoAccess(
     decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
   });
 }
-
-/** Auto's judge: its second try on another agent signed in now. */
-const judgeOn = (opts: { dataDir: string; configFile: string }, quick: ReturnType<typeof harnessRunner>) =>
-  createJudge(quick, undefined, judgeOthers(opts, readyAgents));
 
 /** The agents signed in now (the judge's second try picks one). */
 const readyAgents = async () =>
@@ -463,13 +460,14 @@ function openState(
   const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store, late);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
-  const quick = harnessRunner({ ...opts, record });
+  const own = ownAgents({ ...opts, record }, db, readyAgents);
+  const quick = harnessRunner(own);
   // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
-  const ionQuick = harnessRunner({ ...opts, record }, "quick");
+  const ionQuick = harnessRunner(own, "quick");
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
   sweepNeeds(needs, ionQuestions);
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
-  const access = autoAccess(opts, quick, late, unsure);
+  const access = autoAccess(own, quick, late, unsure);
   const hooks = startHooks({ store, db, opts, tools }, { grants, base, ...(ionBin ? { bin: ionBin } : {}) });
   const servers = serversFor({ tools, oauth, configFile: opts.configFile });
   // Your servers for ions' turns: only what reads, as Auto's judge agrees (the user, 2026-11-21).
@@ -478,7 +476,7 @@ function openState(
     const note = unsure.add({ ...c, input: c.input });
     if (note) console.warn(note);
   };
-  const ionServers = new IonServers({ ...opts, servers, judge: judgeOn(opts, quick), ownNames, onUnsure });
+  const ionServers = new IonServers({ ...opts, servers, judge: judgeOn(own, quick), ownNames, onUnsure });
   const runCtx = runCtxOf({ opts, base, late, grants, hooks, picks: { tools, skills, ionServers }, memory });
   // Said once in the daemon's log when this computer can't sandbox chats' agents; ion's own git runs sandboxed too.
   const sandbox = startOwnAgents(opts, startSandbox(opts));

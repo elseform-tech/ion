@@ -53,6 +53,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     noWeb: true,
     // Its models' standard context.
     contextTokens: 200_000,
+    // ion's own quick calls on it (the judge going on another agent): its small model, never Opus (Plan 21 audit).
+    quickModel: "haiku",
     // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.
     picks: "slash",
     // It reads a server's resources (@server:uri, and its resource tools).

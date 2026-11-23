@@ -139,8 +139,41 @@ describe("loadUserConfig", () => {
     expect(bad.warning).toContain("onLimit");
   });
 
-  it("leaves the models to each harness by default", () => {
-    expect(DEFAULT_CONFIG.ion).toMatchObject({ quick: "claude-code", deep: "claude-code" });
+  // Plan 21 audit, 2026-11-23: a fresh ion's quick and deep models and Auto's judge were Claude Code (the judge at
+  // Haiku), whatever agents you had and against your agent order. None is set now: each follows your agent order
+  // (the first ready agent). Every save wrote those defaults into the file, so a file from before (no `version`)
+  // carrying exactly the old default moves too; any other choice, and anything a file from now on names, stays.
+  it("sets no agent for ion's models or the judge: they follow your agent order", () => {
+    expect(DEFAULT_CONFIG.ion.quick).toBeUndefined();
+    expect(DEFAULT_CONFIG.ion.deep).toBeUndefined();
+    expect(DEFAULT_CONFIG.access.judge).toBeUndefined();
+  });
+
+  it("moves an older file's untouched defaults, and keeps a choice", () => {
+    const file = join(tmp(), "config.toml");
+    const old =
+      '[ion]\nquick = "claude-code"\ndeep = "claude-code"\n\n[access]\njudge = "claude-code:haiku"\n';
+    writeFileSync(file, old);
+    const moved = loadUserConfig(file).config;
+    expect([moved.ion.quick, moved.ion.deep, moved.access.judge]).toEqual([undefined, undefined, undefined]);
+    writeFileSync(
+      file,
+      '[ion]\nquick = "claude-code:opus"\ndeep = "grok-build"\n\n[access]\njudge = "opencode"\n',
+    );
+    const kept = loadUserConfig(file).config;
+    expect([kept.ion.quick, kept.ion.deep, kept.access.judge]).toEqual([
+      "claude-code:opus",
+      "grok-build",
+      "opencode",
+    ]);
+    // Picked from now on (saved with this ion's version): Claude Code stays Claude Code.
+    saveUserConfig(file, {
+      ...kept,
+      ion: { ...kept.ion, quick: "claude-code" },
+      access: { judge: "claude-code:haiku" },
+    });
+    const picked = loadUserConfig(file).config;
+    expect([picked.ion.quick, picked.access.judge]).toEqual(["claude-code", "claude-code:haiku"]);
   });
 });
 

@@ -125,14 +125,21 @@ export const ON_LIMIT = ["ask", "continue", "wait"] as const;
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
 const MaxRuns = z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]);
 
+/**
+ * The file's version, written by every save: 2 since ion's models and the judge follow your agent order (Plan 21
+ * audit, 2026-11-23). A file without it is older, and the defaults every save wrote then are moved (moveOldDefaults).
+ */
+const CONFIG_VERSION = 2;
+
 const UserConfigSchema = z.looseObject({
   ion: z
     .looseObject({
-      // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list.
-      quick: z.string().default("claude-code"),
+      // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list. Absent: the
+      // first ready agent in your agent order (routing.order), at its quick model.
+      quick: z.string().optional(),
       /** How hard ion's quick model thinks; absent: the agent's own default. */
       quickEffort: Effort.optional(),
-      deep: z.string().default("claude-code"),
+      deep: z.string().optional(),
       deepEffort: Effort.default("high"),
       useDeep: z.enum(["auto", "always", "never"]).default("auto"),
     })
@@ -148,8 +155,11 @@ const UserConfigSchema = z.looseObject({
    */
   access: z
     .looseObject({
-      /** Who decides in Auto: "<harness>:<model>", a small model (it runs for every new action). */
-      judge: z.string().default("claude-code:haiku"),
+      /**
+       * Who decides in Auto: "<harness>[:<model>]", a small model (it runs for every new action). Absent: the first
+       * ready agent in your agent order, at its quick model.
+       */
+      judge: z.string().optional(),
     })
     .prefault({}),
   /** Pause all: no routine runs until you resume. Absent: none paused. */
@@ -364,6 +374,31 @@ function dropOldAccess(raw: unknown, file: string): string | null {
   return `${basename(file)}: ${said.join(", ")} no longer used; new chats start on Auto`;
 }
 
+/** The defaults every save wrote before version 2 (Claude Code), with where each is. */
+const OLD_DEFAULTS: [section: string, key: string, was: string][] = [
+  ["ion", "quick", "claude-code"],
+  ["ion", "deep", "claude-code"],
+  ["access", "judge", "claude-code:haiku"],
+];
+
+/**
+ * A file from before version 2 (Plan 21 audit, 2026-11-23): each of ion's models and the judge still on the old
+ * default (Claude Code, written by every save whether you picked it or not) follows your agent order now; any other
+ * value is your choice and stays.
+ */
+function moveOldDefaults(raw: unknown): void {
+  const r = raw as Record<string, unknown> | null;
+  if (typeof r !== "object" || r === null) return;
+  // The version is the file's, never a setting: each save writes the current one.
+  const older = r.version === undefined;
+  delete r.version;
+  if (!older) return;
+  for (const [section, key, was] of OLD_DEFAULTS) {
+    const holder = r[section] as Record<string, unknown> | undefined;
+    if (typeof holder === "object" && holder !== null && holder[key] === was) delete holder[key];
+  }
+}
+
 /**
  * Reads the config file. Missing file → defaults. Invalid file → defaults plus a one-line error. A bad notification
  * time or max_runs alone falls back to its default, with a warning; the rest of the file loads.
@@ -381,6 +416,7 @@ export function loadUserConfig(file: string): {
     const first = String((e as Error).message).split("\n")[0];
     return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null };
   }
+  moveOldDefaults(raw);
   const warning = [dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
   const r = UserConfigSchema.safeParse(raw);
   if (!r.success)
@@ -392,7 +428,8 @@ export function loadUserConfig(file: string): {
 export function saveUserConfig(file: string, c: UserConfig): void {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
-  const { heldProjects, ...parsed } = UserConfigSchema.parse(c);
+  const { heldProjects, ...rest } = UserConfigSchema.parse(c);
+  const parsed = { version: CONFIG_VERSION, ...rest };
   // A held project goes back in the file as you wrote it (after the others).
   const out = heldProjects?.length ? { ...parsed, projects: [...parsed.projects, ...heldProjects] } : parsed;
   writeFileSync(tmp, stringify(out), { mode: 0o600 });

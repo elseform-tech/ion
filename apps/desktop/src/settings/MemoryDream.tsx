@@ -2,7 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import { Moon } from "@ion/design-system";
 import type { DreamInfo, DreamMode, MemoryInfo, SettingsPatch } from "@ion/schema";
 import type { Run } from "../callError.js";
-import { type SettingsData, ready } from "./data.js";
+import { ownSpec, type SettingsData, ready } from "./data.js";
 import { AgentPicker } from "./ModelMenu.js";
 
 const MODES: [DreamMode, string][] = [
@@ -24,7 +24,7 @@ export function DreamRow(p: { client: IonClient; data: SettingsData; run: Run })
   if (!s) return null;
   const save = (dream: NonNullable<SettingsPatch["dream"]>) =>
     p.run(p.client.call("settings.set", { patch: { dream } }), () => p.data.reload());
-  const agent = (s.dream.agent ?? s.quick).split(":")[0];
+  const agent = ownSpec(s.dream.agent ?? s.quick, p.data).split(":")[0];
   return (
     <div className="group">
       <div className="srow">
