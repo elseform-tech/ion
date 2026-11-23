@@ -51,7 +51,7 @@ export function listedHarnessIds(): string[] {
 export function getHarness(id: string): HarnessEntry | null {
   if (id === "fake" && process.env.ION_ALLOW_FAKE === "1")
     return {
-      adapter: createFakeAdapter({ signedIn: process.env.ION_FAKE_SIGNED_OUT !== "1" }),
+      adapter: createFakeAdapter(),
       label: "Fake",
       loginHint: "ion fake login",
     };

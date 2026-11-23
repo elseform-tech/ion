@@ -4,7 +4,7 @@ import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
 import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
 import type { MemorySee, MemoryType } from "./memory.js";
-import type { AgentUsage, HarnessInfo, TaskEstimate } from "./agents.js";
+import { AGENT_COMMANDS, type AgentCommands, type AgentUsage, type TaskEstimate } from "./agents.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -190,7 +190,7 @@ export type StatusResult = {
 };
 
 /** Every command the daemon accepts: its arguments and its result. */
-export type Commands = ToolsCommands & {
+export interface Commands extends ToolsCommands, AgentCommands {
   status: { args: Record<string, never>; result: StatusResult };
   "projects.list": { args: Record<string, never>; result: ProjectInfo[] };
   "projects.add": { args: { path: string }; result: ProjectInfo };
@@ -319,7 +319,6 @@ export type Commands = ToolsCommands & {
   "todo.add": { args: { text: string; projectId?: string; due?: string }; result: MemoryInfo };
   /** Marks a to-do done, by its path, file name or name. */
   "todo.done": { args: { name: string }; result: MemoryInfo };
-  "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
   "routine.add": {
     args: { projectId: string; name: string; when: string; text: string; effort?: EffortLevel };
     result: RoutineInfo;
@@ -341,7 +340,7 @@ export type Commands = ToolsCommands & {
     args: { chatId: string } | { projectId: string | null; harness?: string; text: string };
     result: TaskEstimate | null;
   };
-};
+}
 
 export type NeedInfo = {
   needId: string;
@@ -495,7 +494,7 @@ export const COMMANDS = [
   "memory.dream",
   "todo.add",
   "todo.done",
-  "harnesses.list",
+  ...AGENT_COMMANDS,
   "routine.add",
   "routine.update",
   "routine.remove",
@@ -526,7 +525,9 @@ export const COMMANDS = [
   "tools.setIonUse",
 ] as const;
 
-export type ApiError = { code: "unknown_command" | "bad_request" | "invalid" | "internal"; message: string };
+/** `confirm`: ion asks you first (the message is its question); the same call with `confirm: true` goes ahead. */
+export type ApiError = { code: ApiErrorCode; message: string };
+type ApiErrorCode = "unknown_command" | "bad_request" | "invalid" | "confirm" | "internal";
 export type Request<C extends Command = Command> = { id: string; cmd: C; args: Commands[C]["args"] };
 export type Reply<C extends Command = Command> =
   | { id: string; ok: true; result: Commands[C]["result"] }

@@ -31,6 +31,8 @@ const fake: AcpHarness = {
   versionArgs: ["--version"],
   loginArgs: [],
   loginHint: "fake login",
+  logoutArgs: [],
+  logoutHint: "fake logout",
   defaultModel: null,
 };
 const cwd = mkdtempSync(join(tmpdir(), "ion-acp-"));

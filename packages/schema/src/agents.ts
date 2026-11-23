@@ -10,6 +10,8 @@ export type HarnessInfo = {
   label: string;
   installed: boolean;
   signedIn: boolean;
+  /** Its sign-in check didn't answer: not known to be signed in or out. */
+  signInUnknown?: true;
   /** From the harness itself when it's signed in; empty otherwise. */
   models: { id: string; label: string }[];
   defaultModel: string | null;
@@ -29,6 +31,50 @@ export type HarnessInfo = {
   judgeMisses?: number;
   /** How its sign-in bills, when known (absent: unknown, never shown as free). */
   billing?: Billing;
+  /**
+   * How you sign in: its own command; `inApp`, ion runs it and shows its page and code; `clears`, starting it clears
+   * the sign-in it has (ion warns first).
+   */
+  signIn?: { command: string; inApp: boolean; clears?: true };
+  /** How you sign out: its own command; `inApp`, ion runs it (after you confirm). */
+  signOut?: { command: string; inApp: boolean };
+  /** Its sign-in ion started and waits on: the page to open and the code to confirm there, nothing else it printed. */
+  signingIn?: LoginPage;
+};
+
+/** An agent's sign-in page and the code to confirm there (either may be missing). */
+export type LoginPage = { url: string | null; code: string | null };
+
+/** `harness.login`: ion started the agent's own sign-in (its page and code), or the command to type in a terminal. */
+export type SignInResult = ({ kind: "started" } & LoginPage) | { kind: "command"; command: string };
+
+/** `harness.logout`: ion ran the agent's own sign-out (and whether it now reads signed in), or the command to type. */
+export type SignOutResult = { kind: "done"; signedIn: boolean } | { kind: "command"; command: string };
+
+/** The agents' commands, in the contract's order: the list, and signing in and out (the user, 2026-11-23). */
+export const AGENT_COMMANDS = [
+  "harnesses.list",
+  "harness.login",
+  "harness.logout",
+  "harness.cancelLogin",
+] as const;
+
+/** The coding agents: each one's state, and signing in and out of it from ion (the user, 2026-11-23). */
+export type AgentCommands = {
+  "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
+  /**
+   * Starts an agent's own sign-in where it needs no terminal (its page and code), else gives its command. Refused while
+   * it's signed in or the agent isn't installed; one whose sign-in clears the one it has (`signIn.clears`) needs
+   * `confirm`.
+   */
+  "harness.login": { args: { id: string; confirm?: boolean }; result: SignInResult };
+  /**
+   * Runs an agent's own sign-out, which signs it out on this computer, not only in ion: only with `confirm`, and refused
+   * while it works in a chat. An agent whose sign-out needs a terminal: its command.
+   */
+  "harness.logout": { args: { id: string; confirm?: boolean }; result: SignOutResult };
+  /** Stops an agent's sign-in ion started (its page is gone; the agent stays signed out). */
+  "harness.cancelLogin": { args: { id: string }; result: { ok: true } };
 };
 
 /** One of an agent's rate-limit windows, as it reported it. */

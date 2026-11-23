@@ -11,6 +11,9 @@ export class HarnessInfos {
   private readonly known = new Map<string, Entry>();
   /** First reads still going (nothing known yet), so a list waits on them instead of starting its own. */
   private readonly first = new Map<string, Promise<void>>();
+  /** Each agent's reads in the order they began, and the latest one kept: an older read never undoes a newer one. */
+  private readonly began = new Map<string, number>();
+  private readonly kept = new Map<string, number>();
   /** When the first reads began (the warm-up, or the first ask that waits on them). */
   private since: number | undefined;
 
@@ -80,6 +83,31 @@ export class HarnessInfos {
     return this.idList().includes(id) ? this.get(id) : undefined;
   }
 
+  /**
+   * Reads one agent again now and waits for it (it just signed in or out: the user, 2026-11-23); a read still going
+   * from before can't bring the old answer back.
+   */
+  async refresh(id: string): Promise<void> {
+    const n = this.next(id);
+    await this.load(id).then(
+      (info) => this.keep(id, n, info),
+      () => {},
+    );
+  }
+
+  private next(id: string): number {
+    const n = (this.began.get(id) ?? 0) + 1;
+    this.began.set(id, n);
+    return n;
+  }
+
+  /** Keeps a read's answer unless a newer read's is kept already. */
+  private keep(id: string, n: number, info: HarnessInfo): void {
+    if (n < (this.kept.get(id) ?? 0)) return;
+    this.kept.set(id, n);
+    this.known.set(id, { info, at: this.now() });
+  }
+
   /** Reads every agent now, so the first list is quick (at the daemon's start). */
   warm(): void {
     this.since ??= this.now();
@@ -101,8 +129,9 @@ export class HarnessInfos {
     if (e?.reading) return e.reading;
     const going = this.first.get(id);
     if (!e && going) return going;
+    const n = this.next(id);
     const reading = this.load(id).then(
-      (info) => void this.known.set(id, { info, at: this.now() }),
+      (info) => this.keep(id, n, info),
       () => {
         if (e) this.known.set(id, { info: e.info, at: this.now() });
       },

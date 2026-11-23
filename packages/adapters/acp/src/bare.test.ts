@@ -16,6 +16,8 @@ const judge: AcpHarness = {
   versionArgs: ["--version"],
   loginArgs: [],
   loginHint: "fake login",
+  logoutArgs: [],
+  logoutHint: "fake logout",
   defaultModel: null,
   bare: { model: "fake-2", effort: "low", args: (home) => [AGENT, "--bare-profile", home] },
   forgetArgs: (id) => [AGENT, "--forget", id],

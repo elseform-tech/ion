@@ -25,6 +25,12 @@ export function useSettingsData(client: IonClient): SettingsData {
     void client.call("projects.list", {}).then(setProjects, quiet);
   }, [client]);
   useEffect(reload, [reload]);
+  // Back to the window: read again, so a sign-in or sign-out made elsewhere (the CLI, a terminal) shows (review of
+  // #35, 2026-11-23).
+  useEffect(() => {
+    window.addEventListener("focus", reload);
+    return () => window.removeEventListener("focus", reload);
+  }, [reload]);
   return { harnesses, settings, ions, projects, reload };
 }
 

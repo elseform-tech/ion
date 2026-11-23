@@ -1,8 +1,15 @@
 import type { HarnessAdapter } from "@ion/adapter-kit";
 import { CAPABILITIES, FALLBACK_MODELS, parseAuthStatus } from "./capabilities.js";
 import { getSessionMessages, query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { cachedCatalog, capabilitiesWith, parseVersion, ResumeFailed, whichOnPath } from "@ion/adapter-kit";
-import { type Exec, execNoShell, loginOnlyEnv, runLogin } from "./cli.js";
+import {
+  cachedCatalog,
+  capabilitiesWith,
+  parseVersion,
+  ResumeFailed,
+  runLogout,
+  whichOnPath,
+} from "@ion/adapter-kit";
+import { type Exec, execNoShell, loginOnlyEnv } from "./cli.js";
 import { claudeGateCall } from "./gate.js";
 import { type QueryFn, startSession } from "./session.js";
 
@@ -38,19 +45,7 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
       const version = parseVersion(stdout);
       return { installed: true, ...(version ? { version } : {}), path };
     },
-    auth: {
-      async status() {
-        const path = binary();
-        if (!path) return { signedIn: false, method: "Not installed" };
-        const r = await exec(path, ["auth", "status", "--json"], { env: loginOnlyEnv() });
-        return parseAuthStatus(r.code, r.stdout);
-      },
-      async login() {
-        const path = binary();
-        if (!path) throw new Error("Claude Code isn't installed");
-        await runLogin(path);
-      },
-    },
+    auth: claudeAuth(exec, binary),
     capabilities: capabilitiesWith(CAPABILITIES, claudeCatalog(deps, binary)),
     // The Agent SDK's mcpServers takes both.
     mcpTransports: { http: true },
@@ -77,6 +72,31 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
       });
     },
   };
+}
+
+/** Whether Claude Code is signed in (its own login only), and its own login and logout. */
+function claudeAuth(exec: Exec, binary: () => string | null): HarnessAdapter["auth"] {
+  return {
+    async status() {
+      const path = binary();
+      if (!path) return { signedIn: false, method: "Not installed" };
+      const r = await exec(path, ["auth", "status", "--json"], { env: loginOnlyEnv() });
+      return parseAuthStatus(r.code, r.stdout);
+    },
+    // `claude auth login` opens your browser, and may then ask for a code pasted into it ("Paste code here if
+    // prompted"): ion runs a login with no input, so it shows the command instead (review of #35, 2026-11-23).
+    login: { command: "claude auth login" },
+    logout: {
+      command: "claude auth logout",
+      run: () => runLogout(installed(binary()), ["auth", "logout"], loginOnlyEnv()),
+    },
+  };
+}
+
+/** Its binary, or why it can't sign in or out. */
+function installed(path: string | null): string {
+  if (!path) throw new Error("Claude Code isn't installed");
+  return path;
 }
 
 /** Claude Code's models, kept for 10 minutes; its aliases when it can't list them. */

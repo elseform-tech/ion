@@ -6,6 +6,7 @@ import {
   type AdapterEvent,
   createEventQueue,
   type HarnessAdapter,
+  type LoginRun,
   type Session,
   type StartOpts,
   ResumeFailed,
@@ -47,23 +48,70 @@ function scenarioOf(text: string, own: string, instructions = ""): string {
   return own.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
 }
 
-export function createFakeAdapter(opts: { delayMs?: number; signedIn?: boolean } = {}): HarnessAdapter {
-  const signedIn = opts.signedIn ?? true;
+/** The fake account's sign-in lives in ION_FAKE_SIGNED_OUT, so it lasts across adapters (the daemon makes one per use). */
+const signedOut = () => process.env.ION_FAKE_SIGNED_OUT === "1";
+
+/**
+ * A scripted sign-in: a page and a code at once, signed in ION_FAKE_LOGIN_MS later (default 1.5 s), or never when
+ * stopped. ION_FAKE_LOGIN=command: an agent whose login needs a terminal (only its command).
+ */
+function fakeLogin(signal: AbortSignal): LoginRun {
+  const ms = Number(process.env.ION_FAKE_LOGIN_MS ?? 1500);
+  const done = new Promise<boolean>((resolve) => {
+    const t = setTimeout(() => {
+      delete process.env.ION_FAKE_SIGNED_OUT;
+      resolve(true);
+    }, ms);
+    signal.addEventListener("abort", () => (clearTimeout(t), resolve(false)), { once: true });
+  });
+  return {
+    prompt: Promise.resolve({ url: "https://example.test/fake-sign-in", code: "FAKE-0001" }),
+    done,
+    // No process: done ends with its signal.
+    stopped: async () => {
+      await done;
+    },
+  };
+}
+
+/** Its sign-in state (in ION_FAKE_SIGNED_OUT), and its scripted login and logout. */
+function fakeAuth(): HarnessAdapter["auth"] {
+  return {
+    // ION_FAKE_BILLING: how it bills (the tour's agent paid per use).
+    status: async () => {
+      // ION_FAKE_STATUS_UNKNOWN=1: its check doesn't answer.
+      if (process.env.ION_FAKE_STATUS_UNKNOWN === "1")
+        return { signedIn: false, unknown: true as const, method: "Couldn't tell" };
+      const signedIn = !signedOut();
+      const billing = BILLINGS.find((b) => b === process.env.ION_FAKE_BILLING);
+      return { signedIn, method: signedIn ? "Fake" : "Not signed in", ...(billing ? { billing } : {}) };
+    },
+    login: {
+      command: "ion fake login",
+      // ION_FAKE_LOGIN_CLEARS=1: starting it clears the sign-in it has (as Codex's does).
+      ...(process.env.ION_FAKE_LOGIN_CLEARS === "1" ? { clears: true as const } : {}),
+      ...(process.env.ION_FAKE_LOGIN === "command" ? {} : { start: fakeLogin }),
+    },
+    logout: {
+      command: "ion fake logout",
+      run: async () => {
+        process.env.ION_FAKE_SIGNED_OUT = "1";
+      },
+    },
+  };
+}
+
+export function createFakeAdapter(opts: { delayMs?: number } = {}): HarnessAdapter {
   const delayMs = opts.delayMs ?? 5;
   return {
     id: "fake",
     detect: async () => {
       if (process.env.ION_FAKE_DETECT_FAIL) throw new Error("The fake harness didn't answer");
+      // ION_FAKE_GONE=1: its binary went away.
+      if (process.env.ION_FAKE_GONE === "1") return { installed: false };
       return { installed: true, version: "0.0.0", path: "fake" };
     },
-    auth: {
-      // ION_FAKE_BILLING: how it bills (the tour's agent paid per use).
-      status: async () => {
-        const billing = BILLINGS.find((b) => b === process.env.ION_FAKE_BILLING);
-        return { signedIn, method: signedIn ? "Fake" : "Not signed in", ...(billing ? { billing } : {}) };
-      },
-      login: async () => {},
-    },
+    auth: fakeAuth(),
     capabilities: async () => CAPABILITIES,
     // ION_FAKE_NO_HTTP=1: an agent that takes local servers only.
     mcpTransports: { http: process.env.ION_FAKE_NO_HTTP !== "1" },

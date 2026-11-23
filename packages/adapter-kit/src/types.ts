@@ -1,5 +1,6 @@
 import type { Billing, Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
 import type { PickStyle } from "./picks.js";
+import type { AgentLogin, AgentLogout } from "./login.js";
 import type { EnvDrop } from "./run-env.js";
 import type { RunSandbox } from "./sandbox.js";
 
@@ -126,8 +127,11 @@ export interface Session {
   close(): Promise<void>;
 }
 
-/** Signed in or not, how, and how that sign-in bills (absent: unknown, never taken as free). */
-export type AuthStatus = { signedIn: boolean; method: string; billing?: Billing };
+/**
+ * Signed in or not, how, and how that sign-in bills (absent: unknown, never taken as free). `unknown`: its check
+ * didn't answer (timed out, couldn't start), so it isn't known to be signed out either.
+ */
+export type AuthStatus = { signedIn: boolean; method: string; billing?: Billing; unknown?: true };
 
 /** By kind: whether an agent's switch turns its own off in ion's chats. */
 type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };
@@ -135,7 +139,11 @@ type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };
 export interface HarnessAdapter {
   id: string;
   detect(): Promise<{ installed: boolean; version?: string; path?: string }>;
-  auth: { status(): Promise<AuthStatus>; login(): Promise<void> };
+  /**
+   * Whether it's signed in, and how you sign in and out: its own commands, which ion runs only where they need no
+   * terminal (a page or a code to show; the user, 2026-11-23).
+   */
+  auth: { status(): Promise<AuthStatus>; login: AgentLogin; logout: AgentLogout };
   capabilities(): Promise<Capabilities>;
   /** The kinds of MCP server it takes from ion (a server of another kind is left out of its runs). */
   mcpTransports: McpTransports;

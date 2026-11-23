@@ -928,6 +928,7 @@ button.arow:hover{background:var(--hover)}
 .tabs2{display:flex;gap:6px;margin:0 0 10px}
 .okd{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--good);margin-right:6px;vertical-align:1px}
 .cbusy{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.hacts{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px}.hsign{grid-column:2/-1;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12.5px;color:var(--muted)}.hsign .g{flex:1;min-width:200px}.hsign .hpart{display:inline-flex;align-items:center;gap:0}.hsign .hcode{font-size:13px;letter-spacing:.06em;color:var(--ink)}.hsign.perr{color:var(--del-ink)}.hrow.ord .hsign{grid-column:3/-1}
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}
 .srow.stack .chips{justify-content:flex-start}
 /* settings: Tools: icon tabs and the config file button; each event with its hooks under it; a row's state; its menu opens beside it (the group clips) */
@@ -3791,10 +3792,21 @@ renderByModel();
 function renderHarnesses(){
   const el=document.getElementById('hList');
   el.innerHTML=HARNESSES.map(h=>{ const c=HCONN[h], n=LIB[h].name;
-    const right=c.st==='on'
-      ? `<div class="meter${c.lim||c.use>=80?' hi':''}"><span>${c.line.split(' · ').map(x=>`<span class="mp">${esc(x)}</span>`).join(' · ')}</span>${c.use!=null?`<div class="tr"><i style="width:${c.use}%"></i></div>`:''}</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`
-      : c.st==='busy' ? `<span class="cbusy"><i class="spin"></i>${esc(c.msg)}</span><span></span>`
-      : `<span></span><button class="btn${c.st==='off'?' pri':''}" type="button" data-hconnect="${h}">${c.st==='missing'?'Install and connect':'Connect'}</button>`;
+    /* Sign in and out of each agent (the user, 2026-11-23): Sign out (its icon) asks first under the row, since it signs the
+       agent out on this Mac; Sign in runs the agent's own login and shows its page and code until it ends (c.cmd: an agent
+       whose login needs a terminal shows its command to copy instead). */
+    const sw=`<button type="button" class="sw${c.st==='on'?' on':''}" role="switch" aria-checked="${c.st==='on'}" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`;
+    const act=c.st==='on'?`<button type="button" class="ib" data-hout="${h}" title="Sign out" aria-label="Sign out of ${esc(n)}"><i data-lucide="log-out"></i></button>`
+      : c.st==='off'?`<button class="btn" type="button" data-hconnect="${h}">Sign in</button>`
+      : c.st==='busy'?`<button class="ib" type="button" data-hno="${h}" title="Cancel" aria-label="Cancel sign-in"><i data-lucide="x"></i></button>`
+      : '';
+    const right=(c.st==='on'
+      ? `<div class="meter${c.lim||c.use>=80?' hi':''}"><span>${c.line.split(' · ').map(x=>`<span class="mp">${esc(x)}</span>`).join(' · ')}</span>${c.use!=null?`<div class="tr"><i style="width:${c.use}%"></i></div>`:''}</div>`
+      : '<span></span>')+`<span class="hacts">${act}${sw}</span>`
+      +(c.err?`<div class="hsign perr">${esc(c.err)}</div>`
+      : c.ask?`<div class="hsign"><span class="g">Sign out of ${esc(n)}? This signs ${esc(n)} out on this Mac, not just in ion.</span><button class="btn" type="button" data-hno="${h}">Cancel</button><button class="btn pri" type="button" data-hyes="${h}">Sign out</button></div>`
+      : c.st==='busy'?`<div class="hsign"><i class="spin"></i><span>Finish in your browser</span><span class="hpart"><button class="ib" type="button" title="Open" aria-label="Open sign-in page"><i data-lucide="external-link"></i></button><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></span><span class="hpart"><code class="hcode">FNAS-DDR6</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></span></div>`
+      : c.cmd?`<div class="hsign"><code>${esc(c.cmd)}</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>`:'');
     /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.
        c.nosb: on a computer without an OS sandbox (Plan 18 Task 12), each agent's chats run without one: "Not sandboxed".
        c.rules: its own allow/deny rules ion goes by in its chats (Plan 18 Task 14), with how many. */
@@ -3814,11 +3826,16 @@ function renderIonModels(){
 }
 document.addEventListener('click',e=>{
   const c=e.target.closest('[data-hconnect]');
-  if(c){ const h=c.dataset.hconnect, st=HCONN[h], wasMissing=st.st==='missing';
-    Object.assign(st,{st:'busy',msg:wasMissing?'Installing '+LIB[h].name+'…':'Finish signing in in your browser…'}); renderHarnesses();
-    setTimeout(()=>{ if(wasMissing){ Object.assign(st,{msg:'Finish signing in in your browser…'}); renderHarnesses(); }
-      setTimeout(()=>{ Object.assign(st,{st:'on',how:'Signed in',use:0}); renderHarnesses(); paintPills(); },1400); },wasMissing?1200:0);
+  if(c){ const h=c.dataset.hconnect, st=HCONN[h];
+    if(h==='cursor'){ st.cmd='cursor-agent login'; renderHarnesses(); return; }
+    Object.assign(st,{st:'busy'}); renderHarnesses();
+    setTimeout(()=>{ Object.assign(st,{st:'on',how:'Signed in',use:0,line:st.line||'Signed in'}); renderHarnesses(); paintPills(); },2400);
     return; }
+  const o=e.target.closest('[data-hout]'); if(o){ const h=o.dataset.hout, st=HCONN[h];
+    /* An agent working in chats says so first, in the row's error line (review of #35, 2026-11-23): Codex here. */
+    if(h==='codex') st.err=`${LIB[h].name} is working in 2 chats. Sign out after they finish.`; else st.ask=1; renderHarnesses(); return; }
+  const y=e.target.closest('[data-hyes]'); if(y){ Object.assign(HCONN[y.dataset.hyes],{ask:0,st:'off',how:'Not signed in'}); renderHarnesses(); paintPills(); return; }
+  const no=e.target.closest('[data-hno]'); if(no){ const st=HCONN[no.dataset.hno]; if(st.st==='busy') Object.assign(st,{st:'off'}); st.ask=0; renderHarnesses(); return; }
   const sl=e.target.closest('[data-islot]'); if(sl){ IONBRAIN[sl.dataset.islot]=[sl.dataset.h,sl.dataset.m]; if(!ESUP[IONBRAIN.deep[0]].includes(IONBRAIN.eff)) IONBRAIN.eff=ESUP[IONBRAIN.deep[0]].find(x=>x!=='auto')||'high'; renderIonModels(); renderByIon(); return; }
   const ie=e.target.closest('[data-ieff]'); if(ie){ IONBRAIN.eff=ie.dataset.ieff; renderIonModels(); return; }
   const iw=e.target.closest('[data-iwhen]'); if(iw){ IONBRAIN.when=iw.dataset.iwhen; renderIonModels(); return; }

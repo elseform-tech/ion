@@ -140,10 +140,12 @@ Usage: ion harnesses [options] [command]
 Coding agents and their models
 
 Options:
-  -h, --help      display help for command
+  -h, --help             display help for command
 
 Commands:
-  order <ids...>  Put agents in order, best first
+  order <ids...>         Put agents in order, best first
+  login [options] <id>   Sign in to an agent
+  logout [options] <id>  Sign out of an agent, on this Mac
 
 ---
 

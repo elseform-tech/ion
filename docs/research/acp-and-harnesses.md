@@ -335,3 +335,32 @@ gates each call for ions: the tool must be on for ions (Settings → Tools, "Ion
 `readOnlyHint && !destructiveHint`, your switch kept with a hash of name, description and labels), the input within
 the limits (each text ≤ 200 chars, no 40+ base64/hex run, ≤ 2 KB), and the judge (`onlyReads`) must say allow; no or
 unsure: refused with a plain line, and the ion starts a thread.
+
+## Signing in and out from ion (2026-11-23)
+
+Settings → Agents and `ion harnesses login|logout <id>` run each agent's own login and logout (the adapter declares
+them: `auth.login` / `auth.logout` in `packages/adapter-kit`). Only the page and the code an agent's login prints
+reach the app; nothing else it prints is kept, logged or shown.
+
+| Agent | Sign in | Sign out | How it was checked |
+|---|---|---|---|
+| Claude Code 2.1.330 | `claude auth login`: **only the command**. It opens your browser and may then ask for a code pasted into it ("Paste code here if prompted"); ion runs a login with no input, so a sign-in started from ion might never finish (review of #35). ion's in-app sign-in for Claude was never verified end to end | `claude auth logout`: ion runs it (asks nothing) | `--help` only, plus one start in a throwaway `HOME` and `CLAUDE_CONFIG_DIR` (its own keychain entry), cancelled; the real sign-in stayed. Not started again (the user, 2026-11-23: never touch Claude's sign-in) |
+| Codex 0.153.2 | `codex login`: ion runs it; it serves its page on localhost:1455, opens your browser, prints the page | `codex logout`: ion runs it | `--help`; a start in a throwaway `CODEX_HOME` holding a stand-in `auth.json`: **starting `codex login` deletes the sign-in Codex has at once**, before any browser step. ion starts it only when Codex reads signed out, and asks first anyway |
+| Grok Build 1.0.92 | `grok login --device-auth`: ion runs it; it gives a device page and a code (asked for by name: without a terminal that's its default too, `--oauth` would force the browser) and keeps the sign-in it has until the new one is done | `grok logout`: ion runs it | `--help`; a start in a throwaway `HOME`, cancelled (its `auth.json` stayed) |
+| opencode 1.18.8 | `opencode auth login`: only the command (it asks in a terminal: pick a provider, paste a key) | `opencode auth logout`: only the command (it asks which provider) | `--help`; both started in throwaway XDG folders (each shows its menu) |
+
+- Sign out signs the agent out on this Mac, not only in ion: the daemon refuses `harness.logout` without
+  `confirm: true` (its question comes back with error code `confirm`), and refuses while the agent works in a chat
+  ("Codex is working in 2 chats. Sign out after they finish.").
+- Sign in is refused while the agent reads signed in (asked fresh, not from the list), and an agent whose login
+  clears the sign-in it has (Codex) needs `confirm` too.
+- A sign-in ion runs is its own process group, stopped whole (SIGTERM, then SIGKILL): when you cancel it, after 15
+  minutes, when ion stops, and when `ion harnesses login` is stopped with Ctrl-C or gives up. One per agent: a second
+  click gets the first. An agent whose check didn't answer (Codex's `login status` timed out or couldn't start) is
+  "Couldn't tell", not signed out, and ion won't start a login that clears the sign-in it has over it.
+- While ion signs an agent out, no ask starts on it; an ask still starting counts as work, like a queued run.
+- When ion's sign-in ends, or after a sign-out, ion reads the agent again at once and every readiness check that
+  passed before is asked again.
+- On 2026-11-23 a check started `codex login` against the real `~/.codex` and cancelled it after 6 s: Codex was
+  signed out (its `auth.json` gone). That's how the row above was found; never start an agent's login to look at it
+  outside a throwaway home.
