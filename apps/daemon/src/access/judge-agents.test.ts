@@ -21,13 +21,14 @@ const J = (id: string) => judgePin(id)!;
 const ALLOW = '{"verdict": "allow", "reason": "fine"}';
 
 /** A config with this judge (and agent order), in a fresh folder. */
-function setup(judge: string, order: string[] = []) {
+function setup(judge: string, order: string[] = [], avoid: string[] = []) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "ion-judge-agents-")));
   const configFile = join(home, "config.toml");
   saveUserConfig(configFile, {
     ...DEFAULT_CONFIG,
     access: { ...DEFAULT_CONFIG.access, judge },
     routing: { ...DEFAULT_CONFIG.routing, order },
+    agents: Object.fromEntries(avoid.map((id) => [id, { avoid: true }])),
   });
   return { configFile, dataDir: home };
 }
@@ -41,6 +42,7 @@ function judgeWith(o: {
   limited?: string[];
   /** Agents whose pinned judge model ion checked on this computer (Grok's ships checked). */
   checked?: string[];
+  avoid?: string[];
 }) {
   const tried: string[] = [];
   const logged: string[] = [];
@@ -52,7 +54,8 @@ function judgeWith(o: {
   };
   const now = { ready: async () => o.ready, limited: (id: string) => !!o.limited?.includes(id) };
   const passed = (id: string) => shippedChecked(id) || !!o.checked?.includes(id);
-  const others = judgeOthers({ ...setup(o.judge, o.order), passed }, now, (l) => void logged.push(l));
+  const at = setup(o.judge, o.order, o.avoid);
+  const others = judgeOthers({ ...at, passed }, now, (l) => void logged.push(l));
   return { judge: createJudge(run, 3000, others), tried, logged };
 }
 
@@ -121,6 +124,19 @@ describe("the judge's next agent", () => {
       decided: false,
     });
     expect(none.tried).toEqual([]);
+  });
+
+  // The user, 2026-11-24: an agent you marked "Avoid unless I ask" isn't picked as judge either.
+  it("passes over an agent you avoid", async () => {
+    const j = judgeWith({
+      judge: "",
+      ready: ["fake", "grok-build"],
+      order: ["fake"],
+      checked: ["fake"],
+      avoid: ["fake"],
+    });
+    await j.judge(input);
+    expect(j.tried).toEqual([J("grok-build")]);
   });
 
   it("goes on an agent checked on your Mac, and still runs one you set yourself", async () => {

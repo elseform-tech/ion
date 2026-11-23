@@ -1,6 +1,8 @@
-import type { HarnessInfo } from "@ion/schema";
+import { EV, type HarnessInfo, type NewEvent } from "@ion/schema";
 import { expect, it } from "vitest";
-import { readyForLimit } from "./answers.js";
+import { EventStore, openDb } from "../store/index.js";
+import { allViews } from "../views/index.js";
+import { limitChoice, readyForLimit } from "./answers.js";
 import { HarnessInfos } from "./harness-infos.js";
 
 const info = (id: string): HarnessInfo => ({
@@ -29,3 +31,22 @@ it("the limit question waits for an agent's first sign-in check, a few seconds a
   expect(await readyForLimit(stuck)).toEqual(["grok-build"]);
   expect(Date.now() - t0).toBeLessThan(9000);
 }, 15_000);
+
+// The user, 2026-11-24: "When an agent hits its limit" left Settings. Your own chats ask you; chats ions start go on
+// the next ready agent by themselves (unattended, on Auto).
+it("asks you at a limit in your chats, and goes on in chats ions start", () => {
+  const db = openDb(":memory:");
+  const store = new EventStore(db, allViews);
+  const chat = (chatId: string, by?: "ion") =>
+    store.append({
+      chatId,
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "t", projectId: "default", ...(by ? { by } : {}) },
+    } as NewEvent);
+  chat("mine");
+  chat("ions", "ion");
+  expect(limitChoice(db, "mine")).toBe("ask");
+  expect(limitChoice(db, "ions")).toBe("continue");
+});

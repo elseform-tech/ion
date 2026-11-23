@@ -342,7 +342,8 @@ describe("ion tools", () => {
   it("a run's key opens no ion tools and an ion's key no run tools", async () => {
     const run = await client(grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r1" }));
     const runTools = (await run.listTools()).tools.map((t) => t.name);
-    for (const n of ["projects", "start_thread", "set_profile"]) expect(runTools).not.toContain(n);
+    for (const n of ["projects", "start_thread", "set_profile", "set_chats_model"])
+      expect(runTools).not.toContain(n);
     await run.close();
     const c = await chief();
     const names = (await c.listTools()).tools.map((t) => t.name).sort();
@@ -357,6 +358,7 @@ describe("ion tools", () => {
       "open_needs",
       "projects",
       "search_chats",
+      "set_chats_model",
       "start_thread",
       "tools",
     ]);
@@ -494,5 +496,54 @@ describe("ions and skills", () => {
       skills: ["pdf"],
       mentions: ["github"],
     });
+  });
+});
+
+// The user, 2026-11-24: through any ion, "use Codex with gpt-5.6-sol for this" runs that one chat on it (start_thread
+// passes the agent, model and effort along); "from now on …" saves it for the project's chats (or, said to ion chief
+// about all projects, for every chat ions start), said in one line; "back to the default" clears it. It's the same
+// saved setting Settings shows.
+describe("what chats ions start run on, through an ion", () => {
+  it("start_thread passes an agent, model and effort asked for one chat", async () => {
+    const c = await shopIon();
+    const args = { projectId: "shop", brief: "x", harness: "codex", model: "gpt-5.6-sol", effort: "low" };
+    await c.callTool({ name: "start_thread", arguments: args });
+    expect(startThread).toHaveBeenLastCalledWith("shop", "x", "t2", {
+      harness: "codex",
+      model: "gpt-5.6-sol",
+      effort: "low",
+    });
+  });
+
+  it("saves it for the project's chats, or for every chat ions start, and clears it", async () => {
+    const shop = await shopIon();
+    const saved = await shop.callTool({
+      name: "set_chats_model",
+      arguments: { projectId: "shop", harness: "codex", model: "gpt-5.6-sol" },
+    });
+    expect(text(saved)).toBe("This project's chats now run on Codex · gpt-5.6-sol");
+    const p = () => loadUserConfig(configFile).config.projects.find((x) => x.id === "shop");
+    expect(p()).toMatchObject({ harness: "codex", model: "gpt-5.6-sol" });
+    expect(
+      await shop.callTool({ name: "set_chats_model", arguments: { projectId: "app", harness: "codex" } }),
+    ).toMatchObject(NOT_ALLOWED);
+    expect(
+      text(await shop.callTool({ name: "set_chats_model", arguments: { projectId: "shop", clear: true } })),
+    ).toBe("This project's chats are back to the default");
+    expect(p()?.harness).toBeUndefined();
+    const all = await chief();
+    expect(
+      text(
+        await all.callTool({ name: "set_chats_model", arguments: { harness: "grok-build", effort: "low" } }),
+      ),
+    ).toBe("Chats ions start now run on Grok Build · Low");
+    expect(loadUserConfig(configFile).config.ion).toMatchObject({ chats: "grok-build", chatsEffort: "low" });
+    expect(await shop.callTool({ name: "set_chats_model", arguments: { harness: "codex" } })).toMatchObject({
+      isError: true,
+    });
+    expect(text(await all.callTool({ name: "set_chats_model", arguments: { clear: true } }))).toBe(
+      "Chats ions start are back to Automatic",
+    );
+    expect(loadUserConfig(configFile).config.ion.chats).toBeUndefined();
   });
 });

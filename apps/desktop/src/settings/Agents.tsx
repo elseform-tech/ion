@@ -1,12 +1,12 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar, ShieldCheck } from "@ion/design-system";
+import { Avatar } from "@ion/design-system";
 import { type AgentUsage, EV, type HarnessInfo, type SettingsPatch, usageLine } from "@ion/schema";
-import { Fragment, type HTMLAttributes, type ReactNode, useCallback, useEffect, useState } from "react";
-import { inOrder, PickingAgents, useAgentOrder } from "./AgentOrder.js";
+import { Fragment, type ReactNode, useCallback, useEffect, useState } from "react";
+import { inOrder, PreferOrder } from "./AgentOrder.js";
+import { IonModels } from "./IonModels.js";
 import { useEvents } from "../events.js";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
-import { ModelRow } from "./ModelMenu.js";
 import { Switch } from "./Switch.js";
 import { useAgentSignIn, useSignInsWaiting } from "./AgentSignIn.js";
 
@@ -45,6 +45,26 @@ function UsageMeter({ u }: { u: AgentUsage | undefined }) {
   );
 }
 
+/** What's worth knowing about an agent, each in a quiet line. */
+function AgentNotes({ h }: { h: HarnessInfo }) {
+  return (
+    <>
+      {/* Task review, 2026-11-21 (ruled line): it loads a project's own tools by its own trust list. */}
+      {h.ownTrust && <div className="s">Uses its own trust for project tools</div>}
+      {/* Plan 18 Task 12: its chats run without the OS sandbox on this computer. */}
+      {h.notSandboxed && <div className="s">Not sandboxed</div>}
+      {/* Plan 18 Task 14: its own allow and deny rules count as your decisions in its chats. */}
+      {h.ownRules ? <div className="s">Uses its own allow/deny rules ({h.ownRules})</div> : null}
+      {/* Final review, 2026-11-22: how often its judge didn't answer (too slow, or failed) this week. */}
+      {h.judgeMisses ? (
+        <div className="s">
+          Judge didn't answer {h.judgeMisses === 1 ? "once" : `${h.judgeMisses} times`} this week
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * One agent: its face, name and state, and "Use its own tools" (the user, 2026-11-21: its own servers, skills and
  * plugins in ion's chats, on by default). On: one whose own hooks can't be turned off says they run too. Off: one that
@@ -57,16 +77,17 @@ function AgentRow(p: {
   usage?: AgentUsage;
   own: boolean;
   onOwn: (on: boolean) => void;
-  /** Its grip in your agent order, and where a drag lands. */
-  grip: ReactNode;
-  row: HTMLAttributes<HTMLDivElement>;
+  /** "Avoid unless I ask" (the user, 2026-11-24): Automatic never picks it. */
+  avoid: boolean;
+  onAvoid: (on: boolean) => void;
+  /** Its judge line: checked, being checked, or a small "Check as judge". */
+  judge: ReactNode;
 }) {
   const { h, own, onOwn } = p;
   const chip = own ? h.ownHooks && "Its own hooks run too" : h.ownTools && "Also loads its own";
   const sign = useAgentSignIn(p.client, h, p.reload);
   return (
-    <div className="hrow ord" {...p.row}>
-      {p.grip}
+    <div className="hrow">
       <Avatar harness={h.id} />
       <div>
         {h.label}
@@ -75,50 +96,22 @@ function AgentRow(p: {
           {ready(h) && <i className="okd" />}
           {stateOf(h)}
         </div>
-        {/* Task review, 2026-11-21 (ruled line): it loads a project's own tools by its own trust list. */}
-        {h.ownTrust && <div className="s">Uses its own trust for project tools</div>}
-        {/* Plan 18 Task 12: its chats run without the OS sandbox on this computer. */}
-        {h.notSandboxed && <div className="s">Not sandboxed</div>}
-        {/* Plan 18 Task 14: its own allow and deny rules count as your decisions in its chats. */}
-        {h.ownRules ? <div className="s">Uses its own allow/deny rules ({h.ownRules})</div> : null}
-        {/* Final review, 2026-11-22: how often its judge didn't answer (too slow, or failed) this week. */}
-        {h.judgeMisses ? (
-          <div className="s">
-            Judge didn't answer {h.judgeMisses === 1 ? "once" : `${h.judgeMisses} times`} this week
-          </div>
-        ) : null}
+        <AgentNotes h={h} />
+        {p.judge}
       </div>
       {/* The lab's third column: its usage, for an agent that's ready. */}
       {ready(h) ? <UsageMeter u={p.usage} /> : <span />}
       <span className="hacts">
         {sign.action}
+        <Switch
+          label={`${h.label}: avoid unless I ask`}
+          title="Avoid unless I ask"
+          on={p.avoid}
+          onPick={p.onAvoid}
+        />
         <Switch label={`${h.label}: use its own tools`} title="Use its own tools" on={own} onPick={onOwn} />
       </span>
       {sign.panel}
-    </div>
-  );
-}
-
-/** Auto's judge (Plan 21 audit; PR #36 review, 2026-11-23): your order's first checked agent, or one you picked. */
-function JudgeModel(p: { data: SettingsData; set: (patch: SettingsPatch) => void; error: string | null }) {
-  const s = p.data.settings;
-  return (
-    <div>
-      <h4>Auto</h4>
-      <div className="group">
-        <ModelRow
-          {...{
-            data: p.data,
-            icon: ShieldCheck,
-            label: "Judge",
-            spec: s?.judge ?? "",
-            now: s?.judgeNow ?? null,
-          }}
-          note={!!s?.judge && !s.judgeChecked && "Not checked by ion’s evals"}
-          onPick={(judge) => p.set({ judge })}
-        />
-        {p.error && <div className="perr">{p.error}</div>}
-      </div>
     </div>
   );
 }
@@ -154,16 +147,14 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
   const usage = useUsage(client, data.harnesses);
   useSignInsWaiting(data.harnesses, data.reload);
   const agents = inOrder(data.harnesses, data.settings?.agentOrder);
-  const order = useAgentOrder(
-    agents.map((h) => h.id),
-    (ids) => run(client.call("settings.set", { patch: { agentOrder: ids } }), data.reload),
-  );
+  const judge = useJudgeCheck(client, data, run);
   return (
     <>
+      <IonModels data={data} set={set} error={error} />
       <div>
         <h4>Coding agents</h4>
         <div className="group">
-          {agents.map((h, i) => (
+          {agents.map((h) => (
             <AgentRow
               key={h.id}
               client={client}
@@ -171,24 +162,57 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
               h={h}
               usage={usage.find((u) => u.harness === h.id)}
               own={data.settings?.ownTools?.[h.id] ?? true}
-              onOwn={(on) =>
-                run(client.call("settings.set", { patch: { ownTools: { [h.id]: on } } }), data.reload)
-              }
-              grip={order.grip(i, h.label)}
-              row={order.rowProps(i)}
+              onOwn={(on) => set({ ownTools: { [h.id]: on } })}
+              avoid={!!data.settings?.avoid?.[h.id]}
+              onAvoid={(on) => set({ avoid: { [h.id]: on } })}
+              judge={judge(h)}
             />
           ))}
         </div>
-        {data.settings && (
-          <PickingAgents
-            client={client}
-            onLimit={data.settings.onLimit ?? "ask"}
-            byUsage={data.settings.byUsage ?? false}
-            run={(call) => run(call, data.reload)}
-          />
-        )}
       </div>
-      <JudgeModel data={data} set={set} error={error} />
+      {data.settings && (
+        <PreferOrder
+          agents={agents}
+          prefer={data.settings.prefer ?? []}
+          onOrder={(ids) => set({ agentOrder: ids })}
+        />
+      )}
     </>
   );
+}
+
+/**
+ * Each agent's judge line (the user, 2026-11-24: the judge is automatic, checked on your Mac): "Checked as judge",
+ * "Checking as judge…", what a failed check allowed, or a small "Check as judge" for a ready agent with a judge model
+ * (free ones are checked by themselves).
+ */
+function useJudgeCheck(client: IonClient, data: SettingsData, run: ReturnType<typeof useCallError>[1]) {
+  const [going, setGoing] = useState<string[]>([]);
+  const check = (id: string) => {
+    setGoing((g) => [...g, id]);
+    run(
+      client.call("judge.check", { harness: id }).finally(() => setGoing((g) => g.filter((x) => x !== id))),
+      data.reload,
+    );
+  };
+  return (h: HarnessInfo): ReactNode => {
+    const j = data.settings?.judges?.[h.id];
+    if (!j || !ready(h)) return null;
+    if (j.checked) return <div className="s">Checked as judge</div>;
+    if (j.checking || going.includes(h.id)) return <div className="s">Checking as judge…</div>;
+    const failed = j.last && !j.last.pass ? `Not a judge (allowed ${j.last.dangerous.length}) · ` : "";
+    return (
+      <div className="s">
+        {failed}
+        <button
+          className="lnk"
+          type="button"
+          title={`Runs ion's judge cases on ${j.model}; uses your plan`}
+          onClick={() => check(h.id)}
+        >
+          Check as judge
+        </button>
+      </div>
+    );
+  };
 }

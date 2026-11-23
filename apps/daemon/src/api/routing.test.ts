@@ -43,24 +43,22 @@ function past(d: ReturnType<typeof db>, tokens: number[]) {
   });
 }
 
-describe("Pick by usage", () => {
-  // Review of fb615b0, 2026-11-23: the estimate Pick by usage works out for its pick is handed back (the brain
-  // pill's hover uses it), not worked out a second time.
+// The user, 2026-11-24: two model settings and the rest automatic. Automatic (Pick by usage, always on) picks a chat's
+// agent when none is set: ready, not limited, with room left, free or subscription before pay-per-use, Claude Code
+// last unless it's the only one, never one you avoid, along "Prefer in this order" when you set one.
+describe("Automatic", () => {
+  // Review of fb615b0, 2026-11-23: the estimate it works out for its pick is handed back (the brain pill's hover).
   it("hands back what the request usually takes on the agent it picked", () => {
     const d = db();
     past(d, [1000, 2000, 3000, 4000, 5000]);
-    const c = config({ byUsage: true });
-    const r = routeBy(c, [usage("opencode", "opencode", { billing: "free" })], { db: d, text: "Add a test" });
+    const r = routeBy(DEFAULT_CONFIG, [usage("opencode", "opencode", { billing: "free" })], {
+      db: d,
+      text: "Add a test",
+    });
     expect(r?.estimate).toEqual({ unit: "tokens", low: 3000, high: 5000 });
   });
 
-  // The user, 2026-11-22: Pick by usage is off at first; ion's usual default applies.
-  it("is off by default", () => {
-    expect(routeBy(DEFAULT_CONFIG, [usage("opencode", "opencode")], { db: db() })).toBeNull();
-  });
-
-  // The user, 2026-11-22: on, it fills in a new chat's agent, and the chat says why in one line.
-  it("picks a new chat's agent and says why", () => {
+  it("picks a chat's agent and says why", () => {
     const now = new Date();
     const soon = new Date(now.getTime() + 3600_000).toISOString();
     const list = [
@@ -68,51 +66,20 @@ describe("Pick by usage", () => {
       usage("claude-code", "Claude Code"),
       usage("opencode", "opencode", { billing: "free" }),
     ];
-    const c = config({ byUsage: true, order: ["codex", "opencode"] });
+    const c = config({ order: ["codex", "opencode"] });
     expect(routeBy(c, list, { db: db(), now })).toEqual({
       harness: "opencode",
       reason: "On opencode — Codex is near its limit",
     });
   });
 
-  // The user, 2026-11-21: save Claude unless the work needs it (ion's deep model's agent, at Max effort).
-  it("keeps ion's deep model's agent for Max effort", () => {
-    const list = [usage("claude-code", "Claude Code"), usage("codex", "Codex")];
-    // Plan 21 audit, 2026-11-23: no deep model is set by default now; this one is yours.
-    const deep = { ion: { ...DEFAULT_CONFIG.ion, deep: "claude-code" } };
-    const c = config({ byUsage: true, order: ["opencode", "claude-code", "codex"] }, deep);
-    expect(routeBy(c, list, { db: db() })?.harness).toBe("codex");
-    expect(routeBy(c, list, { db: db(), effort: "max" })).toEqual({
-      harness: "claude-code",
-      reason: "On Claude Code — deep work",
-    });
-  });
-
-  // The user, 2026-11-23: with no deep model picked, ion's brain is the strongest model you're signed in to, so deep
-  // work (Max effort) keeps the strongest agent.
-  it("keeps the strongest agent for Max effort when no deep model is set", () => {
-    const list = [usage("codex", "Codex"), usage("claude-code", "Claude Code")];
-    const c = config({ byUsage: true, order: ["opencode", "codex", "claude-code"] });
-    expect(routeBy(c, list, { db: db() })?.harness).toBe("codex");
-    expect(routeBy(c, list, { db: db(), effort: "max" })?.harness).toBe("claude-code");
-  });
-
-  // Plan 20: a project's own agent is its fit for its ion's threads while Pick by usage is on.
-  it("puts the project's own agent first for its ion's threads", () => {
-    const projects = [{ id: "web", path: "/w", starred: false, harness: "codex" }];
-    const c = config({ byUsage: true }, { projects });
-    const list = [usage("opencode", "opencode"), usage("codex", "Codex")];
-    expect(routeBy(c, list, { db: db(), projectId: "web", thread: true })).toEqual({
-      harness: "codex",
-      reason: "On Codex — this project's agent",
-    });
-  });
-
-  // Final review, 2026-11-23 (the user's ruling): your own new chats follow your agent order, not the project's agent.
-  it("your new chat goes by your order, whatever the project's agent", () => {
-    const projects = [{ id: "web", path: "/w", starred: false, harness: "claude-code" }];
-    const c = config({ byUsage: true, order: ["opencode", "claude-code"] }, { projects });
-    const list = [usage("opencode", "opencode"), usage("claude-code", "Claude Code")];
-    expect(routeBy(c, list, { db: db(), projectId: "web" })?.harness).toBe("opencode");
+  it("puts Claude Code last unless it's the only one, and never picks one you avoid", () => {
+    const list = [usage("claude-code", "Claude Code"), usage("codex", "Codex", { billing: "api" })];
+    expect(routeBy(config({ order: ["claude-code"] }), list, { db: db() })?.harness).toBe("codex");
+    expect(routeBy(DEFAULT_CONFIG, [usage("claude-code", "Claude Code")], { db: db() })?.harness).toBe(
+      "claude-code",
+    );
+    const avoid = { agents: { codex: { avoid: true } } };
+    expect(routeBy(config({}, avoid), list, { db: db() })?.harness).toBe("claude-code");
   });
 });

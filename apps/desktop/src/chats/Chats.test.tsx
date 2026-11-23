@@ -88,7 +88,8 @@ describe("Chats", () => {
       return [];
     });
     const { container } = render(<Chats client={c} openId={null} setOpenId={() => {}} />);
-    await waitFor(() => expect(container.querySelector(".bpill")?.textContent).toBe("Fake"));
+    // The user, 2026-11-24: a new chat you picked nothing for is on Automatic.
+    await waitFor(() => expect(container.querySelector(".bpill")?.textContent).toBe("Automatic"));
     const box = screen.getByLabelText("Message");
     fireEvent.change(box, { target: { value: "Fix the totals" } });
     fireEvent.keyDown(box, { key: "Enter" });
@@ -114,7 +115,8 @@ describe("Chats", () => {
       return [];
     });
     const { container } = render(<Chats client={c} openId={null} setOpenId={() => {}} />);
-    await waitFor(() => expect(container.querySelector(".bpill")?.textContent).toBe("Fake"));
+    // The user, 2026-11-24: a new chat you picked nothing for is on Automatic.
+    await waitFor(() => expect(container.querySelector(".bpill")?.textContent).toBe("Automatic"));
     const ghost = screen.getByRole("button", { name: "Don't remember" });
     expect(ghost.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(ghost);

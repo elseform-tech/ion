@@ -47,8 +47,11 @@ async function nextChecked(
   o: { configFile: string; now: AgentsNow; passed: Passed },
   not: string[] = [],
 ): Promise<string | undefined> {
-  const ready = (await o.now.ready()).filter((id) => o.passed(id) && !not.includes(id) && !o.now.limited(id));
-  const id = byPreference(ready, orderOf(o.configFile))[0];
+  const c = loadUserConfig(o.configFile).config;
+  // Never one you avoid (the user, 2026-11-24).
+  const usable = (id: string) =>
+    o.passed(id) && !not.includes(id) && !o.now.limited(id) && !c.agents?.[id]?.avoid;
+  const id = byPreference((await o.now.ready()).filter(usable), agentOrder(c.routing.order))[0];
   return id && judgePin(id);
 }
 

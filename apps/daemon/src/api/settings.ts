@@ -1,7 +1,13 @@
 import { DEFAULT_PROJECT, loadUserConfig, PROFILE_CHARS, saveUserConfig, type UserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
-import { type EffortLevel, type ProjectPatch, type SettingsInfo, stripControl } from "@ion/schema";
+import {
+  type EffortLevel,
+  type ProjectPatch,
+  type SettingsInfo,
+  type SettingsPatch,
+  stripControl,
+} from "@ion/schema";
 import { applyGeneral, generalOf } from "./general-settings.js";
 import { harnessIds, judgePin, shippedChecked } from "../adapters/registry.js";
 import { agentsNow, firstOwn } from "../access/judge-agents.js";
@@ -93,20 +99,30 @@ function patchProject(c: UserConfig, p: ProjectPatch): UserConfig {
 }
 
 /** ion's own model and effort changed: undefined leaves one as it is; a null effort is the agent's default again. */
-function ionPatch(
-  ion: UserConfig["ion"],
-  quick: string | null | undefined,
-  effort: EffortLevel | null | undefined,
-) {
-  const next = { ...ion, ...(quick ? { quick } : {}) };
-  if (quick === null) delete next.quick;
-  if (effort === null) delete next.quickEffort;
-  else if (effort) next.quickEffort = effort;
+function ionPatch(ion: UserConfig["ion"], p: SettingsPatch): UserConfig["ion"] {
+  const next = { ...ion };
+  const set = (key: "quick" | "quickEffort" | "chats" | "chatsEffort", v: string | null | undefined) => {
+    if (v === null || v === "") delete next[key];
+    else if (v !== undefined) (next as Record<string, unknown>)[key] = v;
+  };
+  set("quick", specPatch(p.quick));
+  set("chats", specPatch(p.chats));
+  set("quickEffort", effortPatch(p.effort));
+  set("chatsEffort", effortPatch(p.chatsEffort));
   return next;
 }
 
-/** "Use its own tools" by agent, checked: an agent ion knows, on or off. */
-function ownPatch(given: Record<string, boolean> | undefined) {
+/** An effort checked; null clears it (the agent's own, or ion's default); undefined leaves it. */
+function effortPatch(v: EffortLevel | null | undefined): EffortLevel | null | undefined {
+  if (v && !EFFORTS.includes(v)) throw new UserError("Pick low, medium, high or max");
+  return v;
+}
+
+/**
+ * A switch by agent, checked (an agent ion knows, on or off): "Use its own tools" (`ownTools`, kept on or off) or
+ * "Avoid unless I ask" (`avoid`, the user, 2026-11-24: off removes the mark).
+ */
+function agentSwitch(given: Record<string, boolean> | undefined, key: "ownTools" | "avoid") {
   const entries = Object.entries(given ?? {});
   for (const [id, on] of entries) {
     checkAgent(id);
@@ -114,7 +130,11 @@ function ownPatch(given: Record<string, boolean> | undefined) {
   }
   return (agents: UserConfig["agents"]): UserConfig["agents"] => {
     const next = { ...agents };
-    for (const [id, on] of entries) next[id] = { ...next[id], ownTools: on };
+    for (const [id, on] of entries) {
+      const rest: Record<string, unknown> = { ...next[id] };
+      delete rest[key];
+      next[id] = key === "avoid" && !on ? rest : { ...rest, [key]: on };
+    }
     return next;
   };
 }
@@ -176,7 +196,7 @@ async function runningOn(c: UserConfig, ctx: Pick<Ctx, "configFile" | "db" | "ju
   const passed = (id: string) => ctx.judges?.passed(id) ?? shippedChecked(id);
   const at = { configFile: ctx.configFile, now: agentsNow(ctx.db, ready), passed };
   const judgeNow = c.access.judge || ((await firstOwn(at, "judge")) ?? null);
-  const deps = { configFile: ctx.configFile, db: ctx.db, agents: infos };
+  const deps = { configFile: ctx.configFile, db: ctx.db, agents: infos, quiet: true as const };
   // ion's brain: yours, else the strongest model you're signed in to (the user, 2026-11-23).
   const strongest = await strongestBrain(deps);
   const strongestSpec = strongest && [strongest.agent, strongest.model].filter(Boolean).join(":");
@@ -230,15 +250,15 @@ export const settingsHandlers: Pick<
   },
   "settings.set": (a, ctx) => {
     const p = a.patch ?? {};
-    const quick = specPatch(p.quick);
     const judge = specPatch(p.judge);
-    if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
-    const own = ownPatch(p.ownTools);
+    const own = agentSwitch(p.ownTools, "ownTools");
+    const avoid = agentSwitch(p.avoid, "avoid");
+    const ion = (c: UserConfig) => ionPatch(c.ion, p);
     changeConfig(ctx.configFile, (c) => ({
       ...applyGeneral(c, p),
-      ion: ionPatch(c.ion, quick, p.effort),
+      ion: ion(c),
       access: accessPatch(c.access, judge),
-      agents: own(c.agents),
+      agents: avoid(own(c.agents)),
     }));
     // A higher limit lets waiting runs start now.
     ctx.runs.limitChanged();

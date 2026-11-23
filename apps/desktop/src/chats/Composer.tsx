@@ -1,7 +1,7 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import { ArrowUp, Folder, type LucideIcon, Shield, ShieldCheck, ShieldOff, Square } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type Brain, BrainPill, BrainPopover, useEffortKey } from "./BrainPopover.js";
 import { useDismiss } from "./dismiss.js";
 import { useEstimate } from "./estimate.js";
@@ -166,8 +166,8 @@ type Props = {
   /** The brain popover opened: read the agents again. */
   onBrainOpen?: () => void;
   onSent: (chatId: string) => void;
-  /** Pick by usage is on: a new chat you pick no agent for goes on the one ion picks. */
-  byUsage?: boolean;
+  /** Automatic (the user, 2026-11-24): a new chat you pick no agent for goes on the one ion picks. */
+  auto?: boolean;
   /** Why Pick by usage put the chat on its agent (its pill says so on hover). */
   why?: string | null;
   /** A new chat you said not to remember (review of #34, 2026-11-23): its first message goes with noMemory. */
@@ -205,9 +205,15 @@ function useSend(client: IonClient, onSent: (chatId: string) => void) {
 /** Your brain picks per chat, for the window's life: a chat's composer drawn again keeps them. */
 const picks = new Map<string, Brain>();
 
-/** An open chat's brain: what you picked for it (kept while the window is open), else its latest model and effort. */
-function useBrain(to: Props["to"], current: Props["current"]): [Brain, (b: Brain) => void] {
+/**
+ * An open chat's brain: what you picked for it (kept while the window is open), else its latest model and effort. A
+ * new chat starts on your last pick, which ion keeps (the user, 2026-11-24: your chats are set here only, and it
+ * remembers); with none, Automatic.
+ */
+function useBrain(p: Pick<Props, "client" | "to" | "current" | "auto">): [Brain, (b: Brain) => void] {
+  const { client, to, current } = p;
   const key = "chatId" in to ? to.chatId : null;
+  const remembers = !key && !!p.auto;
   const [brain, setPicked] = useState<Brain>(
     () =>
       (key && picks.get(key)) || {
@@ -216,8 +222,21 @@ function useBrain(to: Props["to"], current: Props["current"]): [Brain, (b: Brain
         effort: (current?.effort ?? "") as Brain["effort"],
       },
   );
+  const touched = useRef(false);
+  useEffect(() => {
+    if (!remembers) return;
+    void Promise.resolve(client.call("settings.get", {}))
+      .then((s) => {
+        const last = s?.lastPick;
+        if (last && !touched.current) setPicked(last as Brain);
+      })
+      .catch(() => {});
+  }, [client, remembers]);
   const set = (b: Brain) => {
+    touched.current = true;
     if (key) picks.set(key, b);
+    if (remembers && b.harness)
+      void Promise.resolve(client.call("settings.set", { patch: { lastPick: b } })).catch(() => {});
     setPicked(b);
   };
   return [brain, set];
@@ -267,12 +286,12 @@ function useBoxText(q: Queue, onSending: Props["onSending"]) {
  */
 function useSendBrain(p: Props) {
   const { ready, own, first, unlisted } = defaults(p.harnesses, p.harness);
-  const [brain, setBrain] = useBrain(p.to, p.current);
+  const [brain, setBrain] = useBrain(p);
   const [access, setAccess] = useState<Access>("");
   const b = withAgent(brain, own, first);
   const keep = unlisted && !brain.harness;
-  // Pick by usage fills in a new chat's agent only when you picked none (the user, 2026-11-22).
-  const byUsage = Boolean(p.byUsage && "projectId" in p.to && !brain.harness);
+  // Automatic fills in a new chat's agent only when you picked none (the user, 2026-11-22 and 2026-11-24).
+  const byUsage = Boolean(p.auto && "projectId" in p.to && !brain.harness);
   const sent = byUsage
     ? { ...b, access, harness: "", model: "" }
     : { ...b, access, harness: keep ? "" : b.harness };

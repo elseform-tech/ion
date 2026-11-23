@@ -2,9 +2,6 @@ version = 2
 projects = []
 
 [ion]
-deepEffort = "high"
-useDeep = "auto"
-
 [folders]
 projects = "~/ion/projects"
 
@@ -38,5 +35,3 @@ dream = "off"
 [agents]
 [routing]
 order = []
-onLimit = "ask"
-byUsage = false

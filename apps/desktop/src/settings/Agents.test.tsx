@@ -1,29 +1,35 @@
 // @vitest-environment jsdom
 import type { IonClient } from "@ion/client/browser";
-import type { HarnessInfo } from "@ion/schema";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { HarnessInfo, SettingsInfo } from "@ion/schema";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "./Settings.js";
 import { settings } from "./testing.js";
 
 afterEach(cleanup);
 
-const agent = (id: string, label: string): HarnessInfo => ({
-  ...{ id, label, installed: true, signedIn: true, models: [], defaultModel: null },
+const agent = (id: string, label: string, models: string[] = []): HarnessInfo => ({
+  ...{ id, label, installed: true, signedIn: true, defaultModel: null },
+  models: models.map((m) => ({ id: m, label: m })),
 });
 const ALL = [
-  agent("claude-code", "Claude Code"),
-  agent("codex", "Codex"),
-  agent("grok-build", "Grok Build"),
+  agent("claude-code", "Claude Code", ["opus", "haiku"]),
+  agent("codex", "Codex", ["sol"]),
+  agent("grok-build", "Grok Build", ["big"]),
   agent("opencode", "opencode"),
 ];
+const JUDGES: SettingsInfo["judges"] = {
+  "grok-build": { model: "fast", checked: true, shipped: true, last: null, checking: false },
+  codex: { model: "luna", checked: false, shipped: false, last: null, checking: false },
+};
 
-function client(more: Partial<typeof settings> = {}) {
-  const now = {
+function client(more: Partial<SettingsInfo> = {}) {
+  const now: SettingsInfo = {
     ...settings,
     agentOrder: ["opencode", "grok-build", "codex", "claude-code"],
-    onLimit: "ask" as const,
-    byUsage: false,
+    strongest: { agent: "claude-code", model: "opus", effort: "high" },
+    quickNow: "claude-code:opus",
+    judges: JUDGES,
     ...more,
   };
   const call = vi.fn(async (cmd: string) => {
@@ -35,50 +41,77 @@ function client(more: Partial<typeof settings> = {}) {
   return { call, subscribe: vi.fn(async () => () => {}) } as unknown as IonClient & { call: typeof call };
 }
 
-const names = () =>
-  [...document.querySelectorAll(".hrow")].map((r) => r.querySelector("div")?.firstChild?.textContent);
+const patched = (c: ReturnType<typeof client>, patch: object) =>
+  expect(c.call).toHaveBeenCalledWith("settings.set", { patch });
 
-// The user, 2026-11-22: Settings → Agents holds the agent order (a drag list), what ion does when an agent hits its
-// limit, and Pick by usage (off at first).
-describe("Settings → Agents: picking agents", () => {
-  it("lists the agents in your order and saves a new one when you drag", async () => {
-    const c = client();
+// The user, 2026-11-24: two model settings and the rest automatic. Settings → Agents starts with "Ions think with"
+// (Strongest, or your pick) and "Chats ions start run on" (Automatic, or your pick), each with its effort; then one
+// line per agent with its status, usage, "Avoid unless I ask" and, when it isn't checked yet, "Check as judge"; under
+// More, "Prefer in this order" (empty: Automatic decides). The judge, the limit choice and Pick by usage are gone.
+describe("Settings → Agents", () => {
+  it("picks what ions think with, from the strongest you have", async () => {
+    const c = client({ quick: "" });
     render(<Settings client={c} onOpenIon={() => {}} />);
-    await waitFor(() => expect(names()).toEqual(["opencode", "Grok Build", "Codex", "Claude Code"]));
-    const rows = document.querySelectorAll(".hrow");
-    fireEvent.dragStart(rows[2]!.querySelector(".grip")!);
-    fireEvent.dragOver(rows[0]!);
-    fireEvent.drop(rows[0]!);
-    expect(c.call).toHaveBeenCalledWith("settings.set", {
-      patch: { agentOrder: ["codex", "opencode", "grok-build", "claude-code"] },
-    });
+    expect(await screen.findByText("Strongest you have: Claude Code · opus · High")).toBeTruthy();
+    const brain = within(screen.getByRole("radiogroup", { name: "Ions think with" }));
+    await waitFor(() =>
+      expect(brain.getByRole("radio", { name: "Strongest" }).getAttribute("aria-checked")).toBe("true"),
+    );
+    fireEvent.click(brain.getByRole("radio", { name: "Codex" }));
+    patched(c, { quick: "codex" });
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Ions' effort" })).getByRole("button", { name: "Low" }),
+    );
+    patched(c, { effort: "low" });
   });
 
-  it("moves an agent with the keyboard too", async () => {
-    const c = client();
+  it("picks what chats ions start run on, and goes back to Automatic", async () => {
+    const c = client({ chats: "codex:sol", chatsEffort: "medium" });
     render(<Settings client={c} onOpenIon={() => {}} />);
-    const grip = await screen.findByRole("button", { name: "Move Codex" });
-    fireEvent.keyDown(grip, { key: "ArrowUp" });
-    expect(c.call).toHaveBeenCalledWith("settings.set", {
-      patch: { agentOrder: ["opencode", "codex", "grok-build", "claude-code"] },
-    });
+    const chats = within(await screen.findByRole("radiogroup", { name: "Chats ions start run on" }));
+    await waitFor(() =>
+      expect(chats.getByRole("radio", { name: "Codex" }).getAttribute("aria-checked")).toBe("true"),
+    );
+    expect((screen.getByLabelText("Chats ions start run on model") as HTMLSelectElement).value).toBe("sol");
+    fireEvent.click(chats.getByRole("radio", { name: "Automatic" }));
+    patched(c, { chats: null });
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Chats' effort" })).getByRole("button", { name: "High" }),
+    );
+    patched(c, { chatsEffort: "high" });
   });
 
-  it("asks at a limit by default, and saves another choice", async () => {
-    const c = client();
+  it("avoids an agent unless you ask, and checks one as judge", async () => {
+    const c = client({ avoid: { opencode: true } });
     render(<Settings client={c} onOpenIon={() => {}} />);
-    expect(await screen.findByText("When an agent hits its limit")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Ask" }).className).toBe("on");
-    fireEvent.click(screen.getByRole("button", { name: "Continue on the next agent" }));
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { onLimit: "continue" } });
+    const opencode = await screen.findByRole("switch", { name: "opencode: avoid unless I ask" });
+    expect(opencode.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("switch", { name: "Codex: avoid unless I ask" }));
+    patched(c, { avoid: { codex: true } });
+    const codexRow = screen.getByRole("switch", { name: "Codex: avoid unless I ask" }).closest(".hrow")!;
+    fireEvent.click(within(codexRow as HTMLElement).getByRole("button", { name: "Check as judge" }));
+    expect(c.call).toHaveBeenCalledWith("judge.check", { harness: "codex" });
+    const grokRow = screen.getByRole("switch", { name: "Grok Build: avoid unless I ask" }).closest(".hrow")!;
+    expect(grokRow.textContent).toContain("Checked as judge");
   });
 
-  it("has Pick by usage off at first", async () => {
-    const c = client();
+  it("keeps an optional order under More, with a way back to Automatic", async () => {
+    const c = client({ prefer: ["codex"] });
     render(<Settings client={c} onOpenIon={() => {}} />);
-    const sw = await screen.findByRole("switch", { name: "Pick by usage" });
-    expect(sw.getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(sw);
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { byUsage: true } });
+    expect(screen.queryByText("Prefer in this order")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    expect(screen.getByText("Prefer in this order")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Move Codex" }), { key: "ArrowUp" });
+    patched(c, { agentOrder: ["opencode", "codex", "grok-build", "claude-code"] });
+    fireEvent.click(screen.getByRole("button", { name: "Automatic" }));
+    patched(c, { agentOrder: [] });
+  });
+
+  it("has no judge row, limit choice or Pick by usage", async () => {
+    render(<Settings client={client()} onOpenIon={() => {}} />);
+    await screen.findByRole("radiogroup", { name: "Ions think with" });
+    expect(screen.queryByRole("radiogroup", { name: "Judge" })).toBeNull();
+    expect(screen.queryByText("When an agent hits its limit")).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Pick by usage" })).toBeNull();
   });
 });

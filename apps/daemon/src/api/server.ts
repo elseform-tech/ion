@@ -178,6 +178,7 @@ function httpServer(ctx: Ctx, turns: IonTurns) {
   const mcp = createMcpHandler({
     ...{ store, db, grants, decisions, configFile, memory },
     startThread: turns.startThread,
+    agent: (id: string) => harnessInfos.one(id),
     // ion's own tools tell an ion your connections and skills by name; it never gets them itself.
     yourTools: yourToolsOf(ctx),
   });

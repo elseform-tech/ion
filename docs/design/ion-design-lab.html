@@ -1249,7 +1249,7 @@ details a{color:var(--accent)}
       <button type="button" data-go="new"><i data-lucide="square-pen"></i>New chat</button>
       <button type="button" data-go="code"><i data-lucide="code-xml"></i>Coding chat</button>
       <button type="button" data-go="chat"><i data-lucide="message-square"></i>Plain chat</button>
-      <button type="button" data-go="byusage"><i data-lucide="gauge"></i>By usage</button>
+      <button type="button" data-go="byusage"><i data-lucide="gauge"></i>Automatic</button>
       <button type="button" data-go="queued"><i data-lucide="hourglass"></i>Queued</button>
       <button type="button" data-go="ions"><i data-lucide="orbit"></i>Ions</button>
       <button type="button" data-go="settings"><i data-lucide="settings"></i>Settings</button>
@@ -1611,7 +1611,7 @@ export function sumLines(lines: Line[]) {
             </div>
           </div>
         </section>
-        <!-- Plan 20 (the user, 2026-11-22): a new chat with Pick by usage on and no agent picked: its pill is a gauge, "By usage".
+        <!-- Plan 20 (the user, 2026-11-22; 2026-11-24: always on, "Automatic"): a new chat with no agent picked (and no last pick): its pill is a gauge, "Automatic".
              Task 4: once you've typed, its hover also says what such a task usually takes, from 5+ similar past chats -->
         <section class="chat" data-screen="byusage" style="grid-template-rows:48px minmax(0,1fr)" hidden>
           <div class="head"><span class="sp"></span></div>
@@ -1621,7 +1621,7 @@ export function sumLines(lines: Line[]) {
               <span class="ph">Ask anything, or describe a change…</span>
               <div class="bar">
                 <button class="pill" type="button"><i data-lucide="folder"></i>storefront</button>
-                <button class="pill bpill" type="button" data-brain="usage" aria-haspopup="dialog" title="By usage · Default effort&#10;usually 40–120k tokens"></button>
+                <button class="pill bpill" type="button" data-brain="usage" aria-haspopup="dialog" title="Automatic · Default effort&#10;usually 40–120k tokens"></button>
                 <span class="sp"></span>
                 <button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>
               </div>
@@ -1705,14 +1705,18 @@ export function sumLines(lines: Line[]) {
           </div>
           <div class="spage" data-spage="ion" id="sIon" hidden></div>
           <div class="spage" data-spage="harness">
-          <div><h4>Coding agents</h4><div class="group" id="hList"></div>
-            <!-- Plan 20 (the user, 2026-11-22): the rows above are your agent order (drag a grip); what ion does at a limit; Pick by usage, off at first -->
-            <div class="group">
-              <div class="srow"><div class="g">When an agent hits its limit</div><span class="seg sm" role="group" aria-label="When an agent hits its limit"><button type="button" class="on">Ask</button><button type="button">Continue on the next agent</button><button type="button">Wait</button></span></div>
-              <div class="srow"><div class="g">Pick by usage</div><button type="button" class="sw" role="switch" aria-checked="false" aria-label="Pick by usage"></button></div>
+          <!-- The user, 2026-11-24: two model settings and the rest automatic. "Ions think with" (Strongest, or your pick;
+               ion chief and every project's ion; routine turns at Medium by themselves) and "Chats ions start run on"
+               (Automatic, or your pick), each with its effort. Your own chats are set in the composer (it remembers your last
+               pick). The judge, Dream, the briefing, handoffs and fallbacks are automatic: no rows. -->
+          <div><h4>Models</h4><div class="group" id="ionModels"></div></div>
+          <div><h4>Coding agents</h4><div class="group" id="hList"></div></div>
+          <!-- Under More: "Prefer in this order" (empty: Automatic decides; once set, Automatic follows it). -->
+          <div><button class="more" type="button" aria-expanded="false" data-hmore="1">More<i data-lucide="chevron-down"></i></button>
+            <div class="group" id="hPrefer" hidden>
+              <div class="srow"><div class="g">Prefer in this order<div class="s">Automatic decides</div></div></div>
             </div>
           </div>
-          <div><h4>Auto</h4><div class="group" id="ionModels"></div></div>
           <div class="hby"><h4>Usage by model</h4><div class="group" id="hByModel"></div></div>
           <div class="hby"><h4>Usage by ion</h4><div class="group" id="hByIon"></div></div>
           </div>
@@ -3137,7 +3141,7 @@ function renderMemory(){
     icons(el); return;
   }
   const scopes=[['you','You'],...PROJECTS.map(p=>[p,p])];
-  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Dream</span></div>${dreamMode!=='off'?'<div class="hpick" role="radiogroup" aria-label="Agent"><button type="button" role="radio" aria-checked="true" class="on" title="Grok" aria-label="Grok"><canvas class="av" data-bot="grok" aria-hidden="true"></canvas></button></div>':''}<span class="seg sm" role="group" aria-label="Dream">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
+  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Dream</span></div><span class="seg sm" role="group" aria-label="Dream">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
     +`<div class="group">${DREAM_GONE.map(([p,n])=>`<div class="srow"><div class="g">Forgot “${esc(n)}”</div><button class="btn" type="button">Restore</button></div>`).join('')}${DREAM_NOTES.map(n=>`<div class="srow"><div class="g s">${esc(n)}</div></div>`).join('')}</div>`;
   el.innerHTML=`<div>${tabs}${broken}${remRow()}${dream}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div>${memScope==='you'?'':remRow(memScope)}<input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
   hydrate(el); icons(el);
@@ -3402,8 +3406,8 @@ function openIonSettings(k){
     <div class="ihero"><canvas class="av" data-ion="${k}" aria-hidden="true"></canvas><div class="g"><h3>${esc(v.name)}</h3></div><button class="btn" type="button" data-ionsel="${k}"><i data-lucide="message-circle"></i>Open chat</button></div>
     ${statCard(k)}
     <div><h4>Setup</h4><div class="group">
-      ${lead ? chiefBrainRows()
-        : row('Agent','',`<div class="hpick" role="radiogroup" aria-label="Harness">${HARNESSES.map(h=>`<button type="button" role="radio" aria-checked="${h===v.harness}" class="${h===v.harness?'on':''}" title="${esc(LIB[h].name)}" data-sethar="${h}" data-k="${k}"><canvas class="av" data-bot="${pv(k,h)}" aria-hidden="true"></canvas></button>`).join('')}</div>`)
+      ${lead ? row('Thinks with','',`<button class="val" type="button" data-snav="harness"><i data-lucide="zap"></i>${IONBRAIN.brainPick?esc(LIB[IONBRAIN.brainPick].name):'Strongest'}<i data-lucide="chevron-right"></i></button>`)
+        : row('Its chats run on','',`<div class="hpick" role="radiogroup" aria-label="Harness">${HARNESSES.map(h=>`<button type="button" role="radio" aria-checked="${h===v.harness}" class="${h===v.harness?'on':''}" title="${esc(LIB[h].name)}" data-sethar="${h}" data-k="${k}"><canvas class="av" data-bot="${pv(k,h)}" aria-hidden="true"></canvas></button>`).join('')}</div>`)
           + row('Color','',`<div class="sws" role="radiogroup" aria-label="Color">${Object.entries(PAL).map(([n,c])=>`<button type="button" role="radio" aria-checked="${c===v.color}" class="${c===v.color?'on':''}" title="${n}" style="--c:${c}" data-setcol="${c}" data-k="${k}"></button>`).join('')}</div>`)
           + row('Model','',`<div class="chips">${MODELS[v.harness].map(([m])=>`<button type="button" class="chip tog${m===roleModel(k)?' on':''}" data-rmodel="${esc(m)}" data-k="${k}">${m===roleModel(k)?'<i data-lucide="check"></i>':''}${esc(m)}</button>`).join('')}</div>`)
           + row('Effort','',`<span class="seg sm">${EFF.map(([id,l])=>`<button type="button" class="${id===roleEffort(k)?'on':''}" data-reff="${id}" data-k="${k}"${ESUP[v.harness].includes(id)?'':' disabled'}>${l}</button>`).join('')}</span>`)}
@@ -3737,7 +3741,7 @@ const HUSE=new Proxy({},{get:(_,h)=>{ const c=HCONN[h]; return !c?'':c.st==='on'
 const ebars=e=>`<span class="ebars" aria-hidden="true">${[1,2,3,4].map(n=>`<i class="${e==='auto'?'a':n<=(EFFN[e]||0)?'on':''}"></i>`).join('')}</span>`;
 const BRAIN={new:{h:'claude',m:'Opus 5.5',e:'medium',src:'storefront default'},code:{h:'claude',m:'Opus 5.5',e:'high',src:'storefront default',started:'claude'},chat:{h:'claude',m:'Sonnet 5.5',e:'auto',src:'your default',started:'claude'},routed:{h:'codex',m:'gpt-codex',e:'medium',src:'Pick by usage',started:'codex'}};
 const BDEF=JSON.parse(JSON.stringify(BRAIN));
-function brainPill(id){ if(id==='usage') return `<i data-lucide="gauge"></i><span>By usage</span>${ebars('')}<i data-lucide="chevron-up" class="bchev"></i>`; const b=BRAIN[id]; return `<canvas class="av" data-bot="${b.h}" aria-hidden="true"></canvas><span>${esc(LIB[b.h].name)}</span><span class="bsep">·</span><span>${esc(b.m)}</span><span class="bsep">·</span>${ebars(b.e)}<span>${effLabel(b.e)}</span><i data-lucide="chevron-up" class="bchev"></i>`; }
+function brainPill(id){ if(id==='usage') return `<i data-lucide="gauge"></i><span>Automatic</span>${ebars('')}<i data-lucide="chevron-up" class="bchev"></i>`; const b=BRAIN[id]; return `<canvas class="av" data-bot="${b.h}" aria-hidden="true"></canvas><span>${esc(LIB[b.h].name)}</span><span class="bsep">·</span><span>${esc(b.m)}</span><span class="bsep">·</span>${ebars(b.e)}<span>${effLabel(b.e)}</span><i data-lucide="chevron-up" class="bchev"></i>`; }
 function paintPills(){ document.querySelectorAll('[data-brain]').forEach(p=>{ p.innerHTML=brainPill(p.dataset.brain); hydrate(p); icons(p); }); }
 const bpop=document.createElement('div'); bpop.className='bpop'; bpop.hidden=true; bpop.setAttribute('role','dialog'); bpop.setAttribute('aria-label','Harness, model and effort'); document.getElementById('win').append(bpop);
 let bpFor=null;
@@ -3798,7 +3802,9 @@ function renderHarnesses(){
     /* Sign in and out of each agent (the user, 2026-11-23): Sign out (its icon) asks first under the row, since it signs the
        agent out on this Mac; Sign in runs the agent's own login and shows its page and code until it ends (c.cmd: an agent
        whose login needs a terminal shows its command to copy instead). */
-    const sw=`<button type="button" class="sw${c.st==='on'?' on':''}" role="switch" aria-checked="${c.st==='on'}" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`;
+    const sw=`<button type="button" class="sw${AVOID[h]?' on':''}" role="switch" aria-checked="${!!AVOID[h]}" aria-label="${esc(n)}: avoid unless I ask" title="Avoid unless I ask" data-avoid="${h}"></button><button type="button" class="sw${c.st==='on'?' on':''}" role="switch" aria-checked="${c.st==='on'}" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`;
+    /* The judge is automatic (checked on your Mac): a quiet line, or a small "Check as judge" (free agents: by themselves). */
+    const jl=c.st!=='on'?'':JUDGE_CHECKED[h]?'<div class="s">Checked as judge</div>':JCHECKING[h]?'<div class="s">Checking as judge…</div>':`<div class="s"><button class="lnk" type="button" data-jcheck="${h}" title="Runs ion's judge cases on its judge model; uses your plan">Check as judge</button></div>`;
     const act=c.st==='on'?`<button type="button" class="ib" data-hout="${h}" title="Sign out" aria-label="Sign out of ${esc(n)}"><i data-lucide="log-out"></i></button>`
       : c.st==='off'?`<button class="btn" type="button" data-hconnect="${h}">Sign in</button>`
       : c.st==='busy'?`<button class="ib" type="button" data-hno="${h}" title="Cancel" aria-label="Cancel sign-in"><i data-lucide="x"></i></button>`
@@ -3813,44 +3819,32 @@ function renderHarnesses(){
     /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.
        c.nosb: on a computer without an OS sandbox (Plan 18 Task 12), each agent's chats run without one: "Not sandboxed".
        c.rules: its own allow/deny rules ion goes by in its chats (Plan 18 Task 14), with how many. */
-    return `<div class="hrow ord"><button type="button" class="ib grip" draggable="true" aria-label="Move ${esc(n)}" title="Drag to reorder"><i data-lucide="grip-vertical"></i></button><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}</div>${right}</div>`; }).join('');
+    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}${jl}</div>${right}</div>`; }).join('');
   hydrate(el); icons(el); renderIonModels();
 }
-/* ion chief's brain on its page (the user, 2026-11-23: "Orchestrator brain should be a better brain than the worker
-   thread model"; a fresh ion thinks on "the strongest model you're signed in to"), as the app draws it: "Strongest"
-   first (none picked: the daemon's strongest marked, named in the quiet line), then the agents, the model menu and the
-   effort. The Agents page keeps only the Judge ("Your order"). */
-function chiefBrainRows(){
-  const on=HARNESSES.filter(h=>HCONN[h].st==='on'), cur=IONBRAIN.brainPick, top='claude';
-  const pick=`<div class="hpick" role="radiogroup" aria-label="Thinks with"><button type="button" role="radio" aria-checked="${!cur}" title="Strongest" class="${!cur?'on':''}" data-bpick=""><i data-lucide="gauge"></i></button>${on.map(h=>`<button type="button" role="radio" aria-checked="${cur===h}" title="${esc(LIB[h].name)}" class="${cur===h?'on':!cur&&h===top?'now':''}" data-bpick="${h}"><canvas class="av" data-bot="${h}"></canvas></button>`).join('')}</div>`;
+/* The two model settings (the user, 2026-11-24), as the app draws them: "Ions think with" (Strongest first, the
+   daemon's strongest marked and named in the quiet line; then the agents, the model menu, the effort) and "Chats ions
+   start run on" (Automatic first, then the agents, model, effort). No hints but the strongest's line, as in the app. */
+const JUDGE_CHECKED={grok:true}, JCHECKING={}, AVOID={};
+function modelRows(label,icon,followLabel,followIcon,cur,now,note,effLabel2,eff){
+  const on=HARNESSES.filter(h=>HCONN[h].st==='on'), follow=!cur;
+  const pick=`<div class="hpick" role="radiogroup" aria-label="${label}"><button type="button" role="radio" aria-checked="${follow}" title="${followLabel}" class="${follow?'on':''}" data-mpick="${label}" data-h=""><i data-lucide="${followIcon}"></i></button>${on.map(h=>`<button type="button" role="radio" aria-checked="${cur===h}" title="${esc(LIB[h].name)}" class="${cur===h?'on':follow&&h===now?'now':''}" data-mpick="${label}" data-h="${h}"><canvas class="av" data-bot="${h}"></canvas></button>`).join('')}</div>`;
   const effs=[['','Default'],['low','Low'],['medium','Medium'],['high','High'],['max','Max']];
-  return `<div class="srow"><div class="g"><span class="slot"><i data-lucide="zap"></i>Thinks with</span><div class="s">Strongest you have: Claude Code · Opus 5.5 · High</div></div>${pick}<select class="val" aria-label="Thinks with model"><option>Default</option></select></div>`
-    +`<div class="srow"><div class="g"><span class="slot"><i data-lucide="brain"></i>Effort</span></div><span class="seg sm" role="group" aria-label="ion's effort">${effs.map(([id,l])=>`<button type="button" class="${(IONBRAIN.brainEff||'')===id?'on':''}" data-beff="${id}">${l}</button>`).join('')}</span></div>`;
+  return `<div class="srow"><div class="g"><span class="slot"><i data-lucide="${icon}"></i>${label}</span>${note?`<div class="s">${note}</div>`:''}</div>${pick}<select class="val" aria-label="${label} model"><option>Default</option></select></div>`
+    +`<div class="srow"><div class="g"><span class="slot"><i data-lucide="brain"></i>Effort</span></div><span class="seg sm" role="group" aria-label="${effLabel2}">${effs.map(([id,l])=>`<button type="button" class="${(eff||'')===id?'on':''}">${l}</button>`).join('')}</span></div>`;
 }
-document.addEventListener('click',e=>{ const b=e.target.closest('[data-bpick]'); if(b){ IONBRAIN.brainPick=b.dataset.bpick||null; renderByIon(); return; } const f=e.target.closest('[data-beff]'); if(f){ IONBRAIN.brainEff=f.dataset.beff; renderByIon(); } });
-const JUDGE_CHECKED={grok:true};
-/* The app's Judge row: Your order, then each ready agent (Grok marked while it's whom your order picks). */
-function judgeRow(){
-  const on=HARNESSES.filter(h=>HCONN[h].st==='on'), cur=IONBRAIN.judge, follow=!cur;
-  const pick=`<div class="hpick" role="radiogroup" aria-label="Judge"><button type="button" role="radio" aria-checked="${follow}" title="Your order" class="${follow?'on':''}" data-jpick=""><i data-lucide="list"></i></button>${on.map(h=>`<button type="button" role="radio" aria-checked="${cur===h}" title="${esc(LIB[h].name)}" class="${cur===h?'on':follow&&h==='grok'?'now':''}" data-jpick="${h}"><canvas class="av" data-bot="${h}"></canvas></button>`).join('')}</div>`;
-  /* keyed on whether ion checked the pick (PR #36 re-review): Grok ships checked; the rest once checked on this Mac */
-  const note=cur&&!JUDGE_CHECKED[cur]?'<div class="s">Not checked by ion’s evals</div>':'';
-  return `<div class="srow"><div class="g"><span class="slot"><i data-lucide="shield-check"></i>Judge</span>${note}</div>${pick}<select class="val" aria-label="Judge model"><option>Default</option></select></div>`;
-}
-document.addEventListener('click',e=>{ const j=e.target.closest('[data-jpick]'); if(!j) return; IONBRAIN.judge=j.dataset.jpick||null; renderIonModels(); });
 function renderIonModels(){
-  const el=document.getElementById('ionModels'), on=HARNESSES.filter(h=>HCONN[h].st==='on');
-  /* Quick's "Your order" (PR #36 review, 2026-11-23): none set, it follows your agent order; picking it goes back. */
-  const follow=slot=>slot==='fast'?`<button type="button" class="chip tog${IONBRAIN.fastOrder?' on':''}" data-iorder="1"><i data-lucide="list"></i>Your order</button>`:'';
-  const chips=slot=>`<div class="chips">${follow(slot)}${on.flatMap(h=>MODELS[h].map(([m])=>{ const sel=!(slot==='fast'&&IONBRAIN.fastOrder)&&IONBRAIN[slot][0]===h&&IONBRAIN[slot][1]===m; return `<button type="button" class="chip tog${sel?' on':''}" data-islot="${slot}" data-h="${h}" data-m="${esc(m)}"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas>${esc(m)}</button>`; })).join('')}</div>`;
-  const row=(t,d,r)=>`<div class="srow stack"><div class="g">${t}<div class="s">${d}</div></div>${r}</div>`;
-  const seg=(items,cur,attr,dis=()=>false)=>`<span class="seg sm">${items.map(([id,l])=>`<button type="button" class="${cur===id?'on':''}" data-${attr}="${id}"${dis(id)?' disabled':''}>${l}</button>`).join('')}</span>`;
-  /* The user, 2026-11-23: ion's own brain is picked on its page (Ions → ion: chiefBrainRows); Agents keeps Auto's
-     judge, which follows your order. chips/row/seg stay for the brain's model chips elsewhere in the lab. */
-  void chips; void row; void seg;
-  el.innerHTML=judgeRow();
+  const el=document.getElementById('ionModels');
+  el.innerHTML=modelRows('Ions think with','zap','Strongest','gauge',IONBRAIN.brainPick,'claude','Strongest you have: Claude Code · Opus 5.5 · High',"Ions' effort",IONBRAIN.brainEff)
+    +modelRows('Chats ions start run on','messages-square','Automatic','sparkles',IONBRAIN.chatsPick,null,'',"Chats' effort",'');
   hydrate(el); icons(el);
 }
+document.addEventListener('click',e=>{
+  const m=e.target.closest('[data-mpick]'); if(m){ IONBRAIN[m.dataset.mpick==='Ions think with'?'brainPick':'chatsPick']=m.dataset.h||null; renderIonModels(); return; }
+  const a=e.target.closest('[data-avoid]'); if(a){ AVOID[a.dataset.avoid]=!AVOID[a.dataset.avoid]; renderHarnesses(); return; }
+  const j=e.target.closest('[data-jcheck]'); if(j){ const h=j.dataset.jcheck; JCHECKING[h]=1; renderHarnesses(); setTimeout(()=>{ delete JCHECKING[h]; JUDGE_CHECKED[h]=true; renderHarnesses(); },1800); return; }
+  const more=e.target.closest('[data-hmore]'); if(more){ const g=document.getElementById('hPrefer'); g.hidden=!g.hidden; more.setAttribute('aria-expanded',String(!g.hidden)); if(!g.hidden&&!g.dataset.filled){ g.dataset.filled=1; g.insertAdjacentHTML('beforeend',HARNESSES.map(h=>`<div class="hrow ord"><button type="button" class="ib grip" draggable="true" aria-label="Move ${esc(LIB[h].name)}" title="Drag to reorder"><i data-lucide="grip-vertical"></i></button><canvas class="av" data-bot="${h}"></canvas><div>${esc(LIB[h].name)}</div></div>`).join('')); hydrate(g); icons(g); } }
+});
 document.addEventListener('click',e=>{
   const c=e.target.closest('[data-hconnect]');
   if(c){ const h=c.dataset.hconnect, st=HCONN[h];

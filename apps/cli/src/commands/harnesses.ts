@@ -58,7 +58,7 @@ export function harnessesCommand(program: Command, out: () => Out) {
       const list = await withClient((c) => c.call("harnesses.list", {}));
       print(out(), list.map(row).join("\n"), list);
     });
-  // The user, 2026-11-22: your agent order (Settings → Agents), for handoffs, Pick by usage and ions' chats.
+  // The user, 2026-11-22: your agent order (Settings → Agents → More: Prefer in this order; 2026-11-24).
   h.command("order <ids...>")
     .description("Put agents in order, best first")
     .action(async (ids: string[]) => {

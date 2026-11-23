@@ -1,3 +1,4 @@
+import type { EffortLevel } from "@ion/schema";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   DEFAULT_PROJECT,
@@ -6,7 +7,7 @@ import {
   type ProjectEntry,
   saveUserConfig,
 } from "@ion/config";
-import type { ChatInfo } from "@ion/schema";
+import type { ChatInfo, HarnessInfo } from "@ion/schema";
 import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
@@ -21,6 +22,7 @@ import { needsView } from "../views/needs.js";
 import { decisionLine } from "./ask.js";
 import type { IonScope } from "./grants.js";
 import { registerYourTools, type YourTools } from "./ion-your-tools.js";
+import { brainArgs, registerChatsTool } from "./ion-chats-tool.js";
 import { guard, ok, q } from "./result.js";
 import { registerMemoryTools } from "./memory-tools.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
@@ -28,7 +30,17 @@ import { ionCaller, ionMemory, leastIonMemory } from "../memory/switch.js";
 import { type Deps, historyData, needsData, SEARCH_MAX, searchData } from "./tools.js";
 
 /** Skills and servers a thread starts with, by name (the user, 2026-11-21: "/" and "@" for ions too). */
-export type ThreadPicks = { skills?: string[]; mentions?: string[] };
+/**
+ * What an ion passes with a thread: the skills and connections to use, and (only when you asked for this chat) the
+ * agent, model and effort it runs on (the user, 2026-11-24).
+ */
+export type ThreadPicks = {
+  skills?: string[];
+  mentions?: string[];
+  harness?: string;
+  model?: string;
+  effort?: EffortLevel;
+};
 
 /** Starts a thread in a project for an ion's turn: its chat, or why it couldn't. */
 type StartThread = (
@@ -38,7 +50,13 @@ type StartThread = (
   picks?: ThreadPicks,
 ) => Promise<{ chatId: string } | { why: string }>;
 
-export type IonDeps = Deps & { configFile: string; startThread?: StartThread; yourTools?: YourTools };
+export type IonDeps = Deps & {
+  configFile: string;
+  startThread?: StartThread;
+  yourTools?: YourTools;
+  /** One agent as ion knows it now (what you ask a chat to run on is checked against its sign-in). */
+  agent?: (id: string) => Promise<HarnessInfo | undefined>;
+};
 
 const HISTORY_MAX = 200;
 /** The most changes ion's dream makes in one night. */
@@ -86,6 +104,12 @@ export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps)
   needsTools(server, ion);
   memoryTools(server, ion);
   threadTool(server, ion);
+  registerChatsTool(server, {
+    scope,
+    configFile: d.configFile,
+    need: ion.need,
+    ...(d.agent ? { agent: d.agent } : {}),
+  });
   registerYourTools(server, {
     chief: scope.ionId === "chief",
     dirs: () => ion.projects().map((p) => p.path),
@@ -254,12 +278,13 @@ function threadTool(server: McpServer, ion: Ion): void {
   server.registerTool(
     "start_thread",
     {
-      description: `Start work in a project: a thread its agent runs, briefed with what to do there. To have it use a skill or a connection, name it in skills or mentions. At most ${PER_TURN} per turn.`,
+      description: `Start work in a project: a thread its agent runs, briefed with what to do there. To have it use a skill or a connection, name it in skills or mentions. Pass harness, model or effort only when the user asked for this chat to run on them (e.g. "use Codex for this, at low effort"); otherwise leave them out. At most ${PER_TURN} per turn.`,
       inputSchema: {
         projectId: z.string().min(1),
         brief: z.string().min(1).max(4000),
         skills: z.array(z.string().min(1).max(100)).max(10).optional(),
         mentions: z.array(z.string().min(1).max(100)).max(10).optional(),
+        ...brainArgs(),
       },
     },
     guard(async (a: { projectId: string; brief: string } & ThreadPicks) => {
@@ -286,10 +311,13 @@ function threadTool(server: McpServer, ion: Ion): void {
   );
 }
 
-/** The skills and mentions given, only the ones there are. */
+/** The skills, mentions and asked-for agent, model and effort given, only the ones there are. */
 const picksOf = (a: ThreadPicks): ThreadPicks => ({
   ...(a.skills?.length ? { skills: a.skills } : {}),
   ...(a.mentions?.length ? { mentions: a.mentions } : {}),
+  ...(a.harness ? { harness: a.harness } : {}),
+  ...(a.model ? { model: a.model } : {}),
+  ...(a.effort ? { effort: a.effort } : {}),
 });
 
 function profileTool(server: McpServer, ion: Ion): void {

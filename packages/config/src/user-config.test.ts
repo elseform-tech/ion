@@ -41,10 +41,10 @@ describe("loadUserConfig", () => {
   });
   it("returns defaults and a one-line error for a bad value", () => {
     const f = join(tmp(), "config.toml");
-    writeFileSync(f, '[ion]\ndeepEffort = "huge"\n');
+    writeFileSync(f, '[ion]\nquickEffort = "huge"\n');
     const r = loadUserConfig(f);
     expect(r.config).toEqual(DEFAULT_CONFIG);
-    expect(r.error).toBe("config.toml: ion.deepEffort must be one of low, medium, high, max");
+    expect(r.error).toBe("config.toml: ion.quickEffort must be one of low, medium, high, max");
   });
   // Task review, 2026-11-22: a project called "you" or "chief" collides with your memory and ion chief.
   it("leaves out a project called you or chief, and says so", () => {
@@ -67,9 +67,9 @@ describe("loadUserConfig", () => {
       '[[projects]]\nid = "you"\npath = "/p/you"\nname = "Me"\n\n[[projects]]\nid = "shop"\npath = "/p/shop"\n',
     );
     const { config } = loadUserConfig(f);
-    saveUserConfig(f, { ...config, ion: { ...config.ion, useDeep: "never" } });
+    saveUserConfig(f, { ...config, ion: { ...config.ion, quickEffort: "low" } });
     const again = loadUserConfig(f);
-    expect(again.config.ion.useDeep).toBe("never");
+    expect(again.config.ion.quickEffort).toBe("low");
     expect(again.config.projects.map((p) => p.id)).toEqual(["shop"]);
     expect(again.warning).toMatch(/rename project 'you'/);
     expect(readFileSync(f, "utf8")).toMatch(/id = "you"\npath = "\/p\/you"\nname = "Me"/);
@@ -83,8 +83,8 @@ describe("loadUserConfig", () => {
   });
   it("fills missing keys with defaults", () => {
     const f = join(tmp(), "config.toml");
-    writeFileSync(f, '[ion]\nuseDeep = "never"\n');
-    expect(loadUserConfig(f).config.ion).toEqual({ ...DEFAULT_CONFIG.ion, useDeep: "never" });
+    writeFileSync(f, '[ion]\nquickEffort = "low"\n');
+    expect(loadUserConfig(f).config.ion).toEqual({ ...DEFAULT_CONFIG.ion, quickEffort: "low" });
   });
   it("saves the file readable only by you, in a private folder", () => {
     const f = join(tmp(), "new-dir", "config.toml");
@@ -122,21 +122,12 @@ describe("loadUserConfig", () => {
     expect(loadUserConfig(file).warning).toContain("max_runs");
   });
 
-  // The user, 2026-11-22: the agent order, what ion does at a limit and Pick by usage live in config.toml; a bad
-  // value alone falls back to its default (Ask; off).
-  it("keeps the agent order, the limit choice and Pick by usage; a bad one falls back", () => {
-    expect(DEFAULT_CONFIG.routing).toEqual({ order: [], onLimit: "ask", byUsage: false });
+  // The user, 2026-11-22: the agent order lives in config.toml (2026-11-24: as "Prefer in this order").
+  it("keeps the agent order", () => {
+    expect(DEFAULT_CONFIG.routing).toEqual({ order: [] });
     const file = join(mkdtempSync(join(tmpdir(), "ion-cfg-")), "config.toml");
-    writeFileSync(file, '[routing]\norder = ["codex", "opencode"]\nonLimit = "wait"\nbyUsage = true\n');
-    expect(loadUserConfig(file).config.routing).toEqual({
-      order: ["codex", "opencode"],
-      onLimit: "wait",
-      byUsage: true,
-    });
-    writeFileSync(file, '[routing]\nonLimit = "later"\n');
-    const bad = loadUserConfig(file);
-    expect(bad.config.routing.onLimit).toBe("ask");
-    expect(bad.warning).toContain("onLimit");
+    writeFileSync(file, '[routing]\norder = ["codex", "opencode"]\n');
+    expect(loadUserConfig(file).config.routing).toEqual({ order: ["codex", "opencode"] });
   });
 
   // The user, 2026-11-23: unset, ion's quick and deep models are the strongest model you're signed in to (not your
@@ -163,9 +154,10 @@ describe("loadUserConfig", () => {
       '[ion]\nquick = "claude-code:opus"\ndeep = "grok-build"\n\n[access]\njudge = "opencode"\n',
     );
     const kept = loadUserConfig(file).config;
+    // ion.deep went with the simplified settings (2026-11-24).
     expect([kept.ion.quick, kept.ion.deep, kept.access.judge]).toEqual([
       "claude-code:opus",
-      "grok-build",
+      undefined,
       "opencode",
     ]);
     // Picked from now on (saved with this ion's version): Claude Code stays Claude Code.
@@ -194,7 +186,7 @@ describe("loadUserConfig", () => {
       '[ion]\nquick = "claude-code"\ndeep = "claude-code"\n[access]\njudge = "claude-code:haiku"\n',
     );
     expect(loadUserConfig(file).warning).toBe(
-      "config.toml: ion's quick and deep models now use the strongest model you're signed in to, and the judge now follows your order; set them in Settings to keep Claude Code",
+      "config.toml: ion's quick model now uses the strongest model you're signed in to, and the judge now follows your order; set them in Settings to keep Claude Code",
     );
     // PR #36 re-review, 2026-11-23: a version written as a string is a newer ion's, unknown: nothing moves, and a
     // save keeps it as written.
@@ -403,5 +395,43 @@ describe("agents.<id>.ownTools", () => {
     expect(ownToolsOn(config, "grok-build")).toBe(true);
     expect(ownToolsOn(config, "claude-code")).toBe(true);
     expect(ownToolsOn(DEFAULT_CONFIG, "opencode")).toBe(true);
+  });
+});
+
+// The user, 2026-11-24: two model settings and the rest automatic. What ions think with ([ion] quick) and what ions'
+// chats run on ([ion] chats, chatsEffort); each agent can be avoided. The old knobs are read and moved: the agent order
+// is "Prefer in this order"; Pick by usage and the deep model go; "when an agent hits its limit" goes, said once when
+// it wasn't the default (your chats ask, chats ions start continue); Dream's agent stays only when you set it.
+describe("the simplified model settings", () => {
+  it("reads what chats ions start run on, and avoided agents", () => {
+    const file = join(tmp(), "config.toml");
+    writeFileSync(
+      file,
+      'version = 2\n[ion]\nchats = "codex:gpt-5.6-sol"\nchatsEffort = "medium"\n[agents.codex]\navoid = true\n',
+    );
+    const c = loadUserConfig(file).config;
+    expect([c.ion.chats, c.ion.chatsEffort, c.agents?.codex?.avoid]).toEqual([
+      "codex:gpt-5.6-sol",
+      "medium",
+      true,
+    ]);
+  });
+
+  it("moves the old knobs, and says so once when the limit choice wasn't the default", () => {
+    const file = join(tmp(), "config.toml");
+    writeFileSync(
+      file,
+      'version = 2\n[ion]\ndeep = "grok-build"\nuseDeep = "always"\n[routing]\norder = ["grok-build"]\nonLimit = "wait"\nbyUsage = true\n[memory]\ndreamAgent = "opencode"\n',
+    );
+    const r = loadUserConfig(file);
+    expect(r.config.ion.deep).toBeUndefined();
+    expect((r.config.ion as Record<string, unknown>).useDeep).toBeUndefined();
+    expect(r.config.routing).toEqual({ order: ["grok-build"] });
+    expect(r.config.memory.dreamAgent).toBe("opencode");
+    expect(r.warning).toBe(
+      "config.toml: routing.onLimit is no longer used: your chats ask at a limit, chats ions start go on another agent",
+    );
+    writeFileSync(file, 'version = 2\n[routing]\nonLimit = "ask"\nbyUsage = false\n');
+    expect(loadUserConfig(file).warning).toBeNull();
   });
 });

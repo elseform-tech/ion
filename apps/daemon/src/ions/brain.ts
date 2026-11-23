@@ -1,4 +1,4 @@
-import { loadUserConfig } from "@ion/config";
+import { loadUserConfig, type UserConfig } from "@ion/config";
 import { clockOf, type EffortLevel as Effort, type HarnessInfo } from "@ion/schema";
 import {
   agentLabel,
@@ -23,6 +23,8 @@ export type BrainDeps = {
   agents?: () => Promise<HarnessInfo[]>;
   /** One agent (its CLI asked alone): checking a chosen agent never waits on every other's. */
   agent?: (id: string) => Promise<HarnessInfo | undefined>;
+  /** Nothing is said in the log (a read of Settings). */
+  quiet?: true;
 };
 
 /** Your agent order (Settings → Agents). */
@@ -98,21 +100,6 @@ export async function projectAgent(d: BrainDeps, projectId: string): Promise<str
   return defaultAgent(await readyAgents(d.agents), null, orderOf(d));
 }
 
-/**
- * The project's model and effort (Settings). Effort always; the model on the agent it was picked for: the
- * project's own, or (none set) the one Settings showed, which is the one `projectAgent` picks.
- */
-export function brainOf(
-  configFile: string,
-  projectId: string,
-  harness: string | undefined,
-): { model?: string; effort?: Effort } {
-  const p = loadUserConfig(configFile).config.projects.find((x) => x.id === projectId);
-  if (!p) return {};
-  const model = p.model && (!p.harness || p.harness === harness) ? p.model : undefined;
-  return { ...(model ? { model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
-}
-
 /** This agent can start with its web off. */
 const webOff = (id: string) => !!getHarness(id)?.adapter.noWeb;
 
@@ -120,6 +107,27 @@ const webOff = (id: string) => !!getHarness(id)?.adapter.noWeb;
  * ion's dream's agent: Settings → Memory's (else ion's quick model's) while it's ready and can turn its web off, else
  * the first ready one that can (task review, 2026-11-22); with none, the chosen one (its turn says it was skipped).
  */
+/**
+ * ion's dream (the user, 2026-11-24): ions' brain (your pick, else the strongest) at Medium, on an agent that can turn
+ * its web off; when the brain's can't, the next strongest that can, said once in the log. With none that can, the
+ * brain's own (its turn says it was skipped).
+ */
+async function dreamWithBrain(d: BrainDeps, quick: string, effort: Effort): Promise<IonBrain | null> {
+  const [set, ...rest] = quick.split(":");
+  const own = set ? { harness: set, model: rest.join(":") || null, effort } : null;
+  if (own && webOff(own.harness) && (await isReady(d, own.harness)) && !isLimited(d, own.harness)) return own;
+  const top = own ?? (await nextBrain(d, "chief", [], { effort, quiet: true }));
+  if (top && webOff(top.harness)) return top;
+  const other = await strongest(d, [], { ok: webOff, quiet: true });
+  if (!other) return top;
+  if (top && !d.quiet) {
+    const line = `ion's dream: ${agentLabel(top.harness)} can't turn its web off; it dreams on ${agentLabel(other)}`;
+    if (!said.has(line)) console.warn(line);
+    said.add(line);
+  }
+  return { harness: other, model: brainModel(other), effort };
+}
+
 async function dreamOn(d: BrainDeps, spec: string, effort: IonBrain["effort"]): Promise<IonBrain | null> {
   if (spec) return dreamBrain(d, spec, effort);
   const first = await pick(d, { not: [], ok: webOff });
@@ -161,14 +169,14 @@ const said = new Set<string>();
 async function strongest(
   d: BrainDeps,
   not: string[],
-  { own, quiet }: { own?: string; quiet?: true },
+  { own, quiet, ok }: { own?: string; quiet?: true; ok?: (id: string) => boolean },
 ): Promise<string | null> {
-  const all = byStrength(await readyAgents(d.agents));
+  const all = byStrength(await readyAgents(d.agents)).filter(ok ?? (() => true));
   const ready = all.filter((id) => !not.includes(id));
   const marks = usageView.agents(d.db, new Date());
   const open = ready.find((id) => !marks[id]?.limitedUntil);
   const passed = open ? ready.slice(0, ready.indexOf(open)) : [];
-  if (open && passed.length && !quiet) {
+  if (open && passed.length && !quiet && !d.quiet) {
     const line = `ion's brain: ${agentLabel(passed[0]!)} is limited; it thinks on ${agentLabel(open)}`;
     if (!said.has(line)) console.warn(line);
     said.add(line);
@@ -206,7 +214,10 @@ export async function ionBrain(
 ): Promise<IonBrain | null> {
   const c = loadUserConfig(d.configFile).config;
   const ion = c.ion;
-  if (ionId === DREAM_ION) return dreamOn(d, c.memory.dreamAgent || "", ion.quickEffort ?? null);
+  if (ionId === DREAM_ION)
+    return c.memory.dreamAgent
+      ? dreamOn(d, c.memory.dreamAgent, ion.quickEffort ?? null)
+      : dreamWithBrain(d, ion.quick ?? "", brainEffort(ion.quickEffort, true));
   return chiefBrain(d, ion.quick ?? "", brainEffort(ion.quickEffort, o.routine));
 }
 
@@ -257,4 +268,32 @@ export async function strongestBrain(
 ): Promise<{ agent: string; model: string | null; effort: Effort } | null> {
   const b = await nextBrain(d, "chief", [], { quiet: true });
   return b ? { agent: b.harness, model: b.model, effort: b.effort ?? BRAIN_EFFORT } : null;
+}
+
+/** An agent, model and effort for a chat an ion starts; no harness: Automatic picks it. */
+export type ChatsPick = { harness?: string; model?: string; effort?: Effort };
+
+/** "<agent>[:<model>]" as a pick. */
+const specPick = (spec: string, effort?: Effort): ChatsPick => {
+  const [harness, ...rest] = spec.split(":");
+  const model = rest.join(":");
+  return { harness: harness!, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+};
+
+/**
+ * What a chat an ion starts runs on (the user, 2026-11-24): what you asked for that chat through the ion, else the
+ * project's own (its page → More), else "Chats ions start run on" ([ion] chats); none: Automatic picks the agent.
+ */
+export function chatsPick(c: UserConfig, projectId: string, asked: ChatsPick = {}): ChatsPick {
+  if (asked.harness) return asked;
+  const p = c.projects.find((x) => x.id === projectId);
+  if (p?.harness)
+    return {
+      harness: p.harness,
+      ...(p.model ? { model: p.model } : {}),
+      ...(p.effort ? { effort: p.effort } : {}),
+    };
+  if (c.ion.chats) return specPick(c.ion.chats, c.ion.chatsEffort);
+  const effort = asked.effort ?? p?.effort;
+  return effort ? { effort } : {};
 }

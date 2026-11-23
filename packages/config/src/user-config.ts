@@ -119,9 +119,6 @@ const Tools = z.looseObject({
   ionUse: z.array(z.string()).default([]),
 });
 
-/** routing.onLimit: what ion does when a chat's agent hits its limit. */
-export const ON_LIMIT = ["ask", "continue", "wait"] as const;
-
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
 const MaxRuns = z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]);
 
@@ -134,14 +131,13 @@ const CONFIG_VERSION = 2;
 const UserConfigSchema = z.looseObject({
   ion: z
     .looseObject({
-      // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list. Absent (quick
-      // and deep): the strongest model you're signed in to, at High (the user, 2026-11-23).
+      // The user, 2026-11-24: two model settings. `quick`: what ions think with ("<harness>[:<model>]"; absent: the
+      // strongest model you're signed in to), at `quickEffort` (absent: High; routine turns Medium). `chats`: what
+      // chats ions start run on (absent: Automatic), at `chatsEffort` (absent: the agent's own).
       quick: z.string().optional(),
-      /** How hard ion's quick model thinks; absent: the agent's own default. */
       quickEffort: Effort.optional(),
-      deep: z.string().optional(),
-      deepEffort: Effort.default("high"),
-      useDeep: z.enum(["auto", "always", "never"]).default("auto"),
+      chats: z.string().optional(),
+      chatsEffort: Effort.optional(),
     })
     .prefault({}),
   projects: z.array(Project).default([]),
@@ -201,20 +197,18 @@ const UserConfigSchema = z.looseObject({
    * into ion's chats (the user, 2026-11-21: on by default); off, ion's tools only. Its own hooks never run where ion
    * can turn them off.
    */
-  agents: z.record(z.string(), z.looseObject({ ownTools: z.boolean().optional() })).default({}),
+  /** Your last pick in the composer, "<harness>[:<model>]" and its effort: a new chat starts on it (2026-11-24). */
+  composer: z.looseObject({ last: z.string().optional(), lastEffort: Effort.optional() }).optional(),
+  /** `avoid` (the user, 2026-11-24): "Avoid unless I ask": Automatic never picks it. */
+  agents: z
+    .record(z.string(), z.looseObject({ ownTools: z.boolean().optional(), avoid: z.boolean().optional() }))
+    .default({}),
   /**
-   * How ion picks a chat's agent (Plan 20). `order`: your agent order, best first (empty: ion's own, opencode, Grok
-   * Build, Codex, Claude Code); it decides handoff targets, Pick by usage, and an ion's chats when the project names
-   * no agent. `onLimit`: when a chat's agent hits its limit, ask you, continue on the next agent, or wait for the
-   * reset. `byUsage`: Pick by usage fills in a new chat's agent when you picked none.
+   * `order`: "Prefer in this order" (Settings → Agents → More; empty: Automatic decides). Automatic picks a chat's
+   * agent when none is set: ready, not limited, with room left, free or subscription before pay-per-use, Claude Code
+   * last unless it's the only one, never one you avoid (the user, 2026-11-24).
    */
-  routing: z
-    .looseObject({
-      order: z.array(z.string()).default([]),
-      onLimit: z.enum(ON_LIMIT).default("ask"),
-      byUsage: z.boolean().default(false),
-    })
-    .prefault({}),
+  routing: z.looseObject({ order: z.array(z.string()).default([]) }).prefault({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -258,8 +252,6 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["memory", "dreamAgent"], z.string()],
   [["routing"], z.looseObject({})],
   [["routing", "order"], z.array(z.string())],
-  [["routing", "onLimit"], z.enum(ON_LIMIT)],
-  [["routing", "byUsage"], z.boolean()],
 ];
 
 /** Whether this agent brings its own servers, skills and plugins into ion's chats (on unless you turned it off). */
@@ -377,7 +369,6 @@ function dropOldAccess(raw: unknown, file: string): string | null {
 /** The defaults every save wrote before version 2 (Claude Code), with where each is. */
 const OLD_DEFAULTS: [section: string, key: string, was: string, name: string][] = [
   ["ion", "quick", "claude-code", "quick"],
-  ["ion", "deep", "claude-code", "deep"],
   ["access", "judge", "claude-code:haiku", "judge"],
 ];
 
@@ -421,6 +412,30 @@ function moveOldDefaults(raw: unknown, file: string): string | null {
   return moved.length ? movedLine(file, moved) : null;
 }
 
+/** Removes `key` from `raw[section]`; what it held, if anything. */
+function take(raw: Record<string, unknown>, section: string, key: string): unknown {
+  const holder = raw[section] as Record<string, unknown> | undefined;
+  if (typeof holder !== "object" || holder === null || !(key in holder)) return undefined;
+  const was = holder[key];
+  delete holder[key];
+  return was;
+}
+
+/**
+ * The knobs the simplified settings dropped (the user, 2026-11-24): Pick by usage (it's how Automatic works), the deep
+ * model, and what happens at a limit (your chats ask, chats ions start go on another agent), said once when it wasn't the
+ * default. The agent order stays as "Prefer in this order"; Dream's agent stays when you set it.
+ */
+function dropOldKnobs(raw: unknown, file: string): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  for (const key of ["deep", "deepEffort", "useDeep"]) take(r, "ion", key);
+  take(r, "routing", "byUsage");
+  const onLimit = take(r, "routing", "onLimit");
+  if (onLimit === undefined || onLimit === "ask") return null;
+  return `${basename(file)}: routing.onLimit is no longer used: your chats ask at a limit, chats ions start go on another agent`;
+}
+
 /**
  * Reads the config file. Missing file → defaults. Invalid file → defaults plus a one-line error. A bad notification
  * time or max_runs alone falls back to its default, with a warning; the rest of the file loads.
@@ -439,7 +454,9 @@ export function loadUserConfig(file: string): {
     return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null };
   }
   const moved = moveOldDefaults(raw, file);
-  const warning = [moved, dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
+  const knobs = dropOldKnobs(raw, file);
+  const warning =
+    [moved, knobs, dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
   const r = UserConfigSchema.safeParse(raw);
   if (!r.success)
     return { config: defaults(), error: describeIssue(file, r.error.issues[0]!), warning: null };

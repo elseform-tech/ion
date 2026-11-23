@@ -8,8 +8,9 @@ import {
   AGENT_COMMANDS,
   type AgentCommands,
   type AgentUsage,
+  type IonSettings,
   type JudgeCheckInfo,
-  type JudgeStatus,
+  type LastPick,
   type TaskEstimate,
 } from "./agents.js";
 
@@ -90,35 +91,6 @@ export type ProjectPatch = {
   profileSuggestion?: null;
 };
 
-/**
- * ion's own models (PR #36, 2026-11-23). `quick` is ion's brain (ion chief's and every project ion's own turns):
- * "<agent>[:<model>]" you picked in Settings → Ions, or "" for the strongest model you're signed in to, at `effort`
- * (null: High for your messages, Medium for routine turns). `judge` decides in Auto: yours, or "" for the first agent
- * along your order whose pinned judge model ion checked. `*Now` is whom each runs on now (the daemon resolves it).
- */
-export type IonSettings = {
-  quick: string;
-  effort: EffortLevel | null;
-  judge: string;
-  /** Whom each runs on now, "<agent>[:<model>]"; null: none ready. */
-  quickNow: string | null;
-  judgeNow: string | null;
-  /** Whether ion checked the judge's model now (one you set may not be: Settings says so). */
-  judgeChecked: boolean;
-  /** By agent id: its pinned judge model, checked (`shipped`: before shipping), its last check here, one going now. */
-  judges: Record<string, JudgeStatus>;
-  /** Dream's agent now: [memory] dreamAgent, else the first ready in your order that can turn its web off. */
-  dreamNow: string | null;
-  /**
-   * ion's brain when you picked none (the user, 2026-11-23): the strongest model you're signed in to, and the effort
-   * (yours, else High); null when no agent is ready.
-   */
-  strongest: { agent: string; model: string | null; effort: EffortLevel } | null;
-};
-
-/** What ion does when a chat's agent hits its limit (Settings → Agents). */
-export type OnLimit = "ask" | "continue" | "wait";
-
 /** How much a project may notify: everything, what needs you, only urgent things, nothing. */
 export type NotifyLevel = "all" | "needs" | "digest" | "muted";
 
@@ -139,26 +111,31 @@ export type SettingsInfo = IonSettings & {
   dream: { mode: DreamMode; agent: string | null };
   /** Memory everywhere (yours follows it), and in each project, by id (as it is: its own, else everywhere's). */
   memory: { on: boolean; projects: Record<string, boolean> };
-  /**
-   * Your agent order, best first (every agent ion knows): handoff targets, Pick by usage, and an ion's chats when the
-   * project names no agent.
-   */
+  /** Every agent ion knows, in your order (the agent list's order). */
   agentOrder: string[];
-  /** When a chat's agent hits its limit: ask you, continue on the next agent, or wait for the reset. */
-  onLimit: OnLimit;
-  /** Pick by usage: a new chat you picked no agent for goes on the one with room, by fit and cost. */
-  byUsage: boolean;
+  /** "Prefer in this order" as you saved it (empty: Automatic decides; the user, 2026-11-24). */
+  prefer: string[];
+  /** "Chats ions start run on": "<agent>[:<model>]", or "" for Automatic; at `chatsEffort` (null: the agent's own). */
+  chats: string;
+  chatsEffort: EffortLevel | null;
+  /** By agent id, the ones you marked "Avoid unless I ask" (Automatic never picks them). */
+  avoid: Record<string, true>;
+  /** Your last pick in the composer: a new chat starts on it; null: Automatic. */
+  lastPick: LastPick | null;
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
-export type SettingsPatch = Partial<
-  Pick<SettingsInfo, "maxRuns" | "effort" | "ownTools" | "agentOrder" | "onLimit" | "byUsage">
-> & {
-  /** ion's quick model or the judge: "<agent>[:<model>]", or null (or "") to follow your agent order again. */
+export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "effort" | "ownTools" | "agentOrder">> & {
+  /** "Ions think with", the judge, "Chats ions start run on": "<agent>[:<model>]", or null (or "") for the default. */
   quick?: string | null;
   judge?: string | null;
+  chats?: string | null;
+  chatsEffort?: EffortLevel | null;
+  /** "Avoid unless I ask", by agent id. */
+  avoid?: Record<string, boolean>;
+  lastPick?: LastPick | null;
   dream?: { mode?: DreamMode; agent?: string | null };
   /** Memory on or off everywhere, or in a project (set like everywhere, it follows everywhere again). */
   memory?: { on?: boolean; projects?: Record<string, boolean> };

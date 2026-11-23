@@ -45,7 +45,7 @@ function pillModel(h: HarnessInfo | undefined, model: string): string | null {
 /** What the pill names: the agent (none: "By usage" when Pick by usage picks it), its model, and all of it in words. */
 function pillNames(harnesses: HarnessInfo[], brain: Brain, byUsage?: boolean) {
   const effort = `${effortLabel(brain.effort)} effort`;
-  if (byUsage) return { h: undefined, model: null, label: "By usage", name: `By usage · ${effort}` };
+  if (byUsage) return { h: undefined, model: null, label: "Automatic", name: `Automatic · ${effort}` };
   const h = harnesses.find((x) => x.id === brain.harness);
   const model = pillModel(h, brain.model);
   // An agent the app doesn't list (the fake one in the tour) shows by its own name.

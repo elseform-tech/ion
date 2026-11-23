@@ -26,7 +26,12 @@ The always-on service that owns all state.
   model still runs. `[ion] quick` is ion's brain for ion chief and every project ion (a project's own agent, model
   and effort are for the chats its ion starts): unset, the strongest model you're signed in to (each adapter ranks
   its own), at High for your messages and Medium for routine turns (a report when a chat ends); answering an agent's
-  question from your decisions uses the brain at Medium. Workers, Dream and ion's quick work follow your agent order. One judge call
+  question from your decisions uses the brain at Medium. Dream thinks with the brain too, at Medium, on an agent that can turn its web off.
+  The user, 2026-11-24: two model settings and the rest automatic. Chats ions start run on `[ion] chats` (and
+  `chatsEffort`) when set, a project's own agent, model and effort over it, or what you asked an ion for one chat;
+  else Automatic: ready, not limited, with room left, free or subscription before pay-per-use, Claude Code last unless
+  it's the only one, never an agent you avoid (`[agents.<id>] avoid`), along `routing.order` ("Prefer in this order")
+  when set. Your own chats ask you at a limit; chats ions start go on the next ready agent. One judge call
   per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
   says no (or can't decide), ion asks you instead: Allow or Don't allow (Remember keeps either for that exact action in the project), or your
   own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes

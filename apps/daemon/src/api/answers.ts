@@ -1,4 +1,4 @@
-import { loadUserConfig } from "@ion/config";
+import { chatsView } from "../views/chats.js";
 import { agentLabel, byPreference } from "../adapters/registry.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { IonQuestions } from "../ions/questions.js";
@@ -32,6 +32,13 @@ const READY_WAIT_MS = 8000;
 export const readyForLimit = async (infos: Pick<HarnessInfos, "soon">): Promise<string[]> =>
   (await infos.soon(READY_WAIT_MS)).filter((h) => h.installed && h.signedIn).map((h) => h.id);
 
+/**
+ * What ion does at a limit (the user, 2026-11-24: no setting): in chats ions start it goes on the next ready agent by
+ * itself (unattended, on Auto); in your own chats it asks you.
+ */
+export const limitChoice = (db: Db, chatId: string): "ask" | "continue" =>
+  chatsView.list(db).find((c) => c.chatId === chatId)?.by === "ion" ? "continue" : "ask";
+
 type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; configFile: string };
 
 /**
@@ -43,7 +50,7 @@ function limitHandoffs(d: Deps): Handoffs {
   return new Handoffs({
     ...{ store: d.store, db: d.db, needs: d.needs, label: agentLabel, waits: new Waits() },
     ready: async () => byPreference(await readyForLimit(harnessInfos), orderIn(d.configFile)),
-    onLimit: () => loadUserConfig(d.configFile).config.routing.onLimit,
+    onLimit: (chatId) => limitChoice(d.db, chatId),
     start: async (a, o) =>
       (
         await d.runs.ask(a, {

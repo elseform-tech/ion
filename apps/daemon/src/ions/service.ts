@@ -3,10 +3,11 @@ import type { ThreadPicks } from "../mcp/ion-tools.js";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
 import { UserError } from "../api/errors.js";
+import { harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import { wrapData } from "../context/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
-import { brainOf, projectAgent } from "./brain.js";
+import { type ChatsPick, chatsPick, projectAgent } from "./brain.js";
 import { plainReport } from "./project.js";
 import { type IonTurns, NO_AGENT, PER_TURN } from "./turn.js";
 
@@ -264,37 +265,55 @@ export class Ions {
     return t;
   }
 
-  /** A thread's agent: Pick by usage's (when it's on), with why; else the project's ion's. */
-  private async threadAgent(projectId: string, effort: Effort | undefined, text: string) {
-    const e = effort ?? brainOf(this.d.configFile, projectId, undefined).effort;
+  /**
+   * A thread's agent, model and effort (the user, 2026-11-24): what you asked for this chat through the ion, else the
+   * project's own, else "Chats ions start run on" (chatsPick); none set, Automatic picks the agent (with why), else
+   * the project's ion's usual one.
+   */
+  private async threadAgent(projectId: string, o: { effort?: Effort; asked: ChatsPick }, text: string) {
+    const pick = chatsPick(loadUserConfig(this.d.configFile).config, projectId, o.asked);
+    const effort = o.effort ?? pick.effort;
+    if (pick.harness) return { pick: { ...pick, ...(effort ? { effort } : {}) }, route: null };
     const route =
-      (await this.d.route?.(projectId, { text, ...(e ? { effort: e } : {}) }).catch(() => null)) ?? null;
-    return { harness: route?.harness ?? (await projectAgent(this.d, projectId)), route };
+      (await this.d.route?.(projectId, { text, ...(effort ? { effort } : {}) }).catch(() => null)) ?? null;
+    const harness = route?.harness ?? (await projectAgent(this.d, projectId));
+    return { pick: { ...(harness ? { harness } : {}), ...(effort ? { effort } : {}) }, route };
   }
 
   /**
-   * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `o.request` is what the
-   * judge treats as your request: your own message, never a brief an ion's agent wrote. `o.title`: the thread's
-   * title; `o.effort`: its effort, over the project's.
+   * What you asked an ion to run a chat on, checked against the agent's sign-in (the user, 2026-11-24): why not, in
+   * one line the ion passes on ("Codex can't use x with this sign-in: it has a, b"), or null.
+   */
+  private async refusedPick(asked: ChatsPick): Promise<string | null> {
+    if (!asked.harness) return null;
+    // Live check, 2026-11-24: an ion asked for "grok"; an unknown agent says which there are.
+    const ids = listedHarnessIds();
+    if (!ids.includes(asked.harness) && !harnessIds().includes(asked.harness))
+      return `No agent called ${asked.harness}: use one of ${ids.join(", ")}`;
+    const h = await this.d.agent?.(asked.harness).catch(() => undefined);
+    const label = h?.label ?? asked.harness;
+    if (!h?.installed || !h.signedIn) return `${label} isn't signed in`;
+    if (!asked.model || h.models.some((m) => m.id === asked.model)) return null;
+    return `${label} can't use ${asked.model} with this sign-in: it has ${h.models.map((m) => m.id).join(", ")}`;
+  }
+
+  /**
+   * Starts a thread in the project: the thread, or why it couldn't. `o.request` is what the judge treats as your
+   * request: your own message, never a brief an ion's agent wrote. `o.title`: the thread's title; `o.effort`: its
+   * effort, over the project's; `o.harness`/`model`: what you asked this chat to run on (checked first).
    */
   private async thread(
     projectId: string,
     text: string,
     o: { request?: string; title?: string; effort?: Effort } & ThreadPicks = {},
   ): Promise<Thread | { why: string }> {
-    const { harness, route } = await this.threadAgent(projectId, o.effort, text);
+    const asked = askedOf(o);
+    const refused = await this.refusedPick(asked);
+    if (refused) return { why: refused };
+    const { pick, route } = await this.threadAgent(projectId, { asked, ...effortOf(o) }, text);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
-      const args = {
-        projectId,
-        text,
-        ...(harness ? { harness } : {}),
-        ...brainOf(this.d.configFile, projectId, harness),
-        ...(o.effort ? { effort: o.effort } : {}),
-        ...(o.skills?.length ? { skills: o.skills } : {}),
-        ...(o.mentions?.length ? { mentions: o.mentions } : {}),
-        access: "auto" as const,
-      };
+      const args = { ...{ projectId, text, ...pick }, ...namedPicks(o), access: "auto" as const };
       const opts = {
         ...{ by: "ion" as const, ...(o.request ? { request: o.request } : {}) },
         ...(route ? { routed: route.reason } : {}),
@@ -370,6 +389,18 @@ export class Ions {
     return e ? String((e.data as { text?: unknown }).text ?? "") : "";
   }
 }
+
+/** What you asked an ion to run this chat on (only what was given). */
+const askedOf = (o: ThreadPicks): ChatsPick => ({
+  ...(o.harness ? { harness: o.harness } : {}),
+  ...(o.model ? { model: o.model } : {}),
+});
+const effortOf = (o: { effort?: Effort }) => (o.effort ? { effort: o.effort } : {});
+/** The skills and connections picked for a thread (only the ones given). */
+const namedPicks = (o: ThreadPicks) => ({
+  ...(o.skills?.length ? { skills: o.skills } : {}),
+  ...(o.mentions?.length ? { mentions: o.mentions } : {}),
+});
 
 /** The threads a reply carries, as its card (none when it started none). */
 function threadsCard(threads: Thread[]): IonCard | undefined {

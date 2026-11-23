@@ -141,82 +141,6 @@ describe("Settings", () => {
     expect(screen.queryByRole("radiogroup", { name: "Quick" })).toBeNull();
   });
 
-  // The user, 2026-11-23: "Orchestrator brain should be a better brain than the worker thread model"; a fresh ion
-  // thinks on "the strongest model you're signed in to". Ions → ion shows it (the daemon resolves it), keeps your
-  // pick of agent, model and effort, and has a way back to the strongest.
-  it("shows the strongest model ion thinks on, keeps a pick, and goes back to the strongest", async () => {
-    const strongest = { agent: "grok-build", model: "grok-code", effort: "high" as const };
-    const c = client({ settings: { quick: "", quickNow: "grok-build:grok-code", strongest } });
-    render(<Settings client={c} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
-    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
-    expect(await screen.findByText("Strongest you have: Grok Build · grok-code · High")).toBeTruthy();
-    const brain = within(screen.getByRole("radiogroup", { name: "Thinks with" }));
-    await waitFor(() =>
-      expect(brain.getByRole("radio", { name: "Strongest" }).getAttribute("aria-checked")).toBe("true"),
-    );
-    fireEvent.change(screen.getByLabelText("Thinks with model"), { target: { value: "grok-code-fast" } });
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { quick: "grok-build:grok-code-fast" } });
-    fireEvent.click(
-      within(screen.getByRole("group", { name: "ion's effort" })).getByRole("button", { name: "Low" }),
-    );
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { effort: "low" } });
-    cleanup();
-    const picked = client({ settings: { quick: "grok-build", quickNow: "grok-build", strongest } });
-    render(<Settings client={picked} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
-    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
-    const mine = within(await screen.findByRole("radiogroup", { name: "Thinks with" }));
-    await waitFor(() =>
-      expect(mine.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
-    );
-    fireEvent.click(mine.getByRole("radio", { name: "Strongest" }));
-    expect(picked.call).toHaveBeenCalledWith("settings.set", { patch: { quick: null } });
-  });
-
-  // Plan 21 audit, 2026-11-23: Auto's judge ran on Claude Code and Settings never showed it. It's picked like Quick;
-  // none set shows the agent it follows (the first ready in your order).
-  it("shows the judge's agent and picks it like the quick model", async () => {
-    const c = client({ settings: { judge: "", judgeNow: "grok-build:grok-code-fast", judgeChecked: true } });
-    render(<Settings client={c} onOpenIon={() => {}} />);
-    const judge = () => within(screen.getByRole("radiogroup", { name: "Judge" }));
-    fireEvent.change(await screen.findByLabelText("Judge model"), { target: { value: "grok-code-fast" } });
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { judge: "grok-build:grok-code-fast" } });
-    fireEvent.click(await judge().findByRole("radio", { name: "Grok Build" }));
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { judge: "grok-build" } });
-  });
-
-  // PR #36 review, 2026-11-23: none set, the Judge row says it follows your order (and whom, from the
-  // daemon), with a way back to it; a judge you set on a model ion's evals didn't check says so, quietly.
-  it("shows when ion's models follow your order, goes back to it, and flags an unchecked judge", async () => {
-    const c = client({
-      settings: {
-        quick: "",
-        quickNow: "grok-build",
-        judge: "",
-        judgeNow: "grok-build:grok-code-fast",
-        judgeChecked: true,
-      },
-    });
-    render(<Settings client={c} onOpenIon={() => {}} />);
-    const judge = within(await screen.findByRole("radiogroup", { name: "Judge" }));
-    await waitFor(() =>
-      expect(judge.getByRole("radio", { name: "Your order" }).getAttribute("aria-checked")).toBe("true"),
-    );
-    const grok = await judge.findByRole("radio", { name: "Grok Build" });
-    expect(grok.getAttribute("aria-checked")).toBe("false");
-    expect(grok.className).toContain("now");
-    expect(screen.queryByText("Not checked by ion’s evals")).toBeNull();
-    cleanup();
-    const set = client({ settings: { judge: "grok-build", judgeNow: "grok-build", judgeChecked: false } });
-    render(<Settings client={set} onOpenIon={() => {}} />);
-    expect(await screen.findByText("Not checked by ion’s evals")).toBeTruthy();
-    fireEvent.click(
-      within(screen.getByRole("radiogroup", { name: "Judge" })).getByRole("radio", { name: "Your order" }),
-    );
-    expect(set.call).toHaveBeenCalledWith("settings.set", { patch: { judge: null } });
-  });
-
   // The user, 2026-11-21: "Only ion's, plus Import". Grok has no switch for its own servers, hooks and plugins, so
   // with "Use its own tools" off Settings says it also loads its own; the others load only ion's.
   it("says which agent also loads its own servers and hooks", async () => {
@@ -345,9 +269,7 @@ describe("Settings", () => {
   it("picks the effort ion thinks at", async () => {
     const c = client();
     render(<Settings client={c} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
-    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
-    const effort = await screen.findByRole("group", { name: "ion's effort" });
+    const effort = await screen.findByRole("group", { name: "Ions' effort" });
     expect(within(effort).getByRole("button", { name: "Default" }).className).toContain("on");
     fireEvent.click(within(effort).getByRole("button", { name: "Low" }));
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { effort: "low" } });
@@ -465,14 +387,25 @@ describe("Settings, reviewed", () => {
     await screen.findByRole("heading", { name: "Shop" });
   };
 
-  it("saves the agent it shows with a model picked for a project with none of its own", async () => {
+  // The user, 2026-11-24: a project's own agent, model and effort, under More, are for the chats its ion starts.
+  it("sets the agent and model its ion's chats run on, under More, and goes back to the default", async () => {
     const c = client({ projects: [{ ...projects[0]!, harness: undefined } as ProjectInfo] });
     await openShop(c);
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    const runsOn = within(screen.getByRole("radiogroup", { name: "Its chats run on" }));
+    expect(runsOn.getByRole("radio", { name: "Default" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(runsOn.getByRole("radio", { name: "Grok Build" }));
     expect(c.call).toHaveBeenCalledWith("project.update", {
       projectId: "shop",
       harness: "grok-build",
-      model: "grok-code-fast",
+      model: null,
+    });
+    fireEvent.click(runsOn.getByRole("radio", { name: "Default" }));
+    expect(c.call).toHaveBeenCalledWith("project.update", {
+      projectId: "shop",
+      harness: null,
+      model: null,
+      effort: null,
     });
   });
 
@@ -495,13 +428,10 @@ describe("Settings, reviewed", () => {
   });
 
   it("says why ion's model didn't change", async () => {
-    const c = client({ fail: ["settings.set"], settings: { quick: "grok-build", quickNow: "grok-build" } });
+    const c = client({ fail: ["settings.set"] });
     render(<Settings client={c} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
-    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
-    fireEvent.change(await screen.findByLabelText("Thinks with model"), {
-      target: { value: "grok-code-fast" },
-    });
+    const brain = within(await screen.findByRole("radiogroup", { name: "Ions think with" }));
+    fireEvent.click(await brain.findByRole("radio", { name: "Grok Build" }));
     expect(await screen.findByText("Fix your config first.")).toBeTruthy();
   });
 

@@ -293,9 +293,10 @@ describe("a thread an ion starts", () => {
     });
   });
 
-  // Review, 2026-11-19: Settings shows a project's agent as its own or its last chat's, and the model and effort set
-  // there were dropped unless the agent had been picked explicitly.
-  it("runs on the model and effort set for the agent Settings shows (its last chat's)", async () => {
+  // Review, 2026-11-19: the effort set for a project was dropped unless its agent had been picked explicitly. The user,
+  // 2026-11-24: a project's own agent, model and effort are one override (its page → More); a model set without an
+  // agent names no agent's model, so only the effort applies.
+  it("runs at the project's effort on the agent it goes on", async () => {
     saveUserConfig(configFile, {
       ...DEFAULT_CONFIG,
       projects: [
@@ -308,10 +309,30 @@ describe("a thread an ion starts", () => {
       request: "Fix the cart",
       turnId: "turn_1",
     });
-    expect(ask.mock.calls[0]![0]).toMatchObject({
-      harness: "grok-build",
-      model: "grok-code",
-      effort: "high",
+    expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build", effort: "high" });
+    expect(ask.mock.calls[0]![0]).not.toHaveProperty("model");
+  });
+
+  // The user, 2026-11-24: an agent, model and effort you asked an ion for run that one chat, checked against the
+  // sign-in first. Live check, 2026-11-24: an ion asked for "grok" (not an agent's id) and was told Grok Build isn't
+  // signed in; an unknown agent says so, naming the ones there are.
+  it("runs one chat on what you asked for, or says why not", async () => {
+    const grok = { ...agent("grok-build", true), models: [{ id: "big", label: "big" }] };
+    const i = new Ions({
+      ...{ store, db, configFile, runs: { ask }, turns: { turn } },
+      agents: async () => [grok],
+      agent: async (id: string) => (id === "grok-build" ? grok : undefined),
+    });
+    const turnOf = { ionId: "storefront", request: "x", turnId: "turn_1" };
+    await i.startThread("storefront", "x", turnOf, { harness: "grok-build", model: "big", effort: "low" });
+    expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build", model: "big", effort: "low" });
+    expect(await i.startThread("storefront", "x", turnOf, { harness: "grok-build", model: "small" })).toEqual(
+      {
+        why: "grok-build can't use small with this sign-in: it has big",
+      },
+    );
+    expect(await i.startThread("storefront", "x", turnOf, { harness: "grok" })).toMatchObject({
+      why: expect.stringMatching(/^No agent called grok: use one of .*grok-build/),
     });
   });
 

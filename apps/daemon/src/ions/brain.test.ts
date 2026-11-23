@@ -1,13 +1,13 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
+import { DEFAULT_CONFIG, saveUserConfig, type UserConfig } from "@ion/config";
 import { clockOf, type HarnessInfo, type NewEvent } from "@ion/schema";
 import { describe, expect, it, vi } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { brainModel, getHarness } from "../adapters/registry.js";
-import { allLimited, ionBrain, nextBrain, strongestBrain } from "./brain.js";
+import { allLimited, chatsPick, ionBrain, nextBrain, strongestBrain } from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
 // test run past a test's wait), even when the agent was already chosen. Only the chosen one is checked; every agent
@@ -96,8 +96,6 @@ describe("an ion's agent", () => {
         effort: "high",
       });
       expect(await ionBrain(d(all), "app")).toMatchObject({ harness: "claude-code", effort: "high" });
-      // Dream is low-decision work: your order.
-      expect(await ionBrain(d(["claude-code", "opencode"]), "_dream")).toMatchObject({ harness: "opencode" });
       // Claude Code limited: Codex, the next strongest, said once.
       const db = viewsDb();
       const store = new EventStore(db, allViews);
@@ -222,21 +220,44 @@ describe("an ion's agent", () => {
     }
   });
 
-  // PR #36 re-review (I1), 2026-11-23: Dream is low-decision work: [memory] dreamAgent, else your agent order, never
-  // ion's brain.
-  it("dreams on your pick, else your order, never ion's brain", async () => {
+  // The user, 2026-11-24 ("yes, please"): Dream thinks with ions' brain (your pick, else the strongest) at Medium, on
+  // an agent that can turn its web off: when the brain's can't, the next strongest that can, said once in the log. An
+  // explicit [memory] dreamAgent from an older config still wins.
+  it("dreams with ion's brain at Medium, on an agent that can turn its web off", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
-    saveUserConfig(configFile, {
-      ...DEFAULT_CONFIG,
-      ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build" },
-      memory: { dream: "nightly" },
-    });
-    const d = {
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, memory: { dream: "nightly" } });
+    const d = (ids: string[]) => ({
       configFile,
       db: viewsDb(),
-      agents: async () => [info("grok-build", true), info("opencode", true)],
-    };
-    expect(await ionBrain(d, "_dream")).toMatchObject({ harness: "opencode" });
+      agents: async () => ids.map((id) => info(id, true)),
+    });
+    expect(await ionBrain(d(["opencode", "codex"]), "_dream")).toEqual({
+      harness: "codex",
+      model: brainModel("codex"),
+      effort: "medium",
+    });
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "fake", quickEffort: "low" },
+      memory: { dream: "nightly" },
+    });
+    const logged: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((l: string) => void logged.push(l));
+    process.env.ION_FAKE_HAS_WEB = "1";
+    try {
+      expect(await ionBrain(d(["fake", "opencode"]), "_dream")).toMatchObject({
+        harness: "opencode",
+        effort: "low",
+      });
+      await ionBrain(d(["fake", "opencode"]), "_dream");
+      expect(logged).toEqual(["ion's dream: Fake can't turn its web off; it dreams on opencode"]);
+    } finally {
+      delete process.env.ION_FAKE_HAS_WEB;
+      warn.mockRestore();
+    }
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, memory: { dream: "nightly", dreamAgent: "opencode" } });
+    expect(await ionBrain(d(["opencode", "codex"]), "_dream")).toMatchObject({ harness: "opencode" });
   });
 
   // The user, 2026-11-22: an agent marked limited (by any chat's run or ion's turn) is skipped like one that isn't
@@ -307,5 +328,25 @@ describe("an ion's agent", () => {
       expect(await allLimited(d)).toBe(`opencode is limited until ${clock}`);
       expect(await allLimited(setup({ "grok-build": at(3), opencode: null }))).toBeNull();
     });
+  });
+});
+
+// The user, 2026-11-24: what a chat an ion starts runs on, when one is set: what you asked for that chat (through the
+// ion), else the project's own (its page → More), else "Chats ions start run on"; none: Automatic picks.
+describe("what chats ions start run on", () => {
+  const c = (more: Partial<UserConfig> = {}): UserConfig => ({
+    ...DEFAULT_CONFIG,
+    projects: [
+      { id: "web", path: "/w", starred: false, harness: "codex", model: "gpt-5.6-sol", effort: "low" },
+      { id: "app", path: "/a", starred: false },
+    ],
+    ...more,
+  });
+  it("takes what you asked, else the project's own, else the setting, else Automatic", () => {
+    const set = c({ ion: { ...DEFAULT_CONFIG.ion, chats: "grok-build:grok-4.7", chatsEffort: "medium" } });
+    expect(chatsPick(set, "web", { harness: "opencode" })).toEqual({ harness: "opencode" });
+    expect(chatsPick(set, "web")).toEqual({ harness: "codex", model: "gpt-5.6-sol", effort: "low" });
+    expect(chatsPick(set, "app")).toEqual({ harness: "grok-build", model: "grok-4.7", effort: "medium" });
+    expect(chatsPick(c(), "app")).toEqual({});
   });
 });
