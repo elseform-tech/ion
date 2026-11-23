@@ -82,4 +82,17 @@ describe("HarnessInfos", () => {
     expect((await listed)[0]!.label).toBe("claude 1");
     expect(load).toHaveBeenCalledTimes(1);
   });
+
+  // The controller's end-to-end check, 2026-11-23: the limit question came ~5 s after the run failed (the agents
+  // offered waited on opencode's slow first sign-in check), so `ion needs` was empty meanwhile. What's known answers
+  // at once; a first read still going is waited on briefly, never longer.
+  it("answers soon with what it knows, not waiting on a slow first read", async () => {
+    const infos = new HarnessInfos(["a", "slow"], (id) =>
+      id === "slow" ? new Promise<HarnessInfo>(() => {}) : Promise.resolve(info(id, 1)),
+    );
+    infos.warm();
+    const t0 = Date.now();
+    expect((await infos.soon(100)).map((h) => h.id)).toEqual(["a"]);
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
 });

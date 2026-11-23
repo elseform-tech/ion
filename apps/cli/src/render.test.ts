@@ -16,6 +16,28 @@ const ev = (type: string, data: Record<string, unknown>): IonEvent =>
   }) as IonEvent;
 
 describe("render", () => {
+  // The controller's end-to-end check, 2026-11-23: at a limit `ion ask` printed "Failed: …" and quit before ion's
+  // question ("Continue on …, or wait?") came. It stays a moment for the question and shows it.
+  it("stays for ion's question after a limit, and shows it", () => {
+    const r = createRenderer();
+    r(ev("run.started", { harness: "fake" }));
+    r(ev("error", { code: "usage_limit", message: "Fake usage limit reached", limit: {} }));
+    const failed = r(ev("run.finished", { status: "failed" }));
+    expect(failed.text).toBe("Failed: Fake usage limit reached\n");
+    expect(failed.end).toBeUndefined();
+    expect(failed.soon).toEqual({ status: "failed", code: 1 });
+    const asked = r(
+      ev("need.raised", {
+        needId: "n1",
+        kind: "ask",
+        summary: "Fake hit its limit. Continue on opencode, or wait?",
+        choices: [{ label: "Continue on opencode", consequence: "It picks up.", recommended: true }],
+      }),
+    );
+    expect(asked.text).toContain("· Asked you: Fake hit its limit. Continue on opencode, or wait?");
+    expect(asked.end).toEqual({ status: "failed", code: 1 });
+  });
+
   it("shows an edit without line counts as just the path", () => {
     const r = createRenderer();
     expect(

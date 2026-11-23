@@ -15,6 +15,9 @@ type AskOpts = {
   access?: string;
 };
 
+/** How long `ion ask` stays after a limit for ion's question about it. */
+const QUESTION_WAIT_MS = 3000;
+
 /** Prints the run's events as they arrive and resolves when it finishes. */
 function follow(
   client: IonClient,
@@ -37,10 +40,15 @@ function follow(
         if (json) process.stdout.write(`${JSON.stringify(e)}\n`);
         const r = render(e);
         if (!json && r.text) process.stdout.write(r.text);
-        if (r.end) {
+        const finish = (end: RunEnd) => {
+          if (done) return;
           done = true;
-          resolve(r.end);
-        }
+          resolve(end);
+        };
+        if (r.end) finish(r.end);
+        // A limit: ion asks what to do next right after; the run's output ends with its question, or soon after.
+        const soon = r.soon;
+        if (soon) setTimeout(() => finish(soon), QUESTION_WAIT_MS);
       })
       .catch(lost);
   });

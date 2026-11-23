@@ -61,6 +61,20 @@ export class HarnessInfos {
     return this.cached();
   }
 
+  /**
+   * What's known, waiting `maxMs` at most for first reads still going (ion's limit question can't wait on a slow
+   * agent's sign-in check: the controller's end-to-end check, 2026-11-23).
+   */
+  async soon(maxMs: number): Promise<HarnessInfo[]> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<void>((r) => {
+      timer = setTimeout(r, maxMs);
+    });
+    await Promise.race([this.list().catch(() => {}), late]);
+    clearTimeout(timer);
+    return this.cached();
+  }
+
   /** One agent ion knows (read alone), or undefined. */
   async one(id: string): Promise<HarnessInfo | undefined> {
     return this.idList().includes(id) ? this.get(id) : undefined;

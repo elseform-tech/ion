@@ -17,6 +17,9 @@ export const followAsk = (chatId: string, m: { harness: string | null; text: str
   ...(m.harness ? { harness: m.harness } : {}),
 });
 
+/** How long ion's limit question waits on a first sign-in check still going (only just after ion starts). */
+const READY_WAIT_MS = 1500;
+
 type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; configFile: string };
 
 /**
@@ -29,7 +32,7 @@ function limitHandoffs(d: Deps): Handoffs {
     ...{ store: d.store, db: d.db, needs: d.needs, label: agentLabel, waits: new Waits() },
     ready: async () =>
       byPreference(
-        (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id),
+        (await harnessInfos.soon(READY_WAIT_MS)).filter((h) => h.installed && h.signedIn).map((h) => h.id),
         orderIn(d.configFile),
       ),
     onLimit: () => loadUserConfig(d.configFile).config.routing.onLimit,

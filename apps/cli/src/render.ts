@@ -20,7 +20,8 @@ const VERB: Record<string, string> = {
 type D = Record<string, unknown>;
 
 export type RunEnd = { status: string; code: number };
-type Rendered = { text: string; end?: RunEnd };
+/** `soon`: the run ended, but ion may still ask what to do next (a limit): end unless its question comes. */
+type Rendered = { text: string; end?: RunEnd; soon?: RunEnd };
 
 /** What the renderer remembers between events of one run. */
 type State = {
@@ -29,6 +30,8 @@ type State = {
   cost: number | null;
   lastError: string | null;
   asks: Map<string, string>;
+  /** The run failed on a limit: ion's question about it ends the run's output. */
+  limited?: RunEnd;
 };
 
 /** A full line, starting on a fresh line if streamed text left one open. */
@@ -50,7 +53,9 @@ function endLine(s: State, status: string, ts: string): Rendered {
   if (status === "interrupted") return { text: line(s, "Stopped"), end: { status, code: 130 } };
   if (status === "capped")
     return { text: line(s, "Stopped: spending cap reached"), end: { status, code: 1 } };
-  return { text: line(s, `Failed: ${s.lastError ?? "the run stopped"}`), end: { status, code: 1 } };
+  const failed = line(s, `Failed: ${s.lastError ?? "the run stopped"}`);
+  if (s.limited) return { text: failed, soon: s.limited };
+  return { text: failed, end: { status, code: 1 } };
 }
 
 const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered>> = {
@@ -96,6 +101,7 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
     const ask = line(s, `· Asked you: ${clean(d.summary)}`);
     return {
       text: `${ask}${choices.join("")}  Answer: ion answer ${clean(d.needId)} <number, or your own words>\n`,
+      ...(s.limited ? { end: s.limited } : {}),
     };
   },
   [EV.needResolved]: (s, d) =>
@@ -121,6 +127,7 @@ const HANDLERS: Partial<Record<string, (s: State, d: D, e: IonEvent) => Rendered
   },
   [EV.error]: (s, d) => {
     s.lastError = clean(d.message);
+    if (d.limit) s.limited = { status: "failed", code: 1 };
     return quiet;
   },
   [EV.runFinished]: (s, d, e) => endLine(s, String(d.status), e.ts),
