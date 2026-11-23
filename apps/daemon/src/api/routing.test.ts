@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG, type UserConfig } from "@ion/config";
-import type { AgentUsage } from "@ion/schema";
+import type { AgentUsage, NewEvent } from "@ion/schema";
 import { describe, expect, it } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
@@ -21,7 +21,38 @@ const db = () => {
   return new EventStore(d, allViews) && d;
 };
 
+/** Past chats in `default` on opencode, each a short change that took `tokens` in all. */
+function past(d: ReturnType<typeof db>, tokens: number[]) {
+  const store = new EventStore(d, allViews);
+  tokens.forEach((t, i) => {
+    const [chatId, runId] = [`c${i}`, `r${i}`];
+    const add = (type: string, data: object, origin = "daemon") =>
+      store.append({
+        chatId,
+        runId: type.startsWith("chat") || type === "message.sent" ? null : runId,
+        origin,
+        type,
+        data,
+      } as NewEvent);
+    add("chat.created", { title: "t", projectId: "default" });
+    add("message.sent", { text: "Add a line to notes.md" });
+    add("run.started", { harness: "opencode", model: "m", effort: null, authMethod: null }, "adapter");
+    add("usage.reported", { model: "m", inputTokens: t - 10, outputTokens: 10, totalTokens: t }, "adapter");
+    add("run.finished", { status: "done" });
+  });
+}
+
 describe("Pick by usage", () => {
+  // Review of fb615b0, 2026-11-23: the estimate Pick by usage works out for its pick is handed back (the brain
+  // pill's hover uses it), not worked out a second time.
+  it("hands back what the request usually takes on the agent it picked", () => {
+    const d = db();
+    past(d, [1000, 2000, 3000, 4000, 5000]);
+    const c = config({ byUsage: true });
+    const r = routeBy(c, [usage("opencode", "opencode", { billing: "free" })], { db: d, text: "Add a test" });
+    expect(r?.estimate).toEqual({ unit: "tokens", low: 3000, high: 5000 });
+  });
+
   // The user, 2026-11-22: Pick by usage is off at first; ion's usual default applies.
   it("is off by default", () => {
     expect(routeBy(DEFAULT_CONFIG, [usage("opencode", "opencode")], { db: db() })).toBeNull();

@@ -103,6 +103,7 @@
       "model": "claude-haiku-5-5",
       "inputTokens": 4,
       "outputTokens": 171,
+      "totalTokens": 77778,
       "costUsd": 0.00645004,
       "windows": [
         {

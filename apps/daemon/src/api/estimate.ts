@@ -24,14 +24,22 @@ export async function estimateFor(ctx: Ctx, a: Ask, known: HarnessInfo[]): Promi
   const usage = await usageNow(ctx, known);
   const ready = usage.map((u) => u.harness);
   const c = loadUserConfig(ctx.configFile).config;
+  // Pick by usage's pick already worked out what the request usually takes on it: that one, not a second time.
+  let route: ReturnType<typeof routeBy> = null;
   const routed = () => {
     if ("chatId" in a || a.harness) return null;
-    const where = { db: ctx.db, text: a.text, ...(a.projectId ? { projectId: a.projectId } : {}) };
-    return routeBy(c, usage, where)?.harness ?? null;
+    route = routeBy(c, usage, {
+      db: ctx.db,
+      text: a.text,
+      ...(a.projectId ? { projectId: a.projectId } : {}),
+    });
+    return route?.harness ?? null;
   };
   const q: EstimateAsk | null =
     "chatId" in a ? chatAsk(ctx.db, String(a.chatId)) : newAsk(ctx, a, ready, routed);
   if (!q) return null;
+  const picked = route as ReturnType<typeof routeBy>;
+  if (picked?.harness === q.harness) return picked.estimate ?? null;
   const u = usage.find((x) => x.harness === q.harness);
   return estimateOf(ctx.db, q, { billing: u?.billing ?? null, windows: u?.windows ?? [] });
 }

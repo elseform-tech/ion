@@ -41,6 +41,7 @@ export const runsView: View & {
     db.exec(`CREATE TABLE IF NOT EXISTS view_runs (
       run_id TEXT PRIMARY KEY, chat_id TEXT, status TEXT NOT NULL,
       harness TEXT, model TEXT, started_at TEXT, finished_at TEXT, cost REAL)`);
+    db.exec("CREATE INDEX IF NOT EXISTS view_runs_chat ON view_runs (chat_id)");
   },
   reset(db) {
     db.exec("DELETE FROM view_runs");

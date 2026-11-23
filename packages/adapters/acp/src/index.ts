@@ -141,7 +141,14 @@ async function startAcp(h: AcpHarness, path: string | null, deps: AcpDeps, opts:
   const want = wanted(h, opts);
   const model = (await setOption(c, "model", want.model)) ?? h.defaultModel ?? "default";
   await setOption(c, "thought_level", want.effort === "max" ? "high" : want.effort);
-  return startAcpSession(c, { ...opts, effort: want.effort }, { harness: h.id, model, silent: silenceOf(h) });
+  return startAcpSession(
+    c,
+    { ...opts, effort: want.effort },
+    {
+      ...{ harness: h.id, model, silent: silenceOf(h) },
+      ...(h.fullTokens ? { fullTokens: true } : {}),
+    },
+  );
 }
 
 /** A start with no web (ion's dream): the harness's way to turn its web off, or an error when it has none. */

@@ -8,6 +8,7 @@ import { Resizer } from "../chats/Resizer.js";
 import { workSeconds } from "../chats/steps.js";
 import type { Item, Timeline } from "../chats/timeline.js";
 import { current, duration, useNow } from "../chats/Work.js";
+import { useState } from "react";
 import { IonAvatar } from "./IonAvatar.js";
 
 type Work = Extract<Item, { kind: "work" }>;
@@ -50,16 +51,20 @@ type LineProps = {
  */
 export function ThreadLine(p: LineProps) {
   const s = useThread(p.client, p.chatId, p.chat);
-  const estimate = useEstimate(p.client, { chatId: p.chatId });
+  // What such a task usually takes: asked on the first hover, and only while the thread is at work.
+  const [hovered, setHovered] = useState(false);
+  const atWork = s.live || s.waiting;
+  const estimate = useEstimate(p.client, hovered && atWork ? { chatId: p.chatId } : null);
   return (
     <button
       className={`tl${p.on ? " on" : ""}`}
       type="button"
       aria-pressed={p.on}
       onClick={p.onOpen}
+      onMouseEnter={() => setHovered(true)}
       // Why Pick by usage put the thread on its agent (the user, 2026-11-22) and what such a task usually takes, on
       // hover.
-      title={[s.why, estimate].filter(Boolean).join("\n") || undefined}
+      title={[s.why, atWork ? estimate : null].filter(Boolean).join("\n") || undefined}
     >
       {p.ion ? <IonAvatar ion={p.ion} /> : null}
       <b>{p.projectId}</b>

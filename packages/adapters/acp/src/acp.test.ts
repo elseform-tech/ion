@@ -472,6 +472,18 @@ describe("acp adapter", () => {
     });
   });
 
+  // Review of fb615b0, 2026-11-23 (probed on opencode 1.18.8): a run's total is every token it processed. Grok's
+  // _meta counts the whole turn; opencode's prompt result counts only the turn's last step (5 steps: 13,957 of
+  // 68,235), so it has no total and never makes a token estimate.
+  it("tokens include cached context", async () => {
+    const grok = await turn({ ...fake, fullTokens: true }, "grokusage");
+    expect(grok.find((e) => e.type === "usage.reported")?.data).toMatchObject({ totalTokens: 28203 });
+    const opencode = await turn(fake, "laststep");
+    const u = opencode.find((e) => e.type === "usage.reported")?.data;
+    expect(u).toMatchObject({ inputTokens: 357, outputTokens: 32 });
+    expect(u).not.toHaveProperty("totalTokens");
+  });
+
   // The user, 2026-11-21: how an agent bills comes from its sign-in, said by its harness; none said is unknown.
   it("billing comes from the sign-in", async () => {
     expect(

@@ -86,6 +86,11 @@ export type AcpHarness = {
   };
   /** Its own command that deletes a session from its history (ion's judge sessions don't pile up among yours). */
   forgetArgs?: (sessionId: string) => string[];
+  /**
+   * Its prompt result counts every token the turn processed (cached context too), so ion keeps a total for the run.
+   * Absent: the count is partial (opencode's covers only the turn's last step) and the run has no total.
+   */
+  fullTokens?: true;
   /** How its sign-in bills, when ion knows (docs/research/usage-signals.md); absent: unknown, never free. */
   billing?: Billing;
   /** Asks the agent how these models bill (opencode: its own price for each); undefined: unknown. */
@@ -98,6 +103,8 @@ const grokHome = () => process.env.GROK_HOME ?? join(homedir(), ".grok");
 export const GROK_BUILD: AcpHarness = {
   id: "grok-build",
   label: "Grok Build",
+  // Its prompt result's _meta counts the whole turn (docs/research/usage-signals.md).
+  fullTokens: true,
   bin: "grok",
   // The command line outranks the user's config.toml (where permission_mode may be "always-approve").
   args: ["--permission-mode", "default", "agent", "stdio"],

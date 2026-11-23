@@ -57,7 +57,8 @@ export type TaskEstimate =
 
 /** Tokens in few figures, with the unit only on the high end when both share it: "40", "120k", "1.2M". */
 function tokens(n: number): { n: string; unit: string } {
-  if (n >= 1_000_000) return { n: String(Math.round(n / 100_000) / 10), unit: "M" };
+  // From 999.5k it rounds to a thousand k: "1M", never "1000k".
+  if (n >= 999_500) return { n: String(Math.round(n / 100_000) / 10), unit: "M" };
   if (n >= 1000) return { n: String(Math.round(n / 1000)), unit: "k" };
   return { n: String(n), unit: "" };
 }
@@ -65,13 +66,18 @@ function tokens(n: number): { n: string; unit: string } {
 /** Low to high, or one figure when they're the same: "40–120k", "5–10%". */
 const span = (low: string, high: string) => (low === high ? high : `${low}–${high}`);
 
+/** Dollars to the cent; a low end under a cent says only the high end ("under $0.05", "under $0.01"). */
+function dollars(low: number, high: number): string {
+  const usd = (n: number) => "$" + Math.max(0.01, n).toFixed(2);
+  return low < 0.01 ? `under ${usd(high)}` : span(usd(low), usd(high));
+}
+
 /**
  * What a task usually takes, in words: "usually 40–120k tokens", "usually $0.20–$0.60", "usually 5–10% of 5 h".
  * A share rounds to whole percent, never below 1.
  */
 export function estimateText(e: TaskEstimate): string {
-  const usd = (n: number) => "$" + n.toFixed(2);
-  if (e.unit === "usd") return `usually ${span(usd(e.low), usd(e.high))}`;
+  if (e.unit === "usd") return `usually ${dollars(e.low, e.high)}`;
   if (e.unit === "percent") {
     const pct = (n: number) => String(Math.max(1, Math.round(n)));
     return `usually ${span(pct(e.low), pct(e.high))}% of ${e.window}`;

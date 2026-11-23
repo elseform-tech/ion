@@ -89,6 +89,19 @@ names, units and the kind of sign-in.
 - **Billing:** its ACP auth methods are `cached_token` (from `grok login`) and `grok.com` ("Sign in with Grok"): a
   Grok plan, `subscription`.
 
+## What a run's total counts (estimates)
+
+A run's `totalTokens` is every token it processed: input with the cached context it read and wrote, and output.
+ion's estimates ("usually 40–120k tokens") add these up per chat. When an agent's count is known to be partial, the
+run has no total and that agent never shows a token estimate. Checked 2026-11-23:
+
+| Agent | Total | Why |
+|---|---|---|
+| Claude Code | `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens` of the `result` | `input_tokens` leaves out cached context: the fixture `denied.jsonl` is 4 + 28,858 + 48,864 + 702 = 78,428, not 706. |
+| Codex | `inputTokens + outputTokens`, summed over the turn's `tokenUsage.last` | Codex's `inputTokens` already include `cachedInputTokens` (a part of them). |
+| Grok Build | `_meta.inputTokens + outputTokens` | Its `_meta` counts the whole turn (its cost in ticks matches that count at its price). |
+| opencode | none | Probed with opencode 1.18.8 (big-pickle), one ACP turn of 5 steps (4 tool calls). The prompt result's `usage` (`inputTokens` 357, `cachedReadTokens` 13,568, `outputTokens` 32, `totalTokens` 13,957) is only the last step. Its one `usage_update` (`used` 13,925) is the last step's context. `opencode export` shows the 5 steps were 13,278 + 13,484 + 13,705 + 13,811 + 13,957 = 68,235. ACP gives no per-step counts, so ion keeps no total for opencode. |
+
 ## What ion does with them
 
 - Each adapter emits `usage.reported` with `inputTokens`, `outputTokens`, `costUsd` and, where the agent reports them,

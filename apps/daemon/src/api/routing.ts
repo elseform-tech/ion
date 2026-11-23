@@ -45,13 +45,14 @@ function estimates(db: Db, usage: AgentUsage[], q: { projectId: string; text?: s
 /**
  * Pick by usage (the user, 2026-11-22: off at first): the agent a new chat you picked none for goes on, and why in one
  * line; null when it's off or no agent is free (ion's usual default applies). "Verify, don't guess": headroom only
- * from the windows an agent reports; one limited only by ion's guess is tried, last.
+ * from the windows an agent reports; one limited only by ion's guess is tried, last. `estimate`: what the request
+ * usually takes on the agent picked (worked out once, for the brain pill's hover too).
  */
 export function routeBy(
   c: UserConfig,
   usage: AgentUsage[],
   o: { db: Db; projectId?: string; effort?: EffortLevel; text?: string; now?: Date },
-): { harness: string; reason: string } | null {
+): { harness: string; reason: string; estimate?: TaskEstimate } | null {
   if (!c.routing.byUsage) return null;
   const now = o.now ?? new Date();
   const rows = usageView.agents(o.db, now);
@@ -72,7 +73,9 @@ export function routeBy(
     ...(project ? { project } : {}),
     ...(deepAgent ? { deepAgent } : {}),
   });
-  return r.agent && r.reason ? { harness: r.agent, reason: r.reason } : null;
+  if (!r.agent || !r.reason) return null;
+  const mine = estimate[r.agent];
+  return { harness: r.agent, reason: r.reason, ...(mine ? { estimate: mine } : {}) };
 }
 
 /** Pick by usage for a new chat, from the agents ion knows now (read only when it's on). */

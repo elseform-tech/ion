@@ -458,6 +458,11 @@ export const dataSchemas: Partial<Record<EventType, z.ZodType>> = {
     model: z.string(),
     inputTokens: count,
     outputTokens: count,
+    /**
+     * Every token the run processed: its input with the cached context it read and wrote, and its output. Absent
+     * when the agent's count is known to be partial (opencode's covers only a turn's last step): no token estimate.
+     */
+    totalTokens: count.optional(),
     costUsd: z.number().min(0).nullable().optional(),
     /**
      * The agent's own rate-limit windows, as it reported them with this run (Codex's, Claude's): absent when it
@@ -511,9 +516,9 @@ export const EventSchema = Envelope.superRefine((e, ctx) => {
   const schema = dataSchemas[e.type];
   if (!schema) return;
   const r = schema.safeParse(e.data);
-  if (!r.success) {
-    for (const issue of r.error.issues) ctx.addIssue({ ...issue, path: ["data", ...issue.path] } as never);
-  }
+  // Each of its issues, under data.
+  for (const issue of r.success ? [] : r.error.issues)
+    ctx.addIssue({ ...issue, path: ["data", ...issue.path] } as never);
 });
 
 export type IonEvent<T extends EventType = EventType> = Omit<z.infer<typeof Envelope>, "type"> & { type: T };

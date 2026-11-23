@@ -110,6 +110,17 @@ describe("codex adapter", () => {
     ]);
   });
 
+  // Review of fb615b0, 2026-11-23: a run's total is every token it processed. Codex's inputTokens already include
+  // the cached input (cachedInputTokens is a part of them), so the total is input plus output.
+  it("tokens include cached context", async () => {
+    const events = await turn("hello");
+    expect(events.find((e) => e.type === "usage.reported")?.data).toMatchObject({
+      inputTokens: 120,
+      outputTokens: 8,
+      totalTokens: 128,
+    });
+  });
+
   // The user, 2026-11-21: a Codex that doesn't say (an older one, or a read that failed) shows no gauge at all.
   it("a missing gauge shows Learned from errors", async () => {
     process.env.FAKE_CODEX_NO_LIMITS = "1";

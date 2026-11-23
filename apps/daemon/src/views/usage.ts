@@ -29,14 +29,17 @@ const harnessOf = (db: Db, runId: string): string | null =>
   )?.harness ?? null;
 
 function reported(db: Db, e: IonEvent, harness: string, d: Data): void {
-  const tokens = Number(d.inputTokens ?? 0) + Number(d.outputTokens ?? 0);
+  // Every token it processed when the agent counts them all; else what it said (a partial count has no total).
+  const total = typeof d.totalTokens === "number" ? d.totalTokens : null;
+  const tokens = total ?? Number(d.inputTokens ?? 0) + Number(d.outputTokens ?? 0);
   const cost = typeof d.costUsd === "number" ? d.costUsd : 0;
   const model = typeof d.model === "string" ? d.model : null;
   // Its chat and the windows as it reported them: what estimates learn from (views/estimate.ts).
   const windows = Array.isArray(d.windows) && d.windows.length ? JSON.stringify(d.windows) : null;
   db.prepare(
-    "INSERT INTO view_usage (run_id, chat_id, harness, at, tokens, cost, model, windows) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(e.runId, e.chatId, harness, e.ts, tokens, cost, model, windows);
+    `INSERT INTO view_usage (run_id, chat_id, harness, at, tokens, total, cost, model, windows)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(e.runId, e.chatId, harness, e.ts, tokens, total, cost, model, windows);
   // Its windows as this run reported them: none (it stopped reporting) clears the last ones, never keeps them.
   db.prepare(
     `INSERT INTO view_usage_agents (harness, windows) VALUES (?, ?)
@@ -59,11 +62,6 @@ function limited(db: Db, e: IonEvent, harness: string, limit: Limit): void {
      ON CONFLICT (harness) DO UPDATE SET limited_until = excluded.limited_until, limited_at = excluded.limited_at,
        guessed = excluded.guessed`,
   ).run(harness, until, e.ts, limit.resetsAt ? 0 : 1);
-}
-
-/** A chat that changed files was an edit (else a question): estimates compare like with like. */
-function edited(db: Db, e: IonEvent): void {
-  if (e.chatId) db.prepare("INSERT OR IGNORE INTO view_usage_edits (chat_id) VALUES (?)").run(e.chatId);
 }
 
 /** A run that started after the mark and ended well: the agent got past its limit. */
@@ -156,26 +154,25 @@ export const recordTo =
 /** Each agent's usage ledger (tokens, cost, windows) and its limit, from its runs' events. */
 export const usageView: View & { agents(db: Db, now: Date): Record<string, AgentUsageRow> } = {
   name: "usage",
-  // 2: a limit's mark says whether its reset was guessed. 3: each usage row's model. 4: its chat and windows, and
-  // the chats that changed files (estimates).
-  version: 4,
+  // 2: a limit's mark says whether its reset was guessed. 3: each usage row's model. 4: its chat and windows
+  // (estimates). 5: its total (every token, cached context too; none when the agent's count is partial).
+  version: 5,
+  // view_usage_edits: version 4's, dropped.
   tables: ["view_usage", "view_usage_agents", "view_usage_edits"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_usage (
-      run_id TEXT, chat_id TEXT, harness TEXT NOT NULL, at TEXT NOT NULL, tokens INTEGER NOT NULL, cost REAL NOT NULL,
-      model TEXT, windows TEXT)`);
+      run_id TEXT, chat_id TEXT, harness TEXT NOT NULL, at TEXT NOT NULL, tokens INTEGER NOT NULL, total INTEGER,
+      cost REAL NOT NULL, model TEXT, windows TEXT)`);
+    db.exec("CREATE INDEX IF NOT EXISTS view_usage_chat ON view_usage (harness, chat_id)");
     db.exec("CREATE INDEX IF NOT EXISTS view_usage_at ON view_usage (at)");
     db.exec(`CREATE TABLE IF NOT EXISTS view_usage_agents (
       harness TEXT PRIMARY KEY, windows TEXT, limited_until TEXT, limited_at TEXT, guessed INTEGER)`);
-    db.exec("CREATE TABLE IF NOT EXISTS view_usage_edits (chat_id TEXT PRIMARY KEY)");
   },
   reset(db) {
     db.exec("DELETE FROM view_usage");
     db.exec("DELETE FROM view_usage_agents");
-    db.exec("DELETE FROM view_usage_edits");
   },
   apply(db, e) {
-    if (e.type === EV.fileChanged) edited(db, e);
     const watched = e.type === EV.usageReported || e.type === EV.error || e.type === EV.runFinished;
     if (!watched) return;
     const d = e.data as Data;

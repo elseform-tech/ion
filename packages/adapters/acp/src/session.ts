@@ -193,14 +193,23 @@ function trackTools(u: Record<string, unknown>, quiet: Quiet): void {
   else if (u.sessionUpdate === "tool_call") quiet.pause(id, TOOL_PAUSE_MS);
 }
 
-/** The turn's usage: tokens from the prompt result, cost from its updates (opencode) or its result (Grok). */
-function usageEvent(model: string, costUsd: number | null, usage: Usage | null): AdapterEvent {
+/**
+ * The turn's usage: tokens from the prompt result, cost from its updates (opencode) or its result (Grok). A total only
+ * for an agent whose result counts the whole turn (`full`; opencode's counts only its last step).
+ */
+function usageEvent(
+  run: { model: string; full?: boolean },
+  costUsd: number | null,
+  usage: Usage | null,
+): AdapterEvent {
+  const total = run.full && usage ? { totalTokens: usage.inputTokens + usage.outputTokens } : {};
   return {
     type: EV.usageReported,
     data: {
-      model,
+      model: run.model,
       inputTokens: usage?.inputTokens ?? 0,
       outputTokens: usage?.outputTokens ?? 0,
+      ...total,
       costUsd: costUsd ?? usage?.costUsd ?? null,
     },
   };
@@ -215,7 +224,7 @@ const quietFailure = (why: string, limited?: boolean): Failure =>
 export function startAcpSession(
   c: Connection,
   opts: StartOpts,
-  run: { harness: string; model: string; silent?: { ms: number; why: string } },
+  run: { harness: string; model: string; silent?: { ms: number; why: string }; fullTokens?: boolean },
 ): Session {
   const events = createEventQueue<AdapterEvent>();
   const state = createAcpState(projectRoots(opts.cwd));
@@ -229,7 +238,8 @@ export function startAcpSession(
   ) => {
     if (finished) return;
     if (failure) emit({ type: EV.error, data: failure });
-    if (state.costUsd !== null || usage) emit(usageEvent(run.model, state.costUsd, usage));
+    if (state.costUsd !== null || usage)
+      emit(usageEvent({ model: run.model, full: run.fullTokens }, state.costUsd, usage));
     emit({ type: EV.runFinished, data: { status } });
     finished = true;
     events.end();

@@ -206,8 +206,13 @@ function createRun(c: Connection, opts: StartOpts, events: EventQueue<AdapterEve
     if (failure) r.emit({ type: EV.error, data: failure });
     const usage = r.state.usage;
     const windows = r.state.windows ? { windows: r.state.windows } : {};
+    // Codex's inputTokens already include its cached input: the total is input plus output.
+    const total = usage ? { totalTokens: usage.inputTokens + usage.outputTokens } : {};
     if (usage)
-      r.emit({ type: EV.usageReported, data: { model: c.model, ...usage, costUsd: null, ...windows } });
+      r.emit({
+        type: EV.usageReported,
+        data: { model: c.model, ...usage, ...total, costUsd: null, ...windows },
+      });
     r.emit({ type: EV.runFinished, data: { status } });
     r.finished = true;
     events.end();

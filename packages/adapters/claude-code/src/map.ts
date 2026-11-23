@@ -216,6 +216,12 @@ function mapResult(msg: Obj, s: MapState): AdapterEvent[] {
         model,
         inputTokens: num(usage.input_tokens),
         outputTokens: num(usage.output_tokens),
+        // Every token the turn processed: its input_tokens leave out the cached context it read and wrote.
+        totalTokens:
+          num(usage.input_tokens) +
+          num(usage.cache_creation_input_tokens) +
+          num(usage.cache_read_input_tokens) +
+          num(usage.output_tokens),
         costUsd: typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : null,
         ...(s.windows.size ? { windows: [...s.windows.values()] } : {}),
       },

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { IonClient } from "@ion/client/browser";
 import { type ChatInfo, EV, type IonEvent } from "@ion/schema";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadLine } from "./ThreadLine.js";
 
@@ -75,24 +75,32 @@ describe("a thread's line", () => {
   });
 });
 
-// The user, 2026-11-21: an ion's thread line says what such a task usually takes, on hover, from past chats.
+// The user, 2026-11-21: an ion's thread line says what such a task usually takes, on hover, from past chats. Review
+// of fb615b0, 2026-11-23: asked on the first hover (not for every line drawn), and only while the thread is at work.
 describe("a thread's estimate", () => {
-  it("shows on hover, and nothing when there are too few past chats", async () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("is asked on the first hover of a thread at work, and shows on hover", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const call = vi.fn(async () => ({ unit: "tokens", low: 40_000, high: 120_000 }));
+    const { container } = line([started, tool], chat("running"), call);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(call).not.toHaveBeenCalledWith("usage.estimate", expect.anything());
+    fireEvent.mouseEnter(container.querySelector(".tl")!);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(call).toHaveBeenCalledWith("usage.estimate", { chatId: "t1" });
+    expect(container.querySelector(".tl")?.getAttribute("title")).toBe("usually 40–120k tokens");
+  });
+
+  it("isn't shown once the thread is done", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const done = ev(EV.runFinished, { status: "done" }, "2026-11-19T10:01:04Z");
     const call = vi.fn(async () => ({ unit: "tokens", low: 40_000, high: 120_000 }));
     const { container } = line([started, done], chat("done"), call);
-    await waitFor(() =>
-      expect(container.querySelector(".tl")?.getAttribute("title")).toBe("usually 40–120k tokens"),
-    );
-    expect(call).toHaveBeenCalledWith("usage.estimate", { chatId: "t1" });
-    cleanup();
-    const none = line(
-      [started, done],
-      chat("done"),
-      vi.fn(async () => null),
-    );
-    await new Promise((r) => setTimeout(r, 500));
-    expect(none.container.querySelector(".tl")?.getAttribute("title")).toBeNull();
+    fireEvent.mouseEnter(container.querySelector(".tl")!);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(call).not.toHaveBeenCalledWith("usage.estimate", expect.anything());
+    expect(container.querySelector(".tl")?.getAttribute("title")).toBeNull();
   });
 });
 

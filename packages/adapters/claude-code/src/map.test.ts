@@ -248,11 +248,30 @@ describe("mapSdkMessage", () => {
     expect(after("billing_error")).toMatchObject({ code: "billing_error", retryable: false });
   });
 
+  // Review of fb615b0, 2026-11-23: estimates counted 706 tokens for a turn that processed 78,428 (the fixture
+  // denied.jsonl): Claude's input_tokens leave out the cached context it read and wrote.
+  it("tokens include cached context", () => {
+    const usage = {
+      input_tokens: 4,
+      cache_creation_input_tokens: 28858,
+      cache_read_input_tokens: 48864,
+      output_tokens: 702,
+    };
+    const [u] = mapSdkMessage(result("success", { usage }), state());
+    expect(u?.data).toMatchObject({ inputTokens: 4, outputTokens: 702, totalTokens: 78428 });
+  });
+
   it("success → usage then done", () => {
     expect(mapSdkMessage(result("success"), state())).toEqual([
       {
         type: "usage.reported",
-        data: { model: "claude-haiku-5-5", inputTokens: 120, outputTokens: 40, costUsd: 0.0031 },
+        data: {
+          model: "claude-haiku-5-5",
+          inputTokens: 120,
+          outputTokens: 40,
+          totalTokens: 160,
+          costUsd: 0.0031,
+        },
       },
       { type: "run.finished", data: { status: "done" } },
     ]);
