@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import {
   agentEnv,
   type AuthStatus,
@@ -6,6 +6,8 @@ import {
   capabilitiesWith,
   type HarnessAdapter,
   readVersion,
+  runLogout,
+  startLogin,
   whichOnPath,
 } from "@ion/adapter-kit";
 import type { Billing, Capabilities } from "@ion/schema";
@@ -63,6 +65,39 @@ function loginStatus(l: Launch): Promise<AuthStatus> {
   );
 }
 
+/** Whether Codex is signed in (and how), and its own login and logout. */
+function codexAuth(launch: () => Launch | null): HarnessAdapter["auth"] {
+  return {
+    async status() {
+      const l = launch();
+      return l ? loginStatus(l) : { signedIn: false, method: "Not installed" };
+    },
+    // `codex login` serves its page on localhost:1455 and opens your browser (0.153.2). Starting it deletes the
+    // sign-in Codex has (checked on a copy of its folder, 2026-11-23): ion starts it only when signed out.
+    login: {
+      command: "codex login",
+      clears: true,
+      start: (signal) => {
+        const l = launched(launch());
+        return startLogin(l.bin, [...l.prefix, "login"], { signal });
+      },
+    },
+    logout: {
+      command: "codex logout",
+      run: () => {
+        const l = launched(launch());
+        return runLogout(l.bin, [...l.prefix, "logout"]);
+      },
+    },
+  };
+}
+
+/** How to start Codex, or why it can't sign in or out. */
+function launched(l: Launch | null): Launch {
+  if (!l) throw new Error("Codex isn't installed");
+  return l;
+}
+
 /**
  * What it takes from ion: MCP servers by url (Codex's mcp_servers is Streamable HTTP), and a start with no web (ion's
  * dream: its web search off in the thread's config); its default model's context (272k input tokens).
@@ -94,20 +129,7 @@ export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
       const version = await readVersion(l.bin, [...l.prefix, "--version"]);
       return { installed: true, ...(version ? { version } : {}), path: l.bin };
     },
-    auth: {
-      async status() {
-        const l = launch();
-        return l ? loginStatus(l) : { signedIn: false, method: "Not installed" };
-      },
-      login: () =>
-        new Promise<void>((resolve, reject) => {
-          const l = launch();
-          if (!l) return reject(new Error("Codex isn't installed"));
-          spawn(l.bin, [...l.prefix, "login"], { stdio: "inherit", env: agentEnv() }).on("exit", (code) =>
-            code === 0 ? resolve() : reject(new Error("Sign-in didn't finish")),
-          );
-        }),
-    },
+    auth: codexAuth(launch),
     gateCall: codexGateCall,
     capabilities: capabilitiesWith(CAPABILITIES, catalog),
     ...TAKES,

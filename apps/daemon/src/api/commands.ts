@@ -4,6 +4,7 @@ import {
   byPreference,
   defaultAgent,
   getHarness,
+  type HarnessEntry,
   harnessIds,
   listedHarnessIds,
 } from "../adapters/registry.js";
@@ -33,6 +34,7 @@ import { chatsView } from "../views/chats.js";
 import { needsView } from "../views/needs.js";
 import { UserError } from "./errors.js";
 import { HarnessInfos } from "./harness-infos.js";
+import { AgentSignIns } from "./harness-auth.js";
 import { renameChat } from "../runs/ready.js";
 import { projectPath } from "../runs/projects.js";
 import { ionsView } from "../views/ions.js";
@@ -163,7 +165,14 @@ export const handlers: Handlers = {
     return listed
       .map((id) => infos.find((h) => h.id === id))
       .filter((h) => !!h)
-      .map((h) => ({ ...h, ...missesOf(h.id) }));
+      .map(asListed);
+  },
+  // The user, 2026-11-23: sign in and out of each agent from ion (its own login and logout).
+  "harness.login": (a) => signIns.login(String(a.id ?? ""), a.confirm === true),
+  "harness.logout": (a, ctx) => signIns.logout(String(a.id ?? ""), a.confirm === true, ctx.db),
+  "harness.cancelLogin": (a) => {
+    signIns.cancel(String(a.id ?? ""));
+    return { ok: true as const };
   },
   // The ready agents ion knows, waiting a few seconds at most on ones still being read (`ion status` stays quick).
   // A fresh daemon's agents are still being read: a few seconds for them, never longer (review, 2026-11-22).
@@ -320,6 +329,16 @@ export const handlers: Handlers = {
 /** Every agent's info, kept and read again in the background (asking each CLI takes seconds). */
 export const harnessInfos = new HarnessInfos(harnessIds, harnessInfo, { maxAgeMs: 60_000 });
 
+/** Sign-ins ion started, and each agent read again once one ends or it signs out. */
+const signIns = new AgentSignIns({ refresh: (id) => harnessInfos.refresh(id) });
+
+/** An agent as the app lists it: how often its judge missed, and the sign-in ion is waiting on. */
+export const asListed = (h: HarnessInfo): HarnessInfo => ({
+  ...h,
+  ...missesOf(h.id),
+  ...signIns.pageOf(h.id),
+});
+
 /** A harness, whether it's ready, and (only when it is) its own model list. */
 
 async function harnessInfo(id: string): Promise<HarnessInfo> {
@@ -366,6 +385,19 @@ async function readyInfo(id: string, h: NonNullable<ReturnType<typeof getHarness
     ...(notSandboxed(h.adapter.sandbox, machineSandbox()) ? { notSandboxed: true as const } : {}),
     ...ownRulesOf(id),
     ...billingOf(auth),
+    ...signInOf(h.adapter.auth),
+  };
+}
+
+/** How you sign in and out: its own commands, and whether ion runs them. */
+function signInOf(auth: HarnessEntry["adapter"]["auth"]): Pick<HarnessInfo, "signIn" | "signOut"> {
+  return {
+    signIn: {
+      command: auth.login.command,
+      inApp: !!auth.login.start,
+      ...(auth.login.clears ? { clears: true } : {}),
+    },
+    signOut: { command: auth.logout.command, inApp: !!auth.logout.run },
   };
 }
 

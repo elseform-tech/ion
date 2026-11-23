@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { agentEnv } from "@ion/adapter-kit";
 
 export type Exec = (
@@ -35,13 +35,4 @@ export function loginOnlyEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proce
   // A run's MCP key is passed in ION_MCP_H<i> (see session.ts): never inherit another run's.
   for (const k of Object.keys(out)) if (k.startsWith("ION_MCP_")) delete out[k];
   return out;
-}
-
-/** Runs `claude auth login` in the user's terminal. */
-export function runLogin(path: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(path, ["auth", "login"], { stdio: "inherit", env: loginOnlyEnv() });
-    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error("Sign-in didn't finish"))));
-    child.on("error", reject);
-  });
 }

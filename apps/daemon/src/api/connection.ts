@@ -2,6 +2,7 @@ import type { ApiError, IonEvent, Push, Reply, Request } from "@ion/schema";
 import type { WebSocket } from "ws";
 import { readBacklog } from "./backlog.js";
 import { type Ctx, handlers, UserError } from "./commands.js";
+import { AskFirst } from "./errors.js";
 import { RUN_ENDED, type RunCaller, runRefusal } from "./run-calls.js";
 
 type Handler = (args: unknown, ctx: Ctx) => unknown;
@@ -55,7 +56,8 @@ export class Connection {
     try {
       this.send({ id, ok: true, result: await h(args, this.ctx) } as Reply);
     } catch (e) {
-      if (e instanceof UserError) this.fail(id, "invalid", e.message);
+      if (e instanceof AskFirst) this.fail(id, "confirm", e.message);
+      else if (e instanceof UserError) this.fail(id, "invalid", e.message);
       else this.fail(id, "internal", "Something went wrong");
     }
   }

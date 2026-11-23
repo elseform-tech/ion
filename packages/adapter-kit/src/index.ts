@@ -13,6 +13,15 @@ export type {
   Session,
   StartOpts,
 } from "./types.js";
+export {
+  type AgentLogin,
+  type AgentLogout,
+  type LoginPrompt,
+  type LoginRun,
+  loginPromptOf,
+  runLogout,
+  startLogin,
+} from "./login.js";
 export { createDeltaCoalescer } from "./coalesce.js";
 export { usageWindow } from "./usage.js";
 export { type PickedSkill, type Picks, type PickStyle, withPicks } from "./picks.js";

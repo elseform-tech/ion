@@ -43,6 +43,14 @@ export function renameChat(store: EventStore, db: Db, chatId: string, title: str
 /** How long an agent that was ready counts as ready without asking again. A failed check is asked again. */
 const READY_FOR_MS = 2 * 60_000;
 
+/** Bumped when an agent signs in or out through ion: every check that passed before is asked again. */
+let signIns = 0;
+
+/** An agent signed in or out (Settings → Agents, `ion harnesses`): no earlier check holds (the user, 2026-11-23). */
+export function signInChanged(): void {
+  signIns++;
+}
+
 /**
  * Whether an agent can take a message: installed, signed in, and (when one is named) the model is one it lists.
  * Asking its CLI costs seconds, so a check that passed holds for a while.
@@ -51,7 +59,7 @@ export class Readiness {
   private readonly until = new Map<string, number>();
 
   async check(h: HarnessEntry, model?: string): Promise<void> {
-    const key = `${h.label}\u0000${model ?? ""}`;
+    const key = `${signIns}\u0000${h.label}\u0000${model ?? ""}`;
     if ((this.until.get(key) ?? 0) > Date.now()) return;
     await ask(h, model);
     this.until.set(key, Date.now() + READY_FOR_MS);

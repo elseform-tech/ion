@@ -1,11 +1,11 @@
-import { spawn } from "node:child_process";
 import {
-  agentEnv,
   cachedCatalog,
   capabilitiesWith,
   type HarnessAdapter,
   readVersion,
+  runLogout,
   type StartOpts,
+  startLogin,
   whichOnPath,
   withPaths,
 } from "@ion/adapter-kit";
@@ -93,14 +93,16 @@ export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdap
         const billing = probe === "yes" ? h.billing : undefined;
         return { signedIn: probe === "yes", method, ...(billing ? { billing } : {}) };
       },
-      login: () =>
-        new Promise<void>((resolve, reject) => {
-          const path = binary();
-          if (!path) return reject(new Error(`${h.label} isn't installed`));
-          spawn(path, h.loginArgs, { stdio: "inherit", env: agentEnv() }).on("exit", (code) =>
-            code === 0 ? resolve() : reject(new Error("Sign-in didn't finish")),
-          );
-        }),
+      login: {
+        command: h.loginHint,
+        ...(h.loginInApp
+          ? { start: (signal: AbortSignal) => startLogin(installed(h, binary()), h.loginArgs, { signal }) }
+          : {}),
+      },
+      logout: {
+        command: h.logoutHint,
+        ...(h.logoutInApp ? { run: () => runLogout(installed(h, binary()), h.logoutArgs) } : {}),
+      },
     },
     ...(h.toCall ? { gateCall: h.toCall } : {}),
     ...(h.billingOf ? { billingOf: billingWith(h, binary) } : {}),
@@ -109,6 +111,12 @@ export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdap
     ...ownOf(h),
     start: (opts) => startAcp(h, binary(), deps, opts),
   };
+}
+
+/** Its binary, or why it can't sign in or out. */
+function installed(h: AcpHarness, path: string | null): string {
+  if (!path) throw new Error(`${h.label} isn't installed`);
+  return path;
 }
 
 /** How the models ion ran on it bill (null: its default), as the agent says, kept 10 minutes per set of models. */

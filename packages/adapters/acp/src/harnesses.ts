@@ -23,6 +23,12 @@ export type AcpHarness = {
   versionArgs: string[];
   loginArgs: string[];
   loginHint: string;
+  /** ion runs its login and shows its page and code (it needs no terminal); absent: only the command. */
+  loginInApp?: true;
+  logoutArgs: string[];
+  logoutHint: string;
+  /** ion runs its logout (it asks nothing); absent: only the command. */
+  logoutInApp?: true;
   defaultModel: string | null;
   /** About how many tokens its default model's context holds (HarnessAdapter.contextTokens). */
   contextTokens?: number;
@@ -111,6 +117,12 @@ export const GROK_BUILD: AcpHarness = {
   versionArgs: ["--version"],
   loginArgs: ["login"],
   loginHint: "grok login",
+  // Without a terminal, `grok login` gives a page and a code to confirm there, and keeps the sign-in it has until the
+  // new one is done (Grok 1.0.92, tried on a copy of its folder, 2026-11-23); `grok logout` asks nothing.
+  loginInApp: true,
+  logoutArgs: ["logout"],
+  logoutHint: "grok logout",
+  logoutInApp: true,
   defaultModel: null,
   // grok-code-fast-1, its default model: 256k tokens.
   contextTokens: 256_000,
@@ -321,6 +333,9 @@ export const OPENCODE: AcpHarness = {
   versionArgs: ["--version"],
   loginArgs: ["auth", "login"],
   loginHint: "opencode auth login",
+  // Both ask in a terminal: pick a provider, then paste its key (opencode 1.18.8). Its free models need no sign-in.
+  logoutArgs: ["auth", "logout"],
+  logoutHint: "opencode auth logout",
   // A free model, so trying ion costs nothing.
   defaultModel: OPENCODE_MODEL,
   // Its free models differ; the smallest common context, to be safe.

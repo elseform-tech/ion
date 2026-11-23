@@ -9,6 +9,7 @@ import { ready, type SettingsData } from "./data.js";
 import { EFFORTS } from "./IonPage.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { Switch } from "./Switch.js";
+import { useAgentSignIn, useSignInsWaiting } from "./AgentSignIn.js";
 
 /** An agent's state, in plain words. */
 function stateOf(h: HarnessInfo): string {
@@ -50,6 +51,8 @@ function UsageMeter({ u }: { u: AgentUsage | undefined }) {
  * has no switch to leave out all its own tools says it loads them too.
  */
 function AgentRow(p: {
+  client: IonClient;
+  reload: () => void;
   h: HarnessInfo;
   usage?: AgentUsage;
   own: boolean;
@@ -60,6 +63,7 @@ function AgentRow(p: {
 }) {
   const { h, own, onOwn } = p;
   const chip = own ? h.ownHooks && "Its own hooks run too" : h.ownTools && "Also loads its own";
+  const sign = useAgentSignIn(p.client, h, p.reload);
   return (
     <div className="hrow ord" {...p.row}>
       {p.grip}
@@ -86,7 +90,11 @@ function AgentRow(p: {
       </div>
       {/* The lab's third column: its usage, for an agent that's ready. */}
       {ready(h) ? <UsageMeter u={p.usage} /> : <span />}
-      <Switch label={`${h.label}: use its own tools`} title="Use its own tools" on={own} onPick={onOwn} />
+      <span className="hacts">
+        {sign.action}
+        <Switch label={`${h.label}: use its own tools`} title="Use its own tools" on={own} onPick={onOwn} />
+      </span>
+      {sign.panel}
     </div>
   );
 }
@@ -193,6 +201,7 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
   const [error, run] = useCallError();
   const pick = (spec: string) => run(client.call("settings.set", { patch: { quick: spec } }), data.reload);
   const usage = useUsage(client, data.harnesses);
+  useSignInsWaiting(data.harnesses, data.reload);
   const agents = inOrder(data.harnesses, data.settings?.agentOrder);
   const order = useAgentOrder(
     agents.map((h) => h.id),
@@ -206,6 +215,8 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
           {agents.map((h, i) => (
             <AgentRow
               key={h.id}
+              client={client}
+              reload={data.reload}
               h={h}
               usage={usage.find((u) => u.harness === h.id)}
               own={data.settings?.ownTools?.[h.id] ?? true}

@@ -1,5 +1,6 @@
 import type { Billing, Capabilities, Decision, EffortLevel, NewEvent } from "@ion/schema";
 import type { PickStyle } from "./picks.js";
+import type { AgentLogin, AgentLogout } from "./login.js";
 import type { EnvDrop } from "./run-env.js";
 import type { RunSandbox } from "./sandbox.js";
 
@@ -135,7 +136,11 @@ type OwnOff = { servers: boolean; skills: boolean; plugins: boolean };
 export interface HarnessAdapter {
   id: string;
   detect(): Promise<{ installed: boolean; version?: string; path?: string }>;
-  auth: { status(): Promise<AuthStatus>; login(): Promise<void> };
+  /**
+   * Whether it's signed in, and how you sign in and out: its own commands, which ion runs only where they need no
+   * terminal (a page or a code to show; the user, 2026-11-23).
+   */
+  auth: { status(): Promise<AuthStatus>; login: AgentLogin; logout: AgentLogout };
   capabilities(): Promise<Capabilities>;
   /** The kinds of MCP server it takes from ion (a server of another kind is left out of its runs). */
   mcpTransports: McpTransports;
