@@ -27,6 +27,7 @@ const acts = () => ({
   onNewProject: vi.fn(async (name: string) => name),
   onRename: vi.fn(),
   onArchive: vi.fn(),
+  onRemember: vi.fn(),
   onStar: vi.fn(),
   onRenameProject: vi.fn(),
   onRemoveProject: vi.fn(),
@@ -153,6 +154,17 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "More for a" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
     expect(a.onArchive).toHaveBeenCalledWith("a");
+  });
+  // The user, 2026-11-23: "Don't remember this chat", from its menu; a chat not remembered offers Remember instead.
+  it("doesn't remember a chat, from its menu", () => {
+    const a = acts();
+    side([chat("a", "storefront"), chat("b", "storefront", { notRemembered: true })], [], a);
+    fireEvent.click(screen.getByRole("button", { name: "More for a" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Don't remember" }));
+    expect(a.onRemember).toHaveBeenCalledWith("a", false);
+    fireEvent.click(screen.getByRole("button", { name: "More for b" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remember" }));
+    expect(a.onRemember).toHaveBeenCalledWith("b", true);
   });
   // Plan 09: a thread ion started shows its project's ion in the first slot; yours stay empty.
   it("shows the project's ion beside a thread ion started", () => {

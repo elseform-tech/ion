@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
+import { DEFAULT_CONFIG, loadUserConfig, saveUserConfig, setMemory } from "@ion/config";
 import { EV, type IonCard, type MemoryScope } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryFiles } from "../memory/index.js";
@@ -117,6 +117,31 @@ describe("Mark done?", () => {
     expect(status("you/update-the-readme.md")).toBe("done");
     const by = store.read({ types: [EV.memoryWritten] }).at(-1)!.data as { by: unknown };
     expect(by.by).toBe("you");
+  });
+
+  // The user, 2026-11-23: memory off: no tools, no list, nothing written — and no "Mark done?" from a scope that's off:
+  // a project that's off, a chat you said not to remember, or your own to-dos while yours are off.
+  it("memory off: no Mark done offers from that scope", async () => {
+    const c = loadUserConfig(configFile).config;
+    saveUserConfig(configFile, setMemory(c, false, "storefront"));
+    changed = ["README.md"];
+    await finish("c1", "storefront", "I updated the README and rotated the API keys.");
+    expect([cards("ion:chief"), cards("ion:storefront")]).toEqual([[], []]);
+    saveUserConfig(configFile, c);
+    store.append({
+      chatId: "c2",
+      runId: null,
+      origin: "daemon",
+      type: EV.chatCreated,
+      data: { title: "x", projectId: "storefront" },
+    });
+    store.append({ chatId: "c2", runId: null, origin: "daemon", type: EV.chatMemory, data: { on: false } });
+    await finish("c2", "storefront", "I updated the README and rotated the API keys.");
+    expect([cards("ion:chief"), cards("ion:storefront")]).toEqual([[], []]);
+    saveUserConfig(configFile, setMemory(setMemory(c, false), true, "storefront"));
+    await finish("c3", "storefront", "I updated the README and rotated the API keys.");
+    expect(cards("ion:chief")).toEqual([]);
+    expect(cards("ion:storefront").map((x) => x.text)).toEqual(["Mark “Rotate the API keys” done?"]);
   });
 
   it("a project's to-do is offered by its ion; nothing unrelated, failed or kept from ion chief is", async () => {

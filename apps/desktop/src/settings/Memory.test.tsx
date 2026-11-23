@@ -108,13 +108,15 @@ type MemoryClientOpts = {
   text?: string;
   refuse?: string;
   dream?: { tidied: DreamInfo; files: MemoryInfo[] };
+  /** Settings answers (memory's switches). */
+  settings?: boolean;
 };
 
 function memoryClient(o: MemoryClientOpts = {}) {
   const all = [...FILES, ...(o.dream?.files ?? [])];
   const dreamAnswer = (cmd: string) => {
     if (cmd === "memory.tidied") return o.dream?.tidied ?? null;
-    if (cmd === "settings.get") return o.dream ? settings : null;
+    if (cmd === "settings.get") return o.dream || o.settings ? settings : null;
     return [{ id: "grok-build", label: "Grok", installed: true, signedIn: true, models: [] }];
   };
   const answer = async (cmd: string, a: Record<string, unknown>) => {
@@ -175,6 +177,30 @@ describe("Settings → Memory", () => {
     expect(c.call).toHaveBeenCalledWith("memory.search", { q: "sam", scope: "you" });
     expect(c.call.mock.calls.filter(([cmd]) => cmd === "memory.search")).toHaveLength(1);
     expect(screen.getByText("Sam")).toBeTruthy();
+  });
+
+  // The user, 2026-11-23: "a way to disable memory". A switch at the top for everywhere (yours follow it), and each
+  // project's own in its view; your files stay listed while it's off.
+  it("turns memory off everywhere, and in a project", async () => {
+    const c = await openMemory(memoryClient({ settings: true }));
+    const all = await screen.findByRole("switch", { name: "Remember" });
+    expect(all.getAttribute("aria-checked")).toBe("true");
+    expect(all.closest(".srow")?.querySelector("svg")).not.toBeNull();
+    fireEvent.click(all);
+    await waitFor(() =>
+      expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { memory: { on: false } } }),
+    );
+    expect(screen.getByText("Sam")).toBeTruthy();
+    // A project's switch is in its view only.
+    expect(screen.queryByRole("switch", { name: "Remember Shop" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Shop" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Remember Shop" }));
+    await waitFor(() =>
+      expect(c.call).toHaveBeenCalledWith("settings.set", {
+        patch: { memory: { projects: { shop: false } } },
+      }),
+    );
+    expect(screen.getByText("Deploy")).toBeTruthy();
   });
 
   it("a row shows who changed it and when", async () => {

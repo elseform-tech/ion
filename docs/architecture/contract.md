@@ -38,7 +38,7 @@ Daemon events: `chat.created`, `run.queued`, `run.waiting`, `run.retrying`, `app
 `briefing.written`, `signal.raised`, `proposal.made`, `proposal.answered`, `memory.written`, `memory.forgotten`,
 `decision.recorded`, `decision.outcome`, `decision.forgotten`, `queue.added`, `queue.removed`, `queue.sent`,
 `queue.failed`, `notify`, `briefing.posted`, `tool.signedIn`, `tool.signedOut`, `tool.needsSignIn`,
-`memory.dreamed`, `todo.reminded`, `chat.handoff`.
+`memory.dreamed`, `todo.reminded`, `chat.handoff`, `chat.memory`.
 
 Usage and limits (Plan 20): `usage.reported` carries `inputTokens`, `outputTokens`, `totalTokens` (every token the run
 processed, cached context too; absent when the agent's count is partial, as opencode's over ACP), `costUsd`, and
@@ -61,6 +61,13 @@ see it), or `_` and an ion's id (a file an ion wrote that chats would see: only 
 records each night as `memory.dreamed` (chatId null): `status` `started`, then `done`, `late` or `failed`, with what
 it merged, updated, forgot and moved, its notes, and the night (`period`). `todo.reminded { path, due }` (chatId
 null) is a to-do's one reminder for its due day.
+
+Memory can be off (the user, 2026-11-23): `memory.on` in config.toml (everywhere; your own files follow it) and a
+project's `memory` (absent: as everywhere). `chat.memory { on }` is "Don't remember" (false) or "Remember" (true) from a
+chat's menu, or `ask`'s `noMemory` (`ion ask --no-memory`); `ChatInfo.notRemembered` says so. Where memory is off, a
+chat's agent or an ion gets no memory tools, no index and no word of memory in its instructions, writes nothing, is
+offered no "Mark done?", and ion's dream skips it; the files stay, yours to read and change, and reminders of your
+to-dos still come.
 
 Signing in to a remote MCP server (OAuth) is `tool.signedIn { id }`, `tool.signedOut { id }` and
 `tool.needsSignIn { id }` (a refresh failed: "Sign in again"), `id` being the server's name in mcp.json. They never

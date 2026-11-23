@@ -10,7 +10,7 @@ import {
 import { loadUserConfig } from "@ion/config";
 import { type Commands, EV } from "@ion/schema";
 import { getHarness, type HarnessEntry } from "../adapters/registry.js";
-import { type Chat, chatCreated, chatFor, Readiness } from "./ready.js";
+import { type Chat, chatCreated, chatFor, memoryOfRun, notRemembered, Readiness } from "./ready.js";
 import { UserError } from "../api/errors.js";
 import { ionDirsOf } from "../access/index.js";
 import type { NeedsService } from "../needs/index.js";
@@ -54,6 +54,8 @@ type Launch = {
   resume?: string | null;
   /** This try's first message starts with ion's memory index (its instructions say so only then). */
   index?: boolean;
+  /** Its memory, read at its start: "none" (off in its project, or a chat you said not to remember), "project". */
+  memory?: "none" | "project";
   projectId: string;
   /** Full access, or Auto (ion decides each action outside the worktree). */
   access: "auto" | "full";
@@ -141,6 +143,8 @@ export class RunManager {
       const more = { shown: opts.shown, answers: opts.answers, picks, ...how };
       launch = await this.prepare(h, { ...args, ...more }, chat, repo);
       if (opts.request !== undefined) launch.request = opts.request;
+      // `ion ask --no-memory`: not remembered from this message on (before its run reads it).
+      notRemembered(this.store, this.db, launch.chatId, args.noMemory);
       this.go(launch, !!how.ions);
     } finally {
       if (key) this.reserved.delete(key);
@@ -211,6 +215,8 @@ export class RunManager {
    */
   private async launch(l: Launch): Promise<void> {
     this.queued.delete(l.runId);
+    const memory = memoryOfRun(this.ctx.configFile, this.db, l);
+    if (memory) l.memory = memory;
     Object.assign(l, runKeys(this.ctx.mcp?.grants, l, !!(this.ctx.gate && l.h.adapter.gateCall)));
     this.launches.set(l.runId, l);
     const b: Between = { chatId: l.chatId, interrupt: false };
@@ -288,8 +294,9 @@ export class RunManager {
   }
 
   /** ion's own MCP server for a run: its URL and the run's key (also the key for ion's gateway). */
-  private ionServer(l: Launch): { url: string; key: string; index: boolean } | null {
-    return this.ctx.mcp && l.mcpKey ? { url: this.ctx.mcp.url(), key: l.mcpKey, index: !!l.index } : null;
+  private ionServer(l: Launch): { url: string; key: string; index: boolean; memory: boolean } | null {
+    if (!this.ctx.mcp || !l.mcpKey) return null;
+    return { url: this.ctx.mcp.url(), key: l.mcpKey, index: !!l.index, memory: l.memory !== "none" };
   }
 
   /** A daemon-side error for a run; nothing is stored once ion is stopping (the run's end is already written). */

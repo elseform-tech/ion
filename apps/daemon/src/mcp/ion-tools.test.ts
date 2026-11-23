@@ -154,6 +154,40 @@ describe("ion tools", () => {
     await c.close();
   });
 
+  // The user, 2026-11-23: per project off hides your personal memory from that project too. A project's ion whose
+  // memory is off gets no memory tools; ion chief sees no file of a project that's off, and none of yours when yours is.
+  it("per project off hides your personal memory from that project too", async () => {
+    memory.note({ projectId: "shop" }, "Shop note", "you");
+    memory.note({ projectId: "app" }, "App note", "you");
+    memory.note("you", "My note", "you");
+    const off = { you: false, projects: [] };
+    const shop = grants.create({ kind: "ion", ionId: "shop", projects: ["shop"], turnId: "t5", memory: off });
+    const s = await client(shop);
+    expect((await s.listTools()).tools.filter((t) => t.name.startsWith("memory_"))).toEqual([]);
+    await s.close();
+    const some = { you: true, projects: ["app"] };
+    const c = await client(
+      grants.create({ kind: "ion", ionId: "chief", projects: ALL, turnId: "t6", memory: some }),
+    );
+    const listed = text(await c.callTool({ name: "memory_index", arguments: {} }));
+    expect([listed.includes("App note"), listed.includes("My note"), listed.includes("Shop note")]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    const todo = { scope: "shop", name: "Ship it", description: "Ship it", type: "todo", text: "Ship it" };
+    expect(await c.callTool({ name: "memory_write", arguments: todo })).toMatchObject({ isError: true });
+    await c.close();
+    const none = { you: false, projects: ["app"] };
+    const p = await client(
+      grants.create({ kind: "ion", ionId: "chief", projects: ALL, turnId: "t7", memory: none }),
+    );
+    expect(text(await p.callTool({ name: "memory_index", arguments: {} }))).not.toContain("My note");
+    const mine = { scope: "you", name: "Later", description: "Later", type: "todo", text: "Later" };
+    expect(await p.callTool({ name: "memory_write", arguments: mine })).toMatchObject({ isError: true });
+    await p.close();
+  });
+
   it("a project's ion sees only its project", async () => {
     const c = await shopIon();
     expect(text(await c.callTool({ name: "chat_history", arguments: { chatId: "c2" } }))).toContain(

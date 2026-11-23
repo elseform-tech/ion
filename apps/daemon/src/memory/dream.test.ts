@@ -57,7 +57,7 @@ const dreamed = () => store.read({ types: [EV.memoryDreamed] });
 function config(dream: "off" | "nightly" | "weekly", quietOn = true): UserConfig {
   return {
     ...DEFAULT_CONFIG,
-    memory: { dream },
+    memory: { on: true, dream },
     notifications: { ...DEFAULT_CONFIG.notifications, quiet: { on: quietOn, from: "22:00", to: "08:00" } },
     projects: [
       { id: "shop", path: "/p/shop", starred: false },
@@ -481,5 +481,46 @@ describe("ion's dream", () => {
         expect(d.index().map((r) => r.path)).not.toContain(s.path);
         expect(() => d.read(s.path)).toThrow("No such memory");
       }
+  });
+
+  // The user, 2026-11-23: Dream skips a scope that's off. Bank's memory off: no pass of bank's; yours off: no pass of
+  // yours, and no other pass reads your files either. The files stay as they were.
+  it("Dream skips a scope that's off", async () => {
+    seed("Bank deploys", { scope: { projectId: "bank" }, type: "fact", text: "Bank deploys on Mondays." });
+    seed("Shop deploys", { scope: { projectId: "shop" }, type: "fact", text: "Shop deploys on Fridays." });
+    seed("Health", { scope: "you", type: "fact", text: "HERON health." });
+    const passes = async (c: UserConfig) => {
+      saveUserConfig(configFile, c);
+      const seen: string[] = [];
+      const read: boolean[] = [];
+      await runDream(
+        deps(async (prompt, step) => {
+          seen.push(`${step.pass.see}:${step.pass.project ?? "you"}`);
+          read.push(prompt.includes("HERON"));
+          return done();
+        }),
+      );
+      return { seen: seen.sort(), read };
+    };
+    const c = config("nightly");
+    const bankOff = {
+      ...c,
+      projects: c.projects.map((p) => (p.id === "bank" ? { ...p, memory: false } : p)),
+    };
+    expect((await passes(bankOff)).seen).toEqual(["chats:shop", "ions:you"]);
+    const youOff = { ...bankOff, memory: { ...c.memory, on: false } };
+    const shopOn = {
+      ...youOff,
+      projects: youOff.projects.map((p) => (p.id === "shop" ? { ...p, memory: true } : p)),
+    };
+    const r = await passes(shopOn);
+    expect(r.seen).toEqual(["chats:shop"]);
+    expect(r.read).toEqual([false]);
+    expect(
+      memory
+        .list(null, ["chats", "ions"])
+        .map((m) => m.name)
+        .sort(),
+    ).toEqual(["Bank deploys", "Health", "Shop deploys"]);
   });
 });

@@ -75,6 +75,7 @@ Options:
   --model <model>     Model
   --effort <level>    low, medium, high or max
   --access <mode>     auto (ion decides) or full
+  --no-memory         Don't remember this chat
   -h, --help          display help for command
 
 ---
@@ -113,6 +114,8 @@ Commands:
   search <words>  Find by words
   forget <name>   Forget it
   keep <name>     Keep a chat's suggestion for every project
+  on [options]    Turn it on
+  off [options]   Turn it off
   open            Open the folder
   help [command]  display help for command
 

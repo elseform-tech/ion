@@ -25,6 +25,7 @@ import { errLine, type IonLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, type 
 import { ionVerdict } from "./gate.js";
 import { ionInstructions } from "./instructions.js";
 import { ionIndex, type MemoryFiles } from "../memory/index.js";
+import { ionCaller, ionMemory, ionRemembers, sessionProjects } from "../memory/switch.js";
 import { ownAgentStart } from "../access/runner.js";
 import { type Net, systemNet } from "../secrets/oauth-net.js";
 import { type TurnWeb, WebFound } from "./web.js";
@@ -356,7 +357,8 @@ export class IonTurns {
    * turn's key says so: its tools write nothing.
    */
   private scopeOf(t: TurnRef & { report: boolean; dream?: DreamTurn }): IonScope {
-    const all = loadUserConfig(this.d.configFile).config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
+    const config = loadUserConfig(this.d.configFile).config;
+    const all = config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
     const projects =
       t.ionId === "chief" || t.ionId === DREAM_ION
         ? all
@@ -365,6 +367,8 @@ export class IonTurns {
             .sort()
         : [t.ionId];
     const dream = t.dream ? { dream: { ...t.dream.pass, max: t.dream.max } } : {};
+    // What of its memory is off (the user, 2026-11-23): no tools, index or word of it for that.
+    const memory = ionMemory(config, projects, t.ionId !== "chief" && t.ionId !== DREAM_ION);
     return {
       kind: "ion",
       ionId: t.ionId,
@@ -372,6 +376,7 @@ export class IonTurns {
       turnId: t.turnId,
       ...(t.report ? { report: true } : {}),
       ...dream,
+      ...(memory ? { memory } : {}),
     };
   }
 
@@ -395,7 +400,7 @@ export class IonTurns {
       cwd: t.cwd,
       model: brain.model,
       effort: brain.effort,
-      instructions: ionInstructions(t.ionId),
+      instructions: ionInstructions(t.ionId, ionRemembers(scope.memory)),
       // ion's server first, then yours through ion's gateway (ion decides each call there: only what reads).
       mcpServers: [ionSpec(ion), ...yours],
       ...(gateKey ? { gate: { url: `${this.d.gateUrl()}/${gateKey}` } } : {}),
@@ -408,11 +413,13 @@ export class IonTurns {
         return live ? (await this.verdict(live, req, t.turnId)).decision : "deny";
       },
     };
-    const resume = resumeOf(this.d.db, t.ionId, brain.harness, scope.projects);
+    // A session started with other memory (its instructions, its index) isn't resumed.
+    const seen = sessionProjects(scope);
+    const resume = resumeOf(this.d.db, t.ionId, brain.harness, seen);
     const end = await this.within(abort, t.turnId, (e, hold) =>
       this.drive({ ...t, scope, adapter, opts, resume }, e, hold),
     );
-    return { end, projects: scope.projects };
+    return { end, projects: seen };
   }
 
   /**
@@ -491,8 +498,11 @@ export class IonTurns {
     end.nativeId = session.nativeId;
     if (end.late) return;
     // A dream's message holds the whole index already.
+    const caller = ionCaller(t.scope);
     const index =
-      t.ionId === DREAM_ION ? "" : ionIndex(this.d.memory, t.scope, { resumed, sent: this.sentIndex });
+      t.ionId === DREAM_ION || !caller
+        ? ""
+        : ionIndex(this.d.memory, caller, { resumed, sent: this.sentIndex });
     await session.send({ text: index + t.text });
     await this.pump(session, t, end);
   }

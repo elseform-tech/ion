@@ -410,6 +410,9 @@ const HANDLERS: Record<string, Handler> = {
   // A chat's agent hit its limit (it continued on another, or waits), or a long chat started fresh: one quiet line.
   // Pick by usage's reason shows in the chat's header, not as a line of its own.
   [EV.chatHandoff]: handoff,
+  // You said not to remember the chat, or to remember it again (the user, 2026-11-23): one quiet line.
+  [EV.chatMemory]: (t, d) =>
+    push(t, { kind: "ion", tone: "note", text: d.on ? "Remembered" : "Not remembered" }),
   [EV.toolAdded]: (t, d) => push(t, { kind: "added", tool: d.kind as ToolType, name: str(d.name) }),
   // A chat's preference waits for you to keep it (security review, 2026-11-22): the chat says so, once, with a link
   // to Memory (Task 5, 2026-11-22: a question here had no answer).

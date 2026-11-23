@@ -1,4 +1,4 @@
-import { Archive, Avatar, CircleAlert, Ellipsis, Pencil, Square } from "@ion/design-system";
+import { Archive, Avatar, CircleAlert, Ellipsis, NotebookText, Pencil, Square } from "@ion/design-system";
 import type { ChatInfo, IonInfo, NeedInfo } from "@ion/schema";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useDismiss } from "./dismiss.js";
@@ -13,6 +13,8 @@ const Slot = ({ ion }: { ion?: IonInfo }) =>
 export type RowActions = {
   onRename: (chatId: string, title: string) => void;
   onArchive: (chatId: string) => void;
+  /** Remember (true) or Don't remember (false) the chat. */
+  onRemember: (chatId: string, on: boolean) => void;
 };
 
 /** A Needs-you row: the question, its project under it, the wait dot. */
@@ -69,7 +71,7 @@ function RenameBox({ chat, onDone }: { chat: ChatInfo; onDone: (title: string | 
   );
 }
 
-/** The row's menu: Rename and Archive. */
+/** The row's menu: Rename, Don't remember (or Remember) and Archive. */
 function RowMenu({ chat, acts, onRename }: { chat: ChatInfo; acts: RowActions; onRename: () => void }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -93,6 +95,14 @@ function RowMenu({ chat, acts, onRename }: { chat: ChatInfo; acts: RowActions; o
           <button type="button" role="menuitem" onClick={pick(onRename)}>
             <Pencil />
             Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={pick(() => acts.onRemember(chat.chatId, !!chat.notRemembered))}
+          >
+            <NotebookText />
+            {chat.notRemembered ? "Remember" : "Don't remember"}
           </button>
           <button type="button" role="menuitem" onClick={pick(() => acts.onArchive(chat.chatId))}>
             <Archive />

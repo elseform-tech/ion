@@ -15,6 +15,7 @@ export const settings: SettingsInfo = {
   },
   ownTools: { "claude-code": true, "grok-build": true },
   dream: { mode: "off", agent: null },
+  memory: { on: true, projects: { shop: true } },
   agentOrder: ["opencode", "grok-build", "codex", "claude-code"],
   onLimit: "ask",
   byUsage: false,

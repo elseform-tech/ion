@@ -4,6 +4,7 @@ import { z } from "zod";
 import { UserError } from "../api/errors.js";
 import { wrapData } from "../context/index.js";
 import type { MemoryFiles } from "../memory/index.js";
+import { chatCaller } from "../memory/switch.js";
 import { HISTORY_CHARS } from "../runs/history.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -84,11 +85,10 @@ function historyTools(server: McpServer, scope: RunScope, d: Deps): void {
 /** A chat writes at most this many memory files in one run. */
 const WRITES_PER_RUN = 20;
 
+/** A run whose memory is off (its project, its chat) gets no memory tools (the user, 2026-11-23). */
 function memoryTools(server: McpServer, scope: RunScope, d: Deps): void {
-  const caller = {
-    kind: "chat" as const,
-    ...{ projectId: scope.projectId, chatId: scope.chatId, runId: scope.runId },
-  };
+  const caller = chatCaller(scope);
+  if (!caller) return;
   // An agent can't flood a project's memory.
   const limit = { id: scope.runId, max: WRITES_PER_RUN, tooMany: "That's enough memory for one run" };
   registerMemoryTools(server, caller, d, limit);

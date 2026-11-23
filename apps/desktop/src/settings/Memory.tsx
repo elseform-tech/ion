@@ -94,6 +94,39 @@ function Scopes(p: { scope: string; data: SettingsData; onPick: (s: string) => v
 }
 
 /**
+ * Remember: memory on or off, everywhere (`projectId` absent; yours follow it) or in one project (the user,
+ * 2026-11-23). Off, agents and ions get none and nothing new is written; the files stay here.
+ */
+function RememberRow(p: {
+  data: SettingsData;
+  client: IonClient;
+  run: Run;
+  projectId?: string;
+  name?: string;
+}) {
+  const m = p.data.settings?.memory;
+  if (!m) return null;
+  const on = p.projectId === undefined ? m.on : (m.projects[p.projectId] ?? m.on);
+  const set = (to: boolean) => {
+    const memory = p.projectId === undefined ? { on: to } : { projects: { [p.projectId]: to } };
+    p.run(p.client.call("settings.set", { patch: { memory } }), () => p.data.reload());
+  };
+  return (
+    <div className="group">
+      <div className="srow">
+        <div className="g">
+          <span className="slot">
+            <NotebookText />
+            Remember
+          </span>
+        </div>
+        <Switch label={p.name ? `Remember ${p.name}` : "Remember"} on={on} onPick={set} />
+      </div>
+    </div>
+  );
+}
+
+/**
  * Dream and what it tidied, then your files or a project's (You, then each project), searched by words; a row opens
  * its text.
  */
@@ -115,11 +148,22 @@ function MemoryList(p: ListProps) {
   const setQ = (w: string) => p.setFilter({ ...p.filter, q: w });
   const found = useSearch(p.client, q, scope, p.mem.files);
   const shown = (found ?? p.mem.files).filter((m) => scopeOf(m) === scope);
+  const project = p.data.projects.find((x) => x.id === scope);
   return (
     <>
+      <RememberRow data={p.data} client={p.client} run={p.run} />
       <DreamRow client={p.client} data={p.data} run={p.run} />
       <Tidied tidied={p.mem.tidied} client={p.client} run={p.run} />
       <Scopes scope={scope} data={p.data} onPick={setScope} />
+      {project && (
+        <RememberRow
+          data={p.data}
+          client={p.client}
+          run={p.run}
+          projectId={project.id}
+          name={project.name ?? project.id}
+        />
+      )}
       <input
         className="fin msearch"
         type="search"

@@ -113,6 +113,32 @@ describe("ion's MCP server", () => {
     await c.close();
   });
 
+  // The user, 2026-11-23: memory off: no tools, no list, nothing written. A run whose memory is off (everywhere, its
+  // project, or its chat) gets no memory tools; one whose project alone has memory sees and writes only its files.
+  it("memory off: no tools, no list, nothing written", async () => {
+    const off = grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r2", memory: "none" });
+    const c = await client(off);
+    const names = (await c.listTools()).tools.map((t) => t.name);
+    expect(names.filter((n) => n.startsWith("memory_"))).toEqual([]);
+    expect(names).toContain("ask");
+    await c.close();
+    const mine = grants.create({
+      kind: "run",
+      projectId: "app",
+      chatId: "c1",
+      runId: "r3",
+      memory: "project",
+    });
+    const p = await client(mine);
+    memory.note({ projectId: "app" }, "Ours", "you");
+    const listed = text(await p.callTool({ name: "memory_index", arguments: {} }));
+    expect([listed.includes("projects/app/ours.md"), listed.includes("Mine")]).toEqual([true, false]);
+    const pref = { scope: "you", name: "Tabs", description: "Tabs", type: "preference", text: "Tabs" };
+    expect(await p.callTool({ name: "memory_write", arguments: pref })).toMatchObject({ isError: true });
+    expect(memory.list(null, ["chats", "ions"]).some((m) => m.name === "Tabs")).toBe(false);
+    await p.close();
+  });
+
   // The user, 2026-11-19: "Merge it?" with "Merge" / "Wait" read oddly. The ask tool asks for a question that
   // stands on its own as a full sentence, and options that are one-line sentences with their pros and cons.
   it("asks agents for a full-sentence question and one-line sentence options", async () => {

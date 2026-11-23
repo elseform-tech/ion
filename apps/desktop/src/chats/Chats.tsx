@@ -44,6 +44,7 @@ function sidebarActions(
         return made.id;
       }),
     onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
+    onRemember: (chatId: string, on: boolean) => act(() => client.call("chat.remember", { chatId, on })),
     onRenameProject: (projectId: string, name: string) =>
       act(() => client.call("project.rename", { projectId, name }).then(onProjects)),
     onRemoveProject: (projectId: string) =>

@@ -23,6 +23,7 @@ import { registerYourTools, type YourTools } from "./ion-your-tools.js";
 import { guard, ok, q } from "./result.js";
 import { registerMemoryTools } from "./memory-tools.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
+import { ionCaller } from "../memory/switch.js";
 import { type Deps, historyData, needsData, SEARCH_MAX, searchData } from "./tools.js";
 
 /** Skills and servers a thread starts with, by name (the user, 2026-11-21: "/" and "@" for ions too). */
@@ -193,9 +194,11 @@ function needsTools(server: McpServer, ion: Ion): void {
   );
 }
 
+/** An ion whose memory is off gets no memory tools; one with some off, only what's on (the user, 2026-11-23). */
 function memoryTools(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;
-  const caller = { kind: "ion" as const, ionId: scope.ionId, projects: ion.projects().map((p) => p.id) };
+  const caller = ionCaller({ ...scope, projects: ion.projects().map((p) => p.id) });
+  if (!caller) return;
   const limit = {
     ...{ id: scope.turnId, max: PER_TURN, tooMany: "That's enough memory for one turn" },
     refuse: () => notInReport(scope),
@@ -207,12 +210,10 @@ function memoryTools(server: McpServer, ion: Ion): void {
 function dreamTools(server: McpServer, ion: Ion): void {
   const { scope, d } = ion;
   const { max, ...pass } = scope.dream ?? { see: "ions" as const, max: 0 };
-  const caller = {
-    kind: "ion" as const,
-    ionId: DREAM_ION,
-    projects: ion.projects().map((p) => p.id),
-    dream: pass,
-  };
+  // Your files are context to its passes only while your memory is on (the user, 2026-11-23).
+  const sees = ionCaller({ ...scope, projects: ion.projects().map((p) => p.id) });
+  if (!sees) return;
+  const caller = { ...sees, dream: pass };
   const tooMany = `That's ${DREAM_CHANGES} changes, the most for one night; stop here`;
   registerMemoryTools(server, caller, d, { id: scope.turnId, max, tooMany });
 }

@@ -12,14 +12,14 @@ export const chatsView: View & {
   lastAgent(db: Db, projectId: string): string | null;
 } = {
   name: "chats",
-  // 6: why a chat ion started waits for a slot (waiting). 7: or for its agent's reset.
-  version: 7,
+  // 6: why a chat ion started waits for a slot (waiting). 7: or for its agent's reset. 8: Don't remember.
+  version: 8,
   tables: ["view_chats"],
   migrate(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS view_chats (
       chat_id TEXT PRIMARY KEY, title TEXT NOT NULL, project_id TEXT, worktree TEXT, branch TEXT,
       archived INTEGER NOT NULL DEFAULT 0, last_run_status TEXT, harness TEXT, session_id TEXT, last_activity TEXT,
-      preview TEXT, by TEXT, waiting TEXT)`);
+      preview TEXT, by TEXT, waiting TEXT, not_remembered INTEGER NOT NULL DEFAULT 0)`);
   },
   reset(db) {
     db.exec("DELETE FROM view_chats");
@@ -47,8 +47,8 @@ export const chatsView: View & {
     } else if (e.type === EV.chatHandoff && (d.kind === "failed" || d.kind === "stopped")) {
       // The wait couldn't go on, or you stopped it: it reads as it ended again (final review, 2026-11-23).
       db.prepare("UPDATE view_chats SET waiting = NULL WHERE chat_id = ?").run(e.chatId);
-    } else if (e.type === EV.chatArchived) {
-      db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
+    } else if (e.type === EV.chatArchived || e.type === EV.chatMemory) {
+      noteChat(db, e, d);
     } else {
       noteRun(db, e, d);
     }
@@ -58,10 +58,19 @@ export const chatsView: View & {
       db
         .prepare(
           `SELECT chat_id AS chatId, title, project_id AS projectId, branch, archived, last_run_status AS lastRunStatus,
-             last_activity AS lastActivityAt, preview, by, waiting FROM view_chats ORDER BY rowid`,
+             last_activity AS lastActivityAt, preview, by, waiting, not_remembered AS off FROM view_chats ORDER BY rowid`,
         )
-        .all() as (Omit<ChatInfo, "archived" | "waiting"> & { archived: number; waiting: string | null })[]
-    ).map(({ waiting, ...r }) => ({ ...r, archived: r.archived === 1, ...(waiting ? { waiting } : {}) }));
+        .all() as (Omit<ChatInfo, "archived" | "waiting" | "notRemembered"> & {
+        archived: number;
+        waiting: string | null;
+        off: number;
+      })[]
+    ).map(({ waiting, off, ...r }) => ({
+      ...r,
+      archived: r.archived === 1,
+      ...(waiting ? { waiting } : {}),
+      ...(off ? { notRemembered: true as const } : {}),
+    }));
   },
   lastAgent(db, projectId) {
     const r = db
@@ -106,6 +115,13 @@ function runStatus(type: string, d: Record<string, unknown>): string | null {
   if (type === EV.runQueued) return "queued";
   if (type === EV.runStarted) return "running";
   return null;
+}
+
+/** You archived the chat, or said not to remember it (or to again). */
+function noteChat(db: Db, e: IonEvent, d: D): void {
+  if (e.type === EV.chatArchived)
+    db.prepare("UPDATE view_chats SET archived = 1 WHERE chat_id = ?").run(e.chatId);
+  else db.prepare("UPDATE view_chats SET not_remembered = ? WHERE chat_id = ?").run(d.on ? 0 : 1, e.chatId);
 }
 
 /** What a run or message changes on its chat: its session, reply preview, last activity and run status. */
