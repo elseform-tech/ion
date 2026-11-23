@@ -113,6 +113,8 @@ const TAKES = {
   // ion's judge: its fast model. Not checked: its judge eval allowed a case that must not pass (2026-11-23,
   // docs/research/judge-evals.md), so ion's judge never goes on Codex by itself.
   judge: { model: "gpt-5.6-luna" },
+  // ion's brain: its frontier model (ranks: Claude 100, Codex 90, Grok 80, opencode 40).
+  brain: { model: "gpt-6-astra", rank: 90 },
 } as const;
 
 /** OpenAI's Codex CLI, driven through its app-server (JSON-RPC on stdio): `codex app-server`. */

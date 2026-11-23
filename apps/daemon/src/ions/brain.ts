@@ -1,6 +1,15 @@
 import { loadUserConfig } from "@ion/config";
 import { clockOf, type EffortLevel as Effort, type HarnessInfo } from "@ion/schema";
-import { agentOrder, defaultAgent, getHarness, nextInOrder, savingClaude } from "../adapters/registry.js";
+import {
+  agentLabel,
+  agentOrder,
+  brainModel,
+  byStrength,
+  defaultAgent,
+  getHarness,
+  nextInOrder,
+  savingClaude,
+} from "../adapters/registry.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -138,33 +147,72 @@ export type IonBrain = {
   skipped?: string[];
 };
 
+/** ion's brain's effort when you picked none (the user, 2026-11-23: the strongest model, at High). */
+const BRAIN_EFFORT: Effort = "high";
+
+/** What ion's brain said it went past, once each (the daemon's log). */
+const said = new Set<string>();
+
 /**
- * An ion's agent, model and effort, or null when it has no agent ready. ion chief (and its dream, on [memory]
- * dreamAgent when set): [ion] quick ("<agent>[:<model>]")
- * while that agent is ready, else the first ready on its default model. A project's ion: the project's agent, model
- * and effort, as its threads get them. Effort falls back to [ion] quickEffort.
+ * The strongest agent ready but these (the rank each adapter gives its strongest model; the user, 2026-11-23), not
+ * limited; with none, one whose limit is only ion's guess (`own` first). Going past a stronger one that's limited is
+ * said once in the log.
+ */
+async function strongest(d: BrainDeps, not: string[], own?: string): Promise<string | null> {
+  const all = byStrength(await readyAgents(d.agents));
+  const ready = all.filter((id) => !not.includes(id));
+  const marks = usageView.agents(d.db, new Date());
+  const open = ready.find((id) => !marks[id]?.limitedUntil);
+  const passed = open ? ready.slice(0, ready.indexOf(open)) : [];
+  if (open && passed.length) {
+    const line = `ion's brain: ${agentLabel(passed[0]!)} is limited; it thinks on ${agentLabel(open)}`;
+    if (!said.has(line)) console.warn(line);
+    said.add(line);
+  }
+  if (open) return open;
+  // Limited only by ion's guess: `own` first (one turn tells), else the strongest such, never one you passed over.
+  const guessed = all.filter((id) => marks[id]?.limitGuessed);
+  if (own && guessed.includes(own)) return own;
+  return guessed.find((id) => !not.includes(id)) ?? null;
+}
+
+/**
+ * An ion's agent, model and effort, or null when it has no agent ready (the user, 2026-11-23: an ion's brain is
+ * better than its workers'). ion chief: [ion] quick ("<agent>[:<model>]") and quickEffort when you picked them, else
+ * the strongest model you're signed in to, at High. A project's ion: the project's own agent, model and effort, else
+ * the same strongest. One that isn't ready or is limited gives way to the next strongest. ion's dream: [memory]
+ * dreamAgent, else [ion] quick, else your agent order (low-decision work).
  */
 export async function ionBrain(d: BrainDeps, ionId: string): Promise<IonBrain | null> {
   const c = loadUserConfig(d.configFile).config;
   const ion = c.ion;
-  const quickEffort = ion.quickEffort ?? null;
-  // None set (a fresh ion): the first ready agent in your order (Plan 21 audit, 2026-11-23: it was Claude Code).
-  if (ionId === DREAM_ION) return dreamOn(d, c.memory.dreamAgent || ion.quick || "", quickEffort);
-  if (ionId === "chief") return chiefBrain(d, ion.quick ?? "", quickEffort);
-  // A project's own agent that isn't ready (signed out, gone) or is limited gives way to the next ready one (Plan 19's
-  // checks; the user, 2026-11-22).
-  const harness = await projectAgent(d, ionId);
+  if (ionId === DREAM_ION) return dreamOn(d, c.memory.dreamAgent || ion.quick || "", ion.quickEffort ?? null);
+  const effort = ion.quickEffort ?? BRAIN_EFFORT;
+  if (ionId === "chief") return chiefBrain(d, ion.quick ?? "", effort);
+  return projectBrain(d, ionId, c.projects.find((p) => p.id === ionId)?.harness, effort);
+}
+
+/**
+ * A project's ion: its own agent, model and effort; one that isn't ready (signed out, gone) or is limited gives way to
+ * the next strongest (Plan 19's checks; the user, 2026-11-22 and 2026-11-23), as does a project with none.
+ */
+async function projectBrain(
+  d: BrainDeps,
+  ionId: string,
+  harness: string | undefined,
+  effort: Effort,
+): Promise<IonBrain | null> {
   if (!harness || !(await isReady(d, harness))) return nextBrain(d, ionId, harness ? [harness] : []);
   if (isLimited(d, harness)) {
     const next = await pastLimited(nextBrain(d, ionId, [harness], harness), harness);
     if (next?.harness !== harness) return next;
   }
   const b = brainOf(d.configFile, ionId, harness);
-  return { harness, model: b.model ?? null, effort: b.effort ?? quickEffort };
+  return { harness, model: b.model ?? null, effort: b.effort ?? effort };
 }
 
-/** ion chief's: [ion] quick while it's ready and not limited, else the next ready one (saying it went past a limit). */
-async function chiefBrain(d: BrainDeps, quick: string, effort: Effort | null): Promise<IonBrain | null> {
+/** ion chief's: [ion] quick while it's ready and not limited, else the strongest (saying it went past a limit). */
+async function chiefBrain(d: BrainDeps, quick: string, effort: Effort): Promise<IonBrain | null> {
   if (!quick) return nextBrain(d, "chief", []);
   const [set, ...rest] = quick.split(":");
   const ready = await isReady(d, set!);
@@ -183,8 +231,9 @@ async function pastLimited(next: Promise<IonBrain | null>, limited?: string): Pr
 }
 
 /**
- * The first ready agent but these (in your agent order), for an ion whose own agent isn't ready or failed;
- * on its default model (a project's own model only on the agent it was set for), or null when none is left.
+ * The strongest ready agent but these, for an ion with none of its own or whose own isn't ready or failed: on its
+ * strongest model (a project's own model only on the agent it was set for), at your effort, else High; ion's dream
+ * goes along your agent order instead. Null when none is left.
  */
 export async function nextBrain(
   d: BrainDeps,
@@ -192,9 +241,28 @@ export async function nextBrain(
   not: string[],
   own?: string,
 ): Promise<IonBrain | null> {
-  const harness = await pick(d, { not, ...(own ? { own } : {}) });
+  const c = loadUserConfig(d.configFile).config;
+  if (ionId === DREAM_ION) {
+    const harness = await pick(d, { not, ...(own ? { own } : {}) });
+    return harness ? { harness, model: null, effort: c.ion.quickEffort ?? null } : null;
+  }
+  const harness = await strongest(d, not, own);
   if (!harness) return null;
-  const quickEffort = loadUserConfig(d.configFile).config.ion.quickEffort ?? null;
   const b = ionId === "chief" ? {} : brainOf(d.configFile, ionId, harness);
-  return { harness, model: b.model ?? null, effort: b.effort ?? quickEffort };
+  return {
+    harness,
+    model: b.model ?? brainModel(harness),
+    effort: b.effort ?? c.ion.quickEffort ?? BRAIN_EFFORT,
+  };
+}
+
+/**
+ * The strongest model you're signed in to and the effort ion's brain thinks at on it (yours, else High), as Settings
+ * names it whether or not you picked another (the user, 2026-11-23); null when no agent is ready.
+ */
+export async function strongestBrain(
+  d: BrainDeps,
+): Promise<{ agent: string; model: string | null; effort: Effort } | null> {
+  const b = await nextBrain(d, "chief", []);
+  return b ? { agent: b.harness, model: b.model, effort: b.effort ?? BRAIN_EFFORT } : null;
 }

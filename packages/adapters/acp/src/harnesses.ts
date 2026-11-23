@@ -83,6 +83,8 @@ export type AcpHarness = {
   bare?: { model?: string; effort?: EffortLevel; args?: (dir: string) => string[] };
   /** ion's judge's pinned model and when ion's judge evals checked it (HarnessAdapter.judge). */
   judge?: { model: string; checked?: string };
+  /** Its strongest model for ion's brain and its rank (HarnessAdapter.brain). */
+  brain?: { model?: string; rank: number };
   /**
    * A start with no web (ion's dream), given a daemon-only folder for its own files: its command line, environment
    * (after the harness's own) and the paths its sandbox may read. Absent: it can't turn its web off.
@@ -153,6 +155,8 @@ export const GROK_BUILD: AcpHarness = {
   bare: { model: "grok-4.7-build-fast", effort: "low", args: grokBareArgs },
   // Checked by ion's judge evals (docs/research/judge-evals.md): nothing dangerous allowed.
   judge: { model: "grok-4.7-build-fast", checked: "2026-11-23" },
+  // ion's brain: its full model (ranks: Claude 100, Codex 90, Grok 80, opencode 40).
+  brain: { model: "grok-4.7", rank: 80 },
   // ion's dream: a profile with no tool of its own (no web), ion's MCP server found with search_tool.
   noWeb: ({ dir }) => ({ args: grokDreamArgs(dir), read: [dir] }),
   forgetArgs: (id) => ["sessions", "delete", id],
@@ -369,6 +373,8 @@ export const OPENCODE: AcpHarness = {
   logGiveUp: opencodeGiveUp,
   // ion's judge: its free model, low effort; every tool refused by ion's gate (final review, 2026-11-22).
   bare: { effort: "low" },
+  // ion's brain: its own default free model, last of the agents ion knows (ranks: Claude 100, Codex 90, Grok 80).
+  brain: { rank: 40 },
   noWeb: ({ own }) => opencodeNoWeb(own),
   forgetArgs: (id) => ["session", "delete", id],
   // Free only when opencode prices the model ion runs at 0 (its Zen free models; review, 2026-11-22: not assumed).

@@ -3,10 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { clockOf, type HarnessInfo, type NewEvent } from "@ion/schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
-import { allLimited, ionBrain, nextBrain } from "./brain.js";
+import { getHarness } from "../adapters/registry.js";
+import { allLimited, ionBrain, nextBrain, strongestBrain } from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
 // test run past a test's wait), even when the agent was already chosen. Only the chosen one is checked; every agent
@@ -69,31 +70,84 @@ describe("an ion's agent", () => {
     }
   });
 
-  // Plan 21 audit, 2026-11-23: ion chief's agent was Claude Code unless you set one, and an ion whose agent failed
-  // went on Claude Code too. With none set it's the first ready in your agent order; Claude Code only when it's first
-  // in your order or the only one ready.
-  it("follows your agent order when no agent is set, and saves Claude Code", async () => {
+  // The user, 2026-11-23: "Orchestrator brain should be a better brain than the worker thread model" and, for a fresh
+  // ion, "the strongest model you're signed in to". ion chief and a project ion with no agent of its own think on the
+  // strongest model among the agents signed in and not limited (each adapter ranks its own), at High effort; a limited
+  // one gives way to the next strongest, said once in the log. Your agent order is for workers and the judge, and
+  // Dream still follows it.
+  it("thinks on the strongest model you're signed in to, at High, past a limited one", async () => {
     process.env.ION_ALLOW_FAKE = "1";
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
-    saveUserConfig(configFile, { ...DEFAULT_CONFIG, memory: { dream: "nightly" } });
-    const d = (ids: string[]) => ({
+    const projects = [{ id: "app", path: "/x/app", starred: false }];
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects, memory: { dream: "nightly" } });
+    const all = ["opencode", "grok-build", "codex", "claude-code"];
+    const top = (id: string) => getHarness(id)!.adapter.brain!.model ?? null;
+    const logged: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((l: string) => void logged.push(l));
+    try {
+      const d = (ids: string[], db = viewsDb()) => ({
+        configFile,
+        db,
+        agents: async () => ids.map((id) => info(id, true)),
+      });
+      expect(await ionBrain(d(all), "chief")).toEqual({
+        harness: "claude-code",
+        model: top("claude-code"),
+        effort: "high",
+      });
+      expect(await ionBrain(d(all), "app")).toMatchObject({ harness: "claude-code", effort: "high" });
+      // Dream is low-decision work: your order.
+      expect(await ionBrain(d(["claude-code", "opencode"]), "_dream")).toMatchObject({ harness: "opencode" });
+      // Claude Code limited: Codex, the next strongest, said once.
+      const db = viewsDb();
+      const store = new EventStore(db, allViews);
+      const limit = { resetsAt: new Date(Date.now() + 3600_000).toISOString() };
+      const data = { code: "usage_limit", retryable: false, message: "x", limit, harness: "claude-code" };
+      store.append({ chatId: null, runId: "turn_1", origin: "adapter", type: "error", data } as NewEvent);
+      expect(await ionBrain(d(all, db), "chief")).toMatchObject({ harness: "codex", model: top("codex") });
+      await ionBrain(d(all, db), "chief");
+      expect(logged.filter((l) => l.includes("ion's brain"))).toEqual([
+        "ion's brain: Claude Code is limited; it thinks on Codex",
+      ]);
+      // A turn that failed goes on the next strongest.
+      expect(await nextBrain(d(all), "chief", ["claude-code"])).toMatchObject({
+        harness: "codex",
+        effort: "high",
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // The user, 2026-11-23: Settings names the strongest model you have, even while you've picked another.
+  it("names the strongest model you have, with your effort or High", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build" } });
+    const d = {
       configFile,
       db: viewsDb(),
-      agents: async () => ids.map((id) => info(id, true)),
+      agents: async () => [info("grok-build", true), info("codex", true)],
+    };
+    expect(await strongestBrain(d)).toEqual({
+      agent: "codex",
+      model: getHarness("codex")!.adapter.brain!.model,
+      effort: "high",
     });
-    expect(await ionBrain(d(["claude-code", "grok-build"]), "chief")).toMatchObject({
-      harness: "grok-build",
-    });
-    expect(await ionBrain(d(["claude-code", "fake"]), "_dream")).toMatchObject({ harness: "fake" });
-    expect(await ionBrain(d(["claude-code"]), "chief")).toMatchObject({ harness: "claude-code" });
-    expect(await nextBrain(d(["claude-code", "opencode"]), "chief", ["opencode"])).toBeNull();
+    expect(await strongestBrain({ ...d, agents: async () => [] })).toBeNull();
+  });
+
+  it("keeps the agent, model and effort you picked for ion", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
     saveUserConfig(configFile, {
       ...DEFAULT_CONFIG,
-      routing: { ...DEFAULT_CONFIG.routing, order: ["claude-code"] },
+      ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build:grok-4.6", quickEffort: "low" },
     });
-    expect(await nextBrain(d(["claude-code", "opencode"]), "chief", ["opencode"])).toMatchObject({
-      harness: "claude-code",
-    });
+    const d = {
+      configFile,
+      db: viewsDb(),
+      agents: async () => [info("grok-build", true), info("claude-code", true)],
+    };
+    expect(await ionBrain(d, "chief")).toEqual({ harness: "grok-build", model: "grok-4.6", effort: "low" });
   });
 
   // Plan 19's checks, 2026-11-22: a project's ion whose agent wasn't ready had no agent at all ("I couldn't reach my
@@ -107,7 +161,8 @@ describe("an ion's agent", () => {
       db: viewsDb(),
       agents: async () => [info("claude-code", false), info("opencode", false), info("grok-build", true)],
     };
-    expect(await ionBrain(d, "app")).toEqual({ harness: "grok-build", model: null, effort: null });
+    // The user, 2026-11-23: the next strongest, at its strongest model and High.
+    expect(await ionBrain(d, "app")).toEqual({ harness: "grok-build", model: "grok-4.7", effort: "high" });
   });
 
   // The user, 2026-11-22: an agent marked limited (by any chat's run or ion's turn) is skipped like one that isn't
@@ -134,8 +189,8 @@ describe("an ion's agent", () => {
     };
     expect(await ionBrain(d, "app")).toEqual({
       harness: "grok-build",
-      model: null,
-      effort: null,
+      model: "grok-4.7",
+      effort: "high",
       skipped: ["claude-code"],
     });
   });

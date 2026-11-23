@@ -126,7 +126,7 @@ export const ON_LIMIT = ["ask", "continue", "wait"] as const;
 const MaxRuns = z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]);
 
 /**
- * The file's version, written by every save: 2 since ion's models and the judge follow your agent order (Plan 21
+ * The file's version, written by every save: 2 since ion's models and the judge have no Claude Code default (Plan 21
  * audit, 2026-11-23). A file without it is older, and the defaults every save wrote then are moved (moveOldDefaults).
  */
 const CONFIG_VERSION = 2;
@@ -134,8 +134,8 @@ const CONFIG_VERSION = 2;
 const UserConfigSchema = z.looseObject({
   ion: z
     .looseObject({
-      // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list. Absent: the
-      // first ready agent in your agent order (routing.order), at its quick model.
+      // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list. Absent (quick
+      // and deep): the strongest model you're signed in to, at High (the user, 2026-11-23).
       quick: z.string().optional(),
       /** How hard ion's quick model thinks; absent: the agent's own default. */
       quickEffort: Effort.optional(),
@@ -157,7 +157,7 @@ const UserConfigSchema = z.looseObject({
     .looseObject({
       /**
        * Who decides in Auto: "<harness>[:<model>]", a small model (it runs for every new action). Absent: the first
-       * ready agent in your agent order, at its quick model.
+       * ready agent in your agent order whose pinned judge model ion's judge evals checked.
        */
       judge: z.string().optional(),
     })
@@ -376,18 +376,30 @@ function dropOldAccess(raw: unknown, file: string): string | null {
 
 /** The defaults every save wrote before version 2 (Claude Code), with where each is. */
 const OLD_DEFAULTS: [section: string, key: string, was: string, name: string][] = [
-  ["ion", "quick", "claude-code", "ion's quick model"],
-  ["ion", "deep", "claude-code", "ion's deep model"],
-  ["access", "judge", "claude-code:haiku", "the judge"],
+  ["ion", "quick", "claude-code", "quick"],
+  ["ion", "deep", "claude-code", "deep"],
+  ["access", "judge", "claude-code:haiku", "judge"],
 ];
 
-/** "a", "a and b", "a, b and c". */
-const listed = (names: string[]) =>
-  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+/** One line naming what moved: ion's models to the strongest model you have, the judge to your order. */
+function movedLine(file: string, moved: string[]): string {
+  const brain = moved.filter((m) => m !== "judge");
+  const parts = [
+    ...(brain.length
+      ? [
+          `ion's ${brain.join(" and ")} model${brain.length > 1 ? "s" : ""} now use${brain.length > 1 ? "" : "s"} the strongest model you're signed in to`,
+        ]
+      : []),
+    ...(moved.includes("judge") ? ["the judge now follows your order"] : []),
+  ];
+  const it = moved.length > 1 ? "them" : "it";
+  return `${basename(file)}: ${parts.join(", and ")}; set ${it} in Settings to keep Claude Code`;
+}
 
 /**
- * A file from before version 2 (Plan 21 audit, 2026-11-23): each of ion's models and the judge still on the old
- * default (Claude Code, written by every save whether you picked it or not) follows your agent order now; any other
+ * A file from before version 2 (Plan 21 audit, 2026-11-23): each of ion's models still on the old default (Claude
+ * Code, written by every save whether you picked it or not) is the strongest model you're signed in to now, and the
+ * judge follows your agent order (the user, 2026-11-23); any other
  * value is your choice and stays. Older: no version, or one that isn't a number of at least 2 (PR #36 review); a
  * newer file's version is kept so a save never writes it lower. Returns one line naming what moved, or null.
  */
@@ -405,9 +417,7 @@ function moveOldDefaults(raw: unknown, file: string): string | null {
     delete holder[key];
     moved.push(name);
   }
-  if (!moved.length) return null;
-  const [verb, it] = moved.length > 1 ? ["follow", "them"] : ["follows", "it"];
-  return `${basename(file)}: ${listed(moved)} now ${verb} your order; set ${it} in Settings → Agents to keep Claude Code`;
+  return moved.length ? movedLine(file, moved) : null;
 }
 
 /**

@@ -1,9 +1,10 @@
 import type { IonClient } from "@ion/client/browser";
 import {
   Avatar,
+  Brain,
   Check,
   ChevronLeft,
-  ChevronRight,
+  Gauge,
   MessageCircle,
   Sparkles,
   X,
@@ -15,16 +16,19 @@ import {
   type IonStats,
   type ProjectInfo,
   type ProjectPatch,
+  type EffortLevel,
+  type SettingsInfo,
+  type SettingsPatch,
   stripControl,
 } from "@ion/schema";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
-import { AgentPicker, ModelMenu } from "./ModelMenu.js";
+import { AgentPicker, ModelMenu, ModelRow } from "./ModelMenu.js";
 import { Routines } from "./Routines.js";
 
 /** Effort choices: "" is the agent's own default. */
-export const EFFORTS = [
+const EFFORTS = [
   ["", "Default"],
   ["low", "Low"],
   ["medium", "Medium"],
@@ -258,16 +262,63 @@ function Rules({ project, patch, error }: Pick<SetupProps, "project" | "patch"> 
   );
 }
 
-/** ion chief's setup: the model it thinks with (set in Agents). */
-function ChiefSetup({ quick, onAgents }: { quick: string; onAgents: () => void }) {
+/** "Grok Build · Grok Code · High": an agent, its model and an effort, by their names. */
+function brainLine(data: SettingsData, b: NonNullable<SettingsInfo["strongest"]>): string {
+  const h = data.harnesses.find((x) => x.id === b.agent);
+  const model = b.model ? (h?.models.find((m) => m.id === b.model)?.label ?? b.model) : "Default";
+  const effort = EFFORTS.find(([id]) => id === b.effort)?.[1] ?? b.effort;
+  return [h?.label ?? b.agent, model, effort].join(" · ");
+}
+
+/** How hard ion thinks (Default: High when it's on the strongest model, else its agent's own). */
+function BrainEffort({
+  value,
+  onPick,
+}: {
+  value: EffortLevel | null;
+  onPick: (e: EffortLevel | null) => void;
+}) {
   return (
-    <Row label="Thinks with">
-      <button className="val" type="button" onClick={onAgents}>
-        <Zap />
-        {quick}
-        <ChevronRight />
-      </button>
-    </Row>
+    <div className="srow">
+      <div className="g">
+        <span className="slot">
+          <Brain />
+          Effort
+        </span>
+      </div>
+      <span className="seg sm" role="group" aria-label="ion's effort">
+        {EFFORTS.map(([id, label]) => (
+          <button
+            key={label}
+            type="button"
+            className={(value ?? "") === id ? "on" : ""}
+            onClick={() => onPick(id || null)}
+          >
+            {label}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * ion chief's brain (the user, 2026-11-23: better than its workers'): the strongest model you're signed in to, which
+ * the daemon names, or the agent, model and effort you picked, with a way back to the strongest.
+ */
+function ChiefSetup({ data, set }: { data: SettingsData; set: (patch: SettingsPatch) => void }) {
+  const s = data.settings;
+  const strongest = s?.strongest;
+  return (
+    <>
+      <ModelRow
+        {...{ data, icon: Zap, label: "Thinks with", spec: s?.quick ?? "", now: s?.quickNow ?? null }}
+        follow={{ label: "Strongest", icon: Gauge }}
+        note={!!strongest && `Strongest you have: ${brainLine(data, strongest)}`}
+        onPick={(quick) => set({ quick })}
+      />
+      <BrainEffort value={s?.effort ?? null} onPick={(effort) => set({ effort })} />
+    </>
   );
 }
 
@@ -277,7 +328,6 @@ type PageProps = {
   ionId: string;
   onBack: () => void;
   onOpenChat: () => void;
-  onAgents: () => void;
 };
 
 function Hero({ ion, onOpenChat }: { ion: IonInfo; onOpenChat: () => void }) {
@@ -295,15 +345,18 @@ function Hero({ ion, onOpenChat }: { ion: IonInfo; onOpenChat: () => void }) {
   );
 }
 
+/** An ion's stats, read when its page opens. */
+function useIonStats(client: IonClient, ionId: string): IonStats | null {
+  const [stats, setStats] = useState<IonStats | null>(null);
+  useEffect(() => void client.call("ion.stats", { ionId }).then(setStats, () => {}), [client, ionId]);
+  return stats;
+}
+
 /** Settings → an ion: its stats, what it runs on, and its project's rules (ion chief: the model it thinks with). */
 export function IonPage(p: PageProps) {
   const ion = p.data.ions.find((x) => x.ionId === p.ionId);
   const project = p.data.projects.find((x) => x.id === p.ionId);
-  const [stats, setStats] = useState<IonStats | null>(null);
-  useEffect(
-    () => void p.client.call("ion.stats", { ionId: p.ionId }).then(setStats, () => {}),
-    [p.client, p.ionId],
-  );
+  const stats = useIonStats(p.client, p.ionId);
   const [error, run] = useCallError();
   const [at, setAt] = useState<"setup" | "rules">("setup");
   if (!ion) return null;
@@ -335,7 +388,10 @@ export function IonPage(p: PageProps) {
               <BrainPick {...setup} project={project} />
             </>
           ) : (
-            <ChiefSetup quick={p.data.settings?.quickNow ?? ""} onAgents={p.onAgents} />
+            <ChiefSetup
+              data={p.data}
+              set={(patch) => run(p.client.call("settings.set", { patch }), p.data.reload)}
+            />
           )}
           {shown("setup")}
         </div>

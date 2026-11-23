@@ -10,6 +10,7 @@ export const settings: SettingsInfo = {
   quickNow: "grok-build",
   judgeNow: null,
   judgeChecked: false,
+  strongest: null,
   maxRuns: "auto",
   autoRuns: 4,
   notifications: {

@@ -96,6 +96,11 @@ export type IonSettings = {
   judgeNow: string | null;
   /** Whether ion's judge evals checked the judge's model now (one you set may not be: Settings says so). */
   judgeChecked: boolean;
+  /**
+   * ion's brain when you picked none (the user, 2026-11-23): the strongest model you're signed in to, and the effort
+   * (yours, else High); null when no agent is ready.
+   */
+  strongest: { agent: string; model: string | null; effort: EffortLevel } | null;
 };
 
 /** What ion does when a chat's agent hits its limit (Settings → Agents). */

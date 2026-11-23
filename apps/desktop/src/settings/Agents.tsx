@@ -1,20 +1,12 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar, Brain, type LucideIcon, ShieldCheck, Zap } from "@ion/design-system";
-import {
-  type AgentUsage,
-  EV,
-  type EffortLevel,
-  type HarnessInfo,
-  type SettingsPatch,
-  usageLine,
-} from "@ion/schema";
+import { Avatar, ShieldCheck } from "@ion/design-system";
+import { type AgentUsage, EV, type HarnessInfo, type SettingsPatch, usageLine } from "@ion/schema";
 import { Fragment, type HTMLAttributes, type ReactNode, useCallback, useEffect, useState } from "react";
 import { inOrder, PickingAgents, useAgentOrder } from "./AgentOrder.js";
 import { useEvents } from "../events.js";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
-import { EFFORTS } from "./IonPage.js";
-import { AgentPicker, ModelMenu } from "./ModelMenu.js";
+import { ModelRow } from "./ModelMenu.js";
 import { Switch } from "./Switch.js";
 import { useAgentSignIn, useSignInsWaiting } from "./AgentSignIn.js";
 
@@ -107,95 +99,13 @@ function AgentRow(p: {
   );
 }
 
-/**
- * One of ion's own models: "Your order" (none set: it follows your agent order, the agent it's on now marked), or an
- * agent (its shape), then one of its models from a menu ("Default": the agent's own). Only agents that are ready.
- */
-function ModelRow(p: {
-  data: SettingsData;
-  icon: LucideIcon;
-  label: string;
-  /** Yours ("" when none is set), and whom it runs on now (the daemon says). */
-  spec: string;
-  now: string | null;
-  onPick: (spec: string | null) => void;
-  /** A quiet line under it (the judge on a model ion's evals didn't check). */
-  note?: string | false;
-}) {
-  const [agent, model = ""] = (p.spec || p.now || "").split(/:(.*)/);
-  const ok = p.data.harnesses.filter(ready);
-  const models = ok.find((h) => h.id === agent)?.models ?? [];
-  const Icon = p.icon;
-  return (
-    <div className="srow">
-      <div className="g">
-        <span className="slot">
-          <Icon />
-          {p.label}
-        </span>
-        {p.note && <div className="s">{p.note}</div>}
-      </div>
-      <AgentPicker
-        agents={ok}
-        value={p.spec ? agent : null}
-        onPick={p.onPick}
-        label={p.label}
-        follow={{ on: !p.spec, now: p.spec ? null : (agent ?? null), onPick: () => p.onPick(null) }}
-      />
-      <ModelMenu
-        label={`${p.label} model`}
-        models={models}
-        value={p.spec ? model : ""}
-        onChange={(m) => p.onPick(m ? `${agent}:${m}` : String(agent))}
-      />
-    </div>
-  );
-}
-
-/** How hard ion's own model thinks (Default: its agent's own). */
-function QuickEffort({
-  value,
-  onPick,
-}: {
-  value: EffortLevel | null;
-  onPick: (e: EffortLevel | null) => void;
-}) {
-  return (
-    <div className="srow">
-      <div className="g">
-        <span className="slot">
-          <Brain />
-          Effort
-        </span>
-      </div>
-      <span className="seg sm" role="group" aria-label="ion's effort">
-        {EFFORTS.map(([id, label]) => (
-          <button
-            key={label}
-            type="button"
-            className={(value ?? "") === id ? "on" : ""}
-            onClick={() => onPick(id || null)}
-          >
-            {label}
-          </button>
-        ))}
-      </span>
-    </div>
-  );
-}
-
-/** ion's own models: Quick and its effort, and Auto's judge (Plan 21 audit, 2026-11-23: it was Claude Code, unseen). */
-function IonModels(p: { data: SettingsData; set: (patch: SettingsPatch) => void; error: string | null }) {
+/** Auto's judge (Plan 21 audit; PR #36 review, 2026-11-23): your order's first checked agent, or one you picked. */
+function JudgeModel(p: { data: SettingsData; set: (patch: SettingsPatch) => void; error: string | null }) {
   const s = p.data.settings;
   return (
     <div>
-      <h4>ion’s models</h4>
+      <h4>Auto</h4>
       <div className="group">
-        <ModelRow
-          {...{ data: p.data, icon: Zap, label: "Quick", spec: s?.quick ?? "", now: s?.quickNow ?? null }}
-          onPick={(quick) => p.set({ quick })}
-        />
-        <QuickEffort value={s?.effort ?? null} onPick={(effort) => p.set({ effort })} />
         <ModelRow
           {...{
             data: p.data,
@@ -278,7 +188,7 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
           />
         )}
       </div>
-      <IonModels data={data} set={set} error={error} />
+      <JudgeModel data={data} set={set} error={error} />
     </>
   );
 }

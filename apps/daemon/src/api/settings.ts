@@ -5,6 +5,7 @@ import { type EffortLevel, type ProjectPatch, type SettingsInfo, stripControl } 
 import { applyGeneral, generalOf } from "./general-settings.js";
 import { harnessIds, judgeChecked } from "../adapters/registry.js";
 import { agentsNow, firstOwn } from "../access/judge-agents.js";
+import { strongestBrain } from "../ions/brain.js";
 import type { Db } from "../store/index.js";
 import { harnessInfos } from "./commands.js";
 import { ownSwitches } from "../tools/own-run.js";
@@ -159,9 +160,12 @@ async function settingsOf(file: string, db: Db): Promise<SettingsInfo> {
   );
   const now = agentsNow(db, ready);
   const judgeNow = c.access.judge || ((await firstOwn(file, now, "judge")) ?? null);
+  // ion's brain: yours, else the strongest model you're signed in to (the user, 2026-11-23).
+  const strongest = await strongestBrain({ configFile: file, db, agents: () => harnessInfos.soon(READY_MS) });
+  const strongestSpec = strongest && [strongest.agent, strongest.model].filter(Boolean).join(":");
   const settings = {
     ...{ quick: c.ion.quick ?? "", effort: c.ion.quickEffort ?? null, judge: c.access.judge ?? "" },
-    quickNow: c.ion.quick || ((await firstOwn(file, now, "quick")) ?? null),
+    ...{ quickNow: c.ion.quick || strongestSpec || null, strongest },
     ...{ judgeNow, judgeChecked: !!judgeNow && judgeChecked(judgeNow) },
     ...generalOf(c),
     ownTools: ownSwitches(c),

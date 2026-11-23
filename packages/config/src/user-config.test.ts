@@ -139,6 +139,8 @@ describe("loadUserConfig", () => {
     expect(bad.warning).toContain("onLimit");
   });
 
+  // The user, 2026-11-23: unset, ion's quick and deep models are the strongest model you're signed in to (not your
+  // order); the judge follows your order.
   // Plan 21 audit, 2026-11-23: a fresh ion's quick and deep models and Auto's judge were Claude Code (the judge at
   // Haiku), whatever agents you had and against your agent order. None is set now: each follows your agent order
   // (the first ready agent). Every save wrote those defaults into the file, so a file from before (no `version`)
@@ -185,14 +187,14 @@ describe("loadUserConfig", () => {
     const one = loadUserConfig(file);
     expect(one.config.ion.quick).toBeUndefined();
     expect(one.warning).toBe(
-      "config.toml: ion's quick model now follows your order; set it in Settings → Agents to keep Claude Code",
+      "config.toml: ion's quick model now uses the strongest model you're signed in to; set it in Settings to keep Claude Code",
     );
     writeFileSync(
       file,
       '[ion]\nquick = "claude-code"\ndeep = "claude-code"\n[access]\njudge = "claude-code:haiku"\n',
     );
     expect(loadUserConfig(file).warning).toBe(
-      "config.toml: ion's quick model, ion's deep model and the judge now follow your order; set them in Settings → Agents to keep Claude Code",
+      "config.toml: ion's quick and deep models now use the strongest model you're signed in to, and the judge now follows your order; set them in Settings to keep Claude Code",
     );
     writeFileSync(file, 'version = "2"\n[ion]\nquick = "claude-code"\n');
     expect(loadUserConfig(file).config.ion.quick).toBeUndefined();

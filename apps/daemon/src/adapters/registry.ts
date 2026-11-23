@@ -145,6 +145,18 @@ export function judgeSpec(id: string): string | undefined {
 /** Whether ion's judge evals checked this "<agent>[:<model>]" (an agent alone: its own default isn't checked). */
 export const judgeChecked = (spec: string): boolean => !!spec && judgeSpec(spec.split(":")[0]!) === spec;
 
+/**
+ * These agents strongest first, by the rank each adapter gives its strongest model (the user, 2026-11-23: ion's brain
+ * is "the strongest model you're signed in to"); equal ranks keep their order.
+ */
+export const byStrength = (ids: string[]): string[] =>
+  [...ids].sort(
+    (a, b) => (getHarness(b)?.adapter.brain?.rank ?? 0) - (getHarness(a)?.adapter.brain?.rank ?? 0),
+  );
+
+/** An agent's strongest model for ion's brain, as its adapter says; null: its own default. */
+export const brainModel = (id: string): string | null => getHarness(id)?.adapter.brain?.model ?? null;
+
 /** An agent's name as ion says it ("Claude Code"), else its id. */
 export const agentLabel = (id: string): string => getHarness(id)?.label ?? id;
 

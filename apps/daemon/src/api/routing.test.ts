@@ -88,6 +88,15 @@ describe("Pick by usage", () => {
     });
   });
 
+  // The user, 2026-11-23: with no deep model picked, ion's brain is the strongest model you're signed in to, so deep
+  // work (Max effort) keeps the strongest agent.
+  it("keeps the strongest agent for Max effort when no deep model is set", () => {
+    const list = [usage("codex", "Codex"), usage("claude-code", "Claude Code")];
+    const c = config({ byUsage: true, order: ["opencode", "codex", "claude-code"] });
+    expect(routeBy(c, list, { db: db() })?.harness).toBe("codex");
+    expect(routeBy(c, list, { db: db(), effort: "max" })?.harness).toBe("claude-code");
+  });
+
   // Plan 20: a project's own agent is its fit for its ion's threads while Pick by usage is on.
   it("puts the project's own agent first for its ion's threads", () => {
     const projects = [{ id: "web", path: "/w", starred: false, harness: "codex" }];

@@ -81,7 +81,6 @@ export function Settings({ client, onOpenIon, at }: Props) {
               ionId={page.ionId}
               onBack={() => setPage({ kind: "ions" })}
               onOpenChat={() => onOpenIon(page.ionId)}
-              onAgents={() => setPage({ kind: "agents" })}
             />
           )}
           {page.kind === "memory" && <Memory client={client} data={data} at={at ?? null} />}

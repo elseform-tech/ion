@@ -57,6 +57,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     quickModel: "haiku",
     // ion's judge: Haiku, Auto's long-standing default, from before the judge evals (no eval run: Claude is saved).
     judge: { model: "haiku", checked: "default before evals" },
+    // ion's brain: Opus, the strongest of the agents ion knows (ranks: Claude 100, Codex 90, Grok 80, opencode 40).
+    brain: { model: "opus", rank: 100 },
     // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.
     picks: "slash",
     // It reads a server's resources (@server:uri, and its resource tools).

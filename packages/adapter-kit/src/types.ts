@@ -182,6 +182,12 @@ export interface HarnessAdapter {
    */
   judge?: { model: string; checked?: string };
   /**
+   * Its strongest model for ion's own brain (ion chief and the project ions, when you picked none; the user,
+   * 2026-11-23: "the strongest model you're signed in to"), and its rank against the other agents' strongest (higher is
+   * stronger). No model: its own default. Absent: rank 0.
+   */
+  brain?: { model?: string; rank: number };
+  /**
    * How its runs are sandboxed (docs/research/sandbox.md): "own", its own sandbox told to keep ion's folders out
    * (Codex); "ion", ion's wrapper around its process (the rest). Absent: never (the fake agent starts no process).
    */

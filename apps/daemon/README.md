@@ -25,8 +25,9 @@ The always-on service that owns all state.
   agent fails or is slow it goes once on the next checked agent in your order that's ready and not limited (Claude
   Code only when it's first there or the only one ready); with none left it's unsure and asks you. A judge you set on
   a model the evals didn't check still runs; Settings says "Not checked by ion's evals". `[ion] quick` and `deep`
-  are unset at first too (the first ready agent in your order), so Pick by usage's deep work (Max effort) keeps no
-  agent until you set a deep model. One judge call
+  are unset at first too: ion chief and the project ions with no agent of their own think on the strongest model
+  you're signed in to (each adapter ranks its own), at High, and Pick by usage's deep work (Max effort) keeps that
+  agent. Workers, Dream and ion's other low-decision work follow your agent order. One judge call
   per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
   says no (or can't decide), ion asks you instead: Allow or Don't allow (Remember keeps either for that exact action in the project), or your
   own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes
