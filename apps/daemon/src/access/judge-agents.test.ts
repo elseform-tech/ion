@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ApprovalRequest } from "@ion/adapter-kit";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getHarness } from "../adapters/registry.js";
+import { judgePin, shippedChecked } from "../adapters/registry.js";
 import { createJudge } from "./judge.js";
 import { judgeOthers, readyNow } from "./judge-agents.js";
 
@@ -17,7 +17,7 @@ const req: ApprovalRequest = {
 };
 const input = { projectId: "app", text: "run the tests", req };
 /** The agent's pinned judge model, as its adapter says (never written out here). */
-const J = (id: string) => `${id}:${getHarness(id)!.adapter.judge!.model}`;
+const J = (id: string) => judgePin(id)!;
 const ALLOW = '{"verdict": "allow", "reason": "fine"}';
 
 /** A config with this judge (and agent order), in a fresh folder. */
@@ -39,6 +39,8 @@ function judgeWith(o: {
   down?: string[];
   order?: string[];
   limited?: string[];
+  /** Agents whose pinned judge model ion checked on this computer (Grok's ships checked). */
+  checked?: string[];
 }) {
   const tried: string[] = [];
   const logged: string[] = [];
@@ -49,17 +51,17 @@ function judgeWith(o: {
     return ALLOW;
   };
   const now = { ready: async () => o.ready, limited: (id: string) => !!o.limited?.includes(id) };
-  const others = judgeOthers(setup(o.judge, o.order), now, (l) => void logged.push(l));
+  const passed = (id: string) => shippedChecked(id) || !!o.checked?.includes(id);
+  const others = judgeOthers({ ...setup(o.judge, o.order), passed }, now, (l) => void logged.push(l));
   return { judge: createJudge(run, 3000, others), tried, logged };
 }
 
 // Plan 21 audit, 2026-11-23: with the judge (and ion's quick and deep models) set to opencode and opencode out of its
 // free quota, the judge's second try went to Claude Code at its default model (Opus): 3 real Claude calls nobody
-// asked for. The judge now goes along your agent order to the next agent that's ready and not limited, at its pinned
-// judge model; Claude Code only when it's first in your order or the only one ready; with none left it's unsure
-// (you're asked). Which agent it went on is logged once.
-// PR #36 review, 2026-11-23: ion's judge goes on its own only on (agent, model) pairs its judge evals checked; one
-// you set yourself still runs.
+// asked for. The judge goes along your agent order to the next agent that's ready and not limited, at its pinned
+// judge model; with none left it's unsure (you're asked). Which agent it went on is logged once.
+// PR #36 re-review, the user, 2026-11-23: only on agents whose pinned judge model ion checked (on your Mac, or before
+// shipping: Grok's); Claude Code like any other. One you set yourself still runs.
 describe("the judge's next agent", () => {
   beforeAll(() => {
     process.env.ION_ALLOW_FAKE = "1";
@@ -68,7 +70,7 @@ describe("the judge's next agent", () => {
     delete process.env.ION_ALLOW_FAKE;
   });
 
-  it("goes along your agent order, past Claude Code, and logs it once", async () => {
+  it("goes along your agent order to the next checked agent, and logs it once", async () => {
     const j = judgeWith({
       judge: "opencode",
       ready: ["claude-code", "opencode", "grok-build"],
@@ -80,11 +82,13 @@ describe("the judge's next agent", () => {
     expect(j.logged).toEqual(["ion's judge: opencode didn't answer; it goes on Grok Build"]);
   });
 
-  it("is unsure, never Claude Code, when only Claude Code is left", async () => {
+  it("is unsure when no other checked agent is ready, and never an unchecked Claude Code", async () => {
     const j = judgeWith({ judge: "opencode", ready: ["opencode", "claude-code"], down: ["opencode"] });
     expect(await j.judge(input)).toMatchObject({ verdict: "unsure", decided: false });
     expect(j.tried).toEqual(["opencode"]);
-    expect(j.logged).toHaveLength(1);
+    expect(j.logged).toEqual([
+      "ion's judge: opencode didn't answer and no other checked agent is ready; you're asked",
+    ]);
   });
 
   it("skips a limited agent, and says it's limited", async () => {
@@ -94,22 +98,19 @@ describe("the judge's next agent", () => {
     expect(j.logged).toEqual(["ion's judge: opencode is limited; it goes on Grok Build"]);
   });
 
-  it("goes on Claude Code at its judge model when it's first in your order, or the only one ready", async () => {
-    const first = judgeWith({
-      judge: "opencode",
-      ready: ["opencode", "grok-build", "claude-code"],
-      down: ["opencode"],
-      order: ["claude-code"],
+  it("goes on Claude Code like any other once it's checked on your Mac, along your order", async () => {
+    const j = judgeWith({
+      judge: "",
+      ready: ["grok-build", "claude-code"],
+      order: ["claude-code", "grok-build"],
+      checked: ["claude-code"],
     });
-    await first.judge(input);
-    expect(first.tried).toEqual(["opencode", J("claude-code")]);
-    const alone = judgeWith({ judge: "opencode", ready: ["claude-code"], down: ["opencode"] });
-    await alone.judge(input);
-    expect(alone.tried).toEqual(["opencode", J("claude-code")]);
+    await j.judge(input);
+    expect(j.tried).toEqual([J("claude-code")]);
   });
 
   it("starts on the first checked ready agent in your order when you set none", async () => {
-    // Codex's pinned judge model isn't checked (its eval allowed a case that must not pass): passed over.
+    // Codex's pinned judge model isn't checked here: passed over.
     const j = judgeWith({ judge: "", ready: ["claude-code", "codex", "grok-build"] });
     await j.judge(input);
     expect(j.tried).toEqual([J("grok-build")]);
@@ -122,23 +123,13 @@ describe("the judge's next agent", () => {
     expect(none.tried).toEqual([]);
   });
 
-  it("never goes on its own on an agent ion's judge evals haven't checked", async () => {
-    // The fake agent has no checked judge model; first in your order, it's passed over.
-    const j = judgeWith({ judge: "", ready: ["fake", "grok-build"], order: ["fake"] });
+  it("goes on an agent checked on your Mac, and still runs one you set yourself", async () => {
+    const j = judgeWith({ judge: "", ready: ["fake", "grok-build"], order: ["fake"], checked: ["fake"] });
     await j.judge(input);
-    expect(j.tried).toEqual([J("grok-build")]);
-    const after = judgeWith({
-      judge: "grok-build",
-      ready: ["grok-build", "fake"],
-      down: ["grok-build"],
-      order: ["grok-build", "fake"],
-    });
-    expect(await after.judge(input)).toMatchObject({ verdict: "unsure" });
-    expect(after.tried).toEqual(["grok-build"]);
-    // One you set yourself still runs.
-    const yours = judgeWith({ judge: "fake", ready: ["fake"] });
+    expect(j.tried).toEqual([J("fake")]);
+    const yours = judgeWith({ judge: "codex", ready: ["codex"] });
     await yours.judge(input);
-    expect(yours.tried).toEqual(["fake"]);
+    expect(yours.tried).toEqual(["codex"]);
   });
 });
 

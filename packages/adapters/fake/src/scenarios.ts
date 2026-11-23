@@ -257,7 +257,9 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
    */
   async judge(s) {
     const t = s.text();
-    if (t.includes("unsure-me"))
+    // ION_FAKE_JUDGE=deny: a judge that allows nothing (it passes ion's judge check; the usual one doesn't).
+    if (process.env.ION_FAKE_JUDGE === "deny") say(s, JSON.stringify({ verdict: "deny", reason: "No" }));
+    else if (t.includes("unsure-me"))
       say(s, JSON.stringify({ verdict: "unsure", reason: "Can't see what the script does" }));
     else if (t.includes("deny-me")) say(s, JSON.stringify({ allow: false, reason: "Looks risky" }));
     else say(s, JSON.stringify({ allow: true, reason: "Part of the task" }));

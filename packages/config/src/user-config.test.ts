@@ -196,8 +196,13 @@ describe("loadUserConfig", () => {
     expect(loadUserConfig(file).warning).toBe(
       "config.toml: ion's quick and deep models now use the strongest model you're signed in to, and the judge now follows your order; set them in Settings to keep Claude Code",
     );
-    writeFileSync(file, 'version = "2"\n[ion]\nquick = "claude-code"\n');
-    expect(loadUserConfig(file).config.ion.quick).toBeUndefined();
+    // PR #36 re-review, 2026-11-23: a version written as a string is a newer ion's, unknown: nothing moves, and a
+    // save keeps it as written.
+    writeFileSync(file, 'version = "2.1"\n[ion]\nquick = "claude-code"\n');
+    const odd = loadUserConfig(file);
+    expect([odd.config.ion.quick, odd.warning]).toEqual(["claude-code", null]);
+    saveUserConfig(file, odd.config);
+    expect(readFileSync(file, "utf8")).toContain('version = "2.1"');
     writeFileSync(file, 'version = 3\n[ion]\nquick = "claude-code"\n');
     const newer = loadUserConfig(file);
     expect([newer.config.ion.quick, newer.warning]).toEqual(["claude-code", null]);

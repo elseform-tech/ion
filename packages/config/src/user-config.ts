@@ -408,8 +408,9 @@ function moveOldDefaults(raw: unknown, file: string): string | null {
   if (typeof r !== "object" || r === null) return null;
   const v = r.version;
   delete r.version;
-  if (typeof v === "number" && v > CONFIG_VERSION) r.version = v;
-  if (typeof v === "number" && v >= CONFIG_VERSION) return null;
+  // A newer ion's version (a higher number, or one written as a string: unknown) is kept, and nothing moves.
+  if (typeof v === "string" || (typeof v === "number" && v > CONFIG_VERSION)) r.version = v;
+  if (typeof v === "string" || (typeof v === "number" && v >= CONFIG_VERSION)) return null;
   const moved: string[] = [];
   for (const [section, key, was, name] of OLD_DEFAULTS) {
     const holder = r[section] as Record<string, unknown> | undefined;
@@ -445,6 +446,12 @@ export function loadUserConfig(file: string): {
   return { config: r.data, error: null, warning };
 }
 
+/** The version a save writes: a newer ion's as it was (a string: unknown), else at least this ion's. */
+function versionToWrite(read: unknown): number | string {
+  if (typeof read === "string") return read;
+  return Math.max(CONFIG_VERSION, typeof read === "number" ? read : 0);
+}
+
 /** Writes the config atomically (temp file, then rename). */
 export function saveUserConfig(file: string, c: UserConfig): void {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
@@ -455,7 +462,7 @@ export function saveUserConfig(file: string, c: UserConfig): void {
     ...rest
   } = UserConfigSchema.parse(c) as UserConfig & { version?: unknown };
   // Never lower than the file's own (a newer ion's): PR #36 review, 2026-11-23.
-  const parsed = { version: Math.max(CONFIG_VERSION, typeof read === "number" ? read : 0), ...rest };
+  const parsed = { version: versionToWrite(read), ...rest };
   // A held project goes back in the file as you wrote it (after the others).
   const out = heldProjects?.length ? { ...parsed, projects: [...parsed.projects, ...heldProjects] } : parsed;
   writeFileSync(tmp, stringify(out), { mode: 0o600 });

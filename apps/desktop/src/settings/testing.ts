@@ -11,6 +11,8 @@ export const settings: SettingsInfo = {
   judgeNow: null,
   judgeChecked: false,
   strongest: null,
+  judges: {},
+  dreamNow: null,
   maxRuns: "auto",
   autoRuns: 4,
   notifications: {

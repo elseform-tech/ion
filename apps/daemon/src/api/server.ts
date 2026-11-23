@@ -19,7 +19,8 @@ import { startHooks } from "../hooks/start.js";
 import { ionLauncher } from "../runs/ion-bin.js";
 import { createAccess, harnessRunner, ionDirsOf } from "../access/index.js";
 import { startOwnAgents } from "../access/runner.js";
-import { type AgentsNow, judgeOn, ownAgents, readyNow } from "../access/judge-agents.js";
+import { type AgentsNow, judgeOn, type Passed } from "../access/judge-agents.js";
+import { ownModels } from "./own-models.js";
 import { theirRulesOf } from "../access/agent-rules.js";
 import { UnsureLog } from "../access/unsure.js";
 import type { Decisions } from "../decisions/index.js";
@@ -216,7 +217,7 @@ function httpServer(ctx: Ctx, turns: IonTurns) {
  * where ion's gate hook lives; ~/.grok is covered by name) are always denied; the judge weighs your decisions.
  */
 function autoAccess(
-  opts: { dataDir: string; configFile: string; now: AgentsNow },
+  opts: { dataDir: string; configFile: string; now: AgentsNow; passed: Passed },
   quick: ReturnType<typeof harnessRunner>,
   late: { decisions?: Decisions },
   unsure: UnsureLog,
@@ -233,9 +234,6 @@ function autoAccess(
     decisionsFor: (projectId, chatId) => late.decisions?.forJudge(projectId, chatId) ?? [],
   });
 }
-
-/** The agents signed in now (the judge's second try picks one). */
-const readyAgents = readyNow(harnessInfos);
 
 /**
  * ion chief's suggestions: a routine is added the way you'd add it; a stalled chat gets its follow-up through the
@@ -459,10 +457,8 @@ function openState(
   const { tools, oauth, skills, forRuns, cli, ionBin } = connectionsOf(opts, store, late);
   const needs = new NeedsService(store, db);
   const grants = createGrants();
-  const own = ownAgents({ ...opts, record }, db, readyAgents);
-  const quick = harnessRunner(own);
-  // How ion itself thinks (ion chief, the project ions, answering from your decisions): [ion] quick in Settings.
-  const ionQuick = harnessRunner(own, "quick");
+  // The judge, ion's quick model (low-decision work), ion's brain at Medium, and ion's checks of judge models.
+  const { own, judge: quick, quick: ionQuick, brain, judges } = ownModels(opts, db, record);
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
   sweepNeeds(needs, ionQuestions);
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
@@ -481,7 +477,8 @@ function openState(
   const sandbox = startOwnAgents(opts, startSandbox(opts));
   const runs = new RunManager(store, { ...runCtx, access, ionBin, sandbox, servers, ...forRuns }, needs, db);
   // Your answers to agents' questions, and ion's question when a chat's agent hits its limit.
-  const answers = { store, db, needs, runs, configFile: opts.configFile, quick: ionQuick, ion: ionQuestions };
+  // Answering an agent's question from your decisions is judgement work: ion's brain (PR #36 re-review, 2026-11-23).
+  const answers = { store, db, needs, runs, configFile: opts.configFile, quick: brain, ion: ionQuestions };
   const { decisions, handoffs } = answersOf(answers);
   late.decisions = decisions;
   const { ions, turns, dreams } = startIons({ store, db, ...opts, runs, grants, base, ionServers, memory });
@@ -493,7 +490,7 @@ function openState(
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines, memory });
   const base0 = {
     ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
-    ...{ tools, oauth, unsure, ionServers, memory, dreams, handoffs },
+    ...{ tools, oauth, unsure, ionServers, memory, dreams, handoffs, judges },
   };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };

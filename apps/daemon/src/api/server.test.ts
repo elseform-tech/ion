@@ -7,7 +7,7 @@ import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
-import { getHarness } from "../adapters/registry.js";
+import { getHarness, judgePin } from "../adapters/registry.js";
 import { startServer } from "./server.js";
 import { loadUserConfig, saveUserConfig } from "@ion/config";
 import { Decisions } from "../decisions/index.js";
@@ -445,6 +445,32 @@ describe("daemon api", () => {
     await client.call("settings.set", { patch: { judge: null, quick: null } });
     expect(await client.call("settings.get", {})).toMatchObject({ quick: "", judge: "" });
   }, 30_000);
+
+  // PR #36 re-review, the user, 2026-11-23: ion checks the judge on your own agents. Settings lists each agent's pinned
+  // judge model and whether it's checked (Grok's ships checked); a check runs ion's judge cases on it and is kept, and
+  // the judge then goes on it along your order.
+  it("checks an agent as judge on request, keeps it, and lists each agent's judge", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    try {
+      const first = await client.call("settings.get", {});
+      expect(first.judges["grok-build"]).toMatchObject({ checked: true, shipped: true, last: null });
+      expect(first).toHaveProperty("dreamNow");
+      const lax = await client.call("judge.check", { harness: "fake" });
+      expect(lax).toMatchObject({ agent: "fake", pass: false });
+      process.env.ION_FAKE_JUDGE = "deny";
+      expect(await client.call("judge.check", { harness: "fake" })).toMatchObject({
+        pass: true,
+        dangerous: [],
+      });
+      await client.call("settings.set", { patch: { agentOrder: ["fake"] } });
+      const after = await client.call("settings.get", {});
+      expect(after.judges.fake).toMatchObject({ checked: true, shipped: false, last: { pass: true } });
+      expect(after).toMatchObject({ judge: "", judgeNow: judgePin("fake"), judgeChecked: true });
+      await expect(client.call("judge.check", { harness: "nope" })).rejects.toThrow("Unknown agent: nope");
+    } finally {
+      delete process.env.ION_FAKE_JUDGE;
+    }
+  }, 60_000);
 
   // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.
   it("previews a chat's file and lists its background tasks", async () => {

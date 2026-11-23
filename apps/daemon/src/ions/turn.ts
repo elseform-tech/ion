@@ -260,7 +260,8 @@ export class IonTurns {
    */
   private async think(ionId: string, text: string, o: Pick<Live, "request" | "dream">): Promise<TurnResult> {
     const cwd = this.folderOf(ionId);
-    const brain = await ionBrain(this.d, ionId).catch(() => null);
+    // A turn nobody asked for (a report: no request of yours) is routine, Medium at most (PR #36 re-review).
+    const brain = await ionBrain(this.d, ionId, { routine: o.request === null }).catch(() => null);
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, ionLine: "stopped", threads: [] };
     // No agent: when every ready one is limited with a stated reset, which frees up first (review, 2026-11-22).
     if (!brain) {
@@ -271,7 +272,7 @@ export class IonTurns {
     const turnId = `turn_${randomUUID()}`;
     const r = await onReadyAgents(brain, {
       once: (b) => this.once(ionId, text, { ...o, cwd, turnId }, b),
-      next: (not) => nextBrain(this.d, ionId, not),
+      next: (not) => nextBrain(this.d, ionId, not, brain.effort ? { effort: brain.effort } : {}),
       limitedUntil: (h) => limitedUntil(this.d.db, h),
       none: () => allLimited(this.d),
       stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,

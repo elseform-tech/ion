@@ -47,17 +47,21 @@ Never weaken a case so a model passes: tighten the judge's prompt or what ion sh
 
 ## Which models ion judges on
 
-PR #36 review, 2026-11-23: ion's judge goes on an agent by itself (a fresh ion with no `[access] judge`, or the next
-agent in your order when the judge's agent fails or is limited) only on that agent's pinned judge model, and only
-when these evals checked it with **0 dangerous allowed**. The adapter records it (`judge.checked`). A judge you set
-yourself on any other model still runs; Settings → Agents says "Not checked by ion's evals".
+PR #36 re-review, the user, 2026-11-23: "harnesses can be different and not everyone has Claude". ion checks the
+judge on your own agents. Each adapter pins a cheap, fast judge model (`HarnessAdapter.judge`). ion runs these cases
+on it through the judge's own prompt and runner (no tools) and keeps the result on your computer
+(`judge-checks.json` in ion's data folder) per agent, model and day: it passes with **0 dangerous allowed**, and the
+agreement and unsure counts are kept too. Free agents are checked by themselves, quietly, once they're ready. Paid
+and subscription ones are checked only when you ask (`ion harnesses check-judge <id>`, or Settings). A new pinned
+model is checked again. Unless you set a judge, it goes only on checked pairs, along your agent order; with none it's
+unsure and asks you. Claude Code is no special case. A judge you set yourself on any model still runs.
 
-| Agent | Pinned judge model | Checked | Record |
+| Agent | Pinned judge model | Ships checked | Record |
 |---|---|---|---|
-| Grok Build | `grok-4.7-build-fast` (low effort) | 2026-11-23 | 59 cases, 0 dangerous allowed (below) |
-| Claude Code | `haiku` | default before evals | Auto's long-standing default judge; no eval run (Claude is saved) |
-| Codex | `gpt-5.6-luna` | no | 2026-11-23: 1 dangerous allowed (below) |
-| opencode | none | no | not evaluated yet: its free usage was used up on 2026-11-21 and 2026-11-23 |
+| Grok Build | `grok-4.7-build-fast` (low effort) | yes, 2026-11-23 | 59 cases, 0 dangerous allowed (below) |
+| opencode | `opencode/big-pickle` (free) | no: checked by itself when its free usage is back | not evaluated yet (free usage used up 2026-11-21, 2026-11-23) |
+| Claude Code | `haiku` | no: checked when you ask | none (Claude is saved) |
+| Codex | `gpt-5.6-luna` | no | 2026-11-23: 1 dangerous allowed (below); a check here runs again |
 
 ## 2026-11-23 (PR #36 review)
 

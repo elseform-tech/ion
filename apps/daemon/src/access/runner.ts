@@ -2,11 +2,13 @@ import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AdapterEvent, SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
+import type { EffortLevel } from "@ion/schema";
 import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { getHarness, placeProbes } from "../adapters/registry.js";
 import { ownAgentSandbox, runSandbox } from "../runs/sandbox.js";
 import { envDropOf } from "../tools/env-drop.js";
+import { brainEffort } from "../ions/brain.js";
 
 /** Where ion's own agent processes (the judge, ion's quick model, sign-in and model checks) work: in its data folder. */
 const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
@@ -40,28 +42,36 @@ export type RunnerOpts = {
    * The agent to run on when your config names none ("": a fresh ion follows your agent order; Plan 21 audit,
    * 2026-11-23: it was Claude Code), as "<agent>[:<model>]"; undefined when none is ready.
    */
-  firstOwn?: (which: "judge" | "quick") => Promise<string | undefined>;
+  firstOwn?: (which: Which) => Promise<string | undefined>;
 };
+
+/**
+ * Which of ion's own models a prompt runs on: the Auto judge, ion's quick model (low-decision work, your order when
+ * none is set), or ion's brain at Medium at most (judgement work: answering from your decisions; PR #36 re-review).
+ */
+export type Which = "judge" | "quick" | "brain";
 
 /**
  * The agent, model and effort a prompt runs on: ion's quick model at the effort you picked (`agent` overrides the
  * agent, on its default model), or the judge at its agent's default effort.
  */
-export function startOf(c: UserConfig, which: "judge" | "quick", agent?: string) {
-  const spec = agent ?? (which === "quick" ? c.ion.quick : c.access.judge) ?? "";
+export function startOf(c: UserConfig, which: Which, agent?: string) {
+  const spec = agent ?? (which === "judge" ? c.access.judge : c.ion.quick) ?? "";
   const id = spec.split(":")[0]!;
   const model = spec.includes(":") ? spec.slice(spec.indexOf(":") + 1) : null;
-  const effort = which === "quick" ? (c.ion.quickEffort ?? null) : null;
-  return { id, model, effort };
+  return { id, model, effort: effortOf(c, which) };
+}
+
+/** The judge at its agent's own effort; ion's brain at Medium at most; the quick model at yours. */
+function effortOf(c: UserConfig, which: Which): EffortLevel | null {
+  if (which === "judge") return null;
+  if (which === "brain") return brainEffort(c.ion.quickEffort, true);
+  return c.ion.quickEffort ?? null;
 }
 
 /** The judge's or ion's quick model's "<agent>[:<model>]": yours, else the first ready in your order. */
-async function specOf(
-  c: UserConfig,
-  which: "judge" | "quick",
-  firstOwn: RunnerOpts["firstOwn"],
-): Promise<string> {
-  const set = which === "quick" ? c.ion.quick : c.access.judge;
+async function specOf(c: UserConfig, which: Which, firstOwn: RunnerOpts["firstOwn"]): Promise<string> {
+  const set = which === "judge" ? c.access.judge : c.ion.quick;
   const spec = set || (await firstOwn?.(which));
   if (!spec) throw new Error("no agent is ready");
   return spec;
@@ -76,7 +86,7 @@ async function specOf(
  */
 export function harnessRunner(
   o: RunnerOpts,
-  which: "judge" | "quick" = "judge",
+  which: Which = "judge",
 ): (prompt: string, signal: AbortSignal, agent?: string) => Promise<string> {
   return async (prompt, signal, agent) => {
     const c = loadUserConfig(o.configFile).config;
@@ -110,11 +120,7 @@ export function harnessRunner(
  * which holds each session's own folder (made fresh, removed when it ends) and which its sandbox may write, and
  * `home`, a daemon-only folder for the agent's own files (Grok's profile), outside it. Emptied at the daemon's start.
  */
-function foldersOf(
-  dataDir: string,
-  which: "judge" | "quick",
-  harness: string,
-): { base: string; home: string } {
+function foldersOf(dataDir: string, which: Which, harness: string): { base: string; home: string } {
   const name = `ion-${which}-${harness.replace(/[^\w-]/g, "_")}`;
   const base = join(scratchOf(dataDir), name);
   const home = join(scratchOf(dataDir), `${name}-own`);

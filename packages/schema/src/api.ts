@@ -4,7 +4,14 @@ import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
 import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
 import type { MemorySee, MemoryType } from "./memory.js";
-import { AGENT_COMMANDS, type AgentCommands, type AgentUsage, type TaskEstimate } from "./agents.js";
+import {
+  AGENT_COMMANDS,
+  type AgentCommands,
+  type AgentUsage,
+  type JudgeCheckInfo,
+  type JudgeStatus,
+  type TaskEstimate,
+} from "./agents.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -84,18 +91,24 @@ export type ProjectPatch = {
 };
 
 /**
- * ion's own models, each "<agent>" or "<agent>:<model>" ("": none set, the first ready agent in your agent order):
- * `quick` thinks for ion chief and the project ions, at `effort` (null: the agent's default); `judge` decides in Auto.
+ * ion's own models (PR #36, 2026-11-23). `quick` is ion's brain (ion chief's and every project ion's own turns):
+ * "<agent>[:<model>]" you picked in Settings → Ions, or "" for the strongest model you're signed in to, at `effort`
+ * (null: High for your messages, Medium for routine turns). `judge` decides in Auto: yours, or "" for the first agent
+ * along your order whose pinned judge model ion checked. `*Now` is whom each runs on now (the daemon resolves it).
  */
 export type IonSettings = {
   quick: string;
   effort: EffortLevel | null;
   judge: string;
-  /** Whom each runs on now, "<agent>[:<model>]": yours, else the first ready in your order; null when none is. */
+  /** Whom each runs on now, "<agent>[:<model>]"; null: none ready. */
   quickNow: string | null;
   judgeNow: string | null;
-  /** Whether ion's judge evals checked the judge's model now (one you set may not be: Settings says so). */
+  /** Whether ion checked the judge's model now (one you set may not be: Settings says so). */
   judgeChecked: boolean;
+  /** By agent id: its pinned judge model, checked (`shipped`: before shipping), its last check here, one going now. */
+  judges: Record<string, JudgeStatus>;
+  /** Dream's agent now: [memory] dreamAgent, else the first ready in your order that can turn its web off. */
+  dreamNow: string | null;
   /**
    * ion's brain when you picked none (the user, 2026-11-23): the strongest model you're signed in to, and the effort
    * (yours, else High); null when no agent is ready.
@@ -225,6 +238,8 @@ export interface Commands extends ToolsCommands, AgentCommands {
   "settings.get": { args: Record<string, never>; result: SettingsInfo };
   /** Saves the given settings and returns them all; a bad value is refused with its reason. */
   "settings.set": { args: { patch: SettingsPatch }; result: SettingsInfo };
+  /** Checks an agent's pinned judge model now (ion's judge eval cases) and keeps the result (Settings → Agents). */
+  "judge.check": { args: { harness: string }; result: JudgeCheckInfo };
   /** An ion's threads' runs over the last 30 days (ion chief: every ion's). */
   "ion.stats": { args: { ionId: string }; result: IonStats };
   /** What a chat's agent left running (dev servers, watchers), wherever it runs, with PIDs and ports. */
@@ -476,6 +491,7 @@ export const COMMANDS = [
   "task.stop",
   "chat.file",
   "settings.set",
+  "judge.check",
   "chat.create",
   "events.subscribe",
   "ask",

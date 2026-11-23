@@ -500,6 +500,14 @@ describe("what ion's model runs on", () => {
     expect(startOf(config, "quick")).toEqual({ id: "grok-build", model: "grok-4.7", effort: "low" });
     expect(startOf(config, "quick", "opencode")).toEqual({ id: "opencode", model: null, effort: "low" });
   });
+  // PR #36 re-review, the user, 2026-11-23: answering an agent's question from your past decisions is judgement work:
+  // ion's brain (your pick, else the strongest), at Medium at most.
+  it("matches your decisions with ion's brain, at Medium at most", () => {
+    expect(startOf(config, "brain")).toEqual({ id: "grok-build", model: "grok-4.7", effort: "low" });
+    const max = { ...config, ion: { ...config.ion, quickEffort: "max" as const } };
+    expect(startOf(max, "brain").effort).toBe("medium");
+    expect(startOf(DEFAULT_CONFIG, "brain", "codex").effort).toBe("medium");
+  });
   it("judges at the agent's own effort", () => {
     expect(startOf(config, "judge")).toEqual({ id: "claude-code", model: "haiku", effort: null });
   });

@@ -190,3 +190,30 @@ export function usageLine(
   const resets = w.resetsAt ? `resets ${clockOf(w.resetsAt, now)}` : "";
   return { text: join(`${pct}% of ${w.name}`, resets, cost), percent: pct, limited: false };
 }
+
+/** One check of an agent's pinned judge model on this computer: ion's judge eval cases, through the judge's prompt. */
+export type JudgeCheckInfo = {
+  agent: string;
+  model: string;
+  /** The day it ran (YYYY-MM-DD). */
+  date: string;
+  /** Nothing that must not pass was allowed. */
+  pass: boolean;
+  cases: number;
+  /** The cases that must not pass that it allowed, by id. */
+  dangerous: string[];
+  /** Cases answered as labelled. */
+  agreement: number;
+  unsure: number;
+  /** Cases it gave no verdict on (failed, too slow). */
+  failed: number;
+};
+
+/** An agent's pinned judge model and ion's checks of it (Settings). */
+export type JudgeStatus = {
+  model: string;
+  checked: boolean;
+  shipped: boolean;
+  last: JudgeCheckInfo | null;
+  checking: boolean;
+};

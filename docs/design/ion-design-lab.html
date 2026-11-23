@@ -3828,11 +3828,13 @@ function chiefBrainRows(){
     +`<div class="srow"><div class="g"><span class="slot"><i data-lucide="brain"></i>Effort</span></div><span class="seg sm" role="group" aria-label="ion's effort">${effs.map(([id,l])=>`<button type="button" class="${(IONBRAIN.brainEff||'')===id?'on':''}" data-beff="${id}">${l}</button>`).join('')}</span></div>`;
 }
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-bpick]'); if(b){ IONBRAIN.brainPick=b.dataset.bpick||null; renderByIon(); return; } const f=e.target.closest('[data-beff]'); if(f){ IONBRAIN.brainEff=f.dataset.beff; renderByIon(); } });
+const JUDGE_CHECKED={grok:true};
 /* The app's Judge row: Your order, then each ready agent (Grok marked while it's whom your order picks). */
 function judgeRow(){
   const on=HARNESSES.filter(h=>HCONN[h].st==='on'), cur=IONBRAIN.judge, follow=!cur;
   const pick=`<div class="hpick" role="radiogroup" aria-label="Judge"><button type="button" role="radio" aria-checked="${follow}" title="Your order" class="${follow?'on':''}" data-jpick=""><i data-lucide="list"></i></button>${on.map(h=>`<button type="button" role="radio" aria-checked="${cur===h}" title="${esc(LIB[h].name)}" class="${cur===h?'on':follow&&h==='grok'?'now':''}" data-jpick="${h}"><canvas class="av" data-bot="${h}"></canvas></button>`).join('')}</div>`;
-  const note=cur&&cur!=='grok'&&cur!=='claude'&&cur!=='codex'?'<div class="s">Not checked by ion’s evals</div>':'';
+  /* keyed on whether ion checked the pick (PR #36 re-review): Grok ships checked; the rest once checked on this Mac */
+  const note=cur&&!JUDGE_CHECKED[cur]?'<div class="s">Not checked by ion’s evals</div>':'';
   return `<div class="srow"><div class="g"><span class="slot"><i data-lucide="shield-check"></i>Judge</span>${note}</div>${pick}<select class="val" aria-label="Judge model"><option>Default</option></select></div>`;
 }
 document.addEventListener('click',e=>{ const j=e.target.closest('[data-jpick]'); if(!j) return; IONBRAIN.judge=j.dataset.jpick||null; renderIonModels(); });

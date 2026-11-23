@@ -20,14 +20,13 @@ The always-on service that owns all state.
   **Full access** allows it. **Auto** never pauses: your secrets (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, gh,
   gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
   by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (unset: the first ready agent in your
-  agent order whose pinned judge model, in its adapter, ion's judge evals checked (docs/research/judge-evals.md); a
-  bare session with no tools), which answers allow or deny with a reason. A limited judge agent is skipped; when its
-  agent fails or is slow it goes once on the next checked agent in your order that's ready and not limited (Claude
-  Code only when it's first there or the only one ready); with none left it's unsure and asks you. A judge you set on
-  a model the evals didn't check still runs; Settings says "Not checked by ion's evals". `[ion] quick` and `deep`
-  are unset at first too: ion chief and the project ions with no agent of their own think on the strongest model
-  you're signed in to (each adapter ranks its own), at High, and Pick by usage's deep work (Max effort) keeps that
-  agent. Workers, Dream and ion's other low-decision work follow your agent order. One judge call
+  agent order whose pinned judge model ion checked on this computer, docs/research/judge-evals.md; a bare session with
+  no tools), which answers allow or deny with a reason. A limited judge agent is skipped; when its agent fails or is
+  slow it goes once on the next checked one; with none left it's unsure and asks you. A judge you set on an unchecked
+  model still runs. `[ion] quick` is ion's brain for ion chief and every project ion (a project's own agent, model
+  and effort are for the chats its ion starts): unset, the strongest model you're signed in to (each adapter ranks
+  its own), at High for your messages and Medium for routine turns (a report when a chat ends); answering an agent's
+  question from your decisions uses the brain at Medium. Workers, Dream and ion's quick work follow your agent order. One judge call
   per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
   says no (or can't decide), ion asks you instead: Allow or Don't allow (Remember keeps either for that exact action in the project), or your
   own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes

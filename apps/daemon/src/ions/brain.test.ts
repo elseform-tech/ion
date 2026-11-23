@@ -6,7 +6,7 @@ import { clockOf, type HarnessInfo, type NewEvent } from "@ion/schema";
 import { describe, expect, it, vi } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
-import { getHarness } from "../adapters/registry.js";
+import { brainModel, getHarness } from "../adapters/registry.js";
 import { allLimited, ionBrain, nextBrain, strongestBrain } from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
@@ -81,7 +81,7 @@ describe("an ion's agent", () => {
     const projects = [{ id: "app", path: "/x/app", starred: false }];
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects, memory: { dream: "nightly" } });
     const all = ["opencode", "grok-build", "codex", "claude-code"];
-    const top = (id: string) => getHarness(id)!.adapter.brain!.model ?? null;
+    const top = brainModel;
     const logged: string[] = [];
     const warn = vi.spyOn(console, "warn").mockImplementation((l: string) => void logged.push(l));
     try {
@@ -150,27 +150,100 @@ describe("an ion's agent", () => {
     expect(await ionBrain(d, "chief")).toEqual({ harness: "grok-build", model: "grok-4.6", effort: "low" });
   });
 
-  // Plan 19's checks, 2026-11-22: a project's ion whose agent wasn't ready had no agent at all ("I couldn't reach my
-  // agent"). It takes the next ready one, on that agent's default model.
-  it("a project's agent that isn't ready gives way to the next ready one", async () => {
+  // Plan 19's checks, 2026-11-22: an ion whose agent wasn't ready had no agent at all ("I couldn't reach my agent").
+  // It takes the next one: the user, 2026-11-23, the next strongest, at its strongest model and High.
+  it("ion's agent that isn't ready gives way to the next strongest", async () => {
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
-    const projects = [{ id: "app", path: "/x/app", starred: false, harness: "claude-code", model: "opus" }];
-    saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects });
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "claude-code:opus" },
+    });
     const d = {
       configFile,
       db: viewsDb(),
       agents: async () => [info("claude-code", false), info("opencode", false), info("grok-build", true)],
     };
-    // The user, 2026-11-23: the next strongest, at its strongest model and High.
-    expect(await ionBrain(d, "app")).toEqual({ harness: "grok-build", model: "grok-4.7", effort: "high" });
+    expect(await ionBrain(d, "chief")).toEqual({
+      harness: "grok-build",
+      model: brainModel("grok-build"),
+      effort: "high",
+    });
+  });
+
+  // PR #36 re-review, the user, 2026-11-23: a project's agent, model and effort are for the chats its ion starts
+  // (workers); the project's ion itself thinks with ion's brain: your pick in Settings → Ions, else the strongest. A
+  // project model with no agent never reaches the brain.
+  it("a project's ion thinks with ion's brain, not the project's agent", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    const projects = [
+      {
+        id: "app",
+        path: "/x/app",
+        starred: false,
+        harness: "grok-build",
+        model: "grok-4.6",
+        effort: "low" as const,
+      },
+      { id: "web", path: "/x/web", starred: false, model: "opus" },
+    ];
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects });
+    const d = {
+      configFile,
+      db: viewsDb(),
+      agents: async () => [info("grok-build", true), info("codex", true)],
+    };
+    const strongest = { harness: "codex", model: brainModel("codex"), effort: "high" };
+    expect(await ionBrain(d, "app")).toEqual(strongest);
+    expect(await ionBrain(d, "web")).toEqual(strongest);
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build:grok-4.7", quickEffort: "max" },
+    });
+    expect(await ionBrain(d, "app")).toEqual({ harness: "grok-build", model: "grok-4.7", effort: "max" });
+  });
+
+  // PR #36 re-review, the user, 2026-11-23: High for your messages to an ion; Medium for routine turns nobody asked
+  // for (a project ion's report when its chat ends); an effort you set applies to your messages, and routine turns
+  // take the lower of yours and Medium.
+  it("thinks at Medium on routine turns, never above your effort", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    const d = { configFile, db: viewsDb(), agents: async () => [info("grok-build", true)] };
+    saveUserConfig(configFile, DEFAULT_CONFIG);
+    expect(await ionBrain(d, "chief")).toMatchObject({ effort: "high" });
+    expect(await ionBrain(d, "chief", { routine: true })).toMatchObject({ effort: "medium" });
+    for (const [mine, routine] of [
+      ["low", "low"],
+      ["max", "medium"],
+    ] as const) {
+      saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quickEffort: mine } });
+      expect(await ionBrain(d, "app", { routine: true })).toMatchObject({ effort: routine });
+      expect(await ionBrain(d, "app")).toMatchObject({ effort: mine });
+    }
+  });
+
+  // PR #36 re-review (I1), 2026-11-23: Dream is low-decision work: [memory] dreamAgent, else your agent order, never
+  // ion's brain.
+  it("dreams on your pick, else your order, never ion's brain", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      ion: { ...DEFAULT_CONFIG.ion, quick: "grok-build" },
+      memory: { dream: "nightly" },
+    });
+    const d = {
+      configFile,
+      db: viewsDb(),
+      agents: async () => [info("grok-build", true), info("opencode", true)],
+    };
+    expect(await ionBrain(d, "_dream")).toMatchObject({ harness: "opencode" });
   });
 
   // The user, 2026-11-22: an agent marked limited (by any chat's run or ion's turn) is skipped like one that isn't
   // ready, and the turn knows which it skipped (its reply says why in one line).
   it("a limited agent is skipped", async () => {
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
-    const projects = [{ id: "app", path: "/x/app", starred: false, harness: "claude-code" }];
-    saveUserConfig(configFile, { ...DEFAULT_CONFIG, projects });
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "claude-code" } });
     const db = openDb(":memory:");
     const store = new EventStore(db, allViews);
     const resetsAt = new Date(Date.now() + 3600_000).toISOString();
@@ -187,9 +260,9 @@ describe("an ion's agent", () => {
       db,
       agents: async () => [info("claude-code", true), info("grok-build", true)],
     };
-    expect(await ionBrain(d, "app")).toEqual({
+    expect(await ionBrain(d, "chief")).toEqual({
       harness: "grok-build",
-      model: "grok-4.7",
+      model: brainModel("grok-build"),
       effort: "high",
       skipped: ["claude-code"],
     });

@@ -133,17 +133,14 @@ export function quickSpec(id: string): string {
   return m ? `${id}:${m}` : id;
 }
 
-/**
- * "<agent>:<its pinned judge model>" when ion's judge evals checked it (PR #36 review, 2026-11-23: the judge goes on
- * its own only there), else undefined.
- */
-export function judgeSpec(id: string): string | undefined {
+/** "<agent>:<its pinned judge model>", as its adapter pins it (PR #36 re-review, 2026-11-23), else undefined. */
+export function judgePin(id: string): string | undefined {
   const j = getHarness(id)?.adapter.judge;
-  return j?.checked ? `${id}:${j.model}` : undefined;
+  return j ? `${id}:${j.model}` : undefined;
 }
 
-/** Whether ion's judge evals checked this "<agent>[:<model>]" (an agent alone: its own default isn't checked). */
-export const judgeChecked = (spec: string): boolean => !!spec && judgeSpec(spec.split(":")[0]!) === spec;
+/** Whether ion ran its judge checks on this agent's pinned model before shipping it (the adapter says when). */
+export const shippedChecked = (id: string): boolean => !!getHarness(id)?.adapter.judge?.checked;
 
 /**
  * These agents strongest first, by the rank each adapter gives its strongest model (the user, 2026-11-23: ion's brain

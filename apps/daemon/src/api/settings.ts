@@ -3,13 +3,14 @@ import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
 import { type EffortLevel, type ProjectPatch, type SettingsInfo, stripControl } from "@ion/schema";
 import { applyGeneral, generalOf } from "./general-settings.js";
-import { harnessIds, judgeChecked } from "../adapters/registry.js";
+import { harnessIds, judgePin, shippedChecked } from "../adapters/registry.js";
 import { agentsNow, firstOwn } from "../access/judge-agents.js";
-import { strongestBrain } from "../ions/brain.js";
-import type { Db } from "../store/index.js";
+import type { JudgeChecks } from "../access/judge-check.js";
+import { DREAM_ION } from "../memory/dream-rules.js";
+import { ionBrain, strongestBrain } from "../ions/brain.js";
 import { harnessInfos } from "./commands.js";
 import { ownSwitches } from "../tools/own-run.js";
-import type { Handlers } from "./commands.js";
+import type { Ctx, Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
 
 /** Loads your config, changes it, saves it; a refusal (or a config that doesn't parse) is the error you see. */
@@ -148,25 +149,52 @@ function accessPatch(access: UserConfig["access"], judge: string | null | undefi
   return next;
 }
 
+/** Each agent's pinned judge model, whether ion checked it, its last check here, and whether one is going now. */
+function judgesOf(judges: JudgeChecks | undefined): SettingsInfo["judges"] {
+  const out: SettingsInfo["judges"] = {};
+  for (const id of harnessIds()) {
+    const pin = judgePin(id);
+    if (!pin) continue;
+    out[id] = {
+      model: pin.split(":").slice(1).join(":"),
+      checked: judges?.passed(id) ?? shippedChecked(id),
+      shipped: shippedChecked(id),
+      last: judges?.last(id) ?? null,
+      checking: judges?.checking(id) ?? false,
+    };
+  }
+  return out;
+}
+
 /**
- * Every setting as your config file has it (when it doesn't load, the defaults and why), and whom ion's quick model
- * and the judge run on now (PR #36 review, 2026-11-23: the daemon says, from your order, the agents ready and limited).
+ * Whom ion's brain, the judge and Dream run on now (PR #36 review, 2026-11-23): the daemon says, from the agents
+ * ready and limited, read once (what's known, waiting a moment at most for a first check); nothing is logged.
  */
-async function settingsOf(file: string, db: Db): Promise<SettingsInfo> {
-  const { config: c, error } = loadUserConfig(file);
-  // What's known of the agents, waiting a moment at most for a first check (asked only for what isn't set).
-  const ready = lazy(async () =>
-    (await harnessInfos.soon(READY_MS)).filter((h) => h.installed && h.signedIn).map((h) => h.id),
-  );
-  const now = agentsNow(db, ready);
-  const judgeNow = c.access.judge || ((await firstOwn(file, now, "judge")) ?? null);
+async function runningOn(c: UserConfig, ctx: Pick<Ctx, "configFile" | "db" | "judges">) {
+  const infos = lazy(() => harnessInfos.soon(READY_MS));
+  const ready = async () => (await infos()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
+  const passed = (id: string) => ctx.judges?.passed(id) ?? shippedChecked(id);
+  const at = { configFile: ctx.configFile, now: agentsNow(ctx.db, ready), passed };
+  const judgeNow = c.access.judge || ((await firstOwn(at, "judge")) ?? null);
+  const deps = { configFile: ctx.configFile, db: ctx.db, agents: infos };
   // ion's brain: yours, else the strongest model you're signed in to (the user, 2026-11-23).
-  const strongest = await strongestBrain({ configFile: file, db, agents: () => harnessInfos.soon(READY_MS) });
+  const strongest = await strongestBrain(deps);
   const strongestSpec = strongest && [strongest.agent, strongest.model].filter(Boolean).join(":");
+  const dream = c.memory.dreamAgent || (await ionBrain(deps, DREAM_ION).catch(() => null))?.harness;
+  const judgeAgent = judgeNow?.split(":")[0] ?? "";
+  return {
+    ...{ quickNow: c.ion.quick || strongestSpec || null, strongest, dreamNow: dream || null },
+    ...{ judgeNow, judgeChecked: !!judgeNow && judgeNow === judgePin(judgeAgent) && passed(judgeAgent) },
+  };
+}
+
+/** Every setting as your config file has it (when it doesn't load, the defaults and why), and whom each runs on. */
+async function settingsOf(ctx: Pick<Ctx, "configFile" | "db" | "judges">): Promise<SettingsInfo> {
+  const { config: c, error } = loadUserConfig(ctx.configFile);
   const settings = {
     ...{ quick: c.ion.quick ?? "", effort: c.ion.quickEffort ?? null, judge: c.access.judge ?? "" },
-    ...{ quickNow: c.ion.quick || strongestSpec || null, strongest },
-    ...{ judgeNow, judgeChecked: !!judgeNow && judgeChecked(judgeNow) },
+    ...(await runningOn(c, ctx)),
+    judges: judgesOf(ctx.judges),
     ...generalOf(c),
     ownTools: ownSwitches(c),
   };
@@ -176,7 +204,7 @@ async function settingsOf(file: string, db: Db): Promise<SettingsInfo> {
 /** Settings: a project ion's setup and rules, ion's own quick model, and Auto's judge. */
 export const settingsHandlers: Pick<
   Handlers,
-  "project.update" | "settings.get" | "settings.set" | "ion.stats"
+  "project.update" | "settings.get" | "settings.set" | "ion.stats" | "judge.check"
 > = {
   "ion.stats": (a, ctx) => {
     const ionId = String(a.ionId ?? "");
@@ -193,7 +221,13 @@ export const settingsHandlers: Pick<
     changeConfig(ctx.configFile, (c) => patchProject(c, a));
     return { ok: true as const };
   },
-  "settings.get": (_a, ctx) => settingsOf(ctx.configFile, ctx.db),
+  "settings.get": (_a, ctx) => settingsOf(ctx),
+  "judge.check": async (a, ctx) => {
+    const id = checkAgent(String(a.harness ?? ""));
+    if (!judgePin(id)) throw new UserError(`${id} has no judge model`);
+    if (!ctx.judges) throw new UserError("ion can't check a judge yet");
+    return ctx.judges.check(id);
+  },
   "settings.set": (a, ctx) => {
     const p = a.patch ?? {};
     const quick = specPatch(p.quick);
@@ -208,6 +242,6 @@ export const settingsHandlers: Pick<
     }));
     // A higher limit lets waiting runs start now.
     ctx.runs.limitChanged();
-    return settingsOf(ctx.configFile, ctx.db);
+    return settingsOf(ctx);
   },
 };

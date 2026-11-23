@@ -55,8 +55,8 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     contextTokens: 200_000,
     // ion's own quick calls on it (the judge going on another agent): its small model, never Opus (Plan 21 audit).
     quickModel: "haiku",
-    // ion's judge: Haiku, Auto's long-standing default, from before the judge evals (no eval run: Claude is saved).
-    judge: { model: "haiku", checked: "default before evals" },
+    // ion's judge: Haiku, checked on your Mac like any other (PR #36 re-review, 2026-11-23: no special case).
+    judge: { model: "haiku" },
     // ion's brain: Opus, the strongest of the agents ion knows (ranks: Claude 100, Codex 90, Grok 80, opencode 40).
     brain: { model: "opus", rank: 100 },
     // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.

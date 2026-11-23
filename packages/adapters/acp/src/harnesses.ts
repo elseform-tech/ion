@@ -373,6 +373,8 @@ export const OPENCODE: AcpHarness = {
   logGiveUp: opencodeGiveUp,
   // ion's judge: its free model, low effort; every tool refused by ion's gate (final review, 2026-11-22).
   bare: { effort: "low" },
+  // ion's judge: its free model, checked on your Mac by itself once it's ready (free).
+  judge: { model: "opencode/big-pickle" },
   // ion's brain: its own default free model, last of the agents ion knows (ranks: Claude 100, Codex 90, Grok 80).
   brain: { rank: 40 },
   noWeb: ({ own }) => opencodeNoWeb(own),

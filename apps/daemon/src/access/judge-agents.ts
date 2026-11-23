@@ -1,7 +1,14 @@
 import { join } from "node:path";
 import { loadUserConfig } from "@ion/config";
 import type { HarnessInfo } from "@ion/schema";
-import { agentLabel, agentOrder, judgeSpec, nextInOrder, quickSpec } from "../adapters/registry.js";
+import {
+  agentLabel,
+  agentOrder,
+  byPreference,
+  judgePin,
+  nextInOrder,
+  quickSpec,
+} from "../adapters/registry.js";
 import type { Db } from "../store/index.js";
 import { usageView } from "../views/usage.js";
 import { createJudge, type JudgeOthers } from "./judge.js";
@@ -29,54 +36,63 @@ export const agentsNow = (db: Db, ready: () => Promise<string[]>): AgentsNow => 
 
 const orderOf = (configFile: string) => agentOrder(loadUserConfig(configFile).config.routing.order);
 
-/** Agents ion's judge may go on by itself: those with a pinned judge model its evals checked. */
-const checked = (ids: string[]) => ids.filter((id) => judgeSpec(id));
+/** Whether ion checked an agent's pinned judge model (on this computer, or before shipping it). */
+export type Passed = (agent: string) => boolean;
 
 /**
- * The agent ion's own model goes on when your config names none (a fresh ion follows your agent order): the first in
- * your order that's ready and not limited (Claude Code only first in your order or alone ready); for the judge, only
- * one ion's judge evals checked, at that model. None: undefined.
+ * The next agent ion's judge may go on by itself (PR #36 re-review, 2026-11-23): the first in your order that's ready,
+ * not limited, not one of `not`, and whose pinned judge model ion checked, at that model; Claude Code like any other.
  */
-export async function firstOwn(
-  configFile: string,
-  now: AgentsNow,
-  which: "judge" | "quick",
+async function nextChecked(
+  o: { configFile: string; now: AgentsNow; passed: Passed },
+  not: string[] = [],
 ): Promise<string | undefined> {
-  const ready = await now.ready();
-  const order = orderOf(configFile);
-  if (which === "quick") {
-    const id = nextInOrder({ order, ready, limited: now.limited });
-    return id && quickSpec(id);
-  }
-  const id = nextInOrder({ order, ready: checked(ready), limited: now.limited, signedIn: ready });
-  return id && judgeSpec(id);
+  const ready = (await o.now.ready()).filter((id) => o.passed(id) && !not.includes(id) && !o.now.limited(id));
+  const id = byPreference(ready, orderOf(o.configFile))[0];
+  return id && judgePin(id);
 }
 
 /**
- * Where Auto's judge runs (Plan 21 audit, 2026-11-23): the agent you set (else the first ready in your order that
- * ion's judge evals checked, at that model; PR #36 review), skipping one that's limited; then, when that one fails or
- * is slow, the next checked one along your agent order that's ready and not limited, never quietly Claude Code. Each
- * miss is counted for its agent (Settings → Agents); which agent it went on, and why, is logged once.
+ * The agent ion's own model goes on when your config names none: for the judge, the first checked one along your
+ * order (nextChecked); for ion's quick model (low-decision work), the first in your order that's ready and not limited
+ * (Claude Code only first in your order or alone ready). None: undefined.
+ */
+export async function firstOwn(
+  o: { configFile: string; now: AgentsNow; passed: Passed },
+  which: "judge" | "quick",
+): Promise<string | undefined> {
+  if (which === "judge") return nextChecked(o);
+  const id = nextInOrder({
+    order: orderOf(o.configFile),
+    ready: await o.now.ready(),
+    limited: o.now.limited,
+  });
+  return id && quickSpec(id);
+}
+
+/**
+ * Where Auto's judge runs (Plan 21 audit; PR #36 re-review, 2026-11-23): the agent you set (one that's limited is
+ * skipped), else the first along your agent order whose pinned judge model ion checked on your agents; when that one
+ * fails or is slow, the next such one. Never a pair ion hasn't checked unless you set it. Each miss is counted for its
+ * agent (Settings → Agents); which agent it went on, and why, is logged once.
  */
 export function judgeOthers(
-  o: { dataDir: string; configFile: string },
+  o: { dataDir: string; configFile: string; passed: Passed },
   now: AgentsNow,
   log: (line: string) => void = console.warn,
 ): JudgeOthers {
   const misses = useJudgeMisses(join(o.dataDir, "judge-misses.json"));
   const said = new Set<string>();
+  const at = { configFile: o.configFile, now, passed: o.passed };
   const next = async (failed: string, why = "didn't answer") => {
-    const ready = await now.ready();
-    const id = nextInOrder({
-      ...{ order: orderOf(o.configFile), ready: checked(ready), signedIn: ready },
-      ...{ limited: now.limited, not: [failed] },
-    });
+    const spec = await nextChecked(at, [failed]);
+    const id = spec?.split(":")[0];
     const line = id
       ? `ion's judge: ${agentLabel(failed)} ${why}; it goes on ${agentLabel(id)}`
-      : `ion's judge: ${agentLabel(failed)} ${why} and no other agent is ready; you're asked`;
+      : `ion's judge: ${agentLabel(failed)} ${why} and no other checked agent is ready; you're asked`;
     if (!said.has(line)) log(line);
     said.add(line);
-    return id && judgeSpec(id);
+    return spec;
   };
   return {
     first: async () => {
@@ -84,7 +100,7 @@ export function judgeOthers(
       const id = set.split(":")[0]!;
       if (set && !now.limited(id)) return set;
       if (set) return next(id, "is limited");
-      return firstOwn(o.configFile, now, "judge");
+      return nextChecked(at);
     },
     next,
     missed: (agent) => misses.add(agent),
@@ -93,12 +109,19 @@ export function judgeOthers(
 
 /** Auto's judge on this runner: your judge's agent, else the next along your agent order (Plan 21 audit, 2026-11-23). */
 export const judgeOn = (
-  o: { dataDir: string; configFile: string; now: AgentsNow },
+  o: { dataDir: string; configFile: string; now: AgentsNow; passed: Passed },
   run: (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>,
 ) => createJudge(run, undefined, judgeOthers(o, o.now));
 
 /** ion's own agent processes' options with where they may go: the agents now, and the first ready when none is set. */
-export function ownAgents<T extends { configFile: string }>(o: T, db: Db, ready: () => Promise<string[]>) {
-  const now = agentsNow(db, ready);
-  return { ...o, now, firstOwn: (which: "judge" | "quick") => firstOwn(o.configFile, now, which) };
+export function ownAgents<T extends { configFile: string }>(
+  o: T,
+  db: Db,
+  w: { ready: () => Promise<string[]>; passed: Passed; strongest: () => Promise<string | undefined> },
+) {
+  const now = agentsNow(db, w.ready);
+  const at = { configFile: o.configFile, now, passed: w.passed };
+  const first = (which: "judge" | "quick" | "brain") =>
+    which === "brain" ? w.strongest() : firstOwn(at, which);
+  return { ...o, now, passed: w.passed, firstOwn: first };
 }

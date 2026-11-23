@@ -40,6 +40,7 @@ import { projectPath } from "../runs/projects.js";
 import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
 import { changeConfig, settingsHandlers } from "./settings.js";
+import type { JudgeChecks } from "../access/judge-check.js";
 import { workspaceHandlers } from "./workspace.js";
 import { routineHandlers } from "./routines.js";
 import { queueHandlers } from "./queue.js";
@@ -136,6 +137,8 @@ export type Ctx = {
   unsure?: { notes(): string[] };
   /** ion's dream: it tidies memory on its schedule, or now. */
   dreams?: Dreams;
+  /** ion's checks of each agent's pinned judge model on this computer (PR #36 re-review, 2026-11-23). */
+  judges?: JudgeChecks;
 };
 
 export type Handlers = {

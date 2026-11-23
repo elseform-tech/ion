@@ -146,6 +146,8 @@ Commands:
   order <ids...>         Put agents in order, best first
   login [options] <id>   Sign in to an agent
   logout [options] <id>  Sign out of an agent, on this Mac
+  check-judge <id>       Check an agent as Auto's judge (runs ion's judge cases
+                         on it)
 
 ---
 
