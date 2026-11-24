@@ -6,6 +6,7 @@ import { UserError } from "../api/errors.js";
 import { agentLabel, harnessIds, listedHarnessIds } from "../adapters/registry.js";
 import type { IonScope } from "./grants.js";
 import { guard, ok } from "./result.js";
+import type { Confirm } from "../ions/confirms.js";
 
 type Args = { projectId?: string; harness?: string; model?: string; effort?: EffortLevel; clear?: boolean };
 
@@ -58,9 +59,10 @@ function allSet(c: UserConfig, a: Args): UserConfig {
 }
 
 /**
- * set_chats_model (the user, 2026-11-24): "from now on …" said to an ion saves what its project's chats run on (the
- * project's own, as on its page → More); said to ion chief about all projects, "Chats ions start run on". `clear`:
- * back to the default. Never in a report; only projects this ion may see. Answers in one line saying what changed.
+ * set_chats_model (the user, 2026-11-24): "from now on …" said to an ion asks you to save what its project's chats
+ * run on (the project's own, as on its page → More); said to ion chief about all projects, "Chats ions start run on".
+ * Only your click on the confirm saves it; `clear` (back to the default) applies at once. Never in a report; only
+ * projects this ion may see.
  */
 export function registerChatsTool(
   server: McpServer,
@@ -69,13 +71,15 @@ export function registerChatsTool(
     configFile: string;
     need: (projectId: string) => unknown;
     agent?: (id: string) => Promise<HarnessInfo | undefined>;
+    /** Your one-click confirm in the ion's thread: a save waits for it. */
+    confirm?: (ionId: string, c: Confirm) => void;
   },
 ): void {
   server.registerTool(
     "set_chats_model",
     {
       description:
-        'Only when the user says so for the future ("from now on", "always", "back to the default"): save the agent, model and effort the chats you start in a project run on (projectId), or, for ion chief when the user means all projects, every chat ions start (no projectId). clear: back to the default. For one chat only, pass harness/model/effort to start_thread instead.',
+        'Only when the user says so for the future ("from now on", "always", "back to the default"): ask the user to save the agent, model and effort the chats you start in a project run on (projectId), or, for ion chief when the user means all projects, every chat ions start (no projectId). The user saves it with one click; say so. clear: back to the default, at once. For one chat only, pass harness/model/effort to start_thread instead.',
       inputSchema: {
         projectId: z.string().min(1).optional(),
         ...brainArgs(),
@@ -103,11 +107,22 @@ async function save(o: Parameters<typeof registerChatsTool>[1], a: Args): Promis
   if (o.scope.report) throw new UserError("Not in a report");
   if (!a.projectId && o.scope.ionId !== "chief") throw new UserError("Name the project");
   if (a.projectId) o.need(a.projectId);
-  if (!a.clear) await checked(a, o.agent);
-  const { config, error } = loadUserConfig(o.configFile);
+  // Back to the default only narrows: at once. A save waits for your click (security scan, 2026-11-24).
+  if (a.clear) return ok(write(o.configFile, a));
+  await checked(a, o.agent);
+  if (!o.confirm) throw new UserError("Can't ask the user here");
+  const where = a.projectId ? "this project's chats run on" : "chats ions start run on";
+  const question = `Save: ${where} ${said(a)}?`;
+  o.confirm(o.scope.ionId, { question, yes: "Save", act: async () => write(o.configFile, a) });
+  return ok(`Asked the user: ${question}`);
+}
+
+/** Saves it (read again now: what's there when you click) and says what changed. */
+function write(configFile: string, a: Args): string {
+  const { config, error } = loadUserConfig(configFile);
   if (error) throw new UserError("Can't read the config");
-  saveUserConfig(o.configFile, a.projectId ? projectSet(config, a.projectId, a) : allSet(config, a));
-  return ok(savedLine(a));
+  saveUserConfig(configFile, a.projectId ? projectSet(config, a.projectId, a) : allSet(config, a));
+  return savedLine(a);
 }
 
 /** "This project's chats now run on Codex · gpt-5.6-sol", or that they're back to the default. */

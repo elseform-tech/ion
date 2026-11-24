@@ -60,7 +60,7 @@ type StartIonThread = (
   brief: string,
   turn: { ionId: string; request: string; turnId: string },
   picks?: Picks,
-) => Promise<{ chatId: string } | { why: string }>;
+) => Promise<{ chatId: string } | { why: string } | { asked: string }>;
 
 /**
  * How a turn may act: `request`: your own words, what the judge reads for a thread it starts (by default the

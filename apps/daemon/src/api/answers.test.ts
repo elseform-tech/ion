@@ -1,8 +1,12 @@
 import { EV, type HarnessInfo, type NewEvent } from "@ion/schema";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { expect, it } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
-import { limitChoice, readyForLimit } from "./answers.js";
+import { handoffTargets, limitChoice, readyForLimit } from "./answers.js";
 import { HarnessInfos } from "./harness-infos.js";
 
 const info = (id: string): HarnessInfo => ({
@@ -49,4 +53,13 @@ it("asks you at a limit in your chats, and goes on in chats ions start", () => {
   chat("ions", "ion");
   expect(limitChoice(db, "mine")).toBe("ask");
   expect(limitChoice(db, "ions")).toBe("continue");
+});
+
+// Security scan, 2026-11-24 (MEDIUM): a handoff in a chat ions start could land on an agent you marked "Avoid unless
+// I ask". Avoided agents aren't handoff targets; with only those left, ion asks you.
+it("never hands a chat to an agent you avoid", () => {
+  const configFile = join(mkdtempSync(join(tmpdir(), "ion-answers-")), "config.toml");
+  saveUserConfig(configFile, { ...DEFAULT_CONFIG, agents: { "grok-build": { avoid: true } } });
+  expect(handoffTargets(configFile, ["grok-build", "codex", "opencode"])).toEqual(["opencode", "codex"]);
+  expect(handoffTargets(configFile, ["grok-build"])).toEqual([]);
 });

@@ -263,7 +263,9 @@ export const handlers: Handlers = {
   // ion chief's own suggestions (a routine, a stalled chat), else a project ion's "always?".
   "suggestion.answer": async (a, ctx) => {
     const id = String(a.suggestionId ?? "");
-    if (ctx.suggestions.owns(id))
+    // A one-click confirm in an ion's thread: your click does it (security scan, 2026-11-24).
+    if (ctx.ions.confirms.owns(id)) await ctx.ions.confirms.answer(id, a.keep === true);
+    else if (ctx.suggestions.owns(id))
       await ctx.suggestions.answer(id, { keep: a.keep === true, mute: a.mute === true });
     else ctx.decisions.suggestion(id, a.keep === true);
     return { ok: true as const };

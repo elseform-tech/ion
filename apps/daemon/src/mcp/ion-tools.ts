@@ -23,6 +23,7 @@ import { decisionLine } from "./ask.js";
 import type { IonScope } from "./grants.js";
 import { registerYourTools, type YourTools } from "./ion-your-tools.js";
 import { brainArgs, registerChatsTool } from "./ion-chats-tool.js";
+import type { Confirm } from "../ions/confirms.js";
 import { guard, ok, q } from "./result.js";
 import { registerMemoryTools } from "./memory-tools.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
@@ -48,7 +49,7 @@ type StartThread = (
   brief: string,
   turnId: string,
   picks?: ThreadPicks,
-) => Promise<{ chatId: string } | { why: string }>;
+) => Promise<{ chatId: string } | { why: string } | { asked: string }>;
 
 export type IonDeps = Deps & {
   configFile: string;
@@ -56,6 +57,8 @@ export type IonDeps = Deps & {
   yourTools?: YourTools;
   /** One agent as ion knows it now (what you ask a chat to run on is checked against its sign-in). */
   agent?: (id: string) => Promise<HarnessInfo | undefined>;
+  /** A one-click confirm in the ion's thread (security scan, 2026-11-24); only your click does it. */
+  confirm?: (ionId: string, c: Confirm) => void;
 };
 
 const HISTORY_MAX = 200;
@@ -105,6 +108,7 @@ export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps)
   memoryTools(server, ion);
   threadTool(server, ion);
   registerChatsTool(server, {
+    ...(d.confirm ? { confirm: d.confirm } : {}),
     scope,
     configFile: d.configFile,
     need: ion.need,
@@ -302,10 +306,10 @@ function threadTool(server: McpServer, ion: Ion): void {
         d.grants.noteThread(scope.turnId, -1);
         throw e;
       });
-      if ("why" in r) {
-        d.grants.noteThread(scope.turnId, -1);
-        throw new UserError(r.why);
-      }
+      if (!("chatId" in r)) d.grants.noteThread(scope.turnId, -1);
+      if ("why" in r) throw new UserError(r.why);
+      // An agent you avoid: it starts only when you click Run (security scan, 2026-11-24).
+      if ("asked" in r) return ok(`Asked the user: ${r.asked}`);
       return ok(`Started ${r.chatId}`);
     }),
   );

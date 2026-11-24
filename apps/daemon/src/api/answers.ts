@@ -1,3 +1,4 @@
+import { loadUserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
 import { agentLabel, byPreference } from "../adapters/registry.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
@@ -39,6 +40,15 @@ export const readyForLimit = async (infos: Pick<HarnessInfos, "soon">): Promise<
 export const limitChoice = (db: Db, chatId: string): "ask" | "continue" =>
   chatsView.list(db).find((c) => c.chatId === chatId)?.by === "ion" ? "continue" : "ask";
 
+/**
+ * The agents a chat may go on at a limit, in your order: never one you marked "Avoid unless I ask" (security scan,
+ * 2026-11-24); with none left, ion asks you.
+ */
+export function handoffTargets(configFile: string, ready: string[]): string[] {
+  const agents = loadUserConfig(configFile).config.agents ?? {};
+  return byPreference(ready, orderIn(configFile)).filter((id) => !agents[id]?.avoid);
+}
+
 type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; configFile: string };
 
 /**
@@ -49,7 +59,7 @@ type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; 
 function limitHandoffs(d: Deps): Handoffs {
   return new Handoffs({
     ...{ store: d.store, db: d.db, needs: d.needs, label: agentLabel, waits: new Waits() },
-    ready: async () => byPreference(await readyForLimit(harnessInfos), orderIn(d.configFile)),
+    ready: async () => handoffTargets(d.configFile, await readyForLimit(harnessInfos)),
     onLimit: (chatId) => limitChoice(d.db, chatId),
     start: async (a, o) =>
       (

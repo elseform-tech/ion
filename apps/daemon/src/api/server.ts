@@ -30,6 +30,7 @@ import { createGateHandler } from "../gate/index.js";
 import { createGrants, createMcpHandler, type Grants, type RunScope } from "../mcp/index.js";
 import { createGateway } from "../gateway/index.js";
 import { Ions } from "../ions/service.js";
+import type { Confirm } from "../ions/confirms.js";
 import { IonTurns } from "../ions/turn.js";
 import { IonServers } from "../ions/servers.js";
 import { ownServerNames, pickSource } from "./tools-picks.js";
@@ -179,6 +180,8 @@ function httpServer(ctx: Ctx, turns: IonTurns) {
     ...{ store, db, grants, decisions, configFile, memory },
     startThread: turns.startThread,
     agent: (id: string) => harnessInfos.one(id),
+    // "From now on …" and a chat on an agent you avoid wait for your click in the ion's thread.
+    confirm: (ionId: string, c: Confirm) => void ctx.ions.confirms.ask(ionId, c),
     // ion's own tools tell an ion your connections and skills by name; it never gets them itself.
     yourTools: yourToolsOf(ctx),
   });

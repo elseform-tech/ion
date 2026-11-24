@@ -3,11 +3,12 @@ import type { ThreadPicks } from "../mcp/ion-tools.js";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
 import { UserError } from "../api/errors.js";
-import { harnessIds, listedHarnessIds } from "../adapters/registry.js";
+import { listedHarnessIds } from "../adapters/registry.js";
 import { wrapData } from "../context/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { type ChatsPick, chatsPick, projectAgent } from "./brain.js";
+import { Confirms } from "./confirms.js";
 import { plainReport } from "./project.js";
 import { type IonTurns, NO_AGENT, PER_TURN } from "./turn.js";
 
@@ -102,7 +103,12 @@ export class Ions {
   /** Told when an ion's turn ends and it has said its line (its queue sends the next). */
   private readonly ends: ((ionId: string) => void)[] = [];
 
-  constructor(private readonly d: IonsDeps) {}
+  /** One-click confirms in ions' threads (security scan, 2026-11-24). */
+  readonly confirms: Confirms;
+
+  constructor(private readonly d: IonsDeps) {
+    this.confirms = new Confirms({ store: d.store, say: (ionId, text, card) => this.say(ionId, text, card) });
+  }
 
   private projects(): { id: string; harness?: string; shareWithIon?: boolean }[] {
     return loadUserConfig(this.d.configFile).config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
@@ -214,9 +220,11 @@ export class Ions {
     brief: string,
     turn: { ionId: string; request: string; turnId: string },
     picks: ThreadPicks = {},
-  ): Promise<{ chatId: string } | { why: string }> {
-    const refused = this.refusal(projectId, turn.ionId);
+  ): Promise<{ chatId: string } | { why: string } | { asked: string }> {
+    const refused = this.refusal(projectId, turn.ionId) ?? (await this.refusedPick(askedOf(picks)));
     if (refused) return { why: refused };
+    const avoided = await this.avoidedAsk(projectId, brief, turn, picks);
+    if (avoided) return { asked: avoided };
     const n = (this.perTurn.get(turn.turnId) ?? 0) + 1;
     if (n > PER_TURN) return { why: "That's enough threads for one turn" };
     this.counted(turn.turnId, n);
@@ -232,6 +240,32 @@ export class Ions {
       this.say(projectId, "On it.", threadsCard([t]));
     }
     return { chatId: t.chatId };
+  }
+
+  /**
+   * A chat asked to run on an agent you marked "Avoid unless I ask" (security scan, 2026-11-24: the pick comes from
+   * the ion's model): a one-click confirm in the ion's thread instead, which starts it on your Run. The question, or
+   * null when the agent isn't avoided.
+   */
+  private async avoidedAsk(
+    projectId: string,
+    brief: string,
+    turn: { ionId: string; request: string },
+    picks: ThreadPicks,
+  ): Promise<string | null> {
+    const id = picks.harness;
+    if (!id || !loadUserConfig(this.d.configFile).config.agents?.[id]?.avoid) return null;
+    const label = (await this.d.agent?.(id).catch(() => undefined))?.label ?? id;
+    const question = `Run this chat on ${label}? You marked it Avoid`;
+    this.confirms.ask(turn.ionId, {
+      question,
+      yes: "Run",
+      act: async () => {
+        const t = await this.thread(projectId, brief, { request: turn.request, ...picks });
+        return "why" in t ? t.why : `Started on ${label}.`;
+      },
+    });
+    return question;
   }
 
   /** Why an ion may not start work in a project: `default`, one ion doesn't know, kept from ion chief, not its own. */
@@ -287,9 +321,9 @@ export class Ions {
   private async refusedPick(asked: ChatsPick): Promise<string | null> {
     if (!asked.harness) return null;
     // Live check, 2026-11-24: an ion asked for "grok"; an unknown agent says which there are.
+    // Only agents the app lists (security scan, 2026-11-24).
     const ids = listedHarnessIds();
-    if (!ids.includes(asked.harness) && !harnessIds().includes(asked.harness))
-      return `No agent called ${asked.harness}: use one of ${ids.join(", ")}`;
+    if (!ids.includes(asked.harness)) return `No agent called ${asked.harness}: use one of ${ids.join(", ")}`;
     const h = await this.d.agent?.(asked.harness).catch(() => undefined);
     const label = h?.label ?? asked.harness;
     if (!h?.installed || !h.signedIn) return `${label} isn't signed in`;
@@ -308,8 +342,6 @@ export class Ions {
     o: { request?: string; title?: string; effort?: Effort } & ThreadPicks = {},
   ): Promise<Thread | { why: string }> {
     const asked = askedOf(o);
-    const refused = await this.refusedPick(asked);
-    if (refused) return { why: refused };
     const { pick, route } = await this.threadAgent(projectId, { asked, ...effortOf(o) }, text);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.

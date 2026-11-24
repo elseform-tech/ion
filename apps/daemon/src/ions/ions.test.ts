@@ -336,6 +336,50 @@ describe("a thread an ion starts", () => {
     });
   });
 
+  // Security scan, 2026-11-24 (MEDIUM): an agent you marked "Avoid unless I ask" picked for one chat came from the
+  // ion's model; it's a one-click confirm in the ion's thread instead ("Run this chat on Grok Build? You marked it
+  // Avoid"), and the chat starts only on your click.
+  it("asks before running a chat on an agent you avoid", async () => {
+    const grok = agent("grok-build", true);
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [{ id: "storefront", path: "/p/storefront", starred: false }],
+      agents: { "grok-build": { avoid: true } },
+    });
+    const i = new Ions({
+      ...{ store, db, configFile, runs: { ask }, turns: { turn } },
+      agents: async () => [grok],
+      agent: async () => grok,
+    });
+    const turnOf = { ionId: "storefront", request: "x", turnId: "turn_1" };
+    expect(await i.startThread("storefront", "x", turnOf, { harness: "grok-build" })).toEqual({
+      asked: "Run this chat on grok-build? You marked it Avoid",
+    });
+    expect(ask).not.toHaveBeenCalled();
+    const said = store
+      .read({ chatId: "ion:storefront" })
+      .filter((e) => e.type === EV.ionSaid)
+      .at(-1)!;
+    const card = (
+      said.data as { card: { kind: string; suggestionId: string; question: string; yes: string } }
+    ).card;
+    expect(card).toMatchObject({
+      kind: "confirm",
+      question: "Run this chat on grok-build? You marked it Avoid",
+      yes: "Run",
+    });
+    await i.confirms.answer(card.suggestionId, false);
+    expect(ask).not.toHaveBeenCalled();
+    await expect(i.confirms.answer(card.suggestionId, true)).rejects.toThrow("That's gone");
+    await i.startThread("storefront", "x", turnOf, { harness: "grok-build" });
+    const again = store
+      .read({ chatId: "ion:storefront" })
+      .filter((e) => e.type === EV.ionSaid)
+      .at(-1)!;
+    await i.confirms.answer((again.data as { card: { suggestionId: string } }).card.suggestionId, true);
+    expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build" });
+  });
+
   it("runs on the project's last agent, else the first ready (opencode, Grok, then Claude)", async () => {
     const i = withAgents([agent("claude-code", true), agent("grok-build", true)]);
     await i.startThread("storefront", "x", { ionId: "storefront", request: "x", turnId: "turn_1" });

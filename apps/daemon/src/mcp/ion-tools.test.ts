@@ -18,6 +18,7 @@ let db: Db;
 let memory: MemoryFiles;
 let store: EventStore;
 let grants: Grants;
+let confirm: ReturnType<typeof vi.fn>;
 let http: Server;
 let url: string;
 let configFile: string;
@@ -101,7 +102,8 @@ beforeEach(async () => {
   startThread = vi.fn(async (projectId: string) => ({ chatId: `t-${projectId}` }));
   shopDir = root;
   yourTools = vi.fn(async (dirs: string[]) => yourToolsFixture(dirs));
-  const handle = createMcpHandler({ store, db, grants, memory, configFile, startThread, yourTools });
+  confirm = vi.fn();
+  const handle = createMcpHandler({ store, db, grants, memory, configFile, startThread, yourTools, confirm });
   http = createServer((req, res) => void handle(req, res));
   await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
   const addr = http.address();
@@ -515,14 +517,25 @@ describe("what chats ions start run on, through an ion", () => {
     });
   });
 
-  it("saves it for the project's chats, or for every chat ions start, and clears it", async () => {
+  // Security scan, 2026-11-24 (HIGH): the ion's model wrote durable config, so an injection could move where chats run.
+  // Saving "from now on" now needs your click: the tool raises a one-click confirm in the ion's thread and writes only
+  // on Save. "Back to the default" (clear) only narrows, so it applies at once. A report turn can't ask.
+  it("asks you before saving, and clears at once", async () => {
     const shop = await shopIon();
-    const saved = await shop.callTool({
+    const p = () => loadUserConfig(configFile).config.projects.find((x) => x.id === "shop");
+    const asked = await shop.callTool({
       name: "set_chats_model",
       arguments: { projectId: "shop", harness: "codex", model: "gpt-5.6-sol" },
     });
-    expect(text(saved)).toBe("This project's chats now run on Codex · gpt-5.6-sol");
-    const p = () => loadUserConfig(configFile).config.projects.find((x) => x.id === "shop");
+    expect(text(asked)).toBe("Asked the user: Save: this project's chats run on Codex · gpt-5.6-sol?");
+    expect(p()?.harness).toBeUndefined();
+    expect(confirm).toHaveBeenLastCalledWith("shop", {
+      question: "Save: this project's chats run on Codex · gpt-5.6-sol?",
+      yes: "Save",
+      act: expect.any(Function),
+    });
+    const act = confirm.mock.lastCall![1].act as () => Promise<string>;
+    expect(await act()).toBe("This project's chats now run on Codex · gpt-5.6-sol");
     expect(p()).toMatchObject({ harness: "codex", model: "gpt-5.6-sol" });
     expect(
       await shop.callTool({ name: "set_chats_model", arguments: { projectId: "app", harness: "codex" } }),
@@ -532,11 +545,10 @@ describe("what chats ions start run on, through an ion", () => {
     ).toBe("This project's chats are back to the default");
     expect(p()?.harness).toBeUndefined();
     const all = await chief();
-    expect(
-      text(
-        await all.callTool({ name: "set_chats_model", arguments: { harness: "grok-build", effort: "low" } }),
-      ),
-    ).toBe("Chats ions start now run on Grok Build · Low");
+    await all.callTool({ name: "set_chats_model", arguments: { harness: "grok-build", effort: "low" } });
+    expect(await (confirm.mock.lastCall![1].act as () => Promise<string>)()).toBe(
+      "Chats ions start now run on Grok Build · Low",
+    );
     expect(loadUserConfig(configFile).config.ion).toMatchObject({ chats: "grok-build", chatsEffort: "low" });
     expect(await shop.callTool({ name: "set_chats_model", arguments: { harness: "codex" } })).toMatchObject({
       isError: true,
@@ -544,6 +556,11 @@ describe("what chats ions start run on, through an ion", () => {
     expect(text(await all.callTool({ name: "set_chats_model", arguments: { clear: true } }))).toBe(
       "Chats ions start are back to Automatic",
     );
-    expect(loadUserConfig(configFile).config.ion.chats).toBeUndefined();
+    const report = await client(
+      grants.create({ kind: "ion", ionId: "shop", projects: ["shop"], turnId: "t9", report: true }),
+    );
+    expect(
+      await report.callTool({ name: "set_chats_model", arguments: { projectId: "shop", harness: "codex" } }),
+    ).toMatchObject({ isError: true, content: [{ text: "Not in a report" }] });
   });
 });
