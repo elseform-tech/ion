@@ -666,6 +666,11 @@ button.arow:hover{background:var(--hover)}
 .okd{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--good);margin-right:6px;vertical-align:1px}
 .cbusy{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);white-space:nowrap}
 .hacts{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px}.hsign{grid-column:2/-1;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12.5px;color:var(--muted)}.hsign .g{flex:1;min-width:200px}.hsign .hpart{display:inline-flex;align-items:center;gap:0}.hsign .hcode{font-size:13px;letter-spacing:.06em;color:var(--ink)}.hsign.perr{color:var(--del-ink)}.hrow.ord .hsign{grid-column:3/-1}
+/* Tour of PR #36, 2026-11-24: each agent's toggles with their icon (named on hover), and its judge line's quiet link */
+.hacts .swl{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}.hacts .swl svg{width:14px;height:14px}
+.hrow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer}.hrow .lnk:hover{text-decoration:underline}
+/* Tour at 900×700, 2026-11-24: a chip ("Its own hooks run too") stays one line; it moves below the name instead */
+.hrow .chip{white-space:nowrap;display:inline-block;box-sizing:border-box;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}
 .srow.stack .chips{justify-content:flex-start}
 /* settings: Tools: icon tabs and the config file button; each event with its hooks under it; a row's state; its menu opens beside it (the group clips) */

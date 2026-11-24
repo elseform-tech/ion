@@ -20,15 +20,30 @@ function brainLine(data: SettingsData, b: NonNullable<SettingsInfo["strongest"]>
   return [h?.label ?? b.agent, model, effort].join(" · ");
 }
 
+/**
+ * What ions think with, in words (tour of PR #36, 2026-11-24: the line said "Strongest" while Fake was picked): your
+ * pick ("Yours: Fake · Default · High"), else the strongest model you have.
+ */
+function brainNote(data: SettingsData): string | false {
+  const s = data.settings;
+  if (!s) return false;
+  const effort = s.effort ?? "high";
+  if (s.quick) {
+    const [agent, ...rest] = s.quick.split(":");
+    return `Yours: ${brainLine(data, { agent: agent!, model: rest.join(":") || null, effort })}`;
+  }
+  return !!s.strongest && `Strongest you have: ${brainLine(data, s.strongest)}`;
+}
+
 type EffortPick = {
   label: string;
   value: EffortLevel | null;
-  /** What Default means here. */
-  title?: string;
+  /** What "" is called here (Default), and what it means (said under the row while it's on). */
+  auto?: { label: string; means: string };
   onPick: (e: EffortLevel | null) => void;
 };
 
-/** An effort as buttons (Default first). */
+/** An effort as buttons (Default, or Auto, first). */
 export function EffortSeg(p: EffortPick) {
   return (
     <span className="seg sm" role="group" aria-label={p.label}>
@@ -37,17 +52,19 @@ export function EffortSeg(p: EffortPick) {
           key={label}
           type="button"
           className={(p.value ?? "") === id ? "on" : ""}
-          {...(id || !p.title ? {} : { title: p.title })}
           onClick={() => p.onPick(id || null)}
         >
-          {label}
+          {id ? label : (p.auto?.label ?? label)}
         </button>
       ))}
     </span>
   );
 }
 
-/** An effort row of ion's models. */
+/**
+ * An effort row of ion's models (tour of PR #36, 2026-11-24: "Default" didn't say it was High): Auto first, and while
+ * it's on, what it means in a quiet line.
+ */
 function EffortRow(p: EffortPick) {
   return (
     <div className="srow">
@@ -56,6 +73,7 @@ function EffortRow(p: EffortPick) {
           <Brain />
           Effort
         </span>
+        {!p.value && p.auto && <div className="s">{p.auto.means}</div>}
       </div>
       <EffortSeg {...p} />
     </div>
@@ -80,7 +98,7 @@ function ChatsRows(p: { data: SettingsData; set: (patch: SettingsPatch) => void 
       />
       <EffortRow
         label="Chats' effort"
-        title="The agent's own"
+        auto={{ label: "Auto", means: "The agent's own" }}
         value={s?.chatsEffort ?? null}
         onPick={(chatsEffort) => p.set({ chatsEffort })}
       />
@@ -99,7 +117,6 @@ export function IonModels(p: {
   error: string | null;
 }) {
   const s = p.data.settings;
-  const strongest = s?.strongest;
   return (
     <div>
       <h4>Models</h4>
@@ -113,12 +130,12 @@ export function IonModels(p: {
             now: s?.quickNow ?? null,
           }}
           follow={{ label: "Strongest", icon: Gauge }}
-          note={!!strongest && `Strongest you have: ${brainLine(p.data, strongest)}`}
+          note={brainNote(p.data)}
           onPick={(quick) => p.set({ quick })}
         />
         <EffortRow
           label="Ions' effort"
-          title="High; Medium for routine turns"
+          auto={{ label: "Auto", means: "High for you, Medium for routine" }}
           value={s?.effort ?? null}
           onPick={(effort) => p.set({ effort })}
         />

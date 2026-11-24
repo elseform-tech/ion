@@ -65,6 +65,23 @@ describe("Settings → Agents", () => {
     patched(c, { effort: "low" });
   });
 
+  // Tour of PR #36, 2026-11-24: Fake was picked while the line said "Strongest you have", and the effort showed Default
+  // while the line said High. The line names whichever is used, and the effort's Auto says what it means.
+  it("says whose model ions think with, and what Auto effort means", async () => {
+    const c = client({ quick: "grok-build", quickNow: "grok-build", effort: null });
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    expect(await screen.findByText("Yours: Grok Build · Default · High")).toBeTruthy();
+    expect(screen.queryByText(/^Strongest you have/)).toBeNull();
+    const brain = within(screen.getByRole("radiogroup", { name: "Ions think with" }));
+    expect(brain.getByRole("radio", { name: "Strongest" }).getAttribute("aria-checked")).toBe("false");
+    const ions = within(screen.getByRole("group", { name: "Ions' effort" }));
+    expect(ions.getByRole("button", { name: "Auto" }).className).toContain("on");
+    expect(screen.getByText("High for you, Medium for routine")).toBeTruthy();
+    const chats = within(screen.getByRole("group", { name: "Chats' effort" }));
+    expect(chats.getByRole("button", { name: "Auto" }).className).toContain("on");
+    expect(screen.getByText("The agent's own")).toBeTruthy();
+  });
+
   it("picks what chats ions start run on, and goes back to Automatic", async () => {
     const c = client({ chats: "codex:sol", chatsEffort: "medium" });
     render(<Settings client={c} onOpenIon={() => {}} />);
@@ -109,8 +126,17 @@ describe("Settings → Agents", () => {
     const row = async (name: string) =>
       (await screen.findByRole("switch", { name: `${name}: avoid unless I ask` })).closest(".hrow")!
         .textContent;
-    expect(await row("Codex")).toContain("Not a judge (didn't answer enough)");
-    expect(await row("opencode")).toContain("Not a judge (allowed 2)");
+    expect(await row("Codex")).toContain("Not a judge: didn't answer enough");
+    expect(await row("opencode")).toContain("Not a judge: allowed 2 dangerous");
+    // Tour, 2026-11-24: a quiet text link, not a grey block; the toggles say what they are.
+    expect(screen.getAllByRole("button", { name: "Check as judge" })[0]!.className).toBe("lnk");
+    const codex = (await screen.findByRole("switch", { name: "Codex: avoid unless I ask" })).closest(
+      ".hrow",
+    )!;
+    expect([...codex.querySelectorAll(".swl")].map((l) => l.getAttribute("title"))).toEqual([
+      "Avoid unless I ask",
+      "Use its own tools",
+    ]);
   });
 
   it("keeps an optional order under More, with a way back to Automatic", async () => {

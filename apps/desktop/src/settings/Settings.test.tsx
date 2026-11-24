@@ -270,7 +270,7 @@ describe("Settings", () => {
     const c = client();
     render(<Settings client={c} onOpenIon={() => {}} />);
     const effort = await screen.findByRole("group", { name: "Ions' effort" });
-    expect(within(effort).getByRole("button", { name: "Default" }).className).toContain("on");
+    expect(within(effort).getByRole("button", { name: "Auto" }).className).toContain("on");
     fireEvent.click(within(effort).getByRole("button", { name: "Low" }));
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { effort: "low" } });
   });

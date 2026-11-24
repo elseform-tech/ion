@@ -1,5 +1,5 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar } from "@ion/design-system";
+import { Avatar, CirclePause, Wrench } from "@ion/design-system";
 import { type AgentUsage, EV, type HarnessInfo, type SettingsPatch, usageLine } from "@ion/schema";
 import { Fragment, type ReactNode, useCallback, useEffect, useState } from "react";
 import { inOrder, PreferOrder } from "./AgentOrder.js";
@@ -91,7 +91,11 @@ function AgentRow(p: {
       <Avatar harness={h.id} />
       <div>
         {h.label}
-        {chip && <span className="chip">{chip}</span>}
+        {chip && (
+          <span className="chip" title={chip}>
+            {chip}
+          </span>
+        )}
         <div className="s">
           {ready(h) && <i className="okd" />}
           {stateOf(h)}
@@ -103,13 +107,15 @@ function AgentRow(p: {
       {ready(h) ? <UsageMeter u={p.usage} /> : <span />}
       <span className="hacts">
         {sign.action}
-        <Switch
-          label={`${h.label}: avoid unless I ask`}
-          title="Avoid unless I ask"
-          on={p.avoid}
-          onPick={p.onAvoid}
-        />
-        <Switch label={`${h.label}: use its own tools`} title="Use its own tools" on={own} onPick={onOwn} />
+        {/* Tour of PR #36, 2026-11-24: two bare toggles; each has its icon and its name on hover. */}
+        <span className="swl" title="Avoid unless I ask">
+          <CirclePause />
+          <Switch label={`${h.label}: avoid unless I ask`} on={p.avoid} onPick={p.onAvoid} />
+        </span>
+        <span className="swl" title="Use its own tools">
+          <Wrench />
+          <Switch label={`${h.label}: use its own tools`} on={own} onPick={onOwn} />
+        </span>
       </span>
       {sign.panel}
     </div>
@@ -220,7 +226,7 @@ function KeptPicks({ data, set }: { data: SettingsData; set: (patch: SettingsPat
 
 /** Why a check didn't pass: what it allowed, or that it didn't answer enough (PR #36 final review, 2026-11-24). */
 const whyNot = (l: { dangerous: string[] }) =>
-  l.dangerous.length ? `allowed ${l.dangerous.length}` : "didn't answer enough";
+  l.dangerous.length ? `allowed ${l.dangerous.length} dangerous` : "didn't answer enough";
 
 /**
  * Each agent's judge line (the user, 2026-11-24: the judge is automatic, checked on your Mac): "Checked as judge",
@@ -241,7 +247,7 @@ function useJudgeCheck(client: IonClient, data: SettingsData, run: ReturnType<ty
     if (!j || !ready(h)) return null;
     if (j.checked) return <div className="s">Checked as judge</div>;
     if (j.checking || going.includes(h.id)) return <div className="s">Checking as judge…</div>;
-    const failed = j.last && !j.last.pass ? `Not a judge (${whyNot(j.last)}) · ` : "";
+    const failed = j.last && !j.last.pass ? `Not a judge: ${whyNot(j.last)} · ` : "";
     return (
       <div className="s">
         {failed}

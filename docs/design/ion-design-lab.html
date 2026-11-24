@@ -932,6 +932,11 @@ button.arow:hover{background:var(--hover)}
 .okd{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--good);margin-right:6px;vertical-align:1px}
 .cbusy{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);white-space:nowrap}
 .hacts{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px}.hsign{grid-column:2/-1;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12.5px;color:var(--muted)}.hsign .g{flex:1;min-width:200px}.hsign .hpart{display:inline-flex;align-items:center;gap:0}.hsign .hcode{font-size:13px;letter-spacing:.06em;color:var(--ink)}.hsign.perr{color:var(--del-ink)}.hrow.ord .hsign{grid-column:3/-1}
+/* Tour of PR #36, 2026-11-24: each agent's toggles with their icon (named on hover), and its judge line's quiet link */
+.hacts .swl{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}.hacts .swl svg{width:14px;height:14px}
+.hrow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer}.hrow .lnk:hover{text-decoration:underline}
+/* Tour at 900×700, 2026-11-24: a chip ("Its own hooks run too") stays one line; it moves below the name instead */
+.hrow .chip{white-space:nowrap;display:inline-block;box-sizing:border-box;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}
 .srow.stack .chips{justify-content:flex-start}
 /* settings: Tools: icon tabs and the config file button; each event with its hooks under it; a row's state; its menu opens beside it (the group clips) */
@@ -3806,7 +3811,7 @@ function renderHarnesses(){
     /* Sign in and out of each agent (the user, 2026-11-23): Sign out (its icon) asks first under the row, since it signs the
        agent out on this Mac; Sign in runs the agent's own login and shows its page and code until it ends (c.cmd: an agent
        whose login needs a terminal shows its command to copy instead). */
-    const sw=`<button type="button" class="sw${AVOID[h]?' on':''}" role="switch" aria-checked="${!!AVOID[h]}" aria-label="${esc(n)}: avoid unless I ask" title="Avoid unless I ask" data-avoid="${h}"></button><button type="button" class="sw${c.st==='on'?' on':''}" role="switch" aria-checked="${c.st==='on'}" aria-label="${esc(n)}: use its own tools" title="Use its own tools"></button>`;
+    const sw=`<span class="swl" title="Avoid unless I ask"><i data-lucide="circle-pause"></i><button type="button" class="sw${AVOID[h]?' on':''}" role="switch" aria-checked="${!!AVOID[h]}" aria-label="${esc(n)}: avoid unless I ask" data-avoid="${h}"></button></span><span class="swl" title="Use its own tools"><i data-lucide="wrench"></i><button type="button" class="sw${c.st==='on'?' on':''}" role="switch" aria-checked="${c.st==='on'}" aria-label="${esc(n)}: use its own tools"></button></span>`;
     /* The judge is automatic (checked on your Mac): a quiet line, or a small "Check as judge" (free agents: by themselves). */
     const jl=c.st!=='on'?'':JUDGE_CHECKED[h]?'<div class="s">Checked as judge</div>':JCHECKING[h]?'<div class="s">Checking as judge…</div>':`<div class="s"><button class="lnk" type="button" data-jcheck="${h}" title="Runs ion's judge cases on its judge model; uses your plan">Check as judge</button></div>`;
     const act=c.st==='on'?`<button type="button" class="ib" data-hout="${h}" title="Sign out" aria-label="Sign out of ${esc(n)}"><i data-lucide="log-out"></i></button>`
@@ -3833,13 +3838,17 @@ const JUDGE_CHECKED={grok:true}, JCHECKING={}, AVOID={};
 function modelRows(label,icon,followLabel,followIcon,cur,now,note,effLabel2,eff){
   const on=HARNESSES.filter(h=>HCONN[h].st==='on'), follow=!cur;
   const pick=`<div class="hpick" role="radiogroup" aria-label="${label}"><button type="button" role="radio" aria-checked="${follow}" title="${followLabel}" class="${follow?'on':''}" data-mpick="${label}" data-h=""><i data-lucide="${followIcon}"></i></button>${on.map(h=>`<button type="button" role="radio" aria-checked="${cur===h}" title="${esc(LIB[h].name)}" class="${cur===h?'on':follow&&h===now?'now':''}" data-mpick="${label}" data-h="${h}"><canvas class="av" data-bot="${h}"></canvas></button>`).join('')}</div>`;
-  const effs=[['','Default'],['low','Low'],['medium','Medium'],['high','High'],['max','Max']];
+  /* Tour, 2026-11-24: Auto (not "Default"), and what it means while it's on */
+  const effs=[['','Auto'],['low','Low'],['medium','Medium'],['high','High'],['max','Max']];
+  const means=effLabel2==="Ions' effort"?'High for you, Medium for routine':"The agent's own";
   return `<div class="srow"><div class="g"><span class="slot"><i data-lucide="${icon}"></i>${label}</span>${note?`<div class="s">${note}</div>`:''}</div>${pick}<select class="val" aria-label="${label} model"><option>Default</option></select></div>`
-    +`<div class="srow"><div class="g"><span class="slot"><i data-lucide="brain"></i>Effort</span></div><span class="seg sm" role="group" aria-label="${effLabel2}">${effs.map(([id,l])=>`<button type="button" class="${(eff||'')===id?'on':''}">${l}</button>`).join('')}</span></div>`;
+    +`<div class="srow"><div class="g"><span class="slot"><i data-lucide="brain"></i>Effort</span>${eff?'':`<div class="s">${means}</div>`}</div><span class="seg sm" role="group" aria-label="${effLabel2}">${effs.map(([id,l])=>`<button type="button" class="${(eff||'')===id?'on':''}">${l}</button>`).join('')}</span></div>`;
 }
 function renderIonModels(){
   const el=document.getElementById('ionModels');
-  el.innerHTML=modelRows('Ions think with','zap','Strongest','gauge',IONBRAIN.brainPick,'claude','Strongest you have: Claude Code · Opus 5.5 · High',"Ions' effort",IONBRAIN.brainEff)
+  /* The line names what's used: your pick ("Yours: …"), else the strongest you have */
+  const brainNote=IONBRAIN.brainPick?`Yours: ${esc(LIB[IONBRAIN.brainPick].name)} · Default · High`:'Strongest you have: Claude Code · Opus 5.5 · High';
+  el.innerHTML=modelRows('Ions think with','zap','Strongest','gauge',IONBRAIN.brainPick,'claude',brainNote,"Ions' effort",IONBRAIN.brainEff)
     +modelRows('Chats ions start run on','messages-square','Automatic','sparkles',IONBRAIN.chatsPick,null,'',"Chats' effort",'');
   hydrate(el); icons(el);
 }
