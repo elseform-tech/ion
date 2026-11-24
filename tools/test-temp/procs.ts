@@ -51,11 +51,14 @@ function all(): (Proc & { env: string })[] {
     const g = head(rest);
     const line = withEnv.get(pid);
     if (!g || !line?.startsWith(g[1])) return [];
-    return [{ pid, pgid: g[0], command: g[1].slice(0, 160), env: line.slice(g[1].length) }];
+    return [{ pid, pgid: g[0], command: g[1], env: line.slice(g[1].length) }];
   });
 }
 
-/** The vitest runner and its workers carry the run's TMPDIR too; they end on their own. */
+/**
+ * The vitest runner and its workers carry the run's TMPDIR too; they end on their own. The whole command: on CI the
+ * vitest path comes late in a worker's (macOS CI, PR #37: a worker still ending at teardown counted as left running).
+ */
 const isRunner = (p: Proc) => /\/vitest\/|vitest\.mjs/.test(p.command);
 
 /**
@@ -65,7 +68,7 @@ const isRunner = (p: Proc) => /\/vitest\/|vitest\.mjs/.test(p.command);
 export function processesUnder(dir: string, runners = false): Proc[] {
   return all()
     .filter((p) => p.pid !== process.pid && (runners || !isRunner(p)) && inEnv(p.env, dir))
-    .map(({ pid, pgid, command }) => ({ pid, pgid, command }));
+    .map(({ pid, pgid, command }) => ({ pid, pgid, command: command.slice(0, 160) }));
 }
 
 const alive = (pid: number) => {
