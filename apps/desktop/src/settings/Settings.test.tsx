@@ -192,7 +192,7 @@ describe("Settings", () => {
   });
 
   // The user, 2026-11-21: Settings → Agents shows each ready agent's usage in one quiet line, where the lab has its
-  // meter: its window ("62% of 5 h · resets 14:20") with a bar, "limited until 16:00", or "Learned from errors".
+  // meter: its window ("62% of 5 h · resets 14:20") with a bar, "limited until 16:00", or "No usage info".
   describe("an agent's usage line", () => {
     const none = { tokens: 0, costUsd: 0 };
     const grokUsage = (u: Partial<AgentUsage>): AgentUsage[] => [
@@ -232,9 +232,9 @@ describe("Settings", () => {
       expect(m.className).toContain("hi");
     });
 
-    it("a missing gauge shows Learned from errors", async () => {
+    it("a missing gauge shows No usage info", async () => {
       const m = await meterOf(grokUsage({}));
-      expect(m.textContent).toBe("Learned from errors");
+      expect(m.textContent).toBe("No usage info");
       expect(m.querySelector(".tr")).toBeNull();
     });
 
@@ -258,7 +258,7 @@ describe("Settings", () => {
       const row = (await screen.findByRole("switch", { name: "Grok Build: use its own tools" })).closest(
         ".hrow",
       )!;
-      await waitFor(() => expect(row.querySelector(".meter")?.textContent).toBe("Learned from errors"));
+      await waitFor(() => expect(row.querySelector(".meter")?.textContent).toBe("No usage info"));
       usage = grokUsage({ limitedUntil: new Date(Date.now() + 3600_000).toISOString() });
       heard?.({ type: "error", data: { code: "usage_limit", limit: {}, harness: "grok-build" } });
       await waitFor(() => expect(row.querySelector(".meter")?.textContent).toMatch(/^limited until /));

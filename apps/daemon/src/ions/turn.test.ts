@@ -451,14 +451,14 @@ describe("an ion's turn", () => {
     expect(r).toEqual({ reply: "This is payments-api.", threads: [], turnId: expect.any(String) });
   });
 
-  it("ion chief can't start a thread in a project kept from it", async () => {
+  it("ion chief can't start a chat in a project kept from it", async () => {
     const r = await turns().turn("chief", "please check private");
     expect(startThread).not.toHaveBeenCalled();
     expect(r.threads).toEqual([]);
   });
 
   // Task review, 2026-11-19: `default` pools chats without a project; it has no ion and gets no threads.
-  it("ion chief can't start a thread in default", async () => {
+  it("ion chief can't start a chat in default", async () => {
     const r = await turns().turn("chief", "please check default");
     expect(startThread).not.toHaveBeenCalled();
     expect(r.threads).toEqual([]);
@@ -536,7 +536,7 @@ describe("an ion's turn", () => {
   it("ion chief asks the project when an answer needs its code; a project's ion reads it", () => {
     const chief = ionInstructions("chief");
     expect(chief).toContain("can't read projects' files");
-    expect(chief).toMatch(/needs a project's code[^.]*start a thread in that project/);
+    expect(chief).toMatch(/needs a project's code[^.]*start a chat in that project/);
     expect(ionInstructions("storefront")).toContain("read its project");
   });
 

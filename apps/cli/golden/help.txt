@@ -10,7 +10,7 @@ Commands:
   projects                           Your projects
   ask [options] <text>               Ask a coding agent to do something in a
                                      project
-  needs                              What's waiting on you
+  questions                          Questions waiting on you
   answer [options] <id> <answer...>  Answer a question: a choice's number, or
                                      your own words
   chats                              Your chats
@@ -20,7 +20,7 @@ Commands:
   memory                             What ion remembers
   todo                               Your to-dos
   decisions                          Your answers, and what came of them
-  harnesses                          Coding agents and their models
+  agents                             Coding agents and their models
   mcp                                MCP servers ion gives every agent (each
                                      agent manages its own)
   skills                             Skills ion gives every agent (each agent
@@ -70,7 +70,7 @@ Ask a coding agent to do something in a project
 Options:
   -p, --project <id>  Project
   --chat <id>         Continue a chat
-  --harness <id>      claude-code, codex, grok-build or opencode (default: the
+  --agent <id>        claude-code, codex, grok-build or opencode (default: the
                       chat's, else one signed in)
   --model <model>     Model
   --effort <level>    low, medium, high or max
@@ -80,9 +80,9 @@ Options:
 
 ---
 
-Usage: ion needs [options]
+Usage: ion questions [options]
 
-What's waiting on you
+Questions waiting on you
 
 Options:
   -h, --help  display help for command
@@ -135,7 +135,7 @@ Commands:
 
 ---
 
-Usage: ion harnesses [options] [command]
+Usage: ion agents [options] [command]
 
 Coding agents and their models
 
@@ -151,7 +151,7 @@ Commands:
 
 ---
 
-Usage: ion harnesses order [options] <ids...>
+Usage: ion agents order [options] <ids...>
 
 Put agents in order, best first
 

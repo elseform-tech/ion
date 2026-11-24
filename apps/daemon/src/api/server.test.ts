@@ -409,10 +409,10 @@ describe("daemon api", () => {
     // The thread ends: app's ion says what came of it, and ion chief passes it on. PR #36 final review, 2026-11-24:
     // the thread changed nothing and said little, so that's its own reply, with no report turn.
     await until(() => ionSaid("app").length > 2, 15_000);
-    expect(ionSaid("app").at(-1)).toEqual({ text: "Hi from the fake harness." });
-    await until(() => ionSaid("chief").at(-1)?.text === "Hi from the fake harness.", 15_000);
+    expect(ionSaid("app").at(-1)).toEqual({ text: "Hi from the fake agent." });
+    await until(() => ionSaid("chief").at(-1)?.text === "Hi from the fake agent.", 15_000);
     const order = ionSaid("chief").map((m) => m.text);
-    expect(order.indexOf("Asked 1 project.")).toBeLessThan(order.indexOf("Hi from the fake harness."));
+    expect(order.indexOf("Asked 1 project.")).toBeLessThan(order.indexOf("Hi from the fake agent."));
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
@@ -639,7 +639,7 @@ describe("daemon api", () => {
   });
 
   // Review, 2026-11-19: removing a project kept it in your config while its chats were archived, so a routine or an
-  // ion message in that time could start a thread in it.
+  // ion message in that time could start a chat in it.
   it("starts nothing in a project while it's being removed", async () => {
     process.env.ION_ALLOW_FAKE = "1";
     await client.call("projects.add", { path: repo("app") });

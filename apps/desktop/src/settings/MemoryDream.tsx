@@ -16,7 +16,7 @@ export const tidiedByIon = (m: MemoryInfo, now = Date.now()) =>
   m.source === "ion:_dream" && now - Date.parse(m.writtenAt) < DAY_MS;
 
 /**
- * Dream: ion tidies memory overnight (off, nightly or weekly), with ions' brain at Medium (the user, 2026-11-24: no
+ * Tidy memory (was "Dream"; Plan 21 Task 3): ion tidies memory overnight (off, nightly or weekly), with ions' brain at Medium (the user, 2026-11-24: no
  * agent to pick).
  */
 export function DreamRow(p: { client: IonClient; data: SettingsData; run: Run }) {
@@ -30,10 +30,10 @@ export function DreamRow(p: { client: IonClient; data: SettingsData; run: Run })
         <div className="g">
           <span className="slot">
             <Moon />
-            Dream
+            Tidy memory
           </span>
         </div>
-        <span className="seg sm" role="group" aria-label="Dream">
+        <span className="seg sm" role="group" aria-label="Tidy memory">
           {MODES.map(([id, label]) => (
             <button
               key={id}

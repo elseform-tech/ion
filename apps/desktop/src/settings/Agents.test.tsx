@@ -106,10 +106,16 @@ describe("Settings → Agents", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Codex: avoid unless I ask" }));
     patched(c, { avoid: { codex: true } });
     const codexRow = screen.getByRole("switch", { name: "Codex: avoid unless I ask" }).closest(".hrow")!;
-    fireEvent.click(within(codexRow as HTMLElement).getByRole("button", { name: "Check as judge" }));
+    const check = within(codexRow as HTMLElement).getByRole("button", { name: "Check as judge" });
+    expect(check.title).toMatch(/^The judge decides Auto's calls/);
+    fireEvent.click(check);
     expect(c.call).toHaveBeenCalledWith("judge.check", { harness: "codex" });
     const grokRow = screen.getByRole("switch", { name: "Grok Build: avoid unless I ask" }).closest(".hrow")!;
     expect(grokRow.textContent).toContain("Checked as judge");
+    // Plan 21 Task 3: "judge" is explained on hover, not in hint text.
+    expect(within(grokRow as HTMLElement).getByText("Checked as judge").title).toMatch(
+      /decides Auto's calls/,
+    );
   });
 
   // PR #36 final review, 2026-11-24: a check that failed for want of answers said "allowed 0".
@@ -161,7 +167,7 @@ describe("Settings → Agents", () => {
     });
     render(<Settings client={c} onOpenIon={() => {}} />);
     expect(await screen.findByText("Judge: yours, Codex · luna · not checked")).toBeTruthy();
-    expect(screen.getByText("Dream: yours, opencode")).toBeTruthy();
+    expect(screen.getByText("Tidy memory: yours, opencode")).toBeTruthy();
     const back = screen.getAllByRole("button", { name: "Back to automatic" });
     fireEvent.click(back[0]!);
     patched(c, { judge: null });

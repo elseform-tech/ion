@@ -225,9 +225,9 @@ describe("Ions", () => {
       }),
     ]);
     const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Show thread" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Show chat" }));
     expect(container.querySelector("aside.tpeek .title")?.textContent).toBe("Fix the cart");
-    fireEvent.click(screen.getByRole("button", { name: "Hide thread" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide chat" }));
     expect(container.querySelector("aside.tpeek")).toBeNull();
   });
 

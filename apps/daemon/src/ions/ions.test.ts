@@ -250,7 +250,7 @@ describe("a thread an ion starts", () => {
     const i = ions();
     const go = (turnId: string) => i.startThread("storefront", "x", { ionId: "chief", request: "x", turnId });
     for (let k = 0; k < PER_TURN; k++) expect(await go("turn_1")).toHaveProperty("chatId");
-    expect(await go("turn_1")).toEqual({ why: "That's enough threads for one turn" });
+    expect(await go("turn_1")).toEqual({ why: "That's enough chats for one turn" });
     expect(await go("turn_2")).toHaveProperty("chatId");
     expect(ask).toHaveBeenCalledTimes(6);
   });

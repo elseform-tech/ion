@@ -62,7 +62,7 @@ export function registerYourTools(
     "tools",
     {
       description:
-        "The user's connections (MCP servers) and skills, by name: which are on, and which agents get them. With a skill's name, that skill's instructions: follow them in your own answer, or name the skill in start_thread's skills so a thread uses it. You never run a skill's scripts.",
+        "The user's connections (MCP servers) and skills, by name: which are on, and which agents get them. With a skill's name, that skill's instructions: follow them in your own answer, or name the skill in start_thread's skills so a chat uses it. You never run a skill's scripts.",
       inputSchema: { skill: z.string().min(1).max(200).optional() },
     },
     guard(async ({ skill }: { skill?: string }) => {
@@ -95,7 +95,7 @@ function skillText(name: string, reached: SkillInfo[], body?: (s: SkillInfo) => 
   const text = stripControl(md).slice(0, BODY_MAX);
   return ok(
     [
-      "Follow these in your own answer; never run its scripts (a thread can, with the skill in start_thread's skills).",
+      "Follow these in your own answer; never run its scripts (a chat can, with the skill in start_thread's skills).",
       wrapData(`the ${name} skill's instructions`, text),
     ].join("\n\n"),
   );

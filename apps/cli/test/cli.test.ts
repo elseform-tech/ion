@@ -24,7 +24,7 @@ function ion(...args: string[]): Promise<{ code: number; out: string; err: strin
     execFile(
       "node",
       [BIN, ...args],
-      // Debug mode: `ion harnesses` lists the fake agent too (it's hidden otherwise).
+      // Debug mode: `ion agents` lists the fake agent too (it's hidden otherwise).
       { env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1", ION_DEBUG: "1" } },
       (e, out, err) =>
         resolve({ code: e ? ((e as { code?: number }).code ?? 1) : 0, out: out.trim(), err: err.trim() }),
@@ -192,8 +192,8 @@ describe("ion cli", { timeout: 20_000 }, () => {
   it("answer on ion's limit question ends when nothing runs", { timeout: 60_000 }, async () => {
     await ion("daemon", "start");
     await ion("projects", "add", repo("app"));
-    await ion("ask", "limited", "--harness", "fake", "-p", "app");
-    const needs = JSON.parse((await ion("needs", "--json")).out) as {
+    await ion("ask", "limited", "--agent", "fake", "-p", "app");
+    const needs = JSON.parse((await ion("questions", "--json")).out) as {
       needId: string;
       choices?: { label: string }[];
     }[];
@@ -211,12 +211,12 @@ describe("ion cli", { timeout: 20_000 }, () => {
   it("answer shows the chat's reply", async () => {
     await ion("daemon", "start");
     await ion("projects", "add", repo("app"));
-    await ion("ask", "asks", "--harness", "fake", "-p", "app");
-    const [need] = JSON.parse((await ion("needs", "--json")).out) as { needId: string }[];
+    await ion("ask", "asks", "--agent", "fake", "-p", "app");
+    const [need] = JSON.parse((await ion("questions", "--json")).out) as { needId: string }[];
     const r = await ion("answer", need!.needId, "2");
     expect(r.code).toBe(0);
     expect(r.out).toContain("Answered");
-    expect(r.out).toContain("Hi from the fake harness.");
+    expect(r.out).toContain("Hi from the fake agent.");
     expect(r.out).toMatch(/Done · /);
   });
 
@@ -313,12 +313,12 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["daemon"],
         ["projects"],
         ["ask"],
-        ["needs"],
+        ["questions"],
         ["chats"],
         ["memory"],
         ["todo"],
-        ["harnesses"],
-        ["harnesses", "order"],
+        ["agents"],
+        ["agents", "order"],
         ["routines"],
         ["routines", "add"],
         ["suggestions"],
@@ -332,6 +332,30 @@ describe("ion cli", { timeout: 20_000 }, () => {
       ].map((a) => ion(...a, "--help")),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
+  });
+
+  // Plan 21 Task 3 (2026-11-24): one plain word per idea. `agents`, `questions` and `--agent` are the words; the old
+  // `harnesses`, `needs` and `--harness` keep working for one release, out of the help.
+  it("old CLI words still work, and the help shows only the new ones", async () => {
+    const commands = (await ion("--help")).out.split("\n").map((l) => l.trim().split(" ")[0]);
+    expect(commands).toEqual(expect.arrayContaining(["agents", "questions"]));
+    expect(commands).not.toContain("harnesses");
+    expect(commands).not.toContain("needs");
+    expect((await ion("ask", "--help")).out).toContain("--agent <id>");
+    expect((await ion("ask", "--help")).out).not.toContain("harness");
+    expect((await ion("harnesses", "--help")).code).toBe(0);
+    expect((await ion("harnesses", "order", "--help")).code).toBe(0);
+    await ion("daemon", "start");
+    const p = repo("app");
+    await ion("projects", "add", p);
+    expect((await ion("needs")).out).toBe("Nothing needs you");
+    expect((await ion("questions")).out).toBe("Nothing needs you");
+    expect((await ion("harnesses", "order", "codex")).out).toBe((await ion("agents", "order", "codex")).out);
+    for (const flag of ["--harness", "--agent"])
+      expect(await ion("ask", "hello", "-p", "app", flag, "fake")).toMatchObject({
+        code: 0,
+        out: expect.stringContaining("Done"),
+      });
   });
 
   // The user, 2026-11-21: "use the ion commands to add, verify, doctor mcp, skills, hooks" — everything added starts
@@ -481,14 +505,14 @@ describe("ion cli", { timeout: 20_000 }, () => {
 
     it("streams a run and ends with Done", async () => {
       await setup();
-      const r = await ion("ask", "hello", "-p", "app", "--harness", "fake");
+      const r = await ion("ask", "hello", "-p", "app", "--agent", "fake");
       expect(r.code).toBe(0);
       await expect(`${stable(r.out)}\n`).toMatchFileSnapshot("../golden/ask-hello.txt");
     });
 
     it("edits inside the chat's worktree without asking", async () => {
       const p = await setup();
-      const r = await ion("ask", "approve", "-p", "app", "--harness", "fake");
+      const r = await ion("ask", "approve", "-p", "app", "--agent", "fake");
       expect(r.out).toContain("· Edited notes.md");
       expect(r.code).toBe(0);
       expect(existsSync(join(p, "notes.md"))).toBe(false);
@@ -498,11 +522,11 @@ describe("ion cli", { timeout: 20_000 }, () => {
     it("Auto: ion decides, the run never pauses, and only a denial is shown", async () => {
       writeFileSync(join(home, "config.toml"), '[access]\njudge = "fake"\n');
       await setup();
-      const r = await ion("ask", "shell", "-p", "app", "--harness", "fake");
+      const r = await ion("ask", "shell", "-p", "app", "--agent", "fake");
       expect(r.out).not.toContain("Allowed by ion");
       expect(r.out).toContain("Tests pass.");
-      expect((await ion("needs")).out).toBe("Nothing needs you");
-      const full = await ion("ask", "shell", "-p", "app", "--harness", "fake", "--access", "full");
+      expect((await ion("questions")).out).toBe("Nothing needs you");
+      const full = await ion("ask", "shell", "-p", "app", "--agent", "fake", "--access", "full");
       expect(full.out).not.toContain("by ion");
       expect(full.out).toContain("Tests pass.");
     });
@@ -512,16 +536,16 @@ describe("ion cli", { timeout: 20_000 }, () => {
     it("has no projects access; access is per message", async () => {
       await setup();
       expect((await ion("projects", "access", "app", "full")).code).not.toBe(0);
-      expect(await ion("ask", "hello", "-p", "app", "--harness", "fake", "--access", "maybe")).toMatchObject({
+      expect(await ion("ask", "hello", "-p", "app", "--agent", "fake", "--access", "maybe")).toMatchObject({
         code: 1,
         err: "Pick auto or full",
       });
     });
 
-    it("lists harnesses with their models, and refuses an unknown model", async () => {
+    it("lists agents with their models, and refuses an unknown model", async () => {
       await setup();
-      expect((await ion("harnesses")).out).toContain("fake  Signed in  fake (default), fake-big");
-      expect(await ion("ask", "hello", "-p", "app", "--harness", "fake", "--model", "nope")).toMatchObject({
+      expect((await ion("agents")).out).toContain("fake  Signed in  fake (default), fake-big");
+      expect(await ion("ask", "hello", "-p", "app", "--agent", "fake", "--model", "nope")).toMatchObject({
         code: 1,
         err: "Unknown model for Fake: nope",
       });
@@ -530,18 +554,18 @@ describe("ion cli", { timeout: 20_000 }, () => {
     // The user, 2026-11-22: the agent order is yours to set from the CLI too; the rest follow in ion's own order.
     it("puts agents in order", async () => {
       await setup();
-      expect((await ion("harnesses", "order", "codex", "opencode")).out).toBe(
+      expect((await ion("agents", "order", "codex", "opencode")).out).toBe(
         "codex, opencode, grok-build, claude-code",
       );
-      expect(await ion("harnesses", "order", "nope")).toMatchObject({ code: 1, err: "Unknown agent: nope" });
+      expect(await ion("agents", "order", "nope")).toMatchObject({ code: 1, err: "Unknown agent: nope" });
     });
 
     // Final review minor 8: one harness that fails to answer doesn't break the list.
-    it("lists the other harnesses when one fails to answer", async () => {
+    it("lists the other agents when one fails to answer", async () => {
       process.env.ION_FAKE_DETECT_FAIL = "1";
       try {
         await setup();
-        const r = await ion("harnesses");
+        const r = await ion("agents");
         expect(r.code).toBe(0);
         expect(r.out).toContain("fake  Not installed");
       } finally {
@@ -555,8 +579,8 @@ describe("ion cli", { timeout: 20_000 }, () => {
       process.env.ION_FAKE_LOGIN_MS = "50";
       try {
         await setup();
-        expect((await ion("harnesses", "logout", "fake", "--yes")).out).toBe("Not signed in");
-        const r = await ion("harnesses", "login", "fake");
+        expect((await ion("agents", "logout", "fake", "--yes")).out).toBe("Not signed in");
+        const r = await ion("agents", "login", "fake");
         expect(r).toMatchObject({ code: 0, err: "" });
         expect(r.out.split("\n").at(-1)).toBe("Signed in");
       } finally {
@@ -582,7 +606,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         code: 1,
         err: "Unknown project: nope",
       });
-      const r = await ion("ask", "hello", "-p", "app", "--harness", "fake", "--no-memory");
+      const r = await ion("ask", "hello", "-p", "app", "--agent", "fake", "--no-memory");
       expect(r.code).toBe(0);
       const chats = JSON.parse((await ion("chats", "--json")).out) as { notRemembered?: boolean }[];
       expect(chats.map((c) => c.notRemembered)).toEqual([true]);
@@ -689,7 +713,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
 
     it("lists chats and archives one", async () => {
       await setup();
-      const r = await ion("ask", "hello there", "-p", "app", "--harness", "fake", "--json");
+      const r = await ion("ask", "hello there", "-p", "app", "--agent", "fake", "--json");
       const chatId = JSON.parse(r.out.split("\n")[0]!).chatId as string;
       // UX tour: lined-up columns, the title last so a long one doesn't push the others out.
       expect((await ion("chats")).out).toBe(`${chatId}  done  app  hello there`);
@@ -700,7 +724,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
 
     it("prints one JSON event per line with --json", async () => {
       await setup();
-      const r = await ion("ask", "hello", "-p", "app", "--harness", "fake", "--json");
+      const r = await ion("ask", "hello", "-p", "app", "--agent", "fake", "--json");
       const events = r.out.split("\n").map((l) => JSON.parse(l));
       expect(events.slice(0, 3).map((e) => e.type)).toEqual(["message.sent", "run.queued", "run.started"]);
       expect(events.at(-1)).toMatchObject({ type: "run.finished", data: { status: "done" } });
@@ -708,13 +732,13 @@ describe("ion cli", { timeout: 20_000 }, () => {
 
     it("explains an unknown project with exit 1", async () => {
       await setup();
-      const r = await ion("ask", "hello", "-p", "nope", "--harness", "fake");
+      const r = await ion("ask", "hello", "-p", "nope", "--agent", "fake");
       expect(r).toMatchObject({ code: 1, err: "Unknown project: nope" });
     });
 
     // Regression (final review I7): the CLI hung when the daemon went away mid-run.
     const askSlowThen = async (onRunning: () => void) => {
-      const child = spawn("node", [BIN, "ask", "slow", "-p", "app", "--harness", "fake"], {
+      const child = spawn("node", [BIN, "ask", "slow", "-p", "app", "--agent", "fake"], {
         env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1" },
       });
       let out = "";
@@ -750,7 +774,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
       process.env.ION_FAKE_SIGNED_OUT = "1";
       try {
         await setup();
-        const r = await ion("ask", "hello", "-p", "app", "--harness", "fake");
+        const r = await ion("ask", "hello", "-p", "app", "--agent", "fake");
         expect(r).toMatchObject({ code: 1, err: "Fake isn't signed in. Run: ion fake login" });
       } finally {
         delete process.env.ION_FAKE_SIGNED_OUT;
@@ -759,7 +783,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
 
     it("stops on Ctrl+C with exit 130", async () => {
       await setup();
-      const child = spawn("node", [BIN, "ask", "slow", "-p", "app", "--harness", "fake"], {
+      const child = spawn("node", [BIN, "ask", "slow", "-p", "app", "--agent", "fake"], {
         env: { ...process.env, ION_HOME: home, ION_ALLOW_FAKE: "1" },
       });
       let out = "";

@@ -77,7 +77,7 @@ export function BrainPill(p: {
       className="pill bpill"
       aria-haspopup="dialog"
       aria-expanded={p.open}
-      aria-label={`Harness, model and effort: ${name}`}
+      aria-label={`Agent, model and effort: ${name}`}
       title={[name, p.why, p.estimate].filter(Boolean).join("\n")}
       onClick={p.onClick}
     >
@@ -217,7 +217,7 @@ function useFit(harness: string) {
   return ref;
 }
 
-/** The lab's `.bpop`: Harness, Model and Effort columns; agents not ready are disabled and say why. */
+/** The lab's `.bpop`: Agent, Model and Effort columns; agents not ready are disabled and say why. */
 export function BrainPopover(p: {
   harnesses: HarnessInfo[];
   brain: Brain;
@@ -249,9 +249,9 @@ export function BrainPopover(p: {
   }));
   const ref = useFit(b.harness);
   return (
-    <div ref={ref} className="bpop" role="dialog" aria-label="Harness, model and effort">
+    <div ref={ref} className="bpop" role="dialog" aria-label="Agent, model and effort">
       <div className="bp-cols">
-        <Col title="Harness" rows={harnesses} pick={(k) => p.onChange({ ...b, harness: k, model: "" })} />
+        <Col title="Agent" rows={harnesses} pick={(k) => p.onChange({ ...b, harness: k, model: "" })} />
         <ModelCol key={b.harness} rows={models} pick={(k) => p.onChange({ ...b, model: k })} />
         <Col title="Effort" rows={efforts} pick={(k) => p.onChange({ ...b, effort: k as Brain["effort"] })} />
       </div>

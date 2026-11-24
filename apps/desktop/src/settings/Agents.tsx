@@ -19,7 +19,7 @@ function stateOf(h: HarnessInfo): string {
 
 /**
  * The lab's meter: its usage in one quiet line (the user, 2026-11-21: "62% of 5 h · resets 14:20", "limited until
- * 16:00", "Free", "Learned from errors"), with a bar only for a window the agent reports.
+ * 16:00", "Free", "No usage info"), with a bar only for a window the agent reports.
  */
 function UsageMeter({ u }: { u: AgentUsage | undefined }) {
   if (!u) return <span />;
@@ -208,7 +208,7 @@ function KeptPicks({ data, set }: { data: SettingsData; set: (patch: SettingsPat
       { judge: null },
     ]);
   if (s?.dream?.agent)
-    lines.push([`Dream: yours, ${named(data, s.dream.agent)}`, { dream: { agent: null } }]);
+    lines.push([`Tidy memory: yours, ${named(data, s.dream.agent)}`, { dream: { agent: null } }]);
   if (!lines.length) return null;
   return (
     <div className="group">
@@ -228,6 +228,9 @@ function KeptPicks({ data, set }: { data: SettingsData; set: (patch: SettingsPat
 const whyNot = (l: { dangerous: string[] }) =>
   l.dangerous.length ? `allowed ${l.dangerous.length} dangerous` : "didn't answer enough";
 
+/** What a judge is, on hover. */
+const JUDGE = "The judge decides Auto's calls that ion isn't sure about";
+
 /**
  * Each agent's judge line (the user, 2026-11-24: the judge is automatic, checked on your Mac): "Checked as judge",
  * "Checking as judge…", what a failed check allowed, or a small "Check as judge" for a ready agent with a judge model
@@ -245,7 +248,13 @@ function useJudgeCheck(client: IonClient, data: SettingsData, run: ReturnType<ty
   return (h: HarnessInfo): ReactNode => {
     const j = data.settings?.judges?.[h.id];
     if (!j || !ready(h)) return null;
-    if (j.checked) return <div className="s">Checked as judge</div>;
+    // "judge" is clarified on hover (Plan 21 Task 3): what it does, never as hint text.
+    if (j.checked)
+      return (
+        <div className="s" title={JUDGE}>
+          Checked as judge
+        </div>
+      );
     if (j.checking || going.includes(h.id)) return <div className="s">Checking as judge…</div>;
     const failed = j.last && !j.last.pass ? `Not a judge: ${whyNot(j.last)} · ` : "";
     return (
@@ -254,7 +263,7 @@ function useJudgeCheck(client: IonClient, data: SettingsData, run: ReturnType<ty
         <button
           className="lnk"
           type="button"
-          title={`Runs ion's judge cases on ${j.model}; uses your plan`}
+          title={`${JUDGE}\nRuns ion's judge cases on ${j.model}; uses your plan`}
           onClick={() => check(h.id)}
         >
           Check as judge

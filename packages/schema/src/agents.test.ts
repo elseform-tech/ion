@@ -71,11 +71,11 @@ describe("usageLine", () => {
   });
 
   // The user, 2026-11-21: a gauge the agent no longer reports is never shown frozen at an old value.
-  it("a missing gauge shows Learned from errors", () => {
-    expect(usageLine(usage({ billing: "subscription" }), local(12)).text).toBe("Learned from errors");
+  it("a missing gauge shows No usage info", () => {
+    expect(usageLine(usage({ billing: "subscription" }), local(12)).text).toBe("No usage info");
     // A window whose reset has passed is an old value: gone.
     const old = [{ name: "5 h", usedPercent: 90, resetsAt: local(11).toISOString() }];
-    expect(usageLine(usage({ windows: old }), local(12)).text).toBe("Learned from errors");
+    expect(usageLine(usage({ windows: old }), local(12)).text).toBe("No usage info");
   });
 
   // The user, 2026-11-21: how an agent bills comes from its sign-in; unknown is never shown as Free.
@@ -100,10 +100,8 @@ describe("usageLine", () => {
   // agent reported one; a subscription's notional cost isn't shown.
   it("unknown billing with a reported cost says it", () => {
     const week = { tokens: 9000, costUsd: 0.4 };
-    expect(usageLine(usage({ billing: null, week }), local(12)).text).toBe(
-      "Learned from errors · this week $0.40",
-    );
-    expect(usageLine(usage({ billing: "subscription", week }), local(12)).text).toBe("Learned from errors");
+    expect(usageLine(usage({ billing: null, week }), local(12)).text).toBe("No usage info · this week $0.40");
+    expect(usageLine(usage({ billing: "subscription", week }), local(12)).text).toBe("No usage info");
   });
 
   it("a reset on another day says the day", () => {

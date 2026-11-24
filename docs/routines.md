@@ -1,7 +1,7 @@
 # Routines and Activity (Plan 10)
 
-A routine is something a project's ion does on a schedule. When it's due, the ion starts a thread for it, the same
-way it does when you message it: a chat marked `by: "ion"`, always in Auto, on the ion's agent. The thread is titled
+A routine is something a project's ion does on a schedule. When it's due, the ion starts a chat for it, the same
+way it does when you message it: a chat marked `by: "ion"`, always in Auto, on the ion's agent. The chat is titled
 by the routine's name and briefed with its text.
 
 ## Where they live
@@ -15,7 +15,7 @@ path = "/Users/you/code/storefront"
 
 [[projects.routines]]
 id = "morning-check"      # from the name; unique in the project
-name = "Morning check"    # the thread's title
+name = "Morning check"    # the chat's title
 when = "weekdays 09:00"
 text = "Run the tests and say what broke."
 on = true
@@ -49,14 +49,14 @@ Local time, one of four forms (`@ion/schema` `parseWhen`, `nextRun`; `@ion/confi
 - A routine that's off, or every routine while pause all is on, lets its slots pass. Turned back on (or added, or
   given a new time), it waits for its next slot.
 - A skipped slot is recorded (`skipped: true`), and the skip leaves your config.
-- When the thread can't start (no agent ready), `routine.ran` says why, and the ion says so in its chat.
+- When the chat can't start (no agent ready), `routine.ran` says why, and the ion says so in its chat.
 - Run now (`routine.run`) starts it whatever its schedule (`by: "you"`, `due: null`). The schedule stays.
 
 ## Commands
 
 `routine.add`, `routine.update` (any field; `skip: true` skips the next run, `false` undoes it), `routine.remove`,
 `routine.run`, `routines.pause`, and `activity.list`: every routine's next run (soonest first, then the paused ones),
-with its ion, project and effort, plus ion threads' runs today and yesterday (local days), each with its title, ion,
+with its ion, project and effort, plus the runs of chats ions started today and yesterday (local days), each with its title, ion,
 the routine that started it, how it ended, its cost and when it started.
 
 ## CLI

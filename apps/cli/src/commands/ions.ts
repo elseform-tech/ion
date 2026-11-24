@@ -14,7 +14,7 @@ export function ionsCommands(program: Command, out: () => Out) {
     });
   ions
     .command("message <ion> <text...>")
-    .description("Message an ion: chief, or a project's")
+    .description("Message ion (chief) or a project's ion")
     .action(async (ionId: string, words: string[]) => {
       await withClient((c) => c.call("ion.message", { ionId, text: words.join(" ") }));
       print(out(), "Sent", { ok: true });

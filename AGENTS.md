@@ -21,7 +21,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `tools/test-temp` | Every test run's temp folders in one folder under /tmp, removed after; a run that leaves `ion-*` folders in the real temp folder fails. |
 | `scripts/tour.sh` | The UX tour: a fresh ion with every chat and Tools state and a fake agents home, for the tour every UI PR runs (see Rules). `ION_TOUR_HOME` for another home, `ION_TOUR_APP` for another app address. |
 | `apps/desktop` | The desktop app: Tauri 2 shell (`src-tauri`: where the daemon is, your initial, and the opener: your mcp.json in your editor, sign-in pages (https) in your browser) and a React UI that only displays the daemon's state (Chats screen). |
-| `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`, `ion/no-model-names`). |
+| `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`, `ion/no-model-names`, `ion/plain-words`). |
 
 ## Walls
 
@@ -36,6 +36,26 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 
 Also enforced: model names only in adapters (each harness lists its own; `ion/no-model-names`); the daemon imports adapters only in `apps/daemon/src/adapters/registry.ts`; event type strings only in `packages/schema` (use `EV.*`); SQLite only in `apps/daemon/src/store`;
 child processes only in `apps/daemon/src/workspace`, `apps/daemon/src/secrets` (the keychain CLIs: `security`, `secret-tool`), adapters, `packages/adapter-kit` and `apps/cli/src/daemon-control.ts`.
+
+## Words
+
+One plain word per idea, the same in the app, the CLI and the docs (Plan 21; `ion/plain-words` keeps retired words
+off the screens). Precise technical words stay where they're accurate: worktree, branch, diff, commit, MCP, skills,
+hooks. Code keeps its own names (`harness`, `thread`, `needs`, `dream`, `start_thread`); only what people read changes.
+
+| Say | Not | Means |
+|---|---|---|
+| chat | thread, run (for a conversation) | A conversation with a coding agent in a project. One an ion started is "a chat ion started"; settings say "Chats ions start". |
+| run | | One attempt inside a chat (a retry is another); a count of attempts ("3 failed runs"). |
+| agent | harness | A coding agent: Claude Code, Codex, Grok Build, opencode. CLI `ion agents`, `--agent`. |
+| ion | ion chief | The ion over all projects, on every screen. A project's ion goes by its project's name; "ion chief" only in code and architecture docs. |
+| Ions think with | ion's brain, quick, deep | The agent and model ions think with (Settings → Agents). |
+| question | need | A question only you can answer: "Needs you", `ion questions`, "Open questions". |
+| tidy memory | Dream | ion tidying its memory overnight (Settings → Memory). |
+| No usage info | Learned from errors | ion has no usage gauge for an agent. |
+| routine, suggestion, decision, access (Auto, Full access), effort, memory, to-do | | Kept as they are. |
+
+Old CLI words (`ion harnesses`, `ion needs`, `--harness`) keep working for one release, out of the help.
 
 ## Rules
 

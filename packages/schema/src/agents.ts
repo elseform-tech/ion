@@ -188,12 +188,12 @@ function fullest(u: AgentUsage, now: Date): UsageWindow | null {
 function noGauge(u: AgentUsage): string {
   if (u.billing === "free") return "Free";
   if (u.billing === "api" && u.week.costUsd > 0) return "";
-  return "Learned from errors";
+  return "No usage info";
 }
 
 /**
  * One agent's usage in a few words, the same in Settings → Agents and `ion status`: "62% of 5 h · resets 14:20",
- * "limited until 16:00", "Free", "Learned from errors"; this week's cost too for an agent paid per token, or one whose
+ * "limited until 16:00", "Free", "No usage info"; this week's cost too for an agent paid per token, or one whose
  * billing ion can't tell but that reported a cost.
  */
 export function usageLine(

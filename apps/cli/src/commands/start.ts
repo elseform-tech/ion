@@ -36,7 +36,7 @@ export function startCommand(program: Command, out: () => Out) {
     if (word) program.error(`error: unknown command '${word}'`);
     const up = await reach(ionPaths().dataDir);
     if (!up) {
-      print(out(), [NOT_RUNNING, "Then:", "1. Your agents: ion harnesses", ...LATER].join("\n"), {
+      print(out(), [NOT_RUNNING, "Then:", "1. Your agents: ion agents", ...LATER].join("\n"), {
         running: false,
       });
       return;

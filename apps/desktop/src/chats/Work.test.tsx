@@ -23,7 +23,7 @@ describe("a work step's name", () => {
     expect(stepName("mcp__ion__projects")).toBe("Projects");
     expect(stepName("ion__search_chats")).toBe("Search chats");
     expect(stepName("mcp__ion__chat_history")).toBe("Chat history");
-    expect(stepName("mcp__ion__open_needs")).toBe("Open needs");
+    expect(stepName("mcp__ion__open_needs")).toBe("Open questions");
     expect(stepName("mcp__ion__memory_list")).toBe("Memory");
     expect(stepName("mcp__ion__memory_write")).toBe("Remember");
     // Plan 19, 2026-11-22: memory is files, found and read through these (older chats' memory_list stays "Memory").
@@ -33,7 +33,7 @@ describe("a work step's name", () => {
     expect(stepName("ion__memory_forget")).toBe("Forget");
     expect(stepName("ion__decisions")).toBe("Decisions");
     expect(stepName("mcp__ion__set_profile")).toBe("Suggest profile");
-    expect(stepName("mcp__ion__start_thread")).toBe("Start thread");
+    expect(stepName("mcp__ion__start_thread")).toBe("Start chat");
     expect(stepName("mcp__ion__ask")).toBe("Ask");
     expect(stepName("mcp__ion__report_outcome")).toBe("Report outcome");
     expect(stepName("mcp__github__create_issue")).toBe("create_issue");
@@ -55,7 +55,7 @@ describe("a work step's name", () => {
   it("shows plain names, no repeated summary, and no control characters", () => {
     const steps = [
       tool("mcp__ion__projects", "projects"),
-      tool("mcp__ion__start_thread", "Start thread"),
+      tool("mcp__ion__start_thread", "Start chat"),
       tool("Re\u0007ad", "src/\u001b[31mcart.ts", { input: "in\u0000put", output: "out\u0007put" }),
       {
         kind: "think" as const,
@@ -68,7 +68,7 @@ describe("a work step's name", () => {
     fireEvent.click(screen.getByRole("button", { name: /Worked/ }));
     const rows = [...container.querySelectorAll(".ws .wl")].map((r) => r.textContent);
     expect(rows[0]).toBe("Projects");
-    expect(rows[1]).toBe("Start thread");
+    expect(rows[1]).toBe("Start chat");
     expect(rows[2]).toBe("Read src/[31mcart.ts");
     fireEvent.click(screen.getByText("Read"));
     expect(screen.getByText("input")).toBeTruthy();
@@ -89,7 +89,7 @@ describe("a work step's name", () => {
 
   it("shows a live step by its plain name", () => {
     const { container } = render(<WorkBlock w={work([tool("mcp__ion__open_needs", "open_needs")], null)} />);
-    expect(container.querySelector(".wh .now")?.textContent).toBe("Open needs");
+    expect(container.querySelector(".wh .now")?.textContent).toBe("Open questions");
   });
 
   // Task review tour, 2026-11-19: a turn just started read "Projects · 0s"; a time that says nothing isn't shown.

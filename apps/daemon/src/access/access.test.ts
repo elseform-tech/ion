@@ -596,7 +596,7 @@ describe("harnessRunner for ion's own thinking", () => {
       access: { ...DEFAULT_CONFIG.access, judge: "nope" },
     });
     const said = await harnessRunner(runner(configFile), "brain")("hello", new AbortController().signal);
-    expect(said).toBe("Hi from the fake harness.");
+    expect(said).toBe("Hi from the fake agent.");
     await expect(harnessRunner(runner(configFile))("hello", new AbortController().signal)).rejects.toThrow(
       "Unknown harness: nope",
     );
@@ -630,7 +630,7 @@ describe("harnessRunner for ion's own thinking", () => {
       new AbortController().signal,
       "fake",
     );
-    expect(said).toBe("Hi from the fake harness.");
+    expect(said).toBe("Hi from the fake agent.");
   });
 });
 

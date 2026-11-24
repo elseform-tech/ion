@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import { ApiCallError, type IonClient } from "@ion/client";
 import { ionPaths } from "@ion/config";
 import { type EffortLevel, EV, type IonEvent } from "@ion/schema";
@@ -9,6 +9,8 @@ import { createRenderer, type RunEnd } from "../render.js";
 type AskOpts = {
   project?: string;
   chat?: string;
+  agent?: string;
+  /** `--harness`: `--agent`'s old word, kept for one release, out of the help (Plan 21 Task 3). */
   harness?: string;
   model?: string;
   effort?: EffortLevel;
@@ -87,7 +89,7 @@ export function follow(
     };
     const lost = () => {
       if (done) return;
-      process.stderr.write("\nLost the connection to ion. The run may have stopped.\n");
+      process.stderr.write("\nLost the connection to ion. The agent may have stopped.\n");
       finish({ status: "failed", code: 1 });
     };
     const show = (e: IonEvent) => {
@@ -129,7 +131,7 @@ async function start(client: IonClient, text: string, o: AskOpts) {
       text,
       ...(o.project ? { projectId: o.project } : {}),
       ...(o.chat ? { chatId: o.chat } : {}),
-      ...(o.harness ? { harness: o.harness } : {}),
+      ...((o.agent ?? o.harness) ? { harness: o.agent ?? o.harness } : {}),
       ...(o.model ? { model: o.model } : {}),
       ...(o.effort ? { effort: o.effort } : {}),
       ...(o.access === "auto" || o.access === "full" ? { access: o.access } : {}),
@@ -148,9 +150,10 @@ export function askCommand(program: Command, out: () => Out) {
     .option("-p, --project <id>", "Project")
     .option("--chat <id>", "Continue a chat")
     .option(
-      "--harness <id>",
+      "--agent <id>",
       "claude-code, codex, grok-build or opencode (default: the chat's, else one signed in)",
     )
+    .addOption(new Option("--harness <id>").hideHelp())
     .option("--model <model>", "Model")
     .option("--effort <level>", "low, medium, high or max")
     .option("--access <mode>", "auto (ion decides) or full")

@@ -211,6 +211,26 @@ place.
 | Starred | Sidebar project star | Keeps a project open in the sidebar | **Keep.** |
 | Memory / Remember / Don't remember | Settings → Memory, the ghost in a new chat | What ion keeps between chats | **Keep.** |
 
+### The words settled (Task 3, 2026-11-24)
+
+From the verdicts above, with the user's rule (precise technical words stay; only invented, doubled or needless words
+go). The same table is in `AGENTS.md` ("Words"), and `ion/plain-words` keeps the retired words off the screens.
+
+| Was | Now | Where |
+|---|---|---|
+| thread | chat ("a chat ion started"; "Chats ions start") | App (Show/Hide chat, "A chat", the "Start chat" step), ions' own words (their instructions and refusals) |
+| harness | agent | Agent picker ("Agent" column, "Agent, model and effort"), CLI `ion agents`, `--agent` |
+| ion chief | ion | Memory's "who changed it" ("ion · Tue"); the Ions screen already said "ion" |
+| need (a noun) | question | CLI `ion questions`, the "Open questions" step; "Needs you" stays |
+| Dream | Tidy memory | Settings → Memory, Settings → Agents' kept pick, the source "ion (tidying)" |
+| Learned from errors | No usage info | Settings → Agents, `ion status` |
+| run (for a chat) | chat | Already gone from screens; "run" stays for one attempt ("3 failed runs", an ion's stats) |
+
+Kept: chat, agent, ion, routine, suggestion, decision, access (Auto, Full access), effort, memory, to-do, Activity,
+Starred, worktree, branch, diff, commit, MCP, skills, hooks; gate and judge stay in docs and code. Old CLI words
+(`ion harnesses`, `ion needs`, `--harness`) work for one release, out of the help. Left for Task 4: `default` as a
+project name and the per-agent "use its own tools" switch (they're about what shows, not which word).
+
 ## Which screens and commands get used (local counts)
 
 There's no screen telemetry, so "which screens get used" is read from the user's own events.

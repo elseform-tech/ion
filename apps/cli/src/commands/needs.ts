@@ -27,15 +27,21 @@ async function answerAndFollow(c: IonClient, needId: string, pick: Pick, scope: 
 
 const WHERE = ["project", "everywhere"];
 
-export function needsCommands(program: Command, out: () => Out) {
+/** `ion questions`, and `ion needs` (Plan 21 Task 3: its old word, kept for one release, out of the help). */
+function questionsCommand(program: Command, out: () => Out, name: string, hidden = false) {
   program
-    .command("needs")
-    .description("What's waiting on you")
+    .command(name, { hidden })
+    .description("Questions waiting on you")
     .action(async () => {
       const list = await withClient((c) => c.call("needs.list", {}));
       const rows = list.map(needText);
       print(out(), rows.length ? rows.join("\n") : "Nothing needs you", list);
     });
+}
+
+export function needsCommands(program: Command, out: () => Out) {
+  questionsCommand(program, out, "questions");
+  questionsCommand(program, out, "needs", true);
   program
     .command("answer <id> <answer...>")
     .description("Answer a question: a choice's number, or your own words")

@@ -28,7 +28,7 @@ function useThread(client: IonClient, chatId: string, c?: ChatInfo) {
   const now = useNow(live);
   const waiting = Boolean(openQuestion(t));
   const secs = w ? workSeconds(w, now) : 0;
-  let say = c?.title ?? "A thread";
+  let say = c?.title ?? "A chat";
   if (waiting) say = "Waiting for you";
   else if (live) say = w?.steps.length ? current(w) : (t.waiting ?? "Delegating");
   // Waiting for its agent's reset: it says so, and isn't failed (it goes on by itself).

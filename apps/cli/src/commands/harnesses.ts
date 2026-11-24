@@ -50,9 +50,17 @@ function signOutLine(r: SignOutResult): string {
   return r.signedIn ? "Still signed in" : "Not signed in";
 }
 
-export function harnessesCommand(program: Command, out: () => Out) {
+/**
+ * `ion agents`, and `ion harnesses` (Plan 21 Task 3, 2026-11-24: its old word, kept for one release, out of the help).
+ */
+export function agentsCommands(program: Command, out: () => Out) {
+  agentsCommand(program, out, "agents");
+  agentsCommand(program, out, "harnesses", true);
+}
+
+function agentsCommand(program: Command, out: () => Out, name: string, hidden = false) {
   const h = program
-    .command("harnesses")
+    .command(name, { hidden })
     .description("Coding agents and their models")
     .action(async () => {
       const list = await withClient((c) => c.call("harnesses.list", {}));
@@ -110,7 +118,7 @@ function judgeLine(r: JudgeCheckInfo): string {
   return `Not a judge on ${clean(r.model)}: ${why}; ${counts}`;
 }
 
-/** `ion harnesses check-judge <id>` (PR #36 re-review, 2026-11-23): ion checks the judge on your own agents. */
+/** `ion agents check-judge <id>` (PR #36 re-review, 2026-11-23): ion checks the judge on your own agents. */
 function checkJudgeCommand(h: Command, out: () => Out) {
   h.command("check-judge <id>")
     .description("Check an agent as Auto's judge (runs ion's judge cases on it)")

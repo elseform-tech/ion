@@ -120,3 +120,33 @@ tester.run("no-model-names", plugin.rules["no-model-names"], {
     { ...at("apps/cli/src/x.ts", "const m = `grok-4.7`;"), errors: [{ messageId: "fromHarness" }] },
   ],
 });
+
+// Plan 21 Task 3 (2026-11-24): one plain word per idea; a retired word on a screen is an error.
+tester.run("plain-words", plugin.rules["plain-words"], {
+  valid: [
+    at("apps/desktop/src/x.tsx", 'client.call("harnesses.list", {});'),
+    at("apps/desktop/src/x.tsx", 'if (card.kind === "threads") go();'),
+    at("apps/desktop/src/x.tsx", 'const a = <i className="thread row" />;'),
+    at("apps/desktop/src/x.test.tsx", 'const t = "Hide thread";'),
+    at("apps/daemon/src/x.ts", 'const t = "Hide thread";'),
+    at("apps/desktop/src/x.tsx", "const t = `Chats ion runs at once`;"),
+    at("apps/desktop/src/x.tsx", "const t = `${n} failed runs`;"),
+    at("apps/desktop/src/x.tsx", 'const source = "ion:_dream";'),
+    at("apps/cli/src/x.ts", 'cmd.addOption(new Option("--harness <id>").hideHelp());'),
+  ],
+  invalid: [
+    { ...at("apps/desktop/src/x.tsx", 'const t = "Hide thread";'), errors: [{ messageId: "retired" }] },
+    { ...at("apps/desktop/src/x.tsx", "const a = <p>A thread</p>;"), errors: [{ messageId: "retired" }] },
+    {
+      ...at("apps/desktop/src/x.tsx", 'const a = <b aria-label="Harness" />;'),
+      errors: [{ messageId: "retired" }],
+    },
+    { ...at("apps/desktop/src/x.tsx", "const t = `${n} threads`;"), errors: [{ messageId: "retired" }] },
+    { ...at("apps/desktop/src/x.tsx", "const a = <span>Dream</span>;"), errors: [{ messageId: "retired" }] },
+    { ...at("apps/desktop/src/x.tsx", 'const t = "ion chief";'), errors: [{ messageId: "retired" }] },
+    {
+      ...at("apps/cli/src/x.ts", 'cmd.description("Coding agents, by harness");'),
+      errors: [{ messageId: "retired" }],
+    },
+  ],
+});

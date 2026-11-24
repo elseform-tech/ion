@@ -233,7 +233,7 @@ describe("ion tools", () => {
       projects: ["app", "shop"],
       memory: { you: false, projects: ["app"] },
     });
-    expect(told).toContain("Memory is off in shop: pass nothing from memory into its threads.");
+    expect(told).toContain("Memory is off in shop: pass nothing from memory into its chats.");
     expect(told).not.toContain('scope "you"');
     expect(told).not.toContain("Added to your to-dos");
     expect(told).toContain("Added to <project>'s to-dos");
@@ -314,7 +314,7 @@ describe("ion tools", () => {
       expect(text(r)).toBe("Started t-shop");
     }
     const sixth = await c.callTool({ name: "start_thread", arguments: { projectId: "app", brief: "more" } });
-    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough threads for one turn" }] });
+    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough chats for one turn" }] });
     expect(startThread).toHaveBeenCalledTimes(5);
     expect(startThread).toHaveBeenCalledWith("shop", "do 0", "t1", {});
     await c.close();
