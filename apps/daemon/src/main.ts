@@ -6,6 +6,7 @@ import { ionPaths } from "@ion/config";
 import { harnessInfos } from "./api/commands.js";
 import { agentsHome, dropInheritedMarkers } from "./env.js";
 import { startServer } from "./api/server.js";
+import { watchLease } from "./lease.js";
 import { acquireDaemonLock } from "./store/index.js";
 import { standingDropOf } from "./tools/env-drop.js";
 import { MCP_GROUPS, sweepGroups } from "./workspace/server-groups.js";
@@ -36,14 +37,40 @@ async function main() {
   const fd = openSync(infoFile, "wx", 0o600);
   writeFileSync(fd, JSON.stringify({ pid: process.pid, port: srv.port, token: srv.token }));
   closeSync(fd);
+  let stopping = false;
   const stop = async () => {
+    if (stopping) return;
+    stopping = true;
     rmSync(infoFile, { force: true });
     await srv.close();
     lock.release();
+    await stopAgents();
     process.exit(0);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  // A daemon a test started stops once its test run is gone (never yours: it has no lease).
+  watchLease(process.env, () => void stop());
+}
+
+/**
+ * The agents ion started (opencode, grok, claude, their probes) and what they started end with it: `ion daemon start`
+ * makes ion lead its own process group, and its agents share it (2026-11-23: `opencode acp`, grok and claude's hook
+ * helpers outlived their daemons). Asked to end first, then ended; that ends ion too, its own work already done.
+ * Started some other way, ion leads no group and this does nothing.
+ */
+async function stopAgents(): Promise<void> {
+  const group = (signal: NodeJS.Signals) => {
+    try {
+      process.kill(-process.pid, signal);
+      return true;
+    } catch {
+      return false; // no group of its own
+    }
+  };
+  if (!group("SIGTERM")) return;
+  await new Promise((r) => setTimeout(r, 300));
+  group("SIGKILL");
 }
 
 const entry = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : "";

@@ -15,6 +15,14 @@ const isAlive = (pid: number) => {
     return false;
   }
 };
+const killGroup = (pid: number) => {
+  for (const target of [-pid, pid])
+    try {
+      process.kill(target, "SIGKILL");
+    } catch {
+      // gone, or no group of its own
+    }
+};
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -108,7 +116,8 @@ export async function stopDaemon(dataDir: string): Promise<"stopped" | "not-runn
   up.client.close();
   process.kill(pid, "SIGTERM");
   for (let i = 0; i < 50 && isAlive(pid); i++) await sleep(100);
-  if (isAlive(pid)) process.kill(pid, "SIGKILL");
+  // Still there: it and the agents it started (its process group: it was started detached, leading one).
+  if (isAlive(pid)) killGroup(pid);
   rmSync(join(dataDir, "daemon.json"), { force: true });
   return "stopped";
 }

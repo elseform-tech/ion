@@ -72,6 +72,9 @@ importers:
       '@ion/daemon':
         specifier: workspace:*
         version: link:../daemon
+      '@ion/test-temp':
+        specifier: workspace:*
+        version: link:../../tools/test-temp
 
   apps/daemon:
     dependencies:

@@ -8,6 +8,8 @@ const ALLOWED = [
   "packages/adapters/",
   "packages/adapter-kit/",
   "apps/cli/src/daemon-control.ts",
+  // ps: what a test run left running (its daemons and their agents), found and stopped.
+  "tools/test-temp/procs.ts",
 ];
 
 /** Processes start only where sandboxing and concurrency limits apply. */

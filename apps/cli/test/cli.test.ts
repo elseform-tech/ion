@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { killUnder, processesUnder } from "@ion/test-temp/procs";
 
 const BIN = fileURLToPath(new URL("../dist/index.js", import.meta.url));
 let home: string;
@@ -89,6 +90,9 @@ describe("ion cli", { timeout: 20_000 }, () => {
   });
   // Found 2026-11-19: CLI tests left 11 daemons running in temp homes.
   // Every daemon a test starts (through the CLI or directly) is gone, and its home removed, afterwards.
+  // 2026-11-23: daemons still starting under load (no daemon.json yet: `ion daemon start` gave up after 5 s) were
+  // missed, and their agents (opencode, grok) outlived them. Whatever still runs under the test's home goes too, with
+  // its process group; the hook has its own time (the default 10 s ran out under load, skipping the rest).
   afterEach(async () => {
     const pids = [...started.splice(0), ...daemonPid()];
     await ion("daemon", "stop");
@@ -98,9 +102,10 @@ describe("ion cli", { timeout: 20_000 }, () => {
     // each to be gone, then check.
     await Promise.all(pids.map(gone));
     const leaked = pids.filter((pid) => isIonDaemon(pid) && alive(pid));
+    killUnder(home);
     rmSync(home, { recursive: true, force: true });
     expect(leaked).toEqual([]);
-  });
+  }, 60_000);
 
   it("says ion isn't running before start, with exit 2", async () => {
     const r = await ion("status");
@@ -222,6 +227,41 @@ describe("ion cli", { timeout: 20_000 }, () => {
     await ion("daemon", "start");
     expect((await ion("daemon", "stop")).out).toBe("Stopped");
     expect(existsSync(join(home, "data", "daemon.json"))).toBe(false);
+  });
+
+  // 2026-11-23, the Mac slowed down: ~13 test daemons, some 1½ days old, outlived the test runs that started them
+  // (detached: a runner killed mid-way, or timed out, never stopped them). A test's daemon holds its run's lease.
+  it("a daemon whose test run is gone stops by itself", async () => {
+    const runner = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
+    const lease = join(home, "lease");
+    writeFileSync(lease, String(runner.pid));
+    const started = await ionWith({ ION_TESTRUN_LEASE: lease }, "daemon", "start");
+    runner.kill("SIGKILL");
+    expect(started.out).toBe("Started");
+    const [pid] = daemonPid();
+    for (let i = 0; i < 100 && alive(pid!) && isIonDaemon(pid!); i++)
+      await new Promise((r) => setTimeout(r, 100));
+    expect(isIonDaemon(pid!) && alive(pid!)).toBe(false);
+  });
+
+  // 2026-11-23: `opencode acp` and grok children (and what they start: servers, tools) outlived their daemons. Here a
+  // stand-in opencode that starts a helper of its own, which nothing else ever stops.
+  it("the agents ion started, and what they started, stop with it", async () => {
+    const bin = join(home, "bin");
+    mkdirSync(bin);
+    const helper = `${process.execPath} -e 'setTimeout(() => {}, 300_000)' agent-helper`;
+    writeFileSync(
+      join(bin, "opencode"),
+      `#!/bin/sh\n[ "$1" = --version ] && { echo 1.2.3; exit 0; }\n${helper} &\nexec ${process.execPath} -e 'setTimeout(() => {}, 300_000)'\n`,
+      { mode: 0o755 },
+    );
+    expect((await ionWith({ PATH: `${bin}:${process.env.PATH}` }, "daemon", "start")).out).toBe("Started");
+    const helpers = () => processesUnder(home).filter((p) => p.command.includes("agent-helper"));
+    for (let i = 0; i < 100 && helpers().length === 0; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(helpers().length).toBeGreaterThan(0);
+    expect((await ion("daemon", "stop")).out).toBe("Stopped");
+    for (let i = 0; i < 50 && helpers().length > 0; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(helpers()).toEqual([]);
   });
 
   it("prints JSON status with --json", async () => {
@@ -376,14 +416,23 @@ describe("ion cli", { timeout: 20_000 }, () => {
   // Task review, 2026-11-22: every connected command waited out reach()'s 1 s timeout timer before exiting.
   it("a connected command exits at once", async () => {
     await ion("daemon", "start");
-    await ion("status");
-    const t0 = Date.now();
     expect((await ion("status")).code).toBe(0);
-    const bare = Date.now() - t0;
-    const t1 = Date.now();
-    await ion("--version");
-    // Measured against a command that never connects, so a slow machine doesn't count against it.
-    expect(bare - (Date.now() - t1)).toBeLessThan(600);
+    // Measured against a command that never connects, taking turns, and each the median of three: one slow start
+    // on a loaded machine said 8.9 s (2026-11-23). The 1 s wait it guards against still shows on a quiet machine;
+    // on a busy one the bound grows with how long a bare start takes.
+    const took = async (...args: string[]) => {
+      const t = Date.now();
+      await ion(...args);
+      return Date.now() - t;
+    };
+    const connected: number[] = [];
+    const bare: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      connected.push(await took("status"));
+      bare.push(await took("--version"));
+    }
+    const median = (xs: number[]) => xs.sort((a, b) => a - b)[1]!;
+    expect(median(connected) - median(bare)).toBeLessThan(Math.max(600, median(bare) / 2));
   });
 
   // Plan 11: ion chief's suggestions, from the command line.
