@@ -55,5 +55,5 @@ export function ownModels(
   const look = () => void judges.checkFree().catch(() => undefined);
   setTimeout(look, FIRST_LOOK_MS).unref();
   setInterval(look, LOOK_EVERY_MS).unref();
-  return { own, judge, quick: harnessRunner(own, "quick"), brain: harnessRunner(own, "brain"), judges };
+  return { own, judge, brain: harnessRunner(own, "brain"), judges };
 }

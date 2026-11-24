@@ -6,6 +6,7 @@ import {
   DEFAULT_CONFIG,
   ionPaths,
   loadUserConfig,
+  migrateUserConfig,
   ownToolsOn,
   PROFILE_CHARS,
   saveUserConfig,
@@ -429,9 +430,25 @@ describe("the simplified model settings", () => {
     expect(r.config.routing).toEqual({ order: ["grok-build"] });
     expect(r.config.memory.dreamAgent).toBe("opencode");
     expect(r.warning).toBe(
-      "config.toml: routing.onLimit is no longer used: your chats ask at a limit, chats ions start go on another agent",
+      "config.toml: ion.deep (grok-build) is no longer used; routing.onLimit is no longer used: your chats ask at a limit, chats ions start go on another agent",
     );
     writeFileSync(file, 'version = 2\n[routing]\nonLimit = "ask"\nbyUsage = false\n');
+    expect(loadUserConfig(file).warning).toBeNull();
+  });
+});
+
+// PR #36 final review, 2026-11-24: an older file is saved once after it moves, so its notice is said once; the notice
+// also says an old quick effort is now ions' effort, and that a deep model you set is no longer used.
+describe("moving an older config", () => {
+  it("names each move once, and saves the file so it isn't said again", () => {
+    const file = join(tmp(), "config.toml");
+    writeFileSync(file, '[ion]\nquick = "grok-build"\nquickEffort = "low"\ndeep = "codex:x"\n');
+    const r = migrateUserConfig(file);
+    expect(r.warning).toBe(
+      "config.toml: ion's quick effort is now ions' effort; ion.deep (codex:x) is no longer used",
+    );
+    expect(r.config.ion).toMatchObject({ quick: "grok-build", quickEffort: "low" });
+    expect(readFileSync(file, "utf8")).toContain("version = 2");
     expect(loadUserConfig(file).warning).toBeNull();
   });
 });

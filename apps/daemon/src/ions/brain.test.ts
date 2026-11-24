@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { brainModel, getHarness } from "../adapters/registry.js";
-import { allLimited, chatsPick, ionBrain, nextBrain, strongestBrain } from "./brain.js";
+import { allLimited, chatsPick, ionBrain, nextBrain, projectAgent, strongestBrain } from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
 // test run past a test's wait), even when the agent was already chosen. Only the chosen one is checked; every agent
@@ -348,5 +348,26 @@ describe("what chats ions start run on", () => {
     expect(chatsPick(set, "web")).toEqual({ harness: "codex", model: "gpt-5.6-sol", effort: "low" });
     expect(chatsPick(set, "app")).toEqual({ harness: "grok-build", model: "grok-4.7", effort: "medium" });
     expect(chatsPick(c(), "app")).toEqual({});
+  });
+});
+
+// PR #36 final review, 2026-11-24: an agent you marked "Avoid unless I ask" is never picked without your click, also
+// where Automatic finds nothing (a project's last agent, the first ready one).
+describe("an avoided agent", () => {
+  const info = (id: string, ready: boolean): HarnessInfo => ({
+    ...{ id, label: id, installed: ready, signedIn: ready, models: [], defaultModel: null },
+  });
+  it("isn't a project's agent unless the project names it", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    const avoid = { agents: { "grok-build": { avoid: true } } };
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      ...avoid,
+      projects: [{ id: "app", path: "/a", starred: false }],
+    });
+    const db = viewsDb();
+    const d = (ids: string[]) => ({ configFile, db, agents: async () => ids.map((id) => info(id, true)) });
+    expect(await projectAgent(d(["grok-build", "codex"]), "app")).toBe("codex");
+    expect(await projectAgent(d(["grok-build"]), "app")).toBeUndefined();
   });
 });

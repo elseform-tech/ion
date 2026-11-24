@@ -1,14 +1,7 @@
 import { join } from "node:path";
 import { loadUserConfig } from "@ion/config";
 import type { HarnessInfo } from "@ion/schema";
-import {
-  agentLabel,
-  agentOrder,
-  byPreference,
-  judgePin,
-  nextInOrder,
-  quickSpec,
-} from "../adapters/registry.js";
+import { agentLabel, agentOrder, byPreference, judgePin } from "../adapters/registry.js";
 import type { Db } from "../store/index.js";
 import { usageView } from "../views/usage.js";
 import { createJudge, type JudgeOthers } from "./judge.js";
@@ -34,8 +27,6 @@ export const agentsNow = (db: Db, ready: () => Promise<string[]>): AgentsNow => 
   limited: (id) => !!usageView.agents(db, new Date())[id]?.limitedUntil,
 });
 
-const orderOf = (configFile: string) => agentOrder(loadUserConfig(configFile).config.routing.order);
-
 /** Whether ion checked an agent's pinned judge model (on this computer, or before shipping it). */
 export type Passed = (agent: string) => boolean;
 
@@ -55,23 +46,8 @@ async function nextChecked(
   return id && judgePin(id);
 }
 
-/**
- * The agent ion's own model goes on when your config names none: for the judge, the first checked one along your
- * order (nextChecked); for ion's quick model (low-decision work), the first in your order that's ready and not limited
- * (Claude Code only first in your order or alone ready). None: undefined.
- */
-export async function firstOwn(
-  o: { configFile: string; now: AgentsNow; passed: Passed },
-  which: "judge" | "quick",
-): Promise<string | undefined> {
-  if (which === "judge") return nextChecked(o);
-  const id = nextInOrder({
-    order: orderOf(o.configFile),
-    ready: await o.now.ready(),
-    limited: o.now.limited,
-  });
-  return id && quickSpec(id);
-}
+/** The judge's agent when your config names none: the first checked one along your order (nextChecked). */
+export const firstJudge = (o: { configFile: string; now: AgentsNow; passed: Passed }) => nextChecked(o);
 
 /**
  * Where Auto's judge runs (Plan 21 audit; PR #36 re-review, 2026-11-23): the agent you set (one that's limited is
@@ -124,7 +100,6 @@ export function ownAgents<T extends { configFile: string }>(
 ) {
   const now = agentsNow(db, w.ready);
   const at = { configFile: o.configFile, now, passed: w.passed };
-  const first = (which: "judge" | "quick" | "brain") =>
-    which === "brain" ? w.strongest() : firstOwn(at, which);
+  const first = (which: "judge" | "brain") => (which === "brain" ? w.strongest() : firstJudge(at));
   return { ...o, now, passed: w.passed, firstOwn: first };
 }

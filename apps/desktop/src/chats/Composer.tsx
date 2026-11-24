@@ -59,6 +59,8 @@ function BrainPick(p: {
   picked: boolean;
   onChange: (b: Brain) => void;
   byUsage?: boolean;
+  /** Automatic can be picked here (a new chat). */
+  canAuto?: boolean;
   why?: string | null;
   estimate?: string | null;
 }) {
@@ -82,7 +84,13 @@ function BrainPick(p: {
         }}
       />
       {open && (
-        <BrainPopover harnesses={p.harnesses} brain={p.brain} picked={p.picked} onChange={p.onChange} />
+        <BrainPopover
+          harnesses={p.harnesses}
+          brain={p.brain}
+          picked={p.picked}
+          onChange={p.onChange}
+          {...(p.canAuto ? { auto: { on: !!p.byUsage } } : {})}
+        />
       )}
     </span>
   );
@@ -235,8 +243,11 @@ function useBrain(p: Pick<Props, "client" | "to" | "current" | "auto">): [Brain,
   const set = (b: Brain) => {
     touched.current = true;
     if (key) picks.set(key, b);
-    if (remembers && b.harness)
-      void Promise.resolve(client.call("settings.set", { patch: { lastPick: b } })).catch(() => {});
+    // Your pick is kept for new chats; Automatic clears it (PR #36 final review, 2026-11-24).
+    if (remembers)
+      void Promise.resolve(client.call("settings.set", { patch: { lastPick: b.harness ? b : null } })).catch(
+        () => {},
+      );
     setPicked(b);
   };
   return [brain, set];
@@ -365,6 +376,7 @@ export function Composer(p: Props) {
             picked={Boolean(brain.harness || brain.model || brain.effort)}
             onChange={setBrain}
             byUsage={byUsage}
+            canAuto={Boolean(p.auto && "projectId" in p.to)}
             why={p.why}
             estimate={estimate}
           />

@@ -10,10 +10,9 @@ import {
 } from "@ion/schema";
 import { applyGeneral, generalOf } from "./general-settings.js";
 import { harnessIds, judgePin, shippedChecked } from "../adapters/registry.js";
-import { agentsNow, firstOwn } from "../access/judge-agents.js";
+import { agentsNow, firstJudge } from "../access/judge-agents.js";
 import type { JudgeChecks } from "../access/judge-check.js";
-import { DREAM_ION } from "../memory/dream-rules.js";
-import { ionBrain, strongestBrain } from "../ions/brain.js";
+import { strongestBrain } from "../ions/brain.js";
 import { harnessInfos } from "./commands.js";
 import { ownSwitches } from "../tools/own-run.js";
 import type { Ctx, Handlers } from "./commands.js";
@@ -195,16 +194,15 @@ async function runningOn(c: UserConfig, ctx: Pick<Ctx, "configFile" | "db" | "ju
   const ready = async () => (await infos()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
   const passed = (id: string) => ctx.judges?.passed(id) ?? shippedChecked(id);
   const at = { configFile: ctx.configFile, now: agentsNow(ctx.db, ready), passed };
-  const judgeNow = c.access.judge || ((await firstOwn(at, "judge")) ?? null);
+  const judgeNow = c.access.judge || ((await firstJudge(at)) ?? null);
   const deps = { configFile: ctx.configFile, db: ctx.db, agents: infos, quiet: true as const };
   // ion's brain: yours, else the strongest model you're signed in to (the user, 2026-11-23).
   const strongest = await strongestBrain(deps);
   const strongestSpec = strongest && [strongest.agent, strongest.model].filter(Boolean).join(":");
-  const dream = c.memory.dreamAgent || (await ionBrain(deps, DREAM_ION).catch(() => null))?.harness;
   const judgeAgent = judgeNow?.split(":")[0] ?? "";
   return {
-    ...{ quickNow: c.ion.quick || strongestSpec || null, strongest, dreamNow: dream || null },
-    ...{ judgeNow, judgeChecked: !!judgeNow && judgeNow === judgePin(judgeAgent) && passed(judgeAgent) },
+    ...{ quickNow: c.ion.quick || strongestSpec || null, strongest },
+    judgeChecked: !!judgeNow && judgeNow === judgePin(judgeAgent) && passed(judgeAgent),
   };
 }
 

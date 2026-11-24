@@ -53,8 +53,6 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     noWeb: true,
     // Its models' standard context.
     contextTokens: 200_000,
-    // ion's own quick calls on it (the judge going on another agent): its small model, never Opus (Plan 21 audit).
-    quickModel: "haiku",
     // ion's judge: Haiku, checked on your Mac like any other (PR #36 re-review, 2026-11-23: no special case).
     judge: { model: "haiku" },
     // ion's brain: Opus, the strongest of the agents ion knows (ranks: Claude 100, Codex 90, Grok 80, opencode 40).

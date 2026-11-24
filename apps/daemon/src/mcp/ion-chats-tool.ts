@@ -3,7 +3,7 @@ import type { EffortLevel, HarnessInfo } from "@ion/schema";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { UserError } from "../api/errors.js";
-import { agentLabel, harnessIds, listedHarnessIds } from "../adapters/registry.js";
+import { agentLabel, listedHarnessIds } from "../adapters/registry.js";
 import type { IonScope } from "./grants.js";
 import { guard, ok } from "./result.js";
 import type { Confirm } from "../ions/confirms.js";
@@ -18,7 +18,8 @@ const said = (a: Args) =>
 
 /** What you asked for, checked: an agent ion knows, signed in, with that model for your sign-in. */
 async function checked(a: Args, agent?: (id: string) => Promise<HarnessInfo | undefined>): Promise<void> {
-  if (!a.harness || !harnessIds().includes(a.harness))
+  // Only agents the app lists (PR #36 final review, 2026-11-24).
+  if (!a.harness || !listedHarnessIds().includes(a.harness))
     throw new UserError(`Unknown agent: ${a.harness ?? ""}`);
   const h = await agent?.(a.harness).catch(() => undefined);
   if (!agent) return;
@@ -111,10 +112,22 @@ async function save(o: Parameters<typeof registerChatsTool>[1], a: Args): Promis
   if (a.clear) return ok(write(o.configFile, a));
   await checked(a, o.agent);
   if (!o.confirm) throw new UserError("Can't ask the user here");
-  const where = a.projectId ? "this project's chats run on" : "chats ions start run on";
-  const question = `Save: ${where} ${said(a)}?`;
-  o.confirm(o.scope.ionId, { question, yes: "Save", act: async () => write(o.configFile, a) });
+  const question = `Save: ${target(o.configFile, a.projectId)} run on ${said(a)}?`;
+  const act = async () => {
+    // Still yours to save when you click (security scan, 2026-11-24): the project still the ion's, never a report.
+    if (o.scope.report) throw new UserError("Not in a report");
+    if (a.projectId) o.need(a.projectId);
+    return write(o.configFile, a);
+  };
+  o.confirm(o.scope.ionId, { question, yes: "Save", act });
   return ok(`Asked the user: ${question}`);
+}
+
+/** What a save is for, by name: "storefront's chats", or "chats ions start in all projects". */
+function target(configFile: string, projectId: string | undefined): string {
+  if (!projectId) return "chats ions start in all projects";
+  const p = loadUserConfig(configFile).config.projects.find((x) => x.id === projectId);
+  return `${p?.name ?? projectId}'s chats`;
 }
 
 /** Saves it (read again now: what's there when you click) and says what changed. */

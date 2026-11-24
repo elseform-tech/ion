@@ -2,13 +2,13 @@ import { homedir } from "node:os";
 import type { IonServers } from "../ions/servers.js";
 import {
   byPreference,
-  defaultAgent,
   getHarness,
   type HarnessEntry,
   harnessIds,
   listedHarnessIds,
 } from "../adapters/registry.js";
 import type { HarnessInfo } from "@ion/schema";
+import { yourAgent } from "./answers.js";
 import type { AuthStatus } from "@ion/adapter-kit";
 import type { Dreams } from "../scheduler/index.js";
 import type { MemoryFiles } from "../memory/index.js";
@@ -92,9 +92,7 @@ async function askOn(a: Commands["ask"]["args"], ctx: Ctx) {
   if (route) return ctx.runs.ask({ ...a, harness: route.harness }, { routed: route.reason });
   const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
   const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
-  const harness = defaultAgent(ready, own, orderIn(ctx.configFile));
-  if (!harness) throw new UserError("No agent is signed in. See Settings → Agents.");
-  return ctx.runs.ask({ ...a, harness });
+  return ctx.runs.ask({ ...a, harness: yourAgent(ctx.configFile, ready, own) });
 }
 
 export type Ctx = {
@@ -262,6 +260,8 @@ export const handlers: Handlers = {
   },
   // ion chief's own suggestions (a routine, a stalled chat), else a project ion's "always?".
   "suggestion.answer": async (a, ctx) => {
+    // Yours only, whatever it is (security scan, 2026-11-24): never a chat's agent.
+    if (ctx.caller) throw new UserError("A chat's agent can't do that");
     const id = String(a.suggestionId ?? "");
     // A one-click confirm in an ion's thread: your click does it (security scan, 2026-11-24).
     if (ctx.ions.confirms.owns(id)) await ctx.ions.confirms.answer(id, a.keep === true);

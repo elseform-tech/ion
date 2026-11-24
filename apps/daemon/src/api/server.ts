@@ -1,6 +1,6 @@
 import type { GateCall } from "@ion/adapter-kit";
 import { randomUUID } from "node:crypto";
-import { loadUserConfig } from "@ion/config";
+import { loadUserConfig, migrateUserConfig } from "@ion/config";
 import { agentsHome, dropInheritedMarkers } from "../env.js";
 import { createServer, type IncomingMessage } from "node:http";
 import { homedir } from "node:os";
@@ -130,8 +130,9 @@ export async function startServer(
   http.on("error", () => {});
   await new Promise<void>((r) => http.listen(opts.port ?? 0, "127.0.0.1", r));
   wss.on("connection", (ws, req) => new Connection(ws, ctx, who.callerOf(req)));
-  // A hand-edited setting that fell back to its default: say so once, in the daemon's log.
-  const { warning } = loadUserConfig(opts.configFile);
+  // A hand-edited setting that fell back to its default, or an older file that moved: said once in the daemon's log
+  // (a moved file is saved, so it isn't said again; PR #36 final review, 2026-11-24).
+  const { warning } = migrateUserConfig(opts.configFile);
   if (warning) console.warn(warning);
 
   const addr = http.address();
@@ -462,8 +463,9 @@ function openState(
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   // The judge, ion's quick model (low-decision work), ion's brain at Medium, and ion's checks of judge models.
-  const { own, judge: quick, quick: ionQuick, brain, judges } = ownModels(opts, db, record);
-  const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(ionQuick) });
+  const { own, judge: quick, brain, judges } = ownModels(opts, db, record);
+  // "Same question?" is judgement work: ion's brain at Medium (PR #36 final review, 2026-11-24).
+  const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(brain) });
   sweepNeeds(needs, ionQuestions);
   const unsure = new UnsureLog(join(opts.dataDir, "unsure.json"));
   const access = autoAccess(own, quick, late, unsure);

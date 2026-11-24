@@ -8,6 +8,7 @@ import {
   defaultAgent,
   getHarness,
   nextInOrder,
+  notAvoided,
   savingClaude,
 } from "../adapters/registry.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
@@ -89,24 +90,23 @@ export async function allLimited(d: BrainDeps): Promise<string | null> {
 }
 
 /**
- * A project's agent: its own, else the one its last chat ran on (while still ready: a key can expire; you set the
- * project's own on purpose), else the first ready in your agent order.
+ * The agent a chat an ion starts goes on when Automatic finds none: the project's own, else the one its last chat ran
+ * on (while still ready: a key can expire; you set the project's own on purpose), else the first ready in your agent
+ * order; never one you avoid unless the project names it.
  */
 export async function projectAgent(d: BrainDeps, projectId: string): Promise<string | undefined> {
-  const own = loadUserConfig(d.configFile).config.projects.find((p) => p.id === projectId)?.harness;
+  const c = loadUserConfig(d.configFile).config;
+  const own = c.projects.find((p) => p.id === projectId)?.harness;
   if (own) return own;
+  // Never one you avoid (PR #36 final review, 2026-11-24): that takes your click.
   const last = chatsView.lastAgent(d.db, projectId);
-  if (last && (!d.agents || (await isReady(d, last)))) return last;
-  return defaultAgent(await readyAgents(d.agents), null, orderOf(d));
+  if (last && !c.agents?.[last]?.avoid && (!d.agents || (await isReady(d, last)))) return last;
+  return defaultAgent(notAvoided(await readyAgents(d.agents), c), null, orderOf(d));
 }
 
 /** This agent can start with its web off. */
 const webOff = (id: string) => !!getHarness(id)?.adapter.noWeb;
 
-/**
- * ion's dream's agent: Settings → Memory's (else ion's quick model's) while it's ready and can turn its web off, else
- * the first ready one that can (task review, 2026-11-22); with none, the chosen one (its turn says it was skipped).
- */
 /**
  * ion's dream (the user, 2026-11-24): ions' brain (your pick, else the strongest) at Medium, on an agent that can turn
  * its web off; when the brain's can't, the next strongest that can, said once in the log. With none that can, the
@@ -128,6 +128,7 @@ async function dreamWithBrain(d: BrainDeps, quick: string, effort: Effort): Prom
   return { harness: other, model: brainModel(other), effort };
 }
 
+/** ion's dream on the [memory] dreamAgent an older config set (else the first ready one that can turn its web off). */
 async function dreamOn(d: BrainDeps, spec: string, effort: IonBrain["effort"]): Promise<IonBrain | null> {
   if (spec) return dreamBrain(d, spec, effort);
   const first = await pick(d, { not: [], ok: webOff });
@@ -203,9 +204,10 @@ export function brainEffort(mine: Effort | undefined, routine?: boolean): Effort
 /**
  * An ion's agent, model and effort, or null when it has no agent ready (the user, 2026-11-23: an ion's brain is
  * better than its workers'). ion chief and every project's ion think with ion's brain: [ion] quick ("<agent>[:<model>]")
- * when you picked it in Settings → Ions, else the strongest model you're signed in to; a project's agent, model and
+ * when you picked it in Settings → Agents, else the strongest model you're signed in to; a project's agent, model and
  * effort are only for the chats its ion starts (PR #36 re-review). One that isn't ready or is limited gives way to the
- * next strongest. ion's dream: [memory] dreamAgent, else your agent order (low-decision work; never ion's brain).
+ * next strongest. ion's dream: [memory] dreamAgent from an older config, else ion's brain at Medium on an agent that
+ * can turn its web off.
  */
 export async function ionBrain(
   d: BrainDeps,
@@ -240,7 +242,8 @@ async function pastLimited(next: Promise<IonBrain | null>, limited?: string): Pr
 
 /**
  * The strongest ready agent but these, for ion's brain when you picked none or yours isn't ready or failed: on its
- * strongest model, at `effort` (default: yours, else High); ion's dream goes along your agent order instead. `quiet`:
+ * strongest model, at `effort` (default: yours, else High); an explicit dream agent's fallback goes along your agent
+ * order instead. `quiet`:
  * nothing said in the log (a read of Settings). Null when none is left.
  */
 export async function nextBrain(

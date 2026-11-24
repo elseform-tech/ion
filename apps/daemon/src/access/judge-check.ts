@@ -80,6 +80,8 @@ const extras = (c: JudgeCase) => ({
 export class JudgeChecks {
   private readonly file: string;
   private readonly going = new Map<string, Promise<JudgeCheckRecord>>();
+  /** The day each free agent was last tried by itself (judge-tries.json: kept across restarts). */
+  private readonly triesFile: string;
 
   constructor(
     private readonly o: {
@@ -91,6 +93,7 @@ export class JudgeChecks {
     },
   ) {
     this.file = join(o.dataDir, "judge-checks.json");
+    this.triesFile = join(o.dataDir, "judge-tries.json");
   }
 
   /** Every check kept, newest last. */
@@ -115,6 +118,26 @@ export class JudgeChecks {
     return shippedChecked(agent) || !!this.last(agent)?.pass;
   }
 
+  private tries(): Record<string, string> {
+    try {
+      return JSON.parse(readFileSync(this.triesFile, "utf8")) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  private triedOn(agent: string): string | undefined {
+    return this.tries()[agent];
+  }
+
+  private triedToday(agent: string): void {
+    try {
+      writeFileSync(this.triesFile, JSON.stringify({ ...this.tries(), [agent]: today() }), { mode: 0o600 });
+    } catch {
+      // not kept: tried again at the next look
+    }
+  }
+
   /** Whether a check of this agent is going now. */
   checking(agent: string): boolean {
     return this.going.has(agent);
@@ -133,9 +156,10 @@ export class JudgeChecks {
     const spec = judgePin(agent);
     if (!spec) throw new Error(`${agent} has no judge model`);
     const result = await runJudgeCheck((prompt, signal) => this.o.run(prompt, signal, spec));
-    // An agent that couldn't answer (out of quota, signed out) isn't checked either way: nothing is kept.
-    if (result.failed * 2 > result.cases)
-      throw new Error(`${agent} gave no verdict on most cases; try again later`);
+    // An agent that didn't answer enough (out of quota, slow, signed out) isn't checked either way: nothing is kept
+    // (PR #36 final review, 2026-11-24: the same tenth that fails a check).
+    if (result.failed * 10 > result.cases)
+      throw new Error(`${agent} gave no verdict on too many cases; try again later`);
     const record = { agent, model: spec.split(":").slice(1).join(":"), date: today(), ...result };
     this.keep(record);
     return record;
@@ -160,7 +184,10 @@ export class JudgeChecks {
       const spec = judgePin(agent);
       if (!spec || this.passed(agent) || this.last(agent) || this.going.has(agent)) continue;
       const model = spec.split(":").slice(1).join(":");
+      if (this.triedOn(agent) === today()) continue;
       if ((await this.o.billing(agent, model).catch(() => null)) !== "free") continue;
+      // One that can't be checked now (out of quota) is tried again the next day (PR #36 final review).
+      this.triedToday(agent);
       await this.check(agent).catch(() => undefined);
       checked.push(agent);
     }

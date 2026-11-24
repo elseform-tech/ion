@@ -127,12 +127,6 @@ export function nextInOrder(o: {
 export const savingClaude = (ids: string[], order: string[], ready: string[]): string[] =>
   ids.filter((id) => mayGoOn(id, order, ready));
 
-/** "<agent>:<its quick model>" for ion's own one-off calls on it, else "<agent>" (its bare start picks). */
-export function quickSpec(id: string): string {
-  const m = getHarness(id)?.adapter.quickModel;
-  return m ? `${id}:${m}` : id;
-}
-
 /** "<agent>:<its pinned judge model>", as its adapter pins it (PR #36 re-review, 2026-11-23), else undefined. */
 export function judgePin(id: string): string | undefined {
   const j = getHarness(id)?.adapter.judge;
@@ -153,6 +147,10 @@ export const byStrength = (ids: string[]): string[] =>
 
 /** An agent's strongest model for ion's brain, as its adapter says; null: its own default. */
 export const brainModel = (id: string): string | null => getHarness(id)?.adapter.brain?.model ?? null;
+
+/** These agents but the ones you marked "Avoid unless I ask" (PR #36 final review, 2026-11-24). */
+export const notAvoided = (ids: string[], c: { agents?: Record<string, { avoid?: boolean } | undefined> }) =>
+  ids.filter((id) => !c.agents?.[id]?.avoid);
 
 /** An agent's name as ion says it ("Claude Code"), else its id. */
 export const agentLabel = (id: string): string => getHarness(id)?.label ?? id;

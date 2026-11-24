@@ -8,11 +8,9 @@ export const settings: SettingsInfo = {
   effort: null,
   judge: "",
   quickNow: "grok-build",
-  judgeNow: null,
   judgeChecked: false,
   strongest: null,
   judges: {},
-  dreamNow: null,
   maxRuns: "auto",
   autoRuns: 4,
   notifications: {

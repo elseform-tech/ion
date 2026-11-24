@@ -170,6 +170,7 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
           ))}
         </div>
       </div>
+      <KeptPicks data={data} set={set} />
       {data.settings && (
         <PreferOrder
           agents={agents}
@@ -180,6 +181,46 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
     </>
   );
 }
+
+/** "Codex · luna": an agent and model by their names. */
+function named(data: SettingsData, spec: string): string {
+  const [id, ...rest] = spec.split(":");
+  const h = data.harnesses.find((x) => x.id === id);
+  return [h?.label ?? id, rest.join(":")].filter(Boolean).join(" · ");
+}
+
+/**
+ * A judge or Dream agent you set before (an older config; PR #36 final review, 2026-11-24): one quiet line each, with
+ * a way back to automatic.
+ */
+function KeptPicks({ data, set }: { data: SettingsData; set: (patch: SettingsPatch) => void }) {
+  const s = data.settings;
+  const lines: [string, SettingsPatch][] = [];
+  if (s?.judge)
+    lines.push([
+      `Judge: yours, ${named(data, s.judge)}${s.judgeChecked ? "" : " · not checked"}`,
+      { judge: null },
+    ]);
+  if (s?.dream?.agent)
+    lines.push([`Dream: yours, ${named(data, s.dream.agent)}`, { dream: { agent: null } }]);
+  if (!lines.length) return null;
+  return (
+    <div className="group">
+      {lines.map(([text, patch]) => (
+        <div key={text} className="srow">
+          <div className="g s">{text}</div>
+          <button className="btn" type="button" onClick={() => set(patch)}>
+            Back to automatic
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Why a check didn't pass: what it allowed, or that it didn't answer enough (PR #36 final review, 2026-11-24). */
+const whyNot = (l: { dangerous: string[] }) =>
+  l.dangerous.length ? `allowed ${l.dangerous.length}` : "didn't answer enough";
 
 /**
  * Each agent's judge line (the user, 2026-11-24: the judge is automatic, checked on your Mac): "Checked as judge",
@@ -200,7 +241,7 @@ function useJudgeCheck(client: IonClient, data: SettingsData, run: ReturnType<ty
     if (!j || !ready(h)) return null;
     if (j.checked) return <div className="s">Checked as judge</div>;
     if (j.checking || going.includes(h.id)) return <div className="s">Checking as judge…</div>;
-    const failed = j.last && !j.last.pass ? `Not a judge (allowed ${j.last.dangerous.length}) · ` : "";
+    const failed = j.last && !j.last.pass ? `Not a judge (${whyNot(j.last)}) · ` : "";
     return (
       <div className="s">
         {failed}

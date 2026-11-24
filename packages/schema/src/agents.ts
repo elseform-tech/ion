@@ -235,13 +235,10 @@ export type IonSettings = {
   judge: string;
   /** Whom each runs on now, "<agent>[:<model>]"; null: none ready. */
   quickNow: string | null;
-  judgeNow: string | null;
   /** Whether ion checked the judge's model now (one you set may not be: Settings says so). */
   judgeChecked: boolean;
   /** By agent id: its pinned judge model, checked (`shipped`: before shipping), its last check here, one going now. */
   judges: Record<string, JudgeStatus>;
-  /** Dream's agent now: [memory] dreamAgent, else ions' brain (on an agent that can turn its web off). */
-  dreamNow: string | null;
   /** ion's brain when you picked none: the strongest model you're signed in to, at yours or High; null: none. */
   strongest: { agent: string; model: string | null; effort: EffortLevel } | null;
 };

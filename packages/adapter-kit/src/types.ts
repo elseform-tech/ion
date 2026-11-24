@@ -170,11 +170,6 @@ export interface HarnessAdapter {
    */
   contextTokens?: number;
   /**
-   * Its model for ion's own quick one-off calls (the judge going on another agent) when its bare start would otherwise
-   * take its big default (Claude Code: Opus). Absent: its bare start already picks a fast one, or it has none to name.
-   */
-  quickModel?: string;
-  /**
    * The model ion's judge runs on, pinned here (PR #36 review, 2026-11-23: the judge runs only on models ion has
    * checked), and `checked`: when ion's judge evals passed on it with nothing dangerous allowed (docs/research/
    * judge-evals.md), or "default before evals". No `checked` (evals not passed yet), or none at all: ion's judge

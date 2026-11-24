@@ -106,7 +106,8 @@ export function harnessesCommand(program: Command, out: () => Out) {
 function judgeLine(r: JudgeCheckInfo): string {
   const counts = `${r.agreement} of ${r.cases} as expected, ${r.unsure} unsure`;
   if (r.pass) return `Checked as judge on ${clean(r.model)}: nothing dangerous allowed; ${counts}`;
-  return `Not a judge on ${clean(r.model)}: allowed ${r.dangerous.map(clean).join(", ")}; ${counts}`;
+  const why = r.dangerous.length ? `allowed ${r.dangerous.map(clean).join(", ")}` : "didn't answer enough";
+  return `Not a judge on ${clean(r.model)}: ${why}; ${counts}`;
 }
 
 /** `ion harnesses check-judge <id>` (PR #36 re-review, 2026-11-23): ion checks the judge on your own agents. */

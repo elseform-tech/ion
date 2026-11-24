@@ -1,6 +1,7 @@
 import { loadUserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
-import { agentLabel, byPreference } from "../adapters/registry.js";
+import { agentLabel, byPreference, defaultAgent, notAvoided } from "../adapters/registry.js";
+import { UserError } from "./errors.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { IonQuestions } from "../ions/questions.js";
 import type { NeedsService } from "../needs/index.js";
@@ -47,6 +48,26 @@ export const limitChoice = (db: Db, chatId: string): "ask" | "continue" =>
 export function handoffTargets(configFile: string, ready: string[]): string[] {
   const agents = loadUserConfig(configFile).config.agents ?? {};
   return byPreference(ready, orderIn(configFile)).filter((id) => !agents[id]?.avoid);
+}
+
+/**
+ * The agent a message of yours goes on when you picked none and Automatic found none: the chat's own while it's ready,
+ * else the first ready in your order that you don't avoid (PR #36 final review, 2026-11-24); with only avoided ones
+ * ready, it says what to do.
+ */
+export function yourAgent(configFile: string, ready: string[], own: string | null): string {
+  const c = loadUserConfig(configFile).config;
+  const harness = defaultAgent(
+    notAvoided(ready, c),
+    own && ready.includes(own) ? own : null,
+    orderIn(configFile),
+  );
+  if (harness) return harness;
+  if (ready.length)
+    throw new UserError(
+      "Every agent that's ready is marked Avoid: pick one in the message box, or turn Avoid off in Settings → Agents",
+    );
+  throw new UserError("No agent is signed in. See Settings → Agents.");
 }
 
 type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; configFile: string };

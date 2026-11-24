@@ -3,10 +3,11 @@ import type { ThreadPicks } from "../mcp/ion-tools.js";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
 import { UserError } from "../api/errors.js";
-import { listedHarnessIds } from "../adapters/registry.js";
+import { agentOrder, byPreference, listedHarnessIds } from "../adapters/registry.js";
 import { wrapData } from "../context/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
+import { queueView } from "../views/queue.js";
 import { type ChatsPick, chatsPick, projectAgent } from "./brain.js";
 import { Confirms } from "./confirms.js";
 import { plainReport } from "./project.js";
@@ -35,6 +36,8 @@ function trimEnd(title: string): string {
 const STATUSES: ReadonlySet<string> = new Set(["done", "failed", "interrupted", "capped"]);
 const REPLY_MAX = 2000;
 const REPORT_MAX = 1200;
+/** A reply this short, after a run that went well and changed nothing, is said as it is (no report turn). */
+const PLAIN_MAX = 300;
 /** Changed files a report prompt names. */
 const CHANGED_MAX = 20;
 
@@ -98,6 +101,8 @@ export class Ions {
   private chiefAnswering: Promise<void> = Promise.resolve();
   /** Threads each turn started (or is starting), for PER_TURN. */
   private readonly perTurn = new Map<string, number>();
+  /** Outcomes already reported ("<chat>:<run>"): each is reported once. */
+  private readonly reported = new Set<string>();
   /** ion is stopping: nothing more is said. */
   private stopped = false;
   /** Told when an ion's turn ends and it has said its line (its queue sends the next). */
@@ -223,11 +228,12 @@ export class Ions {
   ): Promise<{ chatId: string } | { why: string } | { asked: string }> {
     const refused = this.refusal(projectId, turn.ionId) ?? (await this.refusedPick(askedOf(picks)));
     if (refused) return { why: refused };
-    const avoided = await this.avoidedAsk(projectId, brief, turn, picks);
-    if (avoided) return { asked: avoided };
     const n = (this.perTurn.get(turn.turnId) ?? 0) + 1;
     if (n > PER_TURN) return { why: "That's enough threads for one turn" };
+    // A confirm counts toward the turn's threads too (PR #36 final review, 2026-11-24).
     this.counted(turn.turnId, n);
+    const avoided = await this.avoidedAsk(projectId, brief, turn, picks);
+    if (avoided) return { asked: avoided };
     const chief = turn.ionId === "chief";
     if (chief) this.say(projectId, `From ion: ${brief.trim()}`);
     const t = await this.thread(projectId, brief, { request: turn.request, ...picks });
@@ -253,19 +259,40 @@ export class Ions {
     turn: { ionId: string; request: string },
     picks: ThreadPicks,
   ): Promise<string | null> {
-    const id = picks.harness;
-    if (!id || !loadUserConfig(this.d.configFile).config.agents?.[id]?.avoid) return null;
+    const avoid = loadUserConfig(this.d.configFile).config.agents ?? {};
+    const id = picks.harness ?? (await this.onlyAvoided(projectId, brief, avoid));
+    if (!id || !avoid[id]?.avoid) return null;
     const label = (await this.d.agent?.(id).catch(() => undefined))?.label ?? id;
     const question = `Run this chat on ${label}? You marked it Avoid`;
     this.confirms.ask(turn.ionId, {
       question,
       yes: "Run",
       act: async () => {
-        const t = await this.thread(projectId, brief, { request: turn.request, ...picks });
+        const t = await this.thread(projectId, brief, { request: turn.request, ...picks, harness: id });
         return "why" in t ? t.why : `Started on ${label}.`;
       },
     });
     return question;
+  }
+
+  /**
+   * With nothing picked, the agent a chat would need when every ready one is avoided (PR #36 final review,
+   * 2026-11-24): the first such in your order; null when Automatic (or the project's usual one) finds another.
+   */
+  private async onlyAvoided(
+    projectId: string,
+    text: string,
+    avoid: Record<string, { avoid?: boolean } | undefined>,
+  ): Promise<string | null> {
+    const { pick } = await this.threadAgent(projectId, { asked: {} }, text);
+    if (pick.harness) return null;
+    const ready = ((await this.d.agents?.().catch(() => [])) ?? []).filter((h) => h.installed && h.signedIn);
+    const order = agentOrder(loadUserConfig(this.d.configFile).config.routing.order);
+    const ids = byPreference(
+      ready.map((h) => h.id),
+      order,
+    );
+    return ids.find((id) => avoid[id]?.avoid) ?? null;
   }
 
   /** Why an ion may not start work in a project: `default`, one ion doesn't know, kept from ion chief, not its own. */
@@ -367,6 +394,10 @@ export class Ions {
       const status = (e.data as { status: string }).status;
       // Ended on its agent's limit: ion asks, waits or continues; the run that goes on reports (final review, 2026-11-23).
       if (status === "failed" && endedOnLimit(this.d.store, e.runId)) return;
+      // Once per outcome, and not while a follow-up waits for the chat (PR #36 final review, 2026-11-24: cost).
+      const outcome = `${e.chatId}:${e.runId ?? ""}`;
+      if (this.reported.has(outcome) || queueView.waiting(this.d.db, { chatId: e.chatId }).length) return;
+      this.reported.add(outcome);
       // The report takes a turn; one that ends after ion stopped is dropped, never an error.
       this.report(chat.projectId, chat, status).catch(() => {});
     });
@@ -381,6 +412,9 @@ export class Ions {
     const title = trimEnd(chat.title);
     const reply = this.lastReply(chat.chatId);
     const changed = this.changedFiles(chat.chatId);
+    // Little to say (it went well, changed nothing, said it briefly): the agent's own words, with no model.
+    if (status === "done" && !changed.length && reply.trim().length <= PLAIN_MAX)
+      return this.reported_(projectId, chat.chatId, plainReport(title, status, reply));
     // A report starts no threads: nothing in it is your request.
     const r = await this.d.turns
       .turn(projectId, reportPrompt(chat, { status, reply, changed }), { noThreads: true })
@@ -388,9 +422,14 @@ export class Ions {
     // A report that was stopped (or found no agent, or ran too long) is the agent's own reply instead.
     const failed = !r || !!r.ionLine;
     const text = failed ? plainReport(title, status, reply) : capped(r.reply);
-    this.say(projectId, text, undefined, r?.turnId);
+    await this.reported_(projectId, chat.chatId, text, r?.turnId);
+  }
+
+  /** Says the report in its ion's chat, and in ion chief's when ion chief started the thread. */
+  private async reported_(projectId: string, chatId: string, text: string, turnId?: string): Promise<void> {
+    this.say(projectId, text, undefined, turnId);
     this.ended(projectId);
-    if (!this.chiefStarted(chat.chatId)) return;
+    if (!this.chiefStarted(chatId)) return;
     await this.chiefAnswering;
     this.say("chief", text);
   }

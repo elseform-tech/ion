@@ -6,7 +6,7 @@ import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { expect, it } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
-import { handoffTargets, limitChoice, readyForLimit } from "./answers.js";
+import { handoffTargets, limitChoice, readyForLimit, yourAgent } from "./answers.js";
 import { HarnessInfos } from "./harness-infos.js";
 
 const info = (id: string): HarnessInfo => ({
@@ -62,4 +62,15 @@ it("never hands a chat to an agent you avoid", () => {
   saveUserConfig(configFile, { ...DEFAULT_CONFIG, agents: { "grok-build": { avoid: true } } });
   expect(handoffTargets(configFile, ["grok-build", "codex", "opencode"])).toEqual(["opencode", "codex"]);
   expect(handoffTargets(configFile, ["grok-build"])).toEqual([]);
+});
+
+// PR #36 final review, 2026-11-24: a message of yours sent with no agent picked never goes on one you avoid; with
+// only those ready, it says what to do.
+it("never sends your chat to an agent you avoid", () => {
+  const configFile = join(mkdtempSync(join(tmpdir(), "ion-answers-")), "config.toml");
+  saveUserConfig(configFile, { ...DEFAULT_CONFIG, agents: { "grok-build": { avoid: true } } });
+  expect(yourAgent(configFile, ["grok-build", "codex"], null)).toBe("codex");
+  expect(() => yourAgent(configFile, ["grok-build"], null)).toThrow(
+    "Every agent that's ready is marked Avoid: pick one in the message box, or turn Avoid off in Settings → Agents",
+  );
 });

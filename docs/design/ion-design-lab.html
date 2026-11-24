@@ -2929,6 +2929,9 @@ const IONS={
       {sugg:'friday'},{sugg:'tw4'},
       {f:'u',t:'The checkout rounding bug might be in other services too. Check.'},
       {work:'fan',fanout:[['payments-api','run','Read src/money/round.ts','42s','usually 40–120k tokens'],['billing','ok','Not affected: already sums in cents','1m 12s'],['mobile-app','ok','Not affected: uses payments-api totals','38s'],['storefront','run','Waiting — 4 ion chats running','']]},
+      /* Security scan, 2026-11-24: what an ion's model can't do alone waits for your one click (Not now / Save). */
+      {f:'u',t:'From now on, run storefront’s chats on Codex.'},
+      {confirm:'Save: storefront’s chats run on Codex?',yes:'Save'},
       {f:'u',t:'Every Monday, update storefront’s dependencies and open a PR if the tests pass.'},
       {routineAdded:{k:'storefront',ri:1}},
       {f:'u',t:'Do the same CI triage on payments-api.'},
@@ -3283,7 +3286,7 @@ function renderIon(k,ph){
     ${k==='lead'&&openTodos().length?`<button class="ib todos" type="button" title="${openTodos().length} open to-dos" aria-label="${openTodos().length} open to-dos" data-gotodos><i data-lucide="list-todo"></i><span class="ct">${openTodos().length}</span></button>`:''}<button class="ib" type="button" title="Chats started by ${esc(v.name)}"><i data-lucide="list"></i></button><button class="ib" type="button" title="Ion settings" data-ionedit="${esc(k)}"><i data-lucide="sliders-horizontal"></i></button></div>
     <div class="bubbles">${k==='lead'?pinStrip():''}<div class="bcol">`;
   v.msgs.forEach((m,i)=>{
-    const isI=x=>x&&(x.f==='i'||x.newIon||x.route||x.fanout||x.routineAdded||x.sugg);
+    const isI=x=>x&&(x.f==='i'||x.newIon||x.route||x.fanout||x.routineAdded||x.sugg||x.confirm);
     const next=v.msgs[i+1], showAv=isI(m)&&!isI(next);
     if(m.fanout){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${m.work?workHTML(m.work):''}<div class="tls">${m.fanout.map(r=>tlHTML(...r)).join('')}</div></div></div>`; return; }
     if(m.routineAdded){ const {k:rk,ri}=m.routineAdded, rv=IONS[rk], r=rv&&rv.routines[ri];
@@ -3297,6 +3300,7 @@ function renderIon(k,ph){
     if(m.quick){ h+=`<div class="quick">${m.quick.map(q=>`<button type="button">${esc(q)}</button>`).join('')}</div>`; return; }
     if(m.typing){ h+=`<div class="bm"><canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas><span class="typing"><i></i><i></i><i></i></span></div>`; return; }
     if(m.f==='u'){ h+=`<div class="bu">${esc(m.t)}</div>`; return; }
+    if(m.confirm){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div><div class="ncard"><canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas><div><b>${esc(m.confirm)}</b></div><div class="acts"><span class="sp"></span><button class="btn" type="button">Not now</button><button class="btn pri" type="button">${esc(m.yes)}</button></div></div></div></div>`; return; }
     if(m.sugg){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${suggHTML(m.sugg)}</div></div>`; return; }
     if(m.workOnly){ h+=`<div class="bm">${showAv?`<canvas class="av" data-ion="${esc(k)}" aria-hidden="true"></canvas>`:'<span></span>'}<div>${workHTML(m.workOnly)}</div></div>`; return; }
     const inner=m.link?`<div class="tls">${tlHTML(...m.link)}</div>`:`<div class="bi">${esc(m.t)}</div>`;
@@ -3857,10 +3861,6 @@ document.addEventListener('click',e=>{
     if(h==='codex') st.err=`${LIB[h].name} is working in 2 chats. Sign out after they finish.`; else st.ask=1; renderHarnesses(); return; }
   const y=e.target.closest('[data-hyes]'); if(y){ Object.assign(HCONN[y.dataset.hyes],{ask:0,st:'off',how:'Not signed in'}); renderHarnesses(); paintPills(); return; }
   const no=e.target.closest('[data-hno]'); if(no){ const st=HCONN[no.dataset.hno]; if(st.st==='busy') Object.assign(st,{st:'off'}); st.ask=0; renderHarnesses(); return; }
-  if(e.target.closest('[data-iorder]')){ IONBRAIN.fastOrder=true; renderIonModels(); return; }
-  const sl=e.target.closest('[data-islot]'); if(sl){ if(sl.dataset.islot==='fast') IONBRAIN.fastOrder=false; IONBRAIN[sl.dataset.islot]=[sl.dataset.h,sl.dataset.m]; if(!ESUP[IONBRAIN.deep[0]].includes(IONBRAIN.eff)) IONBRAIN.eff=ESUP[IONBRAIN.deep[0]].find(x=>x!=='auto')||'high'; renderIonModels(); renderByIon(); return; }
-  const ie=e.target.closest('[data-ieff]'); if(ie){ IONBRAIN.eff=ie.dataset.ieff; renderIonModels(); return; }
-  const iw=e.target.closest('[data-iwhen]'); if(iw){ IONBRAIN.when=iw.dataset.iwhen; renderIonModels(); return; }
 });
 renderHarnesses();
 /* role brains: model + effort default to the project, can be set per role and per routine */

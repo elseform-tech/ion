@@ -497,8 +497,8 @@ describe("what ion's model runs on", () => {
     access: { judge: "claude-code:haiku" },
   };
   it("thinks at the effort you picked, on the model you picked", () => {
-    expect(startOf(config, "quick")).toEqual({ id: "grok-build", model: "grok-4.7", effort: "low" });
-    expect(startOf(config, "quick", "opencode")).toEqual({ id: "opencode", model: null, effort: "low" });
+    expect(startOf(config, "brain")).toEqual({ id: "grok-build", model: "grok-4.7", effort: "low" });
+    expect(startOf(config, "brain", "opencode")).toEqual({ id: "opencode", model: null, effort: "low" });
   });
   // PR #36 re-review, the user, 2026-11-23: answering an agent's question from your past decisions is judgement work:
   // ion's brain (your pick, else the strongest), at Medium at most.
@@ -595,7 +595,7 @@ describe("harnessRunner for ion's own thinking", () => {
       ion: { ...DEFAULT_CONFIG.ion, quick: "fake" },
       access: { ...DEFAULT_CONFIG.access, judge: "nope" },
     });
-    const said = await harnessRunner(runner(configFile), "quick")("hello", new AbortController().signal);
+    const said = await harnessRunner(runner(configFile), "brain")("hello", new AbortController().signal);
     expect(said).toBe("Hi from the fake harness.");
     await expect(harnessRunner(runner(configFile))("hello", new AbortController().signal)).rejects.toThrow(
       "Unknown harness: nope",
@@ -610,9 +610,9 @@ describe("harnessRunner for ion's own thinking", () => {
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "fake" } });
     const seen: [string, string][] = [];
     const record = (harness: string, e: { type: string }) => void seen.push([harness, e.type]);
-    await harnessRunner({ ...runner(configFile), record }, "quick")("usage", new AbortController().signal);
+    await harnessRunner({ ...runner(configFile), record }, "brain")("usage", new AbortController().signal);
     await expect(
-      harnessRunner({ ...runner(configFile), record }, "quick")("limited", new AbortController().signal),
+      harnessRunner({ ...runner(configFile), record }, "brain")("limited", new AbortController().signal),
     ).rejects.toThrow("Fake usage limit reached");
     expect(seen.filter(([, t]) => t === "usage.reported" || t === "error")).toEqual([
       ["fake", "usage.reported"],
@@ -625,7 +625,7 @@ describe("harnessRunner for ion's own thinking", () => {
     process.env.ION_ALLOW_FAKE = "1";
     const configFile = join(mkdtempSync(join(tmpdir(), "ion-quick-")), "config.toml");
     saveUserConfig(configFile, { ...DEFAULT_CONFIG, ion: { ...DEFAULT_CONFIG.ion, quick: "nope" } });
-    const said = await harnessRunner(runner(configFile), "quick")(
+    const said = await harnessRunner(runner(configFile), "brain")(
       "hello",
       new AbortController().signal,
       "fake",

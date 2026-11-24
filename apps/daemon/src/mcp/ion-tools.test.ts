@@ -527,10 +527,11 @@ describe("what chats ions start run on, through an ion", () => {
       name: "set_chats_model",
       arguments: { projectId: "shop", harness: "codex", model: "gpt-5.6-sol" },
     });
-    expect(text(asked)).toBe("Asked the user: Save: this project's chats run on Codex · gpt-5.6-sol?");
+    // It names the project (security scan, 2026-11-24): you see what you save.
+    expect(text(asked)).toBe("Asked the user: Save: shop's chats run on Codex · gpt-5.6-sol?");
     expect(p()?.harness).toBeUndefined();
     expect(confirm).toHaveBeenLastCalledWith("shop", {
-      question: "Save: this project's chats run on Codex · gpt-5.6-sol?",
+      question: "Save: shop's chats run on Codex · gpt-5.6-sol?",
       yes: "Save",
       act: expect.any(Function),
     });
@@ -545,10 +546,23 @@ describe("what chats ions start run on, through an ion", () => {
     ).toBe("This project's chats are back to the default");
     expect(p()?.harness).toBeUndefined();
     const all = await chief();
-    await all.callTool({ name: "set_chats_model", arguments: { harness: "grok-build", effort: "low" } });
+    const allAsked = await all.callTool({
+      name: "set_chats_model",
+      arguments: { harness: "grok-build", effort: "low" },
+    });
+    expect(text(allAsked)).toBe(
+      "Asked the user: Save: chats ions start in all projects run on Grok Build · Low?",
+    );
     expect(await (confirm.mock.lastCall![1].act as () => Promise<string>)()).toBe(
       "Chats ions start now run on Grok Build · Low",
     );
+    // When you click, the project must still be the ion's (security scan, 2026-11-24).
+    await shop.callTool({ name: "set_chats_model", arguments: { projectId: "shop", harness: "codex" } });
+    const late = confirm.mock.lastCall![1].act as () => Promise<string>;
+    const cfg = loadUserConfig(configFile).config;
+    saveUserConfig(configFile, { ...cfg, projects: cfg.projects.filter((x) => x.id !== "shop") });
+    await expect(late()).rejects.toThrow("Not allowed");
+    saveUserConfig(configFile, cfg);
     expect(loadUserConfig(configFile).config.ion).toMatchObject({ chats: "grok-build", chatsEffort: "low" });
     expect(await shop.callTool({ name: "set_chats_model", arguments: { harness: "codex" } })).toMatchObject({
       isError: true,

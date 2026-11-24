@@ -373,7 +373,7 @@ const OLD_DEFAULTS: [section: string, key: string, was: string, name: string][] 
 ];
 
 /** One line naming what moved: ion's models to the strongest model you have, the judge to your order. */
-function movedLine(file: string, moved: string[]): string {
+function movedLine(moved: string[]): string {
   const brain = moved.filter((m) => m !== "judge");
   const parts = [
     ...(brain.length
@@ -384,7 +384,7 @@ function movedLine(file: string, moved: string[]): string {
     ...(moved.includes("judge") ? ["the judge now follows your order"] : []),
   ];
   const it = moved.length > 1 ? "them" : "it";
-  return `${basename(file)}: ${parts.join(", and ")}; set ${it} in Settings to keep Claude Code`;
+  return `${parts.join(", and ")}; set ${it} in Settings to keep Claude Code`;
 }
 
 /**
@@ -394,14 +394,14 @@ function movedLine(file: string, moved: string[]): string {
  * value is your choice and stays. Older: no version, or one that isn't a number of at least 2 (PR #36 review); a
  * newer file's version is kept so a save never writes it lower. Returns one line naming what moved, or null.
  */
-function moveOldDefaults(raw: unknown, file: string): string | null {
+function moveOldDefaults(raw: unknown): { older: boolean; said: string[] } {
   const r = raw as Record<string, unknown> | null;
-  if (typeof r !== "object" || r === null) return null;
+  if (typeof r !== "object" || r === null) return { older: false, said: [] };
   const v = r.version;
   delete r.version;
   // A newer ion's version (a higher number, or one written as a string: unknown) is kept, and nothing moves.
-  if (typeof v === "string" || (typeof v === "number" && v > CONFIG_VERSION)) r.version = v;
-  if (typeof v === "string" || (typeof v === "number" && v >= CONFIG_VERSION)) return null;
+  if (newer(v)) r.version = v;
+  if (newer(v) || v === CONFIG_VERSION) return { older: false, said: [] };
   const moved: string[] = [];
   for (const [section, key, was, name] of OLD_DEFAULTS) {
     const holder = r[section] as Record<string, unknown> | undefined;
@@ -409,8 +409,16 @@ function moveOldDefaults(raw: unknown, file: string): string | null {
     delete holder[key];
     moved.push(name);
   }
-  return moved.length ? movedLine(file, moved) : null;
+  const said = moved.length ? [movedLine(moved)] : [];
+  // What was the quick model's effort is ions' effort now (PR #36 final review, 2026-11-24).
+  const ion = r.ion as Record<string, unknown> | undefined;
+  if (ion && typeof ion === "object" && "quickEffort" in ion)
+    said.push("ion's quick effort is now ions' effort");
+  return { older: true, said };
 }
+
+/** A newer ion's version: a higher number, or one written as a string (unknown). */
+const newer = (v: unknown) => typeof v === "string" || (typeof v === "number" && v > CONFIG_VERSION);
 
 /** Removes `key` from `raw[section]`; what it held, if anything. */
 function take(raw: Record<string, unknown>, section: string, key: string): unknown {
@@ -426,14 +434,22 @@ function take(raw: Record<string, unknown>, section: string, key: string): unkno
  * model, and what happens at a limit (your chats ask, chats ions start go on another agent), said once when it wasn't the
  * default. The agent order stays as "Prefer in this order"; Dream's agent stays when you set it.
  */
-function dropOldKnobs(raw: unknown, file: string): string | null {
-  if (typeof raw !== "object" || raw === null) return null;
+function dropOldKnobs(raw: unknown): string[] {
+  if (typeof raw !== "object" || raw === null) return [];
   const r = raw as Record<string, unknown>;
-  for (const key of ["deep", "deepEffort", "useDeep"]) take(r, "ion", key);
+  const said: string[] = [];
+  const deep = take(r, "ion", "deep");
+  // A deep model you set (not the old default) is said once (PR #36 final review, 2026-11-24).
+  if (typeof deep === "string" && deep && deep !== "claude-code")
+    said.push(`ion.deep (${deep}) is no longer used`);
+  for (const key of ["deepEffort", "useDeep"]) take(r, "ion", key);
   take(r, "routing", "byUsage");
   const onLimit = take(r, "routing", "onLimit");
-  if (onLimit === undefined || onLimit === "ask") return null;
-  return `${basename(file)}: routing.onLimit is no longer used: your chats ask at a limit, chats ions start go on another agent`;
+  if (onLimit !== undefined && onLimit !== "ask")
+    said.push(
+      "routing.onLimit is no longer used: your chats ask at a limit, chats ions start go on another agent",
+    );
+  return said;
 }
 
 /**
@@ -445,22 +461,42 @@ export function loadUserConfig(file: string): {
   error: string | null;
   warning: string | null;
 } {
-  if (!existsSync(file)) return { config: defaults(), error: null, warning: null };
+  const r = readUserConfig(file);
+  return { config: r.config, error: r.error, warning: r.warning };
+}
+
+/**
+ * Reads the config file and, when it moved (an older file, or old keys dropped), saves it once so its notice is said
+ * once (PR #36 final review, 2026-11-24). The daemon's start.
+ */
+export function migrateUserConfig(file: string): ReturnType<typeof loadUserConfig> {
+  const { moved, ...r } = readUserConfig(file);
+  if (moved && !r.error) saveUserConfig(file, r.config);
+  return r;
+}
+
+function readUserConfig(file: string): ReturnType<typeof loadUserConfig> & { moved: boolean } {
+  if (!existsSync(file)) return { config: defaults(), error: null, warning: null, moved: false };
   let raw: unknown;
   try {
     raw = parse(readFileSync(file, "utf8"));
   } catch (e) {
     const first = String((e as Error).message).split("\n")[0];
-    return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null };
+    return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null, moved: false };
   }
-  const moved = moveOldDefaults(raw, file);
-  const knobs = dropOldKnobs(raw, file);
-  const warning =
-    [moved, knobs, dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
+  const old = moveOldDefaults(raw);
+  const said = [...old.said, ...dropOldKnobs(raw)];
+  const moves = said.length ? `${basename(file)}: ${said.join("; ")}` : null;
+  const warning = [moves, dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
   const r = UserConfigSchema.safeParse(raw);
   if (!r.success)
-    return { config: defaults(), error: describeIssue(file, r.error.issues[0]!), warning: null };
-  return { config: r.data, error: null, warning };
+    return {
+      config: defaults(),
+      error: describeIssue(file, r.error.issues[0]!),
+      warning: null,
+      moved: false,
+    };
+  return { config: r.data, error: null, warning, moved: old.older || said.length > 0 };
 }
 
 /** The version a save writes: a newer ion's as it was (a string: unknown), else at least this ion's. */

@@ -380,6 +380,24 @@ describe("a thread an ion starts", () => {
     expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build" });
   });
 
+  // PR #36 final review, 2026-11-24: with every ready agent avoided, a chat an ion starts waits for your Run.
+  it("asks before running on an avoided agent when it's all there is", async () => {
+    const grok = agent("grok-build", true);
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [{ id: "storefront", path: "/p/storefront", starred: false }],
+      agents: { "grok-build": { avoid: true } },
+    });
+    const i = new Ions({
+      ...{ store, db, configFile, runs: { ask }, turns: { turn } },
+      agents: async () => [grok],
+      agent: async () => grok,
+    });
+    const r = await i.startThread("storefront", "x", { ionId: "storefront", request: "x", turnId: "turn_1" });
+    expect(r).toEqual({ asked: "Run this chat on grok-build? You marked it Avoid" });
+    expect(ask).not.toHaveBeenCalled();
+  });
+
   it("runs on the project's last agent, else the first ready (opencode, Grok, then Claude)", async () => {
     const i = withAgents([agent("claude-code", true), agent("grok-build", true)]);
     await i.startThread("storefront", "x", { ionId: "storefront", request: "x", turnId: "turn_1" });
@@ -428,7 +446,13 @@ function lastRanOn(harness: string): void {
 // The user, 2026-11-19: "Read through the repo and write a concise overview of what: done. Hi from the fake
 // harness." reads like a machine. An ion tells you what came of a thread in its own words, through a turn.
 describe("a thread's end", () => {
-  const end = (status: string, reply?: string) => {
+  // PR #36 final review, 2026-11-24: a short reply with no changes is said plainly (no turn); the rest change a file.
+  const end = (status: string, reply?: string, o: { plain?: true; runId?: string } = {}) => {
+    const runId = o.runId ?? "r1";
+    if (!o.plain) {
+      const change = { path: "cart.ts", change: "modify", added: 1, removed: 1 };
+      store.append({ chatId: "t1", runId, origin: "adapter", type: EV.fileChanged, data: change });
+    }
     if (reply)
       store.append({
         chatId: "t1",
@@ -437,7 +461,7 @@ describe("a thread's end", () => {
         type: EV.messageCompleted,
         data: { text: reply },
       });
-    store.append({ chatId: "t1", runId: "r1", origin: "daemon", type: EV.runFinished, data: { status } });
+    store.append({ chatId: "t1", runId, origin: "daemon", type: EV.runFinished, data: { status } });
   };
   const last = () => said("storefront").at(-1);
   const started = async (i: Ions, ionId: string) => {
@@ -578,6 +602,34 @@ describe("a thread's end", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(turn).not.toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true });
     expect(said("storefront")).toHaveLength(before);
+  });
+
+  // PR #36 final review, 2026-11-24 (cost): a project ion's report runs once per outcome, never while a follow-up is
+  // queued for the chat, and a run that went well with no changes and a short reply is said plainly, with no model.
+  it("reports each outcome once, not while a follow-up waits, and plainly when there's little to say", async () => {
+    const i = ions();
+    await started(i, "storefront");
+    end("done", "Nothing to change: the totals were right.", { plain: true, runId: "r0" });
+    await vi.waitFor(() => expect(last()).toEqual({ text: "Nothing to change: the totals were right." }));
+    expect(turn).not.toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true });
+    end("done", "Fixed.");
+    store.append({
+      chatId: "t1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+    await vi.waitFor(() =>
+      expect(turn).toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(turn.mock.calls.filter((c) => c[2]?.noThreads)).toHaveLength(1);
+    const queued = { queueId: "q1", to: { chatId: "t1" }, text: "and the tests", brain: {} };
+    store.append({ chatId: "t1", runId: null, origin: "daemon", type: EV.queueAdded, data: queued });
+    end("done", "Fixed again.", { runId: "r2" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(turn.mock.calls.filter((c) => c[2]?.noThreads)).toHaveLength(1);
   });
 
   it("says plainly when a thread didn't finish and its ion can't say it", async () => {

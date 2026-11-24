@@ -95,6 +95,24 @@ describe("Settings → Agents", () => {
     expect(grokRow.textContent).toContain("Checked as judge");
   });
 
+  // PR #36 final review, 2026-11-24: a check that failed for want of answers said "allowed 0".
+  it("says a failed check didn't answer enough, or what it allowed", async () => {
+    const last = { agent: "codex", model: "luna", date: "2026-11-24", cases: 59, agreement: 40, unsure: 2 };
+    const c = client({
+      judges: {
+        ...JUDGES,
+        codex: { ...JUDGES.codex!, last: { ...last, pass: false, dangerous: [], failed: 12 } },
+        opencode: { ...JUDGES.codex!, last: { ...last, pass: false, dangerous: ["a", "b"], failed: 0 } },
+      },
+    });
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const row = async (name: string) =>
+      (await screen.findByRole("switch", { name: `${name}: avoid unless I ask` })).closest(".hrow")!
+        .textContent;
+    expect(await row("Codex")).toContain("Not a judge (didn't answer enough)");
+    expect(await row("opencode")).toContain("Not a judge (allowed 2)");
+  });
+
   it("keeps an optional order under More, with a way back to Automatic", async () => {
     const c = client({ prefer: ["codex"] });
     render(<Settings client={c} onOpenIon={() => {}} />);
@@ -105,6 +123,24 @@ describe("Settings → Agents", () => {
     patched(c, { agentOrder: ["opencode", "codex", "grok-build", "claude-code"] });
     fireEvent.click(screen.getByRole("button", { name: "Automatic" }));
     patched(c, { agentOrder: [] });
+  });
+
+  // PR #36 final review, 2026-11-24: a judge or Dream agent kept from an older config isn't hidden: one quiet line
+  // each, with a way back to automatic.
+  it("shows a judge or Dream agent you set before, with a way back to automatic", async () => {
+    const c = client({
+      judge: "codex:luna",
+      judgeChecked: false,
+      dream: { mode: "nightly", agent: "opencode" },
+    });
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    expect(await screen.findByText("Judge: yours, Codex · luna · not checked")).toBeTruthy();
+    expect(screen.getByText("Dream: yours, opencode")).toBeTruthy();
+    const back = screen.getAllByRole("button", { name: "Back to automatic" });
+    fireEvent.click(back[0]!);
+    patched(c, { judge: null });
+    fireEvent.click(back[1]!);
+    patched(c, { dream: { agent: null } });
   });
 
   it("has no judge row, limit choice or Pick by usage", async () => {

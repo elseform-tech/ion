@@ -7,7 +7,7 @@ import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
-import { getHarness, judgePin } from "../adapters/registry.js";
+import { getHarness } from "../adapters/registry.js";
 import { startServer } from "./server.js";
 import { loadUserConfig, saveUserConfig } from "@ion/config";
 import { Decisions } from "../decisions/index.js";
@@ -403,9 +403,11 @@ describe("daemon api", () => {
       chatId: chief.card!.threads[0]!.chatId,
     });
     expect(ionSaid("app")[0]).toEqual({ text: "From ion: please check app" });
-    // The thread ends: app's ion says what came of it, and ion chief passes it on.
-    await until(() => ionSaid("chief").at(-1)?.text === "It's done.", 15_000);
-    expect(ionSaid("app").at(-1)).toEqual({ text: "It's done." });
+    // The thread ends: app's ion says what came of it, and ion chief passes it on. PR #36 final review, 2026-11-24:
+    // the thread changed nothing and said little, so that's its own reply, with no report turn.
+    await until(() => ionSaid("app").length > 2, 15_000);
+    expect(ionSaid("app").at(-1)).toEqual({ text: "Hi from the fake harness." });
+    await until(() => ionSaid("chief").at(-1)?.text === "Hi from the fake harness.", 15_000);
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
@@ -422,12 +424,11 @@ describe("daemon api", () => {
     // ion's judge evals checked the judge's model; null (or "") goes back to your order.
     expect(await client.call("settings.get", {})).toMatchObject({
       quickNow: "grok-build",
-      judgeNow: "opencode",
       judgeChecked: false,
     });
     const grok = `grok-build:${getHarness("grok-build")!.adapter.judge!.model}`;
     await client.call("settings.set", { patch: { judge: grok } });
-    expect(await client.call("settings.get", {})).toMatchObject({ judgeNow: grok, judgeChecked: true });
+    expect(await client.call("settings.get", {})).toMatchObject({ judge: grok, judgeChecked: true });
     await expect(client.call("settings.set", { patch: { judge: "nope" } })).rejects.toThrow(
       "Unknown agent: nope",
     );
@@ -454,7 +455,6 @@ describe("daemon api", () => {
     try {
       const first = await client.call("settings.get", {});
       expect(first.judges["grok-build"]).toMatchObject({ checked: true, shipped: true, last: null });
-      expect(first).toHaveProperty("dreamNow");
       const lax = await client.call("judge.check", { harness: "fake" });
       expect(lax).toMatchObject({ agent: "fake", pass: false });
       process.env.ION_FAKE_JUDGE = "deny";
@@ -465,7 +465,7 @@ describe("daemon api", () => {
       await client.call("settings.set", { patch: { agentOrder: ["fake"] } });
       const after = await client.call("settings.get", {});
       expect(after.judges.fake).toMatchObject({ checked: true, shipped: false, last: { pass: true } });
-      expect(after).toMatchObject({ judge: "", judgeNow: judgePin("fake"), judgeChecked: true });
+      expect(after).toMatchObject({ judge: "", judgeChecked: true });
       await expect(client.call("judge.check", { harness: "nope" })).rejects.toThrow("Unknown agent: nope");
     } finally {
       delete process.env.ION_FAKE_JUDGE;

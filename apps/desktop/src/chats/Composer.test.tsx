@@ -190,6 +190,12 @@ describe("Composer", () => {
         expect.objectContaining({ text: "again", harness: "grok-build" }),
       ),
     );
+    // PR #36 final review, 2026-11-24: Automatic again, from the popover; the next new chat starts on it too.
+    fireEvent.click(pill());
+    fireEvent.click(screen.getByRole("button", { name: /^Automatic/ }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(call).toHaveBeenCalledWith("settings.set", { patch: { lastPick: null } });
+    expect(pill().textContent).toContain("Automatic");
   });
 
   // The user, 2026-11-21: before you send, the brain pill's hover says what this usually takes ("usually 40–120k

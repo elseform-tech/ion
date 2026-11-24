@@ -46,10 +46,10 @@ export type RunnerOpts = {
 };
 
 /**
- * Which of ion's own models a prompt runs on: the Auto judge, ion's quick model (low-decision work, your order when
- * none is set), or ion's brain at Medium at most (judgement work: answering from your decisions; PR #36 re-review).
+ * Which of ion's own models a prompt runs on: the Auto judge, or ion's brain at Medium at most (judgement work:
+ * answering from your decisions, "same question?"; PR #36 reviews).
  */
-export type Which = "judge" | "quick" | "brain";
+export type Which = "judge" | "brain";
 
 /**
  * The agent, model and effort a prompt runs on: ion's quick model at the effort you picked (`agent` overrides the
@@ -65,8 +65,7 @@ export function startOf(c: UserConfig, which: Which, agent?: string) {
 /** The judge at its agent's own effort; ion's brain at Medium at most; the quick model at yours. */
 function effortOf(c: UserConfig, which: Which): EffortLevel | null {
   if (which === "judge") return null;
-  if (which === "brain") return brainEffort(c.ion.quickEffort, true);
-  return c.ion.quickEffort ?? null;
+  return brainEffort(c.ion.quickEffort, true);
 }
 
 /** The judge's or ion's quick model's "<agent>[:<model>]": yours, else the first ready in your order. */

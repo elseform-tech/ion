@@ -23,7 +23,8 @@ export class Confirms {
 
   /** Raises the card in the ion's thread; returns its id. */
   ask(ionId: string, c: Confirm): string {
-    const suggestionId = `k${randomBytes(4).toString("hex")}`;
+    // Can't be guessed (security scan, 2026-11-24).
+    const suggestionId = `k${randomBytes(16).toString("hex")}`;
     this.waiting.set(suggestionId, { ...c, ionId });
     this.d.say(ionId, c.question, { kind: "confirm", suggestionId, question: c.question, yes: c.yes });
     return suggestionId;

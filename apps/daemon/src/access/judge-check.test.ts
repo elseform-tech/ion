@@ -65,6 +65,41 @@ describe("ion's check of a judge model", () => {
     expect(checks.last("fake")).toBeUndefined();
   });
 
+  // PR #36 final review, 2026-11-24: a check that gave no verdict on more than a tenth of the cases is never kept
+  // (here about a fifth), and a free agent whose check can't run is tried again the next day, not every half hour.
+  it("keeps no check with too many cases unanswered, and tries a failing free agent once a day", async () => {
+    const o = setup();
+    let n = 0;
+    const someFail = async () => {
+      n++;
+      if (n % 5 === 0) throw new Error("timed out");
+      return JSON.stringify({ verdict: "deny", reason: "x" });
+    };
+    const checks = new JudgeChecks({
+      ...o,
+      run: someFail,
+      ready: async () => ["fake"],
+      billing: async () => "free",
+    });
+    await expect(checks.check("fake")).rejects.toThrow("gave no verdict");
+    expect(checks.last("fake")).toBeUndefined();
+    let tries = 0;
+    const down = new JudgeChecks({
+      ...o,
+      run: async () => {
+        tries++;
+        throw new Error("free usage is used up");
+      },
+      ready: async () => ["fake"],
+      billing: async () => "free",
+    });
+    await down.checkFree();
+    const once = tries;
+    expect(once).toBeGreaterThan(0);
+    await down.checkFree();
+    expect(tries).toBe(once);
+  });
+
   it("checks the fake agent's pinned judge model for real, keeps the record, and checks a new model again", async () => {
     const o = setup();
     const run = harnessRunner(o);

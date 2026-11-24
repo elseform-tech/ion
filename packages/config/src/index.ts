@@ -15,6 +15,7 @@ export {
   DEFAULT_CONFIG,
   type HookEntry,
   loadUserConfig,
+  migrateUserConfig,
   MAX_RUNS,
   MIN_RUNS,
   NOTIFY_LEVELS,
