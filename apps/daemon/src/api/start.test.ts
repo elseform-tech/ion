@@ -73,6 +73,14 @@ describe("start.status", () => {
   });
 
   // Review of Plan 21 Task 2, 2026-11-23: git was set up without asking. ion asks first (code `confirm`).
+  // Merge of PR #36 into Plan 21, 2026-11-24: Automatic (honouring Avoid) picks among ready agents; with none ready
+  // at all, ask still says what to do, by agent.
+  it("ask with no agent ready says how to get one ready", async () => {
+    await expect(client.call("ask", { text: "hi" })).rejects.toThrow(
+      "No agent is signed in. Sign in to Fake: ion fake login",
+    );
+  });
+
   it("picking a non-git folder sets up git and says so, once you say yes", async () => {
     const path = folder("tip-calc");
     await expect(client.call("projects.add", { path })).rejects.toMatchObject({

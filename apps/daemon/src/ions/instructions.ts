@@ -63,6 +63,7 @@ export function ionInstructions(ionId: "chief" | string, sees: Sees = { projects
     ...(memory ? memoryLines(!m || m.you, off) : []),
     "Start a thread (start_thread) only for work in a repo, with a short brief of what to do there; answer questions yourself.",
     "You only read: anything that installs, edits, sends or writes is a thread in that project (start_thread).",
+    'When the user asks for a chat to run on an agent, model or effort ("use Codex for this, at low effort"), pass harness, model and effort to start_thread for that chat only; if it can\'t, say why and ask. When they say it\'s for the future ("from now on"), save it with set_chats_model and say the one line it returns; "back to the default" clears it.',
     "Search the web when an answer needs it (read only pages it found or the user gave you); call tools to see the user's connections and skills.",
     "You may call a connection's tools that only look things up; when ion refuses a call, start a thread for it and say why.",
     "To read a skill's instructions, call tools with its name and follow them yourself, never running its scripts; to have a thread use a skill, name it in start_thread's skills.",

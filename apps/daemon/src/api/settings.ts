@@ -1,11 +1,21 @@
 import { DEFAULT_PROJECT, loadUserConfig, PROFILE_CHARS, saveUserConfig, type UserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
 import { runsView } from "../views/runs.js";
-import { type EffortLevel, type ProjectPatch, type SettingsInfo, stripControl } from "@ion/schema";
+import {
+  type EffortLevel,
+  type ProjectPatch,
+  type SettingsInfo,
+  type SettingsPatch,
+  stripControl,
+} from "@ion/schema";
 import { applyGeneral, generalOf } from "./general-settings.js";
-import { harnessIds } from "../adapters/registry.js";
+import { harnessIds, judgePin, shippedChecked } from "../adapters/registry.js";
+import { agentsNow, firstJudge } from "../access/judge-agents.js";
+import type { JudgeChecks } from "../access/judge-check.js";
+import { strongestBrain } from "../ions/brain.js";
+import { harnessInfos } from "./commands.js";
 import { ownSwitches } from "../tools/own-run.js";
-import type { Handlers } from "./commands.js";
+import type { Ctx, Handlers } from "./commands.js";
 import { UserError } from "./errors.js";
 
 /** Loads your config, changes it, saves it; a refusal (or a config that doesn't parse) is the error you see. */
@@ -88,15 +98,30 @@ function patchProject(c: UserConfig, p: ProjectPatch): UserConfig {
 }
 
 /** ion's own model and effort changed: undefined leaves one as it is; a null effort is the agent's default again. */
-function ionPatch(ion: UserConfig["ion"], quick: string | undefined, effort: EffortLevel | null | undefined) {
-  const next = { ...ion, ...(quick ? { quick } : {}) };
-  if (effort === null) delete next.quickEffort;
-  else if (effort) next.quickEffort = effort;
+function ionPatch(ion: UserConfig["ion"], p: SettingsPatch): UserConfig["ion"] {
+  const next = { ...ion };
+  const set = (key: "quick" | "quickEffort" | "chats" | "chatsEffort", v: string | null | undefined) => {
+    if (v === null || v === "") delete next[key];
+    else if (v !== undefined) (next as Record<string, unknown>)[key] = v;
+  };
+  set("quick", specPatch(p.quick));
+  set("chats", specPatch(p.chats));
+  set("quickEffort", effortPatch(p.effort));
+  set("chatsEffort", effortPatch(p.chatsEffort));
   return next;
 }
 
-/** "Use its own tools" by agent, checked: an agent ion knows, on or off. */
-function ownPatch(given: Record<string, boolean> | undefined) {
+/** An effort checked; null clears it (the agent's own, or ion's default); undefined leaves it. */
+function effortPatch(v: EffortLevel | null | undefined): EffortLevel | null | undefined {
+  if (v && !EFFORTS.includes(v)) throw new UserError("Pick low, medium, high or max");
+  return v;
+}
+
+/**
+ * A switch by agent, checked (an agent ion knows, on or off): "Use its own tools" (`ownTools`, kept on or off) or
+ * "Avoid unless I ask" (`avoid`, the user, 2026-11-24: off removes the mark).
+ */
+function agentSwitch(given: Record<string, boolean> | undefined, key: "ownTools" | "avoid") {
   const entries = Object.entries(given ?? {});
   for (const [id, on] of entries) {
     checkAgent(id);
@@ -104,25 +129,100 @@ function ownPatch(given: Record<string, boolean> | undefined) {
   }
   return (agents: UserConfig["agents"]): UserConfig["agents"] => {
     const next = { ...agents };
-    for (const [id, on] of entries) next[id] = { ...next[id], ownTools: on };
+    for (const [id, on] of entries) {
+      const rest: Record<string, unknown> = { ...next[id] };
+      delete rest[key];
+      next[id] = key === "avoid" && !on ? rest : { ...rest, [key]: on };
+    }
     return next;
   };
 }
 
-/** Every setting as your config file has it; when it doesn't load, the defaults and why. */
-function settingsOf(file: string): SettingsInfo {
-  const { config: c, error } = loadUserConfig(file);
+/**
+ * How long Settings waits for a check of the agents still going: a moment (it's read on every change; the app reads
+ * Settings again when the agents' list comes, so whom they follow shows then).
+ */
+const READY_MS = 300;
+
+/** `f`'s promise, asked for at most once. */
+function lazy<T>(f: () => Promise<T>): () => Promise<T> {
+  let p: Promise<T> | undefined;
+  return () => {
+    p ??= f();
+    return p;
+  };
+}
+
+/** "<agent>[:<model>]" checked; null or "" is null (your agent order again); undefined leaves it. */
+function specPatch(v: string | null | undefined): string | null | undefined {
+  if (v === undefined) return undefined;
+  return v ? checkAgent(String(v)) : null;
+}
+
+/** The judge patched: a spec, or none (your agent order again). */
+function accessPatch(access: UserConfig["access"], judge: string | null | undefined): UserConfig["access"] {
+  if (judge === undefined) return access;
+  const next = { ...access };
+  if (judge === null) delete next.judge;
+  else next.judge = judge;
+  return next;
+}
+
+/** Each agent's pinned judge model, whether ion checked it, its last check here, and whether one is going now. */
+function judgesOf(judges: JudgeChecks | undefined): SettingsInfo["judges"] {
+  const out: SettingsInfo["judges"] = {};
+  for (const id of harnessIds()) {
+    const pin = judgePin(id);
+    if (!pin) continue;
+    out[id] = {
+      model: pin.split(":").slice(1).join(":"),
+      checked: judges?.passed(id) ?? shippedChecked(id),
+      shipped: shippedChecked(id),
+      last: judges?.last(id) ?? null,
+      checking: judges?.checking(id) ?? false,
+    };
+  }
+  return out;
+}
+
+/**
+ * Whom ion's brain, the judge and Dream run on now (PR #36 review, 2026-11-23): the daemon says, from the agents
+ * ready and limited, read once (what's known, waiting a moment at most for a first check); nothing is logged.
+ */
+async function runningOn(c: UserConfig, ctx: Pick<Ctx, "configFile" | "db" | "judges">) {
+  const infos = lazy(() => harnessInfos.soon(READY_MS));
+  const ready = async () => (await infos()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
+  const passed = (id: string) => ctx.judges?.passed(id) ?? shippedChecked(id);
+  const at = { configFile: ctx.configFile, now: agentsNow(ctx.db, ready), passed };
+  const judgeNow = c.access.judge || ((await firstJudge(at)) ?? null);
+  const deps = { configFile: ctx.configFile, db: ctx.db, agents: infos, quiet: true as const };
+  // ion's brain: yours, else the strongest model you're signed in to (the user, 2026-11-23).
+  const strongest = await strongestBrain(deps);
+  const strongestSpec = strongest && [strongest.agent, strongest.model].filter(Boolean).join(":");
+  const judgeAgent = judgeNow?.split(":")[0] ?? "";
+  return {
+    ...{ quickNow: c.ion.quick || strongestSpec || null, strongest },
+    judgeChecked: !!judgeNow && judgeNow === judgePin(judgeAgent) && passed(judgeAgent),
+  };
+}
+
+/** Every setting as your config file has it (when it doesn't load, the defaults and why), and whom each runs on. */
+async function settingsOf(ctx: Pick<Ctx, "configFile" | "db" | "judges">): Promise<SettingsInfo> {
+  const { config: c, error } = loadUserConfig(ctx.configFile);
   const settings = {
-    ...{ quick: c.ion.quick, effort: c.ion.quickEffort ?? null, ...generalOf(c) },
+    ...{ quick: c.ion.quick ?? "", effort: c.ion.quickEffort ?? null, judge: c.access.judge ?? "" },
+    ...(await runningOn(c, ctx)),
+    judges: judgesOf(ctx.judges),
+    ...generalOf(c),
     ownTools: ownSwitches(c),
   };
   return error ? { ...settings, problem: error } : settings;
 }
 
-/** Settings: a project ion's setup and rules, and ion's own quick model. */
+/** Settings: a project ion's setup and rules, ion's own quick model, and Auto's judge. */
 export const settingsHandlers: Pick<
   Handlers,
-  "project.update" | "settings.get" | "settings.set" | "ion.stats"
+  "project.update" | "settings.get" | "settings.set" | "ion.stats" | "judge.check"
 > = {
   "ion.stats": (a, ctx) => {
     const ionId = String(a.ionId ?? "");
@@ -139,21 +239,27 @@ export const settingsHandlers: Pick<
     changeConfig(ctx.configFile, (c) => patchProject(c, a));
     return { ok: true as const };
   },
-  "settings.get": (_a, ctx) => {
-    return settingsOf(ctx.configFile);
+  "settings.get": (_a, ctx) => settingsOf(ctx),
+  "judge.check": async (a, ctx) => {
+    const id = checkAgent(String(a.harness ?? ""));
+    if (!judgePin(id)) throw new UserError(`${id} has no judge model`);
+    if (!ctx.judges) throw new UserError("ion can't check a judge yet");
+    return ctx.judges.check(id);
   },
   "settings.set": (a, ctx) => {
     const p = a.patch ?? {};
-    const quick = p.quick === undefined ? undefined : checkAgent(String(p.quick));
-    if (p.effort && !EFFORTS.includes(p.effort)) throw new UserError("Pick low, medium, high or max");
-    const own = ownPatch(p.ownTools);
+    const judge = specPatch(p.judge);
+    const own = agentSwitch(p.ownTools, "ownTools");
+    const avoid = agentSwitch(p.avoid, "avoid");
+    const ion = (c: UserConfig) => ionPatch(c.ion, p);
     changeConfig(ctx.configFile, (c) => ({
       ...applyGeneral(c, p),
-      ion: ionPatch(c.ion, quick, p.effort),
-      agents: own(c.agents),
+      ion: ion(c),
+      access: accessPatch(c.access, judge),
+      agents: avoid(own(c.agents)),
     }));
     // A higher limit lets waiting runs start now.
     ctx.runs.limitChanged();
-    return settingsOf(ctx.configFile);
+    return settingsOf(ctx);
   },
 };

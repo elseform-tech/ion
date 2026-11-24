@@ -61,6 +61,7 @@ function Ask(p: Props & { project: ProjectInfo | null }) {
         running={null}
         project={{ value: projectId, options, onChange: setChosen }}
         onSent={p.onSent}
+        auto
         agentsAbove
         seed={seed}
       />

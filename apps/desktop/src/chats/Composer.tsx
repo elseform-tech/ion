@@ -60,6 +60,8 @@ function BrainPick(p: {
   picked: boolean;
   onChange: (b: Brain) => void;
   byUsage?: boolean;
+  /** Automatic can be picked here (a new chat). */
+  canAuto?: boolean;
   why?: string | null;
   estimate?: string | null;
 }) {
@@ -83,7 +85,13 @@ function BrainPick(p: {
         }}
       />
       {open && (
-        <BrainPopover harnesses={p.harnesses} brain={p.brain} picked={p.picked} onChange={p.onChange} />
+        <BrainPopover
+          harnesses={p.harnesses}
+          brain={p.brain}
+          picked={p.picked}
+          onChange={p.onChange}
+          {...(p.canAuto ? { auto: { on: !!p.byUsage } } : {})}
+        />
       )}
     </span>
   );
@@ -167,8 +175,8 @@ type Props = {
   /** The brain popover opened: read the agents again. */
   onBrainOpen?: () => void;
   onSent: (chatId: string) => void;
-  /** Pick by usage is on: a new chat you pick no agent for goes on the one ion picks. */
-  byUsage?: boolean;
+  /** Automatic (the user, 2026-11-24): a new chat you pick no agent for goes on the one ion picks. */
+  auto?: boolean;
   /** Why Pick by usage put the chat on its agent (its pill says so on hover). */
   why?: string | null;
   /** A new chat you said not to remember (review of #34, 2026-11-23): its first message goes with noMemory. */
@@ -228,9 +236,15 @@ function useSend(client: IonClient, onSent: (chatId: string) => void) {
 /** Your brain picks per chat, for the window's life: a chat's composer drawn again keeps them. */
 const picks = new Map<string, Brain>();
 
-/** An open chat's brain: what you picked for it (kept while the window is open), else its latest model and effort. */
-function useBrain(to: Props["to"], current: Props["current"]): [Brain, (b: Brain) => void] {
+/**
+ * An open chat's brain: what you picked for it (kept while the window is open), else its latest model and effort. A
+ * new chat starts on your last pick, which ion keeps (the user, 2026-11-24: your chats are set here only, and it
+ * remembers); with none, Automatic.
+ */
+function useBrain(p: Pick<Props, "client" | "to" | "current" | "auto">): [Brain, (b: Brain) => void] {
+  const { client, to, current } = p;
   const key = "chatId" in to ? to.chatId : null;
+  const remembers = !key && !!p.auto;
   const [brain, setPicked] = useState<Brain>(
     () =>
       (key && picks.get(key)) || {
@@ -239,8 +253,24 @@ function useBrain(to: Props["to"], current: Props["current"]): [Brain, (b: Brain
         effort: (current?.effort ?? "") as Brain["effort"],
       },
   );
+  const touched = useRef(false);
+  useEffect(() => {
+    if (!remembers) return;
+    void Promise.resolve(client.call("settings.get", {}))
+      .then((s) => {
+        const last = s?.lastPick;
+        if (last && !touched.current) setPicked(last as Brain);
+      })
+      .catch(() => {});
+  }, [client, remembers]);
   const set = (b: Brain) => {
+    touched.current = true;
     if (key) picks.set(key, b);
+    // Your pick is kept for new chats; Automatic clears it (PR #36 final review, 2026-11-24).
+    if (remembers)
+      void Promise.resolve(client.call("settings.set", { patch: { lastPick: b.harness ? b : null } })).catch(
+        () => {},
+      );
     setPicked(b);
   };
   return [brain, set];
@@ -290,12 +320,12 @@ function useBoxText(q: Queue, onSending: Props["onSending"]) {
  */
 function useSendBrain(p: Props) {
   const { ready, own, first, unlisted } = defaults(p.harnesses, p.harness);
-  const [brain, setBrain] = useBrain(p.to, p.current);
+  const [brain, setBrain] = useBrain(p);
   const [access, setAccess] = useState<Access>("");
   const b = withAgent(brain, own, first);
   const keep = unlisted && !brain.harness;
-  // Pick by usage fills in a new chat's agent only when you picked none (the user, 2026-11-22).
-  const byUsage = Boolean(p.byUsage && "projectId" in p.to && !brain.harness);
+  // Automatic fills in a new chat's agent only when you picked none (the user, 2026-11-22 and 2026-11-24).
+  const byUsage = Boolean(p.auto && "projectId" in p.to && !brain.harness);
   const sent = byUsage
     ? { ...b, access, harness: "", model: "" }
     : { ...b, access, harness: keep ? "" : b.harness };
@@ -347,6 +377,21 @@ function useNoAgentYet(
   return p.harnesses.length > 0 && !p.harnesses.some((h) => h.installed && h.signedIn) && !agentReady;
 }
 
+/** The brain pill's state: what the box shows, whether you picked, Automatic (a new chat may pick it). */
+function brainPickOf(
+  p: Props,
+  s: { brain: Brain; b: Brain; setBrain: (b: Brain) => void; byUsage: boolean },
+) {
+  return {
+    brain: s.b,
+    picked: Boolean(s.brain.harness || s.brain.model || s.brain.effort),
+    onChange: s.setBrain,
+    byUsage: s.byUsage,
+    canAuto: Boolean(p.auto && "projectId" in p.to),
+    why: p.why,
+  };
+}
+
 /**
  * The lab's message box: what to do, on which brain; Enter sends, Shift+Enter is a new line; Stop while running.
  * While the run goes, what you send waits in the queue above it (⌘Enter: sends it now).
@@ -386,13 +431,9 @@ export function Composer(p: Props) {
         <div className="bar">
           {project && <ProjectPill p={project} />}
           <BrainPick
+            {...brainPickOf(p, { brain, b, setBrain, byUsage })}
             onOpen={onBrainOpen}
             harnesses={harnesses}
-            brain={b}
-            picked={Boolean(brain.harness || brain.model || brain.effort)}
-            onChange={setBrain}
-            byUsage={byUsage}
-            why={p.why}
             estimate={estimate}
           />
           <AccessPill access={access} onChange={setAccess} />

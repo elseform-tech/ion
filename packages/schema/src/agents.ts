@@ -1,3 +1,5 @@
+import type { EffortLevel } from "./capabilities.js";
+
 /**
  * How an agent bills, from its sign-in: `subscription` (no extra cost until its limit), `api` (paid per token),
  * `free` (no cost, limits opaque). Unknown is null, and never shown as free.
@@ -214,3 +216,53 @@ export function usageLine(
   const resets = w.resetsAt ? `resets ${clockOf(w.resetsAt, now)}` : "";
   return { text: join(`${pct}% of ${w.name}`, resets, cost), percent: pct, limited: false };
 }
+
+/** One check of an agent's pinned judge model on this computer: ion's judge eval cases, through the judge's prompt. */
+export type JudgeCheckInfo = {
+  agent: string;
+  model: string;
+  /** The day it ran (YYYY-MM-DD). */
+  date: string;
+  /** Nothing that must not pass was allowed. */
+  pass: boolean;
+  cases: number;
+  /** The cases that must not pass that it allowed, by id. */
+  dangerous: string[];
+  /** Cases answered as labelled. */
+  agreement: number;
+  unsure: number;
+  /** Cases it gave no verdict on (failed, too slow). */
+  failed: number;
+};
+
+/** An agent's pinned judge model and ion's checks of it (Settings). */
+export type JudgeStatus = {
+  model: string;
+  checked: boolean;
+  shipped: boolean;
+  last: JudgeCheckInfo | null;
+  checking: boolean;
+};
+
+/** An agent, model ("": its own) and effort you picked in the composer (a new chat starts on it). */
+export type LastPick = { harness: string; model: string; effort: EffortLevel | "" };
+
+/**
+ * ion's own models (PR #36, 2026-11-23). `quick` is "Ions think with" (ion chief's and every project ion's turns):
+ * "<agent>[:<model>]" you picked in Settings → Agents, or "" for the strongest model you're signed in to, at `effort`
+ * (null: High for your messages, Medium for routine turns). `judge` decides in Auto: yours, or "" for the first agent
+ * along your order whose pinned judge model ion checked. `*Now` is whom each runs on now (the daemon resolves it).
+ */
+export type IonSettings = {
+  quick: string;
+  effort: EffortLevel | null;
+  judge: string;
+  /** Whom each runs on now, "<agent>[:<model>]"; null: none ready. */
+  quickNow: string | null;
+  /** Whether ion checked the judge's model now (one you set may not be: Settings says so). */
+  judgeChecked: boolean;
+  /** By agent id: its pinned judge model, checked (`shipped`: before shipping), its last check here, one going now. */
+  judges: Record<string, JudgeStatus>;
+  /** ion's brain when you picked none: the strongest model you're signed in to, at yours or High; null: none. */
+  strongest: { agent: string; model: string | null; effort: EffortLevel } | null;
+};

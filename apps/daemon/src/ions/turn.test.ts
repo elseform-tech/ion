@@ -277,6 +277,10 @@ describe("an ion's turn", () => {
   // folder for the agent's own files); on an agent that can't turn its web off, it doesn't start at all.
   it("a dream's turn starts with its web off, or not at all", async () => {
     const dream = { pass: { see: "ions" as const }, max: 30, ms: 60_000 };
+    // PR #36 re-review (I1), 2026-11-23: Dream's agent is [memory] dreamAgent, never ion's brain.
+    const configFile = join(home, "config.toml");
+    const c = loadUserConfig(configFile).config;
+    saveUserConfig(configFile, { ...c, memory: { ...c.memory, dreamAgent: "fake" } });
     await turns().turn("_dream", "Tidy memory.", { noThreads: true, dream });
     const o = starts.at(-1)!;
     expect(o.noWeb).toBe(true);
@@ -676,11 +680,13 @@ describe("an ion's turn", () => {
   it("a turn whose agent fails goes on the next ready agent", async () => {
     const configFile = join(home, "config.toml");
     const c = loadUserConfig(configFile).config;
-    const projects = c.projects.map((p) => (p.id === "storefront" ? { ...p, harness: undefined } : p));
-    saveUserConfig(configFile, { ...c, projects });
+    // PR #36 re-review, 2026-11-23: a project's ion thinks with ion's brain; none picked, the strongest ready.
+    const ion = { ...c.ion };
+    delete ion.quick;
+    saveUserConfig(configFile, { ...c, ion });
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      // opencode first (it's first in ion's order); it can't start here (real agents are off in tests).
+      // opencode first (it ranks above the fake agent); it can't start here (real agents are off in tests).
       const r = await turns(undefined, { agents: both }).turn("storefront", "hello");
       expect(r.reply).toBe("This is storefront.\n\n*On Fake: opencode didn't answer.*");
       expect(log.mock.calls.map((x) => String(x[0]))).toEqual([

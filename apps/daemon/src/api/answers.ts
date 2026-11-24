@@ -1,6 +1,14 @@
 import { loadUserConfig } from "@ion/config";
-import { agentLabel, byPreference, listedHarnessIds } from "../adapters/registry.js";
+import { chatsView } from "../views/chats.js";
+import {
+  agentLabel,
+  byPreference,
+  defaultAgent,
+  listedHarnessIds,
+  notAvoided,
+} from "../adapters/registry.js";
 import { nextToSetUp } from "../runs/agent-steps.js";
+import { UserError } from "./errors.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
 import type { IonQuestions } from "../ions/questions.js";
 import type { NeedsService } from "../needs/index.js";
@@ -33,6 +41,42 @@ const READY_WAIT_MS = 8000;
 export const readyForLimit = async (infos: Pick<HarnessInfos, "soon">): Promise<string[]> =>
   (await infos.soon(READY_WAIT_MS)).filter((h) => h.installed && h.signedIn).map((h) => h.id);
 
+/**
+ * What ion does at a limit (the user, 2026-11-24: no setting): in chats ions start it goes on the next ready agent by
+ * itself (unattended, on Auto); in your own chats it asks you.
+ */
+export const limitChoice = (db: Db, chatId: string): "ask" | "continue" =>
+  chatsView.list(db).find((c) => c.chatId === chatId)?.by === "ion" ? "continue" : "ask";
+
+/**
+ * The agents a chat may go on at a limit, in your order: never one you marked "Avoid unless I ask" (security scan,
+ * 2026-11-24); with none left, ion asks you.
+ */
+export function handoffTargets(configFile: string, ready: string[]): string[] {
+  const agents = loadUserConfig(configFile).config.agents ?? {};
+  return byPreference(ready, orderIn(configFile)).filter((id) => !agents[id]?.avoid);
+}
+
+/**
+ * The agent a message of yours goes on when you picked none and Automatic found none: the chat's own while it's ready,
+ * else the first ready in your order that you don't avoid (PR #36 final review, 2026-11-24); with only avoided ones
+ * ready, it says what to do.
+ */
+export function yourAgent(configFile: string, ready: string[], own: string | null): string {
+  const c = loadUserConfig(configFile).config;
+  const harness = defaultAgent(
+    notAvoided(ready, c),
+    own && ready.includes(own) ? own : null,
+    orderIn(configFile),
+  );
+  if (harness) return harness;
+  if (ready.length)
+    throw new UserError(
+      "Every agent that's ready is marked Avoid: pick one in the message box, or turn Avoid off in Settings → Agents",
+    );
+  throw new UserError("No agent is signed in. See Settings → Agents.");
+}
+
 type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; configFile: string };
 
 /**
@@ -43,8 +87,8 @@ type Deps = { store: EventStore; db: Db; needs: NeedsService; runs: RunManager; 
 function limitHandoffs(d: Deps): Handoffs {
   return new Handoffs({
     ...{ store: d.store, db: d.db, needs: d.needs, label: agentLabel, waits: new Waits() },
-    ready: async () => byPreference(await readyForLimit(harnessInfos), orderIn(d.configFile)),
-    onLimit: () => loadUserConfig(d.configFile).config.routing.onLimit,
+    ready: async () => handoffTargets(d.configFile, await readyForLimit(harnessInfos)),
+    onLimit: (chatId) => limitChoice(d.db, chatId),
     start: async (a, o) =>
       (
         await d.runs.ask(a, {

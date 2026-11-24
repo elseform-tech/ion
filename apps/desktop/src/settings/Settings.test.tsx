@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { ApiCallError, type IonClient } from "@ion/client/browser";
-import type { AgentUsage, HarnessInfo, IonInfo, ProjectInfo } from "@ion/schema";
+import type { AgentUsage, HarnessInfo, IonInfo, ProjectInfo, SettingsInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Settings } from "./Settings.js";
@@ -93,6 +93,7 @@ function client(
     problem?: string;
     own?: Record<string, boolean>;
     usage?: AgentUsage[] | (() => AgentUsage[]);
+    settings?: Partial<SettingsInfo>;
   } = {},
 ) {
   const call = vi.fn(async (cmd: string) => {
@@ -105,6 +106,7 @@ function client(
         effort: null,
         problem: o.problem,
         ownTools: o.own ?? { "claude-code": true, "grok-build": true },
+        ...o.settings,
       };
     if (cmd === "ions.list") return ions;
     if (cmd === "projects.list") return o.projects ?? projects;
@@ -131,18 +133,12 @@ describe("Settings", () => {
     expect(document.querySelector(".spage > .perr")).toBeNull();
   });
 
-  it("lists the agents and whether each is ready, and picks ion's quick model", async () => {
-    const c = client();
-    render(<Settings client={c} onOpenIon={() => {}} />);
+  it("lists the agents and whether each is ready", async () => {
+    render(<Settings client={client()} onOpenIon={() => {}} />);
     expect(await screen.findByText("Not signed in")).toBeTruthy();
     expect(screen.getByText("Signed in")).toBeTruthy();
-    // An agent (its shape), then one of its models from a menu: a long model list stays one line.
-    await waitFor(() =>
-      expect(screen.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
-    );
-    expect(screen.queryByRole("radio", { name: "Claude Code" })).toBeNull(); // not signed in
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
-    expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { quick: "grok-build:grok-code-fast" } });
+    // The user, 2026-11-23: ion's own model is picked on its page (Ions → ion), not here; the judge stays.
+    expect(screen.queryByRole("radiogroup", { name: "Quick" })).toBeNull();
   });
 
   // The user, 2026-11-21: "Only ion's, plus Import". Grok has no switch for its own servers, hooks and plugins, so
@@ -273,8 +269,8 @@ describe("Settings", () => {
   it("picks the effort ion thinks at", async () => {
     const c = client();
     render(<Settings client={c} onOpenIon={() => {}} />);
-    const effort = await screen.findByRole("group", { name: "ion's effort" });
-    expect(within(effort).getByRole("button", { name: "Default" }).className).toContain("on");
+    const effort = await screen.findByRole("group", { name: "Ions' effort" });
+    expect(within(effort).getByRole("button", { name: "Auto" }).className).toContain("on");
     fireEvent.click(within(effort).getByRole("button", { name: "Low" }));
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { effort: "low" } });
   });
@@ -391,14 +387,25 @@ describe("Settings, reviewed", () => {
     await screen.findByRole("heading", { name: "Shop" });
   };
 
-  it("saves the agent it shows with a model picked for a project with none of its own", async () => {
+  // The user, 2026-11-24: a project's own agent, model and effort, under More, are for the chats its ion starts.
+  it("sets the agent and model its ion's chats run on, under More, and goes back to the default", async () => {
     const c = client({ projects: [{ ...projects[0]!, harness: undefined } as ProjectInfo] });
     await openShop(c);
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    const runsOn = within(screen.getByRole("radiogroup", { name: "Its chats run on" }));
+    expect(runsOn.getByRole("radio", { name: "Default" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(runsOn.getByRole("radio", { name: "Grok Build" }));
     expect(c.call).toHaveBeenCalledWith("project.update", {
       projectId: "shop",
       harness: "grok-build",
-      model: "grok-code-fast",
+      model: null,
+    });
+    fireEvent.click(runsOn.getByRole("radio", { name: "Default" }));
+    expect(c.call).toHaveBeenCalledWith("project.update", {
+      projectId: "shop",
+      harness: null,
+      model: null,
+      effort: null,
     });
   });
 
@@ -423,10 +430,8 @@ describe("Settings, reviewed", () => {
   it("says why ion's model didn't change", async () => {
     const c = client({ fail: ["settings.set"] });
     render(<Settings client={c} onOpenIon={() => {}} />);
-    await waitFor(() =>
-      expect(screen.getByRole("radio", { name: "Grok Build" }).getAttribute("aria-checked")).toBe("true"),
-    );
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "grok-code-fast" } });
+    const brain = within(await screen.findByRole("radiogroup", { name: "Ions think with" }));
+    fireEvent.click(await brain.findByRole("radio", { name: "Grok Build" }));
     expect(await screen.findByText("Fix your config first.")).toBeTruthy();
   });
 

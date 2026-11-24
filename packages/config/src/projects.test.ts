@@ -47,8 +47,8 @@ describe("addProject", () => {
 
 describe("access", () => {
   it("has the judge only: no default and no per-project access", () => {
-    // The judge is a small model by default: it runs for every new action in Auto.
-    expect(DEFAULT_CONFIG.access).toEqual({ judge: "claude-code:haiku" });
+    // No judge set by default: the first ready agent in your order, at its quick model (Plan 21 audit, 2026-11-23).
+    expect(DEFAULT_CONFIG.access).toEqual({});
   });
 });
 

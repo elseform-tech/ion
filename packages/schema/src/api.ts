@@ -4,7 +4,15 @@ import type { IonEvent } from "./events.js";
 import type { ToolsCommands } from "./tools-api.js";
 import type { DreamInfo, DreamMode, MemoryChangeInfo, MemoryFileInfo, MemoryInfo } from "./memory.js";
 import type { MemorySee, MemoryType } from "./memory.js";
-import { AGENT_COMMANDS, type AgentCommands, type AgentUsage, type TaskEstimate } from "./agents.js";
+import {
+  AGENT_COMMANDS,
+  type AgentCommands,
+  type AgentUsage,
+  type IonSettings,
+  type JudgeCheckInfo,
+  type LastPick,
+  type TaskEstimate,
+} from "./agents.js";
 
 /** Close code sent when a connection has a missing or wrong token. */
 export const UNAUTHORIZED_CLOSE = 4401;
@@ -83,13 +91,6 @@ export type ProjectPatch = {
   profileSuggestion?: null;
 };
 
-/** ion's own models: "quick" thinks for ion chief and the project ions ("<agent>" or "<agent>:<model>"). */
-/** ion's own model: "<agent>" or "<agent>:<model>", and how hard it thinks (null: the agent's default). */
-export type IonSettings = { quick: string; effort: EffortLevel | null };
-
-/** What ion does when a chat's agent hits its limit (Settings → Agents). */
-export type OnLimit = "ask" | "continue" | "wait";
-
 /** How much a project may notify: everything, what needs you, only urgent things, nothing. */
 export type NotifyLevel = "all" | "needs" | "digest" | "muted";
 
@@ -110,23 +111,31 @@ export type SettingsInfo = IonSettings & {
   dream: { mode: DreamMode; agent: string | null };
   /** Memory everywhere (yours follows it), and in each project, by id (as it is: its own, else everywhere's). */
   memory: { on: boolean; projects: Record<string, boolean> };
-  /**
-   * Your agent order, best first (every agent ion knows): handoff targets, Pick by usage, and an ion's chats when the
-   * project names no agent.
-   */
+  /** Every agent ion knows, in your order (the agent list's order). */
   agentOrder: string[];
-  /** When a chat's agent hits its limit: ask you, continue on the next agent, or wait for the reset. */
-  onLimit: OnLimit;
-  /** Pick by usage: a new chat you picked no agent for goes on the one with room, by fit and cost. */
-  byUsage: boolean;
+  /** "Prefer in this order" as you saved it (empty: Automatic decides; the user, 2026-11-24). */
+  prefer: string[];
+  /** "Chats ions start run on": "<agent>[:<model>]", or "" for Automatic; at `chatsEffort` (null: the agent's own). */
+  chats: string;
+  chatsEffort: EffortLevel | null;
+  /** By agent id, the ones you marked "Avoid unless I ask" (Automatic never picks them). */
+  avoid: Record<string, true>;
+  /** Your last pick in the composer: a new chat starts on it; null: Automatic. */
+  lastPick: LastPick | null;
   /** Why your config file didn't load (what's shown are the defaults), in plain words naming the file. */
   problem?: string;
 };
 
 /** What Settings changes: only the given fields; notifications by part; `ownTools` by agent. */
-export type SettingsPatch = Partial<
-  Pick<SettingsInfo, "maxRuns" | "quick" | "effort" | "ownTools" | "agentOrder" | "onLimit" | "byUsage">
-> & {
+export type SettingsPatch = Partial<Pick<SettingsInfo, "maxRuns" | "effort" | "ownTools" | "agentOrder">> & {
+  /** "Ions think with", the judge, "Chats ions start run on": "<agent>[:<model>]", or null (or "") for the default. */
+  quick?: string | null;
+  judge?: string | null;
+  chats?: string | null;
+  chatsEffort?: EffortLevel | null;
+  /** "Avoid unless I ask", by agent id. */
+  avoid?: Record<string, boolean>;
+  lastPick?: LastPick | null;
   dream?: { mode?: DreamMode; agent?: string | null };
   /** Memory on or off everywhere, or in a project (set like everywhere, it follows everywhere again). */
   memory?: { on?: boolean; projects?: Record<string, boolean> };
@@ -215,6 +224,8 @@ export interface Commands extends ToolsCommands, AgentCommands {
   "settings.get": { args: Record<string, never>; result: SettingsInfo };
   /** Saves the given settings and returns them all; a bad value is refused with its reason. */
   "settings.set": { args: { patch: SettingsPatch }; result: SettingsInfo };
+  /** Checks an agent's pinned judge model now (ion's judge eval cases) and keeps the result (Settings → Agents). */
+  "judge.check": { args: { harness: string }; result: JudgeCheckInfo };
   /** An ion's threads' runs over the last 30 days (ion chief: every ion's). */
   "ion.stats": { args: { ionId: string }; result: IonStats };
   /** What a chat's agent left running (dev servers, watchers), wherever it runs, with PIDs and ports. */
@@ -466,6 +477,7 @@ export const COMMANDS = [
   "task.stop",
   "chat.file",
   "settings.set",
+  "judge.check",
   "chat.create",
   "events.subscribe",
   "ask",

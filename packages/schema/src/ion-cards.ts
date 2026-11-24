@@ -53,6 +53,14 @@ export const IonCardSchema = z.discriminatedUnion("kind", [
     /** Files changed in its worktree. */
     files: z.number().int().min(1),
   }),
+  // Security scan, 2026-11-24: what an ion's model can't do alone (save where chats run, run one on an agent you
+  // avoid) waits for your one click: `yes` (Save, Run) or Not now.
+  z.object({
+    kind: z.literal("confirm"),
+    suggestionId: z.string(),
+    question: z.string().min(1),
+    yes: z.string().min(1),
+  }),
   z.object({
     kind: z.literal("todo"),
     suggestionId: z.string(),

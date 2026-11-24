@@ -106,7 +106,16 @@ function launched(l: Launch | null): Launch {
  * What it takes from ion: MCP servers by url (Codex's mcp_servers is Streamable HTTP), and a start with no web (ion's
  * dream: its web search off in the thread's config); its default model's context (272k input tokens).
  */
-const TAKES = { mcpTransports: { http: true }, noWeb: true, contextTokens: 272_000 } as const;
+const TAKES = {
+  mcpTransports: { http: true },
+  noWeb: true,
+  contextTokens: 272_000,
+  // ion's judge: its fast model. Not checked: its judge eval allowed a case that must not pass (2026-11-23,
+  // docs/research/judge-evals.md), so ion's judge never goes on Codex by itself.
+  judge: { model: "gpt-5.6-luna" },
+  // ion's brain: its frontier model (ranks: Claude 100, Codex 90, Grok 80, opencode 40).
+  brain: { model: "gpt-6-astra", rank: 90 },
+} as const;
 
 /** OpenAI's Codex CLI, driven through its app-server (JSON-RPC on stdio): `codex app-server`. */
 export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {

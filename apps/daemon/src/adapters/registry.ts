@@ -110,6 +110,61 @@ export const byPreference = (ids: string[], order = PREFERRED): string[] => [
   ...ids.filter((id) => !order.includes(id)),
 ];
 
+/** The agent ion saves (the user's standing rule): never one ion's own model moves to unasked. */
+const SAVED = "claude-code";
+
+/** Whether ion's own model may go on this agent: any, but Claude Code only first in your order or alone ready. */
+const mayGoOn = (id: string, order: string[], ready: string[]): boolean =>
+  id !== SAVED || order[0] === SAVED || (ready.length === 1 && ready[0] === id);
+
+/**
+ * The agent ion's own model goes on when none is set or its own failed (Plan 21 audit, 2026-11-23: the judge quietly
+ * went on Claude Code at Opus): the first in your order that's ready, not limited and not one of `not`; Claude Code
+ * only when it's first in your order or the only one ready. None: undefined.
+ */
+export function nextInOrder(o: {
+  order: string[];
+  ready: string[];
+  limited?: (id: string) => boolean;
+  not?: string[];
+  /** Every agent ready, when `ready` is only those fit for the work (a dream's: its web off). */
+  signedIn?: string[];
+}): string | undefined {
+  const all = o.signedIn ?? o.ready;
+  return byPreference(o.ready, o.order).find(
+    (id) => !o.not?.includes(id) && !o.limited?.(id) && mayGoOn(id, o.order, all),
+  );
+}
+
+/** These agents, but Claude Code unless it's first in your order or the only one ready. */
+export const savingClaude = (ids: string[], order: string[], ready: string[]): string[] =>
+  ids.filter((id) => mayGoOn(id, order, ready));
+
+/** "<agent>:<its pinned judge model>", as its adapter pins it (PR #36 re-review, 2026-11-23), else undefined. */
+export function judgePin(id: string): string | undefined {
+  const j = getHarness(id)?.adapter.judge;
+  return j ? `${id}:${j.model}` : undefined;
+}
+
+/** Whether ion ran its judge checks on this agent's pinned model before shipping it (the adapter says when). */
+export const shippedChecked = (id: string): boolean => !!getHarness(id)?.adapter.judge?.checked;
+
+/**
+ * These agents strongest first, by the rank each adapter gives its strongest model (the user, 2026-11-23: ion's brain
+ * is "the strongest model you're signed in to"); equal ranks keep their order.
+ */
+export const byStrength = (ids: string[]): string[] =>
+  [...ids].sort(
+    (a, b) => (getHarness(b)?.adapter.brain?.rank ?? 0) - (getHarness(a)?.adapter.brain?.rank ?? 0),
+  );
+
+/** An agent's strongest model for ion's brain, as its adapter says; null: its own default. */
+export const brainModel = (id: string): string | null => getHarness(id)?.adapter.brain?.model ?? null;
+
+/** These agents but the ones you marked "Avoid unless I ask" (PR #36 final review, 2026-11-24). */
+export const notAvoided = (ids: string[], c: { agents?: Record<string, { avoid?: boolean } | undefined> }) =>
+  ids.filter((id) => !c.agents?.[id]?.avoid);
+
 /** An agent's name as ion says it ("Claude Code"), else its id. */
 export const agentLabel = (id: string): string => getHarness(id)?.label ?? id;
 

@@ -184,7 +184,7 @@ put({ projectId: "storefront" }, { name: "Check the headline on mobile", descrip
 fs.writeFileSync(process.env.ION_HOME + "/data/memory/projects/storefront/notes.md", "no header here\n");
 db.close();'
 # Plan 20 (made up): each agent's usage line, a limit handed to another agent (one asked, one on Auto after your
-# "Always"), a chat Pick by usage routed, and past chats in storefront, so a short request there has an estimate.
+# "Always"), a chat Automatic routed, and past chats in storefront, so a short request there has an estimate.
 node --input-type=module -e '
 const { EventStore, openDb } = await import("./apps/daemon/dist/store/index.js");
 const { allViews } = await import("./apps/daemon/dist/views/index.js");
@@ -238,7 +238,7 @@ run(b, "tour-al-2", "opencode", "ion’s brief: the request, what was done, the 
 });
 add(b, "tour-al-2", "message.completed", { text: "Coupon discounts now round half up to the cent; added a test for 0.005." }, -1430);
 add(b, "tour-al-2", "run.finished", { status: "done" }, -1430);
-// Pick by usage picked the agent, and says why.
+// Automatic picked the agent, and says why.
 const c = "chat_tour-routed";
 chat(c, "Tidy the footer links", -90);
 add(c, "tour-ro-1", "message.sent", { text: "Tidy the footer links: one column on phones" }, -90);
@@ -309,7 +309,7 @@ c.close();'
 (ion ask "gated npm install unsure-me" -p storefront --harness fake >/dev/null 2>&1 &) # waits on you 4 minutes
 (ion ask "slow" -p payments-api --harness fake >/dev/null 2>&1 &) # running while you look
 # Plan 20: a chat that waits for its agent's reset (the fake's limit, you picked Wait); one ion chat at a time, so a
-# routine's chat waits behind another ("Waiting — 1 ion chat running"); then Pick by usage on (the By usage pill).
+# routine's chat waits behind another ("Waiting — 1 ion chat running"). (A new chat is on Automatic by itself.)
 ion ask "limited — tidy the checkout copy" -p payments-api --harness fake >/dev/null 2>&1 || true
 node --input-type=module -e '
 const { connect, readDaemonInfo } = await import("./packages/client/dist/index.js");
@@ -325,11 +325,6 @@ ion routines add "Hold" -p storefront -w "sun 3:00" -d "slow" >/dev/null
 sleep 2
 (ion routines run dependency-update >/dev/null 2>&1 &)
 sleep 2
-node --input-type=module -e '
-const { connect, readDaemonInfo } = await import("./packages/client/dist/index.js");
-const c = await connect(readDaemonInfo(process.env.ION_HOME + "/data"));
-await c.call("settings.set", { patch: { byUsage: true } });
-c.close();'
 pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
 sleep 3
 # ION_TOUR_APP: the app's address when your vite runs elsewhere (another worktree's port).
