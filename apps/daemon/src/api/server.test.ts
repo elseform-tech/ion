@@ -388,7 +388,9 @@ describe("daemon api", () => {
         .filter((e) => e.chatId === `ion:${ionId}` && e.type === "ion.said")
         .map((e) => e.data as { text: string; card?: { kind: string; threads: { chatId: string }[] } });
     await client.call("ion.message", { ionId: "chief", text: "please check app" });
-    const chief = ionSaid("chief").at(-1)!;
+    // Its own line, found by its card (full check, 2026-11-24: the thread's short report, said as-is, can already
+    // follow it): ion chief's "Asked 1 project." comes first, the thread's report after.
+    const chief = ionSaid("chief").find((m) => m.card?.kind === "threads")!;
     expect(chief).toMatchObject({ text: "Asked 1 project.", card: { kind: "threads" } });
     // Its turn used ion's tools: its work is on its chat.
     const tools = seen.filter((e) => e.chatId === "ion:chief" && e.type === "tool.started");
@@ -408,6 +410,8 @@ describe("daemon api", () => {
     await until(() => ionSaid("app").length > 2, 15_000);
     expect(ionSaid("app").at(-1)).toEqual({ text: "Hi from the fake harness." });
     await until(() => ionSaid("chief").at(-1)?.text === "Hi from the fake harness.", 15_000);
+    const order = ionSaid("chief").map((m) => m.text);
+    expect(order.indexOf("Asked 1 project.")).toBeLessThan(order.indexOf("Hi from the fake harness."));
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
