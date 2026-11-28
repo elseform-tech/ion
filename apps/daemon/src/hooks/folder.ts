@@ -31,17 +31,18 @@ export function ownWorktree(cwd: string, chatId: string | null, sb: RunSandbox):
 /**
  * A hook's sandbox in the chat's worktree, which may run code the agent planted there (automated scan, 2026-11-28):
  * no more than the agent's own run gets. It writes the worktree and a temp folder of its own (TMPDIR), nothing else;
- * reads what the run reads (ion's folders denied). `done` removes the temp folder.
+ * reads what the run reads (ion's folders denied). With no worktree (the chat's failed its check), its temp folder
+ * only. `done` removes the temp folder.
  */
 export function worktreeSandbox(
   sb: RunSandbox,
-  worktree: string,
+  worktree: string | null,
 ): { sandbox: RunSandbox; tmp: string; done: () => void } {
   const made = join(sb.dataDir, "hook-tmp", randomUUID());
   mkdirSync(made, { recursive: true, mode: 0o700 });
   const tmp = realpathSync.native(made);
   return {
-    sandbox: { ...sb, paths: { ...sb.paths, write: [worktree, tmp], writeOnly: true } },
+    sandbox: { ...sb, paths: { ...sb.paths, write: worktree ? [worktree, tmp] : [tmp], writeOnly: true } },
     tmp,
     done: () => rmSync(tmp, { recursive: true, force: true }),
   };
