@@ -35,4 +35,15 @@ describe("a thread's brief traces to the user's words", () => {
     expect(tracesTo("x", ["x"])).toBe(true);
     expect(tracesTo("Fix the checkout button label.", ["修正结账按钮的文字"])).toBe(true);
   });
+
+  // Plan 23 final review (I1, 2026-11-28): "issues" stemmed to "issu" but "issue" stayed "issue".
+  it("matches a word and its plural, both ways", () => {
+    expect(tracesTo("Close the issue about refunds rounding.", ["look at the issues"])).toBe(true);
+    expect(tracesTo("Go through the open issues.", ["fix that issue"])).toBe(true);
+    expect(tracesTo("Update the billing addresses.", ["the address is wrong"])).toBe(true);
+  });
+
+  it("still can't match a paraphrase (the service asks the ion to check with the user instead)", () => {
+    expect(tracesTo("Repair the authentication failure on sign-in.", ["fix the login bug"])).toBe(false);
+  });
 });

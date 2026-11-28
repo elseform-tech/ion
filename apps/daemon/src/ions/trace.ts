@@ -1,9 +1,11 @@
 /**
  * Whether a thread's brief traces to what the user said (Plan 23 Task 4, 2026-11-28: on "Hello!", ion chief started a
- * chat "to publish every draft" because a memory file told it to). Only the user asks for work: a brief must share a
- * word with their recent messages (or ion's line they answered); memory, files, chats and tool results never count.
- * It can't judge a brief with no words of its own, or a request written in another script (the brief would be in
- * English), so those go through; ion's instructions say the same in words.
+ * chat "to publish every draft" because a memory file told it to). A backstop by shared words, not a proof: the brief
+ * must share a word (common ones aside) with the user's own recent messages, or with an ion offer they accepted (the
+ * caller picks those, `Ions.userSaid`). It misses paraphrases ("fix the login bug" → "repair the authentication
+ * failure"), so a brief that doesn't trace isn't refused: the ion is asked to check with the user, and their yes then
+ * traces. It can't judge a brief with no words of its own, or a request written in another script, so those skip it;
+ * an ion quoting content to the user, which the user then accepts, also gets through (that is the user's consent).
  */
 
 /** Words too common to tie a brief to a request. */
@@ -16,8 +18,15 @@ const COMMON = new Set(
   ).split(" "),
 );
 
-/** A word's stem: lower case, without a plural or -ed/-ing ending. */
-const stem = (w: string) => w.replace(/(ing|ed|es|s)$/, "");
+/**
+ * A word's stem, the same for a word and its plural ("issue", "issues" → "issu"; "address", "addresses" → "address"):
+ * without an -ing or -ed ending, then a plural s or es (not after another s), then a final e.
+ */
+const stem = (w: string) =>
+  w
+    .replace(/(ing|ed)$/, "")
+    .replace(/(?<!s)e?s$/, "")
+    .replace(/e$/, "");
 
 /** The words that could tie a text to another: three letters or more, not common, stemmed. */
 const wordsOf = (t: string) =>
