@@ -115,7 +115,10 @@ describe("ion cli", { timeout: 20_000 }, () => {
     expect(r.err).toBe("ion isn't running. Start it with: ion daemon start");
   });
 
-  it("starts once, and a second start says Already running", async () => {
+  // Flaked on GitHub's macOS runners (PRs #47 and #50 CI, 2026-11-28): the CLI waited only 5 s for the daemon, which
+  // takes longer when the runner is busy, so the first start printed nothing on stdout (its "didn't start" went to
+  // stderr). It waits up to 30 s now (and stops at once if the daemon exits); this test gets time to match.
+  it("starts once, and a second start says Already running", { timeout: 60_000 }, async () => {
     expect((await ion("daemon", "start")).out).toBe("Started");
     const again = await ion("daemon", "start");
     expect(again).toMatchObject({ code: 0, out: "Already running" });

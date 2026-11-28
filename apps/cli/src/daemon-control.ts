@@ -78,6 +78,8 @@ export async function reachRun(port: string | undefined, runKey: string): Promis
   }
 }
 
+const START_WAIT_TICKS = 300;
+
 export async function startDaemon(dataDir: string): Promise<"started" | "already" | "failed"> {
   const up = await reach(dataDir);
   if (up) {
@@ -93,7 +95,13 @@ export async function startDaemon(dataDir: string): Promise<"started" | "already
     env: process.env,
   });
   child.unref();
-  for (let i = 0; i < 50; i++) {
+  let exited = false;
+  child.once("exit", () => {
+    exited = true;
+  });
+  // Up to 30 s for its ready signal (a slow or loaded computer takes several seconds; 5 s gave up too early on
+  // GitHub's macOS runners, 2026-11-28). A daemon that already exited won't answer: no point waiting.
+  for (let i = 0; i < START_WAIT_TICKS && !exited; i++) {
     await sleep(100);
     const r = await reach(dataDir);
     if (r) {
@@ -101,7 +109,10 @@ export async function startDaemon(dataDir: string): Promise<"started" | "already
       return "started";
     }
   }
-  return "failed";
+  // It exited (another daemon may have won the lock): one last look before giving up.
+  const last = exited ? await reach(dataDir) : null;
+  last?.client.close();
+  return last ? "started" : "failed";
 }
 
 /** Signals only a daemon that proved it is ion (see reach); anything else counts as not running. */

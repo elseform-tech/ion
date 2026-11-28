@@ -24,6 +24,9 @@ export type JudgeCheckResult = {
 
 /** How ion's own check of a free agent goes (Plan 21, 2026-11-28): a gap between cases, a cap on its time. */
 export type Pace = { gapMs: number; capMs: number };
+/** Time as the check sees it; tests give a virtual one so pacing doesn't depend on how fast the machine is. */
+export type Clock = { now: () => number; sleep: (ms: number) => Promise<void> };
+const REAL_CLOCK: Clock = { now: () => Date.now(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)) };
 const AUTO_PACE: Pace = { gapMs: 2000, capMs: 10 * 60_000 };
 
 /**
@@ -60,17 +63,18 @@ function agrees(expect: JudgeCase["expect"], verdict: string): boolean {
  */
 export async function runJudgeCheck(
   run: Run,
-  o: { parallel?: number; stop?: () => boolean } & Partial<Pace> = {},
+  o: { parallel?: number; stop?: () => boolean; clock?: Clock } & Partial<Pace> = {},
 ): Promise<JudgeCheckResult & { stopped?: "limit" | "time" }> {
   const judge = createJudge(run);
   const queue = [...JUDGE_CASES];
   const rows: { c: JudgeCase; verdict: string }[] = [];
-  const t0 = Date.now();
+  const clock = o.clock ?? REAL_CLOCK;
+  const t0 = clock.now();
   const at: { stopped?: "limit" | "time" } = {};
   // Plan 21, 2026-11-28: it stops at the first limit (no case after it) and once it has taken its time.
   const halt = () => {
     if (o.stop?.()) at.stopped = "limit";
-    else if (o.capMs !== undefined && Date.now() - t0 > o.capMs) at.stopped = "time";
+    else if (o.capMs !== undefined && clock.now() - t0 > o.capMs) at.stopped = "time";
     return !!at.stopped;
   };
   const worker = async () => {
@@ -82,7 +86,7 @@ export async function runJudgeCheck(
         ...extras(c),
       });
       rows.push({ c, verdict: v.decided === false ? "failed" : v.verdict });
-      if (o.gapMs && queue.length && !halt()) await new Promise((r) => setTimeout(r, o.gapMs));
+      if (o.gapMs && queue.length && !halt()) await clock.sleep(o.gapMs);
     }
   };
   await Promise.all(Array.from({ length: o.parallel ?? 4 }, worker));
@@ -137,6 +141,8 @@ export class JudgeChecks {
       order?: () => string[];
       /** ion's own check's gap between cases and cap on its time. */
       pace?: Pace;
+      /** Tests only: a virtual clock for the pace. */
+      clock?: Clock;
     },
   ) {
     this.file = join(o.dataDir, "judge-checks.json");
@@ -220,6 +226,7 @@ export class JudgeChecks {
       // ion's own check: a case at a time, with a gap, within its time (Plan 21, 2026-11-28).
       ...(pace ? { parallel: 1, ...pace } : {}),
       stop,
+      ...(this.o.clock ? { clock: this.o.clock } : {}),
     });
     if (result.stopped === "limit") {
       const until = this.o.limited?.(agent) ?? tomorrow();
