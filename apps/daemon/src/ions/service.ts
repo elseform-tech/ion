@@ -36,8 +36,7 @@ const REPLY_MAX = 2000;
 /** The user's recent messages a brief may trace to. */
 const USER_SAID = 3;
 /** A reply that accepts what the ion offered. */
-const ACCEPTS =
-  /^(yes|yeah|yep|sure|ok(ay)?|go ahead|go for it|do it|please do|please|sounds good|start it)\b/i;
+const ACCEPTS = /^(yes|yep|yeah|ok|okay|sure|go ahead|do it|start it)[.!]?$/i;
 /**
  * Why a brief that doesn't trace to the user's words didn't start yet (final review, 2026-11-28): never "the user
  * didn't ask" (it may be their request in other words); the ion checks with them, and their yes then traces.
@@ -114,6 +113,11 @@ export class Ions {
   private chiefAnswering: Promise<void> = Promise.resolve();
   /** Threads each turn started (or is starting), for PER_TURN. */
   private readonly perTurn = new Map<string, number>();
+  /**
+   * Each message of yours, by its event id, with the ion's own reply to it (the reply's event id): the only line that
+   * can be an offer you accept (security review, 2026-11-28: by position, a report could stand in for it).
+   */
+  private readonly replies = new Map<string, string>();
   /** ion is stopping: nothing more is said. */
   private stopped = false;
   /** Told when an ion's turn ends and it has said its line (its queue sends the next). */
@@ -156,25 +160,25 @@ export class Ions {
   }
 
   /** The ion's line; a turn's reply carries the turn's id (its work, kept under that id, goes above it). */
-  private say(ionId: string, text: string, card?: IonCard, turnId?: string): void {
-    if (this.stopped) return;
-    this.d.store.append({
+  private say(ionId: string, text: string, card?: IonCard, turnId?: string): string | null {
+    if (this.stopped) return null;
+    return this.d.store.append({
       chatId: `ion:${ionId}`,
       runId: turnId ?? null,
       origin: "daemon",
       type: EV.ionSaid,
       data: { text, ...(card ? { card } : {}) },
-    });
+    }).id;
   }
 
-  private heard(ionId: string, text: string, picks: ThreadPicks = {}): void {
-    this.d.store.append({
+  private heard(ionId: string, text: string, picks: ThreadPicks = {}): string {
+    return this.d.store.append({
       chatId: `ion:${ionId}`,
       runId: null,
       origin: "daemon",
       type: EV.ionHeard,
       data: { text, ...picksOf(picks) },
-    });
+    }).id;
   }
 
   /**
@@ -183,22 +187,31 @@ export class Ions {
    */
   async message(ionId: string, text: string, picks: ThreadPicks = {}): Promise<void> {
     if (!this.knows(ionId)) throw new UserError(`Unknown ion: ${ionId}`);
-    this.heard(ionId, text, picks);
-    const answering = this.answer(ionId, text, picks);
+    const heardId = this.heard(ionId, text, picks);
+    const answering = this.answer(ionId, text, picks).then((replyId) => this.replied(heardId, replyId));
     if (ionId === "chief") this.chiefAnswering = answering;
     await answering;
   }
 
-  private async answer(ionId: string, text: string, picks: ThreadPicks = {}): Promise<void> {
+  /** The ion's line answering your message, by your message (only the latest are kept: an offer is answered soon). */
+  private replied(heardId: string, replyId: string | null): void {
+    if (!replyId) return;
+    this.replies.set(heardId, replyId);
+    if (this.replies.size > 200) this.replies.delete(this.replies.keys().next().value!);
+  }
+
+  /** Your message to an ion, answered: the ion's reply line (its event id), or null when it said none of its own. */
+  private async answer(ionId: string, text: string, picks: ThreadPicks = {}): Promise<string | null> {
     try {
       // What you picked is said to the ion in ion's words; the judge reads only yours.
       const told = pickLines(picks);
       const { reply, threads, turnId } = told
         ? await this.d.turns.turn(ionId, `${text}\n\n${told}`, { request: text })
         : await this.d.turns.turn(ionId, text);
-      this.say(ionId, reply, threadsCard(threads), turnId);
+      return this.say(ionId, reply, threadsCard(threads), turnId);
     } catch (e) {
       this.say(ionId, e instanceof UserError ? e.message : NO_AGENT);
+      return null;
     } finally {
       this.ended(ionId);
     }
@@ -260,18 +273,15 @@ export class Ions {
    * tool results or file and memory text: only the ion's first line after a message of the user's can be an offer.
    */
   private userSaid(ionId: string, request: string): string[] {
-    const talk = this.d.store
-      .read({ chatId: `ion:${ionId}` })
-      .filter(
-        (e) => e.type === EV.ionHeard || (e.type === EV.ionSaid && !(e.data as { card?: unknown }).card),
-      );
+    const events = this.d.store.read({ chatId: `ion:${ionId}` });
     const text = (e: { data: unknown }) => String((e.data as { text?: unknown }).text ?? "");
-    const heard = talk.filter((e) => e.type === EV.ionHeard);
+    const heard = events.filter((e) => e.type === EV.ionHeard);
     const said = [request, ...heard.slice(-USER_SAID).map(text)];
     const [before, last] = [heard.at(-2), heard.at(-1)];
     if (!before || !last || !ACCEPTS.test(text(last).trim())) return said;
-    const reply = talk[talk.indexOf(before) + 1];
-    return reply?.type === EV.ionSaid && reply !== last ? [...said, text(reply)] : said;
+    const offerId = this.replies.get(before.id);
+    const offer = events.find((e) => e.id === offerId && !(e.data as { card?: unknown }).card);
+    return offer ? [...said, text(offer)] : said;
   }
 
   /** Why an ion may not start work in a project: `default`, one ion doesn't know, kept from ion chief, not its own. */

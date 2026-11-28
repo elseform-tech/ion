@@ -46,4 +46,12 @@ describe("a thread's brief traces to the user's words", () => {
   it("still can't match a paraphrase (the service asks the ion to check with the user instead)", () => {
     expect(tracesTo("Repair the authentication failure on sign-in.", ["fix the login bug"])).toBe(false);
   });
+
+  // Security review of 25cb632 (Medium): stemming cut words short ("bed" → "b", a final e dropped).
+  it("stems only plurals, -ing and -ed, and drops what comes out under three letters", () => {
+    expect(tracesTo("Close the issue.", ["look at the issues"])).toBe(true);
+    expect(tracesTo("Fix the boxes.", ["the box is broken"])).toBe(true);
+    expect(tracesTo("Make the bed frame sturdier.", ["bing it"])).toBe(false);
+    expect(tracesTo("Use the new rate.", ["rated items"])).toBe(false);
+  });
 });

@@ -19,22 +19,23 @@ const COMMON = new Set(
 );
 
 /**
- * A word's stem, the same for a word and its plural ("issue", "issues" → "issu"; "address", "addresses" → "address"):
- * without an -ing or -ed ending, then a plural s or es (not after another s), then a final e.
+ * A word's stem, kept conservative (security review, 2026-11-28): without an -ing or -ed ending, or a plural: -es after
+ * s, x, sh or ch ("boxes" → "box"), else a final s not after another s ("issues" → "issue", "address" stays).
  */
 const stem = (w: string) =>
   w
     .replace(/(ing|ed)$/, "")
-    .replace(/(?<!s)e?s$/, "")
-    .replace(/e$/, "");
+    .replace(/(ss|x|sh|ch)es$/, "$1")
+    .replace(/(?<!s)s$/, "");
 
 /** The words that could tie a text to another: three letters or more, not common, stemmed. */
 const wordsOf = (t: string) =>
   new Set(
     (t.toLowerCase().match(/[a-z0-9][a-z0-9'-]{2,}/g) ?? [])
       .flatMap((w) => w.split(/[-/]/))
-      .filter((w) => w.length >= 3 && !COMMON.has(w))
-      .map(stem),
+      .filter((w) => !COMMON.has(w))
+      .map(stem)
+      .filter((w) => w.length >= 3),
   );
 
 /** Mostly letters outside a–z: a request written in another script. */
