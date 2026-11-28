@@ -92,4 +92,18 @@ export type Between = {
   noResume?: boolean;
   /** The chat said "Started fresh with a summary" for this run (once). */
   summarized?: boolean;
+  /** The run has ended (its run.finished is stored): ion stopping leaves it alone. */
+  ended?: boolean;
 };
+
+/** Waits a retry's delay; false if interrupted (or ion stopped) meanwhile. */
+export function pause(b: Between, delayS: number, stopping: boolean): Promise<boolean> {
+  if (b.interrupt || stopping) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(true), delayS * 1000);
+    b.wake = () => {
+      clearTimeout(t);
+      resolve(false);
+    };
+  });
+}

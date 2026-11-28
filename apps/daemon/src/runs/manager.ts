@@ -28,7 +28,7 @@ import type { GateAnswer } from "../gate/index.js";
 import { Approvals } from "./approvals.js";
 import type { RunCtx } from "./run-ctx.js";
 import type { Between } from "./retry.js";
-import { keep, type Retry, type RetryState, type RunError, retryPlan, type TryEnd } from "./retry.js";
+import { keep, pause, type Retry, type RetryState, type RunError, retryPlan, type TryEnd } from "./retry.js";
 import { defaultProject, projectPath } from "./projects.js";
 import { type Given, givenToRun, redactor, runMcp, type Served, yourServers } from "./servers.js";
 import { type RunKeys, runEnv, runKeys } from "./run-env.js";
@@ -238,7 +238,7 @@ export class RunManager {
         );
         const retry = this.planRetry(l, state, end, b);
         if (!retry) return this.finish(l, end.status);
-        if (!(await this.pause(b, retry.delayS))) return this.finish(l, "interrupted");
+        if (!(await pause(b, retry.delayS, this.stopping))) return this.finish(l, "interrupted");
       }
     } finally {
       // A run's local servers never outlive it.
@@ -302,20 +302,10 @@ export class RunManager {
   }
 
   private finish(l: Launch, status: string): void {
+    // From here a stop must not end this run a second time (found 2026-11-28; its servers still close after this).
+    Object.assign(this.between.get(l.runId) ?? {}, { ended: true });
     const [{ chatId, runId }, data] = [l, { status }];
     if (!this.stopping) this.store.append({ chatId, runId, origin: "daemon", type: EV.runFinished, data });
-  }
-
-  /** Waits a retry's delay; false if interrupted (or ion stopped) meanwhile. */
-  private pause(b: Between, delayS: number): Promise<boolean> {
-    if (b.interrupt || this.stopping) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      const t = setTimeout(() => resolve(true), delayS * 1000);
-      b.wake = () => {
-        clearTimeout(t);
-        resolve(false);
-      };
-    });
   }
 
   /**
@@ -409,7 +399,7 @@ export class RunManager {
     for (const [runId, { chatId, item }] of this.queued)
       if (item.cancel()) this.endFailed(chatId, runId, "daemon_stopped", "ion stopped");
     this.queued.clear();
-    for (const [runId, b] of this.between) {
+    for (const [runId, b] of [...this.between].filter(([, x]) => !x.ended)) {
       b.wake?.();
       this.needs.supersedeRun(runId);
       this.endFailed(b.chatId, runId, "daemon_stopped", "ion stopped");
