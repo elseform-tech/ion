@@ -74,3 +74,20 @@ it("never sends your chat to an agent you avoid", () => {
     "Every agent that's ready is marked Avoid: pick one in the message box, or turn Avoid off in Settings → Agents",
   );
 });
+
+// The user, 2026-11-28: "keep chat on its agent". Avoid covers what ion picks, not a chat you started: it stays on
+// its agent for follow-ups after you set that agent to Avoid. A chat an ion started (own = null) still avoids it.
+it("your chat stays on its agent after you set that agent to Avoid", () => {
+  const configFile = join(mkdtempSync(join(tmpdir(), "ion-answers-")), "config.toml");
+  saveUserConfig(configFile, { ...DEFAULT_CONFIG, agents: { "grok-build": { avoid: true } } });
+  expect(yourAgent(configFile, ["grok-build", "codex"], "grok-build")).toBe("grok-build");
+  // Not ready: it moves, and never onto an avoided one.
+  expect(yourAgent(configFile, ["codex"], "grok-build")).toBe("codex");
+});
+
+it("a chat an ion started still avoids it", () => {
+  const configFile = join(mkdtempSync(join(tmpdir(), "ion-answers-")), "config.toml");
+  saveUserConfig(configFile, { ...DEFAULT_CONFIG, agents: { "grok-build": { avoid: true } } });
+  expect(yourAgent(configFile, ["grok-build", "codex"], null)).toBe("codex");
+  expect(handoffTargets(configFile, ["grok-build", "codex"])).toEqual(["codex"]);
+});
