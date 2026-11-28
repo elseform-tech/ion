@@ -181,13 +181,20 @@ function badLine(r: AgentCheckRecord, now: Date): string | null {
 }
 
 /**
- * The checks in a line each: "Checked last night: all fine" (the oldest agent's check when they differ), or one per
- * agent that failed or was used up ("Grok Build: 2 checks failed · today at 14:05"); none before the first check.
+ * The checks in a line each: "Checked last night: all fine" (the oldest agent's check when they differ), one per
+ * agent that failed or was used up ("Grok Build: 2 checks failed · today at 14:05"), or, with none failed and some
+ * used up, one line naming each ("Grok Build: fine · opencode: its free use is used up · …"); none before the first.
  */
 export function checkLines(last: AgentCheckRecord[], now: Date): string[] {
   const bad = last.map((r) => badLine(r, now)).filter((l): l is string => l !== null);
-  if (bad.length) return bad;
   const oldest = [...last].sort((a, b) => a.at.localeCompare(b.at))[0];
+  const fine = last.filter((r) => !checksFailed(r) && !usedUp(r));
+  // None failed, some used up and the others fine: one line names them all (Task 5 review, 2026-11-28).
+  if (bad.length && fine.length && !last.some((r) => checksFailed(r) > 0)) {
+    const parts = last.map((r) => `${r.label}: ${usedUp(r)?.toLowerCase() ?? "fine"}`);
+    return [`${parts.join(" · ")} · ${whenChecked(oldest!, now)}`];
+  }
+  if (bad.length) return bad;
   return oldest ? [`Checked ${whenChecked(oldest, now)}: all fine`] : [];
 }
 

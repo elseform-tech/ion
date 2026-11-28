@@ -138,4 +138,16 @@ describe("checkLines", () => {
       "a: 1 check failed · today at 14:05",
     ]);
   });
+
+  // Task 5 review, 2026-11-28: one agent used up and the others fine: the line names both.
+  it("names the agents that are fine beside one that's used up", () => {
+    const used: AgentCheckRecord = {
+      ...rec("opencode", new Date(2026, 10, 28, 14, 5), "now"),
+      checks: [{ name: "Answers", ok: true, limited: true, note: "Its free use is used up" }],
+    };
+    expect(checkLines([rec("Grok Build", new Date(2026, 10, 28, 14, 4), "now"), used], now)).toEqual([
+      "Grok Build: fine · opencode: its free use is used up · today at 14:04",
+    ]);
+    expect(checkLines([used], now)).toEqual(["opencode: its free use is used up · today at 14:05"]);
+  });
 });
