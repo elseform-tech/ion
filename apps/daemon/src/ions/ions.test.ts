@@ -695,4 +695,20 @@ describe("contextOf", () => {
     expect(line).toContain("1 question waiting");
     expect(line).not.toContain("IGNORE ALL");
   });
+
+  // Plan 23 (ion evals, 2026-11-28): asked "What's going on?", ion chief left out a finished chat: the projects line
+  // listed what runs and what failed, never what finished, so it had nothing to name.
+  it("lists the chats that finished well, newest first, a few at most", () => {
+    const chat = (title: string, status: string, at: string) =>
+      ({ chatId: title, projectId: "docs", title, lastRunStatus: status, lastActivityAt: at }) as never;
+    const chats = [
+      chat("Proofread the glossary", "done", "2026-11-28T08:00:00Z"),
+      chat("Fix links", "done", "2026-11-28T09:00:00Z"),
+      chat("Rebuild search", "failed", "2026-11-28T07:00:00Z"),
+      ...[1, 2, 3, 4].map((n) => chat(`Old ${n}`, "done", `2026-11-2${n}T00:00:00Z`)),
+    ];
+    const line = contextOf(["docs"], chats, []);
+    expect(line).toContain('finished ["Fix links","Proofread the glossary","Old 4"]');
+    expect(line).toContain('last run failed ["Rebuild search"]');
+  });
 });

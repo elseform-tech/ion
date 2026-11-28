@@ -183,7 +183,15 @@ unchanged. Status re-run ×3 on Grok (0.62 M tokens, 24 turns):
 The one case still under is now a real miss of the ion's, not the seed's: asked "What's going on?", ion chief named
 the four other chats with their true states and twice left out the finished one ("**Docs** is quiet: nothing
 running, nothing waiting, and nothing failed"), against its instruction to name finished chats too. Status stays under
-its case bar (7/8) for that reason; Plan 22 and later prompt work should close it. Follow-up's one miss: "The card SDK upgrade never started. The
+its case bar (7/8) for that reason; Plan 22 and later prompt work should close it.
+
+**Why, and the fix.** It was the state ion chief is given, not the wording: the `projects` tool's line per project
+(`contextOf`, `apps/daemon/src/ions/route.ts`) listed open questions, what runs and what failed, and never what
+finished, so a finished chat was nowhere in what ion chief read unless it went looking with `search_chats` (the titles
+it computed weren't printed either). The line now ends `finished ["…"]` with the 3 newest chats whose last run ended
+well (a test first). `status-chief-everything` re-run ×3 on Grok: **3/3** (76 k tokens), e.g. "**Docs** finished
+proofreading the glossary. It fixed two typos and the checks passed." With the other seven status cases at 3/3 in the
+run just before, **status is 8/8**. The other measures weren't re-run after this change to what every ion reads. Follow-up's one miss: "The card SDK upgrade never started. The
 thread stopped with no reply": it never says it failed.
 
 ## All measures after the Task 4 fixes (2026-11-28, Plan 23 Task 4)
