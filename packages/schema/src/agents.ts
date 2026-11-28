@@ -218,6 +218,8 @@ export type JudgeStatus = {
   shipped: boolean;
   last: JudgeCheckInfo | null;
   checking: boolean;
+  /** ion's own check stopped at the agent's limit: its free use ran out (Plan 21, 2026-11-28). */
+  ranOut?: true;
 };
 
 /** An agent, model ("": its own) and effort you picked in the composer (a new chat starts on it). */

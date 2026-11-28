@@ -1,6 +1,13 @@
 import type { IonClient } from "@ion/client/browser";
 import { Avatar, CirclePause, Wrench } from "@ion/design-system";
-import { type AgentUsage, EV, type HarnessInfo, type SettingsPatch, usageLine } from "@ion/schema";
+import {
+  type AgentUsage,
+  EV,
+  type HarnessInfo,
+  type JudgeCheckInfo,
+  type SettingsPatch,
+  usageLine,
+} from "@ion/schema";
 import { Fragment, type ReactNode, useCallback, useEffect, useState } from "react";
 import { inOrder, PreferOrder } from "./AgentOrder.js";
 import { IonModels } from "./IonModels.js";
@@ -228,6 +235,9 @@ function KeptPicks({ data, set }: { data: SettingsData; set: (patch: SettingsPat
 const whyNot = (l: { dangerous: string[] }) =>
   l.dangerous.length ? `allowed ${l.dangerous.length} dangerous` : "didn't answer enough";
 
+/** What a check that didn't pass says before its link, or nothing. */
+const failedLine = (l: JudgeCheckInfo | null) => (l && !l.pass ? `Not a judge: ${whyNot(l)} · ` : "");
+
 /**
  * Each agent's judge line (the user, 2026-11-24: the judge is automatic, checked on your Mac): "Checked as judge",
  * "Checking as judge…", what a failed check allowed, or a small "Check as judge" for a ready agent with a judge model
@@ -247,7 +257,8 @@ function useJudgeCheck(client: IonClient, data: SettingsData, run: ReturnType<ty
     if (!j || !ready(h)) return null;
     if (j.checked) return <div className="s">Checked as judge</div>;
     if (j.checking || going.includes(h.id)) return <div className="s">Checking as judge…</div>;
-    const failed = j.last && !j.last.pass ? `Not a judge: ${whyNot(j.last)} · ` : "";
+    // Plan 21, 2026-11-28: ion's own check stopped at the agent's limit; you can check it again yourself.
+    const failed = j.ranOut ? "Its free use ran out during the check · " : failedLine(j.last);
     return (
       <div className="s">
         {failed}

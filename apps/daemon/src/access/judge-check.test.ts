@@ -92,6 +92,7 @@ describe("ion's check of a judge model", () => {
       },
       ready: async () => ["fake"],
       billing: async () => "free",
+      pace: { gapMs: 0, capMs: 60_000 },
     });
     await down.checkFree();
     const once = tries;
@@ -129,7 +130,14 @@ describe("ion's check of a judge model", () => {
     });
     expect(await paid.checkFree()).toEqual([]);
     expect(paid.passed("fake")).toBe(false);
-    const free = new JudgeChecks({ ...o, run, ready: async () => ["fake"], billing: async () => "free" });
+    const pace = { gapMs: 0, capMs: 60_000 };
+    const free = new JudgeChecks({
+      ...o,
+      run,
+      ready: async () => ["fake"],
+      billing: async () => "free",
+      pace,
+    });
     expect(await free.checkFree()).toEqual(["fake"]);
     expect(free.passed("fake")).toBe(true);
     // Once checked, not again.
@@ -146,5 +154,72 @@ describe("ion's check of a judge model", () => {
     });
     expect(checks.passed("grok-build")).toBe(true);
     expect(checks.passed("claude-code")).toBe(false);
+  });
+});
+
+// Plan 21, 2026-11-28: a fresh ion checked a free agent as judge by itself, and the 59 cases used up opencode's whole
+// free quota (19 usage reports, then 38 limit errors in a minute), once a day on every fresh home. It checks one only
+// when it needs one (no checked judge ready), only the first free agent in Automatic's choice, a case at a time with
+// a gap and a cap on the time; it stops at the first limit (the agent marked limited, nothing kept) and tries again
+// no sooner than the limit's reset.
+describe("ion's own check of a free agent", () => {
+  const verdict = async () => JSON.stringify({ verdict: "deny", reason: "x" });
+  type Opts = Partial<ConstructorParameters<typeof JudgeChecks>[0]>;
+  const make = (o: Opts) =>
+    new JudgeChecks({
+      ...setup(),
+      run: verdict,
+      ready: async () => [],
+      billing: async () => "free",
+      pace: { gapMs: 0, capMs: 60_000 },
+      ...o,
+    });
+
+  it("checks none while a checked judge is ready, and only the first free one when none is", async () => {
+    const tried: string[] = [];
+    const run = async (_p: string, _s: AbortSignal, spec?: string) => (tried.push(spec!), verdict());
+    const ready = make({ run, ready: async () => ["grok-build", "fake", "opencode"] });
+    expect(await ready.checkFree()).toEqual([]);
+    expect(tried).toEqual([]);
+    const limited = (id: string) => (id === "grok-build" ? "2026-12-01T00:00:00.000Z" : null);
+    const none = make({
+      run,
+      limited,
+      order: () => ["fake", "opencode"],
+      ready: async () => ["grok-build", "fake", "opencode"],
+    });
+    expect(await none.checkFree()).toEqual(["fake"]);
+    expect(new Set(tried.map((s) => s.split(":")[0]))).toEqual(new Set(["fake"]));
+  });
+
+  it("stops at the first limit, keeps nothing, and waits for the reset", async () => {
+    let calls = 0;
+    let until: string | null = null;
+    const run = async () => {
+      calls++;
+      if (calls === 3) {
+        until = new Date(Date.now() + 3600_000).toISOString();
+        throw new Error("free usage is used up");
+      }
+      return verdict();
+    };
+    const c = make({ run, limited: (id) => (id === "fake" ? until : null), ready: async () => ["fake"] });
+    await c.checkFree();
+    expect(calls).toBe(3);
+    expect(c.last("fake")).toBeUndefined();
+    expect(c.status("fake")).toEqual({ ranOut: true });
+    until = null;
+    await c.checkFree();
+    expect(calls).toBe(3);
+  });
+
+  it("runs a case at a time with a gap, within a cap on its time", async () => {
+    let calls = 0;
+    const run = async () => (calls++, verdict());
+    const c = make({ run, ready: async () => ["fake"], pace: { gapMs: 30, capMs: 100 } });
+    await c.checkFree();
+    expect(calls).toBeGreaterThan(1);
+    expect(calls).toBeLessThan(6);
+    expect(c.last("fake")).toBeUndefined();
   });
 });

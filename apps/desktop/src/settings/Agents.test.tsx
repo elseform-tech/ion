@@ -139,6 +139,30 @@ describe("Settings → Agents", () => {
     ]);
   });
 
+  // Plan 21, 2026-11-28: ion's own check of a free agent stops at its first limit and says so.
+  it("says when a free agent's use ran out during its check", async () => {
+    const c = client({
+      judges: {
+        ...JUDGES,
+        opencode: {
+          model: "free",
+          checked: false,
+          shipped: false,
+          last: null,
+          checking: false,
+          ranOut: true,
+        },
+        codex: { ...JUDGES.codex!, checking: true },
+      },
+    });
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const row = async (name: string) =>
+      (await screen.findByRole("switch", { name: `${name}: avoid unless I ask` })).closest(".hrow")!
+        .textContent;
+    expect(await row("opencode")).toContain("Its free use ran out during the check");
+    expect(await row("Codex")).toContain("Checking as judge…");
+  });
+
   it("keeps an optional order under More, with a way back to Automatic", async () => {
     const c = client({ prefer: ["codex"] });
     render(<Settings client={c} onOpenIon={() => {}} />);
