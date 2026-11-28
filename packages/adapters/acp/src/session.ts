@@ -321,7 +321,7 @@ async function answerPermissionUnsafe(
     mcpServer: mcp?.server ?? null,
     kind,
     summary,
-    input: inputOf(tool),
+    ...askedInput(tool),
   });
   const options = (p.options ?? []) as Option[];
   const chosen = ACCEPT[decision].map((k) => options.find((o) => o.kind === k)).find(Boolean);
@@ -348,16 +348,41 @@ function mcpToolOf(tool: AcpToolCall): { server: string; name: string } | null {
   return m ? { server: m[1]!, name } : null;
 }
 
-function inputOf(tool: AcpToolCall): Record<string, unknown> {
-  const raw =
-    typeof tool.rawInput === "object" && tool.rawInput !== null
-      ? (tool.rawInput as Record<string, unknown>)
-      : {};
+/**
+ * What ion is asked about: the tool's own input with ACP's file list beside it, under `locations`, or under
+ * the first key the tool doesn't use (re-review 2, 2026-11-28, R2-4: ACP's list replaced its `locations` in what
+ * the judge saw); the key ACP added is said (re-review, N5), so ion leaves it out when it matches calls.
+ */
+function askedInput(tool: AcpToolCall): { input: Record<string, unknown>; added: string[] } {
+  const raw = ownInput(tool);
+  const key = freeKey(raw);
+  return { input: { ...raw, [key]: acpLocations(tool) }, added: [key] };
+}
+
+/**
+ * The first of `locations`, `acp_locations`, `acp_2_locations`… the tool's input doesn't have (re-review 3,
+ * 2026-11-28: a tool's own `acp_locations` was replaced). Each ends in "locations", so ion's policy reads it as paths.
+ */
+function freeKey(raw: Record<string, unknown>): string {
+  if (!Object.hasOwn(raw, "locations")) return "locations";
+  for (let n = 1; ; n++) {
+    const key = n === 1 ? "acp_locations" : `acp_${n}_locations`;
+    if (!Object.hasOwn(raw, key)) return key;
+  }
+}
+
+/** The tool's own input, as the agent sent it. */
+const ownInput = (tool: AcpToolCall): Record<string, unknown> =>
+  typeof tool.rawInput === "object" && tool.rawInput !== null
+    ? (tool.rawInput as Record<string, unknown>)
+    : {};
+
+/** The files ACP says the call touches. */
+function acpLocations(tool: AcpToolCall): string[] {
   const locs: unknown[] = Array.isArray(tool.locations) ? tool.locations : [];
-  const locations = locs
+  return locs
     .map((l) => (l && typeof l === "object" ? (l as { path?: unknown }).path : undefined))
     .filter((p): p is string => typeof p === "string");
-  return { ...raw, locations };
 }
 
 type PermissionOutcome = { outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" } };

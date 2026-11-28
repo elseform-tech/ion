@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -233,6 +233,35 @@ describe("codex adapter", () => {
     expect(t).toMatchObject({ threadId: "thread-1", effort: "xhigh" });
     expect(overrides).toEqual(
       expect.arrayContaining(["features.memories=false", "features.default_mode_request_user_input=false"]),
+    );
+  });
+
+  // Security re-review 2, 2026-11-28 (R2-2): Codex's own sandbox took the run's paths with their link targets, so a
+  // worktree root swapped for a link to another chat's worktree (or to config.toml) was writable there.
+  it("lets no link inside ion's folders into Codex's sandbox", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "ion-cx-sb-")));
+    const data = join(root, "data");
+    const cfg = join(root, "cfg");
+    mkdirSync(join(data, "worktrees", "c0"), { recursive: true });
+    mkdirSync(join(data, "worktrees", "c2"), { recursive: true });
+    mkdirSync(cfg);
+    writeFileSync(join(cfg, "config.toml"), "");
+    symlinkSync(join(data, "worktrees", "c2"), join(data, "worktrees", "c1"));
+    symlinkSync(join(cfg, "config.toml"), join(data, "worktrees", "c3"));
+    const sandbox = {
+      kind: "seatbelt" as const,
+      paths: {
+        deny: [data, cfg],
+        read: [join(data, "worktrees", "c3")],
+        write: [join(data, "worktrees", "c0"), join(data, "worktrees", "c1"), join(data, "worktrees", "c3")],
+        noWrite: [],
+      },
+      dataDir: data,
+    };
+    const { overrides } = await whoami({ sandbox });
+    const fs = overrides.find((o: string) => o.startsWith("permissions.ion-run.filesystem="));
+    expect(fs).toBe(
+      `permissions.ion-run.filesystem={${JSON.stringify(data)}="none",${JSON.stringify(cfg)}="none",${JSON.stringify(join(data, "worktrees", "c0"))}="write"}`,
     );
   });
 

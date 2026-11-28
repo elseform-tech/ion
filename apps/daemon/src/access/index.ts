@@ -52,6 +52,10 @@ function cacheKey(at: At, req: ApprovalRequest, decisions?: string[]): string {
     .update(
       JSON.stringify([
         at.text,
+        // Its server and kind too: the same tool name on another server is another action (security review,
+        // 2026-11-28).
+        req.mcpServer ?? null,
+        req.kind,
         req.toolName,
         req.input,
         decisions,

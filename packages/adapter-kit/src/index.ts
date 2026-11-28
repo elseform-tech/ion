@@ -40,6 +40,7 @@ export {
   setStandingDrop,
 } from "./run-env.js";
 export {
+  pathsLetThrough,
   realForms,
   type RunSandbox,
   sandboxed,
