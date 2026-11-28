@@ -509,6 +509,23 @@ describe("asking when ion blocks a tool call", () => {
       shown: "Allow",
     });
   });
+
+  // Plan 21 Task 6 tour (2026-11-28): a call that waited 4 minutes kept its question open, and the agent's own prompt
+  // for the same call asked again: two "Allow this? npm install …" rows in Needs you. One row per call: the call asked
+  // again closes the one that timed out.
+  it("the same call asked again after the wait closes the question that timed out", async () => {
+    const d = makeQuick(20);
+    const s = scope();
+    expect(await d.askBlocked(s, block)).toBe("timeout");
+    const first = needs.open("c1")[0]!.needId;
+    void d.askBlocked(s, { ...block, requestId: "q1" });
+    const open = needs.open("c1");
+    expect(open).toHaveLength(1);
+    expect(open[0]!.needId).not.toBe(first);
+    // Another call in the chat still asks on its own.
+    void d.askBlocked(s, { ...block, requestId: "g8", summary: "npm pack", key: "Bash npm pack" });
+    expect(needs.open("c1")).toHaveLength(2);
+  });
 });
 
 // Task review, 2026-11-21: a repo's server is asked about before a chat starts it, not after a tool call: a late yes or

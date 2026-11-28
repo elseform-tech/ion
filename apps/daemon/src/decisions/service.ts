@@ -162,6 +162,7 @@ export class Decisions {
    * meanwhile still counts).
    */
   askBlocked(s: RunScope, b: Blocked): Promise<Held> {
+    if (!b.cut) this.closeTimedOut(s.chatId, keyHash(b.key));
     const q = blockedQuestion(b);
     const needId = this.d.needs.raiseAsk({
       chatId: s.chatId,
@@ -175,6 +176,19 @@ export class Decisions {
     this.requests.set(needId, this.d.requestOf?.(s.runId) ?? "");
     if (!b.cut) this.keys.set(needId, keyHash(b.key));
     return this.holds.hold(needId);
+  }
+
+  /**
+   * The same call asked again (the agent's own prompt after ion's 4-minute no): its question that timed out closes, so
+   * Needs you has one row per call (Plan 21 Task 6 tour, 2026-11-28: two "Allow this?" rows).
+   */
+  private closeTimedOut(chatId: string, key: string): void {
+    for (const n of this.d.needs.open(chatId)) {
+      if (this.keys.get(n.needId) !== key || this.holds.waits(n.needId)) continue;
+      this.d.needs.askedAgain(n);
+      this.keys.delete(n.needId);
+      this.requests.delete(n.needId);
+    }
   }
 
   /** Whether you said "Always allow" for exactly this action (tool and input) in this project. */
