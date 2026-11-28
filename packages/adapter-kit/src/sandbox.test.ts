@@ -8,6 +8,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   bwrapArgs,
   removeProfiles,
+  realForms,
   type RunSandbox,
   sandboxed,
   sandboxKind,
@@ -87,6 +89,91 @@ describe("the sandbox's rules", () => {
     expect(sb?.paths.noWrite).toEqual([...FIXED.noWrite, "/h/.grok/hooks"]);
     expect(sb?.paths.deny).toEqual(FIXED.deny);
     expect(sb?.dataDir).toBe("/d");
+  });
+});
+
+// Security review, 2026-11-28 (hooks fix, C1): a chat's agent could swap its worktree folder for a link to your home;
+// the hook's sandbox then allowed writes there, after the deny, so over ion's own folders. A path the sandbox would
+// let through that is, holds, or leads to one of ion's folders is left out, whatever asked for it.
+describe("a path let through that would reach ion's folders", () => {
+  it("is left out, linked or not; one inside ion's folders stays", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "ion-sbg-")));
+    try {
+      const home = join(root, "home");
+      const data = join(home, ".local", "share", "ion");
+      const wt = join(data, "worktrees", "c1");
+      mkdirSync(wt, { recursive: true });
+      const link = join(data, "worktrees", "c2");
+      symlinkSync(home, link);
+      const paths = { deny: [data], read: [home], write: [wt, home, data, link], noWrite: [] };
+      const profile = seatbeltProfile(paths);
+      const allowed = profile.split("\n").filter((l) => l.startsWith("(allow file-read*"));
+      expect(allowed.join("\n")).toContain(`(subpath "${wt}")`);
+      expect(allowed.join("\n")).not.toContain(`(subpath "${home}")`);
+      expect(allowed.join("\n")).not.toContain(`(subpath "${data}")`);
+      expect(allowed.join("\n")).not.toContain(link);
+      const b = bwrapArgs(paths, {});
+      expect(b).toContain(wt);
+      expect(b.filter((a) => a === home || a === link)).toEqual([]);
+      expect(b.filter((a) => a === data)).toEqual([data]); // its empty folder over it, only
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// Security re-review, 2026-11-28 (N1, N2): a link inside ion's folders (a chat's worktree root swapped for a link to
+// another chat's worktree, or to config.toml) was let through with its target, so the run or hook could write there.
+// Inside ion's folders a path is let through only as its own real path.
+describe("a link inside ion's folders", () => {
+  it("is never let through, nor what it leads to; the profile holds no other path inside ion's folders", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "ion-sbl-")));
+    try {
+      const data = join(root, "data");
+      const cfg = join(root, "cfg");
+      const wts = join(data, "worktrees");
+      for (const d of [join(wts, "c0"), join(wts, "c2"), cfg]) mkdirSync(d, { recursive: true });
+      writeFileSync(join(cfg, "config.toml"), "");
+      symlinkSync(join(wts, "c2"), join(wts, "c1"));
+      symlinkSync(join(cfg, "config.toml"), join(wts, "c3"));
+      const outside = join(root, "elsewhere");
+      symlinkSync(join(cfg), outside);
+      const paths = {
+        deny: [data, cfg],
+        read: [join(wts, "c3")],
+        write: [join(wts, "c0"), join(wts, "c1"), join(wts, "c3"), outside],
+        noWrite: [],
+      };
+      const allowed = seatbeltProfile(paths)
+        .split("\n")
+        .filter((l) => l.startsWith("(allow file-read*"))
+        .join("\n");
+      expect(allowed).toBe(`(allow file-read* file-write* (subpath "${join(wts, "c0")}"))`);
+      const b = bwrapArgs(paths, {});
+      const bound = b.filter((_a, i) => b[i - 1] === "--bind-try" || b[i - 1] === "--ro-bind-try");
+      expect(bound).toEqual([join(wts, "c0")]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// Security re-review, 2026-11-28 (N8): Node's JS realpath keeps the letter case it's given, so on macOS a folder
+// named in another case than ion's denied one could pass the "holds a denied folder" check.
+describe.runIf(process.platform === "darwin")("a path in another letter case", () => {
+  it("is resolved to the folder's own case, and one holding ion's folders is left out", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "ion-sbc-")));
+    try {
+      const home = join(root, "Home");
+      const data = join(home, "Data");
+      mkdirSync(data, { recursive: true });
+      const shouted = join(root, "HOME");
+      expect(realForms(shouted)).toEqual([shouted, home]);
+      const paths = { deny: [data], read: [], write: [shouted], noWrite: [] };
+      expect(seatbeltProfile(paths)).not.toContain("(allow file-read* file-write*");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -200,6 +287,29 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
     };
   });
   afterAll(() => rmSync(home, { recursive: true, force: true }));
+
+  // Security re-review, 2026-11-28 (N3): ion's own reads of a chat's worktree ran in a sandbox that could write every
+  // chat's worktree; a read runs where nothing can be written.
+  it("read-only: reads the worktree, writes nothing anywhere", () => {
+    const rw = sb;
+    sb = { ...rw, paths: { ...rw.paths, read: [wt], write: [], readOnly: true } };
+    try {
+      // Each command on its own, no shell: what it touches is an argument, never text in a script.
+      const out = (command: string, args: string[]) => {
+        const w = sandboxed(sb, command, args);
+        return spawnSync(w.command, w.args, { cwd: wt, encoding: "utf8", timeout: 15_000 }).status;
+      };
+      expect(out("/bin/cat", ["a.txt"])).toBe(0);
+      expect(out("/usr/bin/touch", ["b.txt"])).not.toBe(0);
+      // Your home, from the worktree (home/.local/share/ion/worktrees/chat-1): fixed text, nothing from the env.
+      expect(out("/usr/bin/touch", ["../../../../../x"])).not.toBe(0);
+      expect(out("/bin/cp", ["a.txt", "/dev/null"])).toBe(0);
+    } finally {
+      sb = rw;
+    }
+    expect(existsSync(join(wt, "b.txt"))).toBe(false);
+    expect(existsSync(join(home, "x"))).toBe(false);
+  });
 
   it("can't read daemon.json (cat, python, a script it wrote, a link, a moved folder)", () => {
     const file = join(data, "daemon.json");

@@ -8,7 +8,7 @@ import {
   type HttpMcpSpec,
   ResumeFailed,
   type Rpc,
-  realForms,
+  pathsLetThrough,
   RpcError,
   type RunSandbox,
   type StartOpts,
@@ -71,11 +71,12 @@ const GRANULAR =
  */
 function sandboxArgs(sb: RunSandbox | undefined): string[] {
   if (!sb || sb.kind === "none") return [];
-  const p = sb.paths;
+  // As ion's own sandboxes take them: no link inside ion's folders (security re-review 2, 2026-11-28).
+  const p = pathsLetThrough(sb.paths);
   const entries = [
-    ...p.deny.flatMap(realForms).map((d) => [d, "none"]),
-    ...[...p.read, ...p.noWrite].flatMap(realForms).map((d) => [d, "read"]),
-    ...p.write.flatMap(realForms).map((d) => [d, "write"]),
+    ...p.deny.map((d) => [d, "none"]),
+    ...[...p.read, ...p.noWrite].map((d) => [d, "read"]),
+    ...p.write.map((d) => [d, "write"]),
   ];
   const fs = entries.map(([k, v]) => `${JSON.stringify(k)}=${JSON.stringify(v)}`).join(",");
   return [

@@ -1,10 +1,9 @@
 import { afterSecretFlag, argKey, namedKey, urlHoldsKey } from "./secretish.js";
+import { holdsToken, KEY_PREFIX, ordinaryPath } from "./shown.js";
 
 /** What `ion <kind> add` says to a key typed in: keys go in Settings, mcp.json names them with `${NAME}`. */
 const PUT_KEYS_IN_SETTINGS = "Put keys in Settings";
 
-/** How common keys start: OpenAI/Anthropic, GitHub, Slack, AWS, GitLab, Google. */
-const KEY_PREFIX = /^(sk-|sk_|rk_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|xox[abposr]-|AKIA|ASIA|glpat-|AIza)/;
 /** A long run of key characters with letters and digits mixed: a token, whatever it's called. */
 const LONG_TOKEN = /^[\w+/=.-]{32,}$/;
 const mixed = (s: string) => [/[a-z]/, /[A-Z]/, /\d/].filter((r) => r.test(s)).length >= 2;
@@ -18,8 +17,13 @@ const literalValue = (name: string, v: string) => {
   return namedKey(name, rest) || rest.split(/[\s:=]/).some(keyLike);
 };
 
-/** A word, or any part of a path in it (a program's folder isn't a key; a key in a path still is). */
-const holdsKeyLike = (w: string) => w.split("/").some(keyLike);
+/**
+ * A word, or any part of a path in it (a program's folder isn't a key; a key in a path still is); a path-shaped word
+ * with base64's `+` or `=` also whole (a base64 key can start with "/"). An ordinary path (folders with a name's look,
+ * a file that looks like no key) isn't one (security review, 2026-11-28).
+ */
+const holdsKeyLike = (w: string) =>
+  !ordinaryPath(w) && (w.split("/").some(keyLike) || (isPath(w) && /[+=]/.test(w) && holdsToken(w)));
 
 /** A file's path (judged by its parts, never as one long token). */
 const isPath = (w: string) => /^(\/|\.\.?\/|~\/)/.test(w);

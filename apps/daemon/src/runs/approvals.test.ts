@@ -35,6 +35,21 @@ const write = (file_path: string): ApprovalRequest => ({
   input: { file_path, content: "{}" },
 });
 
+/** Approvals whose judge counts its calls and says what `n.allow` says. */
+const counting = () => {
+  const n = { judged: 0, allow: true };
+  const access0 = createAccess({
+    judge: async () => {
+      n.judged++;
+      return n.allow
+        ? { verdict: "allow" as const, reason: "fine" }
+        : { verdict: "deny" as const, reason: "no" };
+    },
+    ...own,
+  });
+  return { n, a: new Approvals(store, access0, () => true, { own }) };
+};
+
 // Task review, 2026-11-20: Full access allowed everything before any rule, so a run in Full could rewrite ion's
 // config or mcp.json, or read ion's keys from the keychain. ion's own files and keys hold in Full too.
 describe("ion's own files and keys, even in Full access", () => {
@@ -257,19 +272,6 @@ describe("a tools/call at ion's gateway", () => {
 // Task review, 2026-11-20: a handoff came from any allow (the loose gate-allows queue, the policy), could pile up,
 // and outlived an agent-side no. Only ion's, your or Full's allow of exactly the call hands off, once, for 10 s.
 describe("the handoff to ion's gateway", () => {
-  const counting = () => {
-    const n = { judged: 0, allow: true };
-    const access0 = createAccess({
-      judge: async () => {
-        n.judged++;
-        return n.allow
-          ? { verdict: "allow" as const, reason: "fine" }
-          : { verdict: "deny" as const, reason: "no" };
-      },
-      ...own,
-    });
-    return { n, a: new Approvals(store, access0, () => true, { own }) };
-  };
   const at = (toolName: string, input: Record<string, unknown>) => ({
     toolName,
     kind: "mcp",
@@ -340,6 +342,318 @@ describe("Before a tool runs hooks", () => {
     const a = new Approvals(log, access, () => true, { own, beforeTool });
     expect((await a.gate(run("full"), cmd("rm /data/ion.db"), [wt])).decision).toBe("deny");
     expect(asked).toEqual([]);
+  });
+});
+
+// Plugins research, 2026-11-28 (docs/research/plugins-across-agents.md, "Double firing exists today"): one MCP call
+// ran a "Before a tool runs" hook twice on Grok and on Codex, as ion checks a call at its agent's hook, its permission
+// prompt and ion's gateway, and ran your hooks at each check not matched to an earlier allow.
+describe("a before-tool hook runs once per tool call", () => {
+  const counted = (refuse = false) => {
+    const n = { ran: 0, refuse };
+    const beforeTool = async () => {
+      n.ran++;
+      return n.refuse ? { reason: "Not today" } : null;
+    };
+    return { n, a: new Approvals(store, access, () => true, { own, beforeTool }) };
+  };
+  const r = { ...run("auto"), viaIon: ["fs"] };
+  // Grok's own hook (`fs__lookup`, its arguments wrapped), ACP's permission prompt and ion's gateway, as each names it.
+  const hook = {
+    toolName: "fs__lookup",
+    kind: "mcp",
+    mcpServer: "fs",
+    summary: "fs__lookup",
+    input: { variant: "UseTool", tool_name: "fs__lookup", tool_input: { q: "x" } },
+  };
+  const prompt = (requestId: string): ApprovalRequest => ({
+    requestId,
+    toolId: "tc1",
+    toolName: "lookup",
+    mcpServer: "fs",
+    kind: "mcp",
+    summary: "lookup",
+    input: { q: "x", locations: [] },
+    added: ["locations"],
+  });
+  const gateway = {
+    toolName: "lookup",
+    kind: "mcp",
+    mcpServer: "fs",
+    summary: "fs: lookup",
+    input: { q: "x" },
+  };
+  const asked = (a: Approvals, requestId: string) =>
+    a.noteStored({ type: "approval.requested", data: { requestId } } as never);
+
+  it("for one MCP call checked at the agent's prompt, its hook and ion's gateway", async () => {
+    const { n, a } = counted();
+    asked(a, "p1");
+    expect(await a.decide(r, prompt("p1"), [wt])).toBe("allow");
+    expect((await a.gate(r, hook, [wt])).decision).toBe("allow");
+    expect((await a.gateway(r, gateway, [wt])).decision).toBe("allow");
+    expect(n.ran).toBe(1);
+  });
+
+  it("for one MCP call checked at the agent's hook and ion's gateway, in Full too", async () => {
+    const { n, a } = counted();
+    const full = { ...r, access: "full" as const };
+    expect((await a.gate(full, hook, [wt])).decision).toBe("allow");
+    expect((await a.gateway(full, gateway, [wt])).decision).toBe("allow");
+    expect(n.ran).toBe(1);
+  });
+
+  it("a call checked again at the same point is a new call: its hooks run again", async () => {
+    const { n, a } = counted();
+    await a.gate(r, hook, [wt]);
+    await a.gate(r, hook, [wt]);
+    expect(n.ran).toBe(2);
+  });
+
+  it("a refused call stays refused at the next check point", async () => {
+    const { n, a } = counted(true);
+    expect(await a.gate(r, hook, [wt])).toEqual({ decision: "deny", reason: "Not today" });
+    // Said once: a later check of the same call is told the same no, never asked again.
+    n.refuse = false;
+    asked(a, "p2");
+    expect(await a.decide(r, prompt("p2"), [wt])).toBe("deny");
+    expect(await a.gateway(r, gateway, [wt])).toEqual({ decision: "deny", reason: "Not today" });
+    expect(n.ran).toBe(1);
+  });
+
+  it("a hook's result is never reused for another run, nor another chat", async () => {
+    const { n, a } = counted(true);
+    expect((await a.gate(r, hook, [wt])).decision).toBe("deny");
+    n.refuse = false;
+    expect((await a.gateway({ ...r, runId: "r2" }, gateway, [wt])).decision).toBe("allow");
+    expect((await a.gateway({ ...r, chatId: "c2" }, gateway, [wt])).decision).toBe("allow");
+    expect(n.ran).toBe(3);
+  });
+
+  it("an ended run's results go", async () => {
+    const { n, a } = counted(true);
+    await a.gate(r, hook, [wt]);
+    a.forget(r.runId);
+    n.refuse = false;
+    expect((await a.gateway(r, gateway, [wt])).decision).toBe("allow");
+    expect(n.ran).toBe(2);
+  });
+
+  it("a command at the agent's hook and its permission prompt runs them once", async () => {
+    const { n, a } = counted();
+    const ls = cmd(`ls ${wt}`);
+    expect((await a.gate(run("auto"), ls, [wt])).decision).toBe("allow");
+    asked(a, "q");
+    expect(await a.decide(run("auto"), ls, [wt])).toBe("allow");
+    expect(n.ran).toBe(1);
+  });
+});
+
+// Live check, 2026-11-28 (fix-hooks branch): on Grok in Auto, one MCP call was judged twice, at Grok's hook and again at
+// ACP's permission prompt, as the gate kept allows only for calls with a command or a file.
+describe("the gate's allow answers the permission prompt for an MCP call", () => {
+  const r = { ...run("auto"), viaIon: ["probe"] };
+  const hook = (word: string) => ({
+    toolName: "probe__ping",
+    kind: "mcp",
+    mcpServer: "probe",
+    summary: "probe__ping",
+    input: { tool_name: "probe__ping", tool_input: { word } },
+  });
+  const prompt = (requestId: string, word: string): ApprovalRequest => ({
+    requestId,
+    toolId: "tc",
+    toolName: "ping",
+    mcpServer: "probe",
+    kind: "mcp",
+    summary: "probe__ping",
+    input: { word },
+  });
+  const asked = (a: Approvals, requestId: string) =>
+    a.noteStored({ type: "approval.requested", data: { requestId } } as never);
+
+  it("one MCP call checked at Grok's hook and at its permission prompt is judged once", async () => {
+    const { n, a } = counting();
+    expect((await a.gate(r, hook("gk"), [wt])).decision).toBe("allow");
+    asked(a, "p1");
+    expect(await a.decide(r, prompt("p1", "gk"), [wt])).toBe("allow");
+    expect(n.judged).toBe(1);
+  });
+
+  it("another call's prompt, another run's or another chat's, is judged", async () => {
+    const { n, a } = counting();
+    await a.gate(r, hook("one"), [wt]);
+    asked(a, "p2");
+    await a.decide(r, prompt("p2", "two"), [wt]);
+    asked(a, "p3");
+    await a.decide({ ...r, runId: "r2", request: "y" }, prompt("p3", "one"), [wt]);
+    expect(n.judged).toBe(3);
+  });
+
+  it("a refusal stays a refusal", async () => {
+    const { n, a } = counting();
+    n.allow = false;
+    expect((await a.gate(r, hook("no"), [wt])).decision).toBe("deny");
+    asked(a, "p4");
+    expect(await a.decide(r, prompt("p4", "no"), [wt])).toBe("deny");
+  });
+});
+
+// Security review, 2026-11-28 (hooks fix, I2 and M1): the remembered gate allow (and the hook memo) matched on less
+// than the judge saw: Grok's wrapper unwrapped whatever sat beside it, `locations`, `variant` and `tool_name` always
+// dropped, no server or kind outside ion's servers, a command or file alone, and keys joined with newlines an agent
+// could type. A prompt that came without its own gate check could take another call's allow.
+describe("a remembered allow covers exactly the call that was judged", () => {
+  const r = { ...run("auto"), viaIon: ["fs"] };
+  const asked = (a: Approvals, requestId: string) =>
+    a.noteStored({ type: "approval.requested", data: { requestId } } as never);
+  const ask = (requestId: string, c: Omit<ApprovalRequest, "requestId" | "toolId">): ApprovalRequest => ({
+    requestId,
+    toolId: "t",
+    ...c,
+  });
+  const pairs: [
+    string,
+    Omit<ApprovalRequest, "requestId" | "toolId">,
+    Omit<ApprovalRequest, "requestId" | "toolId">,
+  ][] = [
+    [
+      "a proxy tool's own tool_name",
+      {
+        toolName: "proxy__call_tool",
+        kind: "mcp",
+        mcpServer: "proxy",
+        summary: "s",
+        input: { tool_name: "list_files", arguments: { p: "a" } },
+      },
+      {
+        toolName: "proxy__call_tool",
+        kind: "mcp",
+        mcpServer: "proxy",
+        summary: "s",
+        input: { tool_name: "delete_files", arguments: { p: "a" } },
+      },
+    ],
+    [
+      "what sits beside a tool_input",
+      {
+        toolName: "fs__q",
+        kind: "mcp",
+        mcpServer: "fs",
+        summary: "s",
+        input: { tool_input: { q: "x" }, sql: "select 1" },
+      },
+      {
+        toolName: "fs__q",
+        kind: "mcp",
+        mcpServer: "fs",
+        summary: "s",
+        input: { tool_input: { q: "x" }, sql: "drop table t" },
+      },
+    ],
+    [
+      "the same tool on another server",
+      { toolName: "ping", kind: "mcp", mcpServer: "a", summary: "s", input: { w: 1 } },
+      { toolName: "ping", kind: "mcp", mcpServer: "b", summary: "s", input: { w: 1 } },
+    ],
+    [
+      "another write to the same file",
+      {
+        toolName: "Write",
+        kind: "edit",
+        summary: "s",
+        input: { file_path: "/elsewhere/a.txt", content: "a" },
+      },
+      {
+        toolName: "Write",
+        kind: "edit",
+        summary: "s",
+        input: { file_path: "/elsewhere/a.txt", content: "b" },
+      },
+    ],
+    [
+      "a command typed to look like a server's call",
+      { toolName: "fs__lookup", kind: "mcp", mcpServer: "fs", summary: "s", input: { q: "x" } },
+      {
+        toolName: "run",
+        kind: "mcp",
+        mcpServer: "other",
+        summary: "s",
+        input: { command: 'fs\nlookup\n{"q":"x"}' },
+      },
+    ],
+  ];
+  for (const [what, judged, other] of pairs)
+    it(`isn't taken by ${what}`, async () => {
+      const { n, a } = counting();
+      expect((await a.gate(r, judged, ["/w"])).decision).toBe("allow");
+      asked(a, "p");
+      await a.decide(r, ask("p", other), ["/w"]);
+      expect(n.judged).toBe(2);
+    });
+
+  it("still answers the same call at Grok's prompt, its locations aside", async () => {
+    const { n, a } = counting();
+    const hook = {
+      toolName: "fs__q",
+      kind: "mcp",
+      mcpServer: "fs",
+      summary: "s",
+      input: { variant: "UseTool", tool_name: "fs__q", tool_input: { q: "x" } },
+    };
+    expect((await a.gate(r, hook, ["/w"])).decision).toBe("allow");
+    asked(a, "p");
+    const prompt = {
+      toolName: "q",
+      kind: "mcp",
+      mcpServer: "fs",
+      summary: "s",
+      input: { q: "x", locations: [] },
+      added: ["locations"],
+    };
+    expect(await a.decide(r, ask("p", prompt), ["/w"])).toBe("allow");
+    expect(n.judged).toBe(1);
+  });
+
+  // Security re-review, 2026-11-28 (N5): a tool whose own argument is `locations`.
+  it("isn't taken by a call whose own locations differ", async () => {
+    const { n, a } = counting();
+    const hook = { toolName: "fs__q", kind: "mcp", mcpServer: "fs", summary: "s", input: { q: "x" } };
+    expect((await a.gate(r, hook, ["/w"])).decision).toBe("allow");
+    asked(a, "p");
+    const prompt = {
+      toolName: "q",
+      kind: "mcp",
+      mcpServer: "fs",
+      summary: "s",
+      input: { q: "x", locations: ["/etc"] },
+    };
+    await a.decide(r, ask("p", prompt), ["/w"]);
+    expect(n.judged).toBe(2);
+  });
+
+  // Security re-review, 2026-11-28 (N6): with servers `a` and `a_b`, opencode's `a_b_t` was read as server `a`,
+  // tool `b_t`, and its allow handed to a gateway call of `a.b_t`.
+  it("doesn't hand a call whose server name reads two ways to the gateway", async () => {
+    const { n, a } = counting();
+    const two = { ...run("auto"), viaIon: ["a", "a_b"] };
+    expect(
+      (await a.gate(two, { toolName: "a_b_t", kind: "other", summary: "s", input: { q: 1 } }, ["/w"]))
+        .decision,
+    ).toBe("allow");
+    await a.gateway(two, { toolName: "b_t", kind: "mcp", mcpServer: "a", summary: "s", input: { q: 1 } }, [
+      "/w",
+    ]);
+    expect(n.judged).toBe(2);
+  });
+
+  it("ion's own files are still refused on a call the gate allowed", async () => {
+    const proj = "/code/app";
+    const a = new Approvals(store, access, () => true, { own: { home, ionDirs: ["/data", `${proj}/.ion`] } });
+    const read = { toolName: "Read", kind: "read", summary: "s", input: { file_path: ".ion/config.toml" } };
+    expect((await a.gate(run("auto"), read, ["/elsewhere"])).decision).toBe("allow");
+    asked(a, "p");
+    expect(await a.decide(run("auto"), ask("p", read), [proj])).toBe("deny");
   });
 });
 

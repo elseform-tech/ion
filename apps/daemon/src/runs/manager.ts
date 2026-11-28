@@ -22,7 +22,7 @@ import { chatsView } from "../views/chats.js";
 import type { HistoryMessage } from "../views/messages.js";
 import { freshText, historyOf } from "./history.js";
 import { resumable, withMemory } from "./session-memory.js";
-import { createWorktree, removeWorktree } from "../workspace/index.js";
+import { createWorktree, removeWorktree, stillOurs } from "../workspace/index.js";
 import { summarize } from "./brief.js";
 import type { GateAnswer } from "../gate/index.js";
 import { Approvals } from "./approvals.js";
@@ -440,7 +440,7 @@ export class RunManager {
   }
 
   private async start(l: Launch): Promise<Session> {
-    const roots = projectRoots(l.cwd);
+    const roots = projectRoots(stillOurs(this.ctx.dataDir, l.chatId, l.cwd)); // checked again (re-review 2)
     return l.h.adapter.start({
       cwd: l.cwd,
       model: l.args.model ?? null,

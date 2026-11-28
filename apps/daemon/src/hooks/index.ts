@@ -6,6 +6,7 @@ import type { Sign } from "../secrets/consent-key.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { hookEnv, type HookResult, stopHooks } from "../workspace/hooks.js";
+import { ownWorktree } from "./folder.js";
 import { type HookBox, runBoxed } from "./reach.js";
 import { hookEventOf } from "./catalog.js";
 import { maskKeys } from "./mask.js";
@@ -28,10 +29,20 @@ const REASON_MAX = 300;
 /** How many recent runs are read back at start, for each hook's last result. */
 const LAST_READ = 2000;
 
-type Run = { chatId: string; runId: string; projectId: string };
+/** `cwd`: the run's folder (its chat's worktree), where its hooks run. */
+type Run = { chatId: string; runId: string; projectId: string; cwd?: string };
 type Call = { toolName: string; kind: string; summary: string; input: Record<string, unknown> };
-/** Where an event happened: its project (id and name) and chat (id and title), when it has them. */
-type Where = { projectId: string | null; project: string | null; chatId: string | null; chat: string | null };
+/**
+ * Where an event happened: its project (id and name) and chat (id and title), when it has them; `cwd` the folder its
+ * hooks run in.
+ */
+type Where = {
+  projectId: string | null;
+  project: string | null;
+  chatId: string | null;
+  chat: string | null;
+  cwd?: string;
+};
 type Job = () => Promise<void>;
 
 const dayOf = (d: Date) =>
@@ -43,7 +54,7 @@ const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDat
 
 /**
  * Your hooks on ion's events: each event's hooks (turned on in the app for what they run now, for the event's
- * project or every project) run in the project's folder, one at a time per hook (one more waits, the rest are
+ * project or every project) run in the chat's worktree (else the project's folder), one at a time per hook (one more waits, the rest are
  * dropped). "Before a tool runs" hooks run in order for each call; the first that exits 2 refuses it. Each run is
  * kept as `hook.ran` (keys masked); a hook that fails or takes too long is said once a day, as a notification.
  */
@@ -127,7 +138,7 @@ export class Hooks {
     });
     // Hooks ion couldn't check, or ion stopping: the call isn't let through as if they'd said yes.
     if (this.stopped) return list.length || unverified ? { failed: true } : null;
-    const where = this.where(c, run.projectId, run.chatId);
+    const where = { ...this.where(c, run.projectId, run.chatId), ...(run.cwd ? { cwd: run.cwd } : {}) };
     const data = { tool: call.toolName, kind: call.kind, summary: call.summary, input: call.input };
     const payload = { type: "tool.before", chatId: run.chatId, runId: run.runId, data };
     const started = Date.now();
@@ -214,6 +225,7 @@ export class Hooks {
     w: Where & { limitMs?: number },
   ): Promise<HookResult> {
     const before = event === "tool.before";
+    const folder = this.folderOf(w);
     const run = {
       live: this.live,
       run: h.run,
@@ -223,10 +235,10 @@ export class Hooks {
         ...(w.projectId ? { project: w.projectId } : {}),
         ...(w.chatId ? { chat: w.chatId } : {}),
       }),
-      cwd: this.cwdOf(w.projectId),
+      cwd: folder.cwd,
       limitMs: w.limitMs ?? this.limits.eventMs,
     };
-    const r = await runBoxed(this.o, run, w);
+    const r = await runBoxed(this.boxFor(folder), run, w);
     const ok = r.code === 0 || (before && r.code === 2);
     const tail = await this.mask(r.tail);
     const at = this.now().toISOString();
@@ -291,9 +303,28 @@ export class Hooks {
     return { projectId, project: p ? (p.name ?? p.id) : null, chatId, chat: chat?.title ?? null };
   }
 
-  /** The project's folder, else ion's home folder. */
-  private cwdOf(projectId: string | null): string {
-    const p = projectId ? this.config().projects.find((x) => x.id === projectId) : undefined;
-    return p && existsSync(p.path) ? p.path : dirname(this.o.configFile);
+  /**
+   * The run's folder, else the chat's worktree, else the project's folder, else ion's home folder (plugins research,
+   * 2026-11-28: hooks ran in the project's folder, so a rule a chat wrote in its worktree went unseen). `worktree`:
+   * it's the chat's own worktree, checked (never one swapped for a link), by its real path, which its sandbox makes
+   * writable.
+   */
+  private folderOf(w: Where): { cwd: string; worktree?: true } {
+    const wt = w.cwd ?? (w.chatId ? chatsView.worktree(this.o.db, w.chatId) : null);
+    const own = wt ? ownWorktree(wt, w.chatId, this.o.sandbox) : null;
+    if (own) return { cwd: own, worktree: true };
+    const p = w.projectId ? this.config().projects.find((x) => x.id === w.projectId) : undefined;
+    return { cwd: p && existsSync(p.path) ? p.path : dirname(this.o.configFile) };
+  }
+
+  /**
+   * The hook's sandbox, with the chat's worktree writable (it's in ion's data folder, denied otherwise). Nothing else
+   * is added (security review, 2026-11-28: a project's folder added after the deny opened ion's folders inside it;
+   * it was writable already).
+   */
+  private boxFor(f: { cwd: string; worktree?: true }): HookBox {
+    const sb = this.o.sandbox;
+    if (!sb || !f.worktree) return this.o;
+    return { ...this.o, sandbox: { ...sb, paths: { ...sb.paths, write: [...sb.paths.write, f.cwd] } } };
   }
 }
