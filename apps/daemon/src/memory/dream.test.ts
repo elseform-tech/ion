@@ -511,9 +511,7 @@ describe("ion's dream", () => {
   // pass leaves its note under its own name.
   it("a skipped tidy leaves its note in Memory, as Dream", async () => {
     seed("Node", { scope: { projectId: "shop" }, type: "fact", text: "Node 22." });
-    const info = await runDream(
-      deps(async () => done("Dream skipped: Grok Build can't turn its web off")),
-    );
+    const info = await runDream(deps(async () => done("Dream skipped: Grok Build can't turn its web off")));
     expect(info.notes).toEqual(["Dream skipped: Grok Build can't turn its web off"]);
   });
 
