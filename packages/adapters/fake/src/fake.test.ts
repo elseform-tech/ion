@@ -49,6 +49,26 @@ describe("fake adapter scenarios", () => {
     const t = await turn("fail");
     expect(t.slice(-2)).toEqual(["error", "run.finished:failed"]);
   });
+  // Plan 23 (ion evals, 2026-11-28): a finished chat that only said "Hi from the fake harness" was reported by ions
+  // as "never happened", not done. "finish <task>" ends done with a closing reply a real agent would give.
+  it("finish ends done with a realistic closing reply naming the task", async () => {
+    const session = await createFakeAdapter({ delayMs: 0 }).start({
+      cwd,
+      model: null,
+      effort: null,
+      signal: new AbortController().signal,
+      decide: async () => "allow",
+    });
+    await session.send({ text: "finish Proofread the glossary" });
+    const said: string[] = [];
+    let status = "";
+    for await (const e of session.events()) {
+      if (e.type === "message.completed") said.push(String((e.data as { text: string }).text));
+      if (e.type === "run.finished") status = (e.data as { status: string }).status;
+    }
+    expect(status).toBe("done");
+    expect(said.at(-1)).toMatch(/^Proofread the glossary: done\. .*all checks pass\.$/i);
+  });
   it("unknown prompts behave like hello", async () => {
     expect(await turn("what is up")).toContain("message.completed");
   });

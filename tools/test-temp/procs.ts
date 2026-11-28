@@ -44,14 +44,15 @@ const ps = (format: string, env: boolean): Map<number, string> => {
 };
 
 /** Every process on this computer: its group, its command, and its environment (what `ps e` adds after it). */
-function all(): (Proc & { env: string })[] {
+function all(): (Proc & { ppid: number; env: string })[] {
   const withEnv = ps("pid=,command=", true);
   const plain = ps("pid=,pgid=,command=", false);
+  const parents = ps("pid=,ppid=", false);
   return [...plain].flatMap(([pid, rest]) => {
     const g = head(rest);
     const line = withEnv.get(pid);
     if (!g || !line?.startsWith(g[1])) return [];
-    return [{ pid, pgid: g[0], command: g[1], env: line.slice(g[1].length) }];
+    return [{ pid, pgid: g[0], ppid: Number(parents.get(pid)), command: g[1], env: line.slice(g[1].length) }];
   });
 }
 
@@ -62,12 +63,25 @@ function all(): (Proc & { env: string })[] {
 const isRunner = (p: Proc) => /\/vitest\/|vitest\.mjs/.test(p.command);
 
 /**
+ * The helper vitest 5.1.1 forks itself (PR #42, 2026-11-28): it renames itself "vitest-watchdog" (no vitest path left in
+ * the command), carries the run's TMPDIR and ends when the runner does. Only that exact name, and only as a child of
+ * the runner (`runner`): a daemon or an agent a test started is never called that, nor a child of the runner's.
+ */
+export const isRunnersWatchdog = (p: { ppid: number; command: string }, runner: number) =>
+  p.ppid === runner && p.command.trim() === "vitest-watchdog";
+
+/**
  * Live processes started under `dir` (a run's folder or one test's ion home). A dead run's own workers too, with
  * `runners` (a worker whose runner was killed carries on alone: seen 2026-11-23).
  */
 export function processesUnder(dir: string, runners = false): Proc[] {
   return all()
-    .filter((p) => p.pid !== process.pid && (runners || !isRunner(p)) && inEnv(p.env, dir))
+    .filter(
+      (p) =>
+        p.pid !== process.pid &&
+        (runners || !(isRunner(p) || isRunnersWatchdog(p, process.pid))) &&
+        inEnv(p.env, dir),
+    )
     .map(({ pid, pgid, command }) => ({ pid, pgid, command: command.slice(0, 160) }));
 }
 
