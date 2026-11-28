@@ -4,7 +4,7 @@ import type { AgentCheckItem, Billing } from "@ion/schema";
 import { byPreference, judgePin, shippedChecked } from "../adapters/registry.js";
 import { JUDGE_CASES, type JudgeCase } from "../evals/judge-cases.js";
 import { createJudge } from "./judge.js";
-import { quietNow } from "../notify/clock.js";
+import { quietNight } from "../notify/clock.js";
 
 /** A run of the judge's prompt on one "<agent>:<model>" (ion's judge runner). */
 type Run = (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>;
@@ -26,10 +26,6 @@ export type JudgeCheckResult = {
 export type Pace = { gapMs: number; capMs: number };
 const AUTO_PACE: Pace = { gapMs: 2000, capMs: 10 * 60_000 };
 
-const HOUR_MS = 3600_000;
-/** How long nothing must have happened before ion checks a free agent by itself. */
-const IDLE_MS = 30 * 60_000;
-
 /**
  * Whether ion may check a free agent as judge by itself now (Plan 21's final review, 2026-11-28: a fresh ion's check
  * shared a beginner's first session's free quota): a quiet night, as for ion's other nightly work: quiet hours at least
@@ -42,13 +38,7 @@ export function judgeCheckTime(o: {
   lastEventAt: Date;
   answered: boolean;
 }): boolean {
-  if (!o.answered || o.now.getTime() - o.lastEventAt.getTime() < IDLE_MS) return false;
-  if (o.quiet.on && o.quiet.from !== o.quiet.to) {
-    const w = quietNow(o.quiet, o.now);
-    return !!w && o.now.getTime() - w.start.getTime() >= HOUR_MS;
-  }
-  const h = o.now.getHours();
-  return h >= 1 && h < 6;
+  return o.answered && !!quietNight(o.quiet, o.now, o.lastEventAt);
 }
 
 /** A free agent's last try by itself: the day, and when its limit (hit during the check) resets. */

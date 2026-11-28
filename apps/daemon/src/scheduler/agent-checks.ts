@@ -11,7 +11,7 @@ import {
   checksFailed,
   type HarnessInfo,
 } from "@ion/schema";
-import { dayOf, type Quiet, quietNow, type Window } from "../notify/clock.js";
+import { dayOf, nightHours, type Quiet, quietNight, quietNow, type Window } from "../notify/clock.js";
 
 /** How often ion looks whether it's time to check (and whether a note waits for quiet hours to end). */
 const LOOK_MS = 5 * 60_000;
@@ -22,12 +22,8 @@ const LOOK_MS = 5 * 60_000;
 const NIGHT_WAIT_MS = 30_000;
 const NOW_WAIT_MS = 5_000;
 const INFO_WAIT_MS = 1_500;
-/** A quiet night: quiet hours this old, nothing in ion for this long, and no agent started this close to the end. */
-const SETTLED_MS = 60 * 60_000;
-const IDLE_MS = 30 * 60_000;
+/** No agent started this close to the night's end. */
 const LAST_START_MS = 30 * 60_000;
-/** The night's hours when quiet hours are off. */
-const NIGHT: Quiet = { on: true, from: "01:00", to: "06:00" };
 /** Claude Code: checked only when you pick it, even when it would be free (save Claude; the user, 2026-11-28). */
 const CLAUDE = "claude-code";
 
@@ -73,7 +69,7 @@ type Kept = { night: string | null; last: AgentCheckRecord[]; noted: string[]; p
 /** The hours checks may run in: quiet hours (Settings → Notifications), else 01:00–06:00. */
 function hoursOf(c: UserConfig): Quiet {
   const q = c.notifications.quiet;
-  return q.on && q.from !== q.to ? q : NIGHT;
+  return nightHours(q);
 }
 
 /** The window checks may run in now, or null (the working day). */
@@ -147,7 +143,7 @@ export class AgentChecks {
     this.sayPending(c, now);
     if (!c.checks.nightly) return;
     const w = checkWindow(c, now);
-    if (!w || this.checked(w) || !this.quiet(w, now)) return;
+    if (!w || this.checked(w) || !this.quiet(c, now)) return;
     await this.runAll(c, { waitMs: NIGHT_WAIT_MS, by: "night", end: w.end });
   }
 
@@ -162,12 +158,10 @@ export class AgentChecks {
     this.keep({ ...this.kept(), night: this.lastNight });
   }
 
-  /** A quiet night: its quiet hours an hour old, nothing in ion for 30 minutes, no chat working, not near its end. */
-  private quiet(w: Window, now: Date): boolean {
-    const t = now.getTime();
-    const last = this.d.lastEvent()?.getTime() ?? 0;
-    if (t - w.start.getTime() < SETTLED_MS || t - last < IDLE_MS) return false;
-    return w.end.getTime() - t > LAST_START_MS && !this.d.working();
+  /** A quiet night (quietNight: the same rule as a free agent's judge check), no chat working, not near its end. */
+  private quiet(c: UserConfig, now: Date): boolean {
+    const w = quietNight(c.notifications.quiet, now, this.d.lastEvent());
+    return !!w && w.end.getTime() - now.getTime() > LAST_START_MS && !this.d.working();
   }
 
   /** Checks now, as the night would (Check now, `ion agents check --now`); one going is waited for instead. */
