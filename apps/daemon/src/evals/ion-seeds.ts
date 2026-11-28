@@ -85,6 +85,8 @@ export function ionConfig(o: {
   root: string;
   projects: SeedProject[];
   threadsOn: string;
+  /** What ion does when a chat's agent hits its limit (absent: ion's default, ask). */
+  onLimit?: "ask" | "wait";
 }): string {
   const projects = o.projects.map((p) =>
     [
@@ -95,10 +97,11 @@ export function ionConfig(o: {
       `profile = ${q(p.profile)}`,
     ].join("\n"),
   );
+  const limitLine = o.onLimit ? "\nonLimit = " + q(o.onLimit) : "";
   return [
     `[ion]\nquick = ${q(o.agent)}\ndeep = ${q(o.agent)}`,
     `[access]\njudge = ${q(o.agent)}`,
-    `[routing]\norder = [${q(o.agent)}]`,
+    `[routing]\norder = [${q(o.agent)}]${limitLine}`,
     "[notifications.briefing]\non = false",
     `[folders]\nprojects = ${q(o.root)}`,
     ...projects,
@@ -108,13 +111,17 @@ export function ionConfig(o: {
 /**
  * Marks the fake agent limited for the next hour, before the daemon starts: a project's ion then thinks on the agent
  * under test (it goes past a limited agent of its project's), while its chats still go on the fake agent, which runs
- * don't check. The first of its chats to end well clears the mark (views/usage.ts).
+ * don't check. The first of its chats to end well clears the mark (views/usage.ts). `sticky` (Task 3: chats seeded
+ * before the message, a thread's report after it): the mark is dated two hours ahead, so no chat that ends well clears
+ * it and every ion turn of the case stays on the agent under test.
  */
-export function fakeLimited(dataDir: string): void {
+export function fakeLimited(dataDir: string, sticky = false): void {
+  const ahead = sticky ? 2 * 3_600_000 : 0;
   mkdirSync(dataDir, { recursive: true });
   const db = openDb(join(dataDir, "ion.db"));
   try {
     new EventStore(db, allViews).append({
+      ...(sticky ? { ts: new Date(Date.now() + ahead).toISOString() } : {}),
       chatId: null,
       runId: null,
       origin: "adapter",
@@ -123,7 +130,7 @@ export function fakeLimited(dataDir: string): void {
         code: "limit",
         retryable: false,
         message: "ion evals: an ion's turn goes on the agent under test",
-        limit: { resetsAt: new Date(Date.now() + 3_600_000).toISOString() },
+        limit: { resetsAt: new Date(Date.now() + ahead + 3_600_000).toISOString() },
         harness: "fake",
       },
     });

@@ -8,7 +8,7 @@
 | [routines.md](routines.md) | Routines: where they live, the schedule format, how the daemon runs them, Activity, the CLI. |
 | [research/acp-and-harnesses.md](research/acp-and-harnesses.md) | ACP protocol, Codex's app-server, how each coding agent is launched and signed in, quota policy for tests. |
 | [research/memory-evals.md](research/memory-evals.md) | ion's memory on real agents: recall, precision, updates not copies, to-dos, Mark done, privacy, memory text that gives orders, and 300 files; how to run them and the latest numbers. |
-| [research/ion-evals.md](research/ion-evals.md) | ion chief and the project ions as orchestrators, on real agents: decide (answer, start a chat, ask), route, restraint, read-only, briefs (a graded rubric), fan-out, ask; how to run them and the latest numbers. |
+| [research/ion-evals.md](research/ion-evals.md) | ion chief and the project ions as orchestrators, on real agents: decide (answer, start a chat, ask), route, restraint, read-only, briefs (a graded rubric), fan-out, ask, status, follow-up, injection; how to run them and the latest numbers. |
 | [research/judge-evals.md](research/judge-evals.md) | Auto's judge on real models: 59 labelled cases, how to run them, dangerous allowed / ordinary refused / unsure / latency. |
 | [research/sandbox.md](research/sandbox.md) | Agents in the OS sandbox, away from ion's own files: each agent's real behaviour (Claude Code, Codex, opencode, Grok), Seatbelt and bubblewrap, nesting, what's covered and what isn't. |
 | [research/usage-signals.md](research/usage-signals.md) | What each agent reports about its usage and limits (Codex's windows, Claude's rate-limit info, opencode's quota line, Grok's cost), with sources, and how ion uses it. |

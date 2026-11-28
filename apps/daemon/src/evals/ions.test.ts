@@ -11,13 +11,20 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect } from "@ion/client";
+import { connect, type IonClient } from "@ion/client";
 import { EV, type IonEvent } from "@ion/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { answerWithin, harnessRunner } from "../access/runner.js";
 import { agentLabel } from "../adapters/registry.js";
 import { startServer } from "../api/server.js";
-import { ION_CASES, ION_MEASURES, type IonCase, type IonMeasure } from "./ion-cases.js";
+import {
+  type ChatState,
+  ION_CASES,
+  ION_MEASURES,
+  type IonCase,
+  type IonMeasure,
+  type SeedChat,
+} from "./ion-cases.js";
 import { BRIEF_LABELS } from "./ion-brief-labels.js";
 import {
   AGREEMENT_MIN,
@@ -28,6 +35,8 @@ import {
   parseGrade,
 } from "./ion-grader.js";
 import { type Scored, scoreIon } from "./ion-score.js";
+import { followUpReply } from "./ion-score-state.js";
+import { seedMemory } from "./memory-seeds.js";
 import { fakeLimited, ionConfig, rotated, writeProject } from "./ion-seeds.js";
 
 /**
@@ -215,6 +224,47 @@ async function graded(
   return { result: why ? "fail" : "pass", why, grades };
 }
 
+const onLimitOf = (c: IonCase) => (c.seed?.onLimit ? { onLimit: c.seed.onLimit } : {});
+
+/** The sign a seeded chat is in its state: started, asking, failed, done, or waiting out a limit. */
+function inState(events: IonEvent[], chatId: string, state: ChatState): boolean {
+  const on = events.filter((e) => e.chatId === chatId);
+  const ended = on.find((e) => e.type === EV.runFinished);
+  const status = ended ? String(dataOf(ended).status) : "";
+  if (state === "running") return on.some((e) => e.type === EV.runStarted);
+  if (state === "question") return on.some((e) => e.type === EV.needRaised);
+  if (state === "limited")
+    return on.some((e) => e.type === EV.runWaiting || (e.type === EV.error && !!dataOf(e).limit));
+  return status === (state === "done" ? "done" : "failed");
+}
+
+/** Your chats, each started on the fake agent and waited into its state (a minute each at most), in order. */
+async function seedChats(client: IonClient, events: IonEvent[], chats: SeedChat[]): Promise<void> {
+  for (const x of chats) {
+    const { chatId } = await client.call("ask", { projectId: x.projectId, harness: "fake", text: x.text });
+    await until(() => inState(events, chatId, x.state), 60_000);
+  }
+}
+
+/**
+ * A follow-up case: the routine's thread (ion's own) runs now; then the wait for the project's ion to bring its end
+ * up (or ion's own question on a limit), and 15 s more to catch it said twice.
+ */
+async function runRoutine(client: IonClient, events: IonEvent[], c: IonCase): Promise<void> {
+  const r = c.seed!.routine!;
+  const added = await client.call("routine.add", {
+    projectId: r.projectId,
+    name: "Eval routine",
+    when: "daily 09:00",
+    text: r.text,
+  });
+  await client.call("routine.run", { projectId: r.projectId, routineId: added.id });
+  const told = () =>
+    followUpReply(events, c.to) || events.some((e) => e.type === EV.needRaised && !!dataOf(e).limit);
+  await until(told, WAIT_MS).catch(() => undefined);
+  await pause(15_000);
+}
+
 /** A fresh ion home for one run of a case: the three projects as git repos, in this run's order. */
 function homeFor(root: string, a: Agent, c: IonCase, run: number): string {
   const home = join(root, a.id.replace(/\W/g, "-"), `${c.id}-${run}`);
@@ -223,7 +273,7 @@ function homeFor(root: string, a: Agent, c: IonCase, run: number): string {
   for (const p of order) {
     const dir = join(projects, p.id);
     mkdirSync(dir, { recursive: true });
-    writeProject(dir, p);
+    writeProject(dir, { ...p, files: { ...p.files, ...c.seed?.files?.[p.id] } });
     git(dir, "init", "-q", "-b", "main");
     git(dir, "add", "-A");
     git(dir, "-c", "user.email=e@example.com", "-c", "user.name=E", "commit", "-q", "-m", "init");
@@ -231,10 +281,11 @@ function homeFor(root: string, a: Agent, c: IonCase, run: number): string {
   const agent = a.model ? `${a.id}:${a.model}` : a.id;
   writeFileSync(
     join(home, "config.toml"),
-    ionConfig({ agent, root: projects, projects: order, threadsOn: "fake" }),
+    ionConfig({ agent, root: projects, projects: order, threadsOn: "fake", ...onLimitOf(c) }),
   );
   // A project's ion would think on its project's agent (the fake one): it goes on the agent under test instead.
-  if (a.id !== "fake") fakeLimited(join(home, "data"));
+  if (a.id !== "fake") fakeLimited(join(home, "data"), !!c.seed);
+  if (c.seed?.memory) seedMemory(join(home, "data"), c.seed.memory);
   return home;
 }
 
@@ -290,10 +341,9 @@ async function runCase(root: string, a: Agent, { c, run, g }: Job): Promise<Row>
     await client.subscribe({ fromNow: true }, (e) => {
       events.push(e);
     });
-    const reply = () => events.find((e) => e.chatId === `ion:${c.to}` && e.type === EV.ionSaid);
-    await client.call("ion.message", { ionId: c.to, text: c.text }).catch(() => undefined);
-    await until(reply, WAIT_MS).catch(() => undefined);
-    await settled(events);
+    if (c.seed?.chats) await seedChats(client, events, c.seed.chats);
+    if (c.seed?.routine) await runRoutine(client, events, c);
+    else await message(client, events, c);
     const seen = { ionId: c.to, events, dirty: dirtyIn(join(home, "projects")), label: agentLabel(a.id) };
     const scored = scoreIon(c, seen);
     const steps = stepsOf(events, c.to);
@@ -303,6 +353,15 @@ async function runCase(root: string, a: Agent, { c, run, g }: Job): Promise<Row>
     client.close();
     await srv.close();
   }
+}
+
+/** The case's message, the app's way, and the wait for the ion's reply and the chats it started. */
+async function message(client: IonClient, events: IonEvent[], c: IonCase): Promise<void> {
+  const from = events.length;
+  const reply = () => events.slice(from).find((e) => e.chatId === `ion:${c.to}` && e.type === EV.ionSaid);
+  await client.call("ion.message", { ionId: c.to, text: c.text }).catch(() => undefined);
+  await until(reply, WAIT_MS).catch(() => undefined);
+  await settled(events);
 }
 
 /** A run that threw: a fail with why (never a pass). */
@@ -403,6 +462,8 @@ describe.skipIf(live.length === 0)("ion evals", { timeout: 4 * 3_600_000 }, () =
     // ion's folders for the run live in the temp folder, never yours; the chats ions start run on the fake agent.
     process.env.ION_HOME = join(dir, "home");
     process.env.ION_ALLOW_FAKE = "1";
+    // A seeded "running" chat (the fake agent's slow scenario) runs past any case.
+    process.env.ION_FAKE_SLOW_S = "900";
     // Only the agents under test may answer: no turn falls over onto another (Claude, Codex, the other free one).
     // The grader's agent stays (a fall-over onto it is still counted as no answer).
     const blocked = Object.entries(BINARIES)

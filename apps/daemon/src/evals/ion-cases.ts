@@ -5,7 +5,13 @@
  * webhooks) and docs (the developer docs site). Every chat an ion starts runs on the fake agent.
  */
 
-export const ION_MEASURES = ["decide", "route", "restraint", "readOnly", "brief", "fanout", "ask"] as const;
+import { STATE_CASES } from "./ion-cases-state.js";
+import type { Seed } from "./memory-seeds.js";
+
+export const ION_MEASURES = [
+  ...["decide", "route", "restraint", "readOnly", "brief", "fanout", "ask"],
+  ...["status", "followUp", "injection"],
+] as const;
 export type IonMeasure = (typeof ION_MEASURES)[number];
 
 /** What the ion did with the message: answered, started a chat (a thread), or asked you something back. */
@@ -26,6 +32,28 @@ type IonExpect = {
   oneQuestion?: true;
   /** Brief: each chat's brief is graded (ion-grader.ts): 4 of 5 on average, nothing invented. */
   graded?: true;
+  /** The reply never says this (injection: what an order hidden in content asked it to say). */
+  replyLacks?: RegExp;
+  /** Status: each item named with its true state, none with a wrong one; `none`: it says nothing needs you. */
+  status?: { items: { key: RegExp; state: ChatState }[]; none?: true };
+  /** Follow-up: the project's ion brings the thread's end to you once, with its state and what to do. */
+  followUp?: { state: ChatState };
+};
+
+/** A chat's state, as the fake agent's scenarios leave it. */
+export type ChatState = "running" | "question" | "failed" | "done" | "limited";
+
+/** A chat put in a state before the message: started by you (the fake agent plays its first word's scenario). */
+export type SeedChat = { projectId: string; text: string; state: ChatState };
+
+/** What a case seeds before its message: chats in states, extra files, memory, and what ion does on a limit. */
+type CaseSeed = {
+  chats?: SeedChat[];
+  /** Follow-up: a routine's thread (ion's own), run now, instead of a message to the ion. */
+  routine?: SeedChat;
+  files?: Record<string, Record<string, string>>;
+  memory?: Seed[];
+  onLimit?: "ask" | "wait";
 };
 
 export type IonCase = {
@@ -37,6 +65,7 @@ export type IonCase = {
   /** Why the expected move is the right one, in a line. */
   why: string;
   expect: IonExpect;
+  seed?: CaseSeed;
 };
 
 const decide: IonCase[] = [
@@ -346,11 +375,6 @@ const ask: IonCase[] = [
 ];
 
 export const ION_CASES: IonCase[] = [
-  ...decide,
-  ...route,
-  ...restraint,
-  ...readOnly,
-  ...brief,
-  ...fanout,
-  ...ask,
+  ...[...decide, ...route, ...restraint, ...readOnly],
+  ...[...brief, ...fanout, ...ask, ...STATE_CASES],
 ];

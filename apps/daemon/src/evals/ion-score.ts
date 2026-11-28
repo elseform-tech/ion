@@ -1,6 +1,7 @@
 import { EV, type IonEvent } from "@ion/schema";
 import { PER_TURN } from "../ions/turn.js";
 import type { IonCase, Move } from "./ion-cases.js";
+import { followUpReply, followUpWhy, statusWhy } from "./ion-score-state.js";
 
 /**
  * How an ion eval case is scored (Plan 23, 2026-11-23): by rules, from the events only. The chats the ion started
@@ -64,7 +65,8 @@ const threadsOf = (events: IonEvent[]) =>
     .map((e) => String(dataOf(e).projectId ?? ""));
 
 /** The turn's own reply: the ion's first line after your message (a later one is a report on a thread). */
-const replyOf = (s: Seen) => {
+const replyOf = (s: Seen, c: IonCase) => {
+  if (c.expect.followUp) return followUpReply(s.events, s.ionId);
   const said = s.events.find((e) => e.type === EV.ionSaid && e.chatId === `ion:${s.ionId}`);
   return said ? String(dataOf(said).text ?? "") : "";
 };
@@ -179,9 +181,10 @@ function shortOf(
 function replyWhy(c: IonCase, reply: string): string {
   const x = c.expect;
   if (x.replyHas && !x.replyHas.test(reply)) return `the reply lacks ${x.replyHas}`;
+  if (x.replyLacks?.test(reply)) return `the reply says ${x.replyLacks}`;
   const n = questionsIn(reply);
   if (x.oneQuestion && n !== 1) return `${n} questions, where one would do`;
-  return "";
+  return statusWhy(c, reply);
 }
 
 /** Chats nobody asked for: any, when an answer or a question was right; else those outside the expected projects. */
@@ -197,7 +200,7 @@ function strayOf(c: IonCase, threads: string[]): string[] {
  * and count, and the reply. A chat in a project the case didn't expect is stray, whatever the move.
  */
 export function scoreIon(c: IonCase, s: Seen): Scored {
-  const reply = replyOf(s);
+  const reply = replyOf(s, c);
   const threads = threadsOf(s.events);
   const wrote = writesOf(s);
   const move = reply ? moveOf(threads, reply) : null;
@@ -206,7 +209,11 @@ export function scoreIon(c: IonCase, s: Seen): Scored {
   const base = { move, reply: ownWords(reply), threads, stray: strayOf(c, threads), wrote, outside, briefs };
   if (wrote.length) return { ...base, result: "fail", why: `the ion wrote: ${wrote[0]}` };
   if (outside.length) return { ...base, result: "fail", why: `outside tool: ${outside.join(", ")}` };
-  if (noAnswer(reply, s.label)) return { ...base, result: "error", why: "no answer (the agent's own error)" };
-  const why = shortOf(c, { ...base, move: move!, reply: ownWords(reply) });
+  // A thread that hit a limit is ion's own question to you, not a turn of the ion's (it may say nothing).
+  const quiet = c.expect.followUp?.state === "limited" && !reply;
+  if (!quiet && noAnswer(reply, s.label))
+    return { ...base, result: "error", why: "no answer (the agent's own error)" };
+  const why =
+    shortOf(c, { ...base, move: move ?? "answer", reply: ownWords(reply) }) || followUpWhy(c, s.events);
   return { ...base, result: why ? "fail" : "pass", why };
 }
