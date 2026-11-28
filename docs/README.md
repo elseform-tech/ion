@@ -12,8 +12,8 @@
 | [research/sandbox.md](research/sandbox.md) | Agents in the OS sandbox, away from ion's own files: each agent's real behaviour (Claude Code, Codex, opencode, Grok), Seatbelt and bubblewrap, nesting, what's covered and what isn't. |
 | [research/usage-signals.md](research/usage-signals.md) | What each agent reports about its usage and limits (Codex's windows, Claude's rate-limit info, opencode's quota line, Grok's cost), with sources, and how ion uses it. |
 | [research/skills.md](research/skills.md) | Skills through the Agent SDK's `plugins`: the live probe, and what ion passes to Claude Code. |
-| [research/first-run.md](research/first-run.md) | What a beginner meets in ion today (Plan 21): opening ion to a first answer on opencode, Grok and no agent, in the app and the CLI; the defaults; the concept words; local usage counts; findings worst first. |
-| [../scripts/tour.sh](../scripts/tour.sh) | The UX tour: a fresh ion with every chat and Tools state, a fake agents home for Import and Skills (`ION_TOUR_HOME`, `ION_TOUR_APP`). |
+| [research/first-run.md](research/first-run.md) | What a beginner meets in ion today (Plan 21): opening ion to a first answer on opencode, Grok and no agent, in the app and the CLI; the defaults; the concept words; local usage counts; findings worst first; before and after Plan 21 (Task 6: the beginner path checked end to end). |
+| [../scripts/tour.sh](../scripts/tour.sh) | The UX tour: a fresh ion with every chat and Tools state, a fake agents home for Import and Skills (`ION_TOUR_HOME`, `ION_TOUR_APP`); `tour.sh fresh` (`fresh none`): a brand-new ion for the first run. |
 | [../AGENTS.md](../AGENTS.md) | How to work in this repo: layout, walls, rules. |
 
 ## Plans

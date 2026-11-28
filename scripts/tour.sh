@@ -2,6 +2,9 @@
 # The UX tour (AGENTS.md): a fresh ion with every chat state, ion threads and ion chief, and the app in a browser.
 #   scripts/tour.sh            start it; prints the app's address
 #   scripts/tour.sh stop       stop the tour's ion and the app
+#   scripts/tour.sh fresh      a brand-new ion (no projects, no chats) for the first run, with a made-up folder that
+#                              isn't a git repo to add (its path is printed); `fresh none`: no agent found (PATH holds the
+#                              system's and node), for the no-agent rows
 # Needs a build (pnpm build). Uses the fake agent, so it costs no quota; send a real message with opencode's free
 # model from the app as part of the tour.
 set -e
@@ -19,6 +22,32 @@ if [ "$1" = stop ]; then
 fi
 ion daemon stop >/dev/null 2>&1 || true
 rm -rf "$ION_HOME" && mkdir -p "$ION_HOME"
+app() {
+  pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
+  sleep 3
+  # ION_TOUR_APP: the app's address when your vite runs elsewhere (another worktree's port).
+  node -e 'const j=require(process.env.ION_HOME+"/data/daemon.json");console.log(`${process.env.ION_TOUR_APP||"http://127.0.0.1:5173"}/?port=${j.port}&token=${j.token}`)'
+}
+# Plan 21 Task 6: the first run as a newcomer meets it: ion's defaults (only its projects folder is the tour's), your
+# real agents (no fake one), and a folder of made-up code that isn't a git repo, for "Pick a folder" and its git setup.
+if [ "$1" = fresh ]; then
+  unset ION_DEBUG ION_FAKE_BILLING ION_FAKE_SLOW_S
+  printf '[folders]\nprojects = "%s/projects"\n' "$ION_HOME" > "$ION_HOME/config.toml"
+  export ION_AGENTS_HOME="$ION_HOME/agents-home" && mkdir -p "$ION_AGENTS_HOME"
+  # Beside ion's home, not in it: ion refuses its own folders (Plan 21 Task 2).
+  F="$ION_HOME-folders/tip-calc" && rm -rf "$ION_HOME-folders" && mkdir -p "$F/src"
+  printf '# tip-calc\n\nA tiny tip calculator: `node src/tip.js 42.50 18` prints the tip and the total.\n' > "$F/README.md"
+  printf 'const [bill, pct] = process.argv.slice(2).map(Number);\nconst tip = Math.round(bill * pct) / 100;\nconsole.log(`tip ${tip.toFixed(2)} · total ${(bill + tip).toFixed(2)}`);\n' > "$F/src/tip.js"
+  if [ "$2" = none ]; then
+    NODE_DIR="$(dirname "$(command -v node)")" && mkdir -p "$ION_HOME/bin" && ln -s "$NODE_DIR/node" "$ION_HOME/bin/node"
+    PATH="$ION_HOME/bin:/usr/bin:/bin" ion daemon start >/dev/null
+  else
+    ion daemon start >/dev/null
+  fi
+  echo "A folder to add: $F"
+  app
+  exit 0
+fi
 # ion thinks ([ion] quick) and judges ([access] judge) with the fake agent: no quota, no real model.
 printf '[ion]\nquick = "fake"\n[access]\njudge = "fake"\n[folders]\nprojects = "%s/projects"\n' "$ION_HOME" > "$ION_HOME/config.toml"
 # Plan 18: Tools in every state. mcp.json holds a local server (turned on below), a remote one whose ${TOUR_KEY}
@@ -264,7 +293,18 @@ past.forEach(([text, tokens, cost], i) => {
 add(null, null, "usage.reported", { harness: "codex", model: "tour", inputTokens: 52_000, outputTokens: 3_000,
   windows: [{ name: "5 h", usedPercent: 62, resetsAt: at(140) }, { name: "week", usedPercent: 28, resetsAt: at(4 * 1440) }] }, -30);
 add(null, null, "usage.reported", { harness: "fake", model: "fake", inputTokens: 210_000, outputTokens: 12_000, costUsd: 0.06 }, -300);
-db.close();'
+db.close();
+// Plan 21 Task 5 (made up): last night'"'"'s agent checks, Grok Build fine and opencode with one that failed, for the line in
+// Settings → Agents and what it opens. The nightly check stays off, so the tour never checks your real agents.
+const fs = await import("node:fs");
+const night = new Date(now - 864e5); night.setHours(2, 10, 0, 0);
+const ok = (name) => ({ name, ok: true });
+const rec = (agent, label, checks) => ({ agent, label, at: night.toISOString(), by: "night", checks });
+fs.writeFileSync(process.env.ION_HOME + "/data/agent-checks.json", JSON.stringify({ night: null, noted: [], pending: [], last: [
+  rec("grok-build", "Grok Build", [ok("Signed in"), ok("Starts"), ok("Answers"), ok("ion\u0027s tools"), ok("Gate")]),
+  rec("opencode", "opencode", [ok("Signed in"), ok("Starts"), ok("Answers"), ok("ion\u0027s tools"),
+    { name: "Gate", ok: false, note: "No call reached ion\u0027s gate" }]),
+] }, null, 2), { mode: 0o600 });'
 ion daemon start >/dev/null
 # Plan 09, 14: a thread storefront's ion started, and ion chief routing a message to two projects (each a turn of
 # the fake agent, starting threads with ion's start_thread tool).
@@ -325,7 +365,4 @@ ion routines add "Hold" -p storefront -w "sun 3:00" -d "slow" >/dev/null
 sleep 2
 (ion routines run dependency-update >/dev/null 2>&1 &)
 sleep 2
-pgrep -f "apps/desktop.*vite" >/dev/null || (cd apps/desktop && nohup pnpm dev >/dev/null 2>&1 &)
-sleep 3
-# ION_TOUR_APP: the app's address when your vite runs elsewhere (another worktree's port).
-node -e 'const j=require(process.env.ION_HOME+"/data/daemon.json");console.log(`${process.env.ION_TOUR_APP||"http://127.0.0.1:5173"}/?port=${j.port}&token=${j.token}`)'
+app

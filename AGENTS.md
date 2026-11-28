@@ -20,7 +20,7 @@ For humans and AI agents. Read `docs/architecture/contract.md` first.
 | `apps/cli` | The `ion` command (inside a chat, with `ION_RUN_KEY`: ion's commands for tools only). |
 | `tools/test-temp` | Every test run's temp folders in one folder under /tmp, removed after; a run that leaves `ion-*` folders in the real temp folder fails. |
 | `scripts/evals-nightly.sh` | The live evals on the agents you name, output kept in `.ion-evals/` (developers; costs quota). |
-| `scripts/tour.sh` | The UX tour: a fresh ion with every chat and Tools state and a fake agents home, for the tour every UI PR runs (see Rules). `ION_TOUR_HOME` for another home, `ION_TOUR_APP` for another app address. |
+| `scripts/tour.sh` | The UX tour: a fresh ion with every chat and Tools state and a fake agents home, for the tour every UI PR runs (see Rules). `tour.sh fresh`: a brand-new ion (no projects, no chats) for the first run, with a made-up folder to add; `fresh none`: no agent found. `ION_TOUR_HOME` for another home, `ION_TOUR_APP` for another app address. |
 | `apps/desktop` | The desktop app: Tauri 2 shell (`src-tauri`: where the daemon is, your initial, and the opener: your mcp.json in your editor, sign-in pages (https) in your browser) and a React UI that only displays the daemon's state (Chats screen). |
 | `tools/lint-rules` | Custom ESLint rules that enforce the walls below (`ion/walls`, `ion/event-types-from-schema`, `ion/no-direct-db`, `ion/no-child-process`, `ion/no-model-names`, `ion/plain-words`). |
 
@@ -73,7 +73,8 @@ Old CLI words (`ion harnesses`, `ion needs`, `--harness`) keep working for one r
   to a word, and fewer boxes.
 - **Run a tour before every PR that changes what people see** (the desktop app, CLI output). `scripts/tour.sh`
   starts a fresh ion with a chat in every state (an edit, a question, a failure, a retry that works, one that gives
-  up, a gated call, a running one, a plain chat in `default`) and prints the app's address. Then:
+  up, a gated call, a running one, a plain chat in `default`) and prints the app's address; `scripts/tour.sh fresh`
+  (and `fresh none`) starts one with nothing in it, for the first run. Then:
   - open every screen and state at 1440×900 and 900×700, and click what a person would: each chat, the work
     blocks and their steps, the brain popover, access, the question panel (open and collapsed), the side panel and
     its tabs, the sidebar's project menu, the drag handles, the rail, the Ions screen (each ion, stars, the
@@ -82,7 +83,7 @@ Old CLI words (`ion harnesses`, `ion needs`, `--harness`) keep working for one r
     text, History and Restore, Forget, a broken file's line, the To-dos tab; ion chief's to-do count), Agents;
   - send a real message from a new chat, and a follow-up, with opencode's free model, and watch it run; message
     ion chief and a project's ion, and answer a question an agent asks;
-  - run the CLI's main commands (`ion --help`, `status`, `projects`, `chats`, `needs`);
+  - run the CLI's main commands (`ion --help`, `status`, `projects`, `chats`, `questions`);
   - fix what reads oddly: extra or repeated words, hint text, a number that says nothing ("0s", "−0"), a box
     that holds nothing, a wait with no sign anything is happening, things that don't make sense to someone new;
   - list what you found and what you fixed in the PR. `scripts/tour.sh stop` when done.

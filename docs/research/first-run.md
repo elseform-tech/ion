@@ -50,6 +50,53 @@ started the daemon itself in 7 s from a Finder-like PATH (`/usr/bin:/bin`), thro
 | CLI, Grok, a question | `ion answer n3968d9 2` prints "Answered", then the chat's reply and "Done · 15.8s" | — | — | no dead end |
 | Existing user (a copied home with chats) | No first run; the new chat is in `tip-calc`, the project used last | — | — | — |
 
+## After Plan 21 (Task 6, 2026-11-28)
+
+The whole beginner path again, in the app, on a brand-new `ION_HOME` (a scratch folder, `[folders] projects` inside it),
+built from Plan 21's branch (`145d0fc` plus Task 6's fixes). `PATH` held `node`, the agent and the system's
+`/usr/bin:/bin` (for git), so Claude Code, Codex and the other free agent showed as Not installed; ion's model and the
+judge were set to the agent under test, so nothing ran on Claude. The folder was a made-up `tip-calc` (a README and a
+three-line script, not a git repo) outside ion's home. The app ran in a browser (Vite), so `ion daemon start` is still
+one command there (0 in the desktop app, which starts it: Task 2). Same counting as above: Enter and clicks count,
+typing doesn't. Screenshots `p21-t6-*.png`.
+
+| Path | Before (Task 1) | After (Task 6) |
+|---|---|---|
+| App, Grok Build, your own folder (not a git repo) | 102 s, 5 clicks, 4 commands; the folder could only be added from the CLI, after `git init` | **60 s** (16 s to Send, 44 s of work), **4 clicks** (folder path + Enter, Set up git, a first message from the three offered, Send), **1 command** in a browser, 0 in the app. Answer about the folder: "tip-calc is a tiny command-line tip calculator…" |
+| App, opencode (free quota still out) | 131 s; an error, then the answer on Grok Build after "Continue on Grok Build" | The same 4 clicks reach Send; 4 s later ion's question: "opencode hit its limit. No other agent is free. Set up Grok Build: npm i -g @xai-official/grok", with Wait (until its reset). No answer: opencode's free use was still used up today, so this path couldn't finish. |
+| Existing user (the normal tour, `/tmp/ion-tour2`) | — | Nothing moved: no first run, the new chat opens in the project used last (`payments-api`), every chat state and the sidebar as before; Settings shows General, Agents, Memory, then Ions and Tools (used), and Notifications and Shortcuts under More. |
+
+What the run showed:
+
+- **No Claude anywhere.** The chat's events show the judge on Grok's fast model (`grok-4.7-build-fast`, about 6 cents
+  a call) and the chat on Grok 4.7; nothing on Claude Code. The routing line says why: "On Grok Build — first in your
+  order".
+- **A follow-up** in the same chat ("What happens if I leave out the percent?") ran the script and answered in 14 s.
+- **The CLI after it** (`ion --help`, `status`, `projects`, `chats`, `questions`) all exit 0; `status` says
+  "ion is running · 1 project" and Grok's usage line.
+- **The daemon log** holds one line, about the scratch config's retired `[ion] deep` key; no errors.
+
+Fixed in Task 6 (each with a test that fails without it):
+
+- **"Set up git here: 2 files in its first commit"** after ion had done it read like the question again. It says
+  "Git set up: 2 files in its first commit" now, in the app and the CLI (and the lab).
+- **Search found no tucked setting.** "tidy", "judge" and "night" found nothing, though Tidy memory, Check as judge and
+  Prefer in this order wait under a page's More and the nightly check sits on Agents. Each is one search away now, and
+  opens its page with More open.
+- **`ion status` counted ion's own No project:** "2 projects" for one folder after a chat in No project. It counts
+  your projects now.
+
+Seen and left (not Plan 21's, or the user's own words):
+
+- After an agent hits a limit whose reset ion only guessed, Automatic still routes the next chat to it ("On opencode —
+  free and enough for this") when it's the only agent: trying is how ion learns it's back, but the line reads oddly
+  while it's used up.
+- A gated call that waited 4 minutes leaves its question open (on purpose: a yes still counts), and the agent's own
+  prompt for the same call raises a second one: two "Allow this? npm install …" rows in Needs you (the tour's fake
+  agent; not seen on a real agent yet).
+- "Chats ions start run on" (Settings → Agents) reads awkwardly to someone new; it's the user's wording (2026-11-24).
+- The tool steps still show Grok's raw tool names ("Find tool", `run_terminal_command`), as in Task 1.
+
 ## Each path, screen by screen
 
 ### Opening ion (every path)
