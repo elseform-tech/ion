@@ -152,7 +152,8 @@ describe("ion cli", { timeout: 20_000 }, () => {
   });
 
   // Plan 21 audit, 2026-11-23: `ion projects add ~/tip-calc` said "Not a git repository" and exited 1, though `git
-  // init` was all it needed. ion sets up git itself and says so in one line.
+  // init` was all it needed. ion sets up git itself and says so in one line (Plan 21 Task 6 tour, 2026-11-28: "Git set
+  // up: …", since "Set up git here: …" read like the question again).
   it("adds a folder that isn't a git repo: ion sets up git and says so", async () => {
     await ion("daemon", "start");
     const p = join(mkdtempSync(join(tmpdir(), "ion-plain-")), "tip-calc");
@@ -167,7 +168,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
     writeFileSync(join(p, ".env"), "TOKEN=x\n");
     expect(await ion("projects", "add", p, "--yes")).toMatchObject({
       code: 0,
-      out: "Added tip-calc\nSet up git here: 1 file in its first commit, 1 left out (secrets, dependencies, build output, big files)",
+      out: "Added tip-calc\nGit set up: 1 file in its first commit, 1 left out (secrets, dependencies, build output, big files)",
     });
     expect(existsSync(join(p, ".git"))).toBe(true);
   });

@@ -159,7 +159,8 @@ describe("your agents on the first run", () => {
 // Plan 21 audit, 2026-11-23: the app couldn't add your own folder, and new chats went to ion's empty `default`.
 describe("your folder", () => {
   // Review of Plan 21 Task 2, 2026-11-23 (a security scan, HIGH): git was set up without asking. ion asks first, says
-  // it's working while it does, and says how many files went in and that some were left out.
+  // it's working while it does, and says how many files went in and that some were left out. Plan 21 Task 6 tour
+  // (2026-11-28): once done, "Set up git here: …" read like the question again; it says it's done ("Git set up: …").
   it("picking a non-git folder sets up git and says so, once you say yes", async () => {
     let done: (v: unknown) => void = () => {};
     const add = vi.fn((_path: string, confirm?: boolean) =>
@@ -182,7 +183,7 @@ describe("your folder", () => {
     done({ id: "tip-calc", path: "/Users/me/tip-calc", starred: false, gitSetUp: { files: 2, left: 1 } });
     expect(
       await screen.findByText(
-        "Set up git here: 2 files in its first commit, 1 left out (secrets, dependencies, build output, big files)",
+        "Git set up: 2 files in its first commit, 1 left out (secrets, dependencies, build output, big files)",
       ),
     ).toBeTruthy();
     expect(onAdded).toHaveBeenCalledWith(expect.objectContaining({ id: "tip-calc" }));
@@ -204,7 +205,7 @@ describe("your folder", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Set up git" }));
     expect(
       await screen.findByText(
-        "Set up git here: 1 file in its first commit, 2 left out (secrets, dependencies, build output, big files)",
+        "Git set up: 1 file in its first commit, 2 left out (secrets, dependencies, build output, big files)",
       ),
     ).toBeTruthy();
   });

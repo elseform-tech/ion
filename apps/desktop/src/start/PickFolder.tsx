@@ -22,7 +22,7 @@ async function pickFolder(): Promise<string | null> {
 function setUpLine(s: { files: number; left: number }): string {
   const files = `${s.files} ${s.files === 1 ? "file" : "files"}`;
   const left = s.left ? `, ${s.left} left out (secrets, dependencies, build output, big files)` : "";
-  return `Set up git here: ${files} in its first commit${left}`;
+  return `Git set up: ${files} in its first commit${left}`;
 }
 
 /** ion's question before it sets up git (or adds the repo a folder is in), with its path. */

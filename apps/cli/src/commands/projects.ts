@@ -23,7 +23,7 @@ function setUpLine(s: { files: number; left: number } | undefined): string {
   if (!s) return "";
   const files = `${s.files} ${s.files === 1 ? "file" : "files"}`;
   const left = s.left ? `, ${s.left} left out (secrets, dependencies, build output, big files)` : "";
-  return `\nSet up git here: ${files} in its first commit${left}`;
+  return `\nGit set up: ${files} in its first commit${left}`;
 }
 
 /** Your yes to ion's question: in the terminal when there is one, else only with --yes. */
