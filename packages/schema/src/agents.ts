@@ -112,11 +112,20 @@ export type AgentCommands = {
   "agents.check": { args: Record<string, never>; result: AgentChecksInfo };
 };
 
-/** One of ion's checks of an agent: it starts, answers, reaches ion's tools, its calls reach ion's gate, signed in. */
-export type AgentCheckItem = { name: string; ok: boolean; note?: string };
+/**
+ * One of ion's checks of an agent: it starts, answers, reaches ion's tools, its calls reach ion's gate, signed in.
+ * `limited`: its use is used up (not broken: never a failure).
+ */
+export type AgentCheckItem = { name: string; ok: boolean; note?: string; limited?: true };
 
-/** ion's last check of one agent (`at`: when it ran, ISO). */
-export type AgentCheckRecord = { agent: string; label: string; at: string; checks: AgentCheckItem[] };
+/** ion's last check of one agent (`at`: when it ran, ISO; `by`: the night's check, or one you asked for now). */
+export type AgentCheckRecord = {
+  agent: string;
+  label: string;
+  at: string;
+  by?: "night" | "now";
+  checks: AgentCheckItem[];
+};
 
 /**
  * One agent in the nightly check: whether it's in (`why`: why not), whether you picked it (one that isn't free is in
@@ -140,35 +149,46 @@ export type AgentChecksInfo = {
   last: AgentCheckRecord[];
 };
 
-/** How many of a check's parts failed. */
+/** How many of a check's parts failed (used up isn't failed). */
 export const checksFailed = (r: AgentCheckRecord): number => r.checks.filter((c) => !c.ok).length;
 
-/** When a check ran, in words: "last night", "today", "yesterday", or its day ("on 2026-11-20"). */
-function whenChecked(at: Date, now: Date): string {
+/** Its use was used up at the check (not broken): why, in its own words. */
+const usedUp = (r: AgentCheckRecord): string | undefined => r.checks.find((c) => c.limited)?.note;
+
+/**
+ * When a check ran, in words: "last night" only for the night's check; else "today at 14:05", "yesterday at 09:10",
+ * or "on 2026-11-20 at 14:05".
+ */
+function whenChecked(r: AgentCheckRecord, now: Date): string {
+  const at = new Date(r.at);
   const day = (t: Date) => new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
   const days = Math.round((day(now) - day(at)) / 86_400_000);
-  const h = at.getHours();
-  if (days === 0) return h < 8 ? "last night" : "today";
-  if (days === 1) return h >= 18 ? "last night" : "yesterday";
-  return `on ${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+  if (r.by === "night" && days <= 1) return "last night";
+  const clock = `at ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  if (days === 0) return `today ${clock}`;
+  if (days === 1) return `yesterday ${clock}`;
+  return `on ${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${clock}`;
+}
+
+/** An agent's line when it failed or was used up, with when ("Grok Build: 2 checks failed · last night"). */
+function badLine(r: AgentCheckRecord, now: Date): string | null {
+  const n = checksFailed(r);
+  const out = usedUp(r);
+  if (!n && !out) return null;
+  const failed = n === 1 ? "1 check failed" : `${n} checks failed`;
+  const what = n ? failed : out!.toLowerCase();
+  return `${r.label}: ${what} · ${whenChecked(r, now)}`;
 }
 
 /**
- * The checks in a line each: "Checked last night: all fine", or one per agent that failed ("Grok Build: 2 checks
- * failed"); none before the first check.
+ * The checks in a line each: "Checked last night: all fine" (the oldest agent's check when they differ), or one per
+ * agent that failed or was used up ("Grok Build: 2 checks failed · today at 14:05"); none before the first check.
  */
 export function checkLines(last: AgentCheckRecord[], now: Date): string[] {
-  const bad = last.filter((r) => checksFailed(r) > 0);
-  if (bad.length)
-    return bad.map((r) => {
-      const n = checksFailed(r);
-      return `${r.label}: ${n === 1 ? "1 check" : String(n) + " checks"} failed`;
-    });
-  const at = last
-    .map((r) => r.at)
-    .sort()
-    .at(-1);
-  return at ? [`Checked ${whenChecked(new Date(at), now)}: all fine`] : [];
+  const bad = last.map((r) => badLine(r, now)).filter((l): l is string => l !== null);
+  if (bad.length) return bad;
+  const oldest = [...last].sort((a, b) => a.at.localeCompare(b.at))[0];
+  return oldest ? [`Checked ${whenChecked(oldest, now)}: all fine`] : [];
 }
 
 /** One of an agent's rate-limit windows, as it reported it. */

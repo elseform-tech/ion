@@ -22,6 +22,10 @@ const LOOK_MS = 5 * 60_000;
 const NIGHT_WAIT_MS = 30_000;
 const NOW_WAIT_MS = 5_000;
 const INFO_WAIT_MS = 1_500;
+/** A quiet night: quiet hours this old, nothing in ion for this long, and no agent started this close to the end. */
+const SETTLED_MS = 60 * 60_000;
+const IDLE_MS = 30 * 60_000;
+const LAST_START_MS = 30 * 60_000;
 /** The night's hours when quiet hours are off. */
 const NIGHT: Quiet = { on: true, from: "01:00", to: "06:00" };
 /** Claude Code: checked only when you pick it, even when it would be free (save Claude; the user, 2026-11-28). */
@@ -53,8 +57,13 @@ export type AgentChecksDeps = {
   notify: (body: string) => void;
   /** Whether a chat is working now (the check waits for an idle computer). */
   working: () => boolean;
+  /** When something last happened in ion (its last event: a chat, an ion's turn, tidying memory), if ever. */
+  lastEvent: () => Date | null;
   now?: () => Date;
 };
+
+/** A run of the checks: how long it waits for agents being read, whose it is, and (the night's) when it must end. */
+type Run = { waitMs: number; by: "night" | "now"; end?: Date };
 
 /** What's kept (agent-checks.json): the night last checked, each agent's last check, failures noted and to note. */
 type Kept = { night: string | null; last: AgentCheckRecord[]; noted: string[]; pending: string[] };
@@ -94,6 +103,8 @@ export class AgentChecks {
   private going: Promise<void> | null = null;
   private readonly abort = new AbortController();
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** The night checked last, also when its file can't be read or written. */
+  private lastNight: string | null = null;
 
   constructor(private readonly d: AgentChecksDeps) {
     this.file = join(d.dataDir, "agent-checks.json");
@@ -134,18 +145,33 @@ export class AgentChecks {
     this.sayPending(c, now);
     if (!c.checks.nightly) return;
     const w = checkWindow(c, now);
-    if (!w) return;
+    if (!w || this.checked(w) || !this.quiet(w, now)) return;
+    await this.runAll(c, { waitMs: NIGHT_WAIT_MS, by: "night", end: w.end });
+  }
+
+  /** Tonight's check ran (or started): once a night, whatever it finds. */
+  private checked(w: Window): boolean {
     const night = dayOf(w.start);
-    if (this.kept().night === night || this.d.working()) return;
-    // Once a night, whatever it finds.
-    this.keep({ ...this.kept(), night });
-    await this.runAll(c, NIGHT_WAIT_MS);
+    return this.lastNight === night || this.kept().night === night;
+  }
+
+  private markNight(w: Window): void {
+    this.lastNight = dayOf(w.start);
+    this.keep({ ...this.kept(), night: this.lastNight });
+  }
+
+  /** A quiet night: its quiet hours an hour old, nothing in ion for 30 minutes, no chat working, not near its end. */
+  private quiet(w: Window, now: Date): boolean {
+    const t = now.getTime();
+    const last = this.d.lastEvent()?.getTime() ?? 0;
+    if (t - w.start.getTime() < SETTLED_MS || t - last < IDLE_MS) return false;
+    return w.end.getTime() - t > LAST_START_MS && !this.d.working();
   }
 
   /** Checks now, as the night would (Check now, `ion agents check --now`); one going is waited for instead. */
   async runNow(): Promise<AgentChecksInfo> {
     if (this.going) await this.settled();
-    else await this.runAll(loadUserConfig(this.d.configFile).config, NOW_WAIT_MS);
+    else await this.runAll(loadUserConfig(this.d.configFile).config, { waitMs: NOW_WAIT_MS, by: "now" });
     return this.info();
   }
 
@@ -162,22 +188,30 @@ export class AgentChecks {
     };
   }
 
-  private runAll(c: UserConfig, waitMs: number): Promise<void> {
-    const p = this.each(c, waitMs).finally(() => {
+  /** A run: the night's (until `end`'s last half hour) or yours now; yours in the night counts as the night's. */
+  private runAll(c: UserConfig, run: Run): Promise<void> {
+    const w = checkWindow(c, this.now());
+    if (w) this.markNight(w);
+    const p = this.each(c, run).finally(() => {
       this.going = null;
     });
     this.going = p;
     return p;
   }
 
-  private async each(c: UserConfig, waitMs: number): Promise<void> {
-    for (const row of (await this.rows(c, waitMs)).filter((r) => r.included)) {
-      if (this.abort.signal.aborted) return;
+  private async each(c: UserConfig, run: Run): Promise<void> {
+    for (const row of (await this.rows(c, run.waitMs)).filter((r) => r.included)) {
+      if (this.abort.signal.aborted || this.late(run)) return;
       const checks = await this.one(row.agent);
       if (this.abort.signal.aborted) return;
-      this.record({ agent: row.agent, label: row.label, at: this.now().toISOString(), checks });
+      this.record({ agent: row.agent, label: row.label, at: this.now().toISOString(), by: run.by, checks });
     }
     this.sayPending(loadUserConfig(this.d.configFile).config, this.now());
+  }
+
+  /** The night's last half hour: no agent starts then. */
+  private late(run: Run): boolean {
+    return !!run.end && run.end.getTime() - this.now().getTime() <= LAST_START_MS;
   }
 
   /** One agent's checks, and its judge's when that model changed; a check that throws is a failed one. */
@@ -224,7 +258,8 @@ export class AgentChecks {
   /** The failures waiting to be said, in one note, once quiet hours are over. */
   private sayPending(c: UserConfig, now: Date): void {
     const k = this.kept();
-    if (!k.pending.length || quietNow(c.notifications.quiet, now)) return;
+    // Held through the hours checks run in: quiet hours, else until 06:00.
+    if (!k.pending.length || quietNow(hoursOf(c), now)) return;
     const lines = checkLines(
       k.last.filter((r) => k.pending.includes(r.agent)),
       now,

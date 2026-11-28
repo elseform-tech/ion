@@ -10,6 +10,7 @@ import { AgentChecks } from "../scheduler/agent-checks.js";
 import { AgentSmoke } from "../scheduler/agent-smoke.js";
 import type { Db, EventStore } from "../store/index.js";
 import { runsView } from "../views/runs.js";
+import { recordTo } from "../views/usage.js";
 import { harnessInfos } from "./commands.js";
 import { billingOn } from "./own-models.js";
 
@@ -60,6 +61,8 @@ export function agentChecking(d: {
       return harnessInfos.one(id);
     },
     own: (cwd, harness) => ownAgentStart(d, cwd, harness),
+    // Its usage and a limit it hits go in its agent's ledger: the limit mark keeps it out until it resets.
+    record: recordTo(d.store),
   });
   const checks = new AgentChecks({
     ...{ dataDir: d.dataDir, configFile: d.configFile },
@@ -76,6 +79,11 @@ export function agentChecking(d: {
         data: { title: "ion", body, kind: "needs" },
       }),
     // A chat's run going or waiting: the check waits for an idle computer.
+    // The last thing that happened in ion, but its notifications (a quiet night: nothing for 30 minutes).
+    lastEvent: () => {
+      const e = d.store.read({ newest: true, limit: 20 }).findLast((x) => x.chatId !== "notify");
+      return e ? new Date(e.ts) : null;
+    },
     working: () => runsView.rows(d.db).some((r) => r.status === "running" || r.status === "queued"),
   });
   // It looks every few minutes from now on; ion's close stops it (and a check going) first.

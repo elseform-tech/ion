@@ -118,7 +118,7 @@ function useChecks(client: IonClient) {
 /**
  * "Check the agents each night" (Plan 21 Task 5): one quiet line with its switch, off until you turn it on. On: each
  * agent with what a night costs it (one that isn't free, Claude Code too, only once you pick it; one you avoid or
- * that's limited says so), and Check now. The last checks in a line ("Checked last night: all fine", or one per agent
+ * that's limited says so). Check now, on or off. The last checks in a line ("Checked last night: all fine", or one per agent
  * that failed), which opens what failed.
  */
 export function AgentChecks({ client }: { client: IonClient }) {
@@ -132,18 +132,16 @@ export function AgentChecks({ client }: { client: IonClient }) {
           {NAME}
           <Result last={info.last} busy={busy} open={open} onOpen={setOpen} />
         </div>
-        {info.nightly && (
-          <button
-            className="ib"
-            type="button"
-            title="Check now"
-            aria-label="Check now"
-            disabled={busy}
-            onClick={now}
-          >
-            <RotateCw />
-          </button>
-        )}
+        <button
+          className="ib"
+          type="button"
+          title="Check now"
+          aria-label="Check now"
+          disabled={busy}
+          onClick={now}
+        >
+          <RotateCw />
+        </button>
         <Switch
           label={NAME}
           title={`In quiet hours (${info.window})`}

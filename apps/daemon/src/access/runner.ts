@@ -15,14 +15,15 @@ const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
 
 /**
  * Removes the folders ion's judge and agent checks left in the temp folder before they moved into ion's data folder
- * (final review, 2026-11-22): `ion-probe-*` and `ion-judge-*` folders only, nothing else there.
+ * (final review, 2026-11-22): `ion-probe-*` and `ion-judge-*` folders only, nothing else there; and the nightly
+ * check's `ion-check-*`, which a crash can leave (Plan 21 Task 5 review, 2026-11-28).
  */
 export function sweepTmp(tmp: string = tmpdir()): void {
   // Only folders untouched for an hour: one in use (another ion, a test) stays (pnpm check, 2026-11-22).
   const before = Date.now() - 3600_000;
   try {
     for (const e of readdirSync(tmp, { withFileTypes: true })) {
-      if (!e.isDirectory() || !/^ion-(probe|judge)-/.test(e.name)) continue;
+      if (!e.isDirectory() || !/^ion-(probe|judge|check)-/.test(e.name)) continue;
       const at = statSync(join(tmp, e.name), { throwIfNoEntry: false })?.mtimeMs ?? Date.now();
       if (at < before) rmSync(join(tmp, e.name), { recursive: true, force: true });
     }

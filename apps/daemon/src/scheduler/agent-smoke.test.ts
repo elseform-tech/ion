@@ -6,12 +6,16 @@ import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
 import { EV, type HarnessInfo } from "@ion/schema";
 import { describe, expect, it } from "vitest";
 import { createGrants, type IonScope } from "../mcp/index.js";
+import { limitedUntil } from "../ions/brain.js";
+import { EventStore, openDb } from "../store/index.js";
+import { allViews } from "../views/index.js";
+import { recordTo } from "../views/usage.js";
 import { AgentSmoke, CHECK_ION } from "./agent-smoke.js";
 
 // Plan 21 Task 5 (the user, 2026-11-28): the nightly check starts each agent for real, and the leak fix's lesson
 // (2026-11-23: ~13 daemons left behind) holds: every process it starts is stopped, however its check ends.
 
-type How = "answers" | "throws" | "hangs" | "fails-to-start";
+type How = "answers" | "throws" | "hangs" | "fails-to-start" | "used-up";
 
 const signedIn: HarnessInfo = {
   id: "fake",
@@ -49,6 +53,19 @@ function agent(how: How, grants: ReturnType<typeof createGrants>) {
             return;
           }
           if (how === "throws") throw new Error("broken pipe");
+          if (how === "used-up") {
+            yield {
+              type: EV.error,
+              data: {
+                code: "usage_limit",
+                retryable: false,
+                message: "opencode's free usage is used up",
+                limit: {},
+              },
+            } as AdapterEvent;
+            yield { type: EV.runFinished, data: { status: "failed" } } as AdapterEvent;
+            return;
+          }
           // What a real agent does: ion's tool for its word, a file read through the gate, then the two words.
           const key = opts.mcpServers![0]!.headers.Authorization!.slice("Bearer ".length);
           const scope = grants.check(key) as IonScope;
@@ -81,7 +98,9 @@ function setup(how: How, who: HarnessInfo = signedIn) {
   saveUserConfig(configFile, DEFAULT_CONFIG);
   const grants = createGrants();
   const a = agent(how, grants);
+  const heard: { harness: string; type: string; data: unknown }[] = [];
   const smoke = new AgentSmoke({
+    record: (harness, e) => heard.push({ harness, type: e.type, data: e.data }),
     dataDir,
     configFile,
     grants,
@@ -93,7 +112,7 @@ function setup(how: How, who: HarnessInfo = signedIn) {
     limitMs: 300,
   });
   smokeOf.current = smoke;
-  return { smoke, sessions: a.sessions, grants };
+  return { smoke, sessions: a.sessions, grants, heard };
 }
 
 const names = (items: { name: string; ok: boolean }[]) =>
@@ -173,5 +192,38 @@ describe("an agent's nightly check", () => {
     expect(live.verdict(t, req("bash", "command"))).toEqual({ decision: "deny" });
     // A call from no check going: ion can't read it.
     expect(smoke.gate(scope, { toolName: "Read", kind: "read", summary: "", input: {} })).toBeNull();
+  });
+
+  // Task 5 review, 2026-11-28 (live: opencode's free use ran out): used up isn't broken. Answers says so and passes,
+  // ion's tools and the gate aren't counted against it, and the limit goes in its agent's usage (its mark).
+  it("says an agent whose use is used up, and records its limit", async () => {
+    const { smoke, sessions, heard } = setup("used-up");
+    const items = await smoke.run("fake", null, new AbortController().signal);
+    expect(items).toEqual([
+      { name: "Signed in", ok: true },
+      { name: "Starts", ok: true },
+      { name: "Answers", ok: true, limited: true, note: "Its free use is used up" },
+    ]);
+    expect(heard).toContainEqual(expect.objectContaining({ harness: "fake", type: EV.error }));
+    expect(sessions[0]!.closed).toBe(true);
+    // What it heard, kept as ion keeps it (recordTo): the agent's limit mark is set.
+    const db = openDb(":memory:");
+    const store = new EventStore(db, allViews);
+    for (const h of heard)
+      recordTo(store)(h.harness, { type: h.type, data: h.data } as AdapterEvent, new Date().toISOString());
+    expect(limitedUntil(db, "fake")).not.toBeNull();
+  });
+
+  it("lets ion's check tool through only from ion's server, when the agent names one", () => {
+    const { smoke } = setup("answers");
+    const t = { adapter: {}, rules: { roots: [], home: "/nope", ionDirs: [] }, seen: 0 };
+    const v = (smoke as unknown as { verdict: (t: unknown, r: object) => unknown }).verdict.bind(smoke);
+    const req = (mcpServer?: string) => ({
+      ...{ requestId: "g", toolId: "g", toolName: "mcp__ion__check", kind: "mcp", summary: "", input: {} },
+      ...(mcpServer ? { mcpServer } : {}),
+    });
+    expect(v(t, req("ion"))).toEqual({ decision: "allow" });
+    expect(v(t, req())).toEqual({ decision: "allow" });
+    expect(v(t, req("evil"))).toEqual({ decision: "deny" });
   });
 });

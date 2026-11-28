@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type AdapterEvent,
   type ApprovalRequest,
   type HarnessAdapter,
   ION_SERVER,
@@ -33,6 +34,11 @@ const PROMPT = [
 ].join("\n");
 
 type SmokeDeps = {
+  /**
+   * Hears each event of a check's session with its agent's id: what goes in the agent's usage, and a limit it hits
+   * (its mark: Automatic and the next night skip it until it resets; recordTo, as ion's turns and the judge do).
+   */
+  record?: (harness: string, e: AdapterEvent, startedAt: string) => void;
   dataDir: string;
   configFile: string;
   grants: Grants;
@@ -46,6 +52,9 @@ type SmokeDeps = {
   limitMs?: number;
   home?: string;
 };
+
+/** How its answer ended: its last message, its first error, out of time, and its limit's words when it hit one. */
+type End = { reply: string; error: string; late: boolean; limit: string | null };
 
 /** A check while it runs: its agent (to read its gate's calls), its read rules, and how many calls reached ion. */
 type Live = { adapter: HarnessAdapter; rules: RuleCtx; seen: number };
@@ -88,7 +97,9 @@ export class AgentSmoke {
    */
   private verdict(t: Live, req: ApprovalRequest): GateAnswer {
     t.seen++;
-    if (CHECK_TOOL.test(req.toolName)) return { decision: "allow" };
+    // Only ion's own server's, when the agent names the server (Task 5 review, 2026-11-28).
+    const ion = req.mcpServer === undefined || req.mcpServer === null || req.mcpServer === ION_SERVER;
+    if (CHECK_TOOL.test(req.toolName) && ion) return { decision: "allow" };
     if (req.kind === "mcp") return { decision: "deny" };
     return { decision: decideForIon(req, t.rules) };
   }
@@ -140,7 +151,7 @@ export class AgentSmoke {
       session = await this.started(adapter.start(opts), abort.signal);
       if (!session)
         return [{ name: "Starts", ok: false, note: abort.signal.aborted ? "Too slow" : "Didn't start" }];
-      const end = await this.answer(session, abort.signal);
+      const end = await this.answer(session, abort.signal, adapter.id);
       return [{ name: "Starts", ok: true }, ...this.found(end, word, live)];
     } catch (e) {
       return [{ name: "Starts", ok: false, note: short(e) }];
@@ -189,16 +200,15 @@ export class AgentSmoke {
   }
 
   /** Sends the task and reads to the end: its last message and its error, or that it ran out of time. */
-  private async answer(
-    session: Session,
-    signal: AbortSignal,
-  ): Promise<{ reply: string; error: string; late: boolean }> {
-    const end = { reply: "", error: "", late: false };
+  private async answer(session: Session, signal: AbortSignal, harness: string): Promise<End> {
+    const end: End = { reply: "", error: "", late: false, limit: null };
+    const startedAt = new Date().toISOString();
     const read = (async () => {
       await session.send({ text: PROMPT });
       for await (const e of session.events()) {
+        this.d.record?.(harness, e, startedAt);
         if (e.type === EV.messageCompleted) end.reply = String((e.data as { text?: unknown }).text ?? "");
-        if (e.type === EV.error) end.error ||= short((e.data as { message?: unknown }).message ?? "");
+        if (e.type === EV.error) this.failed(end, e.data as { message?: unknown; limit?: unknown });
       }
     })();
     read.catch((e: unknown) => {
@@ -209,12 +219,21 @@ export class AgentSmoke {
     return end;
   }
 
-  /** What its answer shows: it answered, ion's tool's word came back, a call reached ion's gate. */
-  private found(
-    end: { reply: string; error: string; late: boolean },
-    word: string,
-    live: Live,
-  ): AgentCheckItem[] {
+  /** Its error: the first one's words, and whether it's the agent's limit (its use is used up). */
+  private failed(end: End, d: { message?: unknown; limit?: unknown }): void {
+    const message = String(d.message ?? "");
+    end.error ||= short(message);
+    if (d.limit && !end.limit)
+      end.limit = /free/i.test(message) ? "Its free use is used up" : "It hit its limit";
+  }
+
+  /**
+   * What its answer shows: it answered, ion's tool's word came back, a call reached ion's gate. Used up isn't broken
+   * (Task 5 review, 2026-11-28): it says so, and what couldn't be tried then isn't counted.
+   */
+  private found(end: End, word: string, live: Live): AgentCheckItem[] {
+    if (end.limit && !end.reply.trim())
+      return [{ name: "Answers", ok: true, limited: true, note: end.limit }];
     const said = end.reply.trim();
     const why = end.late ? "No answer in time" : end.error || "Said nothing";
     return [

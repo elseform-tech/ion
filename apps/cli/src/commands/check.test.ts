@@ -25,6 +25,7 @@ describe("ion agents check", () => {
           agent: "opencode",
           label: "opencode",
           at: new Date(2026, 10, 28, 2).toISOString(),
+          by: "night",
           checks: [
             { name: "Starts", ok: true },
             { name: "Answers", ok: false, note: "Said nothing" },
@@ -38,7 +39,7 @@ describe("ion agents check", () => {
         "Each night, 22:00–08:00",
         "opencode  Included  Free",
         "Grok Build  Only if you pick it  A little of your plan",
-        "opencode: 2 checks failed",
+        "opencode: 2 checks failed · last night",
         "  opencode: Answers (Said nothing)",
         "  opencode: Gate",
       ].join("\n"),

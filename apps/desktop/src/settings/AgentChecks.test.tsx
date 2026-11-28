@@ -76,7 +76,9 @@ describe("Settings → Agents: Check the agents each night", () => {
       ],
     });
     render(<AgentChecks client={c} />);
-    const line = await screen.findByRole("button", { name: "Grok Build: 2 checks failed" });
+    const line = await screen.findByRole("button", {
+      name: /^Grok Build: 2 checks failed · (today|yesterday) at \d\d:\d\d$/,
+    });
     expect(screen.queryByText("Said nothing")).toBeNull();
     fireEvent.click(line);
     await waitFor(() => expect(screen.getByText("Answers · Said nothing")).toBeTruthy());
@@ -84,6 +86,14 @@ describe("Settings → Agents: Check the agents each night", () => {
 
   it("checks now on request", async () => {
     const c = client({ ...BASE, nightly: true });
+    render(<AgentChecks client={c} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Check now" }));
+    expect(c.call).toHaveBeenCalledWith("agents.check", {});
+  });
+
+  // Task 5 review, 2026-11-28: Check now is there with the nightly check off too (you can check once, by hand).
+  it("checks now with the nightly check off", async () => {
+    const c = client(BASE);
     render(<AgentChecks client={c} />);
     fireEvent.click(await screen.findByRole("button", { name: "Check now" }));
     expect(c.call).toHaveBeenCalledWith("agents.check", {});

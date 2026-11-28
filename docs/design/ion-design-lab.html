@@ -1770,12 +1770,12 @@ export function sumLines(lines: Line[]) {
                pick). The judge, tidying memory, the briefing, handoffs and fallbacks are automatic: no rows. -->
           <div><h4>Models</h4><div class="group" id="ionModels"></div></div>
           <div><h4>Coding agents</h4><div class="group" id="hList"></div></div>
-          <!-- Plan 21 Task 5: "Check the agents each night", off until you turn it on (its switch; quiet hours on hover). On:
-               Check now (its icon), each agent and what a night costs it (one that isn't free, Claude Code too, only once
+          <!-- Plan 21 Task 5: "Check the agents each night", off until you turn it on (its switch; quiet hours on hover); Check now (its icon), on or off. On:
+               each agent and what a night costs it (one that isn't free, Claude Code too, only once
                you pick it; one you avoid or that's limited says so); the last checks in one line ("Checked last night:
                all fine"), or one per agent that failed, which opens what failed. -->
           <div class="group" id="hChecks">
-            <div class="srow"><div class="g">Check the agents each night<div class="s"><button class="lnk" type="button" aria-expanded="false" onclick="const d=document.getElementById('hChkDetails');d.hidden=!d.hidden;this.setAttribute('aria-expanded',String(!d.hidden))">Grok Build: 2 checks failed</button></div></div><button class="ib" type="button" title="Check now" aria-label="Check now"><i data-lucide="rotate-cw"></i></button><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Check the agents each night" title="In quiet hours (22:00–08:00)"></button></div>
+            <div class="srow"><div class="g">Check the agents each night<div class="s"><button class="lnk" type="button" aria-expanded="false" onclick="const d=document.getElementById('hChkDetails');d.hidden=!d.hidden;this.setAttribute('aria-expanded',String(!d.hidden))">Grok Build: 2 checks failed · last night</button></div></div><button class="ib" type="button" title="Check now" aria-label="Check now"><i data-lucide="rotate-cw"></i></button><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Check the agents each night" title="In quiet hours (22:00–08:00)"></button></div>
             <div class="srow" id="hChkDetails" hidden><div class="g">Grok Build<div class="s chk"><i data-lucide="circle-check"></i>Signed in</div><div class="s chk"><i data-lucide="circle-check"></i>Starts</div><div class="s chk"><i data-lucide="circle-x" class="bad"></i>Answers · Said nothing</div><div class="s chk"><i data-lucide="circle-x" class="bad"></i>ion's tools · ion's word didn't come back</div></div></div>
             <div class="srow"><div class="g s">opencode · Free</div></div>
             <div class="srow"><div class="g s">Grok Build · A little of your plan</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Grok Build: check each night"></button></div>

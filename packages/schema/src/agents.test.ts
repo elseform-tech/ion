@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type AgentUsage, parseEvent, usageLine } from "./index.js";
+import { type AgentCheckRecord, type AgentUsage, checkLines, parseEvent, usageLine } from "./index.js";
 
 const at = (type: string, data: Record<string, unknown>) => ({
   v: 1,
@@ -107,5 +107,35 @@ describe("usageLine", () => {
   it("a reset on another day says the day", () => {
     const windows = [{ name: "week", usedPercent: 81, resetsAt: local(9, 5, 25).toISOString() }];
     expect(usageLine(usage({ windows }), local(12)).text).toBe("81% of week · resets Wed 09:05");
+  });
+});
+
+// Task 5 review, 2026-11-28: the check's line says when: "last night" only for the night's check, else the day and
+// time; a failure carries its time; agents checked at different times show the oldest.
+describe("checkLines", () => {
+  const rec = (agent: string, at: Date, by: "night" | "now", ok = true): AgentCheckRecord => ({
+    ...{ agent, label: agent, at: at.toISOString(), by },
+    checks: [{ name: "Starts", ok }],
+  });
+  const now = new Date(2026, 10, 28, 15, 0);
+  it("says when each check ran", () => {
+    expect(checkLines([rec("a", new Date(2026, 10, 28, 2, 0), "night")], now)).toEqual([
+      "Checked last night: all fine",
+    ]);
+    expect(checkLines([rec("a", new Date(2026, 10, 28, 14, 5), "now")], now)).toEqual([
+      "Checked today at 14:05: all fine",
+    ]);
+    expect(checkLines([rec("a", new Date(2026, 10, 27, 9, 10), "now")], now)).toEqual([
+      "Checked yesterday at 09:10: all fine",
+    ]);
+    expect(
+      checkLines(
+        [rec("a", new Date(2026, 10, 28, 14, 5), "now"), rec("b", new Date(2026, 10, 27, 9, 10), "now")],
+        now,
+      ),
+    ).toEqual(["Checked yesterday at 09:10: all fine"]);
+    expect(checkLines([rec("a", new Date(2026, 10, 28, 14, 5), "now", false)], now)).toEqual([
+      "a: 1 check failed · today at 14:05",
+    ]);
   });
 });

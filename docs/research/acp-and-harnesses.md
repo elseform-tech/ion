@@ -50,7 +50,9 @@ crontab line runs it each night).
 
 Separate from the live evals, and small: Settings → Agents → "Check the agents each night" (off until you turn it on;
 `ion agents check [--now] [--nightly on|off] [--pick <id>]`). Once a night, in quiet hours (Settings → Notifications;
-off: 01:00–06:00) and while no chat works, ion starts each agent that's in, one at a time, for one short task:
+off: 01:00–06:00), on a quiet night only (quiet hours at least an hour old, nothing in ion for 30 minutes, no chat
+working; no agent starts in the window's last 30 minutes), ion starts each agent that's in, one at a time, for one
+short task:
 
 | Check | Passes when |
 |---|---|
@@ -68,6 +70,14 @@ plan", about a cent paid per use). The session is closed, its keys revoked and i
 (past 3 minutes, ion stopping, the agent failing). Results: `agent-checks.json` in ion's data folder, one line in
 Settings ("Checked last night: all fine", or "Grok Build: 2 checks failed", which opens what failed). A failure is
 one "needs you" notification, once quiet hours end, and only the first time: not again until it has passed.
+An agent whose use is used up isn't broken: the check says "opencode: its free use is used up", notes nothing, and
+keeps the limit in the agent's usage (its mark), so Automatic and the next night skip it until it resets. Each line
+says when: "last night" only for the night's check, else "today at 14:05" / "yesterday at 09:10".
+
+Found in the tour (2026-11-28): opencode turned Limited minutes after its check passed. ion's own check of opencode as
+judge (PR #36: a free agent is checked as judge by itself a minute after a fresh ion starts) ran its judge cases and
+used up opencode's free quota (19 usage reports, then 38 "free usage is used up" errors in a minute). Every fresh ion
+home (a tour, a test home) does this once a day.
 
 ### Agents' own question tools (found 2026-11-18)
 
