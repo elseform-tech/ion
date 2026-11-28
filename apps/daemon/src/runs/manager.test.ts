@@ -345,6 +345,30 @@ describe("RunManager", () => {
     }
   });
 
+  // Found 2026-11-28: stopping the daemon right after a run finished added `error daemon_stopped` and a second
+  // `run.finished: failed` to that run (it was still listed while its servers closed).
+  it("stopping ion right after a run finished adds nothing to it", async () => {
+    const append = store.append.bind(store);
+    let stop: Promise<void> | undefined;
+    let stopped = false;
+    store.append = ((e: Parameters<EventStore["append"]>[0]) => {
+      const out = append(e);
+      if (e.type === "run.finished" && e.origin === "daemon" && !stopped) {
+        stopped = true;
+        stop = runs.shutdown();
+      }
+      return out;
+    }) as EventStore["append"];
+    const { runId } = await ask("hello");
+    await finished(runId);
+    await stop;
+    await new Promise((r) => setTimeout(r, 50));
+    const ends = store.read({ runId }).filter((e) => e.type === "run.finished");
+    expect(ends).toHaveLength(1);
+    expect(ends[0]?.data).toEqual({ status: "done" });
+    expect(store.read({ runId }).some((e) => e.type === "error")).toBe(false);
+  });
+
   // Final review I2 / Review Focus 1: answering a need after a restart says the run stopped.
   it("after a restart, answering the old need says the run stopped", async () => {
     const { chatId, runId } = await ask("slow");

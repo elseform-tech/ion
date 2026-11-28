@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -274,14 +274,30 @@ describe("your local servers through ion's gateway", () => {
 // and hid a crash; a pid was signalled after it exited; batches, a server's error text and a huge answer went
 // through unchecked; one request at a time per server; a cancelled call kept running.
 describe("ion stops your local servers and everything they started", () => {
-  const withChild = { command: "/bin/sh", args: ["-c", `sleep 4242 & exec "${process.execPath}" "${TINY}"`] };
+  // Found 2026-11-28: this counted every `sleep 4242` on the machine, so another run of the suite (or any sleep)
+  // made it flaky. The child's sleep now has a time of its own, made from this process's id, and only that one is counted.
+  const own = `sleep 7${String(process.pid).padStart(6, "0")}`;
+  const withChild = { command: "/bin/sh", args: ["-c", `${own} & exec "${process.execPath}" "${TINY}"`] };
   const sleeps = () => {
     try {
-      return execFileSync("pgrep", ["-f", "sleep 4242"]).toString().trim().split("\n").filter(Boolean);
+      return execFileSync("pgrep", ["-f", own]).toString().trim().split("\n").filter(Boolean);
     } catch {
       return [];
     }
   };
+
+  it("counts only its own children, with an unrelated sleep running", async () => {
+    const other = spawn("sleep", ["4242"], { stdio: "ignore" });
+    try {
+      const { b } = bridge({}, { over: withChild });
+      expect((await send(b, "tools/list")).result).toHaveProperty("tools");
+      expect(sleeps()).toHaveLength(1);
+      await b.close();
+      expect(sleeps()).toHaveLength(0);
+    } finally {
+      other.kill();
+    }
+  });
 
   it("stops a server's own children too, in under 4 s", async () => {
     const before = sleeps().length;
