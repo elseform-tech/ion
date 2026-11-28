@@ -1,7 +1,7 @@
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
 import { Ghost, PanelRight } from "@ion/design-system";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { type Focus, ToolsPanel, useDiff } from "./ToolsPanel.js";
 import { ChatView, Starting, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
@@ -135,18 +135,6 @@ function OpenChat({
   );
 }
 
-/** Whether Pick by usage is on (Settings → Agents), read when a new chat opens. */
-function useByUsage(client: IonClient): boolean {
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    void client.call("settings.get", {}).then(
-      (s) => setOn(s.byUsage === true),
-      () => {},
-    );
-  }, [client]);
-  return on;
-}
-
 /** A new chat's head: Don't remember (the lab's ghost; review of #34, 2026-11-23), pressed while it's on. */
 function NewHead(p: { noMemory: boolean; onNoMemory: (on: boolean) => void }) {
   return (
@@ -181,7 +169,6 @@ function NewChat(props: {
   onBrainOpen: () => void;
 }) {
   const [projectId, setProjectId] = useState<string>("default");
-  const byUsage = useByUsage(props.client);
   // Your first message, shown at once while ion makes the chat (ion can take a moment).
   const [sending, setSending] = useState<string | null>(null);
   // Don't remember: the chat gets no memory and writes none.
@@ -209,7 +196,7 @@ function NewChat(props: {
             project={{ value: projectId, options: projectOptions(props.projects), onChange: setProjectId }}
             onSending={setSending}
             onSent={props.onSent}
-            byUsage={byUsage}
+            auto
             noMemory={noMemory}
           />
         </div>

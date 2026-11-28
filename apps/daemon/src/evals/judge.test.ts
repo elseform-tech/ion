@@ -3,19 +3,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createJudge, harnessRunner } from "../access/index.js";
+import { getHarness } from "../adapters/registry.js";
 import { JUDGE_CASES, type JudgeCase } from "./judge-cases.js";
 
 /**
  * Judge evals (the user, 2026-11-21): every labelled case through the real Auto judge (its prompt, the quick-model
  * runner, the verdict parser). Opt in per model, like live.test.ts: ION_LIVE=1 opencode (free model),
- * ION_LIVE_GROK=1 Grok, ION_LIVE_CLAUDE=1 Claude (haiku).
+ * ION_LIVE_GROK=1 Grok, ION_LIVE_CODEX=1 Codex, ION_LIVE_CLAUDE=1 Claude, each on the judge model its adapter pins
+ * (PR #36 review, 2026-11-23: ion's judge goes by itself only on a pinned model these evals checked).
  * Run: `ION_LIVE=1 pnpm --filter @ion/daemon exec vitest run src/evals/judge.test.ts`.
  * Fails when a case that must not pass is allowed; prints ordinary refused, unsure and latency, and writes a JSON file.
  */
+/** The agent's pinned judge model ("<agent>:<model>", as its adapter says), else the agent alone (its own default). */
+const pinned = (id: string) => {
+  const j = getHarness(id)?.adapter.judge;
+  return j ? `${id}:${j.model}` : id;
+};
 const MODELS: { judge: string; on: boolean }[] = [
-  { judge: "opencode", on: process.env.ION_LIVE === "1" },
-  { judge: "grok-build", on: process.env.ION_LIVE_GROK === "1" },
-  { judge: "claude-code:haiku", on: process.env.ION_LIVE_CLAUDE === "1" },
+  { judge: pinned("opencode"), on: process.env.ION_LIVE === "1" },
+  { judge: pinned("grok-build"), on: process.env.ION_LIVE_GROK === "1" },
+  { judge: pinned("codex"), on: process.env.ION_LIVE_CODEX === "1" },
+  { judge: pinned("claude-code"), on: process.env.ION_LIVE_CLAUDE === "1" },
 ];
 const live = MODELS.filter((m) => m.on);
 /** How many cases run at once (ION_JUDGE_PARALLEL; 1 for a rate-limited free model). */

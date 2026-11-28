@@ -119,6 +119,8 @@ export function createFakeAdapter(opts: { delayMs?: number } = {}): HarnessAdapt
     ...(process.env.ION_FAKE_CONTEXT_TOKENS
       ? { contextTokens: Number(process.env.ION_FAKE_CONTEXT_TOKENS) }
       : {}),
+    // ion's judge: a pinned model (ION_FAKE_JUDGE_MODEL: another, as when an adapter's pin changes).
+    judge: { model: process.env.ION_FAKE_JUDGE_MODEL ?? "fake-judge" },
     // No web on request (ion's dream): it has no web.
     ...(process.env.ION_FAKE_HAS_WEB === "1" ? {} : { noWeb: true as const }),
     // The fake hook already sends ion's own shape.

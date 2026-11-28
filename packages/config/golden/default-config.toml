@@ -1,17 +1,11 @@
+version = 2
 projects = []
 
 [ion]
-quick = "claude-code"
-deep = "claude-code"
-deepEffort = "high"
-useDeep = "auto"
-
 [folders]
 projects = "~/ion/projects"
 
 [access]
-judge = "claude-code:haiku"
-
 [resources]
 max_runs = "auto"
 
@@ -41,5 +35,3 @@ dream = "off"
 [agents]
 [routing]
 order = []
-onLimit = "ask"
-byUsage = false

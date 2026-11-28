@@ -45,7 +45,7 @@ function pillModel(h: HarnessInfo | undefined, model: string): string | null {
 /** What the pill names: the agent (none: "By usage" when Pick by usage picks it), its model, and all of it in words. */
 function pillNames(harnesses: HarnessInfo[], brain: Brain, byUsage?: boolean) {
   const effort = `${effortLabel(brain.effort)} effort`;
-  if (byUsage) return { h: undefined, model: null, label: "By usage", name: `By usage · ${effort}` };
+  if (byUsage) return { h: undefined, model: null, label: "Automatic", name: `Automatic · ${effort}` };
   const h = harnesses.find((x) => x.id === brain.harness);
   const model = pillModel(h, brain.model);
   // An agent the app doesn't list (the fake one in the tour) shows by its own name.
@@ -223,17 +223,23 @@ export function BrainPopover(p: {
   brain: Brain;
   picked: boolean;
   onChange: (b: Brain) => void;
+  /** A new chat can go on Automatic (the user, 2026-11-24): `on` while it does. */
+  auto?: { on: boolean };
 }) {
   const b = p.brain;
   const h = p.harnesses.find((x) => x.id === b.harness);
-  const harnesses: Row[] = p.harnesses.map((x) => ({
-    key: x.id,
-    on: x.id === b.harness,
-    label: x.label,
-    small: unready(x),
-    disabled: Boolean(unready(x)),
-    lead: <Avatar harness={x.id} />,
-  }));
+  const automatic: Row[] = p.auto ? [{ key: "", on: p.auto.on, label: "Automatic", lead: <Gauge /> }] : [];
+  const harnesses: Row[] = [
+    ...automatic,
+    ...p.harnesses.map((x) => ({
+      key: x.id,
+      on: !p.auto?.on && x.id === b.harness,
+      label: x.label,
+      small: unready(x),
+      disabled: Boolean(unready(x)),
+      lead: <Avatar harness={x.id} />,
+    })),
+  ];
   const models = modelRows(h, b.model);
   const efforts: Row[] = (["", ...EFFORTS] as Brain["effort"][]).map((e) => ({
     key: e,

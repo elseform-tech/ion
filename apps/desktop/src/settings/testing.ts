@@ -6,6 +6,11 @@ import { vi } from "vitest";
 export const settings: SettingsInfo = {
   quick: "grok-build",
   effort: null,
+  judge: "",
+  quickNow: "grok-build",
+  judgeChecked: false,
+  strongest: null,
+  judges: {},
   maxRuns: "auto",
   autoRuns: 4,
   notifications: {
@@ -17,8 +22,11 @@ export const settings: SettingsInfo = {
   dream: { mode: "off", agent: null },
   memory: { on: true, projects: { shop: true } },
   agentOrder: ["opencode", "grok-build", "codex", "claude-code"],
-  onLimit: "ask",
-  byUsage: false,
+  prefer: [],
+  chats: "",
+  chatsEffort: null,
+  avoid: {},
+  lastPick: null,
 };
 
 /** A daemon that answers Settings; `refuse`: settings.set says no with this reason. */

@@ -47,7 +47,7 @@ gauge it stopped reporting goes away). An `error` from an agent at its usage lim
 Usage and limits of ion's own sessions (ions' turns, the judge) are stored with `chatId` null and `harness` in the
 data. `chat.handoff` is one line in a chat: `kind` `continued` ("Continued on Grok Build — Claude Code hit its
 limit", `to` the agent that went on), `waiting` ("Waits for Codex — 16:00", `until`, `guessed` when the reset was
-ion's guess, `tries`), `fresh` ("Started fresh with a summary") or `routed` (Pick by usage's reason, "On opencode —
+ion's guess, `tries`), `fresh` ("Started fresh with a summary") or `routed` (Automatic's reason, "On opencode —
 free and enough for this"). The message that hands a chat to another agent is `message.sent` with `handoff: true`
 (ion's brief; the chat shows the line instead). `run.queued` carries the agent the run will use (`harness`) and may
 carry `waiting` ("Waiting — 4 ion chats running"): a chat ion started waits for one of its slots. A chat waiting for

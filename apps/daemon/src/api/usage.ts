@@ -50,13 +50,14 @@ export async function billings(
 /** The models ion is set to run on an agent: its default (null), ion's quick, deep and judge models, projects'. */
 export function configuredModels(
   c: {
-    ion: { quick: string; deep: string };
-    access: { judge: string };
+    ion: { quick?: string; deep?: string };
+    access: { judge?: string };
     projects: { harness?: string; model?: string }[];
   },
   harness: string,
 ): (string | null)[] {
-  const specs = [c.ion.quick, c.ion.deep, c.access.judge].map((spec) => spec.split(/:(.*)/));
+  const set = [c.ion.quick, c.ion.deep, c.access.judge].filter((spec): spec is string => !!spec);
+  const specs = set.map((spec) => spec.split(/:(.*)/));
   const fromSpecs = specs.filter(([h]) => h === harness).map(([, m]) => m || null);
   const fromProjects = c.projects.filter((p) => p.harness === harness).map((p) => p.model ?? null);
   return [null, ...fromSpecs, ...fromProjects];

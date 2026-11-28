@@ -120,3 +120,21 @@ describe("pickAgent", () => {
     expect(pickAgent([codex, agent("claude")], task({ order, estimate: small })).agent).toBe("codex");
   });
 });
+
+// The user, 2026-11-24 (two model settings, the rest automatic): chats ions start, on Automatic, never go on an agent you
+// marked "Avoid unless I ask", and Claude Code comes last unless it's the only one left.
+describe("Automatic", () => {
+  it("never picks an agent you avoid", () => {
+    const r = pickAgent([agent("opencode"), agent("grok")], task({ avoid: ["opencode"] }));
+    expect(r.agent).toBe("grok");
+    expect(pickAgent([agent("opencode")], task({ avoid: ["opencode"] })).agent).toBeNull();
+  });
+
+  it("puts Claude Code last unless it's the only one", () => {
+    const order = ["claude", "codex"];
+    expect(pickAgent([agent("claude"), agent("codex")], task({ order, last: ["claude"] })).agent).toBe(
+      "codex",
+    );
+    expect(pickAgent([agent("claude")], task({ order, last: ["claude"] })).agent).toBe("claude");
+  });
+});

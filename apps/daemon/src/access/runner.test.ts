@@ -91,10 +91,10 @@ describe("harnessRunner's sandbox and folder", () => {
     seen.length = 0;
     expect(await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal)).toBe("ok");
     await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal);
-    await harnessRunner({ ...o, sandbox: "seatbelt" }, "quick")("hi", new AbortController().signal);
+    await harnessRunner({ ...o, sandbox: "seatbelt" }, "brain")("hi", new AbortController().signal);
     const [a, b, q] = started as [StartOpts, StartOpts, StartOpts];
     const judgeBase = join(o.dataDir, "scratch", "ion-judge-x");
-    const quickBase = join(o.dataDir, "scratch", "ion-quick-x");
+    const quickBase = join(o.dataDir, "scratch", "ion-brain-x");
     expect(a.cwd.startsWith(`${judgeBase}/`)).toBe(true);
     expect(b.cwd.startsWith(`${judgeBase}/`)).toBe(true);
     expect(a.cwd).not.toBe(b.cwd);

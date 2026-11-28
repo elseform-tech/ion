@@ -260,6 +260,24 @@ describe("Ions", () => {
     expect(screen.queryByRole("button", { name: "Keep" })).toBeNull();
   });
 
+  // Security scan, 2026-11-24: saving where chats run (or running one on an agent you avoid) waits for your one click
+  // in the ion's thread: the question once, Not now or its button (Save, Run), then what you chose.
+  it("asks you with one click before saving where chats run", async () => {
+    const question = "Save: this project's chats run on Codex?";
+    const c = client([
+      ev("ion:chief", EV.ionSaid, {
+        text: question,
+        card: { kind: "confirm", suggestionId: "k1", question, yes: "Save" },
+      }),
+    ]);
+    const { container } = render(<Ions client={c} onOpenChat={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    expect(c.call).toHaveBeenCalledWith("suggestion.answer", { suggestionId: "k1", keep: true });
+    await waitFor(() => expect(container.querySelector(".ncard .done")?.textContent).toBe("Saved"));
+    expect(container.textContent?.split(question).length).toBe(2);
+    expect(screen.queryByRole("button", { name: "Not now" })).toBeNull();
+  });
+
   // Final review I9: the ions are read again when something they show changes, not on every word an agent streams.
   it("reads the ions again on ion events, not on streamed text", async () => {
     const live: ((e: IonEvent) => void)[] = [];

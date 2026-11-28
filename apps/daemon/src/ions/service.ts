@@ -3,10 +3,13 @@ import type { ThreadPicks } from "../mcp/ion-tools.js";
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import { type EffortLevel as Effort, EV, type HarnessInfo, type IonCard } from "@ion/schema";
 import { UserError } from "../api/errors.js";
+import { agentOrder, byPreference, listedHarnessIds } from "../adapters/registry.js";
 import { wrapData } from "../context/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
-import { brainOf, projectAgent } from "./brain.js";
+import { queueView } from "../views/queue.js";
+import { type ChatsPick, chatsPick, projectAgent } from "./brain.js";
+import { Confirms } from "./confirms.js";
 import { plainReport } from "./project.js";
 import { type IonTurns, NO_AGENT, PER_TURN } from "./turn.js";
 
@@ -33,6 +36,8 @@ function trimEnd(title: string): string {
 const STATUSES: ReadonlySet<string> = new Set(["done", "failed", "interrupted", "capped"]);
 const REPLY_MAX = 2000;
 const REPORT_MAX = 1200;
+/** A reply this short, after a run that went well and changed nothing, is said as it is (no report turn). */
+const PLAIN_MAX = 300;
 /** Changed files a report prompt names. */
 const CHANGED_MAX = 20;
 
@@ -96,12 +101,19 @@ export class Ions {
   private chiefAnswering: Promise<void> = Promise.resolve();
   /** Threads each turn started (or is starting), for PER_TURN. */
   private readonly perTurn = new Map<string, number>();
+  /** Outcomes already reported ("<chat>:<run>"): each is reported once. */
+  private readonly reported = new Set<string>();
   /** ion is stopping: nothing more is said. */
   private stopped = false;
   /** Told when an ion's turn ends and it has said its line (its queue sends the next). */
   private readonly ends: ((ionId: string) => void)[] = [];
 
-  constructor(private readonly d: IonsDeps) {}
+  /** One-click confirms in ions' threads (security scan, 2026-11-24). */
+  readonly confirms: Confirms;
+
+  constructor(private readonly d: IonsDeps) {
+    this.confirms = new Confirms({ store: d.store, say: (ionId, text, card) => this.say(ionId, text, card) });
+  }
 
   private projects(): { id: string; harness?: string; shareWithIon?: boolean }[] {
     return loadUserConfig(this.d.configFile).config.projects.filter((p) => p.id !== DEFAULT_PROJECT);
@@ -213,12 +225,15 @@ export class Ions {
     brief: string,
     turn: { ionId: string; request: string; turnId: string },
     picks: ThreadPicks = {},
-  ): Promise<{ chatId: string } | { why: string }> {
-    const refused = this.refusal(projectId, turn.ionId);
+  ): Promise<{ chatId: string } | { why: string } | { asked: string }> {
+    const refused = this.refusal(projectId, turn.ionId) ?? (await this.refusedPick(askedOf(picks)));
     if (refused) return { why: refused };
     const n = (this.perTurn.get(turn.turnId) ?? 0) + 1;
     if (n > PER_TURN) return { why: "That's enough threads for one turn" };
+    // A confirm counts toward the turn's threads too (PR #36 final review, 2026-11-24).
     this.counted(turn.turnId, n);
+    const avoided = await this.avoidedAsk(projectId, brief, turn, picks);
+    if (avoided) return { asked: avoided };
     const chief = turn.ionId === "chief";
     if (chief) this.say(projectId, `From ion: ${brief.trim()}`);
     const t = await this.thread(projectId, brief, { request: turn.request, ...picks });
@@ -231,6 +246,53 @@ export class Ions {
       this.say(projectId, "On it.", threadsCard([t]));
     }
     return { chatId: t.chatId };
+  }
+
+  /**
+   * A chat asked to run on an agent you marked "Avoid unless I ask" (security scan, 2026-11-24: the pick comes from
+   * the ion's model): a one-click confirm in the ion's thread instead, which starts it on your Run. The question, or
+   * null when the agent isn't avoided.
+   */
+  private async avoidedAsk(
+    projectId: string,
+    brief: string,
+    turn: { ionId: string; request: string },
+    picks: ThreadPicks,
+  ): Promise<string | null> {
+    const avoid = loadUserConfig(this.d.configFile).config.agents ?? {};
+    const id = picks.harness ?? (await this.onlyAvoided(projectId, brief, avoid));
+    if (!id || !avoid[id]?.avoid) return null;
+    const label = (await this.d.agent?.(id).catch(() => undefined))?.label ?? id;
+    const question = `Run this chat on ${label}? You marked it Avoid`;
+    this.confirms.ask(turn.ionId, {
+      question,
+      yes: "Run",
+      act: async () => {
+        const t = await this.thread(projectId, brief, { request: turn.request, ...picks, harness: id });
+        return "why" in t ? t.why : `Started on ${label}.`;
+      },
+    });
+    return question;
+  }
+
+  /**
+   * With nothing picked, the agent a chat would need when every ready one is avoided (PR #36 final review,
+   * 2026-11-24): the first such in your order; null when Automatic (or the project's usual one) finds another.
+   */
+  private async onlyAvoided(
+    projectId: string,
+    text: string,
+    avoid: Record<string, { avoid?: boolean } | undefined>,
+  ): Promise<string | null> {
+    const { pick } = await this.threadAgent(projectId, { asked: {} }, text);
+    if (pick.harness) return null;
+    const ready = ((await this.d.agents?.().catch(() => [])) ?? []).filter((h) => h.installed && h.signedIn);
+    const order = agentOrder(loadUserConfig(this.d.configFile).config.routing.order);
+    const ids = byPreference(
+      ready.map((h) => h.id),
+      order,
+    );
+    return ids.find((id) => avoid[id]?.avoid) ?? null;
   }
 
   /** Why an ion may not start work in a project: `default`, one ion doesn't know, kept from ion chief, not its own. */
@@ -264,37 +326,53 @@ export class Ions {
     return t;
   }
 
-  /** A thread's agent: Pick by usage's (when it's on), with why; else the project's ion's. */
-  private async threadAgent(projectId: string, effort: Effort | undefined, text: string) {
-    const e = effort ?? brainOf(this.d.configFile, projectId, undefined).effort;
+  /**
+   * A thread's agent, model and effort (the user, 2026-11-24): what you asked for this chat through the ion, else the
+   * project's own, else "Chats ions start run on" (chatsPick); none set, Automatic picks the agent (with why), else
+   * the project's ion's usual one.
+   */
+  private async threadAgent(projectId: string, o: { effort?: Effort; asked: ChatsPick }, text: string) {
+    const pick = chatsPick(loadUserConfig(this.d.configFile).config, projectId, o.asked);
+    const effort = o.effort ?? pick.effort;
+    if (pick.harness) return { pick: { ...pick, ...(effort ? { effort } : {}) }, route: null };
     const route =
-      (await this.d.route?.(projectId, { text, ...(e ? { effort: e } : {}) }).catch(() => null)) ?? null;
-    return { harness: route?.harness ?? (await projectAgent(this.d, projectId)), route };
+      (await this.d.route?.(projectId, { text, ...(effort ? { effort } : {}) }).catch(() => null)) ?? null;
+    const harness = route?.harness ?? (await projectAgent(this.d, projectId));
+    return { pick: { ...(harness ? { harness } : {}), ...(effort ? { effort } : {}) }, route };
   }
 
   /**
-   * Starts a thread in the project, on its ion's agent: the thread, or why it couldn't. `o.request` is what the
-   * judge treats as your request: your own message, never a brief an ion's agent wrote. `o.title`: the thread's
-   * title; `o.effort`: its effort, over the project's.
+   * What you asked an ion to run a chat on, checked against the agent's sign-in (the user, 2026-11-24): why not, in
+   * one line the ion passes on ("Codex can't use x with this sign-in: it has a, b"), or null.
+   */
+  private async refusedPick(asked: ChatsPick): Promise<string | null> {
+    if (!asked.harness) return null;
+    // Live check, 2026-11-24: an ion asked for "grok"; an unknown agent says which there are.
+    // Only agents the app lists (security scan, 2026-11-24).
+    const ids = listedHarnessIds();
+    if (!ids.includes(asked.harness)) return `No agent called ${asked.harness}: use one of ${ids.join(", ")}`;
+    const h = await this.d.agent?.(asked.harness).catch(() => undefined);
+    const label = h?.label ?? asked.harness;
+    if (!h?.installed || !h.signedIn) return `${label} isn't signed in`;
+    if (!asked.model || h.models.some((m) => m.id === asked.model)) return null;
+    return `${label} can't use ${asked.model} with this sign-in: it has ${h.models.map((m) => m.id).join(", ")}`;
+  }
+
+  /**
+   * Starts a thread in the project: the thread, or why it couldn't. `o.request` is what the judge treats as your
+   * request: your own message, never a brief an ion's agent wrote. `o.title`: the thread's title; `o.effort`: its
+   * effort, over the project's; `o.harness`/`model`: what you asked this chat to run on (checked first).
    */
   private async thread(
     projectId: string,
     text: string,
     o: { request?: string; title?: string; effort?: Effort } & ThreadPicks = {},
   ): Promise<Thread | { why: string }> {
-    const { harness, route } = await this.threadAgent(projectId, o.effort, text);
+    const asked = askedOf(o);
+    const { pick, route } = await this.threadAgent(projectId, { asked, ...effortOf(o) }, text);
     try {
       // ion's threads always run in Auto: every action an agent takes there still goes through ion's checks.
-      const args = {
-        projectId,
-        text,
-        ...(harness ? { harness } : {}),
-        ...brainOf(this.d.configFile, projectId, harness),
-        ...(o.effort ? { effort: o.effort } : {}),
-        ...(o.skills?.length ? { skills: o.skills } : {}),
-        ...(o.mentions?.length ? { mentions: o.mentions } : {}),
-        access: "auto" as const,
-      };
+      const args = { ...{ projectId, text, ...pick }, ...namedPicks(o), access: "auto" as const };
       const opts = {
         ...{ by: "ion" as const, ...(o.request ? { request: o.request } : {}) },
         ...(route ? { routed: route.reason } : {}),
@@ -316,6 +394,10 @@ export class Ions {
       const status = (e.data as { status: string }).status;
       // Ended on its agent's limit: ion asks, waits or continues; the run that goes on reports (final review, 2026-11-23).
       if (status === "failed" && endedOnLimit(this.d.store, e.runId)) return;
+      // Once per outcome, and not while a follow-up waits for the chat (PR #36 final review, 2026-11-24: cost).
+      const outcome = `${e.chatId}:${e.runId ?? ""}`;
+      if (this.reported.has(outcome) || queueView.waiting(this.d.db, { chatId: e.chatId }).length) return;
+      this.reported.add(outcome);
       // The report takes a turn; one that ends after ion stopped is dropped, never an error.
       this.report(chat.projectId, chat, status).catch(() => {});
     });
@@ -330,6 +412,9 @@ export class Ions {
     const title = trimEnd(chat.title);
     const reply = this.lastReply(chat.chatId);
     const changed = this.changedFiles(chat.chatId);
+    // Little to say (it went well, changed nothing, said it briefly): the agent's own words, with no model.
+    if (status === "done" && !changed.length && reply.trim().length <= PLAIN_MAX)
+      return this.reported_(projectId, chat.chatId, plainReport(title, status, reply));
     // A report starts no threads: nothing in it is your request.
     const r = await this.d.turns
       .turn(projectId, reportPrompt(chat, { status, reply, changed }), { noThreads: true })
@@ -337,9 +422,14 @@ export class Ions {
     // A report that was stopped (or found no agent, or ran too long) is the agent's own reply instead.
     const failed = !r || !!r.ionLine;
     const text = failed ? plainReport(title, status, reply) : capped(r.reply);
-    this.say(projectId, text, undefined, r?.turnId);
+    await this.reported_(projectId, chat.chatId, text, r?.turnId);
+  }
+
+  /** Says the report in its ion's chat, and in ion chief's when ion chief started the thread. */
+  private async reported_(projectId: string, chatId: string, text: string, turnId?: string): Promise<void> {
+    this.say(projectId, text, undefined, turnId);
     this.ended(projectId);
-    if (!this.chiefStarted(chat.chatId)) return;
+    if (!this.chiefStarted(chatId)) return;
     await this.chiefAnswering;
     this.say("chief", text);
   }
@@ -370,6 +460,18 @@ export class Ions {
     return e ? String((e.data as { text?: unknown }).text ?? "") : "";
   }
 }
+
+/** What you asked an ion to run this chat on (only what was given). */
+const askedOf = (o: ThreadPicks): ChatsPick => ({
+  ...(o.harness ? { harness: o.harness } : {}),
+  ...(o.model ? { model: o.model } : {}),
+});
+const effortOf = (o: { effort?: Effort }) => (o.effort ? { effort: o.effort } : {});
+/** The skills and connections picked for a thread (only the ones given). */
+const namedPicks = (o: ThreadPicks) => ({
+  ...(o.skills?.length ? { skills: o.skills } : {}),
+  ...(o.mentions?.length ? { mentions: o.mentions } : {}),
+});
 
 /** The threads a reply carries, as its card (none when it started none). */
 function threadsCard(threads: Thread[]): IonCard | undefined {
