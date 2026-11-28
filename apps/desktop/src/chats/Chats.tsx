@@ -13,7 +13,7 @@ import { FirstRun } from "../start/FirstRun.js";
 import { lastProject } from "../start/steps.js";
 import { FirstAnswer } from "../start/FirstAnswer.js";
 import type { Item } from "./timeline.js";
-import { NO_PROJECT } from "../projectName.js";
+import { NO_PROJECT, projectName } from "../projectName.js";
 
 type Question = Extract<Item, { kind: "question" }>;
 
@@ -73,7 +73,10 @@ function ChatHead(p: { chat: ChatInfo; panel: boolean | null; onPanel: () => voi
   return (
     <header className="head" data-tauri-drag-region>
       <span className="title">{chat.title}</span>
-      <span className="muted">{chat.by === "ion" ? `${chat.projectId}'s ion` : chat.projectId}</span>
+      <span className="muted">
+        {chat.projectId &&
+          (chat.by === "ion" ? `${projectName(chat.projectId)}'s ion` : projectName(chat.projectId))}
+      </span>
       {/* Why Pick by usage put the chat on its agent, in one line (the user, 2026-11-22). */}
       {p.why && <span className="muted why">{p.why}</span>}
       <span className="sp" />

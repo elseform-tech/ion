@@ -4062,7 +4062,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ e.preventDefault(); closePal(); }
   else if(e.key==='ArrowDown'){ e.preventDefault(); act=(act+1)%Math.max(1,items.length); mark(); }
   else if(e.key==='ArrowUp'){ e.preventDefault(); act=(act-1+items.length)%Math.max(1,items.length); mark(); }
-  else if(e.key==='Enter'){ e.preventDefault(); runPal(e.metaKey||e.ctrlKey?items.length-1:act); }
+  else if(e.key==='Enter'){ e.preventDefault(); if(e.metaKey||e.ctrlKey){ if(pq.value.trim()) runPal(items.length-1); } else runPal(act); }
 });
 
 /* below-window avatars */

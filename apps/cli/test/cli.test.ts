@@ -648,6 +648,10 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(await said("projects", "agent", "app", "fake", "--effort", "low")).toBe(
         "app's chats run on fake · low",
       );
+      expect(await said("projects", "agent", "app")).toBe("app's chats run on fake · low");
+      expect(await said("projects", "agent", "app", "fake", "--model", "m2")).toBe(
+        "app's chats run on fake · m2 · low",
+      );
       expect(await said("projects", "agent", "app", "--clear")).toBe("app's chats run on the default");
       expect(await said("agents", "prefer", "fake", "opencode")).toBe("fake, opencode");
       expect(await said("agents", "prefer")).toBe("Automatic");

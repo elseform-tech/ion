@@ -271,7 +271,8 @@ export function Search({ client, go }: { client: IonClient; go: (to: Place) => v
     if (e.nativeEvent.isComposing) return;
     const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
     if (e.key === "Escape" || hit("search", e)) close();
-    else if (e.key === "Enter") pick(e.metaKey || e.ctrlKey ? items.at(-1) : items[at]);
+    // ⌘↵ asks ion from its row only (none: an empty box asks nothing).
+    else if (e.key === "Enter") pick(e.metaKey || e.ctrlKey ? items.find((i) => i.ask) : items[at]);
     else if (step) setAt((at + step + items.length) % Math.max(1, items.length));
     else if (e.key !== "Tab") return;
     e.preventDefault();

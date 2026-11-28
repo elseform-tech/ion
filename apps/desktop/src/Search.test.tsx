@@ -162,4 +162,17 @@ describe("Search", () => {
       document.removeEventListener("keydown", listen);
     }
   });
+
+  // Re-review (2026-11-28): ⌘↵ picked the last row whatever it was; with an empty box that was an action.
+  it("⌘↵ asks ion only from its row, and does nothing without one", async () => {
+    const go = vi.fn();
+    const c = client();
+    render(<Search client={c} go={go} />);
+    openWithKeys();
+    await screen.findByRole("option", { name: /Fix checkout rounding/ });
+    fireEvent.keyDown(box(), { key: "Enter", metaKey: true });
+    expect(go).not.toHaveBeenCalled();
+    expect(c.call).not.toHaveBeenCalledWith("ion.message", expect.anything());
+    expect(screen.getByRole("dialog", { name: "Search" })).toBeTruthy();
+  });
 });
