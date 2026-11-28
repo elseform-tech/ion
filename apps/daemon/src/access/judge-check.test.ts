@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, saveUserConfig } from "@ion/config";
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { judgePin } from "../adapters/registry.js";
 import { JUDGE_CASES } from "../evals/judge-cases.js";
 import { harnessRunner } from "./runner.js";
-import { JudgeChecks, runJudgeCheck } from "./judge-check.js";
+import { JudgeChecks, judgeCheckTime, runJudgeCheck } from "./judge-check.js";
 
 // PR #36 re-review, the user, 2026-11-23: "harnesses can be different and not everyone has Claude". ion checks the
 // judge on your own agents: each adapter pins a judge model, and ion runs its judge eval cases (the same prompt, no
@@ -84,8 +84,9 @@ describe("ion's check of a judge model", () => {
     await expect(checks.check("fake")).rejects.toThrow("gave no verdict");
     expect(checks.last("fake")).toBeUndefined();
     let tries = 0;
+    // Its own home: the check above is kept as today's try (none doubles up).
     const down = new JudgeChecks({
-      ...o,
+      ...setup(),
       run: async () => {
         tries++;
         throw new Error("free usage is used up");
@@ -256,5 +257,42 @@ describe("the nightly judge check", () => {
       },
     });
     expect(await out.checkItem("fake")).toEqual({ name: "Judge", ok: true, limited: true });
+  });
+});
+
+// Plan 21's final review, 2026-11-28: ion's own check of a free agent ran a minute after a fresh ion started, at any
+// hour, so a beginner's first session shared the free quota with it. It runs only on a quiet night: quiet hours at
+// least an hour old (else 01:00–06:00) with nothing happening for 30 minutes, and never before your first answer.
+// "Check as judge" still runs at once, and every attempt is kept so none doubles up.
+describe("when ion checks a free agent by itself", () => {
+  const quiet = { on: true, from: "22:00", to: "08:00" };
+  const at = (h: number, m = 0) => new Date(2026, 10, 28, h, m);
+  const ok = { quiet, answered: true };
+  it("only on a quiet night, idle, after your first answer", () => {
+    expect(judgeCheckTime({ ...ok, now: at(22, 30), lastEventAt: at(21) })).toBe(false);
+    expect(judgeCheckTime({ ...ok, now: at(23, 30), lastEventAt: at(23, 10) })).toBe(false);
+    expect(judgeCheckTime({ ...ok, now: at(23, 30), lastEventAt: at(22, 50) })).toBe(true);
+    expect(judgeCheckTime({ ...ok, now: at(14), lastEventAt: at(9) })).toBe(false);
+    expect(judgeCheckTime({ ...ok, now: at(23, 30), lastEventAt: at(22), answered: false })).toBe(false);
+    const off = { ...quiet, on: false };
+    expect(judgeCheckTime({ ...ok, quiet: off, now: at(3), lastEventAt: at(1) })).toBe(true);
+    expect(judgeCheckTime({ ...ok, quiet: off, now: at(7), lastEventAt: at(1) })).toBe(false);
+  });
+
+  it("doesn't run again the day you checked it yourself", async () => {
+    let calls = 0;
+    const o = setup();
+    const c = new JudgeChecks({
+      ...o,
+      run: async () => (calls++, JSON.stringify({ verdict: "deny", reason: "x" })),
+      ready: async () => ["fake"],
+      billing: async () => "free",
+      pace: { gapMs: 0, capMs: 60_000 },
+    });
+    await c.check("fake").catch(() => undefined);
+    const yours = calls;
+    rmSync(join(o.dataDir, "judge-checks.json"), { force: true });
+    expect(await c.checkFree()).toEqual([]);
+    expect(calls).toBe(yours);
   });
 });

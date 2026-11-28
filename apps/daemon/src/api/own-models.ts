@@ -1,13 +1,13 @@
 import type { AdapterEvent } from "@ion/adapter-kit";
-import type { Billing } from "@ion/schema";
+import { type Billing, EV } from "@ion/schema";
 import { harnessRunner } from "../access/index.js";
 import { ownAgents, readyNow } from "../access/judge-agents.js";
-import { JudgeChecks } from "../access/judge-check.js";
+import { JudgeChecks, judgeCheckTime } from "../access/judge-check.js";
 import { agentOrder, getHarness } from "../adapters/registry.js";
 import { loadUserConfig } from "@ion/config";
 import { usageView } from "../views/usage.js";
 import { strongestBrain } from "../ions/brain.js";
-import type { Db } from "../store/index.js";
+import type { Db, EventStore } from "../store/index.js";
 import { harnessInfos } from "./commands.js";
 
 /** The agents signed in now (what's known; the judge and ion's brain pick from them). */
@@ -18,6 +18,28 @@ export async function billingOn(agent: string, model: string): Promise<Billing |
   const a = getHarness(agent)?.adapter;
   if (a?.billingOf) return (await a.billingOf([model]).catch(() => undefined)) ?? null;
   return (await harnessInfos.one(agent).catch(() => undefined))?.billing ?? null;
+}
+
+/**
+ * Whether it's a quiet night for ion's own check of a free agent (judgeCheckTime): quiet hours, nothing happening for
+ * 30 minutes (counted from ion's start too), and you've answered one of ion's questions.
+ */
+function quietNight(store: EventStore, configFile: string): () => boolean {
+  const seen = { at: new Date(), answered: false };
+  const yours = (e: { type: string; data: unknown }) =>
+    e.type === EV.needResolved && (e.data as { by?: unknown }).by === "you";
+  seen.answered = store.read({ types: [EV.needResolved] }).some(yours);
+  store.onAppend((e) => {
+    seen.at = new Date();
+    if (yours(e)) seen.answered = true;
+  });
+  return () =>
+    judgeCheckTime({
+      quiet: loadUserConfig(configFile).config.notifications.quiet,
+      now: new Date(),
+      lastEventAt: seen.at,
+      answered: seen.answered,
+    });
 }
 
 /** When ion first looks for free agents to check as judge, then how often (a free agent signed in later is found). */
@@ -32,9 +54,10 @@ const LOOK_EVERY_MS = 30 * 60_000;
  */
 export function ownModels(
   opts: { dataDir: string; configFile: string },
-  db: Db,
+  d: { db: Db; store: EventStore },
   record: (harness: string, e: AdapterEvent, startedAt: string) => void,
 ) {
+  const { db } = d;
   const state: { judges?: JudgeChecks } = {};
   const strongest = async () => {
     const b = await strongestBrain({
@@ -59,7 +82,11 @@ export function ownModels(
     order: () => agentOrder(config().routing.order),
   });
   state.judges = judges;
-  const look = () => void judges.checkFree().catch(() => undefined);
+  // Only on a quiet night, idle, after your first answer (Plan 21's final review, 2026-11-28).
+  const quiet = quietNight(d.store, opts.configFile);
+  const look = () => {
+    if (quiet()) judges.checkFree().catch(() => undefined);
+  };
   setTimeout(look, FIRST_LOOK_MS).unref();
   setInterval(look, LOOK_EVERY_MS).unref();
   return { own, judge, brain: harnessRunner(own, "brain"), judges };
