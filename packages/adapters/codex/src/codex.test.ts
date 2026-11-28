@@ -236,6 +236,13 @@ describe("codex adapter", () => {
     );
   });
 
+  // The user, 2026-11-28: Codex wrote `[projects."<path>"] trust_level` into the real ~/.codex/config.toml for each
+  // new project. ion gives the chat's folder as trusted at launch, so Codex has nothing to record.
+  it("passes the chat's folder as trusted at launch", async () => {
+    const { overrides } = await whoami();
+    expect(overrides).toContain(`projects.${JSON.stringify(cwd)}.trust_level="trusted"`);
+  });
+
   // The user, 2026-11-21: agents run in the OS sandbox, away from ion's own files. Codex sandboxes its own commands
   // (macOS won't nest ion's around it), and its permission profiles can deny reading a folder (checked on Codex
   // 0.153.2: docs/research/sandbox.md), so ion turns that on with ion's folders "none" and the run's own let through.

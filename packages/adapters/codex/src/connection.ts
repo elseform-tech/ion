@@ -25,6 +25,8 @@ export type Launch = {
   envDrop?: EnvDrop;
   ownTools?: boolean;
   sandbox?: RunSandbox;
+  /** The chat's folder: its trust is given to Codex at launch (trustArgs). */
+  cwd?: string;
 };
 
 export type Connection = {
@@ -51,7 +53,18 @@ const baseArgs = (l: Launch) => [
   ...BASE_ARGS,
   ...(l.ownTools ? [] : ["-c", "features.plugins=false"]),
   ...sandboxArgs(l.sandbox),
+  ...trustArgs(l.cwd),
 ];
+
+/**
+ * The chat's folder is trusted for this session only. Left out, Codex asks and then records
+ * `[projects."<path>"] trust_level` in your own ~/.codex/config.toml (the user, 2026-11-28: ion's chats kept adding
+ * projects there). Given as config, there is nothing for it to write.
+ */
+function trustArgs(cwd: string | undefined): string[] {
+  if (!cwd) return [];
+  return ["-c", `projects.${JSON.stringify(cwd)}.trust_level="trusted"`];
+}
 
 const PROFILE = "ion-run";
 
@@ -338,6 +351,7 @@ export async function connect(l0: Launch, opts: StartOpts): Promise<Connection> 
     ...l0,
     ...(opts.envDrop ? { envDrop: opts.envDrop } : {}),
     ...(opts.ownTools ? { ownTools: true } : {}),
+    cwd: opts.cwd,
     ...(opts.sandbox && !opts.bare ? { sandbox: opts.sandbox } : {}),
   };
   const env: Record<string, string> = { ...opts.env, ...(opts.gate ? { ION_GATE_URL: opts.gate.url } : {}) };
