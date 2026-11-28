@@ -59,7 +59,7 @@ export class Dreams {
     const { config, error } = loadUserConfig(this.d.configFile);
     const night = error ? null : dreamDue(config, new Date(), servedPeriods(this.d.store));
     if (night)
-      await this.now(night).catch((e: unknown) => console.error(`Tidy memory: ${(e as Error).message}`));
+      await this.now(night).catch((e: unknown) => console.error(`ion's dream: ${(e as Error).message}`));
   }
 }
 

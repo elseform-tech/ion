@@ -136,7 +136,7 @@ async function dreamWithBrain(d: BrainDeps, quick: string, effort: Effort): Prom
   const other = await strongest(d, [], { ok: webOff, quiet: true });
   if (!other) return top;
   if (top && !d.quiet) {
-    const line = `Tidy memory: ${agentLabel(top.harness)} can't turn its web off; it runs on ${agentLabel(other)}`;
+    const line = `ion's dream: ${agentLabel(top.harness)} can't turn its web off; it dreams on ${agentLabel(other)}`;
     if (!said.has(line)) console.warn(line);
     said.add(line);
   }

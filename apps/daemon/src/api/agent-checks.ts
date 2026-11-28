@@ -118,7 +118,7 @@ export function checksGate(
       : rest(scope, payload);
 }
 
-/** The nightly check and Tidy memory, each waiting while the other goes (Plan 21 final review, M10). */
+/** The nightly check and Dream, each waiting while the other goes (Plan 21 final review, M10). */
 export function checksBeside(dreams: Dreams, make: (tidying: () => boolean) => AgentChecking): AgentChecking {
   const checking = make(() => dreams.tidying);
   dreams.waitFor(() => checking.checks.checking);

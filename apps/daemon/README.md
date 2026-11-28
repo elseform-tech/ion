@@ -23,10 +23,10 @@ The always-on service that owns all state.
   agent order whose pinned judge model ion checked on this computer, docs/research/judge-evals.md; a bare session with
   no tools), which answers allow or deny with a reason. A limited judge agent is skipped; when its agent fails or is
   slow it goes once on the next checked one; with none left it's unsure and asks you. A judge you set on an unchecked
-  model still runs. `[ion] quick` is ion's brain for ion (`chief` in the code) and every project's ion (a project's own agent, model
+  model still runs. `[ion] quick` is ion's brain for ion chief and every project ion (a project's own agent, model
   and effort are for the chats its ion starts): unset, the strongest model you're signed in to (each adapter ranks
   its own), at High for your messages and Medium for routine turns (a report when a chat ends); answering an agent's
-  question from your decisions uses the brain at Medium. Tidy memory (ion's dream in the code) thinks with the brain too, at Medium, on an agent that can turn its web off.
+  question from your decisions uses the brain at Medium. Dream thinks with the brain too, at Medium, on an agent that can turn its web off.
   The user, 2026-11-24: two model settings and the rest automatic. Chats ions start run on `[ion] chats` (and
   `chatsEffort`) when set, a project's own agent, model and effort over it, or what you asked an ion for one chat;
   else Automatic: ready, not limited, with room left, free or subscription before pay-per-use, Claude Code last unless
@@ -64,17 +64,17 @@ The always-on service that owns all state.
 - `src/memory`: a folder of small files, yours (`you/`) or one project's (`projects/<id>/`), never shared between
   projects. `see: ions` means ions only, for your files and a project's alike: that project's chats don't see it.
   `scoped.ts` keeps who sees and writes what: a chat sees its project's files and your `see: chats` ones; a project's
-  ion its project's and all yours; ion yours and every project shared with it. A file a caller can't see
+  ion its project's and all yours; ion chief yours and every project shared with it. A file a caller can't see
   doesn't exist for it. A preference a chat writes is `suggested: <project>` (only that project's chats and the ions
   see it) until you keep it (`ion memory keep`).
   The folder is `<data>/memory` (only you can open it; chats' agents can't reach it). `index.ts` writes files and logs
   each change (`memory.written`, `memory.forgotten`: who, the header, the text before) and `watch.ts` picks up your
   edits in an editor as yours; a file that can't be read keeps its last good version indexed and shows one line in
   Settings. `migrate.ts` moves notes from before memory was files, one file each (`from:` the old note), once.
-  `dream.ts` is Tidy memory (when it's due, its prompt with the last week's chats as data, what it did:
+  `dream.ts` is ion's dream (when it's due, its prompt with the last week's chats as data, what it did:
   `memory.dreamed`, the briefing's line, Restore for what it forgot); `dream-rules.ts` what it may never do and what each pass sees and changes;
   `src/scheduler/dreams.ts` runs it, and `src/ions/dream.ts` is its turn's gate (memory's tools only) and instructions.
-  To-dos (`type: todo`): `todos.ts` for ion's briefing, `ion todo` and "Mark done?" (`src/ions/todo-offers.ts`:
+  To-dos (`type: todo`): `todos.ts` for ion chief's briefing, `ion todo` and "Mark done?" (`src/ions/todo-offers.ts`:
   a chat's finished work that matches an open to-do by its words; only you close one), and
   `src/scheduler/reminders.ts` (one reminder at 9:00 local on the due day, or when quiet hours end).
 - `src/evals`: opt-in live evals on real agents (`live.test.ts`, `judge.test.ts`, `memory.test.ts` with
@@ -86,11 +86,11 @@ Data dir: `$ION_HOME/data`, else `$XDG_DATA_HOME/ion`, else `~/.local/share/ion`
 
 ## Ions (Plan 09)
 
-`src/ions/`: every project but `default` ("No project" in the app) has an ion, and ion (`chief`) sits over them. Each ion's chat is its events
+`src/ions/`: every project but `default` ("No project" in the app) has an ion, and ion chief sits over them. Each ion's chat is its events
 on `ion:<ionId>` (`ion.heard`, `ion.said`).
 - A project's ion starts a chat (`by: "ion"`, always in Auto access) for what you ask and says how it
   ended.
-- ion decides on the quick model (the judge's): it answers from the state of your projects (never one with
+- ion chief decides on the quick model (the judge's): it answers from the state of your projects (never one with
   `shareWithIon = false`), or sends your message on to up to 5 project ions.
 - Questions in chats ions started go through the project's ion (`questions.ts`): an answer from your decisions there, a
   duplicate held behind the same question waiting (settled only when identical), else your question with the
@@ -107,7 +107,7 @@ are in `src/api/routines.ts`. See `docs/routines.md`.
 
 ## Suggestions (Plan 11)
 
-`src/ions/suggestions.ts`: ion looks at start and then hourly, and suggests in its chat (`ion:chief`):
+`src/ions/suggestions.ts`: ion chief looks at start and then hourly, and suggests in its chat (`ion:chief`):
 - a routine, when you asked a project (its ion, or a chat you started there) for the same thing on 3 different days
   in the last four weeks (`habits.ts`: your words lowercased, without dates and punctuation; its time is their one
   weekday, else daily, at their median time to the half hour). Never for `default`, a project with

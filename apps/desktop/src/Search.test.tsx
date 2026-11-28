@@ -147,14 +147,14 @@ describe("Search", () => {
     expect(c.call).toHaveBeenLastCalledWith("ion.message", { ionId: "chief", text: "qwxz" });
   });
 
-  // Plan 21 Task 6 tour (2026-11-28): "tidy", "judge" and "night" found nothing, though Tidy memory, Check as judge and
+  // Plan 21 Task 6 tour (2026-11-28): "dream", "judge" and "night" found nothing, though Dream, Check as judge and
   // Prefer in this order wait under a page's More and the nightly check sits on Agents. Each is one search away, and
   // opens its page with More open.
   it("finds a setting tucked inside a page, and opens its page with More open", async () => {
     const go = vi.fn();
     render(<Search client={client()} go={go} />);
     for (const [q, name, to] of [
-      ["tidy", /^Tidy memory.*Memory$/, { kind: "settings", page: "memory", more: true }],
+      ["dream", /^Dream.*Memory$/, { kind: "settings", page: "memory", more: true }],
       ["judge", /^Check as judge.*Agents$/, { kind: "settings", page: "agents", more: true }],
       ["order", /^Prefer in this order.*Agents$/, { kind: "settings", page: "agents", more: true }],
       ["night", /^Check the agents each night.*Agents$/, { kind: "settings", page: "agents" }],
