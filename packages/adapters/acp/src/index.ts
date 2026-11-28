@@ -6,7 +6,7 @@ import {
   runLogout,
   type StartOpts,
   startLogin,
-  whichOnPath,
+  whichAgent,
   withPaths,
 } from "@ion/adapter-kit";
 import type { Billing, Capabilities } from "@ion/schema";
@@ -70,7 +70,7 @@ const ownOf = (h: AcpHarness) => ({
 
 /** One adapter for any agent that speaks ACP over stdio (Grok Build, opencode, …). */
 export function createAcpAdapter(h: AcpHarness, deps: AcpDeps = {}): HarnessAdapter {
-  const which = deps.which ?? whichOnPath;
+  const which = deps.which ?? ((b: string) => whichAgent(b));
   const binary = () => which(h.bin);
   return {
     id: h.id,

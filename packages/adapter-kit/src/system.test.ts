@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseVersion, projectRoots, whichOnPath } from "./system.js";
+import { parseVersion, projectRoots, whichAgent, whichOnPath } from "./system.js";
 
 describe("system helpers", () => {
   it("finds an executable on PATH and ignores missing ones", () => {
@@ -26,5 +26,22 @@ describe("system helpers", () => {
     const roots = projectRoots(join(base, "link"));
     expect(roots[0]).toBe(join(base, "link"));
     expect(roots.at(-1)?.endsWith("/real")).toBe(true);
+  });
+
+  // 2026-11-28: `pnpm check` started your real claude, grok and opencode (their sign-in and model checks: `claude auth
+  // status`, `opencode acp`, `grok agent stdio`). Tests point ION_AGENTS_PATH at a folder of their own; agents are
+  // looked up only there.
+  it("looks for an agent only in ION_AGENTS_PATH under tests and the tour, on PATH otherwise", () => {
+    const real = mkdtempSync(join(tmpdir(), "ion-bin-"));
+    writeFileSync(join(real, "opencode"), "#!/bin/sh\n");
+    chmodSync(join(real, "opencode"), 0o755);
+    const none = mkdtempSync(join(tmpdir(), "ion-bin-"));
+    expect(whichAgent("opencode", { PATH: real, VITEST: "true", ION_AGENTS_PATH: none })).toBeNull();
+    expect(whichAgent("opencode", { PATH: real, ION_TOUR: "1", ION_AGENTS_PATH: none })).toBeNull();
+    expect(whichAgent("opencode", { PATH: none, VITEST: "true", ION_AGENTS_PATH: real })).toBe(
+      join(real, "opencode"),
+    );
+    // Your ion never honours it.
+    expect(whichAgent("opencode", { PATH: real, ION_AGENTS_PATH: none })).toBe(join(real, "opencode"));
   });
 });
