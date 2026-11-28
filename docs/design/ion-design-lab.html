@@ -4032,7 +4032,10 @@ const ACTIONS=[
   {t:'Ions',icon:'orbit',run:()=>go('ions')},
   /* Plan 21 Task 4: every Settings page, so one tucked under More is one search away */
   ...[['general','General','sliders-horizontal'],['harness','Agents','plug'],['memory','Memory','notebook-text'],['ions','Ions','orbit'],['tools','Tools','blocks'],['notif','Notifications','bell'],['keys','Shortcuts','keyboard']]
-    .map(([id,t,icon])=>({t,icon,sub:'Settings',run:()=>{ go('settings'); showS(id); }}))];
+    .map(([id,t,icon])=>({t,icon,sub:'Settings',run:()=>{ go('settings'); showS(id); }})),
+  /* Plan 21 Task 6: what waits inside a page (under its More, or low on it) is one search away too */
+  ...[['Check the agents each night','harness','Agents','plug'],['Check as judge','harness','Agents','plug'],['Prefer in this order','harness','Agents','plug'],['Tidy memory','memory','Memory','notebook-text']]
+    .map(([t,id,page,icon])=>({t,icon,sub:'Settings · '+page,run:()=>{ go('settings'); showS(id); }}))];
 const pal=document.getElementById('pal'), pq=document.getElementById('pq'), pres=document.getElementById('pres');
 let items=[], act=0, lastFocus=null;
 const hl=(s,q)=>{ const i=q?s.toLowerCase().indexOf(q):-1; return i<0?esc(s):esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+q.length))+'</mark>'+esc(s.slice(i+q.length)); };

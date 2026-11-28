@@ -28,6 +28,9 @@ function firstPage(at: SettingsAt | null): Tab {
   return "name" in at ? "tools" : "memory";
 }
 
+/** Whether a link asked for the page's More open (a setting tucked there, from Search). */
+const moreOf = (at: SettingsAt | null): boolean => !!at && "page" in at && at.more === true;
+
 /** The page a sidebar button stands for (an ion's page is under Ions). */
 const tabOf = (page: Page): Tab => (page.kind === "ion" ? "ions" : page.kind);
 
@@ -70,10 +73,12 @@ function Nav({ page, used, onPick }: { page: Page; used: Set<Tab>; onPick: (t: T
  * files and your to-dos); under More until used, Ions (each ion's setup and rules), Tools (connections, hooks, skills),
  * Notifications and Shortcuts. `at`: opened from a link to a row in Tools, to your to-dos, or to a page (Search).
  */
-export function Settings({ client, onOpenIon, at }: Props) {
+export function Settings({ client, onOpenIon, at: link }: Props) {
+  const at = link ?? null;
+  const more = moreOf(at);
   const data = useSettingsData(client);
   const used = useUsedPages(client, data);
-  const [page, setPage] = useState<Page>({ kind: firstPage(at ?? null) });
+  const [page, setPage] = useState<Page>({ kind: firstPage(at) });
   return (
     <>
       <Nav page={page} used={used} onPick={(kind) => setPage({ kind })} />
@@ -81,7 +86,7 @@ export function Settings({ client, onOpenIon, at }: Props) {
         <div className="spage">
           {data.settings?.problem && <div className="perr">{data.settings.problem}</div>}
           {page.kind === "general" && <General client={client} data={data} />}
-          {page.kind === "agents" && <Agents client={client} data={data} />}
+          {page.kind === "agents" && <Agents client={client} data={data} more={more} />}
           {page.kind === "ions" && (
             <IonsList data={data} onOpen={(ionId) => setPage({ kind: "ion", ionId })} />
           )}
@@ -95,8 +100,8 @@ export function Settings({ client, onOpenIon, at }: Props) {
               onAgents={() => setPage({ kind: "agents" })}
             />
           )}
-          {page.kind === "memory" && <Memory client={client} data={data} at={at ?? null} />}
-          {page.kind === "tools" && <Tools client={client} data={data} at={toolsAtOf(at ?? null)} />}
+          {page.kind === "memory" && <Memory client={client} data={data} at={at} more={more} />}
+          {page.kind === "tools" && <Tools client={client} data={data} at={toolsAtOf(at)} />}
           {page.kind === "notifications" && <Notifications client={client} data={data} />}
           {page.kind === "shortcuts" && <Shortcuts />}
         </div>

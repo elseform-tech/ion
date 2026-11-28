@@ -143,8 +143,8 @@ function RememberRow(p: {
 }
 
 /** Remember; Tidy memory under its More until it's on or has tidied once (Plan 21 Task 4); what it tidied. */
-function RememberAndTidy(p: Pick<ListProps, "mem" | "data" | "client" | "run">) {
-  const [more, setMore] = useState(false);
+function RememberAndTidy(p: Pick<ListProps, "mem" | "data" | "client" | "run" | "more">) {
+  const [more, setMore] = useState(p.more === true);
   const tidyUsed = (p.data.settings?.dream?.mode ?? "off") !== "off" || !!p.mem.tidied;
   return (
     <>
@@ -171,6 +171,8 @@ type ListProps = {
   /** Whose and which words (kept while a file is open, so Back returns to them). */
   filter: Filter;
   setFilter: (f: Filter) => void;
+  /** Tidy memory's More starts open (Search found it: Plan 21 Task 6). */
+  more?: boolean;
 };
 
 function MemoryList(p: ListProps) {
@@ -182,7 +184,7 @@ function MemoryList(p: ListProps) {
   const project = p.data.projects.find((x) => x.id === scope);
   return (
     <>
-      <RememberAndTidy mem={p.mem} data={p.data} client={p.client} run={p.run} />
+      <RememberAndTidy mem={p.mem} data={p.data} client={p.client} run={p.run} more={p.more} />
       <Scopes scope={scope} data={p.data} onPick={setScope} />
       {project && (
         <RememberRow
@@ -229,19 +231,14 @@ const Lines = ({ lines }: { lines: string[] }) =>
     </div>
   ));
 
+/** Where Settings → Memory opened (`at`), and whether Tidy memory's More starts open (`more`: Search found it). */
+type MemoryProps = { client: IonClient; data: SettingsData; at?: SettingsAt | null; more?: boolean };
+
 /**
  * Settings → Memory, as the lab's renderMemory: ion's memory files, yours and each project's, with search; a row opens
  * its text (Open, History, Forget). To-dos: yours and every project's. `at`: opened at the to-dos (ion chief's count).
  */
-export function Memory({
-  client,
-  data,
-  at,
-}: {
-  client: IonClient;
-  data: SettingsData;
-  at?: SettingsAt | null;
-}) {
+export function Memory({ client, data, at, more }: MemoryProps) {
   const mem = useMemory(client);
   const [tab, setTab] = useState<Tab>(at?.kind === "todos" ? "todos" : "all");
   const [open, setOpen] = useState<string | null>(null);
@@ -278,6 +275,7 @@ export function Memory({
           onOpen={setOpen}
           filter={filter}
           setFilter={setFilter}
+          more={more}
         />
       )}
     </div>

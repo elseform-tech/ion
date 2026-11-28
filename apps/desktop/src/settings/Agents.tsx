@@ -201,13 +201,14 @@ function useUsage(client: IonClient, harnesses: HarnessInfo[]): AgentUsage[] {
  * usage; Check the agents each night. Under More (Plan 21 Task 4: until used): each agent's Avoid and own-tools switches, Check as judge, and
  * Prefer in this order.
  */
-export function Agents({ client, data }: { client: IonClient; data: SettingsData }) {
+export function Agents(p: { client: IonClient; data: SettingsData; more?: boolean }) {
+  const { client, data } = p;
   const [error, run] = useCallError();
   const set = (patch: SettingsPatch) => run(client.call("settings.set", { patch }), data.reload);
   const usage = useUsage(client, data.harnesses);
   useSignInsWaiting(data.harnesses, data.reload);
   const agents = inOrder(data.harnesses, data.settings?.agentOrder);
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState(p.more === true);
   const judge = useJudgeCheck(client, data, run, more);
   return (
     <>

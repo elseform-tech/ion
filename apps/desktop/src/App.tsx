@@ -33,7 +33,7 @@ function openChat(
 
 /** Goes where a search result points (Plan 21 Task 4: Search reaches every screen). */
 function goTo(to: Place, go: Parameters<typeof openChat>[1]) {
-  if (to.kind === "settings") return openSettings(to.page);
+  if (to.kind === "settings") return openSettings(to.page, to.more);
   if (to.kind === "chat") return openChat(to.chatId, go);
   if (to.kind === "ion") return openChat(`ion:${to.ionId}`, go);
   if (to.kind === "new") go.setOpenId(null);

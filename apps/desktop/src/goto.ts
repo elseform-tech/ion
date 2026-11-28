@@ -9,7 +9,7 @@ export type SettingsAt =
   | ToolsAt
   | { kind: "todos" }
   | { kind: "memory" }
-  | { kind: "page"; page: SettingsPage };
+  | { kind: "page"; page: SettingsPage; more?: true };
 
 const OPEN_SETTINGS = "ion:open-settings";
 
@@ -26,8 +26,9 @@ export const openTodos = (): void => openAt({ kind: "todos" });
 /** Opens Settings → Memory at your files (a chat's suggested preference, kept there). */
 export const openMemory = (): void => openAt({ kind: "memory" });
 
-/** Opens Settings at a page (Search: Plan 21 Task 4). */
-export const openSettings = (page: SettingsPage): void => openAt({ kind: "page", page });
+/** Opens Settings at a page (Search: Plan 21 Task 4), with its More open (a setting tucked there: Task 6). */
+export const openSettings = (page: SettingsPage, more?: true): void =>
+  openAt({ kind: "page", page, ...(more ? { more } : {}) });
 
 /** Hears each "open Settings here" (the window does: it switches to Settings). */
 function useOpenSettings(fn: (at: SettingsAt) => void): void {
@@ -41,7 +42,7 @@ function useOpenSettings(fn: (at: SettingsAt) => void): void {
 /** A key for where Settings opened (a new place opens it anew). */
 function atKey(at: SettingsAt | null): string {
   if (!at) return "settings";
-  if ("page" in at) return `page:${at.page}`;
+  if ("page" in at) return `page:${at.page}${at.more ? ":more" : ""}`;
   return "name" in at ? `${at.kind}:${at.name}` : at.kind;
 }
 

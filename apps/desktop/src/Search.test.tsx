@@ -127,6 +127,25 @@ describe("Search", () => {
     expect(c.call).toHaveBeenLastCalledWith("ion.message", { ionId: "chief", text: "qwxz" });
   });
 
+  // Plan 21 Task 6 tour (2026-11-28): "tidy", "judge" and "night" found nothing, though Tidy memory, Check as judge and
+  // Prefer in this order wait under a page's More and the nightly check sits on Agents. Each is one search away, and
+  // opens its page with More open.
+  it("finds a setting tucked inside a page, and opens its page with More open", async () => {
+    const go = vi.fn();
+    render(<Search client={client()} go={go} />);
+    for (const [q, name, to] of [
+      ["tidy", /^Tidy memory.*Memory$/, { kind: "settings", page: "memory", more: true }],
+      ["judge", /^Check as judge.*Agents$/, { kind: "settings", page: "agents", more: true }],
+      ["order", /^Prefer in this order.*Agents$/, { kind: "settings", page: "agents", more: true }],
+      ["night", /^Check the agents each night.*Agents$/, { kind: "settings", page: "agents" }],
+    ] as const) {
+      openWithKeys();
+      type(q);
+      fireEvent.click(await screen.findByRole("option", { name }));
+      expect(go).toHaveBeenLastCalledWith(to);
+    }
+  });
+
   // Review: "settings" found no page; "no project" found none of default's chats (they show as No project).
   it("finds by the quiet part too: Settings pages, and No project's chats", async () => {
     render(<Search client={client()} go={vi.fn()} />);

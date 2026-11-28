@@ -21,7 +21,7 @@ export type Place =
   | { kind: "ions" }
   | { kind: "chat"; chatId: string }
   | { kind: "ion"; ionId: string }
-  | { kind: "settings"; page: SettingsPage };
+  | { kind: "settings"; page: SettingsPage; more?: true };
 
 const OPEN_SEARCH = "ion:open-search";
 
@@ -68,6 +68,23 @@ const ACTIONS: { title: string; icon: LucideIcon; to: Place; small?: string }[] 
     small: "Settings",
     to: { kind: "settings" as const, page: p.id },
   })),
+  // Plan 21 Task 6 tour: what waits inside a page (under its More, or low on it) is one search away too.
+  ...(
+    [
+      ["Check the agents each night", "agents", false],
+      ["Check as judge", "agents", true],
+      ["Prefer in this order", "agents", true],
+      ["Tidy memory", "memory", true],
+    ] as const
+  ).map(([title, page, more]) => {
+    const p = SETTINGS_PAGES.find((x) => x.id === page)!;
+    return {
+      title,
+      icon: p.icon,
+      small: `Settings · ${p.label}`,
+      to: { kind: "settings" as const, page, ...(more ? { more: true as const } : {}) },
+    };
+  }),
 ];
 
 /** Whether `q` is in any of the words shown (a title and its quiet part). */
