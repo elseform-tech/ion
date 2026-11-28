@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { UserError } from "../api/errors.js";
 import { git, type ReadAt } from "./git.js";
@@ -17,9 +17,7 @@ export async function readAt(repo: string, worktree: string): Promise<ReadAt> {
   const common = await git(["rev-parse", "--git-common-dir"], repo);
   if (common.code !== 0) throw new UserError(NOT_OURS);
   try {
-    const dotGit = join(worktree, ".git");
-    if (!lstatSync(dotGit).isFile()) throw new UserError(NOT_OURS);
-    const named = /^gitdir: (.+)$/m.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    const named = /^gitdir: (.+)$/m.exec(dotGitText(join(worktree, ".git")))?.[1]?.trim();
     if (!named) throw new UserError(NOT_OURS);
     const gitDir = realpathSync.native(resolve(worktree, named));
     const commonDir = realpathSync.native(resolve(repo, common.stdout.trim()));
@@ -42,6 +40,20 @@ export async function readAt(repo: string, worktree: string): Promise<ReadAt> {
     return { ...at, quiet: await quieted(at) };
   } catch {
     throw new UserError(NOT_OURS);
+  }
+}
+
+/**
+ * A worktree's .git file, read through the one descriptor it was checked on (CodeQL, 2026-11-28: checked by path,
+ * then read by path again): opened without following a link, and a plain file. Anything else is refused.
+ */
+function dotGitText(path: string): string {
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    if (!fstatSync(fd).isFile()) throw new UserError(NOT_OURS);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
   }
 }
 

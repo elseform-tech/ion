@@ -291,14 +291,24 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
   // Security re-review, 2026-11-28 (N3): ion's own reads of a chat's worktree ran in a sandbox that could write every
   // chat's worktree; a read runs where nothing can be written.
   it("read-only: reads the worktree, writes nothing anywhere", () => {
-    const ro = { ...sb, paths: { ...sb.paths, read: [wt], write: [], readOnly: true } };
-    const w = sandboxed(ro, "/bin/sh", [
-      "-c",
-      'cat a.txt; touch b.txt || echo nope; touch "$H/x" || echo nope; echo > /dev/null && echo ok',
-    ]);
-    const r = spawnSync(w.command, w.args, { cwd: wt, env: { ...process.env, H: home }, encoding: "utf8" });
-    expect(r.stdout).toBe("in the worktree\nnope\nnope\nok\n");
+    const rw = sb;
+    sb = { ...rw, paths: { ...rw.paths, read: [wt], write: [], readOnly: true } };
+    try {
+      // Each command on its own, no shell: what it touches is an argument, never text in a script.
+      const out = (command: string, args: string[]) => {
+        const w = sandboxed(sb, command, args);
+        return spawnSync(w.command, w.args, { cwd: wt, encoding: "utf8", timeout: 15_000 }).status;
+      };
+      expect(out("/bin/cat", ["a.txt"])).toBe(0);
+      expect(out("/usr/bin/touch", ["b.txt"])).not.toBe(0);
+      // Your home, from the worktree (home/.local/share/ion/worktrees/chat-1): fixed text, nothing from the env.
+      expect(out("/usr/bin/touch", ["../../../../../x"])).not.toBe(0);
+      expect(out("/bin/cp", ["a.txt", "/dev/null"])).toBe(0);
+    } finally {
+      sb = rw;
+    }
     expect(existsSync(join(wt, "b.txt"))).toBe(false);
+    expect(existsSync(join(home, "x"))).toBe(false);
   });
 
   it("can't read daemon.json (cat, python, a script it wrote, a link, a moved folder)", () => {

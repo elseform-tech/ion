@@ -130,6 +130,11 @@ describe("worktrees", () => {
     symlinkSync(join(other.path, ".git"), join(wt.path, ".git"));
     await expect(chatDiff(repo, wt.path)).rejects.toThrow("The chat's worktree isn't as ion made it");
     expect((await chatDiff(repo, other.path)).files).toEqual([]);
+    // CodeQL, 2026-11-28 (js/file-system-race): the .git is read through the one descriptor it was checked on; a
+    // folder there is refused too.
+    rmSync(join(wt.path, ".git"));
+    mkdirSync(join(wt.path, ".git"));
+    await expect(chatDiff(repo, wt.path)).rejects.toThrow("The chat's worktree isn't as ion made it");
   });
 
   // Automated scan, 2026-11-28: attributes ion's diff reads can name a filter that runs code (the worktree's

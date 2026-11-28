@@ -25,7 +25,7 @@ describe("a key typed into a command", () => {
     const keys = [
       { args: ["sk-proj-Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z"] },
       { args: ["--header", "ghp_0123456789abcdefABCDEF0123456789abcd"] },
-      { run: "curl -H x xo" + "xb-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx" },
+      { run: ["curl -H x ", "xo", "xb-", "123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx"].join("") },
       { args: ["AKIAIOSFODNN7EXAMPLE"] },
       {
         args: [
@@ -55,7 +55,7 @@ describe("what Settings shows of a server's arguments", () => {
 });
 
 // Security review, 2026-11-28 (hooks fix, M2) and the automatic scan: sparing name-like path parts let some keys
-// through: a UUID key or a word-joined token as a path's last part, glpat-/sk_" + "live_ tokens in a part, and a base64 key
+// through: a UUID key or a word-joined token as a path's last part, glpat-/Stripe live tokens in a part, and a base64 key
 // starting with "/" whose parts are short. Only folder parts of an ordinary path are spared; the rest is judged as
 // strictly as before.
 describe("keys in path-shaped words", () => {
@@ -65,7 +65,7 @@ describe("keys in path-shaped words", () => {
     `--opt=/x/${uuid}`,
     uuid,
     "/x/glpat-AbcdefGhijklMnopqrSt",
-    "/x/sk_" + "live_abcdefghijklmnopqrstuvwx",
+    ["/x/sk_", "live_", "abcdefghijklmnopqrstuvwx"].join(""),
     "/AbCd12+GhIjKl/MnOp34Qr==",
   ];
   for (const v of caught)
@@ -100,9 +100,9 @@ describe("a key in a URL's path", () => {
     expect(literalKey({ url: "https://h.example.com/x/glpat-AbcdefGhijklMnopqrSt" })).toBe(
       "Put keys in Settings",
     );
-    expect(literalKey({ url: "https://h.example.com/hooks/sk_" + "live_abcdefghijklmnop" })).toBe(
-      "Put keys in Settings",
-    );
+    expect(
+      literalKey({ url: ["https://h.example.com/hooks/sk_", "live_", "abcdefghijklmnop"].join("") }),
+    ).toBe("Put keys in Settings");
     expect(literalKey({ url: "https://h.example.com/mcp/v1" })).toBeNull();
   });
 });
