@@ -42,10 +42,26 @@ async function isReady(d: BrainDeps, id: string): Promise<boolean> {
   return (await readyAgents(d.agents)).includes(id);
 }
 
-/** The agents installed and signed in. */
+/** The agents installed and signed in, avoided or not (an agent you picked yourself is checked against these). */
 async function readyAgents(agents?: () => Promise<HarnessInfo[]>): Promise<string[]> {
   const all = (await agents?.().catch(() => [])) ?? [];
   return all.filter((h) => h.installed && h.signedIn).map((h) => h.id);
+}
+
+/** The agents you marked "Avoid unless I ask". */
+const avoidedIn = (d: BrainDeps) => {
+  const agents = loadUserConfig(d.configFile).config.agents ?? {};
+  return (id: string) => !!agents[id]?.avoid;
+};
+
+/**
+ * The agents ion may go on by itself: ready, and not one you marked "Avoid unless I ask" unless it's `own`, the one
+ * you picked (Plan 22 live check, 2026-11-28: ion's brain fell back to an avoided Claude Code). Every pick and
+ * fallback of ion's brain and its dream starts from these, so a new one can't forget Avoid.
+ */
+async function candidates(d: BrainDeps, own?: string): Promise<string[]> {
+  const avoided = avoidedIn(d);
+  return (await readyAgents(d.agents)).filter((id) => id === own || !avoided(id));
 }
 
 /** Whether the agent is marked limited now (by any chat's run or ion's turn: views/usage.ts). */
@@ -62,7 +78,7 @@ export const limitedUntil = (db: Db, id: string): string | null =>
  * the only one ready (Plan 21 audit, 2026-11-23).
  */
 async function pick(d: BrainDeps, o: { not: string[]; own?: string; ok?: (id: string) => boolean }) {
-  const signedIn = await readyAgents(d.agents);
+  const signedIn = await candidates(d, o.own);
   const ready = signedIn.filter(o.ok ?? (() => true));
   const marks = usageView.agents(d.db, new Date());
   const order = orderOf(d);
@@ -84,11 +100,35 @@ async function pick(d: BrainDeps, o: { not: string[]; own?: string; ok?: (id: st
  * few words ("Claude Code is limited until 16:00"); null otherwise.
  */
 export async function allLimited(d: BrainDeps): Promise<string | null> {
-  const ready = await readyAgents(d.agents);
+  const ready = await candidates(d, quickAgent(d));
   const marks = usageView.agents(d.db, new Date());
   if (!ready.length || ready.some((id) => !marks[id]?.limitedUntil || marks[id]?.limitGuessed)) return null;
   const first = ready.reduce((a, b) => (marks[b]!.limitedUntil! < marks[a]!.limitedUntil! ? b : a));
   return limitedLine(getHarness(first)?.label ?? first, clockOf(marks[first]!.limitedUntil!, new Date()));
+}
+
+/** The agent you picked for ion's brain (Ions think with), if any. */
+const quickAgent = (d: BrainDeps): string | undefined =>
+  loadUserConfig(d.configFile).config.ion.quick?.split(":")[0] || undefined;
+
+/**
+ * With no agent left for an ion's turn: which frees up first (allLimited), else `otherwise` (a turn's agents failed),
+ * else what to do with none ready; and the agents ready but avoided, with what to do (Plan 22 live check, 2026-11-28:
+ * the ion went on an avoided agent instead of saying so). Null when there's nothing to say.
+ */
+export async function noAgentLeft(d: BrainDeps, otherwise?: string): Promise<string | null> {
+  const line = (await allLimited(d)) ?? otherwise ?? (await noneReady(d));
+  const avoided = avoidedIn(d);
+  const quick = quickAgent(d);
+  const ids = (await readyAgents(d.agents)).filter((id) => avoided(id) && id !== quick);
+  if (!ids.length) return line;
+  const names = byPreference(ids, orderOf(d)).map(agentLabel);
+  const one = names.length === 1;
+  const who = one ? `${names[0]} is` : `${names.slice(0, -1).join(", ")} and ${names.at(-1)} are`;
+  const note = `${who} set to Avoid: pick ${one ? "it" : "one"} under Ions think with, or turn Avoid off, in Settings → Agents`;
+  if (!line) return note;
+  const stop = line.endsWith(".") ? "" : ".";
+  return `${line}${stop} ${note}`;
 }
 
 /**
@@ -187,7 +227,7 @@ async function strongest(
   not: string[],
   { own, quiet, ok }: { own?: string; quiet?: true; ok?: (id: string) => boolean },
 ): Promise<string | null> {
-  const all = byStrength(await readyAgents(d.agents)).filter(ok ?? (() => true));
+  const all = byStrength(await candidates(d, own)).filter(ok ?? (() => true));
   const ready = all.filter((id) => !not.includes(id));
   const marks = usageView.agents(d.db, new Date());
   const open = ready.find((id) => !marks[id]?.limitedUntil);

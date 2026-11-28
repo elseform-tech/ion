@@ -106,8 +106,11 @@ export async function onReadyAgents<R extends { reply: string; ionLine?: IonLine
     once: (b: IonBrain) => Promise<Tried<R>>;
     next: (not: string[]) => Promise<IonBrain | null>;
     stay: (r: R) => boolean;
-    /** With no agent left: when every ready one is limited, which frees up first ("… is limited until 16:00"). */
-    none?: () => Promise<string | null>;
+    /**
+     * With no agent left, the reply instead of `otherwise` (why its agents failed): when every ready one is limited,
+     * which frees up first ("… is limited until 16:00"); the agents you avoid, and what to do.
+     */
+    none?: (otherwise: string) => Promise<string | null>;
   } & Limits,
 ): Promise<R> {
   const failed: Failed[] = [];
@@ -120,7 +123,7 @@ export async function onReadyAgents<R extends { reply: string; ionLine?: IonLine
     failed.push({ harness: brain.harness, why: f.why });
     const next = f.did || o.stay(r) ? null : await o.next(failed.map((x) => x.harness)).catch(() => null);
     if (!next) {
-      const reply = (await o.none?.().catch(() => null)) ?? couldNot(failed);
+      const reply = (await o.none?.(couldNot(failed)).catch(() => null)) ?? couldNot(failed);
       return { ...r, reply, ionLine: "no-agent" };
     }
     brain = next;

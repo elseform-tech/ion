@@ -7,7 +7,15 @@ import { describe, expect, it, vi } from "vitest";
 import { EventStore, openDb } from "../store/index.js";
 import { allViews } from "../views/index.js";
 import { brainModel, getHarness } from "../adapters/registry.js";
-import { allLimited, chatsPick, ionBrain, nextBrain, projectAgent, strongestBrain } from "./brain.js";
+import {
+  allLimited,
+  chatsPick,
+  ionBrain,
+  nextBrain,
+  noAgentLeft,
+  projectAgent,
+  strongestBrain,
+} from "./brain.js";
 
 // Task review, 2026-11-21: picking an ion's agent asked every agent's CLI whether it was ready (slow, and under a full
 // test run past a test's wait), even when the agent was already chosen. Only the chosen one is checked; every agent
@@ -369,5 +377,83 @@ describe("an avoided agent", () => {
     const d = (ids: string[]) => ({ configFile, db, agents: async () => ids.map((id) => info(id, true)) });
     expect(await projectAgent(d(["grok-build", "codex"]), "app")).toBe("codex");
     expect(await projectAgent(d(["grok-build"]), "app")).toBeUndefined();
+  });
+});
+
+// Plan 22 live check, 2026-11-28: opencode's free use ran out on the first message to an ion, and ion's brain fell back
+// to Claude Code (Opus) though Claude Code was set to "Avoid unless I ask". Only your own pick of it (Ions think with,
+// a dream agent) uses an avoided agent; ion's fallbacks, the strongest it finds, and Dream never do, and with nothing
+// else left the ion says which agents are limited or avoided and what to do.
+describe("ion's brain and an avoided agent", () => {
+  const info = (id: string): HarnessInfo => ({
+    ...{ id, label: id, installed: true, signedIn: true, models: [], defaultModel: null },
+  });
+  const inAnHour = () => new Date(Date.now() + 3600_000).toISOString();
+  const setup = (ids: string[], o: { limited?: string[]; more?: Partial<UserConfig> } = {}) => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-brain-")), "config.toml");
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      agents: { "claude-code": { avoid: true } },
+      memory: { dream: "nightly" },
+      ...o.more,
+    });
+    const db = viewsDb();
+    const store = new EventStore(db, allViews);
+    for (const harness of o.limited ?? []) {
+      const data = {
+        code: "usage_limit",
+        retryable: false,
+        message: "x",
+        limit: { resetsAt: inAnHour() },
+        harness,
+      };
+      store.append({ chatId: null, runId: null, origin: "adapter", type: "error", data } as NewEvent);
+    }
+    return { configFile, db, agents: async () => ids.map(info) };
+  };
+
+  it("ion's brain never falls back to an agent you set to Avoid", async () => {
+    const d = setup(["opencode", "claude-code"]);
+    for (const ionId of ["chief", "_dream"])
+      expect((await ionBrain(d, ionId))?.harness).not.toBe("claude-code");
+    expect(await strongestBrain(d)).toMatchObject({ agent: "opencode" });
+    // The bug: opencode's turn failed at its limit, and the next brain was Claude Code.
+    expect(await nextBrain(d, "chief", ["opencode"])).toBeNull();
+    expect(await nextBrain(d, "_dream", ["opencode"])).toBeNull();
+    const limited = setup(["opencode", "claude-code"], { limited: ["opencode"] });
+    for (const ionId of ["chief", "_dream"]) expect(await ionBrain(limited, ionId)).toBeNull();
+    // Another agent you don't avoid is used instead.
+    expect(await nextBrain(setup(["opencode", "claude-code", "codex"]), "chief", ["opencode"])).toMatchObject(
+      {
+        harness: "codex",
+      },
+    );
+  });
+
+  it("is used when you picked it for ion's brain or the dream", async () => {
+    const quick = { ion: { ...DEFAULT_CONFIG.ion, quick: "claude-code" } };
+    expect(await ionBrain(setup(["opencode", "claude-code"], { more: quick }), "chief")).toMatchObject({
+      harness: "claude-code",
+    });
+    const dream = { memory: { dream: "nightly" as const, dreamAgent: "claude-code" } };
+    expect(await ionBrain(setup(["claude-code"], { more: dream }), "_dream")).toMatchObject({
+      harness: "claude-code",
+    });
+  });
+
+  it("with nothing else left, says which agents are limited or avoided and what to do", async () => {
+    const d = setup(["opencode", "claude-code"], { limited: ["opencode"] });
+    const line = await noAgentLeft(d);
+    expect(line).toMatch(/^opencode is limited until \d\d:\d\d\. Claude Code is set to Avoid/);
+    expect(line).toContain("Settings → Agents");
+    expect(await noAgentLeft(setup(["claude-code"]))).toBe(
+      "Claude Code is set to Avoid: pick it under Ions think with, or turn Avoid off, in Settings → Agents",
+    );
+    // A turn whose agents failed keeps its reason, with the avoided agent named.
+    expect(await noAgentLeft(setup(["opencode", "claude-code"]), "I couldn't reach my agent: used up")).toBe(
+      "I couldn't reach my agent: used up. Claude Code is set to Avoid: pick it under Ions think with, or turn Avoid off, in Settings → Agents",
+    );
+    // Nothing avoided: as before.
+    expect(await noAgentLeft(setup(["opencode"], { more: { agents: {} } }), "x")).toBe("x");
   });
 });
