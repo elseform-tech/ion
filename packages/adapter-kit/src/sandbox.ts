@@ -12,7 +12,7 @@ import {
   rmSync,
   writeSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { whichOnPath } from "./system.js";
 
 /**
@@ -29,6 +29,8 @@ export type SandboxPaths = {
   write: string[];
   /** No writes under these, wherever they are: the agent's own config (nothing persists from a run). */
   noWrite: string[];
+  /** Nothing written anywhere (`write` is ignored): ion's own reads of a chat's worktree (re-review, 2026-11-28). */
+  readOnly?: boolean;
 };
 
 /** How this computer sandboxes: macOS's Seatbelt (`sandbox-exec`), Linux's bubblewrap, or not at all. */
@@ -42,13 +44,16 @@ export type RunSandbox = { kind: SandboxKind; paths: SandboxPaths; dataDir: stri
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 
-/** The path and, when different, its real path (links followed as far as the path exists: /tmp is /private/tmp). */
+/**
+ * The path and, when different, its real path (links followed as far as the path exists: /tmp is /private/tmp), in the
+ * letter case the disk has (re-review, 2026-11-28, N8: the JS realpath keeps the case it is given).
+ */
 export function realForms(p: string): string[] {
   const abs = resolve(p);
   const rest: string[] = [];
   for (let head = abs; ; head = dirname(head)) {
     try {
-      const real = join(realpathSync(head), ...rest);
+      const real = join(realpathSync.native(head), ...rest);
       return real === abs ? [abs] : [abs, real];
     } catch {
       if (dirname(head) === head) return [abs];
@@ -68,6 +73,42 @@ function checked(p: string): string {
 }
 
 const allForms = (ps: string[]) => [...new Set(ps.map(checked).flatMap(realForms).map(checked))];
+
+/**
+ * One path a run is let through to, with its real path; null when it is, holds, or leads (through a link) to one of
+ * ion's denied folders. Inside a denied folder (the run's worktree) a path is let through only as its own real path:
+ * no link below the denied folder (security re-review, 2026-11-28: a worktree root swapped for a link to another
+ * chat's worktree, or to config.toml, was let through with its target).
+ */
+function letOne(p: string, deny: string[]): string[] | null {
+  const forms = realForms(checked(p)).map(checked);
+  const abs = forms[0]!;
+  const real = forms.at(-1)!;
+  if (forms.some((f) => deny.some((d) => inside(d, f)))) return null;
+  const under = deny.find((d) => inside(abs, d));
+  if (!under) return deny.some((d) => inside(real, d)) ? null : forms;
+  const expected = join(realForms(under).at(-1)!, relative(under, abs));
+  return expected === real ? forms : null;
+}
+
+/** The paths a run is let through to (read or write), each with its real path; see `letOne`. */
+function letThrough(ps: string[], deny: string[]): string[] {
+  return [...new Set(ps.flatMap((p) => letOne(p, deny) ?? []))];
+}
+
+/**
+ * A run's paths as every sandbox takes them: ion's folders and the agent's config with their real paths, the run's
+ * own paths after `letOne` (for a sandbox ion doesn't build itself: Codex's own; security re-review 2, 2026-11-28).
+ */
+export function pathsLetThrough(p: SandboxPaths): Pick<SandboxPaths, "deny" | "read" | "write" | "noWrite"> {
+  const deny = allForms(p.deny);
+  return {
+    deny,
+    read: letThrough(p.read, deny),
+    write: p.readOnly ? [] : letThrough(p.write, deny),
+    noWrite: allForms(p.noWrite),
+  };
+}
 
 /** Every folder above `p`, nearest first, up to the root. */
 function ancestors(p: string): string[] {
@@ -103,8 +144,8 @@ const OUTSIDE = [
  */
 export function seatbeltProfile(p: SandboxPaths): string {
   const deny = allForms(p.deny);
-  const read = allForms(p.read);
-  const write = allForms(p.write);
+  const read = letThrough(p.read, deny);
+  const write = p.readOnly ? [] : letThrough(p.write, deny);
   const noWrite = allForms(p.noWrite);
   // The folders above ion's and above the agent's config can't be renamed or removed (moving one would carry what's
   // inside out from under its rule); a side effect: a run can't rename, remove or chmod them either.
@@ -120,6 +161,7 @@ export function seatbeltProfile(p: SandboxPaths): string {
   if (read.length) lines.push(`(allow file-read* ${subpaths(read)})`);
   if (write.length) lines.push(`(allow file-read* file-write* ${subpaths(write)})`);
   if (noWrite.length) lines.push(`(deny file-write* ${subpaths(noWrite)})`);
+  if (p.readOnly) lines.push('(deny file-write* (subpath "/"))', '(allow file-write* (literal "/dev/null"))');
   return `${lines.join("\n")}\n`;
 }
 
@@ -133,14 +175,15 @@ export function seatbeltProfile(p: SandboxPaths): string {
  */
 export function bwrapArgs(p: SandboxPaths, env: NodeJS.ProcessEnv = process.env): string[] {
   const args = [
-    ...["--die-with-parent", "--new-session", "--unshare-pid", "--bind", "/", "/"],
+    ...["--die-with-parent", "--new-session", "--unshare-pid", p.readOnly ? "--ro-bind" : "--bind", "/", "/"],
     ...["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm"],
   ];
   // Each path is its own argument (no shell reads them); one with a NUL or a line break is refused (CodeQL, PR #25).
   if (env.XDG_RUNTIME_DIR) args.push("--tmpfs", checked(join(env.XDG_RUNTIME_DIR, "bus")));
-  for (const d of allForms(p.deny)) args.push("--tmpfs", d);
-  for (const r of allForms(p.read)) args.push("--ro-bind-try", r, r);
-  for (const w of allForms(p.write)) args.push("--bind-try", w, w);
+  const deny = allForms(p.deny);
+  for (const d of deny) args.push("--tmpfs", d);
+  for (const r of letThrough(p.read, deny)) args.push("--ro-bind-try", r, r);
+  for (const w of p.readOnly ? [] : letThrough(p.write, deny)) args.push("--bind-try", w, w);
   for (const n of allForms(p.noWrite)) args.push("--ro-bind-try", n, n);
   return args;
 }
@@ -202,10 +245,13 @@ export function sandboxed(
 /** Adds paths to a run's sandbox (an agent's own: its config folder, ion's folder for it). */
 export function withPaths(sb: RunSandbox | undefined, more: Partial<SandboxPaths>): RunSandbox | undefined {
   if (!sb) return sb;
-  const add = (k: keyof SandboxPaths) => [...sb.paths[k], ...(more[k] ?? [])];
+  const add = (k: "deny" | "read" | "write" | "noWrite") => [...sb.paths[k], ...(more[k] ?? [])];
   return {
     kind: sb.kind,
-    paths: { deny: add("deny"), read: add("read"), write: add("write"), noWrite: add("noWrite") },
+    paths: {
+      ...{ deny: add("deny"), read: add("read"), write: add("write"), noWrite: add("noWrite") },
+      ...(sb.paths.readOnly ? { readOnly: true } : {}),
+    },
     dataDir: sb.dataDir,
   };
 }

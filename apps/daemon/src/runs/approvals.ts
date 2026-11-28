@@ -5,7 +5,8 @@ import { type TheirRules, theirSay } from "../access/agent-rules.js";
 import type { Blocked, Held } from "../decisions/blocked.js";
 import { type GateAnswer, GateAllows } from "../gate/index.js";
 import type { EventStore } from "../store/index.js";
-import { agentKey, gatewayKey, HANDOFF_MS } from "./handoff.js";
+import { agentKey, gatewayKey, HANDOFF_MS, sameCallKey } from "./handoff.js";
+import { type CheckPoint, HookMemo } from "./hook-memo.js";
 import { decideByPolicy } from "./policy.js";
 
 /** What a permission decision needs to know about the run asking. */
@@ -27,6 +28,8 @@ export type AskingRun = {
   sandboxed?: boolean;
   /** Its agent (harness id): its own allow and deny rules apply to its chats only. */
   harness?: string;
+  /** Its folder (the chat's worktree): where your hooks run. */
+  cwd?: string;
 };
 
 /** What Auto is told besides the call: a check that didn't finish, ion's guess, your agent's own rules. */
@@ -104,11 +107,14 @@ const HELD: Record<Held, Omit<Verdict, "decision"> & { decision: Decision }> = {
   timeout: { decision: "deny", by: "ion", reason: "No answer in 4 minutes" },
 };
 
-/** What a gate allow and a later prompt are matched on: the kind of call and its command or file. */
-const callKey = (c: { kind: string; input: Record<string, unknown> }) => {
-  const id = [c.input.command, c.input.file_path].find((v) => typeof v === "string") as string | undefined;
-  return id === undefined ? { kind: c.kind } : { kind: c.kind, id };
-};
+/**
+ * What a gate allow and a later prompt are matched on: the same call, on everything that was judged (its kind,
+ * server, tool and input; an MCP call on your servers by server, tool and arguments).
+ */
+const callKey = (r: AskingRun, c: GateCall & { added?: string[] }, side: "gate" | "prompt") => ({
+  kind: "call",
+  id: sameCallKey(c, side, r.viaIon),
+});
 
 /** Allows decided for exactly this call (never the gate's loose allows, nor the policy's), which may hand off. */
 const HANDED = new Set<Verdict["by"]>(["ion", "you", "full"]);
@@ -133,6 +139,8 @@ export class Approvals {
   private readonly holds = new Holding();
   /** Calls on your servers the agent's side just allowed: ion's gateway doesn't ask the judge (or you) again. */
   private readonly handoffs = new GateAllows(Date.now, HANDOFF_MS);
+  /** What your hooks said of each call, for the run's later checks of the same call. */
+  private readonly hooked = new HookMemo<Awaited<ReturnType<BeforeTool>>>();
   private gateCount = 0;
 
   constructor(
@@ -156,9 +164,11 @@ export class Approvals {
   async decide(r: AskingRun, req: ApprovalRequest, roots: string[]): Promise<Decision> {
     await this.waitForRequest(req.requestId);
     if (!this.isOpen(r.runId)) return "deny";
-    const v: Verdict = this.allows.take(r.runId, callKey(req))
-      ? { decision: "allow", by: "gate" }
-      : await this.verdict(r, req, roots);
+    // ion's own files hold on a call the gate allowed too (security review, 2026-11-28).
+    const v: Verdict =
+      !this.ownFiles(r, req, roots) && this.allows.take(r.runId, callKey(r, req, "prompt"))
+        ? { decision: "allow", by: "gate" }
+        : await this.verdict(r, req, roots, "prompt");
     if (!this.isOpen(r.runId)) return v.decision;
     this.record(r, { requestId: req.requestId, ...v });
     this.handOff(r, req, v);
@@ -172,10 +182,10 @@ export class Approvals {
   async gate(r: AskingRun, call: GateCall, roots: string[]): Promise<GateAnswer> {
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     const req: ApprovalRequest = { requestId: `g${++this.gateCount}`, toolId: "", ...call };
-    const v = await this.holds.during(r.runId, this.verdict(r, req, roots));
+    const v = await this.holds.during(r.runId, this.verdict(r, req, roots, "gate"));
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     this.handOff(r, req, v);
-    if (v.decision === "allow") this.allows.add(r.runId, callKey(call));
+    if (v.decision === "allow") this.allows.add(r.runId, callKey(r, call, "gate"));
     return this.answer(r, req, v);
   }
 
@@ -191,7 +201,7 @@ export class Approvals {
     let v: Verdict;
     if (own && !own.wary) v = own;
     else if (!own && this.handoffs.take(r.runId, gatewayKey(call))) v = { decision: "allow", by: "gate" };
-    else v = await this.verdict(r, req, roots); // a guess is judged or asked there
+    else v = await this.verdict(r, req, roots, "gateway"); // a guess is judged or asked there
     if (!this.isOpen(r.runId)) return { decision: "deny", reason: "This run has ended" };
     return this.answer(r, req, v);
   }
@@ -222,6 +232,7 @@ export class Approvals {
     this.allows.drop(runId);
     this.handoffs.drop(runId);
     this.holds.drop(runId);
+    this.hooked.drop(runId);
   }
 
   /** Told when ion starts and stops holding one of this run's gate calls (its agent's silence check waits). */
@@ -294,24 +305,36 @@ export class Approvals {
     }
   }
 
-  /** Your "Before a tool runs" hooks; one that can't be run lets the call go on (it's reported there). */
-  /** Your hooks' no; or that one of them didn't finish (hooks that couldn't be asked at all count too). */
+  /**
+   * Your hooks' no; or that one of them didn't finish (hooks that couldn't be asked at all count too). Once per call:
+   * a later check of the same call in the run gets what they said, a no included.
+   */
   private async hooksOn(
     r: AskingRun,
     req: ApprovalRequest,
+    at: CheckPoint,
   ): Promise<Verdict | { checksFailed: true } | null> {
-    if (!this.opts.beforeTool) return null;
-    const said = await this.opts.beforeTool(r, req).catch(() => ({ failed: true as const }));
+    const before = this.opts.beforeTool;
+    if (!before) return null;
+    const key = sameCallKey(req, at, r.viaIon);
+    const said = await this.hooked.once(r, { key, at }, () =>
+      before(r, req).catch(() => ({ failed: true as const })),
+    );
     if (!said) return null;
     return "reason" in said ? { decision: "deny", by: "hook", reason: said.reason } : { checksFailed: true };
   }
 
-  private async verdict(r: AskingRun, req: ApprovalRequest, roots: string[]): Promise<Verdict> {
+  private async verdict(
+    r: AskingRun,
+    req: ApprovalRequest,
+    roots: string[],
+    at: CheckPoint,
+  ): Promise<Verdict> {
     const own = this.ownFiles(r, req, roots);
     if (own && !own.wary) return own;
     const yours = this.yours(r, req);
     if ("decision" in yours) return yours;
-    const hooks = await this.hooksOn(r, req);
+    const hooks = await this.hooksOn(r, req, at);
     if (hooks && "decision" in hooks) return hooks;
     const how = { ...yours, checksFailed: !!hooks };
     // A guess: in Full (no judge) it asks you; in Auto the judge decides, shown what will run.

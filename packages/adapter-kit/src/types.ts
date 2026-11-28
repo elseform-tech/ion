@@ -17,6 +17,8 @@ export type ApprovalRequest = {
   input: Record<string, unknown>;
   /** For an MCP tool: the server it belongs to, when the harness says (ion's own is "ion"). */
   mcpServer?: string | null;
+  /** Keys the harness added to the tool's own input (ACP's `locations`), left out when ion matches calls. */
+  added?: string[];
 };
 
 export type { Decision };

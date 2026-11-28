@@ -1,4 +1,4 @@
-import { looksLikeToken } from "./shown.js";
+import { holdsToken, KEY_PREFIX, looksLikeToken } from "./shown.js";
 
 /**
  * Could a value typed into mcp.json be a key? Asked for the readable-by-others warning: its own question, not what
@@ -28,7 +28,8 @@ export function urlHoldsKey(url: string): boolean {
   const values = query.split("&").map((kv) => kv.slice(kv.indexOf("=") + 1));
   return (
     authority.includes("@") ||
-    path.split("/").some(looksLikeToken) ||
+    // The prefixes keys use too (re-review, 2026-11-28, N7: `/x/glpat-<letters>` passed).
+    path.split("/").some((p) => KEY_PREFIX.test(p) || looksLikeToken(p)) ||
     values.some((v) => v !== "" && !ONLY_REFS.test(decoded(v)))
   );
 }
@@ -38,7 +39,7 @@ function couldBeKey(v: string): boolean {
   if (ONLY_REFS.test(v)) return false;
   if (v.includes("://")) return urlHoldsKey(v);
   if (/^bearer\s+\S/i.test(v)) return true;
-  return looksLikeToken(v) || v.split(/[/\s]/).some(looksLikeToken);
+  return v.split(/\s/).some(holdsToken);
 }
 
 /** A named value (env, header): a secret-named one typed in, or a value that could be a key. */

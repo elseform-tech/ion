@@ -199,6 +199,76 @@ describe("acp adapter", () => {
     expect(seen).toEqual({ file_path: "/repo/a.ts", locations: ["/repo/a.ts"] });
   });
 
+  // Security re-review, 2026-11-28 (N5): ion dropped any `locations` at the prompt to match the agent's hook, even
+  // when it was the tool's own argument. The adapter says when it added them.
+  it("says when it added the locations, and not when the tool had its own", async () => {
+    const { answerPermission } = await import("./session.js");
+    const added: unknown[] = [];
+    for (const rawInput of [{ q: "x" }, { q: "x", locations: ["mine"] }]) {
+      const p = {
+        toolCall: { toolCallId: "t", kind: "read", locations: [{ path: "/r/a" }], rawInput },
+        options: [],
+      };
+      await answerPermission(
+        p,
+        async (r) => {
+          added.push(r.added);
+          return "deny";
+        },
+        () => {},
+      );
+    }
+    expect(added).toEqual([["locations"], ["acp_locations"]]);
+  });
+
+  // Security re-review 2, 2026-11-28 (R2-4): ACP's file list replaced a tool's own `locations` argument in what the
+  // judge saw. Both are kept, ACP's under its own key.
+  it("keeps a tool's own locations, with ACP's beside them", async () => {
+    const { answerPermission } = await import("./session.js");
+    let seen: { input?: unknown; added?: unknown } = {};
+    const p = {
+      toolCall: {
+        toolCallId: "t",
+        kind: "read",
+        locations: [{ path: "/r/a" }],
+        rawInput: { q: "x", locations: ["mine"] },
+      },
+      options: [],
+    };
+    await answerPermission(
+      p,
+      async (r) => {
+        seen = { input: r.input, added: r.added };
+        return "deny";
+      },
+      () => {},
+    );
+    expect(seen).toEqual({
+      input: { q: "x", locations: ["mine"], acp_locations: ["/r/a"] },
+      added: ["acp_locations"],
+    });
+  });
+
+  // Security re-review 3, 2026-11-28 (R3-3): a tool with its own `acp_locations` had it replaced by ACP's list.
+  it("puts ACP's list under the first key the tool doesn't use", async () => {
+    const { answerPermission } = await import("./session.js");
+    let seen: { input?: unknown; added?: unknown } = {};
+    const rawInput = { locations: ["a"], acp_locations: ["b"] };
+    const p = {
+      toolCall: { toolCallId: "t", kind: "read", locations: [{ path: "/r/a" }], rawInput },
+      options: [],
+    };
+    await answerPermission(
+      p,
+      async (r) => {
+        seen = { input: r.input, added: r.added };
+        return "deny";
+      },
+      () => {},
+    );
+    expect(seen).toEqual({ input: { ...rawInput, acp_2_locations: ["/r/a"] }, added: ["acp_2_locations"] });
+  });
+
   it("tolerates malformed locations and refuses when deciding fails", async () => {
     const { answerPermission } = await import("./session.js");
     const p = {

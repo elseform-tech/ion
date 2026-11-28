@@ -5,6 +5,8 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,6 +19,7 @@ import { allViews } from "../views/index.js";
 import { createSigner } from "../secrets/consent-key.js";
 import { memorySecrets } from "../secrets/index.js";
 import { hookHasher } from "./consent.js";
+import { hookSandbox } from "../runs/sandbox.js";
 import { Hooks, LIMITS } from "./index.js";
 
 // The user, 2026-11-20: "it should be hooks, showing all available events regardless if we have hooks, and of
@@ -355,5 +358,82 @@ describe("hooks before a tool runs", () => {
     await save([{ id: "g", name: "Wordy", event: "tool.before", run: "printf '%0400d' 0 >&2; exit 2" }]);
     const r = await hooks.beforeTool(runOf(chat()), call("ls"));
     expect(r?.reason).toBe("0".repeat(300));
+  });
+});
+
+// Plugins research, 2026-11-28 (docs/research/plugins-across-agents.md, "Where hooks run"): hooks ran in the
+// project's folder, so a rule a chat wrote in its worktree (hookify's `.claude/hookify.*.local.md`) went unseen.
+describe("a hook runs in the chat's worktree", () => {
+  it("before a tool runs, in the run's folder; on an event, in the chat's worktree; else the project's", async () => {
+    const wt = realpathSync(mkdtempSync(join(tmpdir(), "ion-wt-")));
+    const out = join(home, "pwd.txt");
+    await save([
+      { id: "g", name: "Where", event: "tool.before", run: `pwd >> ${out}` },
+      { id: "e", name: "Where", event: "run.finished", run: `pwd >> ${out}` },
+    ]);
+    const c = `c${++n}`;
+    const data = { title: "Fix the cart", projectId: "app", worktree: wt, branch: "ion/x" };
+    store.append({ chatId: c, runId: null, origin: "daemon", type: EV.chatCreated, data });
+    await hooks.beforeTool({ ...runOf(c), cwd: wt }, call("ls"));
+    finish(c);
+    await hooks.idle();
+    // A plain chat with no worktree: the project's folder.
+    finish(chat());
+    await hooks.idle();
+    expect(readFileSync(out, "utf8").trim().split("\n")).toEqual([wt, wt, proj]);
+  });
+});
+
+describe.runIf(process.platform === "darwin")("a hook in a chat's worktree, sandboxed", () => {
+  it("can write there, though the worktree is in ion's data folder", async () => {
+    const dataDir = join(home, "data");
+    const c = chat();
+    const wt = join(dataDir, "worktrees", c);
+    mkdirSync(wt, { recursive: true });
+    const sandbox = hookSandbox({ dataDir, configFile });
+    expect(sandbox).toBeDefined();
+    const boxed = new Hooks({ store, db, configFile, sign, limits: fast, ...(sandbox ? { sandbox } : {}) });
+    await save([{ id: "g", name: "Touch", event: "tool.before", run: "touch here.txt" }]);
+    expect(await boxed.beforeTool({ ...runOf(c), cwd: wt }, call("ls"))).toBeNull();
+    expect(existsSync(join(wt, "here.txt"))).toBe(true);
+  });
+
+  // Security review, 2026-11-28 (hooks fix, C1): a chat's agent can swap its worktree folder for a link; the hook's
+  // sandbox then let it write wherever the link led: another chat's worktree, or a folder holding ion's own.
+  it("gets no reach through a worktree swapped for a link", async () => {
+    const dataDir = join(home, "data");
+    const c = chat();
+    const other = join(dataDir, "worktrees", "c-other");
+    const fakeHome = join(home, "fake-home");
+    mkdirSync(other, { recursive: true });
+    mkdirSync(join(fakeHome, ".config", "ion"), { recursive: true });
+    const ionConfig = join(fakeHome, ".config", "ion", "config.toml");
+    const sandbox = hookSandbox({ dataDir, configFile: ionConfig });
+    const boxed = new Hooks({ store, db, configFile, sign, limits: fast, ...(sandbox ? { sandbox } : {}) });
+    await save([{ id: "g", name: "Touch", event: "tool.before", run: "touch here.txt .config/ion/pwned" }]);
+    const wt = join(dataDir, "worktrees", c);
+    for (const target of [other, fakeHome]) {
+      rmSync(wt, { recursive: true, force: true });
+      symlinkSync(target, wt);
+      await boxed.beforeTool({ ...runOf(c), cwd: wt }, call("ls"));
+    }
+    expect(existsSync(join(other, "here.txt"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".config", "ion", "pwned"))).toBe(false);
+  });
+});
+
+// Security review, 2026-11-28 (hooks fix, I1): a hook's project folder was added to its sandbox's writable paths,
+// after the deny of ion's folders, so a project holding them (a dotfiles repo at ~) let every hook write ion's config.
+describe.runIf(process.platform === "darwin")("a hook in a project's folder, sandboxed", () => {
+  it("can't write ion's folders inside it", async () => {
+    configFile = join(home, "cfg", "config.toml");
+    mkdirSync(join(home, "cfg"));
+    const sandbox = hookSandbox({ dataDir: join(home, "data"), configFile });
+    const boxed = new Hooks({ store, db, configFile, sign, limits: fast, ...(sandbox ? { sandbox } : {}) });
+    await save([{ id: "g", name: "Touch", event: "tool.before", run: "touch cfg/pwned; touch mine" }]);
+    // "other" is at `home`, which holds ion's config folder; the chat has no worktree.
+    await boxed.beforeTool(runOf(chat("other"), "other"), call("ls"));
+    expect(existsSync(join(home, "mine"))).toBe(true);
+    expect(existsSync(join(home, "cfg", "pwned"))).toBe(false);
   });
 });
