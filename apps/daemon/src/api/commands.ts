@@ -95,7 +95,9 @@ async function askOn(a: Commands["ask"]["args"], ctx: Ctx) {
   const route = a.chatId ? null : await routed(ctx, () => harnessInfos.list(), where);
   if (route) return ctx.runs.ask({ ...a, harness: route.harness }, { routed: route.reason });
   const ready = (await harnessInfos.list()).filter((h) => h.installed && h.signedIn).map((h) => h.id);
-  const own = a.chatId ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
+  // A chat an ion started honours Avoid; one you started stays on its agent (the user, 2026-11-28).
+  const byIon = !!a.chatId && chatsView.list(ctx.db).find((c) => c.chatId === a.chatId)?.by === "ion";
+  const own = a.chatId && !byIon ? (chatsView.session(ctx.db, a.chatId)?.harness ?? null) : null;
   // No agent ready at all: what to do, by agent (Plan 21). Some ready: Automatic, honouring Avoid (PR #36).
   if (!ready.length)
     throw new UserError(noAgentLine(await listedAgents(ctx.configFile)) ?? "No agent is ready");

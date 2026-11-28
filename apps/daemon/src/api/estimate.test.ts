@@ -13,8 +13,8 @@ const info = (id: string): HarnessInfo => ({
 });
 
 /** Five past chats in `default` on this agent, each a short change that took `tokens` in all. */
-function past(store: EventStore, harness: string, tokens: number) {
-  for (let i = 0; i < 5; i++) {
+function past(store: EventStore, harness: string, tokens: number, count = 5) {
+  for (let i = 0; i < count; i++) {
     const [chatId, runId] = [`${harness}-c${i}`, `${harness}-r${i}`];
     const add = (type: string, data: object, run: string | null, origin = "daemon") =>
       store.append({ chatId, runId: run, origin, type, data } as NewEvent);
@@ -52,5 +52,21 @@ describe("the estimate before you send", () => {
       info("opencode"),
     ]);
     expect(e).toMatchObject({ unit: "tokens", high: 1000 });
+  });
+
+  // The user, 2026-11-28: a chat you started stays on its agent after you set it to Avoid; its estimate is that agent's.
+  it("names the agent your own chat stays on, though you avoid it", async () => {
+    const configFile = join(mkdtempSync(join(tmpdir(), "ion-estimate-")), "config.toml");
+    saveUserConfig(configFile, { ...DEFAULT_CONFIG, agents: { "claude-code": { avoid: true } } });
+    const db = openDb(":memory:");
+    const store = new EventStore(db, allViews);
+    store.rebuildViews();
+    past(store, "opencode", 1000);
+    past(store, "claude-code", 9000, 6);
+    const e = await estimateFor({ db, configFile }, { chatId: "claude-code-c0" }, [
+      info("claude-code"),
+      info("opencode"),
+    ]);
+    expect(e).toMatchObject({ unit: "tokens", high: 9000 });
   });
 });

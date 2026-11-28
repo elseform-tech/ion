@@ -12,13 +12,15 @@ export const orderIn = (configFile: string): string[] =>
   agentOrder(loadUserConfig(configFile).config.routing.order);
 
 /**
- * The agent a message goes on when you picked none and Automatic found none: `own` (the chat's) while it's ready, else
- * the first ready in your order; never one you avoid (PR #36 final review, 2026-11-24). The send and the estimate
+ * The agent a message goes on when you picked none and Automatic found none: `own` (the chat's) while it's ready, even if you
+ * set it to Avoid, else the first ready in your order that you don't avoid (PR #36 final review, 2026-11-24). The send and the estimate
  * before it both ask this (brain-avoid fix review, 2026-11-28). None: undefined.
  */
 export function usualAgent(configFile: string, ready: string[], own: string | null): string | undefined {
   const c = loadUserConfig(configFile).config;
-  return defaultAgent(notAvoided(ready, c), own && ready.includes(own) ? own : null, orderIn(configFile));
+  // Your own chat stays on its agent even when you later set it to Avoid (the user, 2026-11-28: you own your work).
+  if (own && ready.includes(own)) return own;
+  return defaultAgent(notAvoided(ready, c), null, orderIn(configFile));
 }
 
 /**
