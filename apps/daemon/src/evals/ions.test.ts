@@ -14,9 +14,19 @@ import { fileURLToPath } from "node:url";
 import { connect } from "@ion/client";
 import { EV, type IonEvent } from "@ion/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { answerWithin, harnessRunner } from "../access/runner.js";
 import { agentLabel } from "../adapters/registry.js";
 import { startServer } from "../api/server.js";
 import { ION_CASES, ION_MEASURES, type IonCase, type IonMeasure } from "./ion-cases.js";
+import { BRIEF_LABELS } from "./ion-brief-labels.js";
+import {
+  AGREEMENT_MIN,
+  agreementOf,
+  briefVerdict,
+  type Grade,
+  graderPrompt,
+  parseGrade,
+} from "./ion-grader.js";
 import { type Scored, scoreIon } from "./ion-score.js";
 import { fakeLimited, ionConfig, rotated, writeProject } from "./ion-seeds.js";
 
@@ -67,6 +77,8 @@ type Row = Scored & {
   ms: number;
   /** What the agent under test said its turns used (input and output tokens), where it says. */
   tokens: number;
+  /** Each brief's grade (brief cases only): its score and what it invented; null when the grader gave none. */
+  grades?: (Pick<Grade, "score" | "invented"> | null)[];
 };
 
 async function until<T>(f: () => T | undefined | false, ms: number): Promise<T> {
@@ -134,6 +146,75 @@ function isolate(dir: string): () => void {
   };
 }
 
+/** The brief grader's agent: Grok, never Claude (Plan 23). ION_GRADER: another "<agent>[:<model>]". */
+const GRADER = process.env.ION_GRADER ?? "grok-build";
+/** How long one grade may take. */
+const GRADE_MS = 120_000;
+
+type Grader = {
+  grade(o: { request: string; brief: string; projectId: string }): Promise<Grade | null>;
+  /** The tokens its sessions said they used. */
+  tokens: number;
+  /** It agreed with the hand labels at AGREEMENT_MIN or better: only then do its grades count. */
+  trusted: boolean;
+};
+
+/** The grader: a bare session on GRADER (no tools), in a config and data folder of its own under `dir`. */
+function graderIn(dir: string): Grader {
+  const home = join(dir, "grader");
+  mkdirSync(home, { recursive: true });
+  const configFile = join(home, "config.toml");
+  writeFileSync(configFile, `[ion]\nquick = ${JSON.stringify(GRADER)}\n`);
+  const g: Grader = { grade: async () => null, tokens: 0, trusted: false };
+  const record = (_h: string, e: { type: string; data: unknown }) => {
+    const d = e.data as { inputTokens?: number; outputTokens?: number };
+    if (e.type === EV.usageReported) g.tokens += (d.inputTokens ?? 0) + (d.outputTokens ?? 0);
+  };
+  const run = harnessRunner({ configFile, dataDir: join(home, "data"), record }, "quick");
+  g.grade = async (o) => {
+    const out = await answerWithin(run, graderPrompt(o), GRADE_MS).catch(() => null);
+    return out === null ? null : parseGrade(out);
+  };
+  return g;
+}
+
+/** Each item through `f`, PARALLEL at a time, results in order. */
+async function pool<T, R>(items: T[], f: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < items.length; i = next++) out[i] = await f(items[i]!);
+  };
+  await Promise.all(Array.from({ length: PARALLEL }, worker));
+  return out;
+}
+
+/** The grader against the hand labels, before any of its grades count (at least AGREEMENT_MIN). */
+async function checkGrader(g: Grader) {
+  const grades = await pool(BRIEF_LABELS, (l) => g.grade(l));
+  const a = agreementOf(BRIEF_LABELS, grades);
+  g.trusted = a.pct >= AGREEMENT_MIN;
+  const each = BRIEF_LABELS.map((l, i) => ({
+    ...{ id: l.id, label: l.score, labelInvented: l.invented },
+    ...{ grade: grades[i]?.score ?? null, invented: grades[i]?.invented ?? null },
+  }));
+  return { agent: GRADER, ...a, trusted: g.trusted, each };
+}
+
+/** A brief case's chats graded: failed on a short or inventing brief, only when the grader is trusted. */
+async function graded(
+  c: IonCase,
+  s: Scored,
+  g: Grader | null,
+): Promise<Pick<Row, "result" | "why" | "grades">> {
+  if (!c.expect.graded || !g || s.result !== "pass") return { result: s.result, why: s.why };
+  const all = await Promise.all(s.briefs.map((b) => g.grade({ request: c.text, brief: b.brief, ...b })));
+  const grades = all.map((x) => (x ? { score: x.score, invented: x.invented } : null));
+  const why = briefVerdict(all);
+  if (!g.trusted) return { result: s.result, why: why && `${why} (grader not trusted: not counted)`, grades };
+  return { result: why ? "fail" : "pass", why, grades };
+}
+
 /** A fresh ion home for one run of a case: the three projects as git repos, in this run's order. */
 function homeFor(root: string, a: Agent, c: IonCase, run: number): string {
   const home = join(root, a.id.replace(/\W/g, "-"), `${c.id}-${run}`);
@@ -193,7 +274,9 @@ async function settled(events: IonEvent[]): Promise<void> {
   await pause(1500);
 }
 
-async function runCase(root: string, a: Agent, c: IonCase, run: number): Promise<Row> {
+type Job = { c: IonCase; run: number; g: Grader | null };
+
+async function runCase(root: string, a: Agent, { c, run, g }: Job): Promise<Row> {
   const home = homeFor(root, a, c, run);
   const srv = await startServer({
     dataDir: join(home, "data"),
@@ -215,7 +298,7 @@ async function runCase(root: string, a: Agent, c: IonCase, run: number): Promise
     const scored = scoreIon(c, seen);
     const steps = stepsOf(events, c.to);
     const row = { agent: a.id, id: c.id, measure: c.measure, run, steps, tokens: tokensOf(events, a.id) };
-    return { ...scored, ...row, ms: Date.now() - started };
+    return { ...scored, ...(await graded(c, scored, g)), ...row, ms: Date.now() - started };
   } finally {
     client.close();
     await srv.close();
@@ -225,16 +308,27 @@ async function runCase(root: string, a: Agent, c: IonCase, run: number): Promise
 /** A run that threw: a fail with why (never a pass). */
 const thrown = (a: Agent, c: IonCase, run: number, e: unknown): Row => ({
   ...{ agent: a.id, id: c.id, measure: c.measure, run, result: "fail", why: (e as Error).message },
-  ...{ move: null, reply: "", threads: [], stray: [], wrote: [], outside: [], steps: [], ms: 0, tokens: 0 },
+  ...{
+    move: null,
+    reply: "",
+    threads: [],
+    stray: [],
+    wrote: [],
+    outside: [],
+    briefs: [],
+    steps: [],
+    ms: 0,
+    tokens: 0,
+  },
 });
 
-async function runAll(root: string, a: Agent): Promise<Row[]> {
+async function runAll(root: string, a: Agent, g: Grader | null): Promise<Row[]> {
   const out: Row[] = [];
   const queue = Array.from({ length: RUNS }, (_, run) => CASES.map((c) => ({ c, run }))).flat();
   const worker = async () => {
     for (let job = queue.shift(); job; job = queue.shift()) {
       const { c, run } = job;
-      const r = await runCase(root, a, c, run).catch((e: unknown) => thrown(a, c, run, e));
+      const r = await runCase(root, a, { c, run, g }).catch((e: unknown) => thrown(a, c, run, e));
       const to = r.threads.length ? " → " + r.threads.join(", ") : "";
       console.log(
         `${a.id} ${r.id}#${run + 1}: ${r.result} (${r.move ?? "-"}${to}) ${r.why} [${r.tokens} tokens]`,
@@ -270,7 +364,20 @@ function measureOf(rows: Row[], m: IonMeasure) {
     strayChats: of.reduce((n, r) => n + r.stray.length, 0),
     writes: of.filter((r) => r.wrote.length).length,
     outside: of.filter((r) => r.outside.length).length,
+    ...briefsOf(of),
     failing: cases.filter((x) => !x.pass).map((x) => `${x.id} ${x.split}`),
+  };
+}
+
+/** The briefs graded among these runs: their average score and how many invented something. */
+function briefsOf(rows: Row[]) {
+  const grades = rows.flatMap((r) => r.grades ?? []).filter((x) => !!x);
+  if (!grades.length) return {};
+  const mean = grades.reduce((n, x) => n + x.score, 0) / grades.length;
+  return {
+    briefScore: Number(mean.toFixed(2)),
+    briefs: grades.length,
+    invented: grades.filter((x) => x.invented.length).length,
   };
 }
 
@@ -290,15 +397,16 @@ function summary(agent: string, rows: Row[]) {
 describe.skipIf(live.length === 0)("ion evals", { timeout: 4 * 3_600_000 }, () => {
   let dir = "";
   let restore = () => {};
-  const report: (ReturnType<typeof summary> & { rows: Row[] })[] = [];
+  const report: (ReturnType<typeof summary> & { grader: unknown; rows: Row[] })[] = [];
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "ion-ions-eval-"));
     // ion's folders for the run live in the temp folder, never yours; the chats ions start run on the fake agent.
     process.env.ION_HOME = join(dir, "home");
     process.env.ION_ALLOW_FAKE = "1";
     // Only the agents under test may answer: no turn falls over onto another (Claude, Codex, the other free one).
+    // The grader's agent stays (a fall-over onto it is still counted as no answer).
     const blocked = Object.entries(BINARIES)
-      .filter(([id]) => !live.some((a) => a.id === id))
+      .filter(([id]) => !live.some((a) => a.id === id) && id !== GRADER.split(":")[0])
       .map(([, bin]) => bin);
     process.env.PATH = pathWithout(dir, blocked);
     restore = isolate(dir);
@@ -319,6 +427,7 @@ describe.skipIf(live.length === 0)("ion evals", { timeout: 4 * 3_600_000 }, () =
           stray: v.strayChats,
           writes: v.writes,
           outside: v.outside,
+          ...("briefScore" in v ? { brief: `${v.briefScore} (${v.invented} invented of ${v.briefs})` } : {}),
         },
       }));
       console.table(rows);
@@ -329,10 +438,17 @@ describe.skipIf(live.length === 0)("ion evals", { timeout: 4 * 3_600_000 }, () =
   });
 
   for (const a of live) {
-    it(`${a.id}: ions orchestrate (decide, route, restraint) and never write`, async () => {
-      const rows = await runAll(dir, a);
+    it(`${a.id}: ions orchestrate (decide, route, restraint, briefs, fan-out, ask) and never write`, async () => {
+      // The grader is checked against the labels first; its grades count only when it agrees (Plan 23).
+      const g = CASES.some((c) => c.expect.graded) ? graderIn(join(dir, a.id)) : null;
+      const grader = g ? await checkGrader(g) : null;
+      if (grader)
+        console.log(
+          `grader ${grader.agent}: agrees on ${grader.agreed}/${grader.of}; misses ${grader.misses.join(", ") || "none"}`,
+        );
+      const rows = await runAll(dir, a, g);
       const s = summary(a.id, rows);
-      report.push({ ...s, rows });
+      report.push({ ...s, grader: grader && { ...grader, tokens: g!.tokens }, rows });
       expect(s.wrote, `${a.id}: an ion wrote`).toEqual([]);
       expect(s.outside, `${a.id}: an ion called a tool outside ion's own`).toEqual([]);
       // Too many with no answer says nothing about the ions.

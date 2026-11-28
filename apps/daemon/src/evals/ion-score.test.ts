@@ -164,6 +164,72 @@ describe("ion eval scoring", () => {
     expect(scoreIon(c, seen("chief", [])).result).toBe("error");
   });
 
+  // Plan 23 Task 2 (2026-11-28): fan-out and ask, watched failing before ion-score.ts scored them.
+  const briefed = (projectId: string, brief: string) => {
+    const t = thread(projectId);
+    return [t, ev(EV.messageSent, t.chatId, { text: brief })];
+  };
+
+  it("fails fan-out on a duplicate chat: the same work twice in one project", () => {
+    const c = kase({
+      measure: "fanout",
+      expect: {
+        move: "thread",
+        projects: ["docs", "payments-api"],
+        counts: { docs: [1, 1], "payments-api": [1, 1] },
+      },
+    });
+    const once = [
+      ...briefed("payments-api", "Add a refunds count to the health endpoint in payments-api."),
+      ...briefed("docs", "Mention the refunds count on the refunds page of the docs."),
+      said("chief", "Started both."),
+    ];
+    expect(scoreIon(c, seen("chief", once)).result).toBe("pass");
+    const twice = [
+      ...once,
+      ...briefed("docs", "Mention the new refunds count on the docs refunds page."),
+      said("chief", "Started."),
+    ];
+    const r = scoreIon(c, seen("chief", twice));
+    expect(r.result).toBe("fail");
+    expect(r.why).toMatch(/duplicate|2 chats in docs/);
+  });
+
+  it("finds a duplicate by its brief even where two chats in one project were right", () => {
+    const c = kase({
+      measure: "fanout",
+      to: "storefront",
+      expect: { move: "thread", counts: { storefront: [2, 2] } },
+    });
+    const two = [
+      ...briefed("storefront", "Add alt text to every product image on the listing page."),
+      ...briefed("storefront", "Add a loading spinner to the checkout page while the order submits."),
+      said("storefront", "Started two."),
+    ];
+    expect(scoreIon(c, seen("storefront", two)).result).toBe("pass");
+    const dup = [
+      ...briefed("storefront", "Add alt text to every product image on the listing page."),
+      ...briefed("storefront", "Add alt text to all product images on the listing page."),
+      said("storefront", "Started two."),
+    ];
+    expect(scoreIon(c, seen("storefront", dup)).why).toMatch(/duplicate/);
+  });
+
+  it("fails ask on two questions where one would do, and on a guess", () => {
+    const c = kase({ measure: "ask", expect: { move: "ask", oneQuestion: true } });
+    expect(
+      scoreIon(c, seen("chief", [said("chief", "Which project's README: storefront, payments-api or docs?")]))
+        .result,
+    ).toBe("pass");
+    const two = said("chief", "Which README do you mean? And what should change in it?");
+    const r = scoreIon(c, seen("chief", [two]));
+    expect(r.result).toBe("fail");
+    expect(r.why).toMatch(/2 questions/);
+    expect(scoreIon(c, seen("chief", [thread("docs"), said("chief", "I updated docs.")])).result).toBe(
+      "fail",
+    );
+  });
+
   it("takes the turn's own reply, not a later report on the thread", () => {
     const c = kase({ measure: "decide", expect: { move: "ask" } });
     const r = scoreIon(c, seen("chief", [said("chief", "Which project?"), said("chief", "It's done.")]));
@@ -186,9 +252,14 @@ describe("ion cases", () => {
   it("covers each measure, routes only ion chief's requests, and names a project for every chat expected", () => {
     for (const m of ION_MEASURES)
       expect(ION_CASES.filter((c) => c.measure === m).length, m).toBeGreaterThanOrEqual(5);
-    expect(ION_CASES.length).toBeGreaterThanOrEqual(24);
+    expect(ION_CASES.length).toBeGreaterThanOrEqual(42);
     for (const c of ION_CASES.filter((x) => x.measure === "route")) expect(c.to, c.id).toBe("chief");
     for (const c of ION_CASES.filter((x) => x.expect.move === "thread"))
-      expect(c.expect.projects?.length, c.id).toBeGreaterThan(0);
+      expect(Object.keys(c.expect.counts ?? {}).length || c.expect.projects?.length, c.id).toBeGreaterThan(0);
+    for (const c of ION_CASES.filter((x) => x.measure === "brief")) expect(c.expect.graded, c.id).toBe(true);
+    for (const c of ION_CASES.filter((x) => x.measure === "fanout"))
+      expect(c.expect.counts, c.id).toBeDefined();
+    for (const c of ION_CASES.filter((x) => x.measure === "ask"))
+      expect(c.expect.oneQuestion, c.id).toBe(true);
   });
 });

@@ -59,6 +59,9 @@ const docs: SeedProject = {
 
 const ION_PROJECTS: SeedProject[] = [storefront, paymentsApi, docs];
 
+/** A seeded project by its id. */
+export const projectOf = (id: string): SeedProject | undefined => ION_PROJECTS.find((p) => p.id === id);
+
 /** The projects, turned `by` places (each case's runs see them in another order: Review Focus 2). */
 export const rotated = (by: number): SeedProject[] =>
   ION_PROJECTS.map((_, i) => ION_PROJECTS[(i + by) % ION_PROJECTS.length]!);

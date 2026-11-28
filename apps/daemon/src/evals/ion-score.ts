@@ -1,4 +1,5 @@
 import { EV, type IonEvent } from "@ion/schema";
+import { PER_TURN } from "../ions/turn.js";
 import type { IonCase, Move } from "./ion-cases.js";
 
 /**
@@ -24,7 +25,11 @@ export type Scored = {
   wrote: string[];
   /** Each tool it called on a server other than ion's (yours, a plugin's): an eval's ion has ion's tools only. */
   outside: string[];
+  /** Each chat it started, with the brief it was started with (graded apart, by ion-grader.ts). */
+  briefs: Brief[];
 };
+
+type Brief = { projectId: string; brief: string };
 
 const dataOf = (e: IonEvent) => e.data as Record<string, unknown>;
 
@@ -114,22 +119,76 @@ function moveOf(threads: string[], reply: string): Move {
   return ownWords(reply).includes("?") ? "ask" : "answer";
 }
 
+/** The chats the ion started, each with the message it was started with (its brief). */
+function briefsOf(events: IonEvent[]): Brief[] {
+  return events
+    .filter((e) => e.type === EV.chatCreated && dataOf(e).by === "ion")
+    .map((e) => {
+      const sent = events.find((x) => x.type === EV.messageSent && x.chatId === e.chatId);
+      return {
+        projectId: String(dataOf(e).projectId ?? ""),
+        brief: sent ? String(dataOf(sent).text ?? "") : "",
+      };
+    });
+}
+
+/** A brief's words of three letters or more. */
+const wordsOf = (t: string) => new Set(t.toLowerCase().match(/[a-z0-9']{3,}/g) ?? []);
+
+/** Two briefs doing the same work: most of their words shared (Jaccard 0.6 or more). */
+function same(a: string, b: string): boolean {
+  const x = wordsOf(a);
+  const y = wordsOf(b);
+  const shared = [...x].filter((w) => y.has(w)).length;
+  return shared / (x.size + y.size - shared || 1) >= 0.6;
+}
+
+/** Fan-out: each project's chats within its range, none past the turn's cap, no two in a project doing the same work. */
+function fanOutWhy(counts: Record<string, [number, number]>, briefs: Brief[]): string {
+  if (briefs.length > PER_TURN) return `${briefs.length} chats, past the cap of ${PER_TURN}`;
+  for (const [p, [least, most]] of Object.entries(counts)) {
+    const n = briefs.filter((b) => b.projectId === p).length;
+    const range = least === most ? String(least) : `${least}–${most}`;
+    if (n < least || n > most) return `${n} chats in ${p}, expected ${range}`;
+  }
+  const dup = briefs.findIndex((b, i) =>
+    briefs.slice(0, i).some((a) => a.projectId === b.projectId && same(a.brief, b.brief)),
+  );
+  return dup >= 0 ? `a duplicate chat in ${briefs[dup]!.projectId}` : "";
+}
+
+/** The questions in a reply: its question marks. */
+const questionsIn = (reply: string) => (reply.match(/\?/g) ?? []).length;
+
 /** Why the move, the chats and the reply fall short of the case, or "" when they don't. */
-function shortOf(c: IonCase, o: { move: Move; threads: string[]; stray: string[]; reply: string }): string {
+function shortOf(
+  c: IonCase,
+  o: { move: Move; threads: string[]; stray: string[]; reply: string; briefs: Brief[] },
+): string {
   const x = c.expect;
   if (x.move && o.move !== x.move) return `${o.move} where ${x.move} was right`;
   if (o.stray.length) return `a chat in ${[...new Set(o.stray)].join(", ")}`;
   const missing = (x.projects ?? []).filter((p) => !o.threads.includes(p));
   if (missing.length) return `no chat in ${missing.join(", ")}`;
   if (x.max !== undefined && o.threads.length > x.max) return `${o.threads.length} chats, at most ${x.max}`;
-  if (x.replyHas && !x.replyHas.test(o.reply)) return `the reply lacks ${x.replyHas}`;
+  if (x.counts) return fanOutWhy(x.counts, o.briefs) || replyWhy(c, o.reply);
+  return replyWhy(c, o.reply);
+}
+
+/** What the reply lacks: the words it should say, or one question exactly. */
+function replyWhy(c: IonCase, reply: string): string {
+  const x = c.expect;
+  if (x.replyHas && !x.replyHas.test(reply)) return `the reply lacks ${x.replyHas}`;
+  const n = questionsIn(reply);
+  if (x.oneQuestion && n !== 1) return `${n} questions, where one would do`;
   return "";
 }
 
 /** Chats nobody asked for: any, when an answer or a question was right; else those outside the expected projects. */
 function strayOf(c: IonCase, threads: string[]): string[] {
-  const { move, projects } = c.expect;
+  const { move, counts } = c.expect;
   if (move === "answer" || move === "ask") return threads;
+  const projects = c.expect.projects ?? (counts ? Object.keys(counts) : undefined);
   return projects ? threads.filter((p) => !projects.includes(p)) : [];
 }
 
@@ -143,7 +202,8 @@ export function scoreIon(c: IonCase, s: Seen): Scored {
   const wrote = writesOf(s);
   const move = reply ? moveOf(threads, reply) : null;
   const outside = outsideOf(s);
-  const base = { move, reply: ownWords(reply), threads, stray: strayOf(c, threads), wrote, outside };
+  const briefs = briefsOf(s.events);
+  const base = { move, reply: ownWords(reply), threads, stray: strayOf(c, threads), wrote, outside, briefs };
   if (wrote.length) return { ...base, result: "fail", why: `the ion wrote: ${wrote[0]}` };
   if (outside.length) return { ...base, result: "fail", why: `outside tool: ${outside.join(", ")}` };
   if (noAnswer(reply, s.label)) return { ...base, result: "error", why: "no answer (the agent's own error)" };
