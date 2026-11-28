@@ -290,7 +290,7 @@ describe("an ion's turn", () => {
     try {
       const before = starts.length;
       const r = await turns().turn("_dream", "Tidy memory.", { noThreads: true, dream });
-      expect(r.reply).toBe("Tidy memory skipped: Fake can't turn its web off");
+      expect(r.reply).toBe("Dream skipped: Fake can't turn its web off");
       expect(starts).toHaveLength(before);
     } finally {
       delete process.env.ION_FAKE_HAS_WEB;

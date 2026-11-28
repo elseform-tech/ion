@@ -208,7 +208,7 @@ describe("Settings → Agents", () => {
     });
     render(<Settings client={c} onOpenIon={() => {}} />);
     expect(await screen.findByText("Judge: yours, Codex · luna · not checked")).toBeTruthy();
-    expect(screen.getByText("Tidy memory: yours, opencode")).toBeTruthy();
+    expect(screen.getByText("Dream: yours, opencode")).toBeTruthy();
     const back = screen.getAllByRole("button", { name: "Back to automatic" });
     fireEvent.click(back[0]!);
     patched(c, { judge: null });

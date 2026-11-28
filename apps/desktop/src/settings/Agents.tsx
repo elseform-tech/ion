@@ -270,7 +270,7 @@ function KeptPicks({ data, set }: { data: SettingsData; set: (patch: SettingsPat
       { judge: null },
     ]);
   if (s?.dream?.agent)
-    lines.push([`Tidy memory: yours, ${named(data, s.dream.agent)}`, { dream: { agent: null } }]);
+    lines.push([`Dream: yours, ${named(data, s.dream.agent)}`, { dream: { agent: null } }]);
   if (!lines.length) return null;
   return (
     <div className="group">
