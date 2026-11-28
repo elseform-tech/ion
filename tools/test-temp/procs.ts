@@ -76,7 +76,12 @@ export const isRunnersWatchdog = (p: { ppid: number; command: string }, runner: 
  */
 export function processesUnder(dir: string, runners = false): Proc[] {
   return all()
-    .filter((p) => p.pid !== process.pid && (runners || !(isRunner(p) || isRunnersWatchdog(p, process.pid))) && inEnv(p.env, dir))
+    .filter(
+      (p) =>
+        p.pid !== process.pid &&
+        (runners || !(isRunner(p) || isRunnersWatchdog(p, process.pid))) &&
+        inEnv(p.env, dir),
+    )
     .map(({ pid, pgid, command }) => ({ pid, pgid, command: command.slice(0, 160) }));
 }
 
