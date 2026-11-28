@@ -102,7 +102,7 @@ Steps:
 
 **Interfaces:**
 - Consumes: Task 1's `HookPart`, and the once-per-call-id fix from `fix-hooks-once-in-worktree`.
-- Produces: `runCompatHook(part: HookPart, call: GateCall, run: RunContext): Promise<{ decision: "allow" | "deny"; reason?: string; note?: string }>`
+- Produces: `runCompatHook(part: HookPart, call, run): Promise<{ decision: "allow" | "deny"; reason?: string; note?: string }>`, where `call` is the gate's existing tool-call type and `run` carries the run id, chat, worktree and agent
 
 Steps:
 - [ ] Tests:
