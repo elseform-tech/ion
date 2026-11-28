@@ -67,7 +67,7 @@ const TIDY: DreamMode[] = ["off", "nightly", "weekly"];
  */
 function tidyCommand(m: Command, out: () => Out) {
   m.command("tidy [how]")
-    .description("Tidy it: off, nightly or weekly")
+    .description("How often it tidies: off, nightly or weekly")
     .action(async (how?: string) => {
       if (how !== undefined && !TIDY.includes(how as DreamMode)) fail("Pick off, nightly or weekly");
       const s = await withClient((c) =>

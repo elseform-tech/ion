@@ -10,6 +10,7 @@ import type { Item, Timeline } from "../chats/timeline.js";
 import { current, duration, useNow } from "../chats/Work.js";
 import { useState } from "react";
 import { IonAvatar } from "./IonAvatar.js";
+import { projectName } from "../projectName.js";
 
 type Work = Extract<Item, { kind: "work" }>;
 type Question = Extract<Item, { kind: "question" }>;
@@ -70,7 +71,7 @@ export function ThreadLine(p: LineProps) {
       title={[s.why, atWork ? estimate : null].filter(Boolean).join("\n") || undefined}
     >
       {p.ion ? <IonAvatar ion={p.ion} /> : null}
-      <b>{p.projectId}</b>
+      <b>{projectName(p.projectId)}</b>
       {s.failed && !s.live ? <CircleAlert /> : null}
       <span className={`tt${s.live ? " now" : ""}`}>{s.say}</span>
       {s.waiting && <i className="wd" />}
@@ -121,7 +122,7 @@ export function ThreadPeek(p: {
       <Resizer name="--peek-w" label="Panel width" initial={420} min={320} max={760} edge="left" />
       <header className="head">
         <span className="title">{p.chat.title}</span>
-        <span className="muted">{p.chat.projectId}</span>
+        <span className="muted">{p.chat.projectId && projectName(p.chat.projectId)}</span>
         <span className="sp" />
         <button
           className="ib"

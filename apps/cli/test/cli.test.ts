@@ -318,7 +318,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["memory"],
         ["todo"],
         ["agents"],
-        ["agents", "order"],
+        ["agents", "prefer"],
         ["routines"],
         ["routines", "add"],
         ["suggestions"],
@@ -329,6 +329,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["skills", "add"],
         ["hooks"],
         ["hooks", "add"],
+        ["settings"],
       ].map((a) => ion(...a, "--help")),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
@@ -619,7 +620,6 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(commands).toEqual(
         expect.arrayContaining(["ions", "routines", "mcp", "skills", "hooks", "agents"]),
       );
-      expect((await ion("agents", "--help")).out).toContain("order <ids...>");
       await setup();
       expect((await ion("memory", "tidy")).out).toBe("Tidy memory: off");
       expect((await ion("memory", "tidy", "nightly")).out).toBe("Tidy memory: nightly");
@@ -627,6 +627,33 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(await ion("memory", "tidy", "daily")).toMatchObject({
         code: 1,
         err: "Pick off, nightly or weekly",
+      });
+      // Review of Task 4 (2026-11-28): notifications, an agent's Avoid and own tools, a project's own agent and
+      // "Prefer in this order" were in the app only.
+      const settings = (await ion("settings", "--help")).out;
+      for (const c of ["briefing", "quiet", "notify", "avoid", "own-tools"])
+        expect(settings).toContain(`${c} `);
+      const agents = (await ion("agents", "--help")).out;
+      for (const c of ["prefer [ids...]", "check-judge <id>"]) expect(agents).toContain(c);
+      expect((await ion("projects", "--help")).out).toContain("agent [options] <id> [agent]");
+      const said = async (...a: string[]) => (await ion(...a)).out;
+      expect(await said("settings", "briefing")).toBe("Briefing: 08:30");
+      expect(await said("settings", "briefing", "07:45")).toBe("Briefing: 07:45");
+      expect(await said("settings", "briefing", "off")).toBe("Briefing: off");
+      expect(await said("settings", "quiet", "23:00-07:00")).toBe("Quiet hours: 23:00–07:00");
+      expect(await said("settings", "quiet", "off")).toBe("Quiet hours: off");
+      expect(await said("settings", "notify", "app", "muted")).toBe("app: Muted");
+      expect(await said("settings", "avoid", "fake", "on")).toBe("fake · Avoid unless I ask: on");
+      expect(await said("settings", "own-tools", "fake", "off")).toBe("fake · Use its own tools: off");
+      expect(await said("projects", "agent", "app", "fake", "--effort", "low")).toBe(
+        "app's chats run on fake · low",
+      );
+      expect(await said("projects", "agent", "app", "--clear")).toBe("app's chats run on the default");
+      expect(await said("agents", "prefer", "fake", "opencode")).toBe("fake, opencode");
+      expect(await said("agents", "prefer")).toBe("Automatic");
+      expect(await ion("settings", "quiet", "late")).toMatchObject({
+        code: 1,
+        err: "Say on, off or 22:00-08:00",
       });
     });
 

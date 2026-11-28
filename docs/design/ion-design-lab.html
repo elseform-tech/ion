@@ -4025,10 +4025,9 @@ function renderPal(){
   const q=pq.value.trim().toLowerCase(), m=s=>!q||s.toLowerCase().includes(q);
   const chats=CHATS.filter(c=>m(c.t)||m(c.p||'')).slice(0,q?6:4);
   const ions=live().filter(([,v])=>m(v.name)||m(v.role)||m(v.proj)).slice(0,q?5:3);
-  const acts=ACTIONS.filter(a=>m(a.t)).slice(0,q?6:3);
+  const acts=ACTIONS.filter(a=>m(a.t)||m(a.sub||'')).slice(0,q?8:3);
   items=[]; let h='';
   const add=(html,run)=>{ items.push(run); return html.replace('<button','<button data-pi="'+(items.length-1)+'"'); };
-  if(q) h+=add(`<button class="pr" type="button" role="option"><canvas class="av" data-ion="lead" aria-hidden="true"></canvas><span class="tt">Ask ion: “${esc(pq.value.trim())}”</span><span class="r2">↵</span></button>`,()=>{ go('ions'); renderIon('lead'); });
   if(chats.length){ h+=`<div class="pg">${q?'Chats':'Recent'}</div>`; chats.forEach(c=>{
     const ic=c.ion?`<canvas class="av" data-ion="${c.ion}" aria-hidden="true"></canvas>`:`<i data-lucide="${c.code?'code-xml':'message-square'}"></i>`;
     const r=c.wait?'<i class="wd"></i>':c.run?'<i class="spin"></i>':(c.tm||'');
@@ -4042,6 +4041,9 @@ function renderPal(){
   if(acts.length){ h+=`<div class="pg">Actions</div>`; acts.forEach(a=>{
     h+=add(`<button class="pr" type="button" role="option"><i data-lucide="${a.icon}"></i><span class="tt">${hl(a.t,q)}${a.sub?`<small>${a.sub}</small>`:''}</span><span class="r2">${(a.k||[]).map(x=>`<kbd>${x}</kbd>`).join('')}</span></button>`,a.run);
   }); }
+  /* Review of Plan 21 Task 4: Ask ion is the last row; Enter opens the first match, and asks only when nothing else
+     matches (or ⌘↵) */
+  if(q) h+=add(`<button class="pr" type="button" role="option"><canvas class="av" data-ion="lead" aria-hidden="true"></canvas><span class="tt">Ask ion: “${esc(pq.value.trim())}”</span><span class="r2">${items.length?'⌘↵':'↵'}</span></button>`,()=>{ go('ions'); renderIon('lead'); });
   if(!items.length) h='<div class="pempty">Nothing found</div>';
   pres.innerHTML=h; act=Math.min(act,Math.max(0,items.length-1)); mark(); hydrate(pres); icons(pres);
 }
@@ -4060,7 +4062,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ e.preventDefault(); closePal(); }
   else if(e.key==='ArrowDown'){ e.preventDefault(); act=(act+1)%Math.max(1,items.length); mark(); }
   else if(e.key==='ArrowUp'){ e.preventDefault(); act=(act-1+items.length)%Math.max(1,items.length); mark(); }
-  else if(e.key==='Enter'){ e.preventDefault(); runPal(act); }
+  else if(e.key==='Enter'){ e.preventDefault(); runPal(e.metaKey||e.ctrlKey?items.length-1:act); }
 });
 
 /* below-window avatars */

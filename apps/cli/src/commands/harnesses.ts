@@ -66,13 +66,7 @@ function agentsCommand(program: Command, out: () => Out, name: string, hidden = 
       const list = await withClient((c) => c.call("harnesses.list", {}));
       print(out(), list.map(row).join("\n"), list);
     });
-  // The user, 2026-11-22: your agent order (Settings → Agents → More: Prefer in this order; 2026-11-24).
-  h.command("order <ids...>")
-    .description("Put agents in order, best first")
-    .action(async (ids: string[]) => {
-      const s = await withClient((c) => c.call("settings.set", { patch: { agentOrder: ids } }));
-      print(out(), s.agentOrder.map(clean).join(", "), s.agentOrder);
-    });
+  preferCommands(h, out);
   // The user, 2026-11-23: sign in and out of each agent from ion (its own login and logout).
   h.command("login <id>")
     .description("Sign in to an agent")
@@ -128,4 +122,22 @@ function checkJudgeCommand(h: Command, out: () => Out) {
         print(out(), judgeLine(r), r);
       }),
     );
+}
+
+/** `ion agents prefer [ids...]` (and the old `order`, out of the help). */
+function preferCommands(h: Command, out: () => Out) {
+  // The user, 2026-11-22: your agent order (Settings → Agents → More: Prefer in this order; 2026-11-24). Review of
+  // Plan 21 Task 4: `prefer`, the app's word; none goes back to Automatic. `order` stays, out of the help.
+  for (const [cmd, hide] of [
+    ["prefer [ids...]", false],
+    ["order <ids...>", true],
+  ] as const)
+    h.command(cmd, { hidden: hide })
+      .description("Prefer agents in this order, best first (none: Automatic)")
+      .action(async (ids: string[] = []) => {
+        const s = await withClient((c) => c.call("settings.set", { patch: { agentOrder: ids } }));
+        // `order` says the whole order, as it always did.
+        const shown = hide ? s.agentOrder : s.prefer;
+        print(out(), shown.length ? shown.map(clean).join(", ") : "Automatic", shown);
+      });
 }

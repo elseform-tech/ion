@@ -14,6 +14,7 @@ import { todoCommands } from "./commands/todo.js";
 import { needsCommands } from "./commands/needs.js";
 import { projectCommands } from "./commands/projects.js";
 import { routinesCommands } from "./commands/routines.js";
+import { settingsCommands } from "./commands/settings.js";
 import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
 import { suggestionsCommands } from "./commands/suggestions.js";
@@ -37,6 +38,7 @@ agentsCommands(program, out);
 mcpCommands(program, out);
 skillsCommands(program, out);
 hooksCommands(program, out);
+settingsCommands(program, out);
 // Last: its settings for bare `ion` aren't passed on to the commands above.
 startCommand(program, out);
 

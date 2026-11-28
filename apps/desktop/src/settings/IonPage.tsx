@@ -101,7 +101,7 @@ type SetupProps = { ion: IonInfo; project: ProjectInfo; data: SettingsData; patc
  */
 function ChatsOverride(p: SetupProps & { more: boolean; onMore: (open: boolean) => void }) {
   const { ion, project, data, patch } = p;
-  const open = p.more || !!project.harness;
+  const open = p.more || !!project.harness || !!project.model || !!project.effort;
   const agent = data.harnesses.find((h) => h.id === project.harness);
   return (
     <>
@@ -300,6 +300,20 @@ function useIonStats(client: IonClient, ionId: string): IonStats | null {
   return stats;
 }
 
+/** Whether this project's ion suggests a routine now (review of Plan 21 Task 4: it shows Routines). */
+function useSuggestsRoutine(client: IonClient, projectId: string): boolean {
+  const [yes, setYes] = useState(false);
+  useEffect(
+    () =>
+      void client.call("suggestions.list", {}).then(
+        (l) => setYes(l.some((s) => s.kind === "routine" && s.projectId === projectId)),
+        () => {},
+      ),
+    [client, projectId],
+  );
+  return yes;
+}
+
 /** Settings → an ion: its stats, what it runs on, and its project's rules (ion chief: the model it thinks with). */
 export function IonPage(p: PageProps) {
   const ion = p.data.ions.find((x) => x.ionId === p.ionId);
@@ -307,8 +321,9 @@ export function IonPage(p: PageProps) {
   const stats = useIonStats(p.client, p.ionId);
   const [error, run] = useCallError();
   const [at, setAt] = useState<"setup" | "rules">("setup");
-  // Plan 21 Task 4: its chats' agent and its routines wait under More until it has them.
+  // Plan 21 Task 4: its chats' agent and its routines wait under More until it has them (or it suggests a routine).
   const [more, setMore] = useState(false);
+  const suggested = useSuggestsRoutine(p.client, p.ionId);
   if (!ion) return null;
   // Why a change didn't save shows under the group it was made in.
   const patchIn =
@@ -343,7 +358,7 @@ export function IonPage(p: PageProps) {
         </div>
       </div>
       {project && <Rules project={project} patch={patch} error={shown("rules")} />}
-      {project && (more || !!project.routines?.length) && (
+      {project && (more || !!project.routines?.length || suggested) && (
         <Routines client={p.client} project={project} onChanged={p.data.reload} />
       )}
     </>

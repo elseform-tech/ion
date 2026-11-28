@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { IonClient } from "@ion/client/browser";
+import type { ChatInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Search } from "./Search.js";
@@ -7,7 +8,7 @@ import { SETTINGS_PAGES } from "./settings/pages.js";
 
 afterEach(cleanup);
 
-const chats = [
+const chats: ChatInfo[] = [
   {
     ...{ chatId: "c1", title: "Fix checkout rounding", projectId: "shop", branch: null, archived: false },
     ...{ lastRunStatus: "done", lastActivityAt: "2026-11-24T10:00:00Z", preview: null, by: null },
@@ -17,6 +18,10 @@ const chats = [
     ...{ lastRunStatus: null, lastActivityAt: "2026-11-01T10:00:00Z", preview: null, by: null },
   },
 ];
+chats.push({
+  ...{ chatId: "c3", title: "Scratch idea", projectId: "default", branch: null, archived: false },
+  ...{ lastRunStatus: null, lastActivityAt: "2026-11-02T10:00:00Z", preview: null, by: null },
+});
 const ions = [
   { ionId: "chief", name: "ion", color: null, harness: null, last: null, needs: 0 },
   { ionId: "shop", name: "Shop", color: "#ED712E", harness: "grok-build", last: null, needs: 0 },
@@ -74,8 +79,6 @@ describe("Search", () => {
     await waitFor(() => expect(screen.queryByRole("option", { name: /Old idea/ })).toBeNull());
     type("round");
     await screen.findByRole("option", { name: /Fix checkout rounding/ });
-    // As in the lab, Ask ion comes first; the chat is one down.
-    fireEvent.keyDown(box(), { key: "ArrowDown" });
     fireEvent.keyDown(box(), { key: "Enter" });
     expect(go).toHaveBeenLastCalledWith({ kind: "chat", chatId: "c1" });
     openWithKeys();
@@ -97,5 +100,66 @@ describe("Search", () => {
     fireEvent.click(await screen.findByRole("option", { name: "Ask ion: “what changed today?”" }));
     expect(c.call).toHaveBeenCalledWith("ion.message", { ionId: "chief", text: "what changed today?" });
     expect(go).toHaveBeenLastCalledWith({ kind: "ion", ionId: "chief" });
+  });
+
+  // Review of Plan 21 Task 4 (2026-11-28): Enter on "round" asked ion instead of opening the chat that matched. Enter
+  // opens the first match; Ask ion is the last row, and Enter asks only when nothing else matches (or ⌘↵).
+  it("Enter opens the first match; ion is asked only when nothing matches, or with ⌘↵", async () => {
+    const go = vi.fn();
+    const c = client();
+    render(<Search client={c} go={go} />);
+    openWithKeys();
+    type("round");
+    await screen.findByRole("option", { name: /Fix checkout rounding/ });
+    const options = screen.getAllByRole("option");
+    expect(options.at(-1)?.textContent).toBe("Ask ion: “round”⌘↵");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(go).toHaveBeenLastCalledWith({ kind: "chat", chatId: "c1" });
+    expect(c.call).not.toHaveBeenCalledWith("ion.message", expect.anything());
+    openWithKeys();
+    type("round");
+    await screen.findByRole("option", { name: /Fix checkout rounding/ });
+    fireEvent.keyDown(box(), { key: "Enter", metaKey: true });
+    expect(c.call).toHaveBeenLastCalledWith("ion.message", { ionId: "chief", text: "round" });
+    openWithKeys();
+    type("qwxz");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(c.call).toHaveBeenLastCalledWith("ion.message", { ionId: "chief", text: "qwxz" });
+  });
+
+  // Review: "settings" found no page; "no project" found none of default's chats (they show as No project).
+  it("finds by the quiet part too: Settings pages, and No project's chats", async () => {
+    render(<Search client={client()} go={vi.fn()} />);
+    openWithKeys();
+    type("settings");
+    await screen.findByRole("option", { name: /^Shortcuts.*Settings$/ });
+    type("no project");
+    expect(await screen.findByRole("option", { name: /Scratch idea.*No project/ })).toBeTruthy();
+  });
+
+  // Review: Esc that closed Search also counted toward a chat's double-Esc Stop, ⌘B hid the sidebar behind it, an
+  // IME's Enter picked a row, and Tab left the dialog.
+  it("keeps its keys to itself while open", async () => {
+    const go = vi.fn();
+    const heard: string[] = [];
+    const listen = (e: KeyboardEvent) => heard.push(e.key);
+    document.addEventListener("keydown", listen);
+    try {
+      render(<Search client={client()} go={go} />);
+      openWithKeys();
+      heard.length = 0;
+      type("round");
+      await screen.findByRole("option", { name: /Fix checkout rounding/ });
+      fireEvent.keyDown(box(), { key: "b", metaKey: true });
+      fireEvent.keyDown(box(), { key: "Enter", isComposing: true });
+      expect(go).not.toHaveBeenCalled();
+      for (const o of screen.getAllByRole("option")) expect(o.tabIndex).toBe(-1);
+      expect(fireEvent.keyDown(box(), { key: "Tab" })).toBe(false);
+      fireEvent.keyDown(box(), { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
+      expect(heard).toEqual([]);
+    } finally {
+      document.removeEventListener("keydown", listen);
+    }
   });
 });

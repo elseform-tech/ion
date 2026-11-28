@@ -11,6 +11,7 @@ import {
 import type { ChatInfo, IonInfo } from "@ion/schema";
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { hit } from "./hotkeys.js";
+import { projectName } from "./projectName.js";
 import { SETTINGS_PAGES, type SettingsPage } from "./settings/pages.js";
 
 /** Where a search result goes. */
@@ -45,7 +46,15 @@ export function useSearchKey(toggle: () => void, open: () => void): void {
 }
 
 /** One result: its icon, title (and a quiet second part), what's on its right, and where it goes (or what it asks). */
-type Item = { key: string; icon: ReactNode; title: string; small?: string; to: Place; ask?: string };
+type Item = {
+  key: string;
+  icon: ReactNode;
+  title: string;
+  small?: string;
+  to: Place;
+  ask?: string;
+  hint?: string;
+};
 type Group = { name: string; items: Item[] };
 
 /** The lab's actions: a new chat, each screen, each Settings page. */
@@ -61,22 +70,25 @@ const ACTIONS: { title: string; icon: LucideIcon; to: Place; small?: string }[] 
   })),
 ];
 
-const has = (s: string | null | undefined, q: string) => !q || (s ?? "").toLowerCase().includes(q);
+/** Whether `q` is in any of the words shown (a title and its quiet part). */
+const has = (q: string, ...shown: (string | null | undefined)[]) =>
+  !q || shown.some((s) => (s ?? "").toLowerCase().includes(q));
 
-/** Chats (newest first, none archived), ions and actions that match `q`; with words, Ask ion first. */
+/** Chats (newest first, none archived), ions and actions that match `q`; with words, Ask ion last. */
 function groupsOf(q: string, words: string, chats: ChatInfo[], ions: IonInfo[]): Group[] {
   const chatItems = chats
-    .filter((c) => !c.archived && (has(c.title, q) || has(c.projectId, q)))
+    .map((c) => ({ c, small: c.projectId ? projectName(c.projectId) : undefined }))
+    .filter(({ c, small }) => !c.archived && has(q, c.title, small))
     .slice(0, q ? 6 : 4)
-    .map((c) => ({
+    .map(({ c, small }) => ({
       key: `c:${c.chatId}`,
       icon: c.projectId ? <CodeXml /> : <MessageSquare />,
       title: c.title,
-      small: c.projectId && c.projectId !== "default" ? c.projectId : undefined,
+      small,
       to: { kind: "chat" as const, chatId: c.chatId },
     }));
   const ionItems = ions
-    .filter((i) => has(i.name, q))
+    .filter((i) => has(q, i.name))
     .slice(0, q ? 5 : 3)
     .map((i) => ({
       key: `i:${i.ionId}`,
@@ -85,8 +97,8 @@ function groupsOf(q: string, words: string, chats: ChatInfo[], ions: IonInfo[]):
       small: i.ionId === "chief" ? "All projects" : undefined,
       to: { kind: "ion" as const, ionId: i.ionId },
     }));
-  const actions = ACTIONS.filter((a) => has(a.title, q))
-    .slice(0, q ? 6 : 3)
+  const actions = ACTIONS.filter((a) => has(q, a.title, a.small))
+    .slice(0, q ? 8 : 3)
     .map((a) => ({
       key: `a:${a.title}:${a.small ?? ""}`,
       icon: <a.icon />,
@@ -102,14 +114,16 @@ function groupsOf(q: string, words: string, chats: ChatInfo[], ions: IonInfo[]):
           title: `Ask ion: “${words}”`,
           to: { kind: "ion", ionId: "chief" },
           ask: words,
+          // As in the lab: ↵ asks only when nothing else matches; else ⌘↵.
+          hint: chatItems.length + ionItems.length + actions.length ? "⌘↵" : "↵",
         },
       ]
     : [];
   return [
-    { name: "", items: ask },
     { name: q ? "Chats" : "Recent", items: chatItems },
     { name: "Ions", items: ionItems },
     { name: "Actions", items: actions },
+    { name: "", items: ask },
   ].filter((g) => g.items.length);
 }
 
@@ -144,6 +158,7 @@ function Results(p: { groups: Group[]; at: number; onPick: (i: Item) => void; on
             key={it.key}
             type="button"
             role="option"
+            tabIndex={-1}
             aria-selected={i === p.at}
             className={`pr${i === p.at ? " on" : ""}`}
             onClick={() => p.onPick(it)}
@@ -154,7 +169,9 @@ function Results(p: { groups: Group[]; at: number; onPick: (i: Item) => void; on
               {it.title}
               {it.small && <small>{it.small}</small>}
             </span>
-            <span className="r2" />
+            <span className="r2" aria-hidden="true">
+              {it.hint}
+            </span>
           </button>
         );
       })}
@@ -249,11 +266,14 @@ export function Search({ client, go }: { client: IonClient; go: (to: Place) => v
     go(it.to);
   };
   const onKey = (e: KeyboardEvent) => {
+    // Review of Plan 21 Task 4: Search's keys stay in Search (no double-Esc Stop, no ⌘B behind it); ⌘K still closes.
+    e.stopPropagation();
+    if (e.nativeEvent.isComposing) return;
     const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
-    if (e.key === "Escape") close();
-    else if (e.key === "Enter") pick(items[at]);
+    if (e.key === "Escape" || hit("search", e)) close();
+    else if (e.key === "Enter") pick(e.metaKey || e.ctrlKey ? items.at(-1) : items[at]);
     else if (step) setAt((at + step + items.length) % Math.max(1, items.length));
-    else return;
+    else if (e.key !== "Tab") return;
     e.preventDefault();
   };
   const onQ = (next: string) => {

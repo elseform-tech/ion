@@ -27,6 +27,7 @@ Commands:
                                      manages its own)
   hooks                              Hooks on ion's events, for every agent
                                      (each agent manages its own)
+  settings                           Notifications and each agent's switches
   help [command]                     display help for command
 
 ---
@@ -51,15 +52,16 @@ Usage: ion projects [options] [command]
 Your projects
 
 Options:
-  -h, --help             display help for command
+  -h, --help                    display help for command
 
 Commands:
-  ls                     List your projects
-  add [options] <path>   Add a folder
-  new <name>             Make a new project
-  rename <id> <name...>  Show a project under a new name
-  remove <id>            Take a project out of ion (its folder stays)
-  help [command]         display help for command
+  ls                            List your projects
+  add [options] <path>          Add a folder
+  new <name>                    Make a new project
+  rename <id> <name...>         Show a project under a new name
+  agent [options] <id> [agent]  What the chats its ion starts run on
+  remove <id>                   Take a project out of ion (its folder stays)
+  help [command]                display help for command
 
 ---
 
@@ -117,7 +119,7 @@ Commands:
   on [options]    Turn it on
   off [options]   Turn it off
   open            Open the folder
-  tidy [how]      Tidy it: off, nightly or weekly
+  tidy [how]      How often it tidies: off, nightly or weekly
   help [command]  display help for command
 
 ---
@@ -144,7 +146,8 @@ Options:
   -h, --help             display help for command
 
 Commands:
-  order <ids...>         Put agents in order, best first
+  prefer [ids...]        Prefer agents in this order, best first (none:
+                         Automatic)
   login [options] <id>   Sign in to an agent
   logout [options] <id>  Sign out of an agent, on this Mac
   check-judge <id>       Check an agent as Auto's judge (runs ion's judge cases
@@ -152,9 +155,9 @@ Commands:
 
 ---
 
-Usage: ion agents order [options] <ids...>
+Usage: ion agents prefer [options] [ids...]
 
-Put agents in order, best first
+Prefer agents in this order, best first (none: Automatic)
 
 Options:
   -h, --help  display help for command
@@ -310,3 +313,21 @@ Options:
   --name <name>    Its name
   --from <link>    Where it came from
   -h, --help       display help for command
+
+---
+
+Usage: ion settings [options] [command]
+
+Notifications and each agent's switches
+
+Options:
+  -h, --help                  display help for command
+
+Commands:
+  briefing [when]             ion's daily briefing: on, off, or a time (08:30)
+  quiet [hours]               Quiet hours: on, off, or from-to (22:00-08:00)
+  notify <project> [level]    How much a project notifies: all, needs, digest or
+                              muted
+  avoid <agent> [on|off]      Avoid an agent unless you ask for it
+  own-tools <agent> [on|off]  Let an agent use its own tools too (on by default)
+  help [command]              display help for command

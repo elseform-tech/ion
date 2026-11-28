@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Chats } from "./chats/Chats.js";
 import { Down } from "./Down.js";
 import { Frame, useSidebar } from "./Frame.js";
-import { atKey, openSettings, useSettingsAt } from "./goto.js";
+import { openSettings, useSettingsAt } from "./goto.js";
 import { Ions } from "./ions/Ions.js";
 import { useIon } from "./ion.js";
 import { useSystemNotifications } from "./notify.js";
@@ -60,7 +60,7 @@ export function App() {
   // The ion the Ions screen opens on (Settings' "Open chat" picks one).
   const [ionId, setIonId] = useState("chief");
   const [sidebar, toggleSidebar] = useSidebar();
-  const settingsAt = useSettingsAt(mode, setMode);
+  const [settingsAt, settingsKey] = useSettingsAt(mode, setMode);
   // The chat on screen: no system notification for it while the window has focus.
   const watching = watched(mode, openId, ionId);
   const go = { setIonId, setOpenId, setMode };
@@ -86,7 +86,7 @@ export function App() {
         {mode === "settings" && (
           <div className="mode settings">
             <Settings
-              key={atKey(settingsAt)}
+              key={settingsKey}
               client={client}
               at={settingsAt}
               onOpenIon={(id) => openChat(`ion:${id}`, go)}

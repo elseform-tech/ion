@@ -1,5 +1,5 @@
 import type { IonClient } from "@ion/client/browser";
-import type { ProjectInfo, SettingsInfo, ToolsInfo } from "@ion/schema";
+import { NOTIFY_DEFAULTS as D, type ProjectInfo, type SettingsInfo, type ToolsInfo } from "@ion/schema";
 import { useEffect, useState } from "react";
 import type { SettingsData } from "./data.js";
 import type { SettingsPage } from "./pages.js";
@@ -21,8 +21,9 @@ const toolsUsed = (t: Partial<ToolsInfo> | null) =>
 function notificationsUsed(n: SettingsInfo["notifications"] | undefined): boolean {
   if (!n) return false;
   const { briefing: b, quiet: q } = n;
-  if (!b.on || b.at !== "08:30" || !q.on || q.from !== "22:00" || q.to !== "08:00") return true;
-  return Object.values(n.projects ?? {}).some((l) => l !== "needs");
+  if (b.on !== D.briefing.on || b.at !== D.briefing.at) return true;
+  if (q.on !== D.quiet.on || q.from !== D.quiet.from || q.to !== D.quiet.to) return true;
+  return Object.values(n.projects ?? {}).some((l) => l !== D.level);
 }
 
 /** ion's own tools, read once for whether Tools is used. */

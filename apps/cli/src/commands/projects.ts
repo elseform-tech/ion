@@ -93,6 +93,26 @@ function projectEdits(p: Command, out: () => Out) {
         print(out(), `Renamed ${id}`, { ok: true });
       }),
     );
+  // Review of Plan 21 Task 4 (2026-11-28): a project's own agent for the chats its ion starts, as in its Settings page.
+  p.command("agent <id> [agent]")
+    .description("What the chats its ion starts run on")
+    .option("--model <model>", "Model")
+    .option("--effort <level>", "low, medium, high or max")
+    .option("--clear", "Back to the default")
+    .action(
+      (id: string, agent: string | undefined, o: { model?: string; effort?: string; clear?: boolean }) =>
+        call(async (c) => {
+          const effort = o.effort as "low" | "medium" | "high" | "max" | undefined;
+          const patch = o.clear
+            ? { harness: null, model: null, effort: null }
+            : { ...(agent ? { harness: agent, model: o.model ?? null } : {}), ...(effort ? { effort } : {}) };
+          if (Object.keys(patch).length) await c.call("project.update", { projectId: id, ...patch });
+          const p = (await c.call("projects.list", {})).find((x) => x.id === id);
+          if (!p) fail(`Unknown project: ${id}`);
+          const on = [p.harness, p.model, p.effort].filter(Boolean).map((x) => clean(String(x)));
+          print(out(), `${clean(id)}'s chats run on ${on.length ? on.join(" · ") : "the default"}`, p);
+        }),
+    );
   p.command("remove <id>")
     .description("Take a project out of ion (its folder stays)")
     .action((id: string) =>

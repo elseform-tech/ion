@@ -111,6 +111,7 @@ function client(
     if (cmd === "ions.list") return ions;
     if (cmd === "projects.list") return o.projects ?? projects;
     if (cmd === "activity.list") return activity;
+    if (cmd === "suggestions.list") return [];
     if (cmd === "ion.stats")
       return { runs: 3, succeeded: 2, costUsd: 0.75, perDay: [...Array(29).fill(0), 3] };
     return { ok: true };
@@ -621,5 +622,31 @@ describe("advanced things appear when they matter", () => {
       />,
     );
     expect(await screen.findByRole("group", { name: "Tidy memory" })).toBeTruthy();
+  });
+
+  // Review of Plan 21 Task 4 (2026-11-28): only an agent counted as "set", so an effort alone hid under More; an ion's
+  // suggested routine didn't show Routines; and with More closed, the page you were on vanished from the sidebar.
+  it("its chats' effort alone shows them; a suggested routine shows Routines", async () => {
+    const c = newcomer({ projects: [{ ...fresh[0]!, effort: "low" } as ProjectInfo] });
+    const answer = c.call.getMockImplementation()!;
+    const suggestion = {
+      suggestionId: "s1",
+      kind: "routine",
+      projectId: "shop",
+      title: "Make Deps a routine?",
+    };
+    c.call.mockImplementation(((cmd: string) =>
+      cmd === "suggestions.list" ? Promise.resolve([suggestion]) : answer(cmd)) as never);
+    render(<Settings client={c} onOpenIon={() => {}} at={{ kind: "page", page: "ions" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
+    expect(await screen.findByText("Its chats run on")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Routines" })).toBeTruthy();
+  });
+
+  it("keeps the page you're on in the sidebar with More closed", async () => {
+    render(<Settings client={newcomer()} onOpenIon={() => {}} at={{ kind: "page", page: "shortcuts" }} />);
+    await screen.findByText("Send");
+    fireEvent.click(screen.getByRole("button", { name: "More settings" }));
+    expect(navNames()).toEqual(["General", "Agents", "Memory", "More", "Shortcuts"]);
   });
 });

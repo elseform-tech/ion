@@ -60,7 +60,7 @@ function Nav({ page, used, onPick }: { page: Page; used: Set<Tab>; onPick: (t: T
           More
         </button>
       )}
-      {more && hidden.map(button)}
+      {hidden.filter((p) => more || p.id === tabOf(page)).map(button)}
     </nav>
   );
 }

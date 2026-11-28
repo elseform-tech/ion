@@ -8,6 +8,7 @@ import { Switch } from "./Switch.js";
 import { ServerToolsList } from "./ToolsServerTools.js";
 import { short, stateOf, ToolRow } from "./tools-parts.js";
 import { Faces, fromOf, type Merged, merge, OwnRow, offIn, type Whose, whoseRows } from "./tools-own.js";
+import { projectsFile } from "../projectName.js";
 
 type Part = {
   client: IonClient;
@@ -261,7 +262,7 @@ function RepoRow({ s, part }: { s: OwnServerInfo; part: Part }) {
         icon={PlugZap}
         name={s.name}
         chip={repo.asks ? null : stateOf(repo, part.locked)}
-        origin={fromOf(`From ${repo.project}'s ${repo.file}`)}
+        origin={fromOf(`From ${projectsFile(repo.project, repo.file)}`)}
         line={
           <>
             {/* As the repo wrote it, whole (a URL's query too): it's yours to judge. */}
