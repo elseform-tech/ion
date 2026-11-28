@@ -64,9 +64,11 @@ function quietCommand(s: Command, out: () => Out) {
 
 function notifyCommand(s: Command, out: () => Out) {
   s.command("notify <project> [level]")
-    .description("How much a project notifies: all, needs, digest or muted")
-    .action((project: string, level?: string) => {
-      if (level !== undefined && !(level in LEVELS)) fail("Say all, needs, digest or muted");
+    .description("How much a project notifies: all, needs-me, digest or muted")
+    .action((project: string, word?: string) => {
+      // The app's words (Plan 21 final review, M6): "Needs me" is needs-me; needs still works.
+      const level = word === "needs-me" ? "needs" : word;
+      if (level !== undefined && !(level in LEVELS)) fail("Say all, needs-me, digest or muted");
       const patch = level ? { notifications: { projects: { [project]: level as NotifyLevel } } } : null;
       return save(out, patch, (x) => {
         const l = x.notifications.projects[project];

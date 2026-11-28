@@ -1,4 +1,4 @@
-import { DEFAULT_PROJECT, ionPaths, loadUserConfig, saveUserConfig } from "@ion/config";
+import { addProject, DEFAULT_PROJECT, ionPaths, loadUserConfig, type ProjectEntry } from "@ion/config";
 import type { HarnessInfo } from "@ion/schema";
 import { ionDirsOf } from "../access/index.js";
 import { agentLabel } from "../adapters/registry.js";
@@ -7,6 +7,7 @@ import { chatsView } from "../views/chats.js";
 import { addFolder } from "../workspace/index.js";
 import type { Handlers } from "./commands.js";
 import { AskFirst, UserError } from "./errors.js";
+import { changeConfig } from "./settings.js";
 
 /** `fresh`: each agent read again now; `waitMs`: what's known, waiting that long at most for first reads. */
 export type ListOpts = { fresh?: boolean; waitMs?: number };
@@ -52,8 +53,14 @@ export const startHandlers = (a: Agents): Pick<Handlers, "start.status" | "proje
       throw new UserError(e.message);
     });
     if ("ask" in added) throw new AskFirst(added.ask);
-    saveUserConfig(ctx.configFile, added.config);
-    const project = added.config.projects[added.config.projects.length - 1]!;
-    return added.gitSetUp ? { ...project, gitSetUp: added.gitSetUp } : project;
+    const path = added.config.projects.at(-1)!.path;
+    // Added to the config as it is now: what was saved during the git setup is kept (Plan 21 final review, M1).
+    let project: ProjectEntry | undefined;
+    changeConfig(ctx.configFile, (c) => {
+      const next = addProject(c, path);
+      project = next.projects.at(-1);
+      return next;
+    });
+    return added.gitSetUp ? { ...project!, gitSetUp: added.gitSetUp } : project!;
   },
 });

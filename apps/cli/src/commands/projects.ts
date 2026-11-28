@@ -64,7 +64,7 @@ export function projectCommands(program: Command, out: () => Out) {
     );
   p.command("add <path>")
     .description("Add a folder")
-    .option("--yes", "Set up git in it without asking")
+    .option("--yes", "Go ahead without asking: set up git in it, or add the git repo it's in")
     .action((path: string, o: { yes?: boolean }) =>
       call(async (c) => {
         // Resolve here: the daemon's working folder isn't yours.

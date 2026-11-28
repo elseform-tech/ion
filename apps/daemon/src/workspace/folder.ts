@@ -80,9 +80,12 @@ function homeRefusal(path: string, home: string): string | null {
   return null;
 }
 
-/** Why ion won't add this folder, or null. ion's own: its folders, and any folder that holds one. */
-function refusal(path: string, home: string, ionDirs: string[]): string | null {
-  const near = homeRefusal(path, home);
+/**
+ * Why ion won't add this folder, or null. ion's own: its folders, and any folder that holds one. `repo`: a repo with
+ * commits, where ion writes nothing: only the secrets, system and ion's own refusals (Plan 21 final review, M3).
+ */
+function refusal(path: string, home: string, ionDirs: string[], repo = false): string | null {
+  const near = repo ? null : homeRefusal(path, home);
   if (near) return near;
   const secret = path.split(sep).find((part) => SECRET_DIRS.some((d) => same(d, part)));
   if (secret) return `Pick a project folder, not one in ${secret}`;
@@ -218,6 +221,9 @@ async function addable(path: string, listed: string[]): Promise<string[]> {
  * listed, each by its literal path, never `git add -A`; how many went in. A failure removes the .git ion made.
  */
 async function firstCommit(path: string, w: Walked, hadGit: boolean): Promise<number> {
+  // Your index as it was (a repo with no commits): put back if the setup fails (Plan 21 final review, M11).
+  const index = join(path, ".git", "index");
+  const kept = hadGit ? await readFile(index).catch(() => null) : null;
   try {
     if (!hadGit) await mustGit(["init", "-q", "-b", "main"], path);
     // Nothing staged before rides along (security scan of 3864449, 2026-11-23): an empty index, your files untouched.
@@ -232,6 +238,7 @@ async function firstCommit(path: string, w: Walked, hadGit: boolean): Promise<nu
     return files.length;
   } catch (e) {
     if (!hadGit) await rm(join(path, ".git"), { recursive: true, force: true });
+    else if (kept) await writeFile(index, kept).catch(() => undefined);
     throw new Error(`Couldn't set up git here: ${(e as Error).message}`);
   }
 }
@@ -250,10 +257,10 @@ function addRepoAbove(
   home: string,
 ): FolderAdded | Promise<FolderAdded> {
   if (!o.confirm) return { ask: `This folder is in the git repo at ${top}. Add that repo?` };
-  const why = refusal(top, home, o.ionDirs);
-  if (why) throw new Error(why);
-  mustBeNew(c, top);
   return hasCommit(top).then((yes) => {
+    const why = refusal(top, home, o.ionDirs, yes);
+    if (why) throw new Error(why);
+    mustBeNew(c, top);
     if (!yes) throw new Error(`The git repo at ${top} has no commits yet. Make one there, then add it`);
     return { config: addProject(c, top) };
   });
@@ -268,12 +275,13 @@ function addRepoAbove(
 export async function addFolder(c: UserConfig, path: string, o: FolderOpts): Promise<FolderAdded> {
   const at = folderAt(path);
   const home = real(o.home ?? homedir());
-  const why = refusal(at, home, o.ionDirs);
-  if (why) throw new Error(why);
   const top = await repoOf(at);
+  const committed = !!top && same(top, at) && (await hasCommit(at));
+  const why = refusal(at, home, o.ionDirs, committed);
+  if (why) throw new Error(why);
   if (top && !same(top, at)) return addRepoAbove(c, top, o, home);
   mustBeNew(c, at);
-  if (top && (await hasCommit(at))) return { config: addProject(c, at) };
+  if (committed) return { config: addProject(c, at) };
   const w = await walk(at, { maxFiles: o.maxFiles ?? MAX_FILES, maxBytes: o.maxBytes ?? MAX_BYTES });
   const ignored = await ignoredOf(at, w.paths, Boolean(top));
   const count = w.paths.length - ignored.size;

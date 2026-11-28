@@ -371,6 +371,8 @@ describe("ion cli", { timeout: 20_000 }, () => {
         ["hooks"],
         ["hooks", "add"],
         ["settings"],
+        ["settings", "notify"],
+        ["projects", "add"],
       ].map((a) => ion(...a, "--help")),
     );
     await expect(help.map((h) => h.out).join("\n\n---\n\n") + "\n").toMatchFileSnapshot("../golden/help.txt");
@@ -684,7 +686,7 @@ describe("ion cli", { timeout: 20_000 }, () => {
       for (const c of ["briefing", "quiet", "notify", "avoid", "own-tools"])
         expect(settings).toContain(`${c} `);
       const agents = (await ion("agents", "--help")).out;
-      for (const c of ["prefer [ids...]", "check-judge <id>"]) expect(agents).toContain(c);
+      for (const c of ["prefer [options] [ids...]", "check-judge <id>"]) expect(agents).toContain(c);
       expect((await ion("projects", "--help")).out).toContain("agent [options] <id> [agent]");
       const said = async (...a: string[]) => (await ion(...a)).out;
       expect(await said("settings", "briefing")).toBe("Briefing: 08:30");
@@ -693,6 +695,9 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(await said("settings", "quiet", "23:00-07:00")).toBe("Quiet hours: 23:00–07:00");
       expect(await said("settings", "quiet", "off")).toBe("Quiet hours: off");
       expect(await said("settings", "notify", "app", "muted")).toBe("app: Muted");
+      // Plan 21 final review (2026-11-28, M6): the app says "Needs me"; the CLI takes the same words (needs still works).
+      expect(await said("settings", "notify", "app", "needs-me")).toBe("app: Needs me");
+      expect(await said("settings", "notify", "app", "needs")).toBe("app: Needs me");
       expect(await said("settings", "avoid", "fake", "on")).toBe("fake · Avoid unless I ask: on");
       expect(await said("settings", "own-tools", "fake", "off")).toBe("fake · Use its own tools: off");
       expect(await said("projects", "agent", "app", "fake", "--effort", "low")).toBe(
@@ -704,7 +709,12 @@ describe("ion cli", { timeout: 20_000 }, () => {
       );
       expect(await said("projects", "agent", "app", "--clear")).toBe("app's chats run on the default");
       expect(await said("agents", "prefer", "fake", "opencode")).toBe("fake, opencode");
+      // Plan 21 final review (2026-11-28, I3): bare `prefer` wiped your order. It says the order; `automatic` clears it.
+      expect(await said("agents", "prefer")).toBe("fake, opencode");
+      expect(await said("agents", "prefer", "automatic")).toBe("Automatic");
       expect(await said("agents", "prefer")).toBe("Automatic");
+      expect(await said("agents", "prefer", "fake")).toBe("fake");
+      expect(await said("agents", "prefer", "--auto")).toBe("Automatic");
       expect(await ion("settings", "quiet", "late")).toMatchObject({
         code: 1,
         err: "Say on, off or 22:00-08:00",

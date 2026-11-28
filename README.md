@@ -19,6 +19,9 @@ node apps/cli/dist/index.js projects add ~/code/my-app
 node apps/cli/dist/index.js ask "Explain the build" -p my-app --agent opencode
 ```
 
+The desktop app doesn't include ion yet: a packaged build can't start ion and says so. Build ion as above and
+start it (`daemon start`); a development build of the app (`pnpm --filter @ion/desktop tauri dev`) starts it for you.
+
 ## Docs
 
 See [docs/README.md](docs/README.md) for the index: design canvas, architecture contract, plans.

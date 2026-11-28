@@ -53,6 +53,8 @@ export type AgentChecksDeps = {
   smoke: (agent: string, model: string | null, signal: AbortSignal) => Promise<AgentCheckItem[]>;
   /** The judge checked again when its model changed (PR #36's check); null when there's nothing to check. */
   judge?: (agent: string) => Promise<AgentCheckItem | null>;
+  /** What its judge's check would cost tonight, beside the night's (a paid agent whose judge model changed), or null. */
+  judgeCost?: (agent: string, billing: Billing | null) => string | null;
   /** A "needs you" note (held by the caller until quiet hours end: it's only called outside them). */
   notify: (body: string) => void;
   /** Whether a chat is working now (the check waits for an idle computer). */
@@ -176,6 +178,11 @@ export class AgentChecks {
   }
 
   /** On or off, going now, its hours, each agent's part, the last checks. */
+  /** Whether a check is going now. */
+  get checking(): boolean {
+    return this.going !== null;
+  }
+
   async info(): Promise<AgentChecksInfo> {
     const { config: c } = loadUserConfig(this.d.configFile);
     const h = hoursOf(c);
@@ -214,11 +221,15 @@ export class AgentChecks {
     return !!run.end && run.end.getTime() - this.now().getTime() <= LAST_START_MS;
   }
 
-  /** One agent's checks, and its judge's when that model changed; a check that throws is a failed one. */
+  /**
+   * One agent's checks, and its judge's when that model changed; a check that throws is a failed one. One used up (its
+   * check says so, or it's marked limited) gets no judge check: it would only spend what's left (Plan 21 final review).
+   */
   private async one(agent: string): Promise<AgentCheckItem[]> {
-    const checks = await this.d
+    const checks: AgentCheckItem[] = await this.d
       .smoke(agent, this.d.model(agent), this.abort.signal)
       .catch((e: unknown) => [{ name: "Starts", ok: false, note: (e as Error).message }]);
+    if (checks.some((c) => c.limited) || this.d.limited(agent)) return checks;
     const judge = await this.d.judge?.(agent).catch(() => null);
     return judge ? [...checks, judge] : checks;
   }
@@ -238,7 +249,8 @@ export class AgentChecks {
     const billing =
       asked && h.signedIn ? await this.d.billing(h.id, this.d.model(h.id)).catch(() => null) : null;
     const why = asked ? whyNot(h, { ...o, billing }) : out;
-    const cost = billing ? COST[billing] : "Cost unknown";
+    const judge = this.d.judgeCost?.(h.id, billing);
+    const cost = [billing ? COST[billing] : "Cost unknown", judge].filter(Boolean).join(" · ");
     return { agent: h.id, label: h.label, included: why === null, why, picked, cost };
   }
 

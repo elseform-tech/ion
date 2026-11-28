@@ -10,6 +10,7 @@ import {
 } from "@ion/design-system";
 import type { ChatInfo, IonInfo } from "@ion/schema";
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { why } from "./callError.js";
 import { hit } from "./hotkeys.js";
 import { projectName } from "./projectName.js";
 import { SETTINGS_PAGES, type SettingsPage } from "./settings/pages.js";
@@ -259,6 +260,26 @@ function useOpen() {
 }
 
 /**
+ * Going where a result points; Ask ion asks first, then opens ion's chat, and a failure keeps Search open with your
+ * words, saying why (Plan 21 final review, M9).
+ */
+function usePick(client: IonClient, close: () => void, go: (to: Place) => void) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const pick = (it: Item | undefined) => {
+    if (!it) return;
+    const done = () => {
+      close();
+      go(it.to);
+    };
+    if (!it.ask) return done();
+    void client
+      .call("ion.message", { ionId: "chief", text: it.ask })
+      .then(done, (e: unknown) => setFailed(why(e)));
+  };
+  return { failed, setFailed, pick };
+}
+
+/**
  * The lab's Search (⌘K): your chats, ions and actions (each screen and Settings page), so nothing tucked under More is
  * out of reach (Plan 21 Task 4); free text asks ion. `go` takes you to a result.
  */
@@ -267,21 +288,17 @@ export function Search({ client, go }: { client: IonClient; go: (to: Place) => v
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
   const [chats, ions] = useLists(client, open);
+  const { failed, setFailed, pick } = usePick(client, close, go);
   useEffect(() => {
     if (open) return;
     setQ("");
     setAt(0);
-  }, [open]);
+    setFailed(null);
+  }, [open, setFailed]);
   if (!open) return null;
   const words = q.trim();
   const groups = groupsOf(words.toLowerCase(), words, chats, ions);
   const items = groups.flatMap((g) => g.items);
-  const pick = (it: Item | undefined) => {
-    if (!it) return;
-    close();
-    if (it.ask) void client.call("ion.message", { ionId: "chief", text: it.ask }).catch(() => {});
-    go(it.to);
-  };
   const onKey = (e: KeyboardEvent) => {
     // Review of Plan 21 Task 4: Search's keys stay in Search (no double-Esc Stop, no ⌘B behind it); ⌘K still closes.
     e.stopPropagation();
@@ -297,11 +314,13 @@ export function Search({ client, go }: { client: IonClient; go: (to: Place) => v
   const onQ = (next: string) => {
     setQ(next);
     setAt(0);
+    setFailed(null);
   };
   return (
     <div className="pal" onClick={(e) => e.target === e.currentTarget && close()}>
       <div className="pbox" role="dialog" aria-modal="true" aria-label="Search">
         <Box q={q} onQ={onQ} onKey={onKey} />
+        {failed && <div className="perr">{failed}</div>}
         <div className="pres" id="pres" role="listbox" aria-label="Results">
           <Results groups={groups} at={Math.min(at, items.length - 1)} onPick={pick} onAt={setAt} />
         </div>

@@ -223,3 +223,38 @@ describe("ion's own check of a free agent", () => {
     expect(c.last("fake")).toBeUndefined();
   });
 });
+
+// Plan 21 final review (2026-11-28, I2): the nightly check's judge check ran all 59 cases at once, at no pace, with a
+// limit counted as a failure and nothing kept for the day. It goes like ion's own check: a case at a time within the
+// cap, tried once a day (judge-tries.json), and a limit is "used up" (limited, no note), not a failed check.
+describe("the nightly judge check", () => {
+  const verdict = async () => JSON.stringify({ verdict: "deny", reason: "x" });
+  const make = (o: Partial<ConstructorParameters<typeof JudgeChecks>[0]>) =>
+    new JudgeChecks({
+      ...setup(),
+      run: verdict,
+      ready: async () => ["fake"],
+      billing: async () => "free",
+      pace: { gapMs: 30, capMs: 100 },
+      ...o,
+    });
+
+  it("is paced and capped, kept for the day, and says used up at a limit", async () => {
+    let calls = 0;
+    const paced = make({ run: async () => (calls++, verdict()) });
+    expect(await paced.checkItem("fake")).toMatchObject({ name: "Judge", ok: false });
+    expect(calls).toBeLessThan(6);
+    // Tried today: ion's own check doesn't try it again by itself.
+    expect(await paced.checkFree()).toEqual([]);
+    let until: string | null = null;
+    const out = make({
+      pace: { gapMs: 0, capMs: 60_000 },
+      limited: () => until,
+      run: async () => {
+        until = new Date(Date.now() + 3600_000).toISOString();
+        throw new Error("free usage is used up");
+      },
+    });
+    expect(await out.checkItem("fake")).toEqual({ name: "Judge", ok: true, limited: true });
+  });
+});

@@ -143,24 +143,26 @@ Usage: ion agents [options] [command]
 Coding agents and their models
 
 Options:
-  -h, --help             display help for command
+  -h, --help                 display help for command
 
 Commands:
-  prefer [ids...]        Prefer agents in this order, best first (none:
-                         Automatic)
-  login [options] <id>   Sign in to an agent
-  logout [options] <id>  Sign out of an agent, on this Mac
-  check-judge <id>       Check an agent as Auto's judge (runs ion's judge cases
-                         on it)
-  check [options]        Check the agents each night (or now)
+  prefer [options] [ids...]  Prefer agents in this order, best first (none: say
+                             the order; automatic: clear it)
+  login [options] <id>       Sign in to an agent
+  logout [options] <id>      Sign out of an agent, on this Mac
+  check-judge <id>           Check an agent as Auto's judge (runs ion's judge
+                             cases on it)
+  check [options]            Check the agents each night (or now)
 
 ---
 
 Usage: ion agents prefer [options] [ids...]
 
-Prefer agents in this order, best first (none: Automatic)
+Prefer agents in this order, best first (none: say the order; automatic: clear
+it)
 
 Options:
+  --auto      Clear your order: Automatic decides
   -h, --help  display help for command
 
 ---
@@ -327,8 +329,28 @@ Options:
 Commands:
   briefing [when]             ion's daily briefing: on, off, or a time (08:30)
   quiet [hours]               Quiet hours: on, off, or from-to (22:00-08:00)
-  notify <project> [level]    How much a project notifies: all, needs, digest or
-                              muted
+  notify <project> [level]    How much a project notifies: all, needs-me, digest
+                              or muted
   avoid <agent> [on|off]      Avoid an agent unless you ask for it
   own-tools <agent> [on|off]  Let an agent use its own tools too (on by default)
   help [command]              display help for command
+
+---
+
+Usage: ion settings notify [options] <project> [level]
+
+How much a project notifies: all, needs-me, digest or muted
+
+Options:
+  -h, --help  display help for command
+
+---
+
+Usage: ion projects add [options] <path>
+
+Add a folder
+
+Options:
+  --yes       Go ahead without asking: set up git in it, or add the git repo
+              it's in
+  -h, --help  display help for command

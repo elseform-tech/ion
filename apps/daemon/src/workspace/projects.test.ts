@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -140,6 +141,23 @@ describe("addFolder", () => {
     expect(r).toMatchObject({ gitSetUp: { files: 3, left: 1 } });
   });
 
+  // Plan 21 final review (2026-11-28, M2): the question's count went by a throwaway repo's rules (case-sensitive),
+  // while the commit went by the folder's new repo (case-insensitive on a Mac): "*.LOG" left debug.log out of the
+  // commit but not the count. The count goes by the commit's own rule.
+  it.runIf(process.platform === "darwin")("the count matches the commit, letter case too", async () => {
+    const path = plain();
+    writeFileSync(join(path, ".gitignore"), "*.LOG\n");
+    writeFileSync(join(path, "debug.log"), "x\n");
+    const r = await addFolder(withRoot(), path, opts({ confirm: true }));
+    const files = (r as { gitSetUp: { files: number } }).gitSetUp.files;
+    const asked = plain();
+    writeFileSync(join(asked, ".gitignore"), "*.LOG\n");
+    writeFileSync(join(asked, "debug.log"), "x\n");
+    expect(await addFolder(withRoot(), asked, opts())).toEqual({
+      ask: `Set up git here? ion makes a first commit of ${files} files`,
+    });
+  });
+
   it("adds a git repo as it is", async () => {
     const path = plain();
     await git(["init", "-q", "-b", "main"], path);
@@ -189,6 +207,20 @@ describe("addFolder", () => {
     await addFolder(withRoot(), path, opts({ confirm: true }));
     expect(await committed(path)).toEqual(["README.md", "src/tip.js"]);
     expect(readFileSync(join(path, ".env"), "utf8")).toBe("TOKEN=x\n");
+  });
+
+  // Plan 21 final review (2026-11-28, M11): in a repo with no commits, a setup that failed left the index emptied
+  // (what you had staged was unstaged). A failure puts the index back as it was.
+  it("a failed setup in a repo with no commits leaves what you staged staged", async () => {
+    const path = plain();
+    await git(["init", "-q", "-b", "main"], path);
+    await git(["add", "README.md"], path);
+    rmSync(join(path, ".git", "info"), { recursive: true, force: true });
+    writeFileSync(join(path, ".git", "info"), "not a folder\n");
+    await expect(addFolder(withRoot(), path, opts({ confirm: true }))).rejects.toThrow(
+      /^Couldn't set up git here/,
+    );
+    expect((await git(["diff", "--cached", "--name-only"], path)).stdout.trim()).toBe("README.md");
   });
 
   // Security scan of 3864449, 2026-11-23: another person's folder on this Mac isn't yours to set up.
@@ -273,6 +305,33 @@ describe("addFolder", () => {
       const p = plain(join(home, d));
       await expect(addFolder(withRoot(), p, opts({ home }))).rejects.toThrow(/^Pick a project folder/);
     }
+  });
+
+  // Plan 21 final review (2026-11-28, M3): a repo you already have (with commits) gets nothing written, so only the
+  // secrets and system refusals apply to it (and ion's own); a hidden folder of home or a repo at home is yours to add.
+  it("adds a repo with commits in a hidden folder of home, never one in a secrets folder", async () => {
+    const home = realpathSync.native(root());
+    const commit = async (p: string) => {
+      await git(["init", "-q", "-b", "main"], p);
+      await git(
+        ["-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "x"],
+        p,
+      );
+    };
+    const dots = plain(join(home, ".dotfiles"));
+    await commit(dots);
+    expect(await addFolder(withRoot(), dots, opts({ home }))).toMatchObject({
+      config: { projects: [{ path: dots }] },
+    });
+    const bare = plain(join(home, ".kube"));
+    await expect(addFolder(withRoot(), bare, opts({ home, confirm: true }))).rejects.toThrow(
+      /^Pick a project folder/,
+    );
+    const keys = plain(join(home, ".ssh"));
+    await commit(keys);
+    await expect(addFolder(withRoot(), keys, opts({ home }))).rejects.toThrow(
+      "Pick a project folder, not one in .ssh",
+    );
   });
 
   it("refuses ion's folders and any folder that holds one", async () => {

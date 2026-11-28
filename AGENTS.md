@@ -49,15 +49,18 @@ hooks. Code keeps its own names (`harness`, `thread`, `needs`, `dream`, `start_t
 | chat | thread, run (for a conversation) | A conversation with a coding agent in a project. One an ion started is "a chat ion started"; settings say "Chats ions start". |
 | run | | One attempt inside a chat (a retry is another); a count of attempts ("3 failed runs"). |
 | agent | harness | A coding agent: Claude Code, Codex, Grok Build, opencode. CLI `ion agents`, `--agent`. |
-| ion | ion chief | The ion over all projects, on every screen. A project's ion goes by its project's name; "ion chief" only in code and architecture docs. |
+| ion | ion chief | *Pending the user's OK.* The ion over all projects, on every screen. A project's ion goes by its project's name; "ion chief" only in code and architecture docs. |
 | Ions think with | ion's brain, quick, deep | The agent and model ions think with (Settings → Agents). |
 | question | need | A question only you can answer: "Needs you", `ion questions`, "Open questions". |
-| tidy memory | Dream | ion tidying its memory overnight (Settings → Memory). |
+| tidy memory | Dream | *Pending the user's OK.* ion tidying its memory overnight (Settings → Memory). |
 | No usage info | Learned from errors | ion has no usage gauge for an agent. |
 | No project | default (as a name) | ion's own empty folder for chats in none of your projects; its id stays `default`. |
 | routine, suggestion, decision, access (Auto, Full access), effort, memory, to-do | | Kept as they are. |
 
 Old CLI words (`ion harnesses`, `ion needs`, `--harness`) keep working for one release, out of the help.
+
+The two renames marked pending wait for the user's OK. To put one back: delete its line in the `PENDING` block
+(`tools/lint-rules/src/plain-words.js`) and revert its words in: "ion chief": apps/desktop/src/settings/memory-data.ts, apps/daemon/src/memory/scoped.ts, apps/desktop/README.md, apps/daemon/README.md; "Dream": apps/desktop/src/settings/Memory.tsx, MemoryDream.tsx, memory-data.ts, Agents.tsx; apps/daemon/src/ions/brain.ts, ions/dream.ts, memory/dream.ts, scheduler/dreams.ts; apps/daemon/README.md.
 
 ## Rules
 

@@ -27,7 +27,7 @@ import type { Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
-import { agentChecking, checksGate } from "./agent-checks.js";
+import { agentChecking, checksBeside, checksGate } from "./agent-checks.js";
 import { createGrants, createMcpHandler, type Grants, type RunScope } from "../mcp/index.js";
 import { createGateway } from "../gateway/index.js";
 import { Ions } from "../ions/service.js";
@@ -496,7 +496,9 @@ function openState(
   const base0 = {
     ...{ configFile: opts.configFile, dataDir: opts.dataDir, startedAt: Date.now(), version: VERSION },
     ...{ tools, oauth, unsure, ionServers, memory, dreams, handoffs, judges },
-    agentChecks: agentChecking({ store, db, ...opts, grants, base, judges }),
+    agentChecks: checksBeside(dreams, (tidying) =>
+      agentChecking({ store, db, ...opts, grants, base, judges, tidying }),
+    ),
   };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };

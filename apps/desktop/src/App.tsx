@@ -5,7 +5,7 @@ import { Down } from "./Down.js";
 import { Frame, useSidebar } from "./Frame.js";
 import { openSettings, useSettingsAt } from "./goto.js";
 import { Ions } from "./ions/Ions.js";
-import { useIon } from "./ion.js";
+import { packaged, useIon } from "./ion.js";
 import { useSystemNotifications } from "./notify.js";
 import { type Mode, Rail, useNeedCount } from "./Rail.js";
 import { openSearch, type Place, Search } from "./Search.js";
@@ -67,7 +67,9 @@ export function App() {
   useSystemNotifications(client, (chatId) => openChat(chatId, go), watching);
   if (state === "connecting") return <div className="app--empty" />;
   if (state === "down" || state === "starting" || !client)
-    return <Down onRetry={() => window.location.reload()} starting={state === "starting"} />;
+    return (
+      <Down onRetry={() => window.location.reload()} starting={state === "starting"} packaged={packaged()} />
+    );
   return (
     <div className={`win${sidebar ? "" : " side-off"}`}>
       <Rail mode={mode} setMode={setMode} initial={initial} needs={needs} onSearch={openSearch} />

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { connect as tcp, Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -307,6 +307,23 @@ describe("daemon api", () => {
       code: "invalid",
     });
     expect(await client.call("status", {})).toMatchObject({ projects: 0 });
+  });
+
+  // Plan 21 final review (2026-11-28, M1): adding a folder saved the config it read before ion's git setup, so a
+  // setting saved meanwhile was lost. The folder is added to the config as it is when the setup is done.
+  it("a setting saved while ion sets up git in a folder is kept", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), "ion-plain-")), "tip-calc");
+    mkdirSync(path);
+    for (let i = 0; i < 200; i++) writeFileSync(join(path, `f${i}.js`), `${i}\n`);
+    const adding = client.call("projects.add", { path, confirm: true });
+    await new Promise((r) => setTimeout(r, 5));
+    const cf = join(home, "config.toml");
+    const before = loadUserConfig(cf).config;
+    saveUserConfig(cf, { ...before, resources: { ...before.resources, max_runs: 3 } });
+    await adding;
+    const c = loadUserConfig(cf).config;
+    expect(c.projects.map((p) => p.id)).toContain("tip-calc");
+    expect(c.resources.max_runs).toBe(3);
   });
 
   // Plan 21 Task 6 tour (2026-11-28): after a chat in No project, `ion status` said "2 projects" for one folder: it

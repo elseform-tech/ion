@@ -181,9 +181,16 @@ function preferCommands(h: Command, out: () => Out) {
     ["order <ids...>", true],
   ] as const)
     h.command(cmd, { hidden: hide })
-      .description("Prefer agents in this order, best first (none: Automatic)")
-      .action(async (ids: string[] = []) => {
-        const s = await withClient((c) => c.call("settings.set", { patch: { agentOrder: ids } }));
+      .description("Prefer agents in this order, best first (none: say the order; automatic: clear it)")
+      .option("--auto", "Clear your order: Automatic decides")
+      .action(async (ids: string[] = [], o: { auto?: boolean }) => {
+        // Plan 21 final review (I3): bare `prefer` cleared your order; it says it now, and `automatic` clears it.
+        const clear = o.auto === true || (ids.length === 1 && ids[0]!.toLowerCase() === "automatic");
+        const s = await withClient((c) =>
+          !clear && !ids.length
+            ? c.call("settings.get", {})
+            : c.call("settings.set", { patch: { agentOrder: clear ? [] : ids } }),
+        );
         // `order` says the whole order, as it always did.
         const shown = hide ? s.agentOrder : s.prefer;
         print(out(), shown.length ? shown.map(clean).join(", ") : "Automatic", shown);

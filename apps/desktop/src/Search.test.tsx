@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { IonClient } from "@ion/client/browser";
+import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { ChatInfo } from "@ion/schema";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -99,7 +99,25 @@ describe("Search", () => {
     type("what changed today?");
     fireEvent.click(await screen.findByRole("option", { name: "Ask ion: “what changed today?”" }));
     expect(c.call).toHaveBeenCalledWith("ion.message", { ionId: "chief", text: "what changed today?" });
-    expect(go).toHaveBeenLastCalledWith({ kind: "ion", ionId: "chief" });
+    await waitFor(() => expect(go).toHaveBeenLastCalledWith({ kind: "ion", ionId: "chief" }));
+  });
+
+  // Plan 21 final review (2026-11-28, M9): asking ion from Search failed in silence (Search closed, nothing said). It
+  // stays open with the words and says why.
+  it("says why asking ion failed, and keeps your words", async () => {
+    const go = vi.fn();
+    const c = client();
+    c.call.mockImplementation(async (cmd: string) => {
+      if (cmd === "ion.message") throw new ApiCallError("invalid", "No agent is installed");
+      return cmd === "chats.list" ? chats : [];
+    });
+    render(<Search client={c} go={go} />);
+    openWithKeys();
+    type("qwxz");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(await screen.findByText("No agent is installed")).toBeTruthy();
+    expect(box().value).toBe("qwxz");
+    expect(go).not.toHaveBeenCalled();
   });
 
   // Review of Plan 21 Task 4 (2026-11-28): Enter on "round" asked ion instead of opening the chat that matched. Enter
@@ -121,6 +139,8 @@ describe("Search", () => {
     await screen.findByRole("option", { name: /Fix checkout rounding/ });
     fireEvent.keyDown(box(), { key: "Enter", metaKey: true });
     expect(c.call).toHaveBeenLastCalledWith("ion.message", { ionId: "chief", text: "round" });
+    // It closes once ion has your message.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull());
     openWithKeys();
     type("qwxz");
     fireEvent.keyDown(box(), { key: "Enter" });

@@ -5,7 +5,11 @@ const isTestFile = (p) => isTest(p) || /\.test\.tsx$/.test(p);
 
 /**
  * Renames waiting for the user's OK (Plan 21 Task 3): "ion chief" → "ion", and "Dream" (the user's own word) → "Tidy
- * memory". To put one back, delete its line here (and its words on the screens).
+ * memory". To put one back, delete its line here (and its words on the screens). The files to revert:
+ * - "ion chief": apps/desktop/src/settings/memory-data.ts, apps/daemon/src/memory/scoped.ts, apps/desktop/README.md,
+ *   apps/daemon/README.md.
+ * - "Dream": apps/desktop/src/settings/Memory.tsx, MemoryDream.tsx, memory-data.ts, Agents.tsx;
+ *   apps/daemon/src/ions/brain.ts, ions/dream.ts, memory/dream.ts, scheduler/dreams.ts; apps/daemon/README.md.
  */
 export const PENDING = [
   // --- awaiting the user's OK: begin ---

@@ -43,7 +43,7 @@ started the daemon itself in 7 s from a Finder-like PATH (`/usr/bin:/bin`), thro
 
 | Path | First finished answer | Time | Clicks | Commands |
 |---|---|---|---|---|
-| App, Grok Build, your own folder (not a git repo) | Yes, about the folder: "tip-calc is a tiny tip calculator…" | 91 s (35 s of work) | 3 (folder path + Enter, a first message, Send) | 1 in a browser, 0 in the app (was 102 s / 5 / 4) |
+| App, Grok Build, your own folder (not a git repo) | Yes, about the folder: "tip-calc is a tiny tip calculator…" | 91 s (35 s of work) | 3 (folder path + Enter, a first message, Send) | 1 in a browser, 0 in a dev build of the app (was 102 s / 5 / 4) |
 | App, opencode (free quota still out) | ion's question, "opencode hit its limit. No other agent is free." with Wait; no bare error | — | 3 | 1 |
 | App, no agent | Never, but every screen says what to do: the first run lists each agent's install command; ion chief says "No agent is installed. Install opencode: npm i -g opencode-ai" | — | — | 1 |
 | CLI, no agent | `ion` prints the first steps with each install command; `ion ask` says "No agent is installed. Install opencode: npm i -g opencode-ai" | — | — | 3 |
@@ -57,12 +57,13 @@ built from Plan 21's branch (`145d0fc` plus Task 6's fixes). `PATH` held `node`,
 `/usr/bin:/bin` (for git), so Claude Code, Codex and the other free agent showed as Not installed; ion's model and the
 judge were set to the agent under test, so nothing ran on Claude. The folder was a made-up `tip-calc` (a README and a
 three-line script, not a git repo) outside ion's home. The app ran in a browser (Vite), so `ion daemon start` is still
-one command there (0 in the desktop app, which starts it: Task 2). Same counting as above: Enter and clicks count,
+one command there (0 in a development build of the desktop app, which starts it: Task 2; the packaged app doesn't
+include ion yet, so it can't, and says so). Same counting as above: Enter and clicks count,
 typing doesn't. Screenshots `p21-t6-*.png`.
 
 | Path | Before (Task 1) | After (Task 6) |
 |---|---|---|
-| App, Grok Build, your own folder (not a git repo) | 102 s, 5 clicks, 4 commands; the folder could only be added from the CLI, after `git init` | **60 s** (16 s to Send, 44 s of work), **4 clicks** (folder path + Enter, Set up git, a first message from the three offered, Send), **1 command** in a browser, 0 in the app. Answer about the folder: "tip-calc is a tiny command-line tip calculator…" |
+| App, Grok Build, your own folder (not a git repo) | 102 s, 5 clicks, 4 commands; the folder could only be added from the CLI, after `git init` | **60 s** (16 s to Send, 44 s of work), **4 clicks** (folder path + Enter, Set up git, a first message from the three offered, Send), **1 command** in a browser, 0 in a dev build of the app (measured there only; the packaged app doesn't include ion yet). Answer about the folder: "tip-calc is a tiny command-line tip calculator…" |
 | App, opencode (free quota still out) | 131 s; an error, then the answer on Grok Build after "Continue on Grok Build" | The same 4 clicks reach Send; 4 s later ion's question: "opencode hit its limit. No other agent is free. Set up Grok Build: npm i -g @xai-official/grok", with Wait (until its reset). No answer: opencode's free use was still used up today, so this path couldn't finish. |
 | Existing user (the normal tour, `/tmp/ion-tour2`) | — | Nothing moved: no first run, the new chat opens in the project used last (`payments-api`), every chat state and the sidebar as before; Settings shows General, Agents, Memory, then Ions and Tools (used), and Notifications and Shortcuts under More. |
 

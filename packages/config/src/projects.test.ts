@@ -78,6 +78,17 @@ describe("reserved names", () => {
     expect(addProject(DEFAULT_CONFIG, repo("you")).projects[0]!.id).toBe("you-2");
   });
 
+  // Plan 21 final review (2026-11-28, M5): a picked folder "My App (old)" became the id "My App (old)", which commands
+  // and URLs can't take. Its id is a slug; its name stays the folder's.
+  it("slugs a picked folder's id and keeps its name", () => {
+    expect(addProject(DEFAULT_CONFIG, repo("My App (old)")).projects[0]).toMatchObject({
+      id: "my-app-old",
+      name: "My App (old)",
+    });
+    expect(addProject(DEFAULT_CONFIG, repo("api")).projects[0]).not.toHaveProperty("name");
+    expect(addProject(DEFAULT_CONFIG, repo("…")).projects[0]!.id).toBe("project");
+  });
+
   // Task review, 2026-11-22: ion's dream runs as "_dream", an id no project can have, so a project named dream works.
   it("names a project dream", () => {
     expect(projectNameError("dream")).toBeNull();

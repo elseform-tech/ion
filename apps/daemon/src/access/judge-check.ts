@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Billing } from "@ion/schema";
+import type { AgentCheckItem, Billing } from "@ion/schema";
 import { byPreference, judgePin, shippedChecked } from "../adapters/registry.js";
 import { JUDGE_CASES, type JudgeCase } from "../evals/judge-cases.js";
 import { createJudge } from "./judge.js";
@@ -97,6 +97,9 @@ const extras = (c: JudgeCase) => ({
  * passed, run on request (Settings → Agents "Check as judge", `ion harnesses check-judge`) or, for a free agent, by
  * itself once it's ready. A pin ion checked before shipping (the adapter says) counts as passed.
  */
+/** The agent's use ran out during a check: used up, not a failed check. */
+class RanOut extends Error {}
+
 export class JudgeChecks {
   private readonly file: string;
   private readonly going = new Map<string, Promise<JudgeCheckRecord>>();
@@ -203,7 +206,7 @@ export class JudgeChecks {
     if (result.stopped === "limit") {
       const until = this.o.limited?.(agent) ?? tomorrow();
       this.tried(agent, { day: today(), until, ranOut: true });
-      throw new Error("Its free use ran out during the check");
+      throw new RanOut("Its free use ran out during the check");
     }
     if (result.stopped === "time") throw new Error(`${agent} took too long; try again later`);
     // An agent that didn't answer enough (out of quota, slow, signed out) isn't checked either way: nothing is kept
@@ -222,6 +225,22 @@ export class JudgeChecks {
     } catch {
       // a record that isn't kept is checked again next time
     }
+  }
+
+  /**
+   * The nightly check's judge check (Plan 21 final review, 2026-11-28): paced and capped like ion's own, tried once a
+   * day (judge-tries.json), as one line of the agent's checks; a limit hit is "used up" (limited, no note), not a fail.
+   */
+  async checkItem(agent: string): Promise<AgentCheckItem> {
+    this.tried(agent, { day: today() });
+    const r = await this.check(agent, this.o.pace ?? AUTO_PACE).catch((e: unknown) => e as Error);
+    if (r instanceof RanOut) return { name: "Judge", ok: true, limited: true };
+    if (r instanceof Error) return { name: "Judge", ok: false, note: r.message.slice(0, 120) };
+    return {
+      name: "Judge",
+      ok: r.pass,
+      ...(r.pass ? {} : { note: `allowed ${r.dangerous.length} dangerous` }),
+    };
   }
 
   /**

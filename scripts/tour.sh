@@ -28,11 +28,12 @@ app() {
   # ION_TOUR_APP: the app's address when your vite runs elsewhere (another worktree's port).
   node -e 'const j=require(process.env.ION_HOME+"/data/daemon.json");console.log(`${process.env.ION_TOUR_APP||"http://127.0.0.1:5173"}/?port=${j.port}&token=${j.token}`)'
 }
-# Plan 21 Task 6: the first run as a newcomer meets it: ion's defaults (only its projects folder is the tour's), your
-# real agents (no fake one), and a folder of made-up code that isn't a git repo, for "Pick a folder" and its git setup.
+# Plan 21 Task 6: the first run as a newcomer meets it: ion's defaults (but its projects folder, ion's model and the
+# judge are the tour's), your real agents (no fake one), and a folder of made-up code that isn't a git repo, for "Pick a folder" and its git setup.
 if [ "$1" = fresh ]; then
   unset ION_DEBUG ION_FAKE_BILLING ION_FAKE_SLOW_S
-  printf '[folders]\nprojects = "%s/projects"\n' "$ION_HOME" > "$ION_HOME/config.toml"
+  # Ions think and the judge decides on opencode and Grok Build, never Claude (Plan 21 final review, M7).
+  printf '[folders]\nprojects = "%s/projects"\n[ion]\nquick = "opencode"\n[access]\njudge = "grok-build"\n' "$ION_HOME" > "$ION_HOME/config.toml"
   export ION_AGENTS_HOME="$ION_HOME/agents-home" && mkdir -p "$ION_AGENTS_HOME"
   # Beside ion's home, not in it: ion refuses its own folders (Plan 21 Task 2).
   F="$ION_HOME-folders/tip-calc" && rm -rf "$ION_HOME-folders" && mkdir -p "$F/src"
@@ -45,6 +46,7 @@ if [ "$1" = fresh ]; then
     ion daemon start >/dev/null
   fi
   echo "A folder to add: $F"
+  echo "Your real agents answer here: a message spends a little of opencode's free use (or Grok Build's)."
   app
   exit 0
 fi

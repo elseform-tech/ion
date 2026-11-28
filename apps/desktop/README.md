@@ -8,7 +8,8 @@ through `@ion/client/browser`, and it keeps nothing of its own (lint: no `node:*
   initial. Core permissions, plus dragging the window by its header: no shell, no file system. The CSP allows
   `ws://127.0.0.1:*` and nothing remote; fonts are bundled.
 - `src/connection.ts`: connects, shows "ion isn't running" while the daemon is down, tries again every 2 s, and
-  reconnects when ion restarts (new port and token).
+  reconnects when ion restarts (new port and token). A development build starts ion itself (Plan 21); the packaged
+  app doesn't include ion yet, so a release build says so on that screen, with how to get ion (`Down.tsx`).
 - `src/chats/`: the Chats screen, drawn with the design lab's own CSS and markup (`@ion/design-system/lab.css`).
   - `timeline.ts` (with `steps.ts`) turns a chat's events into what it shows (pure, tested).
   - `live.ts` keeps the sidebar's lists live; `Sidebar` and `ProjectMenu` are the lab's sidebar (Needs you,

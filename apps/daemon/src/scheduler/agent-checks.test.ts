@@ -49,6 +49,8 @@ function setup(o: {
   /** The smoke moves the clock (a check takes time). */
   takes?: number;
   dataDir?: string;
+  judge?: (agent: string) => Promise<AgentCheckItem | null>;
+  judgeCost?: (agent: string, billing: Billing | null) => string | null;
 }) {
   const dataDir = o.dataDir ?? realpathSync(mkdtempSync(join(tmpdir(), "ion-agent-checks-")));
   const configDir = realpathSync(mkdtempSync(join(tmpdir(), "ion-agent-checks-config-")));
@@ -70,6 +72,8 @@ function setup(o: {
       return (o.result ?? (() => OK))(agent);
     },
     notify: (body) => notes.push(body),
+    ...(o.judge ? { judge: o.judge } : {}),
+    ...(o.judgeCost ? { judgeCost: o.judgeCost } : {}),
     working: o.working ?? (() => false),
     lastEvent: o.lastEvent ?? (() => null),
     now: () => clock.now,
@@ -252,6 +256,38 @@ describe("ion's nightly check of its agents", () => {
     await checks.tick();
     expect(smoked).toEqual(["opencode"]);
     expect(info.agents[0]).toMatchObject({ why: "Limited" });
+  });
+
+  // Plan 21 final review (2026-11-28, I2): the judge's check ran after a used-up smoke, spending what was left. An agent
+  // used up (its smoke says so, or it's marked limited) gets no judge check that night; a paid one says what its judge
+  // check costs beside the night's.
+  it("no judge check on a used-up agent, and a paid one says what its judge check costs", async () => {
+    const judged: string[] = [];
+    const judge = async (agent: string) => {
+      judged.push(agent);
+      return { name: "Judge", ok: true };
+    };
+    const used = setup({
+      config: nightly,
+      judge,
+      result: () => [{ name: "Answers", ok: true, limited: true, note: "Its free use is used up" }],
+    });
+    await used.checks.tick();
+    expect(used.smoked).toEqual(["opencode"]);
+    expect(judged).toEqual([]);
+    const fine = setup({ config: nightly, judge });
+    await fine.checks.tick();
+    expect(judged).toEqual(["opencode"]);
+    const paid = setup({
+      config: (c) => ({ ...nightly(c), checks: { nightly: true, agents: ["codex"] } }),
+      agents: [info("codex")],
+      billing: { codex: "api" },
+      judgeCost: (agent, billing) =>
+        billing === "api" ? `${agent}'s judge check: 59 short questions` : null,
+    });
+    expect((await paid.checks.info()).agents[0]).toMatchObject({
+      cost: "About a cent a night · codex's judge check: 59 short questions",
+    });
   });
 
   // Task 5 review: only on a quiet night: quiet hours an hour old, nothing in ion for 30 minutes, and no new agent
