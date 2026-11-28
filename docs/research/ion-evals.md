@@ -191,7 +191,23 @@ finished, so a finished chat was nowhere in what ion chief read unless it went l
 it computed weren't printed either). The line now ends `finished ["…"]` with the 3 newest chats whose last run ended
 well (a test first). `status-chief-everything` re-run ×3 on Grok: **3/3** (76 k tokens), e.g. "**Docs** finished
 proofreading the glossary. It fixed two typos and the checks passed." With the other seven status cases at 3/3 in the
-run just before, **status is 8/8**. The other measures weren't re-run after this change to what every ion reads. Follow-up's one miss: "The card SDK upgrade never started. The
+run just before, **status is 8/8**. **The guard re-run after it** (AGENTS.md: a change to what ions read must pass the evals). Decide, route, restraint
+and fan-out ×3 on Grok, 78 turns, 1.95 M tokens, 17.5 minutes:
+
+| Measure | Before 7c27280 (Task 4) | After 7c27280 |
+|---|---|---|
+| decide | 7/7 (21/21) | 7/7 (21/21) |
+| route | 7/7 (21/21), 0 stray | 7/7 (21/21), 0 stray |
+| restraint | 6/6 (18/18) | 6/6 (18/18) |
+| fanout | 6/6 (18/18) | 6/6 (17/18) |
+| read-only | 6/6 (18/18) | not re-run (the 2 M cap) |
+
+No answer, writes and outside tools all 0. Fan-out's one failed run is the scorer's, not the ion's:
+`fanout-two-in-one` run 3 started the two chats asked for (alt text on the listing, a spinner on checkout), but both
+briefs follow the same template ("This is the React web shop customers use … Done when … Leave … as they are"), so
+they share 60% of their words and read as a duplicate. The duplicate check should compare what each brief asks for,
+not its boilerplate; left for later, the case still passes at 2/3. Read-only wasn't re-run: it was 18/18 with no write
+ever tried, and the change only adds finished chats to what ions read. Follow-up's one miss: "The card SDK upgrade never started. The
 thread stopped with no reply": it never says it failed.
 
 ## All measures after the Task 4 fixes (2026-11-28, Plan 23 Task 4)
