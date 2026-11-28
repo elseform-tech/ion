@@ -34,6 +34,21 @@ describe("pickAgent", () => {
     expect(pickAgent([guessed], task()).agent).toBe("opencode");
   });
 
+  // Plan 21 Task 6 tour (2026-11-28): a minute after opencode hit its limit (a guessed reset), a new chat went back to
+  // it with "On opencode — free and enough for this". Another ready agent goes first and says why; tried only when it's
+  // the only one, and the line says it's a try.
+  it("an agent at a guessed limit says so: passed over for a free one, else tried and named as a try", () => {
+    const guessed = agent("opencode", { billing: "free", limitedUntil: later(30), limitGuessed: true });
+    expect(pickAgent([guessed, agent("grok")], task())).toEqual({
+      agent: "grok",
+      reason: "On Grok Build — opencode may still be at its limit",
+    });
+    expect(pickAgent([guessed, agent("grok", { limitedUntil: later(60) })], task())).toEqual({
+      agent: "opencode",
+      reason: "On opencode — it may be back from its limit; no other agent is free",
+    });
+  });
+
   // The user, 2026-11-21: save Claude quota; Claude only when needed (ion's deep model's agent is kept for deep work).
   it("Claude is saved unless deep work needs it", () => {
     const all = [agent("claude"), agent("codex")];
