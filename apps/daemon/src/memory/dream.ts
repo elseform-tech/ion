@@ -166,7 +166,7 @@ function notesOf(reply: string): string[] {
   return reply
     .split("\n")
     .map((l) => l.trim().replace(/^[-*] /, ""))
-    .filter((l) => /^(note:|tidy memory skipped:)/i.test(l))
+    .filter((l) => /^(note:|dream skipped:)/i.test(l))
     .map((l) => (/^note:/i.test(l) ? l.slice(5).trim() : l))
     .filter(Boolean)
     .slice(0, NOTES_MAX)

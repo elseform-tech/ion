@@ -681,17 +681,17 @@ describe("ion cli", { timeout: 20_000 }, () => {
     });
 
     // Plan 21 Task 4 (2026-11-24): the app tucks advanced parts under More; nothing becomes unreachable. Each has a
-    // command: an ion's routines, tools, your agent order, and Tidy memory (the one the CLI lacked).
+    // command: an ion's routines, tools, your agent order, and Dream (the one the CLI lacked).
     it("nothing becomes unreachable: each part the app tucks under More has a command", async () => {
       const commands = (await ion("--help")).out.split("\n").map((l) => l.trim().split(" ")[0]);
       expect(commands).toEqual(
         expect.arrayContaining(["ions", "routines", "mcp", "skills", "hooks", "agents"]),
       );
       await setup();
-      expect((await ion("memory", "tidy")).out).toBe("Tidy memory: off");
-      expect((await ion("memory", "tidy", "nightly")).out).toBe("Tidy memory: nightly");
-      expect((await ion("memory", "tidy")).out).toBe("Tidy memory: nightly");
-      expect(await ion("memory", "tidy", "daily")).toMatchObject({
+      expect((await ion("memory", "dream")).out).toBe("Dream: off");
+      expect((await ion("memory", "dream", "nightly")).out).toBe("Dream: nightly");
+      expect((await ion("memory", "dream")).out).toBe("Dream: nightly");
+      expect(await ion("memory", "dream", "daily")).toMatchObject({
         code: 1,
         err: "Pick off, nightly or weekly",
       });

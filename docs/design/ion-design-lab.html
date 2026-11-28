@@ -1767,7 +1767,7 @@ export function sumLines(lines: Line[]) {
           <!-- The user, 2026-11-24: two model settings and the rest automatic. "Ions think with" (Strongest, or your pick;
                ion chief and every project's ion; routine turns at Medium by themselves) and "Chats ions start run on"
                (Automatic, or your pick), each with its effort. Your own chats are set in the composer (it remembers your last
-               pick). The judge, tidying memory, the briefing, handoffs and fallbacks are automatic: no rows. -->
+               pick). The judge, Dream, the briefing, handoffs and fallbacks are automatic: no rows. -->
           <div><h4>Models</h4><div class="group" id="ionModels"></div></div>
           <div><h4>Coding agents</h4><div class="group" id="hList"></div></div>
           <!-- Plan 21 Task 5: "Check the agents each night", off until you turn it on (its switch; quiet hours on hover); Check now (its icon), on or off. On:
@@ -3189,9 +3189,9 @@ const MTYPE={preference:['heart','Preference'],fact:['lightbulb','Fact'],person:
 const MEMF=[
   {p:'you/tabs-not-spaces.md',sc:'you',t:'preference',n:'Tabs, not spaces',d:'Indent with tabs in every project',by:'You',at:'2h',see:'chats',text:'Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.',hist:[['You','2h'],['Docs pass','Mon'],['You','Sun',1],['You','Sat']]},
   {p:'you/short-replies.md',sc:'you',t:'preference',n:'Short replies',d:'Answers in a few lines, details on request',by:'Cart badge fix',at:'1h',see:'chats',sugg:'storefront',text:'Keep answers short. Offer details instead of writing them.',hist:[['Cart badge fix','1h']]},
-  {p:'you/sam.md',sc:'you',t:'person',n:'Sam',d:'Designer on the storefront; reviews UI changes',by:'ion',at:'Tue',see:'ions',text:'Sam reviews UI changes on storefront. Prefers screenshots in the PR.',hist:[['ion','Tue']]},
+  {p:'you/sam.md',sc:'you',t:'person',n:'Sam',d:'Designer on the storefront; reviews UI changes',by:'ion chief',at:'Tue',see:'ions',text:'Sam reviews UI changes on storefront. Prefers screenshots in the PR.',hist:[['ion chief','Tue']]},
   {p:'you/renew-passport.md',sc:'you',t:'todo',n:'Renew the passport',d:'Renew the passport',by:'You',at:'Mon',see:'ions',st:'open',due:'Due today',text:'Renew the passport.',hist:[['You','Mon']]},
-  {p:'you/node-version.md',sc:'you',t:'fact',n:'Node version',d:'Projects run Node 22',by:'ion (tidying)',at:'5h',see:'ions',tidied:1,text:'Projects run Node 22 (was 18; a chat on Tue said it moved).',hist:[['ion (tidying)','5h'],['ion','2 Nov']]},
+  {p:'you/node-version.md',sc:'you',t:'fact',n:'Node version',d:'Projects run Node 22',by:'ion (dream)',at:'5h',see:'ions',tidied:1,text:'Projects run Node 22 (was 18; a chat on Tue said it moved).',hist:[['ion (dream)','5h'],['ion','2 Nov']]},
   {p:'projects/storefront/deploy.md',sc:'storefront',t:'reference',n:'Deploy',d:'pnpm deploy from main; staging first',by:'storefront',at:'3 Nov',see:'chats',text:'Deploy with `pnpm deploy` from main. Staging first, then production.',hist:[['storefront','3 Nov']]},
   {p:'projects/storefront/check-headline.md',sc:'storefront',t:'todo',n:'Check the headline on mobile',d:'Check the headline on mobile',by:'Pricing headline',at:'now',see:'chats',st:'open',due:'Due Friday',text:'Check the headline on mobile.',hist:[['Pricing headline','now']]},
   {p:'you/book-dentist.md',sc:'you',t:'todo',n:'Book the dentist',d:'Book the dentist',by:'You',at:'Sun',see:'ions',st:'done',text:'Book the dentist.',hist:[['You','Sun']]}];
@@ -3240,9 +3240,9 @@ function renderMemory(){
     icons(el); return;
   }
   const scopes=[['you','You'],...PROJECTS.map(p=>[p,p])];
-  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Tidy memory</span></div><span class="seg sm" role="group" aria-label="Tidy memory">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
+  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Dream</span></div><span class="seg sm" role="group" aria-label="Dream">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
     +`<div class="group">${DREAM_GONE.map(([p,n])=>`<div class="srow"><div class="g">Forgot “${esc(n)}”</div><button class="btn" type="button">Restore</button></div>`).join('')}${DREAM_NOTES.map(n=>`<div class="srow"><div class="g s">${esc(n)}</div></div>`).join('')}</div>`;
-  /* Plan 21 Task 4: Tidy memory waits under More until it's on or has tidied once */
+  /* Plan 21 Task 4: Dream waits under More until it's on or has tidied once */
   const tidyUsed=dreamMode!=='off'||DREAM_GONE.length||DREAM_NOTES.length;
   const moreM=`<button class="more" type="button" aria-expanded="${MMORE}" data-mmore>More<i data-lucide="chevron-${MMORE?'up':'down'}"></i></button>`;
   el.innerHTML=`<div>${tabs}${broken}${tidyUsed?remRow():remRow().replace(/<\/div>\s*$/,moreM+'</div>')}${tidyUsed||MMORE?dream:''}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div>${memScope==='you'?'':remRow(memScope)}<input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
@@ -4034,7 +4034,7 @@ const ACTIONS=[
   ...[['general','General','sliders-horizontal'],['harness','Agents','plug'],['memory','Memory','notebook-text'],['ions','Ions','orbit'],['tools','Tools','blocks'],['notif','Notifications','bell'],['keys','Shortcuts','keyboard']]
     .map(([id,t,icon])=>({t,icon,sub:'Settings',run:()=>{ go('settings'); showS(id); }})),
   /* Plan 21 Task 6: what waits inside a page (under its More, or low on it) is one search away too */
-  ...[['Check the agents each night','harness','Agents','plug'],['Check as judge','harness','Agents','plug'],['Prefer in this order','harness','Agents','plug'],['Tidy memory','memory','Memory','notebook-text']]
+  ...[['Check the agents each night','harness','Agents','plug'],['Check as judge','harness','Agents','plug'],['Prefer in this order','harness','Agents','plug'],['Dream','memory','Memory','notebook-text']]
     .map(([t,id,page,icon])=>({t,icon,sub:'Settings · '+page,run:()=>{ go('settings'); showS(id); }}))];
 const pal=document.getElementById('pal'), pq=document.getElementById('pq'), pres=document.getElementById('pres');
 let items=[], act=0, lastFocus=null;

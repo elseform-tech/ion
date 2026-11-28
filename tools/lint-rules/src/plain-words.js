@@ -4,28 +4,12 @@ import { isTest, repoPath } from "./paths.js";
 const isTestFile = (p) => isTest(p) || /\.test\.tsx$/.test(p);
 
 /**
- * Renames waiting for the user's OK (Plan 21 Task 3): "ion chief" → "ion", and "Dream" (the user's own word) → "Tidy
- * memory". To put one back, delete its line here (and its words on the screens). The files to revert:
- * - "ion chief": apps/desktop/src/settings/memory-data.ts, apps/daemon/src/memory/scoped.ts, apps/desktop/README.md,
- *   apps/daemon/README.md.
- * - "Dream": apps/desktop/src/settings/Memory.tsx, MemoryDream.tsx, memory-data.ts, Agents.tsx;
- *   apps/daemon/src/ions/brain.ts, ions/dream.ts, memory/dream.ts, scheduler/dreams.ts; apps/daemon/README.md.
- */
-export const PENDING = [
-  // --- awaiting the user's OK: begin ---
-  { word: /\bion chief\b/i, use: "ion" },
-  { word: /\bdream(s|ed|ing)?\b/i, use: "tidy (memory)" },
-  // --- awaiting the user's OK: end ---
-];
-
-/**
  * Words retired from the screens (Plan 21 Task 3, the word table in AGENTS.md): ion's own invented words, and two
  * words for one thing. Each with the word that replaces it.
  */
 export const RETIRED = [
   { word: /\bthreads?\b/i, use: "chat (a chat an ion started)" },
   { word: /\bharness(es)?\b/i, use: "agent" },
-  ...PENDING,
   { word: /\blearned from errors\b/i, use: "No usage info" },
   { word: /\bopen needs\b/i, use: "open questions" },
 ];

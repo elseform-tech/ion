@@ -142,7 +142,7 @@ function RememberRow(p: {
   );
 }
 
-/** Remember; Tidy memory under its More until it's on or has tidied once (Plan 21 Task 4); what it tidied. */
+/** Remember; Dream under its More until it's on or has tidied once (Plan 21 Task 4); what it tidied. */
 function RememberAndTidy(p: Pick<ListProps, "mem" | "data" | "client" | "run" | "more">) {
   const [more, setMore] = useState(p.more === true);
   const tidyUsed = (p.data.settings?.dream?.mode ?? "off") !== "off" || !!p.mem.tidied;
@@ -158,7 +158,7 @@ function RememberAndTidy(p: Pick<ListProps, "mem" | "data" | "client" | "run" | 
 }
 
 /**
- * Remember, then Tidy memory and what it tidied (under More until used), then your files or a project's (You, then
+ * Remember, then Dream and what it tidied (under More until used), then your files or a project's (You, then
  * each project), searched by words; a row opens its text.
  */
 type Filter = { scope: string; q: string };
@@ -171,7 +171,7 @@ type ListProps = {
   /** Whose and which words (kept while a file is open, so Back returns to them). */
   filter: Filter;
   setFilter: (f: Filter) => void;
-  /** Tidy memory's More starts open (Search found it: Plan 21 Task 6). */
+  /** Dream's More starts open (Search found it: Plan 21 Task 6). */
   more?: boolean;
 };
 
@@ -231,7 +231,7 @@ const Lines = ({ lines }: { lines: string[] }) =>
     </div>
   ));
 
-/** Where Settings → Memory opened (`at`), and whether Tidy memory's More starts open (`more`: Search found it). */
+/** Where Settings → Memory opened (`at`), and whether Dream's More starts open (`more`: Search found it). */
 type MemoryProps = { client: IonClient; data: SettingsData; at?: SettingsAt | null; more?: boolean };
 
 /**

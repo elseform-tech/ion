@@ -251,7 +251,7 @@ describe("an ion's agent", () => {
         effort: "low",
       });
       await ionBrain(d(["fake", "opencode"]), "_dream");
-      expect(logged).toEqual(["Tidy memory: Fake can't turn its web off; it runs on opencode"]);
+      expect(logged).toEqual(["ion's dream: Fake can't turn its web off; it dreams on opencode"]);
     } finally {
       delete process.env.ION_FAKE_HAS_WEB;
       warn.mockRestore();
