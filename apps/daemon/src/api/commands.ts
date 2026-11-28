@@ -13,7 +13,14 @@ import type { AuthStatus } from "@ion/adapter-kit";
 import type { Dreams } from "../scheduler/index.js";
 import type { MemoryFiles } from "../memory/index.js";
 import { chatDiff, createProject } from "../workspace/index.js";
-import { loadUserConfig, removeProject, renameProject, saveUserConfig, setProjectStarred } from "@ion/config";
+import {
+  DEFAULT_PROJECT,
+  loadUserConfig,
+  removeProject,
+  renameProject,
+  saveUserConfig,
+  setProjectStarred,
+} from "@ion/config";
 import { type Command, type Commands, DECISION_SCOPES, EV, type IonEvent } from "@ion/schema";
 import type { Decisions } from "../decisions/index.js";
 import { decisionsView } from "../views/decisions.js";
@@ -235,7 +242,8 @@ export const handlers: Handlers = {
       version: ctx.version,
       pid: process.pid,
       uptimeS: Math.round((Date.now() - ctx.startedAt) / 1000),
-      projects: config.projects.length,
+      // Your projects: ion's own No project (`default`) isn't one (Plan 21 Task 6 tour).
+      projects: config.projects.filter((p) => p.id !== DEFAULT_PROJECT).length,
       configError: error,
       notes: ctx.unsure?.notes() ?? [],
     };

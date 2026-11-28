@@ -309,6 +309,19 @@ describe("daemon api", () => {
     expect(await client.call("status", {})).toMatchObject({ projects: 0 });
   });
 
+  // Plan 21 Task 6 tour (2026-11-28): after a chat in No project, `ion status` said "2 projects" for one folder: it
+  // counted ion's `default`. It counts your projects, as the first run does.
+  it("status counts your projects, not ion's own No project", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { runId } = await client.call("ask", { text: "hello", harness: "fake" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"));
+    expect(loadUserConfig(join(home, "config.toml")).config.projects.map((p) => p.id)).toContain("default");
+    expect(await client.call("status", {})).toMatchObject({ projects: 1 });
+  });
+
   it("runs an ask end to end and keeps serving after a failed run", async () => {
     process.env.ION_ALLOW_FAKE = "1";
     const repoPath = repo("app");
