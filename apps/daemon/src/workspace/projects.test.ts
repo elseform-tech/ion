@@ -332,6 +332,23 @@ describe("addFolder", () => {
     await expect(addFolder(withRoot(), keys, opts({ home }))).rejects.toThrow(
       "Pick a project folder, not one in .ssh",
     );
+    // Security scan of 34222c5 (2026-11-28, HIGH): with commits, only the hidden-folder rule relaxes. Credential
+    // folders (.kube and the rest), Library and iCloud, your home and above it, another user's folder stay refused.
+    for (const [d, why] of [
+      [".kube/x", "Pick a project folder, not one in .kube"],
+      [".docker/x", "Pick a project folder, not one in .docker"],
+      [".cargo/x", "Pick a project folder, not one in .cargo"],
+      ["Library/x", "Pick a project folder, not one in Library"],
+      ["Library/Mobile Documents/com~apple~CloudDocs/x", /^iCloud Drive can damage a git repo/],
+    ] as const) {
+      const p = plain(join(home, d));
+      await commit(p);
+      await expect(addFolder(withRoot(), p, opts({ home }))).rejects.toThrow(why);
+    }
+    await commit(home);
+    await expect(addFolder(withRoot(), home, opts({ home }))).rejects.toThrow(
+      "Pick a project folder, not your home folder or one above it",
+    );
   });
 
   it("refuses ion's folders and any folder that holds one", async () => {

@@ -29,7 +29,23 @@ const MAX_FILES = 20_000;
 const MAX_BYTES = 50 * 1024 * 1024;
 
 /** Folders that hold keys and settings, refused wherever they are. */
-const SECRET_DIRS = [".ssh", ".aws", ".gnupg", ".config", ".local"];
+const SECRET_DIRS = [
+  ...[".ssh", ".aws", ".gnupg", ".config", ".local"],
+  // Credential folders (security scan of 34222c5, 2026-11-28): a repo with commits there is refused too.
+  ...[
+    ".kube",
+    ".docker",
+    ".gcloud",
+    ".azure",
+    ".npm",
+    ".cargo",
+    ".gem",
+    ".kaggle",
+    ".netrc",
+    ".pki",
+    ".terraform.d",
+  ],
+];
 /** System folders: refused with all inside them. */
 const SYSTEM_TREES = ["/etc", "/private/etc", "/System", "/bin", "/sbin", "/usr"];
 /** System folders refused themselves (what's inside, like a temp folder under /var, may be yours). */
@@ -66,12 +82,13 @@ const real = (p: string) => (existsSync(p) ? realpathSync.native(p) : p);
  * Why a folder in or around your home isn't a project: home, above it, under one of its hidden folders (any depth),
  * iCloud Drive (its sync can damage a .git: re-review of 2e7edd6, 2026-11-23), or your Library; else null.
  */
-function homeRefusal(path: string, home: string): string | null {
+function homeRefusal(path: string, home: string, repo: boolean): string | null {
   if (within(home, path)) return "Pick a project folder, not your home folder or one above it";
   // Another person's home on this Mac (security scan of 3864449, 2026-11-23).
   if (within(path, "/Users") && !within(path, home))
     return "Pick a project folder, not another user's folder";
-  if (within(path, home) && path.slice(home.length + 1).startsWith("."))
+  // A repo with commits (ion writes nothing) may be in a hidden folder that isn't a credential one (Plan 21, M3).
+  if (!repo && within(path, home) && path.slice(home.length + 1).startsWith("."))
     return "Pick a project folder, not one in a hidden folder of your home";
   if (within(path, join(home, "Library", "Mobile Documents")))
     return "iCloud Drive can damage a git repo; move the project out of iCloud Drive first";
@@ -82,10 +99,11 @@ function homeRefusal(path: string, home: string): string | null {
 
 /**
  * Why ion won't add this folder, or null. ion's own: its folders, and any folder that holds one. `repo`: a repo with
- * commits, where ion writes nothing: only the secrets, system and ion's own refusals (Plan 21 final review, M3).
+ * commits, where ion writes nothing: a hidden folder of home is fine (Plan 21 final review, M3); every other refusal
+ * stands (security scan of 34222c5, 2026-11-28).
  */
 function refusal(path: string, home: string, ionDirs: string[], repo = false): string | null {
-  const near = repo ? null : homeRefusal(path, home);
+  const near = homeRefusal(path, home, repo);
   if (near) return near;
   const secret = path.split(sep).find((part) => SECRET_DIRS.some((d) => same(d, part)));
   if (secret) return `Pick a project folder, not one in ${secret}`;
