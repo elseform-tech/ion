@@ -3,7 +3,9 @@ import type { Billing } from "@ion/schema";
 import { harnessRunner } from "../access/index.js";
 import { ownAgents, readyNow } from "../access/judge-agents.js";
 import { JudgeChecks } from "../access/judge-check.js";
-import { getHarness } from "../adapters/registry.js";
+import { agentOrder, getHarness } from "../adapters/registry.js";
+import { loadUserConfig } from "@ion/config";
+import { usageView } from "../views/usage.js";
 import { strongestBrain } from "../ions/brain.js";
 import type { Db } from "../store/index.js";
 import { harnessInfos } from "./commands.js";
@@ -45,11 +47,16 @@ export function ownModels(
   const passed = (id: string) => state.judges?.passed(id) ?? false;
   const own = ownAgents({ ...opts, record }, db, { ready: readyAgents, passed, strongest });
   const judge = harnessRunner(own);
+  const config = () => loadUserConfig(opts.configFile).config;
   const judges = new JudgeChecks({
     dataDir: opts.dataDir,
     run: judge,
     ready: readyAgents,
     billing: billingOn,
+    // Only when it needs one, on Automatic's first free agent, stopping at its limit (Plan 21, 2026-11-28).
+    limited: (id) => usageView.agents(db, new Date())[id]?.limitedUntil ?? null,
+    avoided: (id) => !!config().agents?.[id]?.avoid,
+    order: () => agentOrder(config().routing.order),
   });
   state.judges = judges;
   const look = () => void judges.checkFree().catch(() => undefined);

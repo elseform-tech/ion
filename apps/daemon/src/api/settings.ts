@@ -180,6 +180,7 @@ function judgesOf(judges: JudgeChecks | undefined): SettingsInfo["judges"] {
       shipped: shippedChecked(id),
       last: judges?.last(id) ?? null,
       checking: judges?.checking(id) ?? false,
+      ...judges?.status(id),
     };
   }
   return out;
