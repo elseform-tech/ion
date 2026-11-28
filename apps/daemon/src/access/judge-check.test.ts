@@ -214,13 +214,31 @@ describe("ion's own check of a free agent", () => {
     expect(calls).toBe(3);
   });
 
+  // Flaked on GitHub's macOS runners (PR #49 CI, 2026-11-28: "expected 1 to be greater than 1"): the real clock let a
+  // slow first case eat the whole 100 ms cap. Time is virtual here (a gap only moves the clock), so the count is exact.
   it("runs a case at a time with a gap, within a cap on its time", async () => {
-    let calls = 0;
-    const run = async () => (calls++, verdict());
-    const c = make({ run, ready: async () => ["fake"], pace: { gapMs: 30, capMs: 100 } });
+    let t = 0;
+    let running = 0;
+    let overlapped = false;
+    const starts: number[] = [];
+    const run = async () => {
+      overlapped ||= ++running > 1;
+      starts.push(t);
+      await Promise.resolve();
+      running--;
+      return verdict();
+    };
+    const clock = {
+      now: () => t,
+      sleep: async (ms: number) => {
+        t += ms;
+      },
+    };
+    const c = make({ run, clock, ready: async () => ["fake"], pace: { gapMs: 30, capMs: 100 } });
     await c.checkFree();
-    expect(calls).toBeGreaterThan(1);
-    expect(calls).toBeLessThan(6);
+    // Starts at 0, 30, 60, 90; the gap after the fourth passes the cap (120 > 100), so no fifth.
+    expect(starts).toEqual([0, 30, 60, 90]);
+    expect(overlapped).toBe(false);
     expect(c.last("fake")).toBeUndefined();
   });
 });

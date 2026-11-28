@@ -9,7 +9,7 @@ export function daemonCommands(program: Command, out: () => Out) {
     .description("Start ion")
     .action(async () => {
       const r = await startDaemon(ionPaths().dataDir);
-      if (r === "failed") fail("ion didn't start. See daemon.log in the data folder.");
+      if (r === "failed") fail("ion didn't start in time. See daemon.log in the data folder.");
       print(out(), r === "already" ? "Already running" : "Started", { status: r });
     });
   d.command("stop")
