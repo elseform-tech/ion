@@ -311,6 +311,26 @@ describe.skipIf(!real)("a run in the real sandbox (macOS)", () => {
     expect(existsSync(join(home, "x"))).toBe(false);
   });
 
+  // Automated scan, 2026-11-28 (after #56): a hook in a chat's worktree writes there and nowhere else.
+  it("write-only: writes its own paths and nothing else", () => {
+    const rw = sb;
+    sb = { ...rw, paths: { ...rw.paths, write: [wt], writeOnly: true } };
+    try {
+      const out = (command: string, args: string[]) => {
+        const w = sandboxed(sb, command, args);
+        return spawnSync(w.command, w.args, { cwd: wt, encoding: "utf8", timeout: 15_000 }).status;
+      };
+      expect(out("/usr/bin/touch", ["w.txt"])).toBe(0);
+      // Your home, from the worktree (home/.local/share/ion/worktrees/chat-1): fixed text, nothing from the env.
+      expect(out("/usr/bin/touch", ["../../../../../w"])).not.toBe(0);
+      expect(out("/bin/cp", ["a.txt", "/dev/null"])).toBe(0);
+    } finally {
+      sb = rw;
+    }
+    expect(existsSync(join(wt, "w.txt"))).toBe(true);
+    expect(existsSync(join(home, "w"))).toBe(false);
+  });
+
   it("can't read daemon.json (cat, python, a script it wrote, a link, a moved folder)", () => {
     const file = join(data, "daemon.json");
     const vars = {

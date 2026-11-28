@@ -31,6 +31,11 @@ export type SandboxPaths = {
   noWrite: string[];
   /** Nothing written anywhere (`write` is ignored): ion's own reads of a chat's worktree (re-review, 2026-11-28). */
   readOnly?: boolean;
+  /**
+   * Writes only in `write` (and the terminal's devices), nowhere else: a hook in a chat's worktree, which may run code
+   * the agent planted there (automated scan, 2026-11-28).
+   */
+  writeOnly?: boolean;
 };
 
 /** How this computer sandboxes: macOS's Seatbelt (`sandbox-exec`), Linux's bubblewrap, or not at all. */
@@ -121,6 +126,9 @@ function ancestors(p: string): string[] {
 
 const inside = (p: string, dir: string) => p === dir || p.startsWith(dir.endsWith("/") ? dir : `${dir}/`);
 
+/** The terminal's devices a process may write wherever it runs. */
+const DEVICES = ["/dev/null", "/dev/zero", "/dev/tty", "/dev/stdout", "/dev/stderr", "/dev/dtracehelper"];
+
 /** A path as a Seatbelt string. */
 const sbString = (p: string) => `"${p.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 const subpaths = (ps: string[]) => ps.map((p) => `(subpath ${sbString(p)})`).join(" ");
@@ -161,8 +169,20 @@ export function seatbeltProfile(p: SandboxPaths): string {
   if (read.length) lines.push(`(allow file-read* ${subpaths(read)})`);
   if (write.length) lines.push(`(allow file-read* file-write* ${subpaths(write)})`);
   if (noWrite.length) lines.push(`(deny file-write* ${subpaths(noWrite)})`);
-  if (p.readOnly) lines.push('(deny file-write* (subpath "/"))', '(allow file-write* (literal "/dev/null"))');
+  lines.push(...writeLimits(p, write, noWrite));
   return `${lines.join("\n")}\n`;
+}
+
+/** A read-only or write-only profile's last rules: no writes anywhere, then back only what it may write. */
+function writeLimits(p: SandboxPaths, write: string[], noWrite: string[]): string[] {
+  if (p.readOnly) return ['(deny file-write* (subpath "/"))', '(allow file-write* (literal "/dev/null"))'];
+  if (!p.writeOnly) return [];
+  return [
+    '(deny file-write* (subpath "/"))',
+    `(allow file-write* ${literals(DEVICES)} (subpath "/dev/fd"))`,
+    ...(write.length ? [`(allow file-write* ${subpaths(write)})`] : []),
+    ...(noWrite.length ? [`(deny file-write* ${subpaths(noWrite)})`] : []),
+  ];
 }
 
 /**
@@ -175,7 +195,8 @@ export function seatbeltProfile(p: SandboxPaths): string {
  */
 export function bwrapArgs(p: SandboxPaths, env: NodeJS.ProcessEnv = process.env): string[] {
   const args = [
-    ...["--die-with-parent", "--new-session", "--unshare-pid", p.readOnly ? "--ro-bind" : "--bind", "/", "/"],
+    ...["--die-with-parent", "--new-session", "--unshare-pid"],
+    ...[p.readOnly || p.writeOnly ? "--ro-bind" : "--bind", "/", "/"],
     ...["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm"],
   ];
   // Each path is its own argument (no shell reads them); one with a NUL or a line break is refused (CodeQL, PR #25).
@@ -251,6 +272,7 @@ export function withPaths(sb: RunSandbox | undefined, more: Partial<SandboxPaths
     paths: {
       ...{ deny: add("deny"), read: add("read"), write: add("write"), noWrite: add("noWrite") },
       ...(sb.paths.readOnly ? { readOnly: true } : {}),
+      ...(sb.paths.writeOnly ? { writeOnly: true } : {}),
     },
     dataDir: sb.dataDir,
   };
