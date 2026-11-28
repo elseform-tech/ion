@@ -669,6 +669,9 @@ button.arow:hover{background:var(--hover)}
 /* Tour of PR #36, 2026-11-24: each agent's toggles with their icon (named on hover), and its judge line's quiet link */
 .hacts .swl{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}.hacts .swl svg{width:14px;height:14px}
 .hrow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer}.hrow .lnk:hover{text-decoration:underline}
+/* Plan 21 Task 5: Check the agents each night: its result line's quiet link, and each check with its icon */
+.srow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left}.srow .lnk:hover{text-decoration:underline}
+.chk{display:flex;align-items:center;gap:6px}.chk svg,.chk .spin{width:13px;height:13px;flex-shrink:0}.chk .bad{color:var(--bad)}
 /* Tour at 900×700, 2026-11-24: a chip ("Its own hooks run too") stays one line; it moves below the name instead */
 .hrow .chip{white-space:nowrap;display:inline-block;box-sizing:border-box;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}

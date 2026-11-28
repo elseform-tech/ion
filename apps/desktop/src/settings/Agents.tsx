@@ -4,6 +4,7 @@ import { type AgentUsage, EV, type HarnessInfo, type SettingsPatch, usageLine } 
 import { Fragment, type ReactNode, useCallback, useEffect, useState } from "react";
 import { inOrder, PreferOrder } from "./AgentOrder.js";
 import { IonModels } from "./IonModels.js";
+import { AgentChecks } from "./AgentChecks.js";
 import { useEvents } from "../events.js";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
@@ -190,7 +191,7 @@ function useUsage(client: IonClient, harnesses: HarnessInfo[]): AgentUsage[] {
 
 /**
  * Settings → Agents: what ions think with and what their chats run on; each coding agent, whether it's ready, and its
- * usage. Under More (Plan 21 Task 4: until used): each agent's Avoid and own-tools switches, Check as judge, and
+ * usage; Check the agents each night. Under More (Plan 21 Task 4: until used): each agent's Avoid and own-tools switches, Check as judge, and
  * Prefer in this order.
  */
 export function Agents({ client, data }: { client: IonClient; data: SettingsData }) {
@@ -226,6 +227,7 @@ export function Agents({ client, data }: { client: IonClient; data: SettingsData
           ))}
         </div>
       </div>
+      <AgentChecks client={client} />
       <KeptPicks data={data} set={set} />
       {data.settings && (
         <PreferOrder

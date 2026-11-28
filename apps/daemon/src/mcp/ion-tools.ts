@@ -26,6 +26,7 @@ import { brainArgs, registerChatsTool } from "./ion-chats-tool.js";
 import type { Confirm } from "../ions/confirms.js";
 import { guard, ok, q } from "./result.js";
 import { registerMemoryTools } from "./memory-tools.js";
+import { CHECK_ION, registerCheckTool } from "./check-tool.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import { ionCaller, ionMemory, leastIonMemory } from "../memory/switch.js";
 import { type Deps, historyData, needsData, SEARCH_MAX, searchData } from "./tools.js";
@@ -100,6 +101,7 @@ function ionOf(scope: IonScope, d: IonDeps): Ion {
  * Everything they return is labelled as data.
  */
 export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps): void {
+  if (scope.ionId === CHECK_ION) return registerCheckTool(server, scope);
   const ion = ionOf(scope, d);
   if (scope.ionId === DREAM_ION) return dreamTools(server, ion);
   projectsTool(server, ion);

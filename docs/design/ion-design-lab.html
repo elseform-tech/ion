@@ -935,6 +935,9 @@ button.arow:hover{background:var(--hover)}
 /* Tour of PR #36, 2026-11-24: each agent's toggles with their icon (named on hover), and its judge line's quiet link */
 .hacts .swl{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}.hacts .swl svg{width:14px;height:14px}
 .hrow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer}.hrow .lnk:hover{text-decoration:underline}
+/* Plan 21 Task 5: Check the agents each night: its result line's quiet link, and each check with its icon */
+.srow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left}.srow .lnk:hover{text-decoration:underline}
+.chk{display:flex;align-items:center;gap:6px}.chk svg,.chk .spin{width:13px;height:13px;flex-shrink:0}.chk .bad{color:var(--bad)}
 /* Tour at 900×700, 2026-11-24: a chip ("Its own hooks run too") stays one line; it moves below the name instead */
 .hrow .chip{white-space:nowrap;display:inline-block;box-sizing:border-box;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}
@@ -1767,6 +1770,18 @@ export function sumLines(lines: Line[]) {
                pick). The judge, tidying memory, the briefing, handoffs and fallbacks are automatic: no rows. -->
           <div><h4>Models</h4><div class="group" id="ionModels"></div></div>
           <div><h4>Coding agents</h4><div class="group" id="hList"></div></div>
+          <!-- Plan 21 Task 5: "Check the agents each night", off until you turn it on (its switch; quiet hours on hover). On:
+               Check now (its icon), each agent and what a night costs it (one that isn't free, Claude Code too, only once
+               you pick it; one you avoid or that's limited says so); the last checks in one line ("Checked last night:
+               all fine"), or one per agent that failed, which opens what failed. -->
+          <div class="group" id="hChecks">
+            <div class="srow"><div class="g">Check the agents each night<div class="s"><button class="lnk" type="button" aria-expanded="false" onclick="const d=document.getElementById('hChkDetails');d.hidden=!d.hidden;this.setAttribute('aria-expanded',String(!d.hidden))">Grok Build: 2 checks failed</button></div></div><button class="ib" type="button" title="Check now" aria-label="Check now"><i data-lucide="rotate-cw"></i></button><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Check the agents each night" title="In quiet hours (22:00–08:00)"></button></div>
+            <div class="srow" id="hChkDetails" hidden><div class="g">Grok Build<div class="s chk"><i data-lucide="circle-check"></i>Signed in</div><div class="s chk"><i data-lucide="circle-check"></i>Starts</div><div class="s chk"><i data-lucide="circle-x" class="bad"></i>Answers · Said nothing</div><div class="s chk"><i data-lucide="circle-x" class="bad"></i>ion's tools · ion's word didn't come back</div></div></div>
+            <div class="srow"><div class="g s">opencode · Free</div></div>
+            <div class="srow"><div class="g s">Grok Build · A little of your plan</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Grok Build: check each night"></button></div>
+            <div class="srow"><div class="g s">Claude Code · A little of your plan</div><button type="button" class="sw" role="switch" aria-checked="false" aria-label="Claude Code: check each night"></button></div>
+            <div class="srow"><div class="g s">Codex · Avoided</div></div>
+          </div>
           <!-- Under More: "Prefer in this order" (empty: Automatic decides; once set, Automatic follows it). -->
           <div><button class="more" type="button" aria-expanded="false" data-hmore="1">More<i data-lucide="chevron-down"></i></button>
             <div class="group" id="hPrefer" hidden>

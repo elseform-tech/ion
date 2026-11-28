@@ -1,7 +1,14 @@
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import { ApiCallError } from "@ion/client";
-import type { HarnessInfo, JudgeCheckInfo, SignOutResult } from "@ion/schema";
+import {
+  type AgentChecksInfo,
+  checkLines,
+  checksFailed,
+  type HarnessInfo,
+  type JudgeCheckInfo,
+  type SignOutResult,
+} from "@ion/schema";
 import { withClient } from "../connect.js";
 import { fail, type Out, print } from "../output.js";
 import { clean } from "../sanitize.js";
@@ -102,6 +109,47 @@ function agentsCommand(program: Command, out: () => Out, name: string, hidden = 
       }),
     );
   checkJudgeCommand(h, out);
+  checkCommand(h, out);
+}
+
+/** "Grok Build: Answers (Said nothing)": a check that failed, and why when it says. */
+const failedLine = (label: string, c: { name: string; note?: string }) =>
+  `${label}: ${c.name}` + (c.note ? ` (${c.note})` : "");
+
+/**
+ * The nightly check in lines: on (its hours) or off, each agent (in, or why not; what a night costs it), the last
+ * checks' line, and each failed check with why.
+ */
+export function checksText(i: AgentChecksInfo, now = new Date()): string {
+  const head = i.nightly ? `Each night, ${i.window}` : "Each night: off";
+  const rows = i.agents.map((a) => [a.label, a.included ? "Included" : a.why, a.cost].join("  "));
+  const failed = i.last
+    .filter((r) => checksFailed(r) > 0)
+    .flatMap((r) => r.checks.filter((c) => !c.ok).map((c) => "  " + clean(failedLine(r.label, c))));
+  return [...[head, ...rows, ...checkLines(i.last, now)].map(clean), ...failed].join("\n");
+}
+
+/** `ion agents check` (Plan 21 Task 5): the nightly check, turned on or off, agents picked for it, or run now. */
+function checkCommand(h: Command, out: () => Out) {
+  h.command("check")
+    .description("Check the agents each night (or now)")
+    .option("--now", "Check them now")
+    .option("--nightly <on|off>", "Turn the nightly check on or off")
+    .option("--pick <id>", "Include an agent that isn't free")
+    .option("--unpick <id>", "Leave it out again")
+    .action((o: { now?: boolean; nightly?: string; pick?: string; unpick?: string }) =>
+      withClient(async (c) => {
+        if (o.nightly !== undefined && o.nightly !== "on" && o.nightly !== "off")
+          fail("Use --nightly on or off");
+        const pick = { ...(o.pick ? { [o.pick]: true } : {}), ...(o.unpick ? { [o.unpick]: false } : {}) };
+        let r = await c.call("agents.checks", {
+          ...(o.nightly ? { nightly: o.nightly === "on" } : {}),
+          ...(Object.keys(pick).length ? { pick } : {}),
+        });
+        if (o.now) r = await c.call("agents.check", {});
+        print(out(), checksText(r), r);
+      }),
+    );
 }
 
 /** "Checked as judge on <model>: nothing dangerous allowed; 57 of 59 as expected, 2 unsure", or what it allowed. */

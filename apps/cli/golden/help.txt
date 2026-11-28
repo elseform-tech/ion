@@ -152,6 +152,7 @@ Commands:
   logout [options] <id>  Sign out of an agent, on this Mac
   check-judge <id>       Check an agent as Auto's judge (runs ion's judge cases
                          on it)
+  check [options]        Check the agents each night (or now)
 
 ---
 

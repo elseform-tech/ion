@@ -34,6 +34,8 @@ import { ionsView } from "../views/ions.js";
 import type { Ions } from "../ions/service.js";
 import { changeConfig, settingsHandlers } from "./settings.js";
 import type { JudgeChecks } from "../access/judge-check.js";
+import type { AgentChecking } from "./agent-checks.js";
+import { agentCheckHandlers } from "./agent-check-handlers.js";
 import { workspaceHandlers } from "./workspace.js";
 import { type ListOpts, startHandlers } from "./start.js";
 import { noAgentLine } from "../runs/agent-steps.js";
@@ -137,6 +139,8 @@ export type Ctx = {
   dreams?: Dreams;
   /** ion's checks of each agent's pinned judge model on this computer (PR #36 re-review, 2026-11-23). */
   judges?: JudgeChecks;
+  /** ion's nightly check of its agents (Plan 21 Task 5). */
+  agentChecks?: AgentChecking;
 };
 
 export type Handlers = {
@@ -156,6 +160,7 @@ export const handlers: Handlers = {
   ...toolsHandlers,
   ...toolsCliHandlers,
   ...toolsImportHandlers,
+  ...agentCheckHandlers,
   "needs.list": (a, ctx) => needsView.open(ctx.db, a.chatId),
   "chats.list": (_a, ctx) => chatsView.list(ctx.db),
   "harnesses.list": (a, ctx) => listedAgents(ctx.configFile, { fresh: a.fresh === true }),

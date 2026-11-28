@@ -120,6 +120,8 @@
     "harness.login",
     "harness.logout",
     "harness.cancelLogin",
+    "agents.checks",
+    "agents.check",
     "routine.add",
     "routine.update",
     "routine.remove",

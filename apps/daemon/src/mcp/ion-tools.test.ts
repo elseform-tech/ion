@@ -131,6 +131,24 @@ const NOT_ALLOWED = { isError: true, content: [{ text: "Not allowed" }] };
 
 // The user, 2026-11-19: ion chief and project ions get real tools, each only over what it may see.
 describe("ion tools", () => {
+  // Plan 21 Task 5, 2026-11-28: the nightly check's key gets one tool, its word, and nothing of yours.
+  it("a check's key has only the check tool, which gives its word", async () => {
+    const c = await client(
+      grants.create({
+        kind: "ion",
+        ionId: "_check",
+        projects: [],
+        turnId: "c1",
+        report: true,
+        check: { word: "f00d" },
+      }),
+    );
+    const { tools } = await c.listTools();
+    expect(tools.map((t) => t.name)).toEqual(["check"]);
+    expect(text(await c.callTool({ name: "check", arguments: {} }))).toBe("f00d");
+    await c.close();
+  });
+
   it("ion chief's key lists only projects shared with ion, never default", async () => {
     const c = await chief();
     const listed = text(await c.callTool({ name: "projects", arguments: {} }));

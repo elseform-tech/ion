@@ -477,6 +477,31 @@ describe("daemon api", () => {
     }
   }, 60_000);
 
+  // Plan 21 Task 5, 2026-11-28: "Check the agents each night" is off until you turn it on; Check now runs the same
+  // small check on the agents that are in (one that isn't free only when you pick it), through ion's own server.
+  it("checks the agents each night only once you turn it on, and now on request", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const first = await client.call("agents.checks", {});
+    expect(first).toMatchObject({ nightly: false, running: false, last: [] });
+    // Only the fake agent is checked here: the others are avoided (no real agent, nothing slow to ask).
+    const others = ["claude-code", "codex", "grok-build", "opencode"];
+    await client.call("settings.set", {
+      patch: { avoid: Object.fromEntries(others.map((id) => [id, true])) },
+    });
+    const on = await client.call("agents.checks", { nightly: true, pick: { fake: true } });
+    expect(on.nightly).toBe(true);
+    expect(on.agents.find((a) => a.agent === "fake")).toMatchObject({ picked: true, included: true });
+    const done = await client.call("agents.check", {});
+    const fake = done.last.find((r) => r.agent === "fake");
+    expect(fake?.checks.slice(0, 2)).toEqual([
+      { name: "Signed in", ok: true },
+      { name: "Starts", ok: true },
+    ]);
+    await expect(client.call("agents.checks", { pick: { nope: true } })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
+  }, 120_000);
+
   // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.
   it("previews a chat's file and lists its background tasks", async () => {
     process.env.ION_ALLOW_FAKE = "1";
