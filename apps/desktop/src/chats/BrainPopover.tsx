@@ -45,7 +45,7 @@ function pillModel(h: HarnessInfo | undefined, model: string): string | null {
 /** What the pill names: the agent (none: "By usage" when Pick by usage picks it), its model, and all of it in words. */
 function pillNames(harnesses: HarnessInfo[], brain: Brain, byUsage?: boolean) {
   const effort = `${effortLabel(brain.effort)} effort`;
-  if (byUsage) return { h: undefined, model: null, label: "By usage", name: `By usage · ${effort}` };
+  if (byUsage) return { h: undefined, model: null, label: "Automatic", name: `Automatic · ${effort}` };
   const h = harnesses.find((x) => x.id === brain.harness);
   const model = pillModel(h, brain.model);
   // An agent the app doesn't list (the fake one in the tour) shows by its own name.
@@ -77,7 +77,7 @@ export function BrainPill(p: {
       className="pill bpill"
       aria-haspopup="dialog"
       aria-expanded={p.open}
-      aria-label={`Harness, model and effort: ${name}`}
+      aria-label={`Agent, model and effort: ${name}`}
       title={[name, p.why, p.estimate].filter(Boolean).join("\n")}
       onClick={p.onClick}
     >
@@ -217,23 +217,29 @@ function useFit(harness: string) {
   return ref;
 }
 
-/** The lab's `.bpop`: Harness, Model and Effort columns; agents not ready are disabled and say why. */
+/** The lab's `.bpop`: Agent, Model and Effort columns; agents not ready are disabled and say why. */
 export function BrainPopover(p: {
   harnesses: HarnessInfo[];
   brain: Brain;
   picked: boolean;
   onChange: (b: Brain) => void;
+  /** A new chat can go on Automatic (the user, 2026-11-24): `on` while it does. */
+  auto?: { on: boolean };
 }) {
   const b = p.brain;
   const h = p.harnesses.find((x) => x.id === b.harness);
-  const harnesses: Row[] = p.harnesses.map((x) => ({
-    key: x.id,
-    on: x.id === b.harness,
-    label: x.label,
-    small: unready(x),
-    disabled: Boolean(unready(x)),
-    lead: <Avatar harness={x.id} />,
-  }));
+  const automatic: Row[] = p.auto ? [{ key: "", on: p.auto.on, label: "Automatic", lead: <Gauge /> }] : [];
+  const harnesses: Row[] = [
+    ...automatic,
+    ...p.harnesses.map((x) => ({
+      key: x.id,
+      on: !p.auto?.on && x.id === b.harness,
+      label: x.label,
+      small: unready(x),
+      disabled: Boolean(unready(x)),
+      lead: <Avatar harness={x.id} />,
+    })),
+  ];
   const models = modelRows(h, b.model);
   const efforts: Row[] = (["", ...EFFORTS] as Brain["effort"][]).map((e) => ({
     key: e,
@@ -243,9 +249,9 @@ export function BrainPopover(p: {
   }));
   const ref = useFit(b.harness);
   return (
-    <div ref={ref} className="bpop" role="dialog" aria-label="Harness, model and effort">
+    <div ref={ref} className="bpop" role="dialog" aria-label="Agent, model and effort">
       <div className="bp-cols">
-        <Col title="Harness" rows={harnesses} pick={(k) => p.onChange({ ...b, harness: k, model: "" })} />
+        <Col title="Agent" rows={harnesses} pick={(k) => p.onChange({ ...b, harness: k, model: "" })} />
         <ModelCol key={b.harness} rows={models} pick={(k) => p.onChange({ ...b, model: k })} />
         <Col title="Effort" rows={efforts} pick={(k) => p.onChange({ ...b, effort: k as Brain["effort"] })} />
       </div>

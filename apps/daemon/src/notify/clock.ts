@@ -40,3 +40,24 @@ export function lastQuiet(q: Quiet, now: Date): Window | null {
   const today = onDay(now, q.to);
   return windowEnding(q, today <= now ? today : onDay(now, q.to, -1));
 }
+
+/** The night's hours when quiet hours are off. */
+const NIGHT: Quiet = { on: true, from: "01:00", to: "06:00" };
+/** A quiet night: its hours this old, and nothing in ion for this long. */
+const SETTLED_MS = 60 * 60_000;
+const IDLE_MS = 30 * 60_000;
+
+/** The hours ion's own nightly work may run in: quiet hours, else 01:00–06:00. */
+export const nightHours = (q: Quiet): Quiet => (q.on && q.from !== q.to ? q : NIGHT);
+
+/**
+ * A quiet night for ion's own nightly work (the agents' check, a free agent's judge check: one rule for both, Plan 21
+ * final review): in its hours (nightHours) for an hour at least, with nothing in ion for 30 minutes. Its window, or
+ * null.
+ */
+export function quietNight(q: Quiet, now: Date, lastEventAt: Date | null): Window | null {
+  const w = quietNow(nightHours(q), now);
+  const t = now.getTime();
+  if (!w || t - w.start.getTime() < SETTLED_MS) return null;
+  return t - (lastEventAt?.getTime() ?? 0) < IDLE_MS ? null : w;
+}

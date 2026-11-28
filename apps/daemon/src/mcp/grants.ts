@@ -27,6 +27,8 @@ export type IonScope = {
   dream?: DreamPass & { max: number };
   /** Some of its memory is off (the user, 2026-11-23): yours, or projects'; absent, all of it is on. */
   memory?: IonMemory;
+  /** ion's nightly check of an agent (Plan 21 Task 5): the word its one tool gives back. */
+  check?: { word: string };
 };
 
 export type Scope = RunScope | IonScope;

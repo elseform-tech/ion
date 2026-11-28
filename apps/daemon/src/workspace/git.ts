@@ -40,7 +40,11 @@ function gitEnv(yours = false): NodeJS.ProcessEnv {
  * Runs git without a shell, without prompting, with a minimal environment and with the repo's hooks turned off:
  * a cloned repo's hooks must never run code when ion makes or removes a worktree.
  */
-export function git(args: string[], cwd: string, o: { yours?: boolean } = {}): Promise<GitResult> {
+export function git(
+  args: string[],
+  cwd: string,
+  o: { yours?: boolean; input?: string } = {},
+): Promise<GitResult> {
   const run = sandboxed(box, resolveGit(), [
     "-c",
     "core.hooksPath=/dev/null",
@@ -49,7 +53,7 @@ export function git(args: string[], cwd: string, o: { yours?: boolean } = {}): P
     ...args,
   ]);
   return new Promise((resolve) => {
-    execFile(
+    const child = execFile(
       run.command,
       run.args,
       // Diffs can be large: Node's 1 MB default would cut them off silently.
@@ -61,5 +65,11 @@ export function git(args: string[], cwd: string, o: { yours?: boolean } = {}): P
         resolve({ code, stdout: String(stdout), stderr: String(stderr) });
       },
     );
+    // What git reads on stdin (a pathspec file), when there is one. A git that ended early can't break ion (EPIPE:
+    // pnpm check, 2026-11-23, when every git call wrote to its stdin).
+    if (o.input !== undefined) {
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(o.input);
+    }
   });
 }

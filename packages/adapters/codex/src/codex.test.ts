@@ -129,7 +129,7 @@ describe("codex adapter", () => {
   });
 
   // The user, 2026-11-21: a Codex that doesn't say (an older one, or a read that failed) shows no gauge at all.
-  it("a missing gauge shows Learned from errors", async () => {
+  it("a missing gauge shows No usage info", async () => {
     process.env.FAKE_CODEX_NO_LIMITS = "1";
     const events = await turn("hello");
     const usage = events.find((e) => e.type === "usage.reported")?.data as Record<string, unknown>;

@@ -34,6 +34,21 @@ describe("pickAgent", () => {
     expect(pickAgent([guessed], task()).agent).toBe("opencode");
   });
 
+  // Plan 21 Task 6 tour (2026-11-28): a minute after opencode hit its limit (a guessed reset), a new chat went back to
+  // it with "On opencode — free and enough for this". Another ready agent goes first and says why; tried only when it's
+  // the only one, and the line says it's a try.
+  it("an agent at a guessed limit says so: passed over for a free one, else tried and named as a try", () => {
+    const guessed = agent("opencode", { billing: "free", limitedUntil: later(30), limitGuessed: true });
+    expect(pickAgent([guessed, agent("grok")], task())).toEqual({
+      agent: "grok",
+      reason: "On Grok Build — opencode may still be at its limit",
+    });
+    expect(pickAgent([guessed, agent("grok", { limitedUntil: later(60) })], task())).toEqual({
+      agent: "opencode",
+      reason: "On opencode — it may be back from its limit; no other agent is free",
+    });
+  });
+
   // The user, 2026-11-21: save Claude quota; Claude only when needed (ion's deep model's agent is kept for deep work).
   it("Claude is saved unless deep work needs it", () => {
     const all = [agent("claude"), agent("codex")];
@@ -118,5 +133,23 @@ describe("pickAgent", () => {
     // One that fits stays put.
     const small = { codex: { unit: "percent" as const, low: 5, high: 10, window: "5 h" } };
     expect(pickAgent([codex, agent("claude")], task({ order, estimate: small })).agent).toBe("codex");
+  });
+});
+
+// The user, 2026-11-24 (two model settings, the rest automatic): chats ions start, on Automatic, never go on an agent you
+// marked "Avoid unless I ask", and Claude Code comes last unless it's the only one left.
+describe("Automatic", () => {
+  it("never picks an agent you avoid", () => {
+    const r = pickAgent([agent("opencode"), agent("grok")], task({ avoid: ["opencode"] }));
+    expect(r.agent).toBe("grok");
+    expect(pickAgent([agent("opencode")], task({ avoid: ["opencode"] })).agent).toBeNull();
+  });
+
+  it("puts Claude Code last unless it's the only one", () => {
+    const order = ["claude", "codex"];
+    expect(pickAgent([agent("claude"), agent("codex")], task({ order, last: ["claude"] })).agent).toBe(
+      "codex",
+    );
+    expect(pickAgent([agent("claude")], task({ order, last: ["claude"] })).agent).toBe("claude");
   });
 });

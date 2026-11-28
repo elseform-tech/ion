@@ -5,6 +5,9 @@ import { type ConnState, type DaemonInfo, IonConnection } from "./connection.js"
 
 const inTauri = () => "__TAURI_INTERNALS__" in window;
 
+/** The packaged app (a Tauri release build): it doesn't include ion yet, so it can't start it (Plan 21 final review). */
+export const packaged = (): boolean => inTauri() && import.meta.env.PROD;
+
 /**
  * Where the daemon is: from the app (Tauri reads daemon.json). Only in a development build opened in a plain
  * browser (`vite`, used by the end-to-end check), from `?port=&token=`; a release build never reads the URL.
@@ -18,7 +21,19 @@ async function daemonInfo(): Promise<DaemonInfo | null> {
   return port && token ? { port, token } : null;
 }
 
-const connection = new IonConnection({ info: daemonInfo, connect: (i) => connectBrowser(i) });
+/**
+ * Starts ion when it isn't running (Plan 21 audit, 2026-11-23: the app opened on a terminal command): only the app
+ * can, through its shell; a browser keeps the command.
+ */
+async function startIon(): Promise<boolean> {
+  return inTauri() ? invoke<boolean>("start_daemon").catch(() => false) : false;
+}
+
+const connection = new IonConnection({
+  info: daemonInfo,
+  connect: (i) => connectBrowser(i),
+  ...(inTauri() ? { start: startIon } : {}),
+});
 
 /** The app's connection to ion: its state, and the client while it's up. */
 export function useIon(): { state: ConnState; client: IonClient | null } {

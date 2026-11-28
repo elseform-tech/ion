@@ -19,11 +19,11 @@ const INPUT_MAX = 2048;
 /** A run of 40+ base64 or hex characters: an encoded blob. */
 const BLOB = /[A-Za-z0-9+/=_-]{40,}/;
 
-const TOO_LONG = "That's too long for an ion's call, so I'll start a thread";
-const ENCODED = "That looks like encoded data, so I'll start a thread";
-const NOT_ON = "That tool isn't on for ions, so I'll start a thread";
-const WRITES = "That changes something, so I'll start a thread";
-const ONLY_TOOLS = "An ion only calls a server's tools, so I'll start a thread";
+const TOO_LONG = "That's too long for an ion's call, so I'll start a chat";
+const ENCODED = "That looks like encoded data, so I'll start a chat";
+const NOT_ON = "That tool isn't on for ions, so I'll start a chat";
+const WRITES = "That changes something, so I'll start a chat";
+const ONLY_TOOLS = "An ion only calls a server's tools, so I'll start a chat";
 
 /** Every text in a call's input (keys too). */
 function texts(v: unknown): string[] {
@@ -212,14 +212,13 @@ export class IonServers {
       req: { requestId: "ion", toolId: "ion", ...call },
       onlyReads: true,
     });
-    if (v.decided === false)
-      return { decision: "deny", reason: "ion couldn't decide, so I'll start a thread" };
+    if (v.decided === false) return { decision: "deny", reason: "ion couldn't decide, so I'll start a chat" };
     if (v.verdict === "allow") return { decision: "allow" };
     if (v.verdict === "unsure") this.d.onUnsure?.(call);
     if (v.verdict === "unsure")
       return {
         decision: "deny",
-        reason: `ion isn't sure it only reads (${v.reason}), so I'll start a thread`,
+        reason: `ion isn't sure it only reads (${v.reason}), so I'll start a chat`,
       };
     return { decision: "deny", reason: WRITES };
   }

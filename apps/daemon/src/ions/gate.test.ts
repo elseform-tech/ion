@@ -52,6 +52,8 @@ describe("an ion's gate", () => {
     const mcp = (toolName: string, mcpServer: string) => req({ kind: "mcp", toolName, mcpServer });
     expect(decideForIon(mcp("mcp__ion__projects", "ion"), ctx)).toBe("allow");
     expect(decideForIon(mcp("ion__start_thread", "ion"), ctx)).toBe("allow");
+    // Live check, 2026-11-24: "from now on …" was refused by ion's gate; saving what chats ions start run on is ion's.
+    expect(decideForIon(mcp("ion__set_chats_model", "ion"), ctx)).toBe("allow");
     expect(decideForIon(mcp("mcp__ion__chat_history", "ion"), ctx)).toBe("allow");
     expect(decideForIon(mcp("mcp__other__projects", "other"), ctx)).toBe("deny");
     expect(decideForIon(mcp("mcp__ion__projects", "other"), ctx)).toBe("deny");
@@ -71,7 +73,7 @@ describe("an ion's gate", () => {
       expect(decideForIon(cmd(a), ctx)).toBe("deny");
       expect(await ionVerdict(cmd(a), ctx, new WebFound())).toEqual({
         decision: "deny",
-        reason: "An ion only reads; a thread does the work.",
+        reason: "An ion only reads; a chat does the work.",
       });
     }
   });
@@ -177,7 +179,7 @@ describe("an ion on the web", () => {
     for (const r of bad) expect((await ionVerdict(r, ctx, turnWeb([PAGE]))).decision).toBe("deny");
     for (const id of ["chief", "storefront"])
       expect(ionInstructions(id)).toContain(
-        "You only read: anything that installs, edits, sends or writes is a thread in that project (start_thread).",
+        "You only read: anything that installs, edits, sends or writes is a chat in that project (start_thread).",
       );
   });
 });
@@ -389,7 +391,7 @@ describe("an ion's reads outside its project", () => {
   put("proj/a.ts");
   const at = { roots: [join(home, "proj")], home, ionDirs: [join(home, ".ion")] };
   const readOf = (file_path: string) => req({ toolName: "Read", kind: "read", input: { file_path } });
-  const NOT_FOR_ION = "An ion doesn't read that; a thread can, with your OK.";
+  const NOT_FOR_ION = "An ion doesn't read that; a chat can, with your OK.";
 
   it("reads another repo's README, by a read tool or cat", async () => {
     expect(decideForIon(readOf(readme), at)).toBe("allow");
@@ -430,7 +432,7 @@ describe("an ion's reads outside its project", () => {
       expect(decideForIon(r, at)).toBe("deny");
       expect(await ionVerdict(r, at, new WebFound())).toEqual({
         decision: "deny",
-        reason: "An ion only reads; a thread does the work.",
+        reason: "An ion only reads; a chat does the work.",
       });
     }
   });

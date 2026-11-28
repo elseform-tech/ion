@@ -47,8 +47,8 @@ describe("addProject", () => {
 
 describe("access", () => {
   it("has the judge only: no default and no per-project access", () => {
-    // The judge is a small model by default: it runs for every new action in Auto.
-    expect(DEFAULT_CONFIG.access).toEqual({ judge: "claude-code:haiku" });
+    // No judge set by default: the first ready agent in your order, at its quick model (Plan 21 audit, 2026-11-23).
+    expect(DEFAULT_CONFIG.access).toEqual({});
   });
 });
 
@@ -76,6 +76,17 @@ describe("reserved names", () => {
   it("never names a project you", () => {
     expect(projectNameError("you")).toBe("That name is ion's own");
     expect(addProject(DEFAULT_CONFIG, repo("you")).projects[0]!.id).toBe("you-2");
+  });
+
+  // Plan 21 final review (2026-11-28, M5): a picked folder "My App (old)" became the id "My App (old)", which commands
+  // and URLs can't take. Its id is a slug; its name stays the folder's.
+  it("slugs a picked folder's id and keeps its name", () => {
+    expect(addProject(DEFAULT_CONFIG, repo("My App (old)")).projects[0]).toMatchObject({
+      id: "my-app-old",
+      name: "My App (old)",
+    });
+    expect(addProject(DEFAULT_CONFIG, repo("api")).projects[0]).not.toHaveProperty("name");
+    expect(addProject(DEFAULT_CONFIG, repo("…")).projects[0]!.id).toBe("project");
   });
 
   // Task review, 2026-11-22: ion's dream runs as "_dream", an id no project can have, so a project named dream works.

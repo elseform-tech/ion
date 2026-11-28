@@ -2,27 +2,28 @@ import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AdapterEvent, SandboxKind, Session, StartOpts } from "@ion/adapter-kit";
+import type { EffortLevel } from "@ion/schema";
 import { loadUserConfig, type UserConfig } from "@ion/config";
 import { EV } from "@ion/schema";
 import { getHarness, placeProbes } from "../adapters/registry.js";
 import { ownAgentSandbox, runSandbox } from "../runs/sandbox.js";
-import type { JudgeOthers } from "./judge.js";
-import { useJudgeMisses } from "./misses.js";
 import { envDropOf } from "../tools/env-drop.js";
+import { brainEffort } from "../ions/brain.js";
 
 /** Where ion's own agent processes (the judge, ion's quick model, sign-in and model checks) work: in its data folder. */
 const scratchOf = (dataDir: string): string => join(dataDir, "scratch");
 
 /**
  * Removes the folders ion's judge and agent checks left in the temp folder before they moved into ion's data folder
- * (final review, 2026-11-22): `ion-probe-*` and `ion-judge-*` folders only, nothing else there.
+ * (final review, 2026-11-22): `ion-probe-*` and `ion-judge-*` folders only, nothing else there; and the nightly
+ * check's `ion-check-*`, which a crash can leave (Plan 21 Task 5 review, 2026-11-28).
  */
 export function sweepTmp(tmp: string = tmpdir()): void {
   // Only folders untouched for an hour: one in use (another ion, a test) stays (pnpm check, 2026-11-22).
   const before = Date.now() - 3600_000;
   try {
     for (const e of readdirSync(tmp, { withFileTypes: true })) {
-      if (!e.isDirectory() || !/^ion-(probe|judge)-/.test(e.name)) continue;
+      if (!e.isDirectory() || !/^ion-(probe|judge|check)-/.test(e.name)) continue;
       const at = statSync(join(tmp, e.name), { throwIfNoEntry: false })?.mtimeMs ?? Date.now();
       if (at < before) rmSync(join(tmp, e.name), { recursive: true, force: true });
     }
@@ -38,18 +39,42 @@ export type RunnerOpts = {
   sandbox?: SandboxKind;
   /** Hears each event of a session with its agent's id (the daemon keeps its usage and limits: views/usage.ts). */
   record?: (harness: string, e: AdapterEvent, startedAt: string) => void;
+  /**
+   * The agent to run on when your config names none ("": a fresh ion follows your agent order; Plan 21 audit,
+   * 2026-11-23: it was Claude Code), as "<agent>[:<model>]"; undefined when none is ready.
+   */
+  firstOwn?: (which: Which) => Promise<string | undefined>;
 };
+
+/**
+ * Which of ion's own models a prompt runs on: the Auto judge, or ion's brain at Medium at most (judgement work:
+ * answering from your decisions, "same question?"; PR #36 reviews).
+ */
+export type Which = "judge" | "brain";
 
 /**
  * The agent, model and effort a prompt runs on: ion's quick model at the effort you picked (`agent` overrides the
  * agent, on its default model), or the judge at its agent's default effort.
  */
-export function startOf(c: UserConfig, which: "judge" | "quick", agent?: string) {
-  const spec = agent ?? (which === "quick" ? c.ion.quick : c.access.judge);
+export function startOf(c: UserConfig, which: Which, agent?: string) {
+  const spec = agent ?? (which === "judge" ? c.access.judge : c.ion.quick) ?? "";
   const id = spec.split(":")[0]!;
   const model = spec.includes(":") ? spec.slice(spec.indexOf(":") + 1) : null;
-  const effort = which === "quick" ? (c.ion.quickEffort ?? null) : null;
-  return { id, model, effort };
+  return { id, model, effort: effortOf(c, which) };
+}
+
+/** The judge at its agent's own effort; ion's brain at Medium at most; the quick model at yours. */
+function effortOf(c: UserConfig, which: Which): EffortLevel | null {
+  if (which === "judge") return null;
+  return brainEffort(c.ion.quickEffort, true);
+}
+
+/** The judge's or ion's quick model's "<agent>[:<model>]": yours, else the first ready in your order. */
+async function specOf(c: UserConfig, which: Which, firstOwn: RunnerOpts["firstOwn"]): Promise<string> {
+  const set = which === "judge" ? c.access.judge : c.ion.quick;
+  const spec = set || (await firstOwn?.(which));
+  if (!spec) throw new Error("no agent is ready");
+  return spec;
 }
 
 /**
@@ -61,10 +86,11 @@ export function startOf(c: UserConfig, which: "judge" | "quick", agent?: string)
  */
 export function harnessRunner(
   o: RunnerOpts,
-  which: "judge" | "quick" = "judge",
+  which: Which = "judge",
 ): (prompt: string, signal: AbortSignal, agent?: string) => Promise<string> {
   return async (prompt, signal, agent) => {
-    const { id, model, effort } = startOf(loadUserConfig(o.configFile).config, which, agent);
+    const c = loadUserConfig(o.configFile).config;
+    const { id, model, effort } = startOf(c, which, agent ?? (await specOf(c, which, o.firstOwn)));
     const h = getHarness(id);
     if (!h) throw new Error(`Unknown harness: ${id}`);
     const f = foldersOf(o.dataDir, which, id);
@@ -94,11 +120,7 @@ export function harnessRunner(
  * which holds each session's own folder (made fresh, removed when it ends) and which its sandbox may write, and
  * `home`, a daemon-only folder for the agent's own files (Grok's profile), outside it. Emptied at the daemon's start.
  */
-function foldersOf(
-  dataDir: string,
-  which: "judge" | "quick",
-  harness: string,
-): { base: string; home: string } {
+function foldersOf(dataDir: string, which: Which, harness: string): { base: string; home: string } {
   const name = `ion-${which}-${harness.replace(/[^\w-]/g, "_")}`;
   const base = join(scratchOf(dataDir), name);
   const home = join(scratchOf(dataDir), `${name}-own`);
@@ -178,22 +200,6 @@ export function startOwnAgents(o: { dataDir: string; configFile: string }, kind:
   sweepTmp();
   clearScratch(o.dataDir);
   return kind;
-}
-
-/**
- * The agents a judge that didn't answer may ask once more (final review, 2026-11-22): any other ready one; each miss is
- * counted for its agent (Settings → Agents).
- */
-export function judgeOthers(
-  o: { dataDir: string; configFile: string },
-  ready: () => Promise<string[]>,
-): JudgeOthers {
-  const misses = useJudgeMisses(join(o.dataDir, "judge-misses.json"));
-  return {
-    first: () => startOf(loadUserConfig(o.configFile).config, "judge").id,
-    ready,
-    missed: (agent) => misses.add(agent),
-  };
 }
 
 /** What one of ion's own agent processes starts with: your keys kept from it, and its sandbox (none where there's none). */

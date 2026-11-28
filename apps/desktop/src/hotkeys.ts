@@ -16,6 +16,13 @@ export const HOTKEYS = [
     keys: ["⌘", "B"],
     match: (e: Press) => mod(e) && e.key.toLowerCase() === "b",
   },
+  // Plan 21 Task 4: the lab's Search, so a page tucked under More is one search away.
+  {
+    id: "search",
+    name: "Search",
+    keys: ["⌘", "K"],
+    match: (e: Press) => mod(e) && e.key.toLowerCase() === "k",
+  },
   { id: "effort", name: "Next effort", keys: ["⌘", "."], match: (e: Press) => mod(e) && e.key === "." },
   { id: "send", name: "Send", keys: ["↵"], match: (e: Press) => enter(e) && !e.shiftKey && !mod(e) },
   {

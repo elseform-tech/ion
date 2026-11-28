@@ -2,6 +2,8 @@ import { Check, ChevronsUpDown, Folder, FolderPlus, Layers, Search, Star } from 
 import type { NeedInfo, ProjectInfo } from "@ion/schema";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useDismiss } from "./dismiss.js";
+import { type AddFolderFn, AddFolder } from "../start/PickFolder.js";
+import { projectName } from "../projectName.js";
 
 type Pick = { project: string | null; onPick: (id: string | null) => void };
 
@@ -15,7 +17,10 @@ function ProjectList({
 }: Pick & { projects: ProjectInfo[]; needs: NeedInfo[]; q: string }) {
   const list = [...projects]
     .sort((a, b) => Number(b.starred) - Number(a.starred))
-    .filter((x) => !q.trim() || `${x.id} ${x.name ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
+    .filter(
+      (x) =>
+        !q.trim() || `${x.id} ${projectName(x.id, x.name)}`.toLowerCase().includes(q.trim().toLowerCase()),
+    );
   return (
     <div className="pml">
       {!q.trim() && (
@@ -35,13 +40,13 @@ function ProjectList({
             onClick={() => onPick(x.id)}
           >
             {x.starred ? <Star className="stari" /> : <Folder />}
-            {x.name ?? x.id}
+            {projectName(x.id, x.name)}
             {waiting > 0 && <span className="nb">{waiting}</span>}
             {x.id === project && <Check className="ck" />}
           </button>
         );
       })}
-      {list.length === 0 && <div className="pempty">No project matches</div>}
+      {list.length === 0 && q.trim() && <div className="pempty">No project matches</div>}
     </div>
   );
 }
@@ -116,8 +121,38 @@ export function NewProject({
   );
 }
 
+/** The menu's New project, and Add folder (Plan 21) where ion can add one. */
+function Adders(p: {
+  onNew: (name: string) => Promise<unknown>;
+  onAddFolder?: AddFolderFn;
+  onPick: (id: string) => void;
+  close: () => void;
+}) {
+  return (
+    <>
+      <NewProject onNew={(name) => p.onNew(name).then(p.close)} />
+      {p.onAddFolder && (
+        <AddFolder
+          add={p.onAddFolder}
+          onAdded={(added) => {
+            p.onPick(added.id);
+            // ion's git setup is said in the menu; otherwise it's done.
+            if (!added.gitSetUp) p.close();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 export function ProjectMenu(
-  p: Pick & { projects: ProjectInfo[]; needs: NeedInfo[]; onNew: (name: string) => Promise<unknown> },
+  p: Pick & {
+    projects: ProjectInfo[];
+    needs: NeedInfo[];
+    onNew: (name: string) => Promise<unknown>;
+    /** Adds a folder of yours (Plan 21: the app couldn't). */
+    onAddFolder?: AddFolderFn;
+  },
 ) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -137,7 +172,9 @@ export function ProjectMenu(
         onClick={() => setOpen(!open)}
       >
         <span className="projLbl">
-          {p.project ? (p.projects.find((x) => x.id === p.project)?.name ?? p.project) : "All projects"}
+          {p.project
+            ? projectName(p.project, p.projects.find((x) => x.id === p.project)?.name)
+            : "All projects"}
         </span>
         <ChevronsUpDown />
       </button>
@@ -153,7 +190,7 @@ export function ProjectMenu(
             close();
           }}
         />
-        <NewProject onNew={(name) => p.onNew(name).then(close)} />
+        <Adders onNew={p.onNew} onAddFolder={p.onAddFolder} onPick={p.onPick} close={close} />
       </div>
     </div>
   );

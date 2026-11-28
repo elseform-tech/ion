@@ -19,7 +19,7 @@ import { UserError } from "../api/errors.js";
 import type { GateAnswer } from "../gate/index.js";
 import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
-import { allLimited, type IonBrain, ionBrain, limitedUntil, nextBrain } from "./brain.js";
+import { allLimited, type IonBrain, ionBrain, limitedUntil, nextBrain, noneReady } from "./brain.js";
 import { forgetSession, resumeOf, startSession } from "./sessions.js";
 import { errLine, type IonLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, type Tried } from "./fallback.js";
 import { ionVerdict } from "./gate.js";
@@ -60,7 +60,7 @@ type StartIonThread = (
   brief: string,
   turn: { ionId: string; request: string; turnId: string },
   picks?: Picks,
-) => Promise<{ chatId: string } | { why: string }>;
+) => Promise<{ chatId: string } | { why: string } | { asked: string }>;
 
 /**
  * How a turn may act: `request`: your own words, what the judge reads for a thread it starts (by default the
@@ -260,18 +260,19 @@ export class IonTurns {
    */
   private async think(ionId: string, text: string, o: Pick<Live, "request" | "dream">): Promise<TurnResult> {
     const cwd = this.folderOf(ionId);
-    const brain = await ionBrain(this.d, ionId).catch(() => null);
+    // A turn nobody asked for (a report: no request of yours) is routine, Medium at most (PR #36 re-review).
+    const brain = await ionBrain(this.d, ionId, { routine: o.request === null }).catch(() => null);
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, ionLine: "stopped", threads: [] };
     // No agent: when every ready one is limited with a stated reset, which frees up first (review, 2026-11-22).
     if (!brain) {
-      const reply = (await allLimited(this.d).catch(() => null)) ?? NO_AGENT;
-      return { reply, ionLine: "no-agent", threads: [] };
+      const why = (await allLimited(this.d).catch(() => null)) ?? (await noneReady(this.d).catch(() => null));
+      return { reply: why ?? NO_AGENT, ionLine: "no-agent", threads: [] };
     }
     // Every try is one turn (security review, 2026-11-22): its id, and so its caps on memory and threads.
     const turnId = `turn_${randomUUID()}`;
     const r = await onReadyAgents(brain, {
       once: (b) => this.once(ionId, text, { ...o, cwd, turnId }, b),
-      next: (not) => nextBrain(this.d, ionId, not),
+      next: (not) => nextBrain(this.d, ionId, not, brain.effort ? { effort: brain.effort } : {}),
       limitedUntil: (h) => limitedUntil(this.d.db, h),
       none: () => allLimited(this.d),
       stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,

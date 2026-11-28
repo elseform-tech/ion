@@ -1,7 +1,7 @@
 import type { IonClient } from "@ion/client/browser";
 import type { ChatInfo, HarnessInfo, ProjectInfo } from "@ion/schema";
 import { Ghost, PanelRight } from "@ion/design-system";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { type Focus, ToolsPanel, useDiff } from "./ToolsPanel.js";
 import { ChatView, Starting, useTimeline } from "./ChatView.js";
 import { Composer } from "./Composer.js";
@@ -9,7 +9,11 @@ import { QuestionBar } from "./QuestionBar.js";
 import { Resizer } from "./Resizer.js";
 import { Sidebar } from "./Sidebar.js";
 import { useLive } from "./live.js";
+import { FirstRun } from "../start/FirstRun.js";
+import { lastProject } from "../start/steps.js";
+import { FirstAnswer } from "../start/FirstAnswer.js";
 import type { Item } from "./timeline.js";
+import { NO_PROJECT, projectName } from "../projectName.js";
 
 type Question = Extract<Item, { kind: "question" }>;
 
@@ -43,6 +47,11 @@ function sidebarActions(
         onProjects();
         return made.id;
       }),
+    onAddFolder: (path: string, confirm?: boolean) =>
+      client.call("projects.add", { path, ...(confirm ? { confirm } : {}) }).then((added) => {
+        onProjects();
+        return added;
+      }),
     onRename: (chatId: string, title: string) => act(() => client.call("chat.rename", { chatId, title })),
     onRemember: (chatId: string, on: boolean) => act(() => client.call("chat.remember", { chatId, on })),
     onRenameProject: (projectId: string, name: string) =>
@@ -64,7 +73,10 @@ function ChatHead(p: { chat: ChatInfo; panel: boolean | null; onPanel: () => voi
   return (
     <header className="head" data-tauri-drag-region>
       <span className="title">{chat.title}</span>
-      <span className="muted">{chat.by === "ion" ? `${chat.projectId}'s ion` : chat.projectId}</span>
+      <span className="muted">
+        {chat.projectId &&
+          (chat.by === "ion" ? `${projectName(chat.projectId)}'s ion` : projectName(chat.projectId))}
+      </span>
       {/* Why Pick by usage put the chat on its agent, in one line (the user, 2026-11-22). */}
       {p.why && <span className="muted why">{p.why}</span>}
       <span className="sp" />
@@ -93,18 +105,23 @@ function OpenChat({
   harnesses,
   onBrainOpen,
   panel,
+  only,
 }: {
   client: IonClient;
   chat: ChatInfo;
   harnesses: HarnessInfo[];
   onBrainOpen: () => void;
   panel: Panel;
+  /** Your first run's chat: after its first answer, one line points to what ion remembers (once). */
+  only: (() => void) | null;
 }) {
   const t = useTimeline(client, chat.chatId);
   const open = t.items.filter((i): i is Question => i.kind === "question" && !i.resolved).at(-1);
   const hasWorktree = Boolean(chat.branch) && !chat.archived;
   const changes = useDiff(client, chat.chatId, t.changes);
   const showPanel = hasWorktree && panel.open;
+  const seen = only && !t.running && chat.lastRunStatus === "done" ? only : null;
+  const ask = { harness: t.harness, current: { model: t.model, effort: t.effort }, why: t.routed };
   return (
     <>
       <ChatHead chat={chat} panel={hasWorktree ? panel.open : null} onPanel={panel.toggle} why={t.routed} />
@@ -113,6 +130,7 @@ function OpenChat({
           <ChatView timeline={t} onFile={hasWorktree ? panel.show : undefined} />
           <div className="foot">
             <div className="fcol">
+              {seen && <FirstAnswer client={client} onSeen={seen} />}
               {open && <QuestionBar key={open.needId} client={client} question={open} />}
               <Composer
                 client={client}
@@ -121,9 +139,7 @@ function OpenChat({
                 to={{ chatId: chat.chatId }}
                 running={t.running}
                 locked={Boolean(open)}
-                harness={t.harness}
-                current={{ model: t.model, effort: t.effort }}
-                why={t.routed}
+                {...ask}
                 onSent={() => {}}
               />
             </div>
@@ -133,18 +149,6 @@ function OpenChat({
       </div>
     </>
   );
-}
-
-/** Whether Pick by usage is on (Settings → Agents), read when a new chat opens. */
-function useByUsage(client: IonClient): boolean {
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    void client.call("settings.get", {}).then(
-      (s) => setOn(s.byUsage === true),
-      () => {},
-    );
-  }, [client]);
-  return on;
 }
 
 /** A new chat's head: Don't remember (the lab's ghost; review of #34, 2026-11-23), pressed while it's on. */
@@ -168,20 +172,24 @@ function NewHead(p: { noMemory: boolean; onNoMemory: (on: boolean) => void }) {
 
 /** The projects a new chat can go in: ion's `default` first. */
 const projectOptions = (projects: ProjectInfo[]) => [
-  { id: "default", name: "default" },
+  { id: "default", name: NO_PROJECT },
   ...projects.filter((p) => p.id !== "default").map((p) => ({ id: p.id, name: p.name ?? p.id })),
 ];
 
-/** A new chat: which project it's in (ion's `default` unless you pick one), then the message box. */
+/**
+ * A new chat: which project it's in (the one you used last until you pick one: Plan 21 audit, 2026-11-23), then the
+ * message box.
+ */
 function NewChat(props: {
   client: IonClient;
   projects: ProjectInfo[];
+  chats: ChatInfo[];
   harnesses: HarnessInfo[];
   onSent: (chatId: string) => void;
   onBrainOpen: () => void;
 }) {
-  const [projectId, setProjectId] = useState<string>("default");
-  const byUsage = useByUsage(props.client);
+  const [picked, setProjectId] = useState<string | null>(null);
+  const projectId = picked ?? lastProject(props.chats, props.projects);
   // Your first message, shown at once while ion makes the chat (ion can take a moment).
   const [sending, setSending] = useState<string | null>(null);
   // Don't remember: the chat gets no memory and writes none.
@@ -209,7 +217,7 @@ function NewChat(props: {
             project={{ value: projectId, options: projectOptions(props.projects), onChange: setProjectId }}
             onSending={setSending}
             onSent={props.onSent}
-            byUsage={byUsage}
+            auto
             noMemory={noMemory}
           />
         </div>
@@ -218,7 +226,61 @@ function NewChat(props: {
   );
 }
 
-/** The Chats screen: the sidebar, and the open chat or a new one. */
+/** No chat open: the first run's three steps (the first time), else a new chat. */
+function Fresh(p: {
+  client: IonClient;
+  live: ReturnType<typeof useLive>;
+  first: boolean;
+  onSent: (chatId: string) => void;
+}) {
+  const { client, live } = p;
+  if (p.first)
+    return (
+      <FirstRun
+        client={client}
+        harnesses={live.harnesses}
+        onReload={live.refreshHarnesses}
+        onSent={p.onSent}
+      />
+    );
+  return (
+    <NewChat
+      client={client}
+      projects={live.projects}
+      chats={live.chats}
+      harnesses={live.harnesses}
+      onBrainOpen={live.refreshHarnesses}
+      onSent={p.onSent}
+    />
+  );
+}
+
+/**
+ * Whether this is a first run (Plan 21: no projects and no chats), asked once when the screen opens and kept until
+ * your first message: adding a folder on the way doesn't end it.
+ */
+function useFirstRun(client: IonClient, onEnd: () => void): [boolean, () => void, (() => void) | null] {
+  const [first, setFirst] = useState(false);
+  // A first run ended in this window: its chat may say what ion remembers (never for someone upgrading).
+  const [started, setStarted] = useState(false);
+  useEffect(() => {
+    void client.call("start.status", {}).then(
+      (s) => setFirst(s?.firstRun === true),
+      () => {},
+    );
+  }, [client]);
+  // Your first message ends it; the folder you added shows in the sidebar.
+  const end = () => {
+    if (!first) return;
+    setFirst(false);
+    setStarted(true);
+    onEnd();
+  };
+  const seen = useCallback(() => setStarted(false), []);
+  return [first, end, started ? seen : null];
+}
+
+/** The Chats screen: the sidebar, and the open chat or a new one (the first run's three steps, the first time). */
 export function Chats({
   client,
   openId,
@@ -231,8 +293,13 @@ export function Chats({
 }) {
   const live = useLive(client);
   const panel = usePanel();
+  const [first, endFirst, started] = useFirstRun(client, live.refreshProjects);
 
   const chat = live.chats.find((c) => c.chatId === openId);
+  const sent = (chatId: string) => {
+    endFirst();
+    setOpenId(chatId);
+  };
   return (
     <>
       <aside className="side" aria-label="Chats">
@@ -256,15 +323,10 @@ export function Chats({
             harnesses={live.harnesses}
             onBrainOpen={live.refreshHarnesses}
             panel={panel}
+            only={started}
           />
         ) : (
-          <NewChat
-            client={client}
-            projects={live.projects}
-            harnesses={live.harnesses}
-            onBrainOpen={live.refreshHarnesses}
-            onSent={setOpenId}
-          />
+          <Fresh client={client} live={live} first={first} onSent={sent} />
         )}
       </main>
     </>

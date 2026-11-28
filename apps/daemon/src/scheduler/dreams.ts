@@ -21,8 +21,20 @@ const LOOK_MS = 60_000;
  */
 export class Dreams {
   private running = false;
+  /** Something else that runs at night (the agents' check): tidying waits for it (Plan 21 final review, M10). */
+  private busy: () => boolean = () => false;
 
   constructor(private readonly d: DreamDeps) {}
+
+  /** Whether it's tidying now. */
+  get tidying(): boolean {
+    return this.running;
+  }
+
+  /** Tidying on its schedule waits while `busy` says so. */
+  waitFor(busy: () => boolean): void {
+    this.busy = busy;
+  }
 
   /** Looks every minute; returns a stop. */
   start(): () => void {
@@ -43,11 +55,11 @@ export class Dreams {
   }
 
   private async tick(): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.busy()) return;
     const { config, error } = loadUserConfig(this.d.configFile);
     const night = error ? null : dreamDue(config, new Date(), servedPeriods(this.d.store));
     if (night)
-      await this.now(night).catch((e: unknown) => console.error(`ion's dream: ${(e as Error).message}`));
+      await this.now(night).catch((e: unknown) => console.error(`Tidy memory: ${(e as Error).message}`));
   }
 }
 

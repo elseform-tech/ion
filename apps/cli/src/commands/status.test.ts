@@ -29,11 +29,11 @@ describe("ion status: one line per agent", () => {
     expect(agentLines([u], local(12))).toEqual(["Claude Code · limited until 16:00"]);
   });
 
-  it("billing comes from the sign-in, and a missing gauge shows Learned from errors", () => {
+  it("billing comes from the sign-in, and a missing gauge shows No usage info", () => {
     const list = [
       usage("opencode", "opencode", { billing: "free" }),
       usage("grok-build", "Grok Build", { billing: "subscription" }),
     ];
-    expect(agentLines(list, local(12))).toEqual(["opencode · Free", "Grok Build · Learned from errors"]);
+    expect(agentLines(list, local(12))).toEqual(["opencode · Free", "Grok Build · No usage info"]);
   });
 });

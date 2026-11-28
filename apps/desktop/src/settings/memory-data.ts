@@ -81,10 +81,10 @@ export function whoOf(m: { source: string; sourceTitle?: string }, ions: IonInfo
   if (m.source === "you") return "You";
   if (m.source.startsWith("ion:")) {
     const id = m.source.slice(4);
-    // ion chief's name is the wordmark, "ion": said in full here, so it isn't read as ion itself (tour, 2026-11-22).
-    if (id === "chief") return "ion chief";
-    // ion's dream, which tidies memory overnight.
-    if (id === "_dream") return "ion (dream)";
+    // ion chief is "ion" on every screen (Plan 21 Task 3, one word per idea); its tidying says so.
+    if (id === "chief") return "ion";
+    // ion tidying memory overnight (its id is still `_dream`).
+    if (id === "_dream") return "ion (tidying)";
     return ions.find((i) => i.ionId === id)?.name ?? id;
   }
   return m.sourceTitle ?? "A chat";

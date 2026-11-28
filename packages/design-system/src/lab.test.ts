@@ -102,7 +102,28 @@ describe("lab.css", () => {
       page.indexOf('<nav class="snav">'),
       page.indexOf("</nav>", page.indexOf('<nav class="snav">')),
     );
-    expect(nav.indexOf('data-snav="ions"')).toBeLessThan(nav.indexOf('data-snav="memory"'));
-    expect(nav.indexOf('data-snav="memory"')).toBeLessThan(nav.indexOf('data-snav="tools"'));
+    // Plan 21 Task 4 (the user, 2026-11-24): General, Agents and Memory first; Ions, Tools, Notifications and Shortcuts
+    // under one More until used.
+    const at = (id: string) => nav.indexOf(`data-snav="${id}"`);
+    expect(at("harness")).toBeLessThan(at("memory"));
+    expect(at("memory")).toBeLessThan(nav.indexOf("data-smore"));
+    for (const id of ["ions", "tools", "notif", "keys"]) {
+      expect(nav.indexOf("data-smore")).toBeLessThan(at(id));
+      expect(nav).toMatch(new RegExp(`data-snav="${id}" data-tucked hidden`));
+    }
+  });
+
+  // Plan 21 Task 4 (Task 3's tour, 2026-11-24): at 900×700 the Ions screen with a chat open beside its ion gave the chat
+  // ~100 px, one word per line. In a narrow window the ions list steps aside while a chat is open beside.
+  it("gives a chat open beside its ion room in a narrow window", () => {
+    expect(lab).toMatch(
+      /@media \(max-width:1180px\)\{\.ions:has\(\.ichat\.peek\)\{grid-template-columns:minmax\(0,1fr\)\}\.ions:has\(\.ichat\.peek\) \.ipanel\{display:none\}\}/,
+    );
+  });
+
+  // Plan 21 Task 4: the app's Search is the lab's palette.
+  it("holds the lab's Search palette and Settings' More", () => {
+    for (const sel of [".pal{", ".pbox{", ".pin{", ".pres{", ".pg{", ".pr{", ".pfoot{", ".snav .smore{"])
+      expect(lab.includes(sel), sel).toBe(true);
   });
 });

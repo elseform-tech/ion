@@ -18,6 +18,7 @@ let db: Db;
 let memory: MemoryFiles;
 let store: EventStore;
 let grants: Grants;
+let confirm: ReturnType<typeof vi.fn>;
 let http: Server;
 let url: string;
 let configFile: string;
@@ -101,7 +102,8 @@ beforeEach(async () => {
   startThread = vi.fn(async (projectId: string) => ({ chatId: `t-${projectId}` }));
   shopDir = root;
   yourTools = vi.fn(async (dirs: string[]) => yourToolsFixture(dirs));
-  const handle = createMcpHandler({ store, db, grants, memory, configFile, startThread, yourTools });
+  confirm = vi.fn();
+  const handle = createMcpHandler({ store, db, grants, memory, configFile, startThread, yourTools, confirm });
   http = createServer((req, res) => void handle(req, res));
   await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
   const addr = http.address();
@@ -129,6 +131,24 @@ const NOT_ALLOWED = { isError: true, content: [{ text: "Not allowed" }] };
 
 // The user, 2026-11-19: ion chief and project ions get real tools, each only over what it may see.
 describe("ion tools", () => {
+  // Plan 21 Task 5, 2026-11-28: the nightly check's key gets one tool, its word, and nothing of yours.
+  it("a check's key has only the check tool, which gives its word", async () => {
+    const c = await client(
+      grants.create({
+        kind: "ion",
+        ionId: "_check",
+        projects: [],
+        turnId: "c1",
+        report: true,
+        check: { word: "f00d" },
+      }),
+    );
+    const { tools } = await c.listTools();
+    expect(tools.map((t) => t.name)).toEqual(["check"]);
+    expect(text(await c.callTool({ name: "check", arguments: {} }))).toBe("f00d");
+    await c.close();
+  });
+
   it("ion chief's key lists only projects shared with ion, never default", async () => {
     const c = await chief();
     const listed = text(await c.callTool({ name: "projects", arguments: {} }));
@@ -231,7 +251,7 @@ describe("ion tools", () => {
       projects: ["app", "shop"],
       memory: { you: false, projects: ["app"] },
     });
-    expect(told).toContain("Memory is off in shop: pass nothing from memory into its threads.");
+    expect(told).toContain("Memory is off in shop: pass nothing from memory into its chats.");
     expect(told).not.toContain('scope "you"');
     expect(told).not.toContain("Added to your to-dos");
     expect(told).toContain("Added to <project>'s to-dos");
@@ -312,7 +332,7 @@ describe("ion tools", () => {
       expect(text(r)).toBe("Started t-shop");
     }
     const sixth = await c.callTool({ name: "start_thread", arguments: { projectId: "app", brief: "more" } });
-    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough threads for one turn" }] });
+    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough chats for one turn" }] });
     expect(startThread).toHaveBeenCalledTimes(5);
     expect(startThread).toHaveBeenCalledWith("shop", "do 0", "t1", {});
     await c.close();
@@ -342,7 +362,8 @@ describe("ion tools", () => {
   it("a run's key opens no ion tools and an ion's key no run tools", async () => {
     const run = await client(grants.create({ kind: "run", projectId: "app", chatId: "c1", runId: "r1" }));
     const runTools = (await run.listTools()).tools.map((t) => t.name);
-    for (const n of ["projects", "start_thread", "set_profile"]) expect(runTools).not.toContain(n);
+    for (const n of ["projects", "start_thread", "set_profile", "set_chats_model"])
+      expect(runTools).not.toContain(n);
     await run.close();
     const c = await chief();
     const names = (await c.listTools()).tools.map((t) => t.name).sort();
@@ -357,6 +378,7 @@ describe("ion tools", () => {
       "open_needs",
       "projects",
       "search_chats",
+      "set_chats_model",
       "start_thread",
       "tools",
     ]);
@@ -494,5 +516,83 @@ describe("ions and skills", () => {
       skills: ["pdf"],
       mentions: ["github"],
     });
+  });
+});
+
+// The user, 2026-11-24: through any ion, "use Codex with gpt-5.6-sol for this" runs that one chat on it (start_thread
+// passes the agent, model and effort along); "from now on …" saves it for the project's chats (or, said to ion chief
+// about all projects, for every chat ions start), said in one line; "back to the default" clears it. It's the same
+// saved setting Settings shows.
+describe("what chats ions start run on, through an ion", () => {
+  it("start_thread passes an agent, model and effort asked for one chat", async () => {
+    const c = await shopIon();
+    const args = { projectId: "shop", brief: "x", harness: "codex", model: "gpt-5.6-sol", effort: "low" };
+    await c.callTool({ name: "start_thread", arguments: args });
+    expect(startThread).toHaveBeenLastCalledWith("shop", "x", "t2", {
+      harness: "codex",
+      model: "gpt-5.6-sol",
+      effort: "low",
+    });
+  });
+
+  // Security scan, 2026-11-24 (HIGH): the ion's model wrote durable config, so an injection could move where chats run.
+  // Saving "from now on" now needs your click: the tool raises a one-click confirm in the ion's thread and writes only
+  // on Save. "Back to the default" (clear) only narrows, so it applies at once. A report turn can't ask.
+  it("asks you before saving, and clears at once", async () => {
+    const shop = await shopIon();
+    const p = () => loadUserConfig(configFile).config.projects.find((x) => x.id === "shop");
+    const asked = await shop.callTool({
+      name: "set_chats_model",
+      arguments: { projectId: "shop", harness: "codex", model: "gpt-5.6-sol" },
+    });
+    // It names the project (security scan, 2026-11-24): you see what you save.
+    expect(text(asked)).toBe("Asked the user: Save: shop's chats run on Codex · gpt-5.6-sol?");
+    expect(p()?.harness).toBeUndefined();
+    expect(confirm).toHaveBeenLastCalledWith("shop", {
+      question: "Save: shop's chats run on Codex · gpt-5.6-sol?",
+      yes: "Save",
+      act: expect.any(Function),
+    });
+    const act = confirm.mock.lastCall![1].act as () => Promise<string>;
+    expect(await act()).toBe("This project's chats now run on Codex · gpt-5.6-sol");
+    expect(p()).toMatchObject({ harness: "codex", model: "gpt-5.6-sol" });
+    expect(
+      await shop.callTool({ name: "set_chats_model", arguments: { projectId: "app", harness: "codex" } }),
+    ).toMatchObject(NOT_ALLOWED);
+    expect(
+      text(await shop.callTool({ name: "set_chats_model", arguments: { projectId: "shop", clear: true } })),
+    ).toBe("This project's chats are back to the default");
+    expect(p()?.harness).toBeUndefined();
+    const all = await chief();
+    const allAsked = await all.callTool({
+      name: "set_chats_model",
+      arguments: { harness: "grok-build", effort: "low" },
+    });
+    expect(text(allAsked)).toBe(
+      "Asked the user: Save: chats ions start in all projects run on Grok Build · Low?",
+    );
+    expect(await (confirm.mock.lastCall![1].act as () => Promise<string>)()).toBe(
+      "Chats ions start now run on Grok Build · Low",
+    );
+    // When you click, the project must still be the ion's (security scan, 2026-11-24).
+    await shop.callTool({ name: "set_chats_model", arguments: { projectId: "shop", harness: "codex" } });
+    const late = confirm.mock.lastCall![1].act as () => Promise<string>;
+    const cfg = loadUserConfig(configFile).config;
+    saveUserConfig(configFile, { ...cfg, projects: cfg.projects.filter((x) => x.id !== "shop") });
+    await expect(late()).rejects.toThrow("Not allowed");
+    saveUserConfig(configFile, cfg);
+    expect(loadUserConfig(configFile).config.ion).toMatchObject({ chats: "grok-build", chatsEffort: "low" });
+    expect(await shop.callTool({ name: "set_chats_model", arguments: { harness: "codex" } })).toMatchObject({
+      isError: true,
+    });
+    expect(text(await all.callTool({ name: "set_chats_model", arguments: { clear: true } }))).toBe(
+      "Chats ions start are back to Automatic",
+    );
+    const report = await client(
+      grants.create({ kind: "ion", ionId: "shop", projects: ["shop"], turnId: "t9", report: true }),
+    );
+    expect(
+      await report.callTool({ name: "set_chats_model", arguments: { projectId: "shop", harness: "codex" } }),
+    ).toMatchObject({ isError: true, content: [{ text: "Not in a report" }] });
   });
 });

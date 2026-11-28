@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type AgentUsage, parseEvent, usageLine } from "./index.js";
+import { type AgentCheckRecord, type AgentUsage, checkLines, parseEvent, usageLine } from "./index.js";
 
 const at = (type: string, data: Record<string, unknown>) => ({
   v: 1,
@@ -71,11 +71,11 @@ describe("usageLine", () => {
   });
 
   // The user, 2026-11-21: a gauge the agent no longer reports is never shown frozen at an old value.
-  it("a missing gauge shows Learned from errors", () => {
-    expect(usageLine(usage({ billing: "subscription" }), local(12)).text).toBe("Learned from errors");
+  it("a missing gauge shows No usage info", () => {
+    expect(usageLine(usage({ billing: "subscription" }), local(12)).text).toBe("No usage info");
     // A window whose reset has passed is an old value: gone.
     const old = [{ name: "5 h", usedPercent: 90, resetsAt: local(11).toISOString() }];
-    expect(usageLine(usage({ windows: old }), local(12)).text).toBe("Learned from errors");
+    expect(usageLine(usage({ windows: old }), local(12)).text).toBe("No usage info");
   });
 
   // The user, 2026-11-21: how an agent bills comes from its sign-in; unknown is never shown as Free.
@@ -100,14 +100,54 @@ describe("usageLine", () => {
   // agent reported one; a subscription's notional cost isn't shown.
   it("unknown billing with a reported cost says it", () => {
     const week = { tokens: 9000, costUsd: 0.4 };
-    expect(usageLine(usage({ billing: null, week }), local(12)).text).toBe(
-      "Learned from errors · this week $0.40",
-    );
-    expect(usageLine(usage({ billing: "subscription", week }), local(12)).text).toBe("Learned from errors");
+    expect(usageLine(usage({ billing: null, week }), local(12)).text).toBe("No usage info · this week $0.40");
+    expect(usageLine(usage({ billing: "subscription", week }), local(12)).text).toBe("No usage info");
   });
 
   it("a reset on another day says the day", () => {
     const windows = [{ name: "week", usedPercent: 81, resetsAt: local(9, 5, 25).toISOString() }];
     expect(usageLine(usage({ windows }), local(12)).text).toBe("81% of week · resets Wed 09:05");
+  });
+});
+
+// Task 5 review, 2026-11-28: the check's line says when: "last night" only for the night's check, else the day and
+// time; a failure carries its time; agents checked at different times show the oldest.
+describe("checkLines", () => {
+  const rec = (agent: string, at: Date, by: "night" | "now", ok = true): AgentCheckRecord => ({
+    ...{ agent, label: agent, at: at.toISOString(), by },
+    checks: [{ name: "Starts", ok }],
+  });
+  const now = new Date(2026, 10, 28, 15, 0);
+  it("says when each check ran", () => {
+    expect(checkLines([rec("a", new Date(2026, 10, 28, 2, 0), "night")], now)).toEqual([
+      "Checked last night: all fine",
+    ]);
+    expect(checkLines([rec("a", new Date(2026, 10, 28, 14, 5), "now")], now)).toEqual([
+      "Checked today at 14:05: all fine",
+    ]);
+    expect(checkLines([rec("a", new Date(2026, 10, 27, 9, 10), "now")], now)).toEqual([
+      "Checked yesterday at 09:10: all fine",
+    ]);
+    expect(
+      checkLines(
+        [rec("a", new Date(2026, 10, 28, 14, 5), "now"), rec("b", new Date(2026, 10, 27, 9, 10), "now")],
+        now,
+      ),
+    ).toEqual(["Checked yesterday at 09:10: all fine"]);
+    expect(checkLines([rec("a", new Date(2026, 10, 28, 14, 5), "now", false)], now)).toEqual([
+      "a: 1 check failed · today at 14:05",
+    ]);
+  });
+
+  // Task 5 review, 2026-11-28: one agent used up and the others fine: the line names both.
+  it("names the agents that are fine beside one that's used up", () => {
+    const used: AgentCheckRecord = {
+      ...rec("opencode", new Date(2026, 10, 28, 14, 5), "now"),
+      checks: [{ name: "Answers", ok: true, limited: true, note: "Its free use is used up" }],
+    };
+    expect(checkLines([rec("Grok Build", new Date(2026, 10, 28, 14, 4), "now"), used], now)).toEqual([
+      "Grok Build: fine · opencode: its free use is used up · today at 14:04",
+    ]);
+    expect(checkLines([used], now)).toEqual(["opencode: its free use is used up · today at 14:05"]);
   });
 });

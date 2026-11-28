@@ -42,25 +42,49 @@ describe("General and notification settings", () => {
     expect(got.autoRuns).toBe(Math.max(1, Math.floor(availableParallelism() / 2)));
   });
 
-  // The user, 2026-11-22: Settings → Agents keeps your agent order, what ion does at a limit, and Pick by usage.
-  it("saves the agent order, the limit choice and Pick by usage", async () => {
+  // The user, 2026-11-24: two model settings and the rest automatic. "Ions think with" ([ion] quick) and "Chats ions
+  // start run on" ([ion] chats, chatsEffort; none: Automatic); each agent's "Avoid unless I ask"; and, under More,
+  // "Prefer in this order" (empty: Automatic decides). The limit choice and Pick by usage are gone.
+  it("saves what chats ions start run on, the agents you avoid, and your order, each with a way back", async () => {
     const first = await client.call("settings.get", {});
-    expect(first).toMatchObject({
-      agentOrder: ["opencode", "grok-build", "codex", "claude-code"],
-      onLimit: "ask",
-      byUsage: false,
-    });
+    expect(first).toMatchObject({ chats: "", chatsEffort: null, prefer: [], avoid: {} });
+    expect(first).not.toHaveProperty("onLimit");
+    expect(first).not.toHaveProperty("byUsage");
     await client.call("settings.set", {
-      patch: { agentOrder: ["codex", "opencode"], onLimit: "continue", byUsage: true },
+      patch: {
+        chats: "codex:gpt-5.6-sol",
+        chatsEffort: "medium",
+        avoid: { opencode: true },
+        agentOrder: ["codex"],
+      },
     });
     const got = await client.call("settings.get", {});
+    expect(got).toMatchObject({
+      chats: "codex:gpt-5.6-sol",
+      chatsEffort: "medium",
+      avoid: { opencode: true },
+      prefer: ["codex"],
+    });
     expect(got.agentOrder).toEqual(["codex", "opencode", "grok-build", "claude-code"]);
-    expect(got).toMatchObject({ onLimit: "continue", byUsage: true });
-    await expect(client.call("settings.set", { patch: { agentOrder: ["nope"] } })).rejects.toThrow(
+    await client.call("settings.set", {
+      patch: { chats: null, chatsEffort: null, avoid: { opencode: false }, agentOrder: [] },
+    });
+    expect(await client.call("settings.get", {})).toMatchObject({
+      chats: "",
+      chatsEffort: null,
+      avoid: {},
+      prefer: [],
+    });
+    await expect(client.call("settings.set", { patch: { chats: "nope" } })).rejects.toThrow(
       "Unknown agent: nope",
     );
-    await expect(client.call("settings.set", { patch: { onLimit: "later" as never } })).rejects.toThrow(
-      "Pick ask, continue or wait",
+    // Your own chats are set in the composer, which starts a new chat on your last pick (kept here, not in the app).
+    expect((await client.call("settings.get", {})).lastPick).toBeNull();
+    const pick = { harness: "grok-build", model: "m", effort: "low" as const };
+    await client.call("settings.set", { patch: { lastPick: pick } });
+    expect((await client.call("settings.get", {})).lastPick).toEqual(pick);
+    await expect(client.call("settings.set", { patch: { agentOrder: ["nope"] } })).rejects.toThrow(
+      "Unknown agent: nope",
     );
   });
 
@@ -185,5 +209,17 @@ describe("General and notification settings", () => {
     warn.mockRestore();
     expect((await client.call("projects.list", {})).length).toBeGreaterThan(0);
     expect((await client.call("settings.get", {})).maxRuns).toBe("auto");
+  });
+});
+
+// Review of Plan 21 Task 4 (2026-11-28): the app judged "Notifications changed" against its own copy of the defaults.
+// One copy, in the schema, and your config's defaults are it.
+describe("notification defaults", () => {
+  it("your config's defaults are the schema's", async () => {
+    const { DEFAULT_CONFIG } = await import("@ion/config");
+    const { NOTIFY_DEFAULTS } = await import("@ion/schema");
+    expect(DEFAULT_CONFIG.notifications.briefing).toEqual(NOTIFY_DEFAULTS.briefing);
+    expect(DEFAULT_CONFIG.notifications.quiet).toEqual(NOTIFY_DEFAULTS.quiet);
+    expect(NOTIFY_DEFAULTS.level).toBe("needs");
   });
 });

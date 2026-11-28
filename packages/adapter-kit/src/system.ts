@@ -17,6 +17,16 @@ export function whichOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): 
   return null;
 }
 
+/**
+ * An agent's binary (claude, codex, grok, opencode): on PATH, or under tests and the tour only in ION_AGENTS_PATH, a
+ * folder of stand-ins or none, so their checks never start your real agents (2026-11-28: `pnpm check` ran `claude auth
+ * status`, `opencode acp` and `grok agent stdio`). Live evals (ION_LIVE*) leave it unset.
+ */
+export function whichAgent(bin: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const own = (env.VITEST || env.ION_TOUR === "1") && env.ION_AGENTS_PATH !== undefined;
+  return whichOnPath(bin, own ? { PATH: env.ION_AGENTS_PATH } : env);
+}
+
 export const parseVersion = (text: string): string | null =>
   /\b\d{1,4}\.\d{1,4}\.\d{1,6}\b/.exec(text)?.[0] ?? null;
 

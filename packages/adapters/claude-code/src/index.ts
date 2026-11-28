@@ -7,7 +7,7 @@ import {
   parseVersion,
   ResumeFailed,
   runLogout,
-  whichOnPath,
+  whichAgent,
 } from "@ion/adapter-kit";
 import { type Exec, execNoShell, loginOnlyEnv } from "./cli.js";
 import { claudeGateCall } from "./gate.js";
@@ -32,7 +32,7 @@ const sdkSessionExists = async (sessionId: string, dir: string) =>
 
 export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapter {
   const exec = deps.exec ?? execNoShell;
-  const which = deps.which ?? ((b: string) => whichOnPath(b));
+  const which = deps.which ?? ((b: string) => whichAgent(b));
   const binary = () => which("claude");
   return {
     id: "claude-code",
@@ -53,6 +53,10 @@ export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapt
     noWeb: true,
     // Its models' standard context.
     contextTokens: 200_000,
+    // ion's judge: Haiku, checked on your Mac like any other (PR #36 re-review, 2026-11-23: no special case).
+    judge: { model: "haiku" },
+    // ion's brain: Opus, the strongest of the agents ion knows (ranks: Claude 100, Codex 90, Grok 80, opencode 40).
+    brain: { model: "opus", rank: 100 },
     // Claude Code runs `/command` (its own and its plugins') at the start of a prompt.
     picks: "slash",
     // It reads a server's resources (@server:uri, and its resource tools).

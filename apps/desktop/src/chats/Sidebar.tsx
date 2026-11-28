@@ -4,7 +4,9 @@ import { type ReactNode, useMemo, useState } from "react";
 import { groupChats } from "./live.js";
 import { type ProjectActions, ProjectGroupMenu, ProjectRename } from "./ProjectGroupMenu.js";
 import { ProjectMenu } from "./ProjectMenu.js";
+import type { AddFolderFn } from "../start/PickFolder.js";
 import { ChatRow, NeedRow, type RowActions, type RowProps } from "./SidebarRows.js";
+import { projectName } from "../projectName.js";
 
 /** A project group shows this many chats until you ask for the rest. */
 const SHOWN = 5;
@@ -92,6 +94,8 @@ type Props = {
   onOpen: (chatId: string | null) => void;
   /** Makes a project: its id, or a refusal (an Error with ion's words). */
   onNewProject: (name: string) => Promise<string>;
+  /** Adds a folder of yours (Plan 21). */
+  onAddFolder?: AddFolderFn;
   /** Star (watch) or unstar a project. */
   onStar: (projectId: string, starred: boolean) => void;
 } & RowActions &
@@ -117,7 +121,7 @@ function useProjectHead(
 ): [string | null, (projectId: string) => Head] {
   const [renaming, setRenaming] = useState<string | null>(null);
   const head = (projectId: string): Head => {
-    const name = p.names.get(projectId) ?? projectId;
+    const name = p.names.get(projectId) ?? projectName(projectId);
     if (projectId === "default") return { label: name };
     const done = (to: string | null) => {
       setRenaming(null);
@@ -193,6 +197,7 @@ function SidebarHead(p: {
   project: string | null;
   onPick: (id: string | null) => void;
   onNewProject: (name: string) => Promise<string>;
+  onAddFolder: AddFolderFn | undefined;
   onOpen: (chatId: string | null) => void;
 }) {
   const { projects, needs, project, onOpen } = p;
@@ -212,6 +217,7 @@ function SidebarHead(p: {
             onOpen(null);
           })
         }
+        {...(p.onAddFolder ? { onAddFolder: p.onAddFolder } : {})}
       />
       <button className="ib" type="button" title="New chat" onClick={() => onOpen(null)}>
         <SquarePen />
@@ -223,7 +229,7 @@ function SidebarHead(p: {
 /** Which projects are starred, and each one's shown name. */
 function useProjectSets(projects: ProjectInfo[]) {
   const starred = useMemo(() => new Set(projects.filter((x) => x.starred).map((x) => x.id)), [projects]);
-  const names = useMemo(() => new Map(projects.map((x) => [x.id, x.name ?? x.id])), [projects]);
+  const names = useMemo(() => new Map(projects.map((x) => [x.id, projectName(x.id, x.name)])), [projects]);
   return { starred, names };
 }
 
@@ -242,12 +248,9 @@ export function Sidebar(p: Props) {
   return (
     <>
       <SidebarHead
-        projects={projects}
-        needs={needs}
-        project={project}
+        {...{ projects, needs, project, onNewProject, onOpen }}
         onPick={setProject}
-        onNewProject={onNewProject}
-        onOpen={onOpen}
+        onAddFolder={p.onAddFolder}
       />
       <div className="slist">
         {g.needsYou.length > 0 && (

@@ -7,7 +7,7 @@ import type { Verdict } from "./web.js";
  */
 
 /** How a dream that couldn't run on its agent starts its reply (and its note for you). */
-export const DREAM_SKIPPED = "Dream skipped:";
+export const DREAM_SKIPPED = "Tidy memory skipped:";
 
 /** ion's memory tools: `mcp__ion__memory_*` (Claude Code) or `ion__memory_*` (Grok). */
 const MEMORY_TOOL = /^(mcp__)?ion__memory_(index|search|read|write|forget)$/;
@@ -23,7 +23,7 @@ export function dreamVerdict(req: ApprovalRequest): Verdict {
   if (req.kind === "mcp" && req.mcpServer === "ion" && MEMORY_TOOL.test(req.toolName))
     return { decision: "allow" };
   if (req.kind !== "mcp" && TOOL_LOOKUP.has(req.toolName)) return { decision: "allow" };
-  return { decision: "deny", reason: "The dream only tidies memory, with ion's memory tools." };
+  return { decision: "deny", reason: "Tidying memory uses ion's memory tools only." };
 }
 
 /** What the dream is told: what to tidy, how, and what it may never do. Starts "You are ion" (the fake agent's cue). */

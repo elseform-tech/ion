@@ -47,7 +47,7 @@ const chatClient = (call: (...a: never[]) => unknown) =>
       cmd === "queue.list" ? [] : (call as (c: string, a: unknown) => unknown)(cmd, a),
     subscribe: async () => () => {},
   }) as unknown as IonClient;
-const pill = () => screen.getByRole("button", { name: /Harness, model and effort/ });
+const pill = () => screen.getByRole("button", { name: /Agent, model and effort/ });
 
 describe("Composer", () => {
   // Final review M6: before the agents are known, nothing is sent (it would go to Claude Code and use its quota).
@@ -97,7 +97,7 @@ describe("Composer", () => {
     expect(p.textContent).toBe("Grok Build·grok-code");
     expect(p.querySelector(".ebars")).not.toBeNull();
     expect(p.getAttribute("aria-label")).toBe(
-      "Harness, model and effort: Grok Build · grok-code · Default effort",
+      "Agent, model and effort: Grok Build · grok-code · Default effort",
     );
   });
 
@@ -148,24 +148,54 @@ describe("Composer", () => {
     );
   });
 
-  // The user, 2026-11-22: with Pick by usage on, a new chat you picked no agent for goes without one (ion picks it and
-  // says why); one you picked goes on it.
-  it("leaves a new chat's agent to Pick by usage until you pick one", async () => {
-    const call = vi.fn(async () => ({ chatId: "c1", runId: "r1" }));
-    render(
-      <Composer
-        client={{ call } as unknown as IonClient}
-        harnesses={[fake, grok]}
-        to={{ projectId: null }}
-        running={null}
-        byUsage
-        onSent={() => {}}
-      />,
-    );
-    expect(pill().textContent).toContain("By usage");
+  // The user, 2026-11-22: a new chat you picked no agent for goes without one (ion picks it and says why). The user,
+  // 2026-11-24: that's Automatic, always; your own chats are set here only, and a new chat starts on your last pick.
+  it("leaves a new chat's agent to Automatic until you pick one, then starts new chats on your last pick", async () => {
+    let last: object | null = null;
+    const call = vi.fn(async (cmd: string, a?: { patch?: { lastPick?: object } }) => {
+      if (cmd === "settings.get") return { lastPick: last };
+      if (cmd === "settings.set") last = a?.patch?.lastPick ?? last;
+      return { chatId: "c1", runId: "r1" };
+    });
+    const box = () =>
+      render(
+        <Composer
+          client={{ call } as unknown as IonClient}
+          harnesses={[fake, grok]}
+          to={{ projectId: null }}
+          running={null}
+          auto
+          onSent={() => {}}
+        />,
+      );
+    box();
+    expect(pill().textContent).toContain("Automatic");
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hi" } });
     fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
     await waitFor(() => expect(call).toHaveBeenCalledWith("ask", { text: "hi" }));
+    fireEvent.click(pill());
+    fireEvent.click(screen.getByRole("button", { name: /^Grok Build/ }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(call).toHaveBeenCalledWith("settings.set", {
+      patch: { lastPick: expect.objectContaining({ harness: "grok-build" }) },
+    });
+    cleanup();
+    box();
+    await waitFor(() => expect(pill().textContent).toContain("Grok Build"));
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "again" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    await waitFor(() =>
+      expect(call).toHaveBeenLastCalledWith(
+        "ask",
+        expect.objectContaining({ text: "again", harness: "grok-build" }),
+      ),
+    );
+    // PR #36 final review, 2026-11-24: Automatic again, from the popover; the next new chat starts on it too.
+    fireEvent.click(pill());
+    fireEvent.click(screen.getByRole("button", { name: /^Automatic/ }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(call).toHaveBeenCalledWith("settings.set", { patch: { lastPick: null } });
+    expect(pill().textContent).toContain("Automatic");
   });
 
   // The user, 2026-11-21: before you send, the brain pill's hover says what this usually takes ("usually 40–120k

@@ -91,10 +91,10 @@ describe("harnessRunner's sandbox and folder", () => {
     seen.length = 0;
     expect(await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal)).toBe("ok");
     await harnessRunner({ ...o, sandbox: "seatbelt" })("hi", new AbortController().signal);
-    await harnessRunner({ ...o, sandbox: "seatbelt" }, "quick")("hi", new AbortController().signal);
+    await harnessRunner({ ...o, sandbox: "seatbelt" }, "brain")("hi", new AbortController().signal);
     const [a, b, q] = started as [StartOpts, StartOpts, StartOpts];
     const judgeBase = join(o.dataDir, "scratch", "ion-judge-x");
-    const quickBase = join(o.dataDir, "scratch", "ion-quick-x");
+    const quickBase = join(o.dataDir, "scratch", "ion-brain-x");
     expect(a.cwd.startsWith(`${judgeBase}/`)).toBe(true);
     expect(b.cwd.startsWith(`${judgeBase}/`)).toBe(true);
     expect(a.cwd).not.toBe(b.cwd);
@@ -143,10 +143,19 @@ describe("harnessRunner's answer", () => {
 describe("sweepTmp", () => {
   // Final review, 2026-11-22: probes and judges left ion-probe-* and ion-judge-* folders in $TMPDIR. They go at the
   // daemon's start; nothing else there is touched (the tour's /tmp/ion-tour folders least of all).
-  it("removes only ion-probe-* and ion-judge-* folders (not files)", () => {
+  // Plan 21 Task 5 review, 2026-11-28: the nightly check's ion-check-* folders too (a crash can leave one).
+  it("removes only ion-probe-*, ion-judge-* and ion-check-* folders (not files)", () => {
     const tmp = mkdtempSync(join(tmpdir(), "sweep-"));
     const old = new Date(Date.now() - 2 * 3600_000);
-    for (const d of ["ion-probe-a", "ion-judge-b", "ion-tour", "ion-tour2", "ion-setup-c", "other"]) {
+    for (const d of [
+      "ion-probe-a",
+      "ion-judge-b",
+      "ion-check-d",
+      "ion-tour",
+      "ion-tour2",
+      "ion-setup-c",
+      "other",
+    ]) {
       mkdirSync(join(tmp, d));
       utimesSync(join(tmp, d), old, old);
     }

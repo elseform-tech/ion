@@ -2,8 +2,7 @@ import type { IonClient } from "@ion/client/browser";
 import { Moon } from "@ion/design-system";
 import type { DreamInfo, DreamMode, MemoryInfo, SettingsPatch } from "@ion/schema";
 import type { Run } from "../callError.js";
-import { type SettingsData, ready } from "./data.js";
-import { AgentPicker } from "./ModelMenu.js";
+import type { SettingsData } from "./data.js";
 
 const MODES: [DreamMode, string][] = [
   ["off", "Off"],
@@ -17,31 +16,24 @@ export const tidiedByIon = (m: MemoryInfo, now = Date.now()) =>
   m.source === "ion:_dream" && now - Date.parse(m.writtenAt) < DAY_MS;
 
 /**
- * Dream: ion tidies memory overnight (off, nightly or weekly), on an agent you pick (ion's own model's unless you do).
+ * Tidy memory (was "Dream"; Plan 21 Task 3): ion tidies memory overnight (off, nightly or weekly), with ions' brain at Medium (the user, 2026-11-24: no
+ * agent to pick).
  */
 export function DreamRow(p: { client: IonClient; data: SettingsData; run: Run }) {
   const s = p.data.settings;
   if (!s) return null;
   const save = (dream: NonNullable<SettingsPatch["dream"]>) =>
     p.run(p.client.call("settings.set", { patch: { dream } }), () => p.data.reload());
-  const agent = (s.dream.agent ?? s.quick).split(":")[0];
   return (
     <div className="group">
       <div className="srow">
         <div className="g">
           <span className="slot">
             <Moon />
-            Dream
+            Tidy memory
           </span>
         </div>
-        {s.dream.mode !== "off" && (
-          <AgentPicker
-            agents={p.data.harnesses.filter(ready)}
-            value={agent}
-            onPick={(id) => save({ agent: id })}
-          />
-        )}
-        <span className="seg sm" role="group" aria-label="Dream">
+        <span className="seg sm" role="group" aria-label="Tidy memory">
           {MODES.map(([id, label]) => (
             <button
               key={id}

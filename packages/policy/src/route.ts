@@ -27,6 +27,10 @@ export type Task = {
   deepAgent?: string;
   /** What this task usually takes on each agent, from your past chats (none: too few to say). */
   estimate?: Record<string, TaskEstimate>;
+  /** Agents you marked "Avoid unless I ask" (the user, 2026-11-24): never picked here. */
+  avoid?: string[];
+  /** Agents that come after every other (Claude Code: saved), unless one is all that's left. */
+  last?: string[];
 };
 
 /** The agent, and why in one line ("On Codex — Claude Code is near its limit"); null when you picked it. */
@@ -69,6 +73,7 @@ const expected = (c: Candidate, t: Task): number[] => [fits(c, t) ? 0 : 1, rank(
  * and free before api, then your order.
  */
 const weight = (c: Candidate, t: Task): number[] => [
+  t.last?.includes(c.id) ? 1 : 0,
   isNear(c, t.now) || c.limitGuessed || tooBig(c, t) ? 1 : 0,
   fits(c, t) ? 0 : 1,
   kept(c, t) ? 1 : 0,
@@ -106,10 +111,14 @@ function fitsBecause(c: Candidate, t: Task): string {
  */
 export function pickAgent(candidates: Candidate[], t: Task): Pick {
   if (t.picked) return { agent: t.picked, reason: null };
-  const open = candidates.filter((c) => !limited(c)).sort(byWeight((c) => weight(c, t)));
+  const open = candidates
+    .filter((c) => !limited(c) && !t.avoid?.includes(c.id))
+    .sort(byWeight((c) => weight(c, t)));
   const pick = open[0];
   if (!pick) return { agent: null, reason: "No agent is free" };
   const top = [...candidates].sort(byWeight((c) => expected(c, t)))[0]!;
-  const why = top.id === pick.id ? fitsBecause(pick, t) : passedOver(top, t);
+  // Only a guessed limit left: it's a try, and the line says so (Plan 21 Task 6 tour).
+  const tried = pick.limitedUntil ? "it may be back from its limit; no other agent is free" : null;
+  const why = tried ?? (top.id === pick.id ? fitsBecause(pick, t) : passedOver(top, t));
   return { agent: pick.id, reason: `On ${pick.label} — ${why}` };
 }

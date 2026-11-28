@@ -60,6 +60,7 @@ export {
   MessageCircle,
   Star,
   Code,
+  CodeXml,
   FileDiff,
   MessageSquare,
   PanelRight,

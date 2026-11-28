@@ -1,7 +1,14 @@
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import { ApiCallError } from "@ion/client";
-import type { HarnessInfo, SignOutResult } from "@ion/schema";
+import {
+  type AgentChecksInfo,
+  checkLines,
+  checksFailed,
+  type HarnessInfo,
+  type JudgeCheckInfo,
+  type SignOutResult,
+} from "@ion/schema";
 import { withClient } from "../connect.js";
 import { fail, type Out, print } from "../output.js";
 import { clean } from "../sanitize.js";
@@ -50,21 +57,23 @@ function signOutLine(r: SignOutResult): string {
   return r.signedIn ? "Still signed in" : "Not signed in";
 }
 
-export function harnessesCommand(program: Command, out: () => Out) {
+/**
+ * `ion agents`, and `ion harnesses` (Plan 21 Task 3, 2026-11-24: its old word, kept for one release, out of the help).
+ */
+export function agentsCommands(program: Command, out: () => Out) {
+  agentsCommand(program, out, "agents");
+  agentsCommand(program, out, "harnesses", true);
+}
+
+function agentsCommand(program: Command, out: () => Out, name: string, hidden = false) {
   const h = program
-    .command("harnesses")
+    .command(name, { hidden })
     .description("Coding agents and their models")
     .action(async () => {
       const list = await withClient((c) => c.call("harnesses.list", {}));
       print(out(), list.map(row).join("\n"), list);
     });
-  // The user, 2026-11-22: your agent order (Settings → Agents), for handoffs, Pick by usage and ions' chats.
-  h.command("order <ids...>")
-    .description("Put agents in order, best first")
-    .action(async (ids: string[]) => {
-      const s = await withClient((c) => c.call("settings.set", { patch: { agentOrder: ids } }));
-      print(out(), s.agentOrder.map(clean).join(", "), s.agentOrder);
-    });
+  preferCommands(h, out);
   // The user, 2026-11-23: sign in and out of each agent from ion (its own login and logout).
   h.command("login <id>")
     .description("Sign in to an agent")
@@ -99,4 +108,91 @@ export function harnessesCommand(program: Command, out: () => Out) {
         print(out(), signOutLine(r), r);
       }),
     );
+  checkJudgeCommand(h, out);
+  checkCommand(h, out);
+}
+
+/** "Grok Build: Answers (Said nothing)": a check that failed, and why when it says. */
+const failedLine = (label: string, c: { name: string; note?: string }) =>
+  `${label}: ${c.name}` + (c.note ? ` (${c.note})` : "");
+
+/**
+ * The nightly check in lines: on (its hours) or off, each agent (in, or why not; what a night costs it), the last
+ * checks' line, and each failed check with why.
+ */
+export function checksText(i: AgentChecksInfo, now = new Date()): string {
+  const head = i.nightly ? `Each night, ${i.window}` : "Each night: off";
+  const rows = i.agents.map((a) => [a.label, a.included ? "Included" : a.why, a.cost].join("  "));
+  const failed = i.last
+    .filter((r) => checksFailed(r) > 0)
+    .flatMap((r) => r.checks.filter((c) => !c.ok).map((c) => "  " + clean(failedLine(r.label, c))));
+  return [...[head, ...rows, ...checkLines(i.last, now)].map(clean), ...failed].join("\n");
+}
+
+/** `ion agents check` (Plan 21 Task 5): the nightly check, turned on or off, agents picked for it, or run now. */
+function checkCommand(h: Command, out: () => Out) {
+  h.command("check")
+    .description("Check the agents each night (or now)")
+    .option("--now", "Check them now")
+    .option("--nightly <on|off>", "Turn the nightly check on or off")
+    .option("--pick <id>", "Include an agent that isn't free")
+    .option("--unpick <id>", "Leave it out again")
+    .action((o: { now?: boolean; nightly?: string; pick?: string; unpick?: string }) =>
+      withClient(async (c) => {
+        if (o.nightly !== undefined && o.nightly !== "on" && o.nightly !== "off")
+          fail("Use --nightly on or off");
+        const pick = { ...(o.pick ? { [o.pick]: true } : {}), ...(o.unpick ? { [o.unpick]: false } : {}) };
+        let r = await c.call("agents.checks", {
+          ...(o.nightly ? { nightly: o.nightly === "on" } : {}),
+          ...(Object.keys(pick).length ? { pick } : {}),
+        });
+        if (o.now) r = await c.call("agents.check", {});
+        print(out(), checksText(r), r);
+      }),
+    );
+}
+
+/** "Checked as judge on <model>: nothing dangerous allowed; 57 of 59 as expected, 2 unsure", or what it allowed. */
+function judgeLine(r: JudgeCheckInfo): string {
+  const counts = `${r.agreement} of ${r.cases} as expected, ${r.unsure} unsure`;
+  if (r.pass) return `Checked as judge on ${clean(r.model)}: nothing dangerous allowed; ${counts}`;
+  const why = r.dangerous.length ? `allowed ${r.dangerous.map(clean).join(", ")}` : "didn't answer enough";
+  return `Not a judge on ${clean(r.model)}: ${why}; ${counts}`;
+}
+
+/** `ion agents check-judge <id>` (PR #36 re-review, 2026-11-23): ion checks the judge on your own agents. */
+function checkJudgeCommand(h: Command, out: () => Out) {
+  h.command("check-judge <id>")
+    .description("Check an agent as Auto's judge (runs ion's judge cases on it)")
+    .action((id: string) =>
+      withClient(async (c) => {
+        const r = await c.call("judge.check", { harness: id });
+        print(out(), judgeLine(r), r);
+      }),
+    );
+}
+
+/** `ion agents prefer [ids...]` (and the old `order`, out of the help). */
+function preferCommands(h: Command, out: () => Out) {
+  // The user, 2026-11-22: your agent order (Settings → Agents → More: Prefer in this order; 2026-11-24). Review of
+  // Plan 21 Task 4: `prefer`, the app's word; none goes back to Automatic. `order` stays, out of the help.
+  for (const [cmd, hide] of [
+    ["prefer [ids...]", false],
+    ["order <ids...>", true],
+  ] as const)
+    h.command(cmd, { hidden: hide })
+      .description("Prefer agents in this order, best first (none: say the order; automatic: clear it)")
+      .option("--auto", "Clear your order: Automatic decides")
+      .action(async (ids: string[] = [], o: { auto?: boolean }) => {
+        // Plan 21 final review (I3): bare `prefer` cleared your order; it says it now, and `automatic` clears it.
+        const clear = o.auto === true || (ids.length === 1 && ids[0]!.toLowerCase() === "automatic");
+        const s = await withClient((c) =>
+          !clear && !ids.length
+            ? c.call("settings.get", {})
+            : c.call("settings.set", { patch: { agentOrder: clear ? [] : ids } }),
+        );
+        // `order` says the whole order, as it always did.
+        const shown = hide ? s.agentOrder : s.prefer;
+        print(out(), shown.length ? shown.map(clean).join(", ") : "Automatic", shown);
+      });
 }

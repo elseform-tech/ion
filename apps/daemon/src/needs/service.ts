@@ -121,6 +121,17 @@ export class NeedsService {
       });
   }
 
+  /** Closed because the same thing is asked again (a stopped call the agent tried again): it leaves Needs you. */
+  askedAgain(n: { needId: string; chatId: string; runId: string }): void {
+    this.store.append({
+      chatId: n.chatId,
+      runId: n.runId,
+      origin: "daemon",
+      type: EV.needResolved,
+      data: { needId: n.needId, decision: "superseded", by: "daemon", why: "asked again" },
+    });
+  }
+
   /** A held question raised to you after all: closed as itself, and asked again in the open. */
   release(n: NeedInfo, note: string): void {
     this.store.append({

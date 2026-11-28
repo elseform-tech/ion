@@ -3,6 +3,7 @@ import type { ChatInfo, IonInfo, NeedInfo } from "@ion/schema";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useDismiss } from "./dismiss.js";
 import { relTime } from "./live.js";
+import { projectName } from "../projectName.js";
 
 /** `ion`: the chat's project ion, when ion started the chat (its avatar fills the first slot). */
 export type RowProps = { chat: ChatInfo; open: boolean; onOpen: () => void; ion?: IonInfo };
@@ -23,7 +24,7 @@ export const NeedRow = ({ chat, open, onOpen, need, ion }: RowProps & { need: Ne
     <Slot ion={ion} />
     <span>
       <span className="tt">{need.summary}</span>
-      <span className="sub">{chat.projectId}</span>
+      <span className="sub">{chat.projectId && projectName(chat.projectId)}</span>
     </span>
     <i className="wd" />
   </button>

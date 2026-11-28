@@ -28,7 +28,7 @@ export { type PickedSkill, type Picks, type PickStyle, withPicks } from "./picks
 export { parseJsonc } from "./jsonc.js";
 export { readSmallFile } from "./read-small.js";
 export { blocksText, TOOL_INPUT_MAX, TOOL_OUTPUT_MAX, toolText } from "./tool-text.js";
-export { parseVersion, projectRoots, readVersion, whichOnPath } from "./system.js";
+export { parseVersion, projectRoots, readVersion, whichAgent, whichOnPath } from "./system.js";
 export { type Catalog, cachedCatalog, capabilitiesWith, type Model } from "./catalog.js";
 export { createRpc, type Rpc, RpcError } from "./rpc.js";
 export {

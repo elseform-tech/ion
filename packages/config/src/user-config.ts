@@ -119,22 +119,25 @@ const Tools = z.looseObject({
   ionUse: z.array(z.string()).default([]),
 });
 
-/** routing.onLimit: what ion does when a chat's agent hits its limit. */
-export const ON_LIMIT = ["ask", "continue", "wait"] as const;
-
 // Loose objects keep keys this version doesn't know (newer ion, other tools), so saving never drops them.
 const MaxRuns = z.union([z.literal("auto"), z.number().int().min(MIN_RUNS).max(MAX_RUNS)]);
+
+/**
+ * The file's version, written by every save: 2 since ion's models and the judge have no Claude Code default (Plan 21
+ * audit, 2026-11-23). A file without it is older, and the defaults every save wrote then are moved (moveOldDefaults).
+ */
+const CONFIG_VERSION = 2;
 
 const UserConfigSchema = z.looseObject({
   ion: z
     .looseObject({
-      // "<harness>" uses that harness's own default model; "<harness>:<model>" picks one from its list.
-      quick: z.string().default("claude-code"),
-      /** How hard ion's quick model thinks; absent: the agent's own default. */
+      // The user, 2026-11-24: two model settings. `quick`: what ions think with ("<harness>[:<model>]"; absent: the
+      // strongest model you're signed in to), at `quickEffort` (absent: High; routine turns Medium). `chats`: what
+      // chats ions start run on (absent: Automatic), at `chatsEffort` (absent: the agent's own).
+      quick: z.string().optional(),
       quickEffort: Effort.optional(),
-      deep: z.string().default("claude-code"),
-      deepEffort: Effort.default("high"),
-      useDeep: z.enum(["auto", "always", "never"]).default("auto"),
+      chats: z.string().optional(),
+      chatsEffort: Effort.optional(),
     })
     .prefault({}),
   projects: z.array(Project).default([]),
@@ -148,8 +151,11 @@ const UserConfigSchema = z.looseObject({
    */
   access: z
     .looseObject({
-      /** Who decides in Auto: "<harness>:<model>", a small model (it runs for every new action). */
-      judge: z.string().default("claude-code:haiku"),
+      /**
+       * Who decides in Auto: "<harness>[:<model>]", a small model (it runs for every new action). Absent: the first
+       * ready agent in your agent order whose pinned judge model ion's judge evals checked.
+       */
+      judge: z.string().optional(),
     })
     .prefault({}),
   /** Pause all: no routine runs until you resume. Absent: none paused. */
@@ -191,19 +197,24 @@ const UserConfigSchema = z.looseObject({
    * into ion's chats (the user, 2026-11-21: on by default); off, ion's tools only. Its own hooks never run where ion
    * can turn them off.
    */
-  agents: z.record(z.string(), z.looseObject({ ownTools: z.boolean().optional() })).default({}),
+  /** Your last pick in the composer, "<harness>[:<model>]" and its effort: a new chat starts on it (2026-11-24). */
+  composer: z.looseObject({ last: z.string().optional(), lastEffort: Effort.optional() }).optional(),
+  /** `avoid` (the user, 2026-11-24): "Avoid unless I ask": Automatic never picks it. */
+  agents: z
+    .record(z.string(), z.looseObject({ ownTools: z.boolean().optional(), avoid: z.boolean().optional() }))
+    .default({}),
   /**
-   * How ion picks a chat's agent (Plan 20). `order`: your agent order, best first (empty: ion's own, opencode, Grok
-   * Build, Codex, Claude Code); it decides handoff targets, Pick by usage, and an ion's chats when the project names
-   * no agent. `onLimit`: when a chat's agent hits its limit, ask you, continue on the next agent, or wait for the
-   * reset. `byUsage`: Pick by usage fills in a new chat's agent when you picked none.
+   * `order`: "Prefer in this order" (Settings → Agents → More; empty: Automatic decides). Automatic picks a chat's
+   * agent when none is set: ready, not limited, with room left, free or subscription before pay-per-use, Claude Code
+   * last unless it's the only one, never one you avoid (the user, 2026-11-24).
    */
-  routing: z
-    .looseObject({
-      order: z.array(z.string()).default([]),
-      onLimit: z.enum(ON_LIMIT).default("ask"),
-      byUsage: z.boolean().default(false),
-    })
+  routing: z.looseObject({ order: z.array(z.string()).default([]) }).prefault({}),
+  /**
+   * "Check the agents each night" (Plan 21 Task 5; off until you turn it on): a small check of each signed-in free
+   * agent in quiet hours. `agents`: those that aren't free you picked for it (Claude Code only so).
+   */
+  checks: z
+    .looseObject({ nightly: z.boolean().default(false), agents: z.array(z.string()).default([]) })
     .prefault({}),
 });
 
@@ -248,8 +259,9 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["memory", "dreamAgent"], z.string()],
   [["routing"], z.looseObject({})],
   [["routing", "order"], z.array(z.string())],
-  [["routing", "onLimit"], z.enum(ON_LIMIT)],
-  [["routing", "byUsage"], z.boolean()],
+  [["checks"], z.looseObject({})],
+  [["checks", "nightly"], z.boolean()],
+  [["checks", "agents"], z.array(z.string())],
 ];
 
 /** Whether this agent brings its own servers, skills and plugins into ion's chats (on unless you turned it off). */
@@ -364,6 +376,92 @@ function dropOldAccess(raw: unknown, file: string): string | null {
   return `${basename(file)}: ${said.join(", ")} no longer used; new chats start on Auto`;
 }
 
+/** The defaults every save wrote before version 2 (Claude Code), with where each is. */
+const OLD_DEFAULTS: [section: string, key: string, was: string, name: string][] = [
+  ["ion", "quick", "claude-code", "quick"],
+  ["access", "judge", "claude-code:haiku", "judge"],
+];
+
+/** One line naming what moved: ion's models to the strongest model you have, the judge to your order. */
+function movedLine(moved: string[]): string {
+  const brain = moved.filter((m) => m !== "judge");
+  const parts = [
+    ...(brain.length
+      ? [
+          `ion's ${brain.join(" and ")} model${brain.length > 1 ? "s" : ""} now use${brain.length > 1 ? "" : "s"} the strongest model you're signed in to`,
+        ]
+      : []),
+    ...(moved.includes("judge") ? ["the judge now follows your order"] : []),
+  ];
+  const it = moved.length > 1 ? "them" : "it";
+  return `${parts.join(", and ")}; set ${it} in Settings to keep Claude Code`;
+}
+
+/**
+ * A file from before version 2 (Plan 21 audit, 2026-11-23): each of ion's models still on the old default (Claude
+ * Code, written by every save whether you picked it or not) is the strongest model you're signed in to now, and the
+ * judge follows your agent order (the user, 2026-11-23); any other
+ * value is your choice and stays. Older: no version, or one that isn't a number of at least 2 (PR #36 review); a
+ * newer file's version is kept so a save never writes it lower. Returns one line naming what moved, or null.
+ */
+function moveOldDefaults(raw: unknown): { older: boolean; said: string[] } {
+  const r = raw as Record<string, unknown> | null;
+  if (typeof r !== "object" || r === null) return { older: false, said: [] };
+  const v = r.version;
+  delete r.version;
+  // A newer ion's version (a higher number, or one written as a string: unknown) is kept, and nothing moves.
+  if (newer(v)) r.version = v;
+  if (newer(v) || v === CONFIG_VERSION) return { older: false, said: [] };
+  const moved: string[] = [];
+  for (const [section, key, was, name] of OLD_DEFAULTS) {
+    const holder = r[section] as Record<string, unknown> | undefined;
+    if (typeof holder !== "object" || holder === null || holder[key] !== was) continue;
+    delete holder[key];
+    moved.push(name);
+  }
+  const said = moved.length ? [movedLine(moved)] : [];
+  // What was the quick model's effort is ions' effort now (PR #36 final review, 2026-11-24).
+  const ion = r.ion as Record<string, unknown> | undefined;
+  if (ion && typeof ion === "object" && "quickEffort" in ion)
+    said.push("ion's quick effort is now ions' effort");
+  return { older: true, said };
+}
+
+/** A newer ion's version: a higher number, or one written as a string (unknown). */
+const newer = (v: unknown) => typeof v === "string" || (typeof v === "number" && v > CONFIG_VERSION);
+
+/** Removes `key` from `raw[section]`; what it held, if anything. */
+function take(raw: Record<string, unknown>, section: string, key: string): unknown {
+  const holder = raw[section] as Record<string, unknown> | undefined;
+  if (typeof holder !== "object" || holder === null || !(key in holder)) return undefined;
+  const was = holder[key];
+  delete holder[key];
+  return was;
+}
+
+/**
+ * The knobs the simplified settings dropped (the user, 2026-11-24): Pick by usage (it's how Automatic works), the deep
+ * model, and what happens at a limit (your chats ask, chats ions start go on another agent), said once when it wasn't the
+ * default. The agent order stays as "Prefer in this order"; Dream's agent stays when you set it.
+ */
+function dropOldKnobs(raw: unknown): string[] {
+  if (typeof raw !== "object" || raw === null) return [];
+  const r = raw as Record<string, unknown>;
+  const said: string[] = [];
+  const deep = take(r, "ion", "deep");
+  // A deep model you set (not the old default) is said once (PR #36 final review, 2026-11-24).
+  if (typeof deep === "string" && deep && deep !== "claude-code")
+    said.push(`ion.deep (${deep}) is no longer used`);
+  for (const key of ["deepEffort", "useDeep"]) take(r, "ion", key);
+  take(r, "routing", "byUsage");
+  const onLimit = take(r, "routing", "onLimit");
+  if (onLimit !== undefined && onLimit !== "ask")
+    said.push(
+      "routing.onLimit is no longer used: your chats ask at a limit, chats ions start go on another agent",
+    );
+  return said;
+}
+
 /**
  * Reads the config file. Missing file → defaults. Invalid file → defaults plus a one-line error. A bad notification
  * time or max_runs alone falls back to its default, with a warning; the rest of the file loads.
@@ -373,26 +471,61 @@ export function loadUserConfig(file: string): {
   error: string | null;
   warning: string | null;
 } {
-  if (!existsSync(file)) return { config: defaults(), error: null, warning: null };
+  const r = readUserConfig(file);
+  return { config: r.config, error: r.error, warning: r.warning };
+}
+
+/**
+ * Reads the config file and, when it moved (an older file, or old keys dropped), saves it once so its notice is said
+ * once (PR #36 final review, 2026-11-24). The daemon's start.
+ */
+export function migrateUserConfig(file: string): ReturnType<typeof loadUserConfig> {
+  const { moved, ...r } = readUserConfig(file);
+  if (moved && !r.error) saveUserConfig(file, r.config);
+  return r;
+}
+
+function readUserConfig(file: string): ReturnType<typeof loadUserConfig> & { moved: boolean } {
+  if (!existsSync(file)) return { config: defaults(), error: null, warning: null, moved: false };
   let raw: unknown;
   try {
     raw = parse(readFileSync(file, "utf8"));
   } catch (e) {
     const first = String((e as Error).message).split("\n")[0];
-    return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null };
+    return { config: defaults(), error: `${basename(file)}: ${first}`, warning: null, moved: false };
   }
-  const warning = [dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
+  const old = moveOldDefaults(raw);
+  const said = [...old.said, ...dropOldKnobs(raw)];
+  const moves = said.length ? `${basename(file)}: ${said.join("; ")}` : null;
+  const warning = [moves, dropBad(raw, file), dropOldAccess(raw, file)].filter(Boolean).join("; ") || null;
   const r = UserConfigSchema.safeParse(raw);
   if (!r.success)
-    return { config: defaults(), error: describeIssue(file, r.error.issues[0]!), warning: null };
-  return { config: r.data, error: null, warning };
+    return {
+      config: defaults(),
+      error: describeIssue(file, r.error.issues[0]!),
+      warning: null,
+      moved: false,
+    };
+  return { config: r.data, error: null, warning, moved: old.older || said.length > 0 };
+}
+
+/** The version a save writes: a newer ion's as it was (a string: unknown), else at least this ion's. */
+function versionToWrite(read: unknown): number | string {
+  if (typeof read === "string") return read;
+  return Math.max(CONFIG_VERSION, typeof read === "number" ? read : 0);
 }
 
 /** Writes the config atomically (temp file, then rename). */
 export function saveUserConfig(file: string, c: UserConfig): void {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
-  const { heldProjects, ...parsed } = UserConfigSchema.parse(c);
+  const {
+    heldProjects,
+    version: read,
+    ...rest
+  } = UserConfigSchema.parse(c) as UserConfig & { version?: unknown };
+  // Never lower than the file's own (a newer ion's): PR #36 review, 2026-11-23.
+  const parsed = { version: versionToWrite(read), ...rest };
   // A held project goes back in the file as you wrote it (after the others).
   const out = heldProjects?.length ? { ...parsed, projects: [...parsed.projects, ...heldProjects] } : parsed;
   writeFileSync(tmp, stringify(out), { mode: 0o600 });

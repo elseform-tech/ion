@@ -359,7 +359,7 @@ describe("a thread an ion starts", () => {
     const i = ions();
     const go = (turnId: string) => i.startThread("storefront", "x", { ionId: "chief", request: "x", turnId });
     for (let k = 0; k < PER_TURN; k++) expect(await go("turn_1")).toHaveProperty("chatId");
-    expect(await go("turn_1")).toEqual({ why: "That's enough threads for one turn" });
+    expect(await go("turn_1")).toEqual({ why: "That's enough chats for one turn" });
     expect(await go("turn_2")).toHaveProperty("chatId");
     expect(ask).toHaveBeenCalledTimes(6);
   });
@@ -402,9 +402,10 @@ describe("a thread an ion starts", () => {
     });
   });
 
-  // Review, 2026-11-19: Settings shows a project's agent as its own or its last chat's, and the model and effort set
-  // there were dropped unless the agent had been picked explicitly.
-  it("runs on the model and effort set for the agent Settings shows (its last chat's)", async () => {
+  // Review, 2026-11-19: the effort set for a project was dropped unless its agent had been picked explicitly. The user,
+  // 2026-11-24: a project's own agent, model and effort are one override (its page → More); a model set without an
+  // agent names no agent's model, so only the effort applies.
+  it("runs at the project's effort on the agent it goes on", async () => {
     saveUserConfig(configFile, {
       ...DEFAULT_CONFIG,
       projects: [
@@ -417,11 +418,93 @@ describe("a thread an ion starts", () => {
       request: "Fix the cart",
       turnId: "turn_1",
     });
-    expect(ask.mock.calls[0]![0]).toMatchObject({
-      harness: "grok-build",
-      model: "grok-code",
-      effort: "high",
+    expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build", effort: "high" });
+    expect(ask.mock.calls[0]![0]).not.toHaveProperty("model");
+  });
+
+  // The user, 2026-11-24: an agent, model and effort you asked an ion for run that one chat, checked against the
+  // sign-in first. Live check, 2026-11-24: an ion asked for "grok" (not an agent's id) and was told Grok Build isn't
+  // signed in; an unknown agent says so, naming the ones there are.
+  it("runs one chat on what you asked for, or says why not", async () => {
+    const grok = { ...agent("grok-build", true), models: [{ id: "big", label: "big" }] };
+    const i = new Ions({
+      ...{ store, db, configFile, runs: { ask }, turns: { turn } },
+      agents: async () => [grok],
+      agent: async (id: string) => (id === "grok-build" ? grok : undefined),
     });
+    const turnOf = { ionId: "storefront", request: "x", turnId: "turn_1" };
+    await i.startThread("storefront", "x", turnOf, { harness: "grok-build", model: "big", effort: "low" });
+    expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build", model: "big", effort: "low" });
+    expect(await i.startThread("storefront", "x", turnOf, { harness: "grok-build", model: "small" })).toEqual(
+      {
+        why: "grok-build can't use small with this sign-in: it has big",
+      },
+    );
+    expect(await i.startThread("storefront", "x", turnOf, { harness: "grok" })).toMatchObject({
+      why: expect.stringMatching(/^No agent called grok: use one of .*grok-build/),
+    });
+  });
+
+  // Security scan, 2026-11-24 (MEDIUM): an agent you marked "Avoid unless I ask" picked for one chat came from the
+  // ion's model; it's a one-click confirm in the ion's thread instead ("Run this chat on Grok Build? You marked it
+  // Avoid"), and the chat starts only on your click.
+  it("asks before running a chat on an agent you avoid", async () => {
+    const grok = agent("grok-build", true);
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [{ id: "storefront", path: "/p/storefront", starred: false }],
+      agents: { "grok-build": { avoid: true } },
+    });
+    const i = new Ions({
+      ...{ store, db, configFile, runs: { ask }, turns: { turn } },
+      agents: async () => [grok],
+      agent: async () => grok,
+    });
+    const turnOf = { ionId: "storefront", request: "x", turnId: "turn_1" };
+    expect(await i.startThread("storefront", "x", turnOf, { harness: "grok-build" })).toEqual({
+      asked: "Run this chat on grok-build? You marked it Avoid",
+    });
+    expect(ask).not.toHaveBeenCalled();
+    const said = store
+      .read({ chatId: "ion:storefront" })
+      .filter((e) => e.type === EV.ionSaid)
+      .at(-1)!;
+    const card = (
+      said.data as { card: { kind: string; suggestionId: string; question: string; yes: string } }
+    ).card;
+    expect(card).toMatchObject({
+      kind: "confirm",
+      question: "Run this chat on grok-build? You marked it Avoid",
+      yes: "Run",
+    });
+    await i.confirms.answer(card.suggestionId, false);
+    expect(ask).not.toHaveBeenCalled();
+    await expect(i.confirms.answer(card.suggestionId, true)).rejects.toThrow("That's gone");
+    await i.startThread("storefront", "x", turnOf, { harness: "grok-build" });
+    const again = store
+      .read({ chatId: "ion:storefront" })
+      .filter((e) => e.type === EV.ionSaid)
+      .at(-1)!;
+    await i.confirms.answer((again.data as { card: { suggestionId: string } }).card.suggestionId, true);
+    expect(ask.mock.calls[0]![0]).toMatchObject({ harness: "grok-build" });
+  });
+
+  // PR #36 final review, 2026-11-24: with every ready agent avoided, a chat an ion starts waits for your Run.
+  it("asks before running on an avoided agent when it's all there is", async () => {
+    const grok = agent("grok-build", true);
+    saveUserConfig(configFile, {
+      ...DEFAULT_CONFIG,
+      projects: [{ id: "storefront", path: "/p/storefront", starred: false }],
+      agents: { "grok-build": { avoid: true } },
+    });
+    const i = new Ions({
+      ...{ store, db, configFile, runs: { ask }, turns: { turn } },
+      agents: async () => [grok],
+      agent: async () => grok,
+    });
+    const r = await i.startThread("storefront", "x", { ionId: "storefront", request: "x", turnId: "turn_1" });
+    expect(r).toEqual({ asked: "Run this chat on grok-build? You marked it Avoid" });
+    expect(ask).not.toHaveBeenCalled();
   });
 
   it("runs on the project's last agent, else the first ready (opencode, Grok, then Claude)", async () => {
@@ -472,7 +555,13 @@ function lastRanOn(harness: string): void {
 // The user, 2026-11-19: "Read through the repo and write a concise overview of what: done. Hi from the fake
 // harness." reads like a machine. An ion tells you what came of a thread in its own words, through a turn.
 describe("a thread's end", () => {
-  const end = (status: string, reply?: string) => {
+  // PR #36 final review, 2026-11-24: a short reply with no changes is said plainly (no turn); the rest change a file.
+  const end = (status: string, reply?: string, o: { plain?: true; runId?: string } = {}) => {
+    const runId = o.runId ?? "r1";
+    if (!o.plain) {
+      const change = { path: "cart.ts", change: "modify", added: 1, removed: 1 };
+      store.append({ chatId: "t1", runId, origin: "adapter", type: EV.fileChanged, data: change });
+    }
     if (reply)
       store.append({
         chatId: "t1",
@@ -481,7 +570,7 @@ describe("a thread's end", () => {
         type: EV.messageCompleted,
         data: { text: reply },
       });
-    store.append({ chatId: "t1", runId: "r1", origin: "daemon", type: EV.runFinished, data: { status } });
+    store.append({ chatId: "t1", runId, origin: "daemon", type: EV.runFinished, data: { status } });
   };
   const last = () => said("storefront").at(-1);
   const started = async (i: Ions, ionId: string) => {
@@ -641,6 +730,34 @@ describe("a thread's end", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(turn).not.toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true });
     expect(said("storefront")).toHaveLength(before);
+  });
+
+  // PR #36 final review, 2026-11-24 (cost): a project ion's report runs once per outcome, never while a follow-up is
+  // queued for the chat, and a run that went well with no changes and a short reply is said plainly, with no model.
+  it("reports each outcome once, not while a follow-up waits, and plainly when there's little to say", async () => {
+    const i = ions();
+    await started(i, "storefront");
+    end("done", "Nothing to change: the totals were right.", { plain: true, runId: "r0" });
+    await vi.waitFor(() => expect(last()).toEqual({ text: "Nothing to change: the totals were right." }));
+    expect(turn).not.toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true });
+    end("done", "Fixed.");
+    store.append({
+      chatId: "t1",
+      runId: "r1",
+      origin: "daemon",
+      type: EV.runFinished,
+      data: { status: "done" },
+    });
+    await vi.waitFor(() =>
+      expect(turn).toHaveBeenCalledWith("storefront", expect.any(String), { noThreads: true }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(turn.mock.calls.filter((c) => c[2]?.noThreads)).toHaveLength(1);
+    const queued = { queueId: "q1", to: { chatId: "t1" }, text: "and the tests", brain: {} };
+    store.append({ chatId: "t1", runId: null, origin: "daemon", type: EV.queueAdded, data: queued });
+    end("done", "Fixed again.", { runId: "r2" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(turn.mock.calls.filter((c) => c[2]?.noThreads)).toHaveLength(1);
   });
 
   it("says plainly when a thread didn't finish and its ion can't say it", async () => {

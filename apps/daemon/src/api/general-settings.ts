@@ -4,7 +4,6 @@ import {
   MAX_RUNS,
   MIN_RUNS,
   NOTIFY_LEVELS,
-  ON_LIMIT,
   projectRemembered,
   setMemory,
   type UserConfig,
@@ -12,8 +11,9 @@ import {
 } from "@ion/config";
 import {
   DREAM_MODES,
+  NOTIFY_DEFAULTS,
+  type IonSettings,
   type NotifyLevel,
-  type OnLimit,
   type SettingsInfo,
   type SettingsPatch,
 } from "@ion/schema";
@@ -22,7 +22,7 @@ import { maxRuns } from "../scheduler/index.js";
 import { UserError } from "./errors.js";
 
 /** General and Notifications as the app shows them, from your config (what's not set is its default). */
-export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort" | "ownTools"> {
+export function generalOf(c: UserConfig): Omit<SettingsInfo, keyof IonSettings | "ownTools"> {
   return {
     maxRuns: c.resources.max_runs,
     autoRuns: maxRuns("auto", availableParallelism()),
@@ -33,7 +33,7 @@ export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort" 
         from: c.notifications.quiet.from,
         to: c.notifications.quiet.to,
       },
-      projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? "needs"])),
+      projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? NOTIFY_DEFAULTS.level])),
     },
     dream: { mode: c.memory.dream, agent: c.memory.dreamAgent ?? null },
     memory: {
@@ -41,23 +41,42 @@ export function generalOf(c: UserConfig): Omit<SettingsInfo, "quick" | "effort" 
       projects: Object.fromEntries(c.projects.map((p) => [p.id, projectRemembered(c, p.id)])),
     },
     agentOrder: agentOrder(c.routing.order),
-    onLimit: c.routing.onLimit,
-    byUsage: c.routing.byUsage,
+    prefer: c.routing.order,
+    chats: c.ion.chats ?? "",
+    lastPick: lastPickOf(c),
+    chatsEffort: c.ion.chatsEffort ?? null,
+    avoid: Object.fromEntries(
+      Object.entries(c.agents ?? {})
+        .filter(([, a]) => a?.avoid)
+        .map(([id]) => [id, true as const]),
+    ),
   };
 }
 
-/** Your agent order: agents ion knows, each once (the rest follow in ion's own order). */
+/** Your last pick in the composer (the user, 2026-11-24), or null. */
+function lastPickOf(c: UserConfig): SettingsInfo["lastPick"] {
+  const last = c.composer?.last;
+  if (!last) return null;
+  const [harness, ...rest] = last.split(":");
+  return { harness: harness!, model: rest.join(":"), effort: c.composer?.lastEffort ?? "" };
+}
+
+/** Your last pick, saved as given (an agent ion knows), or cleared. */
+function composerPatch(c: UserConfig, p: SettingsPatch["lastPick"]): UserConfig["composer"] {
+  if (p === undefined) return c.composer;
+  if (p === null) return {};
+  if (!harnessIds().includes(p.harness)) throw new UserError(`Unknown agent: ${p.harness}`);
+  const last = p.model ? `${p.harness}:${p.model}` : p.harness;
+  return { last, ...(p.effort ? { lastEffort: p.effort } : {}) };
+}
+
+/** "Prefer in this order": agents ion knows, each once; empty: Automatic decides (the user, 2026-11-24). */
 function order(v: unknown): string[] {
-  if (!Array.isArray(v) || !v.length) throw new UserError("Name the agents in order");
+  if (!Array.isArray(v)) throw new UserError("Name the agents in order");
   const ids = v.map(String);
   const unknown = ids.find((id) => !harnessIds().includes(id));
   if (unknown) throw new UserError(`Unknown agent: ${unknown}`);
   return [...new Set(ids)];
-}
-
-function onLimit(v: unknown): OnLimit {
-  if (!ON_LIMIT.includes(v as OnLimit)) throw new UserError("Pick ask, continue or wait");
-  return v as OnLimit;
 }
 
 /** ion's dream changed: how often (checked), and its agent (one ion knows; null: ion's own model's again). */
@@ -146,10 +165,7 @@ export function applyGeneral(was: UserConfig, patch: SettingsPatch): UserConfig 
     },
     projects: projectLevels(c, n?.projects),
     memory: dreamPatch(c.memory, patch.dream),
-    routing: merged(
-      c.routing,
-      { order: patch.agentOrder, onLimit: patch.onLimit, byUsage: patch.byUsage },
-      { order, onLimit, byUsage: flag },
-    ),
+    routing: merged(c.routing, { order: patch.agentOrder }, { order }),
+    composer: composerPatch(c, patch.lastPick),
   };
 }

@@ -85,9 +85,9 @@ async function ionTool(s: Script, server: IonServer, name: string, args: Record<
   return ok ? (body?.result?.content?.[0]?.text ?? "") : "";
 }
 
-/** How an ion's turn answers a thread's end ("A thread you started has ended: <status>. …"), or null. */
+/** How an ion's turn answers a chat's end ("A chat you started has ended: <status>. …"), or null. */
 function endOf(message: string): string | null {
-  const status = /^A thread you started has ended: (\w+)\./.exec(message)?.[1];
+  const status = /^A chat you started has ended: (\w+)\./.exec(message)?.[1];
   if (!status) return null;
   return status === "done" ? "It's done." : "It didn't finish.";
 }
@@ -257,14 +257,16 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
    */
   async judge(s) {
     const t = s.text();
-    if (t.includes("unsure-me"))
+    // ION_FAKE_JUDGE=deny: a judge that allows nothing (it passes ion's judge check; the usual one doesn't).
+    if (process.env.ION_FAKE_JUDGE === "deny") say(s, JSON.stringify({ verdict: "deny", reason: "No" }));
+    else if (t.includes("unsure-me"))
       say(s, JSON.stringify({ verdict: "unsure", reason: "Can't see what the script does" }));
     else if (t.includes("deny-me")) say(s, JSON.stringify({ allow: false, reason: "Looks risky" }));
     else say(s, JSON.stringify({ allow: true, reason: "Part of the task" }));
     return "done";
   },
   async hello(s) {
-    say(s, "Hi from the fake harness.");
+    say(s, "Hi from the fake agent.");
     return "done";
   },
   /**

@@ -27,4 +27,13 @@ describe("Rail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(setMode).toHaveBeenCalledWith("settings");
   });
+  // Plan 21 Task 4: the lab's Search sits under Ions, so a page tucked under More is one click away.
+  it("opens Search from the rail", () => {
+    const onSearch = vi.fn();
+    render(<Rail mode="chats" setMode={() => {}} initial="Y" needs={0} onSearch={onSearch} />);
+    const search = screen.getByRole("button", { name: "Search" });
+    expect(search.title).toBe("Search  ⌘K");
+    fireEvent.click(search);
+    expect(onSearch).toHaveBeenCalled();
+  });
 });

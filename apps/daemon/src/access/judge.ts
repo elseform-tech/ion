@@ -136,12 +136,12 @@ export function parseVerdict(text: string): { verdict: JudgeVerdict; reason: str
 type JudgeRun = (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>;
 
 /**
- * The other agents a judge that times out or fails may ask (final review, 2026-11-22): the judge's own agent, the
- * agents ready now, and where each miss is counted (Settings → Agents).
+ * Where the judge runs (Plan 21 audit, 2026-11-23): `first`, the agent (and model) it tries first; `next`, the one it
+ * goes on when that one fails or is slow ("<agent>[:<model>]"), or none; `missed` counts each miss (Settings → Agents).
  */
 export type JudgeOthers = {
-  first: () => string;
-  ready: () => Promise<string[]>;
+  first: () => Promise<string | undefined>;
+  next: (failed: string) => Promise<string | undefined>;
   missed?: (agent: string) => void;
 };
 
@@ -167,12 +167,10 @@ async function attempt(run: JudgeRun, prompt: string, ms: number, agent?: string
   }
 }
 
-/** Another ready agent than the judge's, or none (the list is asked for at most 2 s). */
-async function otherAgent(o: JudgeOthers): Promise<string | undefined> {
-  const first = o.first();
-  const none = new Promise<string[]>((r) => setTimeout(() => r([]), 2000).unref());
-  const ready = await Promise.race([o.ready().catch(() => []), none]);
-  return ready.find((id) => id !== first);
+/** What `ask` gives within 2 s, else undefined (a list of agents that's slow to come). */
+async function soon(ask: Promise<string | undefined>): Promise<string | undefined> {
+  const none = new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000).unref());
+  return Promise.race([ask.catch(() => undefined), none]);
 }
 
 /** The verdict a try gives; a failure, a slow answer or no verdict is a deny that isn't kept. */
@@ -188,20 +186,33 @@ function verdictOfTry(t: Try): { verdict: JudgeVerdict; reason: string; decided?
 /** The first try's share of the judge's time when another agent may be asked after it. */
 const FIRST_SHARE = 2 / 3;
 
+/** With no agent to ask (none ready, or none left after a miss): unsure, so you're asked; nothing is kept. */
+const noneLeft = (t?: Try): { verdict: JudgeVerdict; reason: string; decided: false } => ({
+  verdict: "unsure",
+  reason: t ? verdictOfTry(t).reason : "ion couldn't decide: no agent is ready",
+  decided: false,
+});
+
 /**
- * A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. With `others`, a
- * try that times out or fails is made once more on another ready agent, within the same time (never longer).
+ * A judge that runs the prompt on a quick model; a failure, a slow answer or no verdict means deny. With `others`, it
+ * runs on their first agent, and a try that times out or fails is made once more on their next one, within the same
+ * time (never longer); with no agent to ask, it's unsure (you're asked).
  */
 export function createJudge(run: JudgeRun, timeoutMs = TIMEOUT_MS, others?: JudgeOthers): Judge {
   return async (i) => {
     const prompt = judgePrompt(i);
+    if (!others) return verdictOfTry(await attempt(run, prompt, timeoutMs));
     const t0 = Date.now();
-    const first = await attempt(run, prompt, others ? timeoutMs * FIRST_SHARE : timeoutMs);
-    if (!others || "out" in first) return verdictOfTry(first);
-    others.missed?.(others.first());
-    const agent = await otherAgent(others);
+    const first = await soon(others.first());
+    if (!first) return noneLeft();
+    const tried = await attempt(run, prompt, timeoutMs * FIRST_SHARE, first);
+    if ("out" in tried) return verdictOfTry(tried);
+    const failed = first.split(":")[0]!;
+    others.missed?.(failed);
+    const agent = await soon(others.next(failed));
+    if (!agent) return noneLeft(tried);
     const left = timeoutMs - (Date.now() - t0);
-    if (!agent || left < timeoutMs / 6) return verdictOfTry(first);
+    if (left < timeoutMs / 6) return verdictOfTry(tried);
     return verdictOfTry(await attempt(run, prompt, left, agent));
   };
 }

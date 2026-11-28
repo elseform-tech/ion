@@ -6,7 +6,7 @@ everything that needs you.
 
 Status: early. Working: daemon, event log, config, architecture lint rules, CI, and `ion ask` on Claude Code,
 Grok Build and opencode. Each chat works in its own git worktree; anything outside it waits for you
-(`ion needs`); runs queue and retry.
+(`ion questions`); runs queue and retry.
 
 ## Quick start (development)
 
@@ -16,8 +16,11 @@ pnpm build
 node apps/cli/dist/index.js daemon start
 node apps/cli/dist/index.js status
 node apps/cli/dist/index.js projects add ~/code/my-app
-node apps/cli/dist/index.js ask "Explain the build" -p my-app --harness opencode
+node apps/cli/dist/index.js ask "Explain the build" -p my-app --agent opencode
 ```
+
+The desktop app doesn't include ion yet: a packaged build can't start ion and says so. Build ion as above and
+start it (`daemon start`); a development build of the app (`pnpm --filter @ion/desktop tauri dev`) starts it for you.
 
 ## Docs
 

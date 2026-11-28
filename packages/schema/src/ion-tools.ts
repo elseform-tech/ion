@@ -26,6 +26,7 @@ export const ION_ION_TOOLS = [
   "memory_forget",
   "decisions",
   "set_profile",
+  "set_chats_model",
   "start_thread",
   "tools",
 ] as const;

@@ -21,16 +21,11 @@ import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
+import { EffortSeg } from "./IonModels.js";
+import { More } from "./More.js";
 import { Routines } from "./Routines.js";
 
 /** Effort choices: "" is the agent's own default. */
-export const EFFORTS = [
-  ["", "Default"],
-  ["low", "Low"],
-  ["medium", "Medium"],
-  ["high", "High"],
-  ["max", "Max"],
-] as const;
 
 export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -99,18 +94,55 @@ function StatCard({ s }: { s: IonStats | null }) {
 type Patch = (p: Omit<ProjectPatch, "projectId">) => void;
 type SetupProps = { ion: IonInfo; project: ProjectInfo; data: SettingsData; patch: Patch };
 
-/** A project ion's agent (its shape in the ion's colour). Changing it clears the model (it was that agent's). */
-function AgentPick({ ion, project, data, patch }: SetupProps) {
-  const agent = project.harness ?? ion.harness;
+/**
+ * Under More (the user, 2026-11-24): what the chats this project's ion starts run on, over "Chats ions start run on":
+ * Default (that setting), or an agent with a model and effort. The ion itself thinks with "Ions think with". Changing
+ * the agent clears the model (it was that agent's). Shown without More once set.
+ */
+function ChatsOverride(p: SetupProps & { more: boolean; onMore: (open: boolean) => void }) {
+  const { ion, project, data, patch } = p;
+  const open = p.more || !!project.harness || !!project.model || !!project.effort;
+  const agent = data.harnesses.find((h) => h.id === project.harness);
   return (
-    <Row label="Agent">
-      <AgentPicker
-        agents={data.harnesses.filter(ready)}
-        value={agent}
-        color={ion.color}
-        onPick={(h) => patch({ harness: h, model: null })}
-      />
-    </Row>
+    <>
+      <More open={p.more} onOpen={p.onMore} />
+      {open && (
+        <>
+          <Row label="Its chats run on">
+            <AgentPicker
+              agents={data.harnesses.filter(ready)}
+              value={project.harness ?? null}
+              color={ion.color}
+              label="Its chats run on"
+              follow={{
+                label: "Default",
+                icon: Sparkles,
+                on: !project.harness,
+                now: null,
+                onPick: () => patch({ harness: null, model: null, effort: null }),
+              }}
+              onPick={(h) => patch({ harness: h, model: null })}
+            />
+          </Row>
+          {agent && (
+            <Row label="Model">
+              <ModelMenu
+                models={agent.models}
+                value={project.model ?? ""}
+                onChange={(m) => patch({ model: m || null })}
+              />
+            </Row>
+          )}
+          <Row label="Effort">
+            <EffortSeg
+              label="Its chats' effort"
+              value={project.effort ?? null}
+              onPick={(effort) => patch({ effort })}
+            />
+          </Row>
+        </>
+      )}
+    </>
   );
 }
 
@@ -133,40 +165,6 @@ function ColorPick({ ion, patch }: Pick<SetupProps, "ion" | "patch">) {
         ))}
       </div>
     </Row>
-  );
-}
-
-/**
- * The model and effort its threads run on (the agent's own when Default). A model is saved with the agent shown
- * (its last chat's, when it has none of its own), so what's shown is what runs.
- */
-function BrainPick({ ion, project, data, patch }: SetupProps) {
-  const agent = data.harnesses.find((h) => h.id === (project.harness ?? ion.harness));
-  const pinned = !project.harness && agent ? { harness: agent.id } : {};
-  return (
-    <>
-      <Row label="Model">
-        <ModelMenu
-          models={agent?.models ?? []}
-          value={project.model ?? ""}
-          onChange={(m) => patch({ ...pinned, model: m || null })}
-        />
-      </Row>
-      <Row label="Effort">
-        <span className="seg sm">
-          {EFFORTS.map(([id, label]) => (
-            <button
-              key={label}
-              type="button"
-              className={(project.effort ?? "") === id ? "on" : ""}
-              onClick={() => patch({ effort: id || null })}
-            >
-              {label}
-            </button>
-          ))}
-        </span>
-      </Row>
-    </>
   );
 }
 
@@ -258,13 +256,13 @@ function Rules({ project, patch, error }: Pick<SetupProps, "project" | "patch"> 
   );
 }
 
-/** ion chief's setup: the model it thinks with (set in Agents). */
+/** ion chief's setup: what ions think with, set in Settings → Agents (the user, 2026-11-24). */
 function ChiefSetup({ quick, onAgents }: { quick: string; onAgents: () => void }) {
   return (
     <Row label="Thinks with">
       <button className="val" type="button" onClick={onAgents}>
         <Zap />
-        {quick}
+        {quick || "Strongest"}
         <ChevronRight />
       </button>
     </Row>
@@ -295,17 +293,37 @@ function Hero({ ion, onOpenChat }: { ion: IonInfo; onOpenChat: () => void }) {
   );
 }
 
+/** An ion's stats, read when its page opens. */
+function useIonStats(client: IonClient, ionId: string): IonStats | null {
+  const [stats, setStats] = useState<IonStats | null>(null);
+  useEffect(() => void client.call("ion.stats", { ionId }).then(setStats, () => {}), [client, ionId]);
+  return stats;
+}
+
+/** Whether this project's ion suggests a routine now (review of Plan 21 Task 4: it shows Routines). */
+function useSuggestsRoutine(client: IonClient, projectId: string): boolean {
+  const [yes, setYes] = useState(false);
+  useEffect(
+    () =>
+      void client.call("suggestions.list", {}).then(
+        (l) => setYes(l.some((s) => s.kind === "routine" && s.projectId === projectId)),
+        () => {},
+      ),
+    [client, projectId],
+  );
+  return yes;
+}
+
 /** Settings → an ion: its stats, what it runs on, and its project's rules (ion chief: the model it thinks with). */
 export function IonPage(p: PageProps) {
   const ion = p.data.ions.find((x) => x.ionId === p.ionId);
   const project = p.data.projects.find((x) => x.id === p.ionId);
-  const [stats, setStats] = useState<IonStats | null>(null);
-  useEffect(
-    () => void p.client.call("ion.stats", { ionId: p.ionId }).then(setStats, () => {}),
-    [p.client, p.ionId],
-  );
+  const stats = useIonStats(p.client, p.ionId);
   const [error, run] = useCallError();
   const [at, setAt] = useState<"setup" | "rules">("setup");
+  // Plan 21 Task 4: its chats' agent and its routines wait under More until it has them (or it suggests a routine).
+  const [more, setMore] = useState(false);
+  const suggested = useSuggestsRoutine(p.client, p.ionId);
   if (!ion) return null;
   // Why a change didn't save shows under the group it was made in.
   const patchIn =
@@ -330,18 +348,19 @@ export function IonPage(p: PageProps) {
         <div className="group">
           {project ? (
             <>
-              <AgentPick {...setup} project={project} />
               <ColorPick {...setup} />
-              <BrainPick {...setup} project={project} />
+              <ChatsOverride {...setup} project={project} more={more} onMore={setMore} />
             </>
           ) : (
-            <ChiefSetup quick={p.data.settings?.quick ?? ""} onAgents={p.onAgents} />
+            <ChiefSetup quick={p.data.settings?.quickNow ?? ""} onAgents={p.onAgents} />
           )}
           {shown("setup")}
         </div>
       </div>
       {project && <Rules project={project} patch={patch} error={shown("rules")} />}
-      {project && <Routines client={p.client} project={project} onChanged={p.data.reload} />}
+      {project && (more || !!project.routines?.length || suggested) && (
+        <Routines client={p.client} project={project} onChanged={p.data.reload} />
+      )}
     </>
   );
 }

@@ -151,3 +151,20 @@ it("a thread waiting for its agent's reset says so, not failed", async () => {
   await waitFor(() => expect(container.querySelector(".tt")?.textContent).toBe("Waits for Fake — 16:20"));
   expect(container.querySelector(".lucide-circle-alert")).toBeNull();
 });
+
+// Review of Plan 21 Task 4 (2026-11-28): a chat an ion started in `default` still read "default" on its line.
+describe("a chat in no project of yours", () => {
+  it("reads No project", () => {
+    const { container } = render(
+      <ThreadLine
+        client={{ subscribe: vi.fn(async () => () => {}), call: vi.fn() } as unknown as IonClient}
+        chatId="t1"
+        projectId="default"
+        chat={{ ...chat("done"), projectId: "default" }}
+        on={false}
+        onOpen={() => {}}
+      />,
+    );
+    expect(container.querySelector("b")?.textContent).toBe("No project");
+  });
+});
