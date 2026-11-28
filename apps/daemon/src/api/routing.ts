@@ -1,7 +1,7 @@
 import { DEFAULT_PROJECT, loadUserConfig, type UserConfig } from "@ion/config";
 import { type Candidate, pickAgent } from "@ion/policy";
 import type { AgentUsage, EffortLevel, HarnessInfo, TaskEstimate } from "@ion/schema";
-import { agentOrder, getHarness, listedHarnessIds } from "../adapters/registry.js";
+import { agentOrder, defaultAgent, getHarness, listedHarnessIds, notAvoided } from "../adapters/registry.js";
 import type { Db } from "../store/index.js";
 import { estimateOf } from "../views/estimate.js";
 import { usageView } from "../views/usage.js";
@@ -10,6 +10,18 @@ import { agentUsages, billings, configuredModels } from "./usage.js";
 /** Your agent order (Settings → Agents), every agent ion knows: handoff targets, routing, an ion's chats. */
 export const orderIn = (configFile: string): string[] =>
   agentOrder(loadUserConfig(configFile).config.routing.order);
+
+/**
+ * The agent a message goes on when you picked none and Automatic found none: `own` (the chat's) while it's ready, even if you
+ * set it to Avoid, else the first ready in your order that you don't avoid (PR #36 final review, 2026-11-24). The send and the estimate
+ * before it both ask this (brain-avoid fix review, 2026-11-28). None: undefined.
+ */
+export function usualAgent(configFile: string, ready: string[], own: string | null): string | undefined {
+  const c = loadUserConfig(configFile).config;
+  // Your own chat stays on its agent even when you later set it to Avoid (the user, 2026-11-28: you own your work).
+  if (own && ready.includes(own)) return own;
+  return defaultAgent(notAvoided(ready, c), null, orderIn(configFile));
+}
 
 /**
  * Each ready agent's usage, as Settings → Agents shows it: how it bills (from the models it ran, else its sign-in;

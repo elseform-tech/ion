@@ -1,17 +1,16 @@
 import { DEFAULT_PROJECT, loadUserConfig } from "@ion/config";
 import type { Commands, HarnessInfo, TaskEstimate } from "@ion/schema";
-import { defaultAgent } from "../adapters/registry.js";
 import type { Db } from "../store/index.js";
 import { chatAsk, type EstimateAsk, estimateOf } from "../views/estimate.js";
-import { orderIn, routeBy, usageNow } from "./routing.js";
+import { routeBy, usageNow, usualAgent } from "./routing.js";
 
 type Ctx = { db: Db; configFile: string };
 type Ask = Commands["usage.estimate"]["args"];
 
-/** A new chat's request, on the agent you picked, else the one it would go on (Pick by usage's, else your first). */
+/** A new chat's request, on the agent you picked, else the one it would go on (Automatic's, else usualAgent). */
 function newAsk(ctx: Ctx, a: Exclude<Ask, { chatId: string }>, ready: string[], pick: () => string | null) {
   const text = String(a.text ?? "").trim();
-  const harness = a.harness || pick() || defaultAgent(ready, null, orderIn(ctx.configFile));
+  const harness = a.harness || pick() || usualAgent(ctx.configFile, ready, null);
   if (!text || !harness) return null;
   return { projectId: a.projectId ?? DEFAULT_PROJECT, harness, text };
 }

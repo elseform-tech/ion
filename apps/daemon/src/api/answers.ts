@@ -1,12 +1,6 @@
 import { loadUserConfig } from "@ion/config";
 import { chatsView } from "../views/chats.js";
-import {
-  agentLabel,
-  byPreference,
-  defaultAgent,
-  listedHarnessIds,
-  notAvoided,
-} from "../adapters/registry.js";
+import { agentLabel, byPreference, listedHarnessIds } from "../adapters/registry.js";
 import { nextToSetUp } from "../runs/agent-steps.js";
 import { UserError } from "./errors.js";
 import { createMatcher, Decisions } from "../decisions/index.js";
@@ -18,7 +12,7 @@ import { Waits } from "../scheduler/index.js";
 import type { Db, EventStore } from "../store/index.js";
 import { diffOfChat, harnessInfos } from "./commands.js";
 import type { HarnessInfos } from "./harness-infos.js";
-import { orderIn } from "./routing.js";
+import { orderIn, usualAgent } from "./routing.js";
 
 /** An answer's message as ask arguments: its chat, its text, and the chat's agent. */
 export const followAsk = (chatId: string, m: { harness: string | null; text: string }) => ({
@@ -63,12 +57,7 @@ export function handoffTargets(configFile: string, ready: string[]): string[] {
  * ready, it says what to do.
  */
 export function yourAgent(configFile: string, ready: string[], own: string | null): string {
-  const c = loadUserConfig(configFile).config;
-  const harness = defaultAgent(
-    notAvoided(ready, c),
-    own && ready.includes(own) ? own : null,
-    orderIn(configFile),
-  );
+  const harness = usualAgent(configFile, ready, own);
   if (harness) return harness;
   if (ready.length)
     throw new UserError(
