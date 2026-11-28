@@ -19,7 +19,7 @@ import { UserError } from "../api/errors.js";
 import type { GateAnswer } from "../gate/index.js";
 import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
-import { allLimited, type IonBrain, ionBrain, limitedUntil, nextBrain, noneReady } from "./brain.js";
+import { type IonBrain, ionBrain, limitedUntil, nextBrain, noAgentLeft } from "./brain.js";
 import { forgetSession, resumeOf, startSession } from "./sessions.js";
 import { errLine, type IonLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, type Tried } from "./fallback.js";
 import { ionVerdict } from "./gate.js";
@@ -263,9 +263,10 @@ export class IonTurns {
     // A turn nobody asked for (a report: no request of yours) is routine, Medium at most (PR #36 re-review).
     const brain = await ionBrain(this.d, ionId, { routine: o.request === null }).catch(() => null);
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, ionLine: "stopped", threads: [] };
-    // No agent: when every ready one is limited with a stated reset, which frees up first (review, 2026-11-22).
+    // No agent: when every ready one is limited with a stated reset, which frees up first (review, 2026-11-22); and
+    // the ones you avoid, never used unasked (Plan 22 live check, 2026-11-28).
     if (!brain) {
-      const why = (await allLimited(this.d).catch(() => null)) ?? (await noneReady(this.d).catch(() => null));
+      const why = await noAgentLeft(this.d).catch(() => null);
       return { reply: why ?? NO_AGENT, ionLine: "no-agent", threads: [] };
     }
     // Every try is one turn (security review, 2026-11-22): its id, and so its caps on memory and threads.
@@ -274,7 +275,7 @@ export class IonTurns {
       once: (b) => this.once(ionId, text, { ...o, cwd, turnId }, b),
       next: (not) => nextBrain(this.d, ionId, not, brain.effort ? { effort: brain.effort } : {}),
       limitedUntil: (h) => limitedUntil(this.d.db, h),
-      none: () => allLimited(this.d),
+      none: (otherwise) => noAgentLeft(this.d, otherwise),
       stay: (x: TurnResult) => !!x.threads.length || !!o.dream || this.stopping,
     });
     return o.dream && noAgent(r) ? { ...r, reply: NO_AGENT } : r;

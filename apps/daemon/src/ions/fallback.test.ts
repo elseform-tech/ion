@@ -77,6 +77,24 @@ describe("all agents limited", () => {
     );
     expect(r.reply).toBe("Grok Build is limited until 16:00");
   });
+
+  // Plan 22 live check, 2026-11-28: with no agent left, the ion went on one you avoid instead of saying so. Its last
+  // line is given why its agents failed, so it can keep that reason and name the agents you avoid.
+  it("with none left, the last line keeps why its agents failed", async () => {
+    const r = await onReadyAgents(
+      { harness: "opencode", model: null, effort: null },
+      {
+        once: async () => ({ reply: "", failed: { why: "free use ran out", did: false } }),
+        next: async () => null,
+        stay: () => false,
+        none: async (otherwise) => `${otherwise}. Claude Code is set to Avoid`,
+      },
+    );
+    expect(r).toMatchObject({
+      reply: "I couldn't reach my agent: free use ran out. Claude Code is set to Avoid",
+      ionLine: "no-agent",
+    });
+  });
 });
 
 // Security scan, 2026-11-22: whether a turn found no agent is ion's own mark on it, never read from its words.
