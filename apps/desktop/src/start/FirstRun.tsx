@@ -5,6 +5,7 @@ import { Composer } from "../chats/Composer.js";
 import { AgentSteps } from "./AgentSteps.js";
 import { PickFolder } from "./PickFolder.js";
 import { EXAMPLES } from "./steps.js";
+import { NO_PROJECT } from "../projectName.js";
 
 type Props = {
   client: IonClient;
@@ -47,7 +48,7 @@ function Ask(p: Props & { project: ProjectInfo | null }) {
   const [seed, setSeed] = useState<Seed>(null);
   const { project } = p;
   const options = [
-    { id: "default", name: "default" },
+    { id: "default", name: NO_PROJECT },
     ...(project ? [{ id: project.id, name: project.name ?? project.id }] : []),
   ];
   const projectId = chosen ?? project?.id ?? "default";

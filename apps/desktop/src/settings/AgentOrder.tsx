@@ -1,6 +1,7 @@
-import { Avatar, ChevronDown, ChevronUp, GripVertical } from "@ion/design-system";
+import { Avatar, GripVertical } from "@ion/design-system";
 import type { HarnessInfo } from "@ion/schema";
 import { type DragEvent, type KeyboardEvent, useState } from "react";
+import { More } from "./More.js";
 
 /** The agents in your order (the ones it doesn't name after, as listed). */
 export function inOrder(agents: HarnessInfo[], order: string[] | undefined): HarnessInfo[] {
@@ -64,25 +65,24 @@ function useAgentOrder(ids: string[], onOrder: (ids: string[]) => void) {
 
 /**
  * Under More (the user, 2026-11-24): "Prefer in this order", a drag list of your agents (empty: Automatic decides;
- * once set, Automatic follows it), with Automatic to go back.
+ * once set, Automatic follows it), with Automatic to go back. Plan 21 Task 4: the page's More (it also shows each
+ * agent's switches); an order you set shows without it.
  */
 export function PreferOrder(p: {
   agents: HarnessInfo[];
   prefer: string[];
   onOrder: (ids: string[]) => void;
+  more: boolean;
+  onMore: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const order = useAgentOrder(
     p.agents.map((h) => h.id),
     p.onOrder,
   );
   return (
     <div>
-      <button className="more" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
-        More
-        {open ? <ChevronUp /> : <ChevronDown />}
-      </button>
-      {open && (
+      <More open={p.more} onOpen={p.onMore} />
+      {(p.more || p.prefer.length > 0) && (
         <div className="group">
           <div className="srow">
             <div className="g">

@@ -56,6 +56,17 @@ const ION_TOOLS: Record<string, string> = {
   tools: "Your tools",
 };
 
+/** What one of ion's tools read, on hover, where its name alone says little (Plan 21 Task 4). */
+const ION_TOOL_HOVER: Record<string, string> = {
+  decisions: "Your past answers to agents, and what came of them",
+};
+
+/** A step's hover: what one of ion's tools read, else nothing. */
+const stepHover = (raw: string): string | undefined => {
+  const ion = /^(?:mcp__ion__|ion__)(.+)$/.exec(stripControl(raw))?.[1];
+  return ion ? ION_TOOL_HOVER[ion] : undefined;
+};
+
 /** Each agent's web tools (Claude Code, Grok and Codex, opencode), in words. */
 const WEB_TOOLS: Record<string, string> = {
   WebSearch: "Search the web",
@@ -114,7 +125,9 @@ const ToolRow = memo(function ToolRow({ s, live }: { s: ToolStep; live: boolean 
     <div className={`ws w-${state}`} onClick={() => setOpen(!open)}>
       <Icon />
       <div className="wl">
-        <b className={running ? "now" : undefined}>{name}</b>
+        <b className={running ? "now" : undefined} title={stepHover(s.name)}>
+          {name}
+        </b>
         {summary && (
           <>
             {" "}

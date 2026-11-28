@@ -612,6 +612,24 @@ describe("ion cli", { timeout: 20_000 }, () => {
       expect(chats.map((c) => c.notRemembered)).toEqual([true]);
     });
 
+    // Plan 21 Task 4 (2026-11-24): the app tucks advanced parts under More; nothing becomes unreachable. Each has a
+    // command: an ion's routines, tools, your agent order, and Tidy memory (the one the CLI lacked).
+    it("nothing becomes unreachable: each part the app tucks under More has a command", async () => {
+      const commands = (await ion("--help")).out.split("\n").map((l) => l.trim().split(" ")[0]);
+      expect(commands).toEqual(
+        expect.arrayContaining(["ions", "routines", "mcp", "skills", "hooks", "agents"]),
+      );
+      expect((await ion("agents", "--help")).out).toContain("order <ids...>");
+      await setup();
+      expect((await ion("memory", "tidy")).out).toBe("Tidy memory: off");
+      expect((await ion("memory", "tidy", "nightly")).out).toBe("Tidy memory: nightly");
+      expect((await ion("memory", "tidy")).out).toBe("Tidy memory: nightly");
+      expect(await ion("memory", "tidy", "daily")).toMatchObject({
+        code: 1,
+        err: "Pick off, nightly or weekly",
+      });
+    });
+
     // The user, 2026-11-21: memory is a folder of small files you can read and fix yourself; the CLI lists, shows,
     // searches and forgets them, and opens the folder.
     it("the CLI lists, shows, searches and forgets", async () => {

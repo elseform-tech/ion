@@ -118,6 +118,9 @@ function client(
   return { call, subscribe: vi.fn(async () => () => {}) } as unknown as IonClient & { call: typeof call };
 }
 
+/** Opens Agents' More (Plan 21 Task 4: each agent's switches wait under it). */
+const agentsMore = async () => fireEvent.click(await screen.findByRole("button", { name: "More" }));
+
 // The user, 2026-11-19: "where are the settings". The lab's Settings: Agents (who's ready, ion's quick model) and
 // Ions (each ion's agent, colour, model, effort, folder and rules).
 describe("Settings", () => {
@@ -162,6 +165,7 @@ describe("Settings", () => {
   it("Use its own tools off brings back ion's tools only (the switch in Agents)", async () => {
     const c = client();
     render(<Settings client={c} onOpenIon={() => {}} />);
+    await agentsMore();
     const sw = await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
     expect(sw.getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("Its own hooks run too").closest(".hrow")?.textContent).toContain("Grok Build");
@@ -185,7 +189,7 @@ describe("Settings", () => {
     ["Judge didn't answer 4 times this week", "Grok Build"],
   ])("says %s for that agent only", async (line, agent) => {
     render(<Settings client={client()} onOpenIon={() => {}} />);
-    await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
+    await screen.findByText("Not signed in");
     const lines = screen.getAllByText(line);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.closest(".hrow")?.textContent).toContain(agent);
@@ -209,6 +213,7 @@ describe("Settings", () => {
     ];
     const meterOf = async (usage: AgentUsage[]) => {
       render(<Settings client={client({ usage })} onOpenIon={() => {}} />);
+      await agentsMore();
       await screen.findByRole("switch", { name: "Grok Build: use its own tools" });
       const row = screen.getByRole("switch", { name: "Grok Build: use its own tools" }).closest(".hrow")!;
       return waitFor(() => {
@@ -255,6 +260,7 @@ describe("Settings", () => {
         },
       );
       render(<Settings client={c} onOpenIon={() => {}} />);
+      await agentsMore();
       const row = (await screen.findByRole("switch", { name: "Grok Build: use its own tools" })).closest(
         ".hrow",
       )!;
@@ -278,7 +284,7 @@ describe("Settings", () => {
   it("opens an ion's page from the Ions list, with its stats", async () => {
     const c = client();
     render(<Settings client={c} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ions" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
     expect(await screen.findByRole("heading", { name: "Shop" })).toBeTruthy();
     await waitFor(() => expect(document.querySelector(".statcard")?.textContent).toContain("3runs"));
@@ -289,7 +295,7 @@ describe("Settings", () => {
     const c = client();
     const onOpenIon = vi.fn();
     render(<Settings client={c} onOpenIon={onOpenIon} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ions" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
     await screen.findByRole("heading", { name: "Shop" });
     const patch = (p: object) =>
@@ -310,7 +316,7 @@ describe("Settings", () => {
   // (2026-11-20) that Auto-approval is switched only with the composer's access icon, never in Settings.
   it("the ion page has no Access row", async () => {
     render(<Settings client={client()} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ions" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
     await screen.findByText("Share with ion");
     expect(screen.queryByText("Access")).toBeNull();
@@ -320,7 +326,7 @@ describe("Settings", () => {
   // Plan 10: an ion's routines, on its Settings page.
   const openShop = async (c: ReturnType<typeof client>) => {
     render(<Settings client={c} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ions" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
   };
 
@@ -382,7 +388,7 @@ describe("Settings", () => {
 describe("Settings, reviewed", () => {
   const openShop = async (c: ReturnType<typeof client>) => {
     render(<Settings client={c} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ions" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
     await screen.findByRole("heading", { name: "Shop" });
   };
@@ -486,5 +492,134 @@ describe("Settings, reviewed", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(c.call).toHaveBeenCalledWith("project.update", { projectId: "shop", profileSuggestion: null });
+  });
+});
+
+// Plan 21 Task 4 (the user, 2026-11-22: "everything else stays out of the way until it's needed"; 2026-11-24: tuck
+// away, never delete). Task 1 counted a real ion's events: routines, suggestions, decisions and Dream never used, memory
+// once. Settings shows General, Agents and Memory first; Ions, Tools, Notifications and Shortcuts sit under one More
+// until used, and each page's advanced parts (the agents' own-tools and avoid switches, Check as judge, Prefer in this
+// order, Tidy memory, an ion's routines and its chats' agent) sit under that page's More until used.
+describe("advanced things appear when they matter", () => {
+  const fresh: ProjectInfo[] = [{ id: "shop", name: "Shop", path: "/p/shop", starred: false }];
+  const notifications = {
+    briefing: { on: true, at: "08:30" },
+    quiet: { on: true, from: "22:00", to: "08:00" },
+    projects: { shop: "needs" as const },
+  };
+  const noTools = { mcpFile: "/m.json", mcp: [], leftOut: [], hooks: [], skills: [], support: {}, own: {} };
+  /** A newcomer's ion, with `o` changing what's been used. */
+  function newcomer(
+    o: { projects?: ProjectInfo[]; settings?: Partial<SettingsInfo>; tools?: object; tidied?: object } = {},
+  ) {
+    const dream = { mode: "off" as const, agent: null };
+    const memory = { on: true, projects: {} };
+    const c = client({
+      projects: o.projects ?? fresh,
+      settings: { notifications, dream, memory, ...o.settings },
+    });
+    const answer = c.call.getMockImplementation()!;
+    const more: Record<string, unknown> = {
+      "tools.list": { ...noTools, ...o.tools },
+      "memory.tidied": o.tidied ?? null,
+    };
+    more["memory.list"] = [];
+    c.call.mockImplementation(((cmd: string) =>
+      cmd in more ? Promise.resolve(more[cmd]) : answer(cmd)) as never);
+    return c;
+  }
+  const navNames = () =>
+    within(screen.getByRole("navigation", { name: "Settings" }))
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+
+  it("advanced sections stay tucked away until used", async () => {
+    render(<Settings client={newcomer()} onOpenIon={() => {}} />);
+    await screen.findByText("Signed in");
+    await waitFor(() => expect(navNames()).toEqual(["General", "Agents", "Memory", "More"]));
+    // Agents: each agent's switches, Check as judge and Prefer in this order wait under the page's More.
+    expect(screen.queryByRole("switch", { name: "Grok Build: use its own tools" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Grok Build: avoid unless I ask" })).toBeNull();
+    expect(screen.queryByText("Its own hooks run too")).toBeNull();
+    expect(screen.queryByText("Prefer in this order")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("switch", { name: "Grok Build: use its own tools" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Grok Build: avoid unless I ask" })).toBeTruthy();
+    expect(screen.getByText("Prefer in this order")).toBeTruthy();
+    // The rest of Settings opens from its own More, and stays open while you're on one of them.
+    fireEvent.click(screen.getByRole("button", { name: "More settings" }));
+    expect(navNames()).toEqual([
+      "General",
+      "Agents",
+      "Memory",
+      "More",
+      "Ions",
+      "Tools",
+      "Notifications",
+      "Shortcuts",
+    ]);
+    fireEvent.click(await screen.findByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
+    await screen.findByRole("heading", { name: "Shop" });
+    expect(navNames()).toContain("Ions");
+    // An ion's page: no Routines until it has one (More shows them, with Add routine).
+    expect(screen.queryByRole("heading", { name: "Routines" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("heading", { name: "Routines" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add routine" })).toBeTruthy();
+    // Memory: Tidy memory waits under More while it's off and has never tidied.
+    fireEvent.click(screen.getByRole("button", { name: "Memory" }));
+    await screen.findByRole("switch", { name: "Remember" });
+    expect(screen.queryByRole("group", { name: "Tidy memory" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("group", { name: "Tidy memory" })).toBeTruthy();
+  });
+
+  it("a used section stays shown", async () => {
+    const used = newcomer({
+      projects: [{ ...fresh[0]!, routines: projects[0]!.routines }],
+      settings: {
+        notifications: { ...notifications, quiet: { on: false, from: "22:00", to: "08:00" } },
+        ownTools: { "claude-code": true, "grok-build": false },
+        avoid: { "claude-code": true },
+        prefer: ["grok-build", "claude-code"],
+        dream: { mode: "nightly", agent: null },
+      },
+      tools: { mcp: [{ name: "github" }] },
+    });
+    render(<Settings client={used} onOpenIon={() => {}} />);
+    await waitFor(() =>
+      expect(navNames()).toEqual(["General", "Agents", "Memory", "Ions", "Tools", "Notifications", "More"]),
+    );
+    // What you changed shows without More: that switch, and your order.
+    expect(screen.getByRole("switch", { name: "Grok Build: use its own tools" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Claude Code: avoid unless I ask" })).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "Grok Build: avoid unless I ask" })).toBeNull();
+    expect(screen.getByText("Prefer in this order")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Ions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
+    expect(await screen.findByRole("heading", { name: "Routines" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Memory" }));
+    expect(await screen.findByRole("group", { name: "Tidy memory" })).toBeTruthy();
+    // Tidied once (it's off now): it stays shown too.
+    cleanup();
+    render(
+      <Settings
+        client={newcomer({
+          tidied: {
+            at: new Date().toISOString(),
+            merged: 1,
+            updated: 0,
+            forgot: 0,
+            moved: 0,
+            notes: [],
+            forgotten: [],
+          },
+        })}
+        onOpenIon={() => {}}
+        at={{ kind: "memory" }}
+      />,
+    );
+    expect(await screen.findByRole("group", { name: "Tidy memory" })).toBeTruthy();
   });
 });

@@ -53,6 +53,7 @@ hooks. Code keeps its own names (`harness`, `thread`, `needs`, `dream`, `start_t
 | question | need | A question only you can answer: "Needs you", `ion questions`, "Open questions". |
 | tidy memory | Dream | ion tidying its memory overnight (Settings → Memory). |
 | No usage info | Learned from errors | ion has no usage gauge for an agent. |
+| No project | default (as a name) | ion's own empty folder for chats in none of your projects; its id stays `default`. |
 | routine, suggestion, decision, access (Auto, Full access), effort, memory, to-do | | Kept as they are. |
 
 Old CLI words (`ion harnesses`, `ion needs`, `--harness`) keep working for one release, out of the help.

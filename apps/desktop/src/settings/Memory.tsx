@@ -1,7 +1,7 @@
 import type { IonClient } from "@ion/client/browser";
 import { FolderOpen, ListTodo, type LucideIcon, MessagesSquare, NotebookText } from "@ion/design-system";
 import type { IonInfo, MemoryInfo } from "@ion/schema";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { type Run, useCallError } from "../callError.js";
 import { relTime } from "../chats/live.js";
 import type { SettingsAt } from "../goto.js";
@@ -13,8 +13,10 @@ import { DreamRow, Tidied, tidiedByIon } from "./MemoryDream.js";
 import { MemoryFile } from "./MemoryFile.js";
 import { Nothing, TypeIcon } from "./memory-parts.js";
 import { MemoryTodos } from "./MemoryTodos.js";
+import { More } from "./More.js";
 import { OpenPath } from "./OpenPath.js";
 import { Switch } from "./Switch.js";
+import { projectName } from "../projectName.js";
 
 type Tab = "all" | "todos";
 const TABS: [Tab, string, LucideIcon][] = [
@@ -75,7 +77,7 @@ function MemoryRow({ m, ions, client, run, onOpen }: RowProps) {
 
 /** You, then each project: whose files the list shows. */
 function Scopes(p: { scope: string; data: SettingsData; onPick: (s: string) => void }) {
-  const all = [["you", "You"], ...p.data.projects.map((x) => [x.id, x.name ?? x.id])] as const;
+  const all = [["you", "You"], ...p.data.projects.map((x) => [x.id, projectName(x.id, x.name)])] as const;
   return (
     <div className="mscope" role="group" aria-label="Whose">
       {all.map(([id, name]) => (
@@ -113,6 +115,8 @@ function RememberRow(p: {
   run: Run;
   projectId?: string;
   name?: string;
+  /** The last line of its group (yours: More). */
+  children?: ReactNode;
 }) {
   const m = p.data.settings?.memory;
   if (!m) return null;
@@ -133,13 +137,29 @@ function RememberRow(p: {
         {p.projectId === undefined && <StillOn data={p.data} />}
         <Switch label={p.name ? `Remember ${p.name}` : "Remember"} on={on} onPick={set} />
       </div>
+      {p.children}
     </div>
   );
 }
 
+/** Remember; Tidy memory under its More until it's on or has tidied once (Plan 21 Task 4); what it tidied. */
+function RememberAndTidy(p: Pick<ListProps, "mem" | "data" | "client" | "run">) {
+  const [more, setMore] = useState(false);
+  const tidyUsed = (p.data.settings?.dream?.mode ?? "off") !== "off" || !!p.mem.tidied;
+  return (
+    <>
+      <RememberRow data={p.data} client={p.client} run={p.run}>
+        {!tidyUsed && <More open={more} onOpen={setMore} />}
+      </RememberRow>
+      {(more || tidyUsed) && <DreamRow client={p.client} data={p.data} run={p.run} />}
+      <Tidied tidied={p.mem.tidied} client={p.client} run={p.run} />
+    </>
+  );
+}
+
 /**
- * Dream and what it tidied, then your files or a project's (You, then each project), searched by words; a row opens
- * its text.
+ * Remember, then Tidy memory and what it tidied (under More until used), then your files or a project's (You, then
+ * each project), searched by words; a row opens its text.
  */
 type Filter = { scope: string; q: string };
 type ListProps = {
@@ -162,9 +182,7 @@ function MemoryList(p: ListProps) {
   const project = p.data.projects.find((x) => x.id === scope);
   return (
     <>
-      <RememberRow data={p.data} client={p.client} run={p.run} />
-      <DreamRow client={p.client} data={p.data} run={p.run} />
-      <Tidied tidied={p.mem.tidied} client={p.client} run={p.run} />
+      <RememberAndTidy mem={p.mem} data={p.data} client={p.client} run={p.run} />
       <Scopes scope={scope} data={p.data} onPick={setScope} />
       {project && (
         <RememberRow

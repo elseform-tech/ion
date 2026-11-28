@@ -6,6 +6,7 @@ import { type ProjectActions, ProjectGroupMenu, ProjectRename } from "./ProjectG
 import { ProjectMenu } from "./ProjectMenu.js";
 import type { AddFolderFn } from "../start/PickFolder.js";
 import { ChatRow, NeedRow, type RowActions, type RowProps } from "./SidebarRows.js";
+import { projectName } from "../projectName.js";
 
 /** A project group shows this many chats until you ask for the rest. */
 const SHOWN = 5;
@@ -120,7 +121,7 @@ function useProjectHead(
 ): [string | null, (projectId: string) => Head] {
   const [renaming, setRenaming] = useState<string | null>(null);
   const head = (projectId: string): Head => {
-    const name = p.names.get(projectId) ?? projectId;
+    const name = p.names.get(projectId) ?? projectName(projectId);
     if (projectId === "default") return { label: name };
     const done = (to: string | null) => {
       setRenaming(null);
@@ -228,7 +229,7 @@ function SidebarHead(p: {
 /** Which projects are starred, and each one's shown name. */
 function useProjectSets(projects: ProjectInfo[]) {
   const starred = useMemo(() => new Set(projects.filter((x) => x.starred).map((x) => x.id)), [projects]);
-  const names = useMemo(() => new Map(projects.map((x) => [x.id, x.name ?? x.id])), [projects]);
+  const names = useMemo(() => new Map(projects.map((x) => [x.id, projectName(x.id, x.name)])), [projects]);
   return { starred, names };
 }
 

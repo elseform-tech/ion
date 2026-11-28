@@ -101,6 +101,8 @@ describe("Settings → Agents", () => {
   it("avoids an agent unless you ask, and checks one as judge", async () => {
     const c = client({ avoid: { opencode: true } });
     render(<Settings client={c} onOpenIon={() => {}} />);
+    // Plan 21 Task 4: the switches and Check as judge wait under More.
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
     const opencode = await screen.findByRole("switch", { name: "opencode: avoid unless I ask" });
     expect(opencode.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("switch", { name: "Codex: avoid unless I ask" }));
@@ -129,6 +131,7 @@ describe("Settings → Agents", () => {
       },
     });
     render(<Settings client={c} onOpenIon={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
     const row = async (name: string) =>
       (await screen.findByRole("switch", { name: `${name}: avoid unless I ask` })).closest(".hrow")!
         .textContent;
@@ -143,6 +146,18 @@ describe("Settings → Agents", () => {
       "Avoid unless I ask",
       "Use its own tools",
     ]);
+  });
+
+  // Plan 21 Task 4 tour (a fresh home, 2026-11-28): the agents took ~20 s to be checked and "Coding agents" stood over an
+  // empty box with no sign anything was happening.
+  it("says the agents are being checked while they are", async () => {
+    const c = client();
+    const answer = c.call.getMockImplementation()!;
+    c.call.mockImplementation(((cmd: string) =>
+      cmd === "harnesses.list" ? new Promise(() => {}) : answer(cmd)) as never);
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const row = await screen.findByText("Checking your agents");
+    expect(row.closest(".srow")?.querySelector(".spin")).not.toBeNull();
   });
 
   it("keeps an optional order under More, with a way back to Automatic", async () => {

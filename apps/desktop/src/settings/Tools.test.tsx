@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openFile, openLink } from "../opener.js";
 import { Settings } from "./Settings.js";
-import { settings } from "./testing.js";
+import { openPage, settings } from "./testing.js";
 
 vi.mock("../opener.js", () => ({
   CANT_OPEN: "Couldn't open it",
@@ -155,7 +155,7 @@ function toolsClient(now: () => ToolsInfo, answer?: (cmd: string) => Promise<unk
 
 const open = async (c: { client: IonClient }, tab?: "Hooks" | "Skills") => {
   render(<Settings client={c.client} onOpenIon={() => {}} />);
-  fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+  await openPage("Tools");
   await screen.findByRole("button", { name: "Connections" });
   if (tab) fireEvent.click(screen.getByRole("button", { name: tab }));
 };

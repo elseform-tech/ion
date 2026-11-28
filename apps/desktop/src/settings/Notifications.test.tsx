@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { settingsClient } from "./testing.js";
+import { openPage, settingsClient } from "./testing.js";
 import { Settings } from "./Settings.js";
 
 afterEach(cleanup);
@@ -16,7 +16,7 @@ const type = (label: string, value: string) => {
 
 const open = async (c: ReturnType<typeof settingsClient>) => {
   render(<Settings client={c} onOpenIon={() => {}} />);
-  fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+  await openPage("Notifications");
   await screen.findByText("How loud");
 };
 

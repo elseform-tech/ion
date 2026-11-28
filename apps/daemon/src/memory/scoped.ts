@@ -429,7 +429,7 @@ export class ScopedMemory {
     if (scope !== "you" || c.kind === "you") return;
     if (c.kind === "chat" && type !== "preference") throw new UserError(CHAT_WRITES);
     if (c.kind === "ion" && type === "person" && c.ionId !== "chief")
-      throw new UserError("Only ion chief writes your person files");
+      throw new UserError("Only ion writes your person files");
   }
 
   /** A file this caller may see, by path, file name or name (ignoring case). */

@@ -3,6 +3,7 @@ import type { NeedInfo, ProjectInfo } from "@ion/schema";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useDismiss } from "./dismiss.js";
 import { type AddFolderFn, AddFolder } from "../start/PickFolder.js";
+import { projectName } from "../projectName.js";
 
 type Pick = { project: string | null; onPick: (id: string | null) => void };
 
@@ -16,7 +17,10 @@ function ProjectList({
 }: Pick & { projects: ProjectInfo[]; needs: NeedInfo[]; q: string }) {
   const list = [...projects]
     .sort((a, b) => Number(b.starred) - Number(a.starred))
-    .filter((x) => !q.trim() || `${x.id} ${x.name ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
+    .filter(
+      (x) =>
+        !q.trim() || `${x.id} ${projectName(x.id, x.name)}`.toLowerCase().includes(q.trim().toLowerCase()),
+    );
   return (
     <div className="pml">
       {!q.trim() && (
@@ -36,7 +40,7 @@ function ProjectList({
             onClick={() => onPick(x.id)}
           >
             {x.starred ? <Star className="stari" /> : <Folder />}
-            {x.name ?? x.id}
+            {projectName(x.id, x.name)}
             {waiting > 0 && <span className="nb">{waiting}</span>}
             {x.id === project && <Check className="ck" />}
           </button>
@@ -168,7 +172,9 @@ export function ProjectMenu(
         onClick={() => setOpen(!open)}
       >
         <span className="projLbl">
-          {p.project ? (p.projects.find((x) => x.id === p.project)?.name ?? p.project) : "All projects"}
+          {p.project
+            ? projectName(p.project, p.projects.find((x) => x.id === p.project)?.name)
+            : "All projects"}
         </span>
         <ChevronsUpDown />
       </button>

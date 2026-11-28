@@ -2,10 +2,8 @@ import type { IonClient } from "@ion/client/browser";
 import {
   Avatar,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   MessageCircle,
   Sparkles,
   X,
@@ -24,6 +22,7 @@ import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { EffortSeg } from "./IonModels.js";
+import { More } from "./More.js";
 import { Routines } from "./Routines.js";
 
 /** Effort choices: "" is the agent's own default. */
@@ -95,20 +94,18 @@ function StatCard({ s }: { s: IonStats | null }) {
 type Patch = (p: Omit<ProjectPatch, "projectId">) => void;
 type SetupProps = { ion: IonInfo; project: ProjectInfo; data: SettingsData; patch: Patch };
 
-/** A project ion's agent (its shape in the ion's colour). Changing it clears the model (it was that agent's). */
 /**
  * Under More (the user, 2026-11-24): what the chats this project's ion starts run on, over "Chats ions start run on":
- * Default (that setting), or an agent with a model and effort. The ion itself thinks with "Ions think with".
+ * Default (that setting), or an agent with a model and effort. The ion itself thinks with "Ions think with". Changing
+ * the agent clears the model (it was that agent's). Shown without More once set.
  */
-function ChatsOverride({ ion, project, data, patch }: SetupProps) {
-  const [open, setOpen] = useState(!!project.harness);
+function ChatsOverride(p: SetupProps & { more: boolean; onMore: (open: boolean) => void }) {
+  const { ion, project, data, patch } = p;
+  const open = p.more || !!project.harness;
   const agent = data.harnesses.find((h) => h.id === project.harness);
   return (
     <>
-      <button className="more" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
-        More
-        {open ? <ChevronUp /> : <ChevronDown />}
-      </button>
+      <More open={p.more} onOpen={p.onMore} />
       {open && (
         <>
           <Row label="Its chats run on">
@@ -310,6 +307,8 @@ export function IonPage(p: PageProps) {
   const stats = useIonStats(p.client, p.ionId);
   const [error, run] = useCallError();
   const [at, setAt] = useState<"setup" | "rules">("setup");
+  // Plan 21 Task 4: its chats' agent and its routines wait under More until it has them.
+  const [more, setMore] = useState(false);
   if (!ion) return null;
   // Why a change didn't save shows under the group it was made in.
   const patchIn =
@@ -335,7 +334,7 @@ export function IonPage(p: PageProps) {
           {project ? (
             <>
               <ColorPick {...setup} />
-              <ChatsOverride {...setup} project={project} />
+              <ChatsOverride {...setup} project={project} more={more} onMore={setMore} />
             </>
           ) : (
             <ChiefSetup quick={p.data.settings?.quickNow ?? ""} onAgents={p.onAgents} />
@@ -344,7 +343,9 @@ export function IonPage(p: PageProps) {
         </div>
       </div>
       {project && <Rules project={project} patch={patch} error={shown("rules")} />}
-      {project && <Routines client={p.client} project={project} onChanged={p.data.reload} />}
+      {project && (more || !!project.routines?.length) && (
+        <Routines client={p.client} project={project} onChanged={p.data.reload} />
+      )}
     </>
   );
 }

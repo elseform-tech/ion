@@ -245,6 +245,14 @@ describe("Sidebar", () => {
     expect(a.onRemoveProject).toHaveBeenCalledWith("storefront");
   });
 
+  // Plan 21 Task 4 (Task 1's finding 12, Task 3's review): a newcomer read ion's `default` folder as "your project".
+  // Chats in no project of yours group under "No project".
+  it("names ion's default folder No project", () => {
+    side([chat("a", "default"), chat("b", "storefront")]);
+    expect(screen.getByText("No project")).toBeTruthy();
+    expect(screen.queryByText("default")).toBeNull();
+  });
+
   it("has no menu for default", () => {
     side([chat("a", "default")]);
     expect(screen.queryByRole("button", { name: "More for default" })).toBeNull();

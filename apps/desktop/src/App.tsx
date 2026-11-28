@@ -3,11 +3,12 @@ import { useEffect, useState } from "react";
 import { Chats } from "./chats/Chats.js";
 import { Down } from "./Down.js";
 import { Frame, useSidebar } from "./Frame.js";
-import { atKey, useSettingsAt } from "./goto.js";
+import { atKey, openSettings, useSettingsAt } from "./goto.js";
 import { Ions } from "./ions/Ions.js";
 import { useIon } from "./ion.js";
 import { useSystemNotifications } from "./notify.js";
 import { type Mode, Rail, useNeedCount } from "./Rail.js";
+import { openSearch, type Place, Search } from "./Search.js";
 import { Settings } from "./settings/Settings.js";
 
 /** The first letter of your account's name, for the rail (the lab's "Y"). */
@@ -22,12 +23,21 @@ function useInitial(): string {
 /** Opens a chat a notification is about: an ion's chat on the Ions screen, any other on Chats. */
 function openChat(
   chatId: string,
-  go: { setIonId: (id: string) => void; setOpenId: (id: string) => void; setMode: (m: Mode) => void },
+  go: { setIonId: (id: string) => void; setOpenId: (id: string | null) => void; setMode: (m: Mode) => void },
 ) {
   const ion = chatId.startsWith("ion:") ? chatId.slice(4) : null;
   if (ion) go.setIonId(ion);
   else go.setOpenId(chatId);
   go.setMode(ion ? "ions" : "chats");
+}
+
+/** Goes where a search result points (Plan 21 Task 4: Search reaches every screen). */
+function goTo(to: Place, go: Parameters<typeof openChat>[1]) {
+  if (to.kind === "settings") return openSettings(to.page);
+  if (to.kind === "chat") return openChat(to.chatId, go);
+  if (to.kind === "ion") return openChat(`ion:${to.ionId}`, go);
+  if (to.kind === "new") go.setOpenId(null);
+  go.setMode(to.kind === "ions" ? "ions" : "chats");
 }
 
 /** The chat on screen: the open chat on Chats, the open ion's chat on Ions, none elsewhere. */
@@ -60,7 +70,7 @@ export function App() {
     return <Down onRetry={() => window.location.reload()} starting={state === "starting"} />;
   return (
     <div className={`win${sidebar ? "" : " side-off"}`}>
-      <Rail mode={mode} setMode={setMode} initial={initial} needs={needs} />
+      <Rail mode={mode} setMode={setMode} initial={initial} needs={needs} onSearch={openSearch} />
       <div className="body">
         <Frame sidebar={sidebar} onSidebar={toggleSidebar} />
         {mode === "chats" && (
@@ -84,6 +94,7 @@ export function App() {
           </div>
         )}
       </div>
+      <Search client={client} go={(to) => goTo(to, go)} />
     </div>
   );
 }

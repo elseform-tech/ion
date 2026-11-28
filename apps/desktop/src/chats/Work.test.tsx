@@ -40,6 +40,15 @@ describe("a work step's name", () => {
     expect(stepName("Read")).toBe("Read");
   });
 
+  // Plan 21 Task 4 (Task 3's review): "Decisions" said nothing to a newcomer; on hover it says what was read.
+  it("says on hover what the Decisions step read", () => {
+    render(<WorkBlock w={work([tool("mcp__ion__decisions", "")])} />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("Decisions").getAttribute("title")).toBe(
+      "Your past answers to agents, and what came of them",
+    );
+  });
+
   // Task 7, 2026-11-20: an ion's (and a chat's) web steps read in plain words, whichever agent ran them.
   it("names web steps plainly", () => {
     for (const n of ["WebSearch", "web_search", "websearch"]) expect(stepName(n)).toBe("Search the web");

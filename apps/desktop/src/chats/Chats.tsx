@@ -13,6 +13,7 @@ import { FirstRun } from "../start/FirstRun.js";
 import { lastProject } from "../start/steps.js";
 import { FirstAnswer } from "../start/FirstAnswer.js";
 import type { Item } from "./timeline.js";
+import { NO_PROJECT } from "../projectName.js";
 
 type Question = Extract<Item, { kind: "question" }>;
 
@@ -168,7 +169,7 @@ function NewHead(p: { noMemory: boolean; onNoMemory: (on: boolean) => void }) {
 
 /** The projects a new chat can go in: ion's `default` first. */
 const projectOptions = (projects: ProjectInfo[]) => [
-  { id: "default", name: "default" },
+  { id: "default", name: NO_PROJECT },
   ...projects.filter((p) => p.id !== "default").map((p) => ({ id: p.id, name: p.name ?? p.id })),
 ];
 
