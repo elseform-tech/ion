@@ -135,7 +135,7 @@ export async function noAgentLeft(d: BrainDeps, otherwise?: string): Promise<str
  * With no agent ready at all, what to do in one line, by your agent order (Plan 21 audit, 2026-11-23: ion chief said
  * "I couldn't reach my agent; try again" with none installed, and trying again couldn't help); null otherwise.
  */
-export async function noneReady(d: BrainDeps): Promise<string | null> {
+async function noneReady(d: BrainDeps): Promise<string | null> {
   const all = (await d.agents?.().catch(() => [])) ?? [];
   const ids = byPreference(
     all.map((h) => h.id),
