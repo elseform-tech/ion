@@ -7,7 +7,7 @@ import {
   parseVersion,
   ResumeFailed,
   runLogout,
-  whichOnPath,
+  whichAgent,
 } from "@ion/adapter-kit";
 import { type Exec, execNoShell, loginOnlyEnv } from "./cli.js";
 import { claudeGateCall } from "./gate.js";
@@ -32,7 +32,7 @@ const sdkSessionExists = async (sessionId: string, dir: string) =>
 
 export function createClaudeCodeAdapter(deps: ClaudeCodeDeps = {}): HarnessAdapter {
   const exec = deps.exec ?? execNoShell;
-  const which = deps.which ?? ((b: string) => whichOnPath(b));
+  const which = deps.which ?? ((b: string) => whichAgent(b));
   const binary = () => which("claude");
   return {
     id: "claude-code",

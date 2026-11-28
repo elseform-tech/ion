@@ -8,7 +8,7 @@ import {
   readVersion,
   runLogout,
   startLogin,
-  whichOnPath,
+  whichAgent,
 } from "@ion/adapter-kit";
 import type { Billing, Capabilities } from "@ion/schema";
 import { connect, type Launch, probeModels } from "./connection.js";
@@ -119,7 +119,7 @@ const TAKES = {
 
 /** OpenAI's Codex CLI, driven through its app-server (JSON-RPC on stdio): `codex app-server`. */
 export function createCodexAdapter(deps: CodexDeps = {}): HarnessAdapter {
-  const which = deps.which ?? whichOnPath;
+  const which = deps.which ?? ((b: string) => whichAgent(b));
   const launch = (): Launch | null => {
     const bin = which("codex");
     return bin ? { bin, prefix: deps.prefixArgs ?? [], timeoutMs: deps.startTimeoutMs ?? 30_000 } : null;

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -92,5 +92,24 @@ describe("a test run's temp folder", () => {
     expect(alive(kept)).toBe(true);
     process.kill(kept, "SIGKILL");
     end();
+  });
+
+  // 2026-11-28: `pnpm check` started your real claude, grok and opencode for their sign-in and model checks. A run's
+  // agents are looked up in a folder of its own, empty: none is installed, as on CI. A live eval keeps your agents.
+  it("gives the run an empty folder of agents, unless it's a live eval", () => {
+    const end = tempRun(env());
+    const agents = process.env.ION_AGENTS_PATH!;
+    expect(agents.startsWith(process.env.TMPDIR!)).toBe(true);
+    expect(readdirSync(agents)).toEqual([]);
+    end();
+    expect(process.env.ION_AGENTS_PATH).toBeUndefined();
+    process.env.ION_LIVE_GROK = "1";
+    try {
+      const live = tempRun(env());
+      expect(process.env.ION_AGENTS_PATH).toBeUndefined();
+      live();
+    } finally {
+      delete process.env.ION_LIVE_GROK;
+    }
   });
 });

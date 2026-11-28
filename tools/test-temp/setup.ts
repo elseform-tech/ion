@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { killUnder } from "./procs.js";
@@ -21,6 +29,10 @@ const RUN_PREFIX = "ion-test-run-";
 
 /** The runner's pid, in its run's folder: a daemon a test started stops once it's gone (ION_TESTRUN_LEASE). */
 const LEASE = "lease";
+
+/** A live eval (ION_LIVE=1, ION_LIVE_GROK=1, …) runs your real agents on purpose. */
+const isLive = () =>
+  Object.entries(process.env).some(([k, v]) => /^ION_LIVE(_[A-Z]+)?$/.test(k) && v === "1");
 
 const alive = (pid: number) => {
   try {
@@ -68,6 +80,7 @@ export function tempRun(o: { real?: string; base?: string } = {}): () => void {
     XDG: process.env.XDG_CACHE_HOME,
     AGENTS: process.env.ION_AGENTS_HOME,
     LEASE: process.env.ION_TESTRUN_LEASE,
+    AGENTS_PATH: process.env.ION_AGENTS_PATH,
   };
   process.env.TMPDIR = root;
   // Tests never write your real cache folder (ion's config folder for opencode lives there), nor read your agents'
@@ -76,11 +89,18 @@ export function tempRun(o: { real?: string; base?: string } = {}): () => void {
   process.env.ION_AGENTS_HOME = join(root, "agents");
   // Not *_TEST_*: those are the variables tests check an agent never inherits.
   process.env.ION_TESTRUN_LEASE = join(root, LEASE);
+  // Where agents are looked up (ION_AGENTS_PATH): an empty folder, so no check starts your real claude, codex, grok or
+  // opencode (2026-11-28); a test that needs one puts a stand-in there or names its own. A live eval keeps yours.
+  if (!isLive()) {
+    process.env.ION_AGENTS_PATH = join(root, "agents-bin");
+    mkdirSync(process.env.ION_AGENTS_PATH);
+  }
   return () => {
     restore("TMPDIR", saved.TMPDIR);
     restore("XDG_CACHE_HOME", saved.XDG);
     restore("ION_AGENTS_HOME", saved.AGENTS);
     restore("ION_TESTRUN_LEASE", saved.LEASE);
+    restore("ION_AGENTS_PATH", saved.AGENTS_PATH);
     const running = killUnder(root);
     // A daemon a test started may still be writing its last file there: tried again for a moment.
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

@@ -332,13 +332,28 @@ describe("ion cli", { timeout: 20_000 }, () => {
       `#!/bin/sh\n[ "$1" = --version ] && { echo 1.2.3; exit 0; }\n${helper} &\nexec ${process.execPath} -e 'setTimeout(() => {}, 300_000)'\n`,
       { mode: 0o755 },
     );
-    expect((await ionWith({ PATH: `${bin}:${process.env.PATH}` }, "daemon", "start")).out).toBe("Started");
+    expect((await ionWith({ ION_AGENTS_PATH: bin }, "daemon", "start")).out).toBe("Started");
     const helpers = () => processesUnder(home).filter((p) => p.command.includes("agent-helper"));
     for (let i = 0; i < 100 && helpers().length === 0; i++) await new Promise((r) => setTimeout(r, 100));
     expect(helpers().length).toBeGreaterThan(0);
     expect((await ion("daemon", "stop")).out).toBe("Stopped");
     for (let i = 0; i < 50 && helpers().length > 0; i++) await new Promise((r) => setTimeout(r, 100));
     expect(helpers()).toEqual([]);
+  });
+
+  // 2026-11-28: `pnpm check` started the real claude (`claude auth status`), opencode (`opencode acp`) and grok
+  // (`grok agent stdio`): a test daemon's sign-in and model checks found your agents on PATH. Here stand-ins on PATH,
+  // as yours are, that note when they run.
+  it("a test's daemon never starts the agents on your PATH", async () => {
+    const bin = join(home, "yours");
+    mkdirSync(bin);
+    const ran = join(home, "ran");
+    for (const name of ["claude", "codex", "grok", "opencode"])
+      writeFileSync(join(bin, name), `#!/bin/sh\necho ${name} >> ${ran}\necho 1.2.3\n`, { mode: 0o755 });
+    const env = { PATH: `${bin}:${process.env.PATH}` };
+    expect((await ionWith(env, "daemon", "start")).out).toBe("Started");
+    await ionWith(env, "harnesses");
+    expect(existsSync(ran) ? readFileSync(ran, "utf8") : "").toBe("");
   });
 
   it("prints JSON status with --json", async () => {
