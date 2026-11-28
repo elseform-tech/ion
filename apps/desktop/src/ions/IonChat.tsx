@@ -112,45 +112,90 @@ function Pins({ needs, onOpenChat }: { needs: NeedInfo[]; onOpenChat: (chatId: s
   );
 }
 
-/** ion's "always?" suggestion: No or Keep; once answered, it says so. */
-function Suggest({
-  card,
-  ion,
-  client,
-  answered,
-}: CardProps & { card: Extract<IonCard, { kind: "suggest" }> }) {
+/** Your answer to a card (keep or not), sent once; what you answered, and why it didn't go through. */
+function useAnswer(client: CardProps["client"], suggestionId: string, answered: boolean | undefined) {
   const [done, setDone] = useState<boolean | null>(answered ?? null);
   const [error, setError] = useState<string | null>(null);
   const answer = (keep: boolean) =>
-    void client.call("suggestion.answer", { suggestionId: card.suggestionId, keep }).then(
+    void client.call("suggestion.answer", { suggestionId, keep }).then(
       () => setDone(keep),
       (e: unknown) => setError(e instanceof Error ? e.message : "Something went wrong"),
     );
+  return { done, error, answer };
+}
+
+/**
+ * A card you answer with one click: its words, No (or Not now) and its button; once answered, what you chose. Used
+ * by ion's "always?" suggestion and by a confirm (security scan, 2026-11-24).
+ */
+function AnswerCard(
+  p: Pick<CardProps, "ion" | "client" | "answered"> & {
+    suggestionId: string;
+    title: string;
+    sub?: string;
+    no: string;
+    yes: string;
+    took: string;
+  },
+) {
+  const { done, error, answer } = useAnswer(p.client, p.suggestionId, p.answered);
   if (error) return <div className="note">{error}</div>;
   return (
     <div className="ncard">
-      <IonAvatar ion={ion} />
+      <IonAvatar ion={p.ion} />
       <div>
-        <b>{card.choice}</b>
-        <div className="s">{card.question}</div>
+        <b>{p.title}</b>
+        {p.sub && <div className="s">{p.sub}</div>}
       </div>
       {done === null ? (
         <div className="acts">
           <span className="sp" />
           <button className="btn" type="button" onClick={() => answer(false)}>
-            No
+            {p.no}
           </button>
           <button className="btn pri" type="button" onClick={() => answer(true)}>
-            Keep
+            {p.yes}
           </button>
         </div>
       ) : (
         <div className="done">
           {done ? <Check /> : null}
-          {done ? "Always, for this project" : "Not now"}
+          {done ? p.took : "Not now"}
         </div>
       )}
     </div>
+  );
+}
+
+/** ion's "always?" suggestion: No or Keep; once answered, it says so. */
+function Suggest({ card, ...p }: CardProps & { card: Extract<IonCard, { kind: "suggest" }> }) {
+  return (
+    <AnswerCard
+      {...p}
+      suggestionId={card.suggestionId}
+      title={card.choice}
+      sub={card.question}
+      no="No"
+      yes="Keep"
+      took="Always, for this project"
+    />
+  );
+}
+
+/** What a confirm's button did, said once you clicked it. */
+const DONE: Record<string, string> = { Save: "Saved", Run: "Started" };
+
+/** A one-click confirm (security scan, 2026-11-24): what an ion's model can't do alone waits for your click. */
+function Confirm({ card, ...p }: CardProps & { card: Extract<IonCard, { kind: "confirm" }> }) {
+  return (
+    <AnswerCard
+      {...p}
+      suggestionId={card.suggestionId}
+      title={card.question}
+      no="Not now"
+      yes={card.yes}
+      took={DONE[card.yes] ?? "Done"}
+    />
   );
 }
 
@@ -167,6 +212,7 @@ function Card(p: CardProps) {
       />
     );
   if (p.card.kind === "suggest") return <Suggest {...p} card={p.card} />;
+  if (p.card.kind === "confirm") return <Confirm {...p} card={p.card} />;
   if (p.card.kind === "routine" || p.card.kind === "stalled" || p.card.kind === "todo")
     return <SuggestionCard {...p} card={p.card} />;
   return (
@@ -177,7 +223,8 @@ function Card(p: CardProps) {
   );
 }
 
-const ownWords = (c?: IonCard) => c?.kind === "routine" || c?.kind === "stalled" || c?.kind === "todo";
+const ownWords = (c?: IonCard) =>
+  c?.kind === "routine" || c?.kind === "stalled" || c?.kind === "todo" || c?.kind === "confirm";
 const ions = (m: IonItem | undefined) => m !== undefined && m.kind !== "you";
 
 type LineProps = Omit<CardProps, "card"> & { m: Exclude<IonItem, { kind: "you" }>; last: boolean };

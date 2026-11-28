@@ -340,7 +340,7 @@ describe("a computer that slept", () => {
 // defaults, every project "needs". It keeps the last settings it read, or, with none, notifies only Urgent.
 describe("a config that fails to load", () => {
   const breakIt = () =>
-    writeFileSync(configFile, readFileSync(configFile, "utf8").replace(/judge = "[^"]*"/, "judge = 5"));
+    writeFileSync(configFile, readFileSync(configFile, "utf8").replace("[access]", "[access]\njudge = 5"));
 
   it("keeps the last good settings", () => {
     save({ level: "muted" });

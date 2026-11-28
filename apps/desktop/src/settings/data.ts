@@ -19,7 +19,11 @@ export function useSettingsData(client: IonClient): SettingsData {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const reload = useCallback(() => {
     const quiet = () => {};
-    void client.call("harnesses.list", {}).then(setHarnesses, quiet);
+    // Settings again once the agents are known: whom ion's models follow comes from them (PR #36 review, 2026-11-23).
+    void client.call("harnesses.list", {}).then((h) => {
+      setHarnesses(h);
+      void client.call("settings.get", {}).then(setSettings, quiet);
+    }, quiet);
     void client.call("settings.get", {}).then(setSettings, quiet);
     void client.call("ions.list", {}).then(setIons, quiet);
     void client.call("projects.list", {}).then(setProjects, quiet);

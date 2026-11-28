@@ -7,6 +7,7 @@ import { connect, type IonClient } from "@ion/client";
 import type { IonEvent } from "@ion/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
+import { getHarness } from "../adapters/registry.js";
 import { startServer } from "./server.js";
 import { loadUserConfig, saveUserConfig } from "@ion/config";
 import { Decisions } from "../decisions/index.js";
@@ -387,7 +388,9 @@ describe("daemon api", () => {
         .filter((e) => e.chatId === `ion:${ionId}` && e.type === "ion.said")
         .map((e) => e.data as { text: string; card?: { kind: string; threads: { chatId: string }[] } });
     await client.call("ion.message", { ionId: "chief", text: "please check app" });
-    const chief = ionSaid("chief").at(-1)!;
+    // Its own line, found by its card (full check, 2026-11-24: the thread's short report, said as-is, can already
+    // follow it): ion chief's "Asked 1 project." comes first, the thread's report after.
+    const chief = ionSaid("chief").find((m) => m.card?.kind === "threads")!;
     expect(chief).toMatchObject({ text: "Asked 1 project.", card: { kind: "threads" } });
     // Its turn used ion's tools: its work is on its chat.
     const tools = seen.filter((e) => e.chatId === "ion:chief" && e.type === "tool.started");
@@ -402,17 +405,37 @@ describe("daemon api", () => {
       chatId: chief.card!.threads[0]!.chatId,
     });
     expect(ionSaid("app")[0]).toEqual({ text: "From ion: please check app" });
-    // The thread ends: app's ion says what came of it, and ion chief passes it on.
-    await until(() => ionSaid("chief").at(-1)?.text === "It's done.", 15_000);
-    expect(ionSaid("app").at(-1)).toEqual({ text: "It's done." });
+    // The thread ends: app's ion says what came of it, and ion chief passes it on. PR #36 final review, 2026-11-24:
+    // the thread changed nothing and said little, so that's its own reply, with no report turn.
+    await until(() => ionSaid("app").length > 2, 15_000);
+    expect(ionSaid("app").at(-1)).toEqual({ text: "Hi from the fake harness." });
+    await until(() => ionSaid("chief").at(-1)?.text === "Hi from the fake harness.", 15_000);
+    const order = ionSaid("chief").map((m) => m.text);
+    expect(order.indexOf("Asked 1 project.")).toBeLessThan(order.indexOf("Hi from the fake harness."));
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
   // Task review, 2026-11-20: one call (settings.set) saves every setting, the model and effort included.
   it("reads and sets ion's quick model, refusing an unknown agent", async () => {
-    expect(await client.call("settings.get", {})).toMatchObject({ quick: "claude-code", effort: null });
+    // Plan 21 audit, 2026-11-23: none set at first (it follows your agent order), the judge too.
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "", effort: null, judge: "" });
     await client.call("settings.set", { patch: { quick: "grok-build" } });
     expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", effort: null });
+    // Plan 21 audit, 2026-11-23: Settings shows and sets the judge's agent too, with the same picker.
+    await client.call("settings.set", { patch: { judge: "opencode" } });
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", judge: "opencode" });
+    // PR #36 review, 2026-11-23: the daemon says whom each follows now (yours, else your order's first) and whether
+    // ion's judge evals checked the judge's model; null (or "") goes back to your order.
+    expect(await client.call("settings.get", {})).toMatchObject({
+      quickNow: "grok-build",
+      judgeChecked: false,
+    });
+    const grok = `grok-build:${getHarness("grok-build")!.adapter.judge!.model}`;
+    await client.call("settings.set", { patch: { judge: grok } });
+    expect(await client.call("settings.get", {})).toMatchObject({ judge: grok, judgeChecked: true });
+    await expect(client.call("settings.set", { patch: { judge: "nope" } })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
     await expect(client.call("settings.set", { patch: { quick: "nope:x" } })).rejects.toThrow(
       "Unknown agent: nope",
     );
@@ -424,7 +447,34 @@ describe("daemon api", () => {
     );
     await client.call("settings.set", { patch: { effort: null } });
     expect(await client.call("settings.get", {})).toMatchObject({ quick: "grok-build", effort: null });
-  });
+    await client.call("settings.set", { patch: { judge: null, quick: null } });
+    expect(await client.call("settings.get", {})).toMatchObject({ quick: "", judge: "" });
+  }, 30_000);
+
+  // PR #36 re-review, the user, 2026-11-23: ion checks the judge on your own agents. Settings lists each agent's pinned
+  // judge model and whether it's checked (Grok's ships checked); a check runs ion's judge cases on it and is kept, and
+  // the judge then goes on it along your order.
+  it("checks an agent as judge on request, keeps it, and lists each agent's judge", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    try {
+      const first = await client.call("settings.get", {});
+      expect(first.judges["grok-build"]).toMatchObject({ checked: true, shipped: true, last: null });
+      const lax = await client.call("judge.check", { harness: "fake" });
+      expect(lax).toMatchObject({ agent: "fake", pass: false });
+      process.env.ION_FAKE_JUDGE = "deny";
+      expect(await client.call("judge.check", { harness: "fake" })).toMatchObject({
+        pass: true,
+        dangerous: [],
+      });
+      await client.call("settings.set", { patch: { agentOrder: ["fake"] } });
+      const after = await client.call("settings.get", {});
+      expect(after.judges.fake).toMatchObject({ checked: true, shipped: false, last: { pass: true } });
+      expect(after).toMatchObject({ judge: "", judgeChecked: true });
+      await expect(client.call("judge.check", { harness: "nope" })).rejects.toThrow("Unknown agent: nope");
+    } finally {
+      delete process.env.ION_FAKE_JUDGE;
+    }
+  }, 60_000);
 
   // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.
   it("previews a chat's file and lists its background tasks", async () => {

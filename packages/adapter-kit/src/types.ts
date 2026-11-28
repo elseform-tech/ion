@@ -170,6 +170,19 @@ export interface HarnessAdapter {
    */
   contextTokens?: number;
   /**
+   * The model ion's judge runs on, pinned here (PR #36 review, 2026-11-23: the judge runs only on models ion has
+   * checked), and `checked`: when ion's judge evals passed on it with nothing dangerous allowed (docs/research/
+   * judge-evals.md), or "default before evals". No `checked` (evals not passed yet), or none at all: ion's judge
+   * never goes on it unless you set it yourself.
+   */
+  judge?: { model: string; checked?: string };
+  /**
+   * Its strongest model for ion's own brain (ion chief and the project ions, when you picked none; the user,
+   * 2026-11-23: "the strongest model you're signed in to"), and its rank against the other agents' strongest (higher is
+   * stronger). No model: its own default. Absent: rank 0.
+   */
+  brain?: { model?: string; rank: number };
+  /**
    * How its runs are sandboxed (docs/research/sandbox.md): "own", its own sandbox told to keep ion's folders out
    * (Codex); "ion", ion's wrapper around its process (the rest). Absent: never (the fake agent starts no process).
    */

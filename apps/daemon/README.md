@@ -19,8 +19,19 @@ The always-on service that owns all state.
   access mode (`ion ask --access`, else the project's `access`, else `[access] default`, which is `"auto"`).
   **Full access** allows it. **Auto** never pauses: your secrets (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, gh,
   gcloud, 1Password, `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc`, Keychains) and ion's own files are denied
-  by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (default `claude-code:haiku`, a bare session
-  with no tools), which answers allow or deny with a reason (deny on failure or after 30 s). One judge call
+  by rule; read-only commands whose arguments are plain relative paths inside the worktree are allowed; anything else goes to a judge, `[access] judge` (unset: the first ready agent in your
+  agent order whose pinned judge model ion checked on this computer, docs/research/judge-evals.md; a bare session with
+  no tools), which answers allow or deny with a reason. A limited judge agent is skipped; when its agent fails or is
+  slow it goes once on the next checked one; with none left it's unsure and asks you. A judge you set on an unchecked
+  model still runs. `[ion] quick` is ion's brain for ion chief and every project ion (a project's own agent, model
+  and effort are for the chats its ion starts): unset, the strongest model you're signed in to (each adapter ranks
+  its own), at High for your messages and Medium for routine turns (a report when a chat ends); answering an agent's
+  question from your decisions uses the brain at Medium. Dream thinks with the brain too, at Medium, on an agent that can turn its web off.
+  The user, 2026-11-24: two model settings and the rest automatic. Chats ions start run on `[ion] chats` (and
+  `chatsEffort`) when set, a project's own agent, model and effort over it, or what you asked an ion for one chat;
+  else Automatic: ready, not limited, with room left, free or subscription before pay-per-use, Claude Code last unless
+  it's the only one, never an agent you avoid (`[agents.<id>] avoid`), along `routing.order` ("Prefer in this order")
+  when set. Your own chats ask you at a limit; chats ions start go on the next ready agent. One judge call
   per action and request in a chat. The judge also gets your decisions that apply (newest 10). When the judge
   says no (or can't decide), ion asks you instead: Allow or Don't allow (Remember keeps either for that exact action in the project), or your
   own words. The tool call waits up to 4 minutes (agents' hooks wait 5); with no answer ion says no, the agent goes

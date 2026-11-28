@@ -64,6 +64,8 @@ const ownOf = (h: AcpHarness) => ({
   ...(h.ownOff ? { ownOff: h.ownOff } : {}),
   ...(h.ownTrust ? { ownTrust: true as const } : {}),
   ...(h.contextTokens ? { contextTokens: h.contextTokens } : {}),
+  ...(h.judge ? { judge: h.judge } : {}),
+  ...(h.brain ? { brain: h.brain } : {}),
 });
 
 /** One adapter for any agent that speaks ACP over stdio (Grok Build, opencode, …). */

@@ -102,7 +102,8 @@ export function createAccess(o: {
       const v = await o.judge(judgeInput(at, req, o.decisionsFor?.(at.projectId, at.chatId) ?? []));
       const verdict = fromJudge(v);
       // A judge that couldn't decide (slow, signed out) or wasn't sure is asked again next time.
-      if (v.verdict === "unsure") o.onUnsure?.(req);
+      // No agent to decide (Plan 21 audit, 2026-11-23) isn't unsure about this kind of action: not noted.
+      if (v.verdict === "unsure" && v.decided !== false) o.onUnsure?.(req);
       else if (v.decided !== false) cache.set(key, verdict);
       return verdict;
     },
