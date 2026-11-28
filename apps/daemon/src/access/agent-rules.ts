@@ -185,7 +185,10 @@ function codexRules(w: Where): TheirRules {
 }
 
 /** The rules an agent's chats go by, from your own settings; null for an agent with none ion reads. */
-export function readAgentRules(harness: string, w: Where): TheirRules | null {
+export function readAgentRules(harness: string, where: Where): TheirRules | null {
+  // A stand-in home (ION_AGENTS_HOME: tests, the tour) never mixes in the real CLAUDE_CONFIG_DIR, CODEX_HOME or
+  // XDG_CONFIG_HOME of ion's environment (found 2026-11-28: the real ~/.claude was still read).
+  const w = { ...where, env: where.env ?? (where.home === homedir() ? process.env : {}) };
   if (harness === "claude-code") return claudeRules(w);
   if (harness === "opencode") return opencodeRules(w);
   return harness === "codex" ? codexRules(w) : null;

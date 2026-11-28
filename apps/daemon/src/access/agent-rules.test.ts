@@ -364,4 +364,19 @@ describe("an agent's settings file that's a link", () => {
     symlinkSync(join(home, "dotfiles", "claude", "settings.json"), join(away, ".claude", "settings.json"));
     expect(ruleCount(readAgentRules("claude-code", { home: away, env: {} }))).toBe(0);
   });
+
+  // Found 2026-11-28: with ION_AGENTS_HOME (a stand-in home) set, ion still read the real agent folders named by
+  // ion's own environment (CLAUDE_CONFIG_DIR), so a chat went by rules from outside the stand-in home.
+  it("a stand-in home ignores CLAUDE_CONFIG_DIR of ion's environment", () => {
+    const real = claudeHome([], ["Bash(rm:*)"]);
+    const standIn = fakeHome({});
+    const was = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = join(real, ".claude");
+    try {
+      expect(ruleCount(readAgentRules("claude-code", { home: standIn }))).toBe(0);
+    } finally {
+      if (was === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = was;
+    }
+  });
 });
