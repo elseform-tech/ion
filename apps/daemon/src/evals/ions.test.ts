@@ -25,15 +25,8 @@ import {
   type IonMeasure,
   type SeedChat,
 } from "./ion-cases.js";
-import { BRIEF_LABELS } from "./ion-brief-labels.js";
-import {
-  AGREEMENT_MIN,
-  agreementOf,
-  briefVerdict,
-  type Grade,
-  graderPrompt,
-  parseGrade,
-} from "./ion-grader.js";
+import { BRIEF_HELD_OUT, BRIEF_LABELS } from "./ion-brief-labels.js";
+import { agreementOf, briefVerdict, type Grade, graderPrompt, parseGrade, trusted } from "./ion-grader.js";
 import { type Scored, scoreIon } from "./ion-score.js";
 import { followUpReply } from "./ion-score-state.js";
 import { seedMemory } from "./memory-seeds.js";
@@ -164,7 +157,7 @@ type Grader = {
   grade(o: { request: string; brief: string; projectId: string }): Promise<Grade | null>;
   /** The tokens its sessions said they used. */
   tokens: number;
-  /** It agreed with the hand labels at AGREEMENT_MIN or better: only then do its grades count. */
+  /** It agreed with both label sets at AGREEMENT_MIN or better (ion-grader.ts trusted): only then do its grades count. */
   trusted: boolean;
 };
 
@@ -198,16 +191,18 @@ async function pool<T, R>(items: T[], f: (x: T) => Promise<R>): Promise<R[]> {
   return out;
 }
 
-/** The grader against the hand labels, before any of its grades count (at least AGREEMENT_MIN). */
+/** The grader against the hand labels and the held-out ones, before any of its grades count (both AGREEMENT_MIN). */
 async function checkGrader(g: Grader) {
-  const grades = await pool(BRIEF_LABELS, (l) => g.grade(l));
-  const a = agreementOf(BRIEF_LABELS, grades);
-  g.trusted = a.pct >= AGREEMENT_MIN;
-  const each = BRIEF_LABELS.map((l, i) => ({
+  const labels = [...BRIEF_LABELS, ...BRIEF_HELD_OUT];
+  const grades = await pool(labels, (l) => g.grade(l));
+  const tuned = agreementOf(BRIEF_LABELS, grades.slice(0, BRIEF_LABELS.length));
+  const heldOut = agreementOf(BRIEF_HELD_OUT, grades.slice(BRIEF_LABELS.length));
+  g.trusted = trusted(tuned, heldOut);
+  const each = labels.map((l, i) => ({
     ...{ id: l.id, label: l.score, labelInvented: l.invented },
     ...{ grade: grades[i]?.score ?? null, invented: grades[i]?.invented ?? null },
   }));
-  return { agent: GRADER, ...a, trusted: g.trusted, each };
+  return { agent: GRADER, ...tuned, heldOut, trusted: g.trusted, each };
 }
 
 /** A brief case's chats graded: failed on a short or inventing brief, only when the grader is trusted. */
@@ -505,7 +500,7 @@ describe.skipIf(live.length === 0)("ion evals", { timeout: 4 * 3_600_000 }, () =
       const grader = g ? await checkGrader(g) : null;
       if (grader)
         console.log(
-          `grader ${grader.agent}: agrees on ${grader.agreed}/${grader.of}; misses ${grader.misses.join(", ") || "none"}`,
+          `grader ${grader.agent}: ${grader.agreed}/${grader.of}, held out ${grader.heldOut.agreed}/${grader.heldOut.of}; misses ${[...grader.misses, ...grader.heldOut.misses].join(", ") || "none"}`,
         );
       const rows = await runAll(dir, a, g);
       const s = summary(a.id, rows);

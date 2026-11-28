@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BRIEF_LABELS } from "./ion-brief-labels.js";
+import { BRIEF_HELD_OUT, BRIEF_LABELS } from "./ion-brief-labels.js";
 import {
   AGREEMENT_MIN,
   agreementOf,
@@ -7,6 +7,7 @@ import {
   type Grade,
   graderPrompt,
   parseGrade,
+  trusted,
 } from "./ion-grader.js";
 import { projectOf } from "./ion-seeds.js";
 
@@ -83,5 +84,16 @@ describe("brief grader", () => {
     expect(briefVerdict([grade(5, ["a reviewer named Mei"])])).toMatch(/invented/);
     expect(briefVerdict([grade(5), null])).toMatch(/not graded/);
     expect(briefVerdict([])).toMatch(/no brief/);
+  });
+
+  // Plan 23 Task 4 (2026-11-28): the labels above were tuned once against the grader; a held-out set wasn't.
+  it("counts the grader only when it agrees with the held-out labels too", () => {
+    expect(BRIEF_HELD_OUT.length).toBeGreaterThanOrEqual(10);
+    const ids = new Set(BRIEF_LABELS.map((l) => l.id));
+    for (const l of BRIEF_HELD_OUT) expect(ids.has(l.id), l.id).toBe(false);
+    const all = (n: number, of: number) => ({ agreed: n, of, pct: n / of, misses: [] });
+    expect(trusted(all(19, 20), all(11, 12))).toBe(true);
+    expect(trusted(all(19, 20), all(9, 12))).toBe(false);
+    expect(trusted(all(15, 20), all(12, 12))).toBe(false);
   });
 });

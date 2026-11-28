@@ -93,6 +93,13 @@ export function agreementOf(labels: BriefLabel[], grades: (Grade | null)[]) {
   return { agreed, of: labels.length, pct: labels.length ? agreed / labels.length : 0, misses };
 }
 
+/**
+ * Whether the grader's scores count: it agrees with the labels it was tuned on and with the held-out ones, each at
+ * AGREEMENT_MIN or better (Plan 23 Task 4: the first set was tuned against it once).
+ */
+export const trusted = (tuned: { pct: number }, heldOut: { pct: number }): boolean =>
+  tuned.pct >= AGREEMENT_MIN && heldOut.pct >= AGREEMENT_MIN;
+
 /** Why a case's briefs fall short ("" when they don't): one ungraded, anything invented, or an average under 4. */
 export function briefVerdict(grades: (Grade | null)[]): string {
   if (!grades.length) return "no brief to grade";

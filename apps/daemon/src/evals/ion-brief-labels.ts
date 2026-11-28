@@ -183,3 +183,103 @@ export const BRIEF_LABELS: BriefLabel[] = [
     why: "Exact and limited, but says no check.",
   },
 ];
+
+/**
+ * The held-out labels (Plan 23 Task 4, 2026-11-28): written after the rubric was settled and never used to tune it or
+ * the labels above. The grader's scores count only when it agrees with these too (AGREEMENT_MIN).
+ */
+export const BRIEF_HELD_OUT: BriefLabel[] = [
+  {
+    ...{ id: "alt-good-short", projectId: "storefront", score: 5, invented: false },
+    request: "Add alt text to the listing's product images.",
+    brief:
+      "In src/listing.tsx, give each product <img> an alt attribute, using the product's id for now. Change nothing else. Done when every image Listing renders has alt text.",
+    why: "All of it, a limit, a check; id and Listing are in the file.",
+  },
+  {
+    ...{ id: "alt-bad-short", projectId: "storefront", score: 1, invented: false },
+    request: "Add alt text to the listing's product images.",
+    brief: "Improve accessibility.",
+    why: "Only gestures at it.",
+  },
+  {
+    ...{ id: "version-invented-paths", projectId: "payments-api", score: 4, invented: true },
+    request: "Add a /version endpoint that returns the build's version.",
+    brief:
+      "Add GET /version to the router in cmd/server/main.go, returning internal/build.Version. Done when a request to /version returns it.",
+    why: "Neither cmd/server/main.go nor internal/build exists.",
+  },
+  {
+    ...{ id: "webhooks-page-good", projectId: "docs", score: 5, invented: false },
+    request:
+      "Document the charge webhook events charge.succeeded and charge.failed, in the refunds page's style.",
+    brief:
+      "Create api/webhooks.md with a heading and one or two sentences naming `charge.succeeded` and `charge.failed`, in the style of api/refunds.md. Edit no other page. Done when the page exists and names both events.",
+    why: "Exact, limited, a check, nothing claimed about what the events mean.",
+  },
+  {
+    ...{ id: "webhooks-page-bad-long", projectId: "docs", score: 1, invented: true },
+    request:
+      "Document the charge webhook events charge.succeeded and charge.failed, in the refunds page's style.",
+    brief: long(
+      "Write complete webhook documentation for the platform.",
+      "Cover the payload schema for every event, how signatures are verified with HMAC-SHA256 as the payments service does today, and the retry policy (every 30 seconds for up to a day).",
+      "Add a troubleshooting section, code samples in three languages, and a changelog.",
+      "Reorganise the API reference so webhooks get their own section in the sidebar, and update the getting-started guide to link to it.",
+    ),
+    why: "Drifts far past one short page; HMAC signing and a 30-second retry are nowhere in the project.",
+  },
+  {
+    ...{ id: "spinner-good-long", projectId: "storefront", score: 5, invented: false },
+    request: "Show a loading spinner on checkout while the order submits.",
+    brief: long(
+      "On the checkout page (the Checkout component in src/checkout.tsx), show a loading spinner while the order is being submitted after Pay now is pressed.",
+      "Show it from the moment the submit starts until it finishes, whether it succeeds or fails, and hide it afterwards.",
+      "Only the checkout page: leave BuyNow, the listing and the cart as they are.",
+      "Done when pressing Pay now shows the spinner during the submit and it's gone once the submit has finished either way.",
+    ),
+    why: "Whole request, a limit, a check, facts from the file.",
+  },
+  {
+    ...{ id: "retries-no-check", projectId: "payments-api", score: 4, invented: false },
+    request: "Cap webhook retries at 5.",
+    brief: "Make Deliver in webhooks/retry.go stop after 5 failed posts.",
+    why: "Right and limited, no check.",
+  },
+  {
+    ...{ id: "typo-overreach", projectId: "docs", score: 2, invented: false },
+    request: "Fix the 'intall' typo.",
+    brief: "Fix all typos across the docs and rewrite the getting-started guide to be friendlier.",
+    why: "One typo became a rewrite: request 1, extra work.",
+  },
+  {
+    ...{ id: "buynow-question-good", projectId: "storefront", score: 5, invented: false },
+    request: "What does BuyNow render?",
+    brief:
+      "Read src/checkout.tsx and reply with what the BuyNow component renders, quoting its JSX. Change nothing.",
+    why: "Asks for exactly the answer to report.",
+  },
+  {
+    ...{ id: "cents-bad-long", projectId: "payments-api", score: 1, invented: true },
+    request: "Charge amounts must be sent in cents.",
+    brief: long(
+      "Finance (Priya) has reported currency bugs for months, and the team wants money handled properly everywhere.",
+      "Introduce a Money type across the payments service and the storefront, migrate every amount to it, add currency codes, and update the database schema and the refunds flow to match.",
+      "Take the time to clean up anything else in the money paths you find along the way.",
+    ),
+    why: "A one-line fix buried in a migration; Priya, a database and currency codes are nowhere in the project.",
+  },
+  {
+    ...{ id: "shipping-good-check", projectId: "storefront", score: 5, invented: false },
+    request: "Raise free shipping to $100.",
+    brief:
+      "In src/cart.ts, set FREE_SHIPPING_OVER to 100 (it is 75 now). Change nothing else. Done when FREE_SHIPPING_OVER is 100.",
+    why: "Exact, with the file's value, a limit and a check.",
+  },
+  {
+    ...{ id: "shipping-wrong-value", projectId: "storefront", score: 3, invented: false },
+    request: "Raise free shipping to $100.",
+    brief: "Set free shipping to $150.",
+    why: "The value changed: request 1; nothing claimed about the project; no check.",
+  },
+];

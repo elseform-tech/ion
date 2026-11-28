@@ -37,8 +37,15 @@ const WRONG: Record<ChatState, RegExp | null> = {
 };
 
 /** What to do: a next step offered or asked for. */
-const NEXT =
-  /try again|retry|re-?run|restart|answer|reply|decide|choose|pick|want me to|shall i|should i|let me know|look into|check|fix|switch|wait/i;
+const NEXT = new RegExp(
+  [
+    "try (it |that )?again|retry|re-?run|restart|drop it",
+    "answer|reply|decide|choose|pick",
+    "want me to|shall i|should i|let me know",
+    "look into|check|fix|switch|wait",
+  ].join("|"),
+  "i",
+);
 
 /** A reply's clauses: sentences, lines, and parts joined by ";" or ", and/but/while". */
 const clausesOf = (reply: string) =>
