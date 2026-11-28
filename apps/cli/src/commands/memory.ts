@@ -56,18 +56,18 @@ export function memoryCommands(program: Command, out: () => Out) {
       print(out(), "Kept for every project", r);
     });
   memorySwitch(m, out);
-  tidyCommand(m, out);
+  dreamCommand(m, out);
 }
 
 const TIDY: DreamMode[] = ["off", "nightly", "weekly"];
 
 /**
- * `ion memory tidy [off|nightly|weekly]` (Plan 21 Task 4): the app tucks Tidy memory under More; the CLI reaches it
+ * `ion memory dream [off|nightly|weekly]` (Plan 21 Task 4): the app tucks Dream under More; the CLI reaches it
  * too. With no word, says how often it runs.
  */
-function tidyCommand(m: Command, out: () => Out) {
-  m.command("tidy [how]")
-    .description("How often it tidies: off, nightly or weekly")
+function dreamCommand(m: Command, out: () => Out) {
+  m.command("dream [how]")
+    .description("How often it runs: off, nightly or weekly")
     .action(async (how?: string) => {
       if (how !== undefined && !TIDY.includes(how as DreamMode)) fail("Pick off, nightly or weekly");
       const s = await withClient((c) =>
@@ -75,7 +75,7 @@ function tidyCommand(m: Command, out: () => Out) {
           ? c.call("settings.set", { patch: { dream: { mode: how as DreamMode } } })
           : c.call("settings.get", {}),
       );
-      print(out(), `Tidy memory: ${s.dream.mode}`, s.dream);
+      print(out(), `Dream: ${s.dream.mode}`, s.dream);
     });
 }
 

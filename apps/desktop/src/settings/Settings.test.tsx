@@ -500,7 +500,7 @@ describe("Settings, reviewed", () => {
 // away, never delete). Task 1 counted a real ion's events: routines, suggestions, decisions and Dream never used, memory
 // once. Settings shows General, Agents and Memory first; Ions, Tools, Notifications and Shortcuts sit under one More
 // until used, and each page's advanced parts (the agents' own-tools and avoid switches, Check as judge, Prefer in this
-// order, Tidy memory, an ion's routines and its chats' agent) sit under that page's More until used.
+// order, Dream, an ion's routines and its chats' agent) sit under that page's More until used.
 describe("advanced things appear when they matter", () => {
   const fresh: ProjectInfo[] = [{ id: "shop", name: "Shop", path: "/p/shop", starred: false }];
   const notifications = {
@@ -568,12 +568,12 @@ describe("advanced things appear when they matter", () => {
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(screen.getByRole("heading", { name: "Routines" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add routine" })).toBeTruthy();
-    // Memory: Tidy memory waits under More while it's off and has never tidied.
+    // Memory: Dream waits under More while it's off and has never tidied.
     fireEvent.click(screen.getByRole("button", { name: "Memory" }));
     await screen.findByRole("switch", { name: "Remember" });
-    expect(screen.queryByRole("group", { name: "Tidy memory" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Dream" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("group", { name: "Tidy memory" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Dream" })).toBeTruthy();
   });
 
   it("a used section stays shown", async () => {
@@ -601,7 +601,7 @@ describe("advanced things appear when they matter", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Shop/ }));
     expect(await screen.findByRole("heading", { name: "Routines" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Memory" }));
-    expect(await screen.findByRole("group", { name: "Tidy memory" })).toBeTruthy();
+    expect(await screen.findByRole("group", { name: "Dream" })).toBeTruthy();
     // Tidied once (it's off now): it stays shown too.
     cleanup();
     render(
@@ -621,7 +621,7 @@ describe("advanced things appear when they matter", () => {
         at={{ kind: "memory" }}
       />,
     );
-    expect(await screen.findByRole("group", { name: "Tidy memory" })).toBeTruthy();
+    expect(await screen.findByRole("group", { name: "Dream" })).toBeTruthy();
   });
 
   // Review of Plan 21 Task 4 (2026-11-28): only an agent counted as "set", so an effort alone hid under More; an ion's

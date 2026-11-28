@@ -119,7 +119,7 @@ Commands:
   on [options]    Turn it on
   off [options]   Turn it off
   open            Open the folder
-  tidy [how]      How often it tidies: off, nightly or weekly
+  dream [how]     How often it runs: off, nightly or weekly
   help [command]  display help for command
 
 ---

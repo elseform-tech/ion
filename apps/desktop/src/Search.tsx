@@ -75,7 +75,7 @@ const ACTIONS: { title: string; icon: LucideIcon; to: Place; small?: string }[] 
       ["Check the agents each night", "agents", false],
       ["Check as judge", "agents", true],
       ["Prefer in this order", "agents", true],
-      ["Tidy memory", "memory", true],
+      ["Dream", "memory", true],
     ] as const
   ).map(([title, page, more]) => {
     const p = SETTINGS_PAGES.find((x) => x.id === page)!;

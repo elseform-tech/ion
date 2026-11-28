@@ -132,6 +132,9 @@ tester.run("plain-words", plugin.rules["plain-words"], {
     at("apps/desktop/src/x.tsx", "const t = `Chats ion runs at once`;"),
     at("apps/desktop/src/x.tsx", "const t = `${n} failed runs`;"),
     at("apps/desktop/src/x.tsx", 'const source = "ion:_dream";'),
+    at("apps/desktop/src/x.tsx", "const a = <span>Dream</span>;"),
+    at("apps/desktop/src/x.tsx", 'const t = "ion chief";'),
+    at("apps/daemon/src/memory/x.ts", 'throw new UserError("Only ion chief writes your person files");'),
     at("apps/cli/src/x.ts", 'cmd.addOption(new Option("--harness <id>").hideHelp());'),
     // Plan 21 Task 4: the daemon's copy is its errors, refusals and warnings; its other logs, its code and what it tells
     // agents (tool descriptions, an ion's instructions) aren't.
@@ -154,8 +157,6 @@ tester.run("plain-words", plugin.rules["plain-words"], {
       errors: [{ messageId: "retired" }],
     },
     { ...at("apps/desktop/src/x.tsx", "const t = `${n} threads`;"), errors: [{ messageId: "retired" }] },
-    { ...at("apps/desktop/src/x.tsx", "const a = <span>Dream</span>;"), errors: [{ messageId: "retired" }] },
-    { ...at("apps/desktop/src/x.tsx", 'const t = "ion chief";'), errors: [{ messageId: "retired" }] },
     {
       ...at("apps/cli/src/x.ts", 'cmd.description("Coding agents, by harness");'),
       errors: [{ messageId: "retired" }],
@@ -163,32 +164,26 @@ tester.run("plain-words", plugin.rules["plain-words"], {
     // Plan 21 Task 4 (Task 3's review): the daemon's words reach you too: its errors (UserError), an ion's refusals
     // (a denied call's reason) and its warnings in the log you read.
     {
-      ...at("apps/daemon/src/memory/x.ts", 'throw new UserError("Only ion chief writes your person files");'),
-      errors: [{ messageId: "retired" }],
-    },
-    {
       ...at("apps/daemon/src/api/x.ts", "throw new UserError(`${id} isn't a harness`);"),
       errors: [{ messageId: "retired" }],
     },
     {
       ...at(
         "apps/daemon/src/ions/x.ts",
-        'return { decision: "deny", reason: "The dream only tidies memory" };',
+        'return { decision: "deny", reason: "The thread only reads memory" };',
       ),
       errors: [{ messageId: "retired" }],
     },
     {
-      ...at("apps/daemon/src/ions/x.ts", "console.warn(`ion's dream: ${a} can't`);"),
+      ...at("apps/daemon/src/ions/x.ts", "console.warn(`ion's thread: ${a} can't`);"),
       errors: [{ messageId: "retired" }],
     },
   ],
 });
 
-// Plan 21 Task 4: the two renames still waiting for the user's OK ("ion chief" → "ion", "Dream" → "Tidy memory") are
-// their own block, so either goes back with a one-line deletion.
-it("keeps the renames awaiting the user's OK in their own block", async () => {
-  const { PENDING, RETIRED } = await import("./plain-words.js");
-  expect(PENDING.map((r) => r.use)).toEqual(["ion", "tidy (memory)"]);
-  for (const r of PENDING) expect(RETIRED).toContain(r);
-  expect(RETIRED.filter((r) => !PENDING.includes(r)).some((r) => r.word.test("ion chief"))).toBe(false);
+// The user, 2026-11-28, "no renames": "ion chief" and "Dream" stay on the screens, so neither is a retired word.
+it("allows ion chief and Dream", async () => {
+  const { RETIRED } = await import("./plain-words.js");
+  expect(RETIRED.some((r) => r.word.test("ion chief"))).toBe(false);
+  expect(RETIRED.some((r) => r.word.test("Dream") || r.word.test("dreams"))).toBe(false);
 });
