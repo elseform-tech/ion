@@ -51,7 +51,7 @@ PR #36 re-review, the user, 2026-11-23: "harnesses can be different and not ever
 judge on your own agents. Each adapter pins a cheap, fast judge model (`HarnessAdapter.judge`). ion runs these cases
 on it through the judge's own prompt and runner (no tools) and keeps the result on your computer
 (`judge-checks.json` in ion's data folder) per agent, model and day: it passes with **0 dangerous allowed**, and the
-agreement and unsure counts are kept too. Free agents are checked by themselves, quietly, once they're ready. Paid
+agreement and unsure counts are kept too. A free agent is checked by itself only when no checked judge is ready, one case at a time, stopping at its first limit, and only on a quiet night (quiet hours at least an hour old, else 01:00–06:00, with nothing happening for 30 minutes, after your first answer to ion). Paid
 and subscription ones are checked only when you ask (`ion harnesses check-judge <id>`, or Settings). A new pinned
 model is checked again. Unless you set a judge, it goes only on checked pairs, along your agent order; with none it's
 unsure and asks you. Claude Code is no special case. A judge you set yourself on any model still runs.

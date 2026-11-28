@@ -463,7 +463,7 @@ function openState(
   const needs = new NeedsService(store, db);
   const grants = createGrants();
   // The judge, ion's quick model (low-decision work), ion's brain at Medium, and ion's checks of judge models.
-  const { own, judge: quick, brain, judges } = ownModels(opts, db, record);
+  const { own, judge: quick, brain, judges } = ownModels(opts, { db, store }, record);
   // "Same question?" is judgement work: ion's brain at Medium (PR #36 final review, 2026-11-24).
   const ionQuestions = new IonQuestions({ store, db, needs, same: createSame(brain) });
   sweepNeeds(needs, ionQuestions);

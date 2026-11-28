@@ -4,6 +4,7 @@ import type { Billing } from "@ion/schema";
 import { byPreference, judgePin, shippedChecked } from "../adapters/registry.js";
 import { JUDGE_CASES, type JudgeCase } from "../evals/judge-cases.js";
 import { createJudge } from "./judge.js";
+import { quietNow } from "../notify/clock.js";
 
 /** A run of the judge's prompt on one "<agent>:<model>" (ion's judge runner). */
 type Run = (prompt: string, signal: AbortSignal, agent?: string) => Promise<string>;
@@ -24,6 +25,31 @@ export type JudgeCheckResult = {
 /** How ion's own check of a free agent goes (Plan 21, 2026-11-28): a gap between cases, a cap on its time. */
 export type Pace = { gapMs: number; capMs: number };
 const AUTO_PACE: Pace = { gapMs: 2000, capMs: 10 * 60_000 };
+
+const HOUR_MS = 3600_000;
+/** How long nothing must have happened before ion checks a free agent by itself. */
+const IDLE_MS = 30 * 60_000;
+
+/**
+ * Whether ion may check a free agent as judge by itself now (Plan 21's final review, 2026-11-28: a fresh ion's check
+ * shared a beginner's first session's free quota): a quiet night, as for ion's other nightly work: quiet hours at least
+ * an hour old (with quiet hours off, 01:00–06:00), nothing happening for 30 minutes, and never before your first
+ * answer to a question of ion's.
+ */
+export function judgeCheckTime(o: {
+  quiet: { on: boolean; from: string; to: string };
+  now: Date;
+  lastEventAt: Date;
+  answered: boolean;
+}): boolean {
+  if (!o.answered || o.now.getTime() - o.lastEventAt.getTime() < IDLE_MS) return false;
+  if (o.quiet.on && o.quiet.from !== o.quiet.to) {
+    const w = quietNow(o.quiet, o.now);
+    return !!w && o.now.getTime() - w.start.getTime() >= HOUR_MS;
+  }
+  const h = o.now.getHours();
+  return h >= 1 && h < 6;
+}
 
 /** A free agent's last try by itself: the day, and when its limit (hit during the check) resets. */
 type Tried = { day: string; until?: string; ranOut?: true };
@@ -195,6 +221,8 @@ export class JudgeChecks {
     const spec = judgePin(agent);
     if (!spec) throw new Error(`${agent} has no judge model`);
     const stop = () => !!this.o.limited?.(agent);
+    // Every attempt is kept, yours too, so none doubles up (Plan 21's final review, 2026-11-28).
+    this.tried(agent, { day: today() });
     const result = await runJudgeCheck((prompt, signal) => this.o.run(prompt, signal, spec), {
       // ion's own check: a case at a time, with a gap, within its time (Plan 21, 2026-11-28).
       ...(pace ? { parallel: 1, ...pace } : {}),
