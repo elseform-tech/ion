@@ -3,6 +3,7 @@ import { clockOf, type EffortLevel as Effort, type HarnessInfo } from "@ion/sche
 import {
   agentLabel,
   agentOrder,
+  byPreference,
   brainModel,
   byStrength,
   defaultAgent,
@@ -11,6 +12,7 @@ import {
   notAvoided,
   savingClaude,
 } from "../adapters/registry.js";
+import { noAgentLine } from "../runs/agent-steps.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import type { Db } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
@@ -90,6 +92,19 @@ export async function allLimited(d: BrainDeps): Promise<string | null> {
 }
 
 /**
+ * With no agent ready at all, what to do in one line, by your agent order (Plan 21 audit, 2026-11-23: ion chief said
+ * "I couldn't reach my agent; try again" with none installed, and trying again couldn't help); null otherwise.
+ */
+export async function noneReady(d: BrainDeps): Promise<string | null> {
+  const all = (await d.agents?.().catch(() => [])) ?? [];
+  const ids = byPreference(
+    all.map((h) => h.id),
+    orderOf(d),
+  );
+  return noAgentLine(ids.map((id) => all.find((h) => h.id === id)!));
+}
+
+/**
  * The agent a chat an ion starts goes on when Automatic finds none: the project's own, else the one its last chat ran
  * on (while still ready: a key can expire; you set the project's own on purpose), else the first ready in your agent
  * order; never one you avoid unless the project names it.
@@ -121,7 +136,7 @@ async function dreamWithBrain(d: BrainDeps, quick: string, effort: Effort): Prom
   const other = await strongest(d, [], { ok: webOff, quiet: true });
   if (!other) return top;
   if (top && !d.quiet) {
-    const line = `ion's dream: ${agentLabel(top.harness)} can't turn its web off; it dreams on ${agentLabel(other)}`;
+    const line = `Tidy memory: ${agentLabel(top.harness)} can't turn its web off; it runs on ${agentLabel(other)}`;
     if (!said.has(line)) console.warn(line);
     said.add(line);
   }

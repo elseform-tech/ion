@@ -85,9 +85,9 @@ async function ionTool(s: Script, server: IonServer, name: string, args: Record<
   return ok ? (body?.result?.content?.[0]?.text ?? "") : "";
 }
 
-/** How an ion's turn answers a thread's end ("A thread you started has ended: <status>. …"), or null. */
+/** How an ion's turn answers a chat's end ("A chat you started has ended: <status>. …"), or null. */
 function endOf(message: string): string | null {
-  const status = /^A thread you started has ended: (\w+)\./.exec(message)?.[1];
+  const status = /^A chat you started has ended: (\w+)\./.exec(message)?.[1];
   if (!status) return null;
   return status === "done" ? "It's done." : "It didn't finish.";
 }
@@ -266,7 +266,7 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     return "done";
   },
   async hello(s) {
-    say(s, "Hi from the fake harness.");
+    say(s, "Hi from the fake agent.");
     return "done";
   },
   async edit(s) {

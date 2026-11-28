@@ -82,7 +82,7 @@ describe("usageView", () => {
   });
 
   // The user, 2026-11-21: a gauge the agent stopped reporting goes away (never frozen at an old value).
-  it("a missing gauge shows Learned from errors", () => {
+  it("a missing gauge shows No usage info", () => {
     const resetsAt = new Date(Date.now() + 90 * MIN).toISOString();
     start("r1", "codex");
     const windows = [{ name: "5 h", usedPercent: 62, resetsAt }];

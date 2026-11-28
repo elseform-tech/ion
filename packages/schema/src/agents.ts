@@ -42,7 +42,27 @@ export type HarnessInfo = {
   signOut?: { command: string; inApp: boolean };
   /** Its sign-in ion started and waits on: the page to open and the code to confirm there, nothing else it printed. */
   signingIn?: LoginPage;
+  /** The command that installs it (Plan 21: a beginner without it is told how). */
+  install?: string;
 };
+
+/** One agent on the first run: ready, or the command that gets it there (install it, or sign in). */
+export type AgentStep = {
+  id: string;
+  label: string;
+  /** `checking`: ion is still reading it (a fresh start). */
+  state: "ready" | "install" | "signIn" | "checking";
+  /** The command to type: its install, or its sign-in. */
+  command?: string;
+  /** ion can run its sign-in itself (Settings → Agents' Sign in). */
+  inApp?: boolean;
+};
+
+/**
+ * `start.status`: your agents, your own projects (not ion's `default`) and your chats (archived too). `firstRun`: none
+ * of either, so the app opens on its first-run screen and bare `ion` prints the first steps.
+ */
+export type StartStatus = { agents: AgentStep[]; projects: number; chats: number; firstRun: boolean };
 
 /** An agent's sign-in page and the code to confirm there (either may be missing). */
 export type LoginPage = { url: string | null; code: string | null };
@@ -56,14 +76,20 @@ export type SignOutResult = { kind: "done"; signedIn: boolean } | { kind: "comma
 /** The agents' commands, in the contract's order: the list, and signing in and out (the user, 2026-11-23). */
 export const AGENT_COMMANDS = [
   "harnesses.list",
+  "start.status",
   "harness.login",
   "harness.logout",
   "harness.cancelLogin",
+  "agents.checks",
+  "agents.check",
 ] as const;
 
 /** The coding agents: each one's state, and signing in and out of it from ion (the user, 2026-11-23). */
 export type AgentCommands = {
-  "harnesses.list": { args: Record<string, never>; result: HarnessInfo[] };
+  /** `fresh`: each agent is read again now (Check again), not answered from what ion read a minute ago. */
+  "harnesses.list": { args: { fresh?: boolean }; result: HarnessInfo[] };
+  /** What a first run needs (Plan 21): each agent's state and its one-line fix, and how much you have in ion. */
+  "start.status": { args: { fresh?: boolean }; result: StartStatus };
   /**
    * Starts an agent's own sign-in where it needs no terminal (its page and code), else gives its command. Refused while
    * it's signed in or the agent isn't installed; one whose sign-in clears the one it has (`signIn.clears`) needs
@@ -77,7 +103,100 @@ export type AgentCommands = {
   "harness.logout": { args: { id: string; confirm?: boolean }; result: SignOutResult };
   /** Stops an agent's sign-in ion started (its page is gone; the agent stays signed out). */
   "harness.cancelLogin": { args: { id: string }; result: { ok: true } };
+  /**
+   * "Check the agents each night" (Plan 21 Task 5): on or off, and the agents that aren't free you pick for it; returns
+   * each agent's part in it and the last checks.
+   */
+  "agents.checks": { args: { nightly?: boolean; pick?: Record<string, boolean> }; result: AgentChecksInfo };
+  /** Checks the agents now, as the night would (waits for them), and returns what it found. */
+  "agents.check": { args: Record<string, never>; result: AgentChecksInfo };
 };
+
+/**
+ * One of ion's checks of an agent: it starts, answers, reaches ion's tools, its calls reach ion's gate, signed in.
+ * `limited`: its use is used up (not broken: never a failure).
+ */
+export type AgentCheckItem = { name: string; ok: boolean; note?: string; limited?: true };
+
+/** ion's last check of one agent (`at`: when it ran, ISO; `by`: the night's check, or one you asked for now). */
+export type AgentCheckRecord = {
+  agent: string;
+  label: string;
+  at: string;
+  by?: "night" | "now";
+  checks: AgentCheckItem[];
+};
+
+/**
+ * One agent in the nightly check: whether it's in (`why`: why not), whether you picked it (one that isn't free is in
+ * only then; Claude Code too), and what a night costs it.
+ */
+export type AgentCheckRow = {
+  agent: string;
+  label: string;
+  included: boolean;
+  why: string | null;
+  picked: boolean;
+  cost: string;
+};
+
+/** The nightly check: on or off, going now, when it runs ("01:00–06:00"), each agent's part, and the last checks. */
+export type AgentChecksInfo = {
+  nightly: boolean;
+  running: boolean;
+  window: string;
+  agents: AgentCheckRow[];
+  last: AgentCheckRecord[];
+};
+
+/** How many of a check's parts failed (used up isn't failed). */
+export const checksFailed = (r: AgentCheckRecord): number => r.checks.filter((c) => !c.ok).length;
+
+/** Its use was used up at the check (not broken): why, in its own words. */
+const usedUp = (r: AgentCheckRecord): string | undefined => r.checks.find((c) => c.limited)?.note;
+
+/**
+ * When a check ran, in words: "last night" only for the night's check; else "today at 14:05", "yesterday at 09:10",
+ * or "on 2026-11-20 at 14:05".
+ */
+function whenChecked(r: AgentCheckRecord, now: Date): string {
+  const at = new Date(r.at);
+  const day = (t: Date) => new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+  const days = Math.round((day(now) - day(at)) / 86_400_000);
+  if (r.by === "night" && days <= 1) return "last night";
+  const clock = `at ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  if (days === 0) return `today ${clock}`;
+  if (days === 1) return `yesterday ${clock}`;
+  return `on ${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${clock}`;
+}
+
+/** An agent's line when it failed or was used up, with when ("Grok Build: 2 checks failed · last night"). */
+function badLine(r: AgentCheckRecord, now: Date): string | null {
+  const n = checksFailed(r);
+  const out = usedUp(r);
+  if (!n && !out) return null;
+  const failed = n === 1 ? "1 check failed" : `${n} checks failed`;
+  const what = n ? failed : out!.toLowerCase();
+  return `${r.label}: ${what} · ${whenChecked(r, now)}`;
+}
+
+/**
+ * The checks in a line each: "Checked last night: all fine" (the oldest agent's check when they differ), one per
+ * agent that failed or was used up ("Grok Build: 2 checks failed · today at 14:05"), or, with none failed and some
+ * used up, one line naming each ("Grok Build: fine · opencode: its free use is used up · …"); none before the first.
+ */
+export function checkLines(last: AgentCheckRecord[], now: Date): string[] {
+  const bad = last.map((r) => badLine(r, now)).filter((l): l is string => l !== null);
+  const oldest = [...last].sort((a, b) => a.at.localeCompare(b.at))[0];
+  const fine = last.filter((r) => !checksFailed(r) && !usedUp(r));
+  // None failed, some used up and the others fine: one line names them all (Task 5 review, 2026-11-28).
+  if (bad.length && fine.length && !last.some((r) => checksFailed(r) > 0)) {
+    const parts = last.map((r) => `${r.label}: ${usedUp(r)?.toLowerCase() ?? "fine"}`);
+    return [`${parts.join(" · ")} · ${whenChecked(oldest!, now)}`];
+  }
+  if (bad.length) return bad;
+  return oldest ? [`Checked ${whenChecked(oldest, now)}: all fine`] : [];
+}
 
 /** One of an agent's rate-limit windows, as it reported it. */
 export type UsageWindow = { name: string; usedPercent: number; resetsAt: string | null };
@@ -164,12 +283,12 @@ function fullest(u: AgentUsage, now: Date): UsageWindow | null {
 function noGauge(u: AgentUsage): string {
   if (u.billing === "free") return "Free";
   if (u.billing === "api" && u.week.costUsd > 0) return "";
-  return "Learned from errors";
+  return "No usage info";
 }
 
 /**
  * One agent's usage in a few words, the same in Settings → Agents and `ion status`: "62% of 5 h · resets 14:20",
- * "limited until 16:00", "Free", "Learned from errors"; this week's cost too for an agent paid per token, or one whose
+ * "limited until 16:00", "Free", "No usage info"; this week's cost too for an agent paid per token, or one whose
  * billing ion can't tell but that reported a cost.
  */
 export function usageLine(

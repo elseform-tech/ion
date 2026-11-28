@@ -11,6 +11,7 @@ import {
 } from "@ion/config";
 import {
   DREAM_MODES,
+  NOTIFY_DEFAULTS,
   type IonSettings,
   type NotifyLevel,
   type SettingsInfo,
@@ -32,7 +33,7 @@ export function generalOf(c: UserConfig): Omit<SettingsInfo, keyof IonSettings |
         from: c.notifications.quiet.from,
         to: c.notifications.quiet.to,
       },
-      projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? "needs"])),
+      projects: Object.fromEntries(c.projects.map((p) => [p.id, p.notify ?? NOTIFY_DEFAULTS.level])),
     },
     dream: { mode: c.memory.dream, agent: c.memory.dreamAgent ?? null },
     memory: {

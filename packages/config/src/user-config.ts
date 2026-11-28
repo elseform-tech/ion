@@ -209,6 +209,13 @@ const UserConfigSchema = z.looseObject({
    * last unless it's the only one, never one you avoid (the user, 2026-11-24).
    */
   routing: z.looseObject({ order: z.array(z.string()).default([]) }).prefault({}),
+  /**
+   * "Check the agents each night" (Plan 21 Task 5; off until you turn it on): a small check of each signed-in free
+   * agent in quiet hours. `agents`: those that aren't free you picked for it (Claude Code only so).
+   */
+  checks: z
+    .looseObject({ nightly: z.boolean().default(false), agents: z.array(z.string()).default([]) })
+    .prefault({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -252,6 +259,9 @@ const FALLBACKS: [path: string[], schema: z.ZodType][] = [
   [["memory", "dreamAgent"], z.string()],
   [["routing"], z.looseObject({})],
   [["routing", "order"], z.array(z.string())],
+  [["checks"], z.looseObject({})],
+  [["checks", "nightly"], z.boolean()],
+  [["checks", "agents"], z.array(z.string())],
 ];
 
 /** Whether this agent brings its own servers, skills and plugins into ion's chats (on unless you turned it off). */

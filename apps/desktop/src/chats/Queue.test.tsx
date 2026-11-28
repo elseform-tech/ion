@@ -247,7 +247,7 @@ describe("the queue in a chat", () => {
       />
     );
     const { rerender } = render(at("r1"));
-    expect(screen.getByRole("button", { name: /Harness, model and effort/ }).textContent).toContain("fake");
+    expect(screen.getByRole("button", { name: /Agent, model and effort/ }).textContent).toContain("fake");
     type("then this");
     fireEvent.keyDown(box(), { key: "Enter" });
     await waitFor(() =>

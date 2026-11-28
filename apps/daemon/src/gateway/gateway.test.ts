@@ -387,7 +387,7 @@ describe("an ion's turn through the gateway", () => {
     expect(ionGated).toEqual([
       { turnId: "turn_1", call: expect.objectContaining({ toolName: "echo", mcpServer: "docs" }) },
     ]);
-    ionSays = { decision: "deny", reason: "That changes something, so I'll start a thread" };
+    ionSays = { decision: "deny", reason: "That changes something, so I'll start a chat" };
     const no = (await (await send(turnKey, callTool("echo", {}))).json()) as { result: { isError: boolean } };
     expect(no.result.isError).toBe(true);
     expect((await send(other, callTool("echo", {}))).status).toBe(404);

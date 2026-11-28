@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { why } from "../callError.js";
 import type { SettingsData } from "./data.js";
 import { Switch } from "./Switch.js";
+import { projectName } from "../projectName.js";
 
 type Notifs = NonNullable<SettingsPatch["notifications"]>;
 
@@ -135,7 +136,7 @@ function PerProject(part: Part) {
       <h4>Per project</h4>
       <div className="group">
         {data.projects.map((p) => {
-          const name = p.name ?? p.id;
+          const name = projectName(p.id, p.name);
           const level = n.projects[p.id] ?? "needs";
           const label = (
             <>

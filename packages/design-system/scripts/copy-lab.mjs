@@ -49,6 +49,7 @@ const RANGES = [
   [1108, 1112, "settings: chats at once, times, a shortcut's keys"],
   [1113, 1119, "the message box's / and @ menu, picks as chips; a server's tools"],
   [1120, 1126, "settings: Memory (whose, search, rows, a file, history, to-dos); ion chief's open to-dos"],
+  [1129, 1133, "the first run: your agents, pick a folder, ask (Plan 21)"],
 ];
 
 const out = [

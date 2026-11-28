@@ -245,6 +245,26 @@ describe("Sidebar", () => {
     expect(a.onRemoveProject).toHaveBeenCalledWith("storefront");
   });
 
+  // Plan 21 Task 4 (Task 1's finding 12, Task 3's review): a newcomer read ion's `default` folder as "your project".
+  // Chats in no project of yours group under "No project".
+  it("names ion's default folder No project", () => {
+    side([chat("a", "default"), chat("b", "storefront")]);
+    expect(screen.getByText("No project")).toBeTruthy();
+    expect(screen.queryByText("default")).toBeNull();
+  });
+
+  // Re-review of Plan 21 Task 4 (2026-11-28): a question from a chat in `default` still said "default" under it.
+  it("says No project under a question from ion's default folder", () => {
+    const need = {
+      ...{ needId: "n1", chatId: "a", runId: "r1", projectId: "default", kind: "ask" },
+      ...{ summary: "Which file?", detail: null, dedupeKey: "k", raisedAt: "2026-11-18T10:00:00.000Z" },
+    } as NeedInfo;
+    const { container } = side([chat("a", "default")], [need]);
+    const row = screen.getByText("Which file?").closest("button")!;
+    expect(row.querySelector(".sub")?.textContent).toBe("No project");
+    expect(container.textContent).not.toContain("default");
+  });
+
   it("has no menu for default", () => {
     side([chat("a", "default")]);
     expect(screen.queryByRole("button", { name: "More for default" })).toBeNull();

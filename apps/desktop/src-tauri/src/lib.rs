@@ -1,6 +1,7 @@
-//! ion's desktop shell. It tells the UI where the daemon is (port and token from `daemon.json`) and opens a few
-//! things for it: your mcp.json in your editor (that one file), ion's memory folder and its files (nothing else in the
-//! data folder), and sign-in pages in your browser; everything else goes through the daemon's WebSocket API.
+//! ion's desktop shell. It tells the UI where the daemon is (port and token from `daemon.json`), starts the daemon
+//! when it isn't running and the shell can find it, and opens a few things for it: your mcp.json in your editor (that
+//! one file), ion's memory folder and its files (nothing else in the data folder), sign-in pages in your browser, and
+//! the system's folder picker; everything else goes through the daemon's WebSocket API.
 
 use std::path::PathBuf;
 
@@ -56,6 +57,58 @@ pub fn initial_of(name: Option<String>) -> String {
         .unwrap_or_else(|| "Y".to_string())
 }
 
+/// The daemon this app starts when ion isn't running (Plan 21 audit, 2026-11-23: the app opened on "ion daemon
+/// start"): `$ION_DAEMON_BIN`, else (a development build only) the one built beside this app in ion's repo
+/// (`apps/daemon/dist/main.js`), when it's there; None otherwise (the app then shows the command).
+pub fn daemon_script(env: impl Fn(&str) -> Option<String>, built: Option<&std::path::Path>) -> Option<PathBuf> {
+    if let Some(bin) = env("ION_DAEMON_BIN").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(bin));
+    }
+    built.filter(|b| b.is_file()).map(|b| b.to_path_buf())
+}
+
+/// How the daemon is started: through your login shell, so it has your PATH (an app opened from the Finder gets a
+/// short one, and the daemon finds your agents and `node` on it): `<shell> -l -c 'exec node "$0"' <script>`.
+pub fn launch_args(env: impl Fn(&str) -> Option<String>, script: &std::path::Path) -> (String, Vec<String>) {
+    let shell = env("SHELL").filter(|s| s.starts_with('/')).unwrap_or_else(|| "/bin/zsh".to_string());
+    let args = vec!["-l".into(), "-c".into(), "exec node \"$0\"".into(), script.display().to_string()];
+    (shell, args)
+}
+
+/// The daemon built in ion's repo, beside this app's source: a development build only (review of Plan 21 Task 2,
+/// 2026-11-23: a release build must never run a file from where it was built).
+#[cfg(debug_assertions)]
+const BUILT_DAEMON: Option<&str> = Some(concat!(env!("CARGO_MANIFEST_DIR"), "/../../daemon/dist/main.js"));
+#[cfg(not(debug_assertions))]
+const BUILT_DAEMON: Option<&str> = None;
+
+/// Starts the daemon in the background, its output in `<data>/daemon.log`; false when there's none to start.
+#[tauri::command]
+fn start_daemon() -> bool {
+    use std::os::unix::process::CommandExt;
+    let env = |k: &str| std::env::var(k).ok();
+    let (Some(script), Some(data)) = (daemon_script(env, BUILT_DAEMON.map(std::path::Path::new)), data_dir(env)) else {
+        return false;
+    };
+    if std::fs::create_dir_all(&data).is_err() {
+        return false;
+    }
+    let Ok(log) = std::fs::OpenOptions::new().create(true).append(true).open(data.join("daemon.log")) else {
+        return false;
+    };
+    let Ok(err) = log.try_clone() else { return false };
+    let (shell, args) = launch_args(env, &script);
+    std::process::Command::new(shell)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(log)
+        .stderr(err)
+        // Its own process group: closing the app doesn't stop ion.
+        .process_group(0)
+        .spawn()
+        .is_ok()
+}
+
 #[tauri::command]
 fn user_initial() -> String {
     initial_of(std::env::var("USER").ok())
@@ -71,6 +124,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // The window may open your mcp.json (Settings → Tools → Open config file) and ion's memory folder and
             // its files (Settings → Memory), nothing else.
@@ -88,7 +142,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![daemon_info, user_initial])
+        .invoke_handler(tauri::generate_handler![daemon_info, user_initial, start_daemon])
         .run(tauri::generate_context!())
         .expect("ion couldn't open its window");
 }
@@ -128,6 +182,29 @@ mod tests {
         // Task review, 2026-11-22: Markdown files only, not anything else in the folder.
         assert_eq!(files, PathBuf::from("/i/data/memory/**/*.md"));
         assert_eq!(memory_paths(env(&[])), None);
+    }
+
+    // Plan 21 audit, 2026-11-23: the app opened on "ion isn't running. Start it with: ion daemon start".
+    #[test]
+    fn starts_the_daemon_named_else_the_one_built_beside_it() {
+        let built = std::env::temp_dir().join(format!("ion-built-{}.js", std::process::id()));
+        let named = env(&[("ION_DAEMON_BIN", "/x/main.js")]);
+        assert_eq!(daemon_script(named, Some(&built)), Some(PathBuf::from("/x/main.js")));
+        assert_eq!(daemon_script(env(&[]), Some(&built)), None);
+        std::fs::write(&built, "").unwrap();
+        assert_eq!(daemon_script(env(&[]), Some(&built)), Some(built.clone()));
+        // A release build has none beside it (review of Plan 21 Task 2, 2026-11-23).
+        assert_eq!(daemon_script(env(&[]), None), None);
+        std::fs::remove_file(&built).unwrap();
+    }
+
+    #[test]
+    fn starts_it_through_your_login_shell() {
+        let script = PathBuf::from("/repo/apps/daemon/dist/main.js");
+        let (shell, args) = launch_args(env(&[("SHELL", "/bin/bash")]), &script);
+        assert_eq!(shell, "/bin/bash");
+        assert_eq!(args, vec!["-l", "-c", "exec node \"$0\"", "/repo/apps/daemon/dist/main.js"]);
+        assert_eq!(launch_args(env(&[]), &script).0, "/bin/zsh");
     }
 
     #[test]

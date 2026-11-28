@@ -117,6 +117,8 @@ export function pickAgent(candidates: Candidate[], t: Task): Pick {
   const pick = open[0];
   if (!pick) return { agent: null, reason: "No agent is free" };
   const top = [...candidates].sort(byWeight((c) => expected(c, t)))[0]!;
-  const why = top.id === pick.id ? fitsBecause(pick, t) : passedOver(top, t);
+  // Only a guessed limit left: it's a try, and the line says so (Plan 21 Task 6 tour).
+  const tried = pick.limitedUntil ? "it may be back from its limit; no other agent is free" : null;
+  const why = tried ?? (top.id === pick.id ? fitsBecause(pick, t) : passedOver(top, t));
   return { agent: pick.id, reason: `On ${pick.label} — ${why}` };
 }

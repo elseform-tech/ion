@@ -1,5 +1,6 @@
 import { ApiCallError, type IonClient } from "@ion/client/browser";
 import type { SettingsInfo } from "@ion/schema";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 
 /** For tests: every setting, as the daemon reads them by default. */
@@ -41,4 +42,12 @@ export function settingsClient(o: { now?: SettingsInfo; refuse?: string } = {}) 
     return [];
   });
   return { call, subscribe: vi.fn(async () => () => {}) } as unknown as IonClient & { call: typeof call };
+}
+
+/** Opens a Settings page from the sidebar, through More when it's tucked there (Plan 21 Task 4). */
+export async function openPage(name: string): Promise<void> {
+  const nav = within(await screen.findByRole("navigation", { name: "Settings" }));
+  if (!nav.queryByRole("button", { name }))
+    fireEvent.click(nav.getByRole("button", { name: "More settings" }));
+  fireEvent.click(nav.getByRole("button", { name }));
 }

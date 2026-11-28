@@ -1,5 +1,5 @@
 import type { IonClient } from "@ion/client/browser";
-import { Avatar, MessageSquare, Settings as Cog } from "@ion/design-system";
+import { Avatar, MessageSquare, Search, Settings as Cog } from "@ion/design-system";
 import { EV } from "@ion/schema";
 import { useEffect, useState } from "react";
 
@@ -39,9 +39,15 @@ export function useNeedCount(client: IonClient | null): number {
 
 /**
  * The lab's rail: the window's own buttons in its top strip, Chats, then Ions as the transparent orbit glyph (a
- * dot on it when something needs you), then you.
+ * dot on it when something needs you), Search (⌘K), then Settings and you.
  */
-export function Rail(p: { mode: Mode; setMode: (m: Mode) => void; initial: string; needs: number }) {
+export function Rail(p: {
+  mode: Mode;
+  setMode: (m: Mode) => void;
+  initial: string;
+  needs: number;
+  onSearch?: () => void;
+}) {
   const on = (m: Mode) => `rb${p.mode === m ? " on" : ""}`;
   return (
     <nav className="rail" aria-label="App">
@@ -58,6 +64,9 @@ export function Rail(p: { mode: Mode; setMode: (m: Mode) => void; initial: strin
       >
         <Avatar ion={p.mode === "ions" ? "glyph-on" : "glyph"} />
         <i className="dotb" hidden={p.needs === 0} />
+      </button>
+      <button className="rb" type="button" title="Search  ⌘K" aria-label="Search" onClick={p.onSearch}>
+        <Search />
       </button>
       <span className="grow" />
       <button

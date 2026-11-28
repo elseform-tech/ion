@@ -154,6 +154,28 @@ describe("ion's dream", () => {
     expect(new Set(periods)).toEqual(new Set(["2026-11-21", "2026-11-22"]));
   });
 
+  // Plan 21 final review (2026-11-28, M10): the nightly agent check and Tidy memory could run at once, two agents'
+  // sessions in the same quiet hour. Tidy memory waits while the check goes (and the check waits while it tidies).
+  it("waits while the nightly check goes, and says it's tidying", async () => {
+    seed("Node", { scope: { projectId: "shop" }, type: "fact", text: "Node 22." });
+    saveUserConfig(configFile, config("nightly", false));
+    vi.useFakeTimers();
+    vi.setSystemTime(at(25, 2, 58));
+    let checking = true;
+    let seen: boolean | null = null;
+    const dreams = new Dreams(deps(vi.fn(async () => ((seen = dreams.tidying), done()))));
+    dreams.waitFor(() => checking);
+    const stop = dreams.start();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(seen).toBeNull();
+    checking = false;
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    expect(seen).toBe(true);
+    expect(dreams.tidying).toBe(false);
+    stop();
+    vi.useRealTimers();
+  });
+
   it("dream sees recent chats' words as data, and memory's index", async () => {
     seed("Package manager", { scope: { projectId: "shop" }, type: "fact", text: "The shop uses npm." });
     store.append({
@@ -485,6 +507,16 @@ describe("ion's dream", () => {
 
   // The user, 2026-11-23: Dream skips a scope that's off. Bank's memory off: no pass of bank's; yours off: no pass of
   // yours, and no other pass reads your files either. The files stay as they were.
+  // Plan 21 Task 4 (Task 3's review): Memory showed "Dream skipped: …" after Settings had said Tidy memory. A skipped
+  // pass leaves its note in the new words.
+  it("a skipped tidy leaves its note in Memory, as Tidy memory", async () => {
+    seed("Node", { scope: { projectId: "shop" }, type: "fact", text: "Node 22." });
+    const info = await runDream(
+      deps(async () => done("Tidy memory skipped: Grok Build can't turn its web off")),
+    );
+    expect(info.notes).toEqual(["Tidy memory skipped: Grok Build can't turn its web off"]);
+  });
+
   it("Dream skips a scope that's off", async () => {
     seed("Bank deploys", { scope: { projectId: "bank" }, type: "fact", text: "Bank deploys on Mondays." });
     seed("Shop deploys", { scope: { projectId: "shop" }, type: "fact", text: "Shop deploys on Fridays." });

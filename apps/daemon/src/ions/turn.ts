@@ -19,7 +19,7 @@ import { UserError } from "../api/errors.js";
 import type { GateAnswer } from "../gate/index.js";
 import type { Grants, IonScope } from "../mcp/index.js";
 import type { Db, EventStore } from "../store/index.js";
-import { allLimited, type IonBrain, ionBrain, limitedUntil, nextBrain } from "./brain.js";
+import { allLimited, type IonBrain, ionBrain, limitedUntil, nextBrain, noneReady } from "./brain.js";
 import { forgetSession, resumeOf, startSession } from "./sessions.js";
 import { errLine, type IonLine, NO_AGENT, noAgent, onReadyAgents, STOPPED, type Tried } from "./fallback.js";
 import { ionVerdict } from "./gate.js";
@@ -265,8 +265,8 @@ export class IonTurns {
     if (this.stopAsked.delete(ionId)) return { reply: STOPPED, ionLine: "stopped", threads: [] };
     // No agent: when every ready one is limited with a stated reset, which frees up first (review, 2026-11-22).
     if (!brain) {
-      const reply = (await allLimited(this.d).catch(() => null)) ?? NO_AGENT;
-      return { reply, ionLine: "no-agent", threads: [] };
+      const why = (await allLimited(this.d).catch(() => null)) ?? (await noneReady(this.d).catch(() => null));
+      return { reply: why ?? NO_AGENT, ionLine: "no-agent", threads: [] };
     }
     // Every try is one turn (security review, 2026-11-22): its id, and so its caps on memory and threads.
     const turnId = `turn_${randomUUID()}`;

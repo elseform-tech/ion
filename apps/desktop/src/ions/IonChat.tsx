@@ -22,6 +22,7 @@ import { onEnter, QueueLines, submit, useDoubleEsc, useEditInto, useQueue } from
 import { WorkBlock } from "../chats/Work.js";
 import { SuggestionCard } from "./SuggestionCard.js";
 import { ThreadLines, ThreadPeek } from "./ThreadLine.js";
+import { projectName } from "../projectName.js";
 
 /** An ion's chat, live: its backlog, then each new line. */
 function useIonChat(client: IonClient, ionId: string): IonItem[] {
@@ -99,7 +100,7 @@ function Pins({ needs, onOpenChat }: { needs: NeedInfo[]; onOpenChat: (chatId: s
           <MessageSquare />
           <span className="g">
             <b>{n.summary}</b>
-            <small>{n.projectId}</small>
+            <small>{n.projectId && projectName(n.projectId)}</small>
           </span>
           <span />
           <span />

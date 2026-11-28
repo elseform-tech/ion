@@ -37,12 +37,15 @@ export function addProject(c: UserConfig, path: string): UserConfig {
   if (!existsSync(`${abs}/.git`)) throw new Error(`Not a git repository: ${path}`);
   const dup = c.projects.find((p) => p.path === abs);
   if (dup) throw new Error(`Already added: ${dup.id}`);
-  const base = basename(abs);
+  // Its id a slug commands can take; the folder's own name kept to show (Plan 21 final review, M5).
+  const folder = basename(abs);
+  const base = projectIdOf(folder) || "project";
   const taken = new Set([...RESERVED_IDS, ...c.projects.map((p) => p.id)]);
   let id = base;
   let n = 1;
   while (taken.has(id)) id = `${base}-${++n}`;
-  return { ...c, projects: [...c.projects, { id, path: abs, starred: false }] };
+  const named = folder !== base ? { name: folder.slice(0, 60) } : {};
+  return { ...c, projects: [...c.projects, { id, path: abs, starred: false, ...named }] };
 }
 
 /** Shows a project under a new name; its id stays. Back to its id: the name is dropped. */

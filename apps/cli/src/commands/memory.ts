@@ -1,8 +1,8 @@
-import type { MemoryInfo } from "@ion/schema";
+import type { DreamMode, MemoryInfo } from "@ion/schema";
 import type { Command } from "commander";
 import { withClient } from "../connect.js";
 import { openFolder } from "../daemon-control.js";
-import { type Out, print } from "../output.js";
+import { fail, type Out, print } from "../output.js";
 import { clean, text } from "../sanitize.js";
 
 /** A file in one line: where it is, its type (a to-do's state and date), its name and description (once, if alike). */
@@ -56,6 +56,27 @@ export function memoryCommands(program: Command, out: () => Out) {
       print(out(), "Kept for every project", r);
     });
   memorySwitch(m, out);
+  tidyCommand(m, out);
+}
+
+const TIDY: DreamMode[] = ["off", "nightly", "weekly"];
+
+/**
+ * `ion memory tidy [off|nightly|weekly]` (Plan 21 Task 4): the app tucks Tidy memory under More; the CLI reaches it
+ * too. With no word, says how often it runs.
+ */
+function tidyCommand(m: Command, out: () => Out) {
+  m.command("tidy [how]")
+    .description("How often it tidies: off, nightly or weekly")
+    .action(async (how?: string) => {
+      if (how !== undefined && !TIDY.includes(how as DreamMode)) fail("Pick off, nightly or weekly");
+      const s = await withClient((c) =>
+        how
+          ? c.call("settings.set", { patch: { dream: { mode: how as DreamMode } } })
+          : c.call("settings.get", {}),
+      );
+      print(out(), `Tidy memory: ${s.dream.mode}`, s.dream);
+    });
 }
 
 /** `ion memory on|off [-p <project>]` and `ion memory open`. */

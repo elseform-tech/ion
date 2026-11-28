@@ -131,6 +131,24 @@ const NOT_ALLOWED = { isError: true, content: [{ text: "Not allowed" }] };
 
 // The user, 2026-11-19: ion chief and project ions get real tools, each only over what it may see.
 describe("ion tools", () => {
+  // Plan 21 Task 5, 2026-11-28: the nightly check's key gets one tool, its word, and nothing of yours.
+  it("a check's key has only the check tool, which gives its word", async () => {
+    const c = await client(
+      grants.create({
+        kind: "ion",
+        ionId: "_check",
+        projects: [],
+        turnId: "c1",
+        report: true,
+        check: { word: "f00d" },
+      }),
+    );
+    const { tools } = await c.listTools();
+    expect(tools.map((t) => t.name)).toEqual(["check"]);
+    expect(text(await c.callTool({ name: "check", arguments: {} }))).toBe("f00d");
+    await c.close();
+  });
+
   it("ion chief's key lists only projects shared with ion, never default", async () => {
     const c = await chief();
     const listed = text(await c.callTool({ name: "projects", arguments: {} }));
@@ -233,7 +251,7 @@ describe("ion tools", () => {
       projects: ["app", "shop"],
       memory: { you: false, projects: ["app"] },
     });
-    expect(told).toContain("Memory is off in shop: pass nothing from memory into its threads.");
+    expect(told).toContain("Memory is off in shop: pass nothing from memory into its chats.");
     expect(told).not.toContain('scope "you"');
     expect(told).not.toContain("Added to your to-dos");
     expect(told).toContain("Added to <project>'s to-dos");
@@ -314,7 +332,7 @@ describe("ion tools", () => {
       expect(text(r)).toBe("Started t-shop");
     }
     const sixth = await c.callTool({ name: "start_thread", arguments: { projectId: "app", brief: "more" } });
-    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough threads for one turn" }] });
+    expect(sixth).toMatchObject({ isError: true, content: [{ text: "That's enough chats for one turn" }] });
     expect(startThread).toHaveBeenCalledTimes(5);
     expect(startThread).toHaveBeenCalledWith("shop", "do 0", "t1", {});
     await c.close();

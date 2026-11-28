@@ -669,6 +669,9 @@ button.arow:hover{background:var(--hover)}
 /* Tour of PR #36, 2026-11-24: each agent's toggles with their icon (named on hover), and its judge line's quiet link */
 .hacts .swl{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}.hacts .swl svg{width:14px;height:14px}
 .hrow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer}.hrow .lnk:hover{text-decoration:underline}
+/* Plan 21 Task 5: Check the agents each night: its result line's quiet link, and each check with its icon */
+.srow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left}.srow .lnk:hover{text-decoration:underline}
+.chk{display:flex;align-items:center;gap:6px}.chk svg,.chk .spin{width:13px;height:13px;flex-shrink:0}.chk .bad{color:var(--bad)}
 /* Tour at 900×700, 2026-11-24: a chip ("Its own hooks run too") stays one line; it moves below the name instead */
 .hrow .chip{white-space:nowrap;display:inline-block;box-sizing:border-box;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}
@@ -747,6 +750,43 @@ button.arow:hover{background:var(--hover)}
 .mtext{padding:12px 16px;font-size:13.5px;line-height:1.55;overflow-wrap:anywhere}.mtext>.md>:first-child{margin-top:0}.mtext>.md>:last-child{margin-bottom:0}
 .srow .when{color:var(--faint);font-size:12px;white-space:nowrap}.srow.ask .g{font-size:13px}.mfold{width:100%;border:0;background:transparent;font:inherit;color:var(--muted);cursor:pointer;text-align:left}.mfold:hover{color:var(--ink)}.mfold .lucide{width:14px;height:14px}
 .head .todos{width:auto;padding:0 8px;gap:5px;display:inline-flex;align-items:center}.head .todos .ct{font-size:12px;font-variant-numeric:tabular-nums}
+
+/* lab lines 1129-1133: the first run: your agents, pick a folder, ask (Plan 21) */
+/* first run (Plan 21): no projects and no chats yet; your agents, pick a folder, ask: three steps on one screen */
+.first{display:grid;place-items:center;padding:20px 28px 56px;overflow:auto}.first .inner{width:100%;max-width:640px;display:grid;gap:22px}.first h3{margin:0;font-family:var(--display);font-weight:600;font-size:24px;letter-spacing:-.02em;text-align:center}
+.fstep{display:grid;gap:8px}.fh2{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--muted);min-height:28px}.fh2 .n{width:18px;height:18px;border-radius:50%;background:var(--hover);display:grid;place-items:center;font-size:11px;color:var(--ink)}.fh2 .sp{flex:1}
+.fagents{border-radius:12px;box-shadow:inset 0 0 0 1px var(--line)}.farow{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:8px 12px;font-size:13.5px;min-height:40px;box-sizing:border-box}.farow+.farow{border-top:1px solid var(--line)}.farow .nm{flex:0 0 104px;font-weight:500}.farow .ok{color:var(--good);display:inline-flex;align-items:center;gap:6px;font-size:13px}.farow .g{color:var(--muted);font-size:13px}.farow code{font:12.5px var(--mono);color:var(--ink);background:var(--hover);padding:2px 6px;border-radius:6px;overflow-wrap:anywhere}.farow .sp{flex:1}.farow .hsign{flex-basis:100%;padding-left:112px}
+.ffolder{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.ffolder .fin{flex:1;min-width:200px}.ffolder .perr{flex-basis:100%;font-size:12.5px;color:var(--del-ink)}.fex{display:flex;flex-wrap:wrap;gap:6px}.fex .chip{cursor:pointer;color:var(--muted)}.fex .chip:hover{color:var(--ink)}.fwait{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px}.fwait .lucide{width:14px;height:14px}
+
+/* lab lines 289-312: search palette (Plan 21 Task 4: the app's Search) */
+/* search palette */
+.pal{position:absolute;inset:0;z-index:5;background:rgba(12,14,18,.16);display:grid;justify-items:center;align-items:start;padding-top:92px}
+.pal[hidden]{display:none}
+.pbox{width:600px;max-width:calc(100% - 32px);background:var(--win);border-radius:16px;box-shadow:0 0 0 1px var(--line),0 28px 70px -16px rgba(0,0,0,.35);overflow:hidden;display:grid}
+.pin{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.pin .lucide{color:var(--faint);width:18px;height:18px}
+.pin input{flex:1;border:0;background:transparent;font:inherit;font-size:15px;color:var(--ink);outline:none;min-width:0}
+.pin input::placeholder{color:var(--faint)}
+.pres{max-height:400px;overflow:auto;padding:6px}
+.pg{font-size:12px;color:var(--faint);font-weight:500;padding:8px 10px 4px}
+.pr{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 10px;border-radius:9px;border:0;background:transparent;width:100%;text-align:left;cursor:pointer}
+.pr.on{background:var(--hover)}
+.pr canvas{width:20px;height:20px}
+.pr>.lucide{color:var(--muted);justify-self:center}
+.pr .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr .tt small{color:var(--faint);font-size:12.5px;margin-left:8px}
+.pr .r2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--faint)}
+.pr .wd{width:7px;height:7px;border-radius:50%;background:var(--wait)}
+.pr mark{background:transparent;color:var(--ink);font-weight:600}
+.pfoot{display:flex;align-items:center;gap:14px;padding:8px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--faint)}
+.pfoot span{display:inline-flex;align-items:center;gap:4px}
+.pfoot .sp{flex:1}
+
+/* lab lines 1142-1145: Settings' More; a chat beside its ion in a narrow window (Plan 21 Task 4) */
+/* Plan 21 Task 4: Settings' More (the pages you haven't used), quieter than a page */
+.snav .smore{color:var(--faint)}.snav .smore .lucide{width:14px;height:14px}.snav button[hidden]{display:none}
+/* Plan 21 Task 4 (tour at 900×700): a chat open beside its ion got ~100 px; in a narrow window the ions list steps aside */
+@media (max-width:1180px){.ions:has(.ichat.peek){grid-template-columns:minmax(0,1fr)}.ions:has(.ichat.peek) .ipanel{display:none}}
 
 /* app: not in the lab */
 /* The lab draws the app as a picture on a page; the app fills its own window. */

@@ -101,18 +101,18 @@ describe("ions and your servers", () => {
     const off = setup("allow");
     await off.s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     const r = await off.s.gate("turn_1", call("remove"), "tidy my notes");
-    expect(r).toEqual({ decision: "deny", reason: "That tool isn't on for ions, so I'll start a thread" });
+    expect(r).toEqual({ decision: "deny", reason: "That tool isn't on for ions, so I'll start a chat" });
     expect(off.judge).not.toHaveBeenCalled();
     const no = setup("deny");
     await no.s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect(await no.s.gate("turn_1", call("search"), "x")).toEqual({
       decision: "deny",
-      reason: "That changes something, so I'll start a thread",
+      reason: "That changes something, so I'll start a chat",
     });
     const unsure = setup("unsure");
     await unsure.s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect((await unsure.s.gate("turn_1", call("search"), "x")).reason).toBe(
-      "ion isn't sure it only reads (it deletes), so I'll start a thread",
+      "ion isn't sure it only reads (it deletes), so I'll start a chat",
     );
     // Your switch turns an unlabelled tool on for ions.
     const yours = setIonUse([], "notes", TOOLS[1]!, true);
@@ -123,17 +123,15 @@ describe("ions and your servers", () => {
 
   it("an ion's call with a long text or an encoded blob is refused", async () => {
     expect(callLimit({ q: "kiwi" })).toBeNull();
-    expect(callLimit({ q: "a".repeat(201) })).toBe(
-      "That's too long for an ion's call, so I'll start a thread",
-    );
+    expect(callLimit({ q: "a".repeat(201) })).toBe("That's too long for an ion's call, so I'll start a chat");
     expect(callLimit({ q: `x ${"QUJD".repeat(10)}` })).toBe(
-      "That looks like encoded data, so I'll start a thread",
+      "That looks like encoded data, so I'll start a chat",
     );
     expect(callLimit({ q: "0123456789abcdef".repeat(3) })).toBe(
-      "That looks like encoded data, so I'll start a thread",
+      "That looks like encoded data, so I'll start a chat",
     );
     expect(callLimit({ list: Array.from({ length: 30 }, () => "word ".repeat(19)) })).toBe(
-      "That's too long for an ion's call, so I'll start a thread",
+      "That's too long for an ion's call, so I'll start a chat",
     );
     const { s, judge } = setup("allow");
     await s.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
@@ -189,7 +187,7 @@ describe("the judge on an ion's call", () => {
     const slow = make({ verdict: "deny", reason: "ion couldn't decide in time", decided: false });
     await slow.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });
     expect((await slow.gate("turn_1", call("search"), "x")).reason).toBe(
-      "ion couldn't decide, so I'll start a thread",
+      "ion couldn't decide, so I'll start a chat",
     );
     const unsure = make({ verdict: "unsure", reason: "can't tell" });
     await unsure.open("turn_1", { url: "https://x.test/mcp", key: "k" }, { http: true });

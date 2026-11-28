@@ -2,10 +2,8 @@ import type { IonClient } from "@ion/client/browser";
 import {
   Avatar,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   MessageCircle,
   Sparkles,
   X,
@@ -24,6 +22,7 @@ import { useCallError } from "../callError.js";
 import { ready, type SettingsData } from "./data.js";
 import { AgentPicker, ModelMenu } from "./ModelMenu.js";
 import { EffortSeg } from "./IonModels.js";
+import { More } from "./More.js";
 import { Routines } from "./Routines.js";
 
 /** Effort choices: "" is the agent's own default. */
@@ -95,20 +94,18 @@ function StatCard({ s }: { s: IonStats | null }) {
 type Patch = (p: Omit<ProjectPatch, "projectId">) => void;
 type SetupProps = { ion: IonInfo; project: ProjectInfo; data: SettingsData; patch: Patch };
 
-/** A project ion's agent (its shape in the ion's colour). Changing it clears the model (it was that agent's). */
 /**
  * Under More (the user, 2026-11-24): what the chats this project's ion starts run on, over "Chats ions start run on":
- * Default (that setting), or an agent with a model and effort. The ion itself thinks with "Ions think with".
+ * Default (that setting), or an agent with a model and effort. The ion itself thinks with "Ions think with". Changing
+ * the agent clears the model (it was that agent's). Shown without More once set.
  */
-function ChatsOverride({ ion, project, data, patch }: SetupProps) {
-  const [open, setOpen] = useState(!!project.harness);
+function ChatsOverride(p: SetupProps & { more: boolean; onMore: (open: boolean) => void }) {
+  const { ion, project, data, patch } = p;
+  const open = p.more || !!project.harness || !!project.model || !!project.effort;
   const agent = data.harnesses.find((h) => h.id === project.harness);
   return (
     <>
-      <button className="more" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
-        More
-        {open ? <ChevronUp /> : <ChevronDown />}
-      </button>
+      <More open={p.more} onOpen={p.onMore} />
       {open && (
         <>
           <Row label="Its chats run on">
@@ -303,6 +300,20 @@ function useIonStats(client: IonClient, ionId: string): IonStats | null {
   return stats;
 }
 
+/** Whether this project's ion suggests a routine now (review of Plan 21 Task 4: it shows Routines). */
+function useSuggestsRoutine(client: IonClient, projectId: string): boolean {
+  const [yes, setYes] = useState(false);
+  useEffect(
+    () =>
+      void client.call("suggestions.list", {}).then(
+        (l) => setYes(l.some((s) => s.kind === "routine" && s.projectId === projectId)),
+        () => {},
+      ),
+    [client, projectId],
+  );
+  return yes;
+}
+
 /** Settings → an ion: its stats, what it runs on, and its project's rules (ion chief: the model it thinks with). */
 export function IonPage(p: PageProps) {
   const ion = p.data.ions.find((x) => x.ionId === p.ionId);
@@ -310,6 +321,9 @@ export function IonPage(p: PageProps) {
   const stats = useIonStats(p.client, p.ionId);
   const [error, run] = useCallError();
   const [at, setAt] = useState<"setup" | "rules">("setup");
+  // Plan 21 Task 4: its chats' agent and its routines wait under More until it has them (or it suggests a routine).
+  const [more, setMore] = useState(false);
+  const suggested = useSuggestsRoutine(p.client, p.ionId);
   if (!ion) return null;
   // Why a change didn't save shows under the group it was made in.
   const patchIn =
@@ -335,7 +349,7 @@ export function IonPage(p: PageProps) {
           {project ? (
             <>
               <ColorPick {...setup} />
-              <ChatsOverride {...setup} project={project} />
+              <ChatsOverride {...setup} project={project} more={more} onMore={setMore} />
             </>
           ) : (
             <ChiefSetup quick={p.data.settings?.quickNow ?? ""} onAgents={p.onAgents} />
@@ -344,7 +358,9 @@ export function IonPage(p: PageProps) {
         </div>
       </div>
       {project && <Rules project={project} patch={patch} error={shown("rules")} />}
-      {project && <Routines client={p.client} project={project} onChanged={p.data.reload} />}
+      {project && (more || !!project.routines?.length || suggested) && (
+        <Routines client={p.client} project={project} onChanged={p.data.reload} />
+      )}
     </>
   );
 }

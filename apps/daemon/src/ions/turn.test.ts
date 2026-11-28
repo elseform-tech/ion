@@ -290,7 +290,7 @@ describe("an ion's turn", () => {
     try {
       const before = starts.length;
       const r = await turns().turn("_dream", "Tidy memory.", { noThreads: true, dream });
-      expect(r.reply).toBe("Dream skipped: Fake can't turn its web off");
+      expect(r.reply).toBe("Tidy memory skipped: Fake can't turn its web off");
       expect(starts).toHaveLength(before);
     } finally {
       delete process.env.ION_FAKE_HAS_WEB;
@@ -451,14 +451,14 @@ describe("an ion's turn", () => {
     expect(r).toEqual({ reply: "This is payments-api.", threads: [], turnId: expect.any(String) });
   });
 
-  it("ion chief can't start a thread in a project kept from it", async () => {
+  it("ion chief can't start a chat in a project kept from it", async () => {
     const r = await turns().turn("chief", "please check private");
     expect(startThread).not.toHaveBeenCalled();
     expect(r.threads).toEqual([]);
   });
 
   // Task review, 2026-11-19: `default` pools chats without a project; it has no ion and gets no threads.
-  it("ion chief can't start a thread in default", async () => {
+  it("ion chief can't start a chat in default", async () => {
     const r = await turns().turn("chief", "please check default");
     expect(startThread).not.toHaveBeenCalled();
     expect(r.threads).toEqual([]);
@@ -536,7 +536,7 @@ describe("an ion's turn", () => {
   it("ion chief asks the project when an answer needs its code; a project's ion reads it", () => {
     const chief = ionInstructions("chief");
     expect(chief).toContain("can't read projects' files");
-    expect(chief).toMatch(/needs a project's code[^.]*start a thread in that project/);
+    expect(chief).toMatch(/needs a project's code[^.]*start a chat in that project/);
     expect(ionInstructions("storefront")).toContain("read its project");
   });
 
@@ -565,10 +565,11 @@ describe("an ion's turn", () => {
     expect(onIon("storefront").filter((e: IonEvent) => e.type === EV.ionSession)).toHaveLength(1);
   }, 10_000);
 
-  // Review Focus 4: nothing hangs on "Thinking".
+  // Review Focus 4: nothing hangs on "Thinking". Plan 21 audit, 2026-11-23: the line was "I couldn't reach my agent;
+  // try again", which trying again can't fix; it says what to do instead.
   it("an agent that isn't signed in gives one plain line", async () => {
     signedIn = false;
-    const none = { reply: NO_AGENT, ionLine: "no-agent", threads: [] };
+    const none = { reply: "No agent is signed in. Sign in to Fake", ionLine: "no-agent", threads: [] };
     expect(await turns().turn("chief", "hello")).toEqual(none);
     expect(await turns().turn("storefront", "hello")).toEqual(none);
   });

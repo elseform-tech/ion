@@ -223,7 +223,7 @@ describe("memory tools", () => {
     const s = await ion("shop");
     expect(await call(s, "memory_write", person)).toMatchObject({
       isError: true,
-      content: [{ text: "Only ion chief writes your person files" }],
+      content: [{ text: "Only ion writes your person files" }],
     });
     // A project's file chats see waits for your Keep (final review, 2026-11-22).
     expect(text(await call(s, "memory_write", fact("Payments")))).toBe(

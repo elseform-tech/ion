@@ -55,9 +55,9 @@ function Started({
   );
 }
 
-/** Shows or hides the threads' panel beside the chat, like a chat's side panel. */
+/** Shows or hides the panel of the chat it started beside the chat, like a chat's side panel. */
 function PanelToggle({ open, toggle }: { open: boolean; toggle: () => void }) {
-  const label = open ? "Hide thread" : "Show thread";
+  const label = open ? "Hide chat" : "Show chat";
   return (
     <button
       type="button"

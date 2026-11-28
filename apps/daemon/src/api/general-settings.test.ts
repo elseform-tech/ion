@@ -211,3 +211,15 @@ describe("General and notification settings", () => {
     expect((await client.call("settings.get", {})).maxRuns).toBe("auto");
   });
 });
+
+// Review of Plan 21 Task 4 (2026-11-28): the app judged "Notifications changed" against its own copy of the defaults.
+// One copy, in the schema, and your config's defaults are it.
+describe("notification defaults", () => {
+  it("your config's defaults are the schema's", async () => {
+    const { DEFAULT_CONFIG } = await import("@ion/config");
+    const { NOTIFY_DEFAULTS } = await import("@ion/schema");
+    expect(DEFAULT_CONFIG.notifications.briefing).toEqual(NOTIFY_DEFAULTS.briefing);
+    expect(DEFAULT_CONFIG.notifications.quiet).toEqual(NOTIFY_DEFAULTS.quiet);
+    expect(NOTIFY_DEFAULTS.level).toBe("needs");
+  });
+});

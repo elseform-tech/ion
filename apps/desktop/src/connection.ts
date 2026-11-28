@@ -1,13 +1,19 @@
 import type { IonClient } from "@ion/client/browser";
 
 export type DaemonInfo = { port: number; token: string };
-export type ConnState = "connecting" | "down" | "up";
+export type ConnState = "connecting" | "starting" | "down" | "up";
 
 type Deps = {
   /** Where the daemon is now (it changes when ion restarts), or null when it isn't running. */
   info: () => Promise<DaemonInfo | null>;
   connect: (info: DaemonInfo) => Promise<IonClient>;
   retryMs?: number;
+  /**
+   * Starts ion when it isn't running (the app: Plan 21), once; false when it can't. Absent (a browser): never.
+   */
+  start?: () => Promise<boolean>;
+  /** How long a start may take before the app says ion isn't running after all. */
+  startMs?: number;
 };
 
 /**
@@ -20,8 +26,29 @@ export class IonConnection {
   private readonly listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
+  /** When ion was started from here (once), while it may still be starting. */
+  private startedAt: number | null = null;
+  private triedStart = false;
 
   constructor(private readonly d: Deps) {}
+
+  /** ion isn't running: start it once, where the app can; "starting" until it's up or its time is out. */
+  private notRunning(): ConnState {
+    if (this.d.start && !this.triedStart) {
+      this.triedStart = true;
+      this.startedAt = Date.now();
+      void this.d.start().then(
+        (ok) => {
+          if (!ok) this.startedAt = null;
+        },
+        () => {
+          this.startedAt = null;
+        },
+      );
+    }
+    const going = this.startedAt !== null && Date.now() - this.startedAt < (this.d.startMs ?? 20_000);
+    return going ? "starting" : "down";
+  }
 
   start(): void {
     this.stopped = false;
@@ -60,7 +87,7 @@ export class IonConnection {
       });
       this.set("up", client);
     } catch {
-      this.set("down", null);
+      this.set(this.notRunning(), null);
       this.retry();
     }
   }

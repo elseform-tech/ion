@@ -4,9 +4,9 @@ import { meansToRead, ruleFor, type RuleCtx } from "../access/rules.js";
 import { fetchVerdict, isWebNamed, isWebSearch, searchVerdict, type TurnWeb, type Verdict } from "./web.js";
 
 /** Why an ion's call was refused, when it isn't a page read. */
-const READ_ONLY = "An ion only reads; a thread does the work.";
+const READ_ONLY = "An ion only reads; a chat does the work.";
 /** Why an ion's read was refused where a chat's would go to the judge (the user, 2026-11-22). */
-const NOT_FOR_ION = "An ion doesn't read that; a thread can, with your OK.";
+const NOT_FOR_ION = "An ion doesn't read that; a chat can, with your OK.";
 
 /** A web call, whatever kind its harness gave it: kind "web", a web tool by name, or Grok's own search. */
 const isWeb = (req: ApprovalRequest) => req.kind === "web" || isWebNamed(req);

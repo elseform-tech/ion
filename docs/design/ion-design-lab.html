@@ -935,6 +935,9 @@ button.arow:hover{background:var(--hover)}
 /* Tour of PR #36, 2026-11-24: each agent's toggles with their icon (named on hover), and its judge line's quiet link */
 .hacts .swl{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}.hacts .swl svg{width:14px;height:14px}
 .hrow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer}.hrow .lnk:hover{text-decoration:underline}
+/* Plan 21 Task 5: Check the agents each night: its result line's quiet link, and each check with its icon */
+.srow .lnk{border:0;background:transparent;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left}.srow .lnk:hover{text-decoration:underline}
+.chk{display:flex;align-items:center;gap:6px}.chk svg,.chk .spin{width:13px;height:13px;flex-shrink:0}.chk .bad{color:var(--bad)}
 /* Tour at 900×700, 2026-11-24: a chip ("Its own hooks run too") stays one line; it moves below the name instead */
 .hrow .chip{white-space:nowrap;display:inline-block;box-sizing:border-box;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .srow.stack{flex-direction:column;align-items:stretch;gap:10px}
@@ -1134,6 +1137,15 @@ button.arow:hover{background:var(--hover)}
 .mtext{padding:12px 16px;font-size:13.5px;line-height:1.55;overflow-wrap:anywhere}.mtext>.md>:first-child{margin-top:0}.mtext>.md>:last-child{margin-bottom:0}
 .srow .when{color:var(--faint);font-size:12px;white-space:nowrap}.srow.ask .g{font-size:13px}.mfold{width:100%;border:0;background:transparent;font:inherit;color:var(--muted);cursor:pointer;text-align:left}.mfold:hover{color:var(--ink)}.mfold .lucide{width:14px;height:14px}
 .head .todos{width:auto;padding:0 8px;gap:5px;display:inline-flex;align-items:center}.head .todos .ct{font-size:12px;font-variant-numeric:tabular-nums}
+/* first run (Plan 21): no projects and no chats yet; your agents, pick a folder, ask: three steps on one screen */
+.first{display:grid;place-items:center;padding:20px 28px 56px;overflow:auto}.first .inner{width:100%;max-width:640px;display:grid;gap:22px}.first h3{margin:0;font-family:var(--display);font-weight:600;font-size:24px;letter-spacing:-.02em;text-align:center}
+.fstep{display:grid;gap:8px}.fh2{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--muted);min-height:28px}.fh2 .n{width:18px;height:18px;border-radius:50%;background:var(--hover);display:grid;place-items:center;font-size:11px;color:var(--ink)}.fh2 .sp{flex:1}
+.fagents{border-radius:12px;box-shadow:inset 0 0 0 1px var(--line)}.farow{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:8px 12px;font-size:13.5px;min-height:40px;box-sizing:border-box}.farow+.farow{border-top:1px solid var(--line)}.farow .nm{flex:0 0 104px;font-weight:500}.farow .ok{color:var(--good);display:inline-flex;align-items:center;gap:6px;font-size:13px}.farow .g{color:var(--muted);font-size:13px}.farow code{font:12.5px var(--mono);color:var(--ink);background:var(--hover);padding:2px 6px;border-radius:6px;overflow-wrap:anywhere}.farow .sp{flex:1}.farow .hsign{flex-basis:100%;padding-left:112px}
+.ffolder{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.ffolder .fin{flex:1;min-width:200px}.ffolder .perr{flex-basis:100%;font-size:12.5px;color:var(--del-ink)}.fex{display:flex;flex-wrap:wrap;gap:6px}.fex .chip{cursor:pointer;color:var(--muted)}.fex .chip:hover{color:var(--ink)}.fwait{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px}.fwait .lucide{width:14px;height:14px}
+/* Plan 21 Task 4: Settings' More (the pages you haven't used), quieter than a page */
+.snav .smore{color:var(--faint)}.snav .smore .lucide{width:14px;height:14px}.snav button[hidden]{display:none}
+/* Plan 21 Task 4 (tour at 900×700): a chat open beside its ion got ~100 px; in a narrow window the ions list steps aside */
+@media (max-width:1180px){.ions:has(.ichat.peek){grid-template-columns:minmax(0,1fr)}.ions:has(.ichat.peek) .ipanel{display:none}}
 
 .ab.st{rx:23}
 .ab.good{stroke:var(--good)}
@@ -1251,6 +1263,7 @@ details a{color:var(--accent)}
     <canvas id="mark" aria-label="ion mark"></canvas>
     <span class="brand">i<i>o</i>n</span>
     <nav class="switch" id="switch" aria-label="Screens">
+      <button type="button" data-go="first"><i data-lucide="sparkles"></i>First run</button>
       <button type="button" data-go="new"><i data-lucide="square-pen"></i>New chat</button>
       <button type="button" data-go="code"><i data-lucide="code-xml"></i>Coding chat</button>
       <button type="button" data-go="chat"><i data-lucide="message-square"></i>Plain chat</button>
@@ -1294,6 +1307,44 @@ details a{color:var(--accent)}
             <div id="chatGrps"></div>
           </div>
         </aside>
+
+        <!-- Plan 21 (the user, 2026-11-22: "easier to use even for beginners"): the first run. Only with no projects and no
+             chats (an existing user never sees it): your agents (ready, Install: or Sign in: with its command, Check
+             again), pick a folder (one that isn't a git repo gets ion's git setup, said in one line), then ask, with three
+             first messages. With no agent ready the box waits and says why. -->
+        <section class="chat" data-screen="first" style="grid-template-rows:48px minmax(0,1fr)" hidden>
+          <div class="head"><span class="sp"></span></div>
+          <div class="first"><div class="inner">
+            <h3>Start here</h3>
+            <div class="fstep">
+              <div class="fh2"><span class="n">1</span>Your agents<span class="sp"></span><button class="ib" type="button" title="Check again" aria-label="Check again"><i data-lucide="rotate-cw"></i></button></div>
+              <div class="fagents">
+                <div class="farow"><span class="nm">opencode</span><span class="g">Install:</span><code>npm i -g opencode-ai</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>
+                <div class="farow"><span class="nm">Grok Build</span><span class="g">Sign in:</span><code>grok login</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button><span class="sp"></span><button class="btn" type="button">Sign in</button></div>
+                <div class="farow"><span class="nm">Codex</span><span class="g">Install:</span><code>npm i -g @openai/codex</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>
+                <div class="farow"><span class="nm">Claude Code</span><span class="ok"><i data-lucide="circle-check"></i>Ready</span></div>
+              </div>
+            </div>
+            <div class="fstep">
+              <div class="fh2"><span class="n">2</span>Pick a folder</div>
+              <div class="ffolder"><button class="btn" type="button"><i data-lucide="folder-open"></i>Pick a folder</button><span class="chip"><i data-lucide="folder"></i>tip-calc</span></div>
+              <div class="quiet"><i data-lucide="info"></i>Git set up: your files are its first commit</div>
+            </div>
+            <div class="fstep">
+              <div class="fh2"><span class="n">3</span>Ask</div>
+              <div class="cbox big">
+                <span class="ph">Ask anything, or describe a change…</span>
+                <div class="bar">
+                  <button class="pill" type="button"><i data-lucide="folder"></i>tip-calc</button>
+                  <button class="pill bpill" type="button" data-brain="new" aria-haspopup="dialog" title="Claude Code · Opus 5.5 · Medium effort"></button>
+                  <span class="sp"></span>
+                  <button class="send" type="button" title="Send"><i data-lucide="arrow-up"></i></button>
+                </div>
+              </div>
+              <div class="fex"><button class="chip" type="button">What does this project do?</button><button class="chip" type="button">Find a small bug and fix it</button><button class="chip" type="button">Add a test for the code that has none</button></div>
+            </div>
+          </div></div>
+        </section>
 
         <!-- new chat -->
         <section class="chat" data-screen="new" style="grid-template-rows:48px minmax(0,1fr)">
@@ -1679,13 +1730,16 @@ export function sumLines(lines: Line[]) {
       <div class="mode settings" data-mode="settings" hidden>
         <nav class="snav">
           <b>Settings</b>
+          <!-- Plan 21 Task 4 (the user, 2026-11-24): General, Agents and Memory first; the rest under one More until used
+               (an ion with a routine, a tool you added, notifications you changed show above More). -->
           <button type="button" data-snav="general"><i data-lucide="sliders-horizontal"></i>General</button>
           <button type="button" data-snav="harness" class="on"><i data-lucide="plug"></i>Agents</button>
-          <button type="button" data-snav="ions"><i data-lucide="orbit"></i>Ions</button>
           <button type="button" data-snav="memory"><i data-lucide="notebook-text"></i>Memory</button>
-          <button type="button" data-snav="tools"><i data-lucide="blocks"></i>Tools</button>
-          <button type="button" data-snav="notif"><i data-lucide="bell"></i>Notifications</button>
-          <button type="button" data-snav="keys"><i data-lucide="keyboard"></i>Shortcuts</button>
+          <button type="button" class="smore" aria-label="More settings" aria-expanded="false" data-smore><i data-lucide="chevron-down"></i>More</button>
+          <button type="button" data-snav="ions" data-tucked hidden><i data-lucide="orbit"></i>Ions</button>
+          <button type="button" data-snav="tools" data-tucked hidden><i data-lucide="blocks"></i>Tools</button>
+          <button type="button" data-snav="notif" data-tucked hidden><i data-lucide="bell"></i>Notifications</button>
+          <button type="button" data-snav="keys" data-tucked hidden><i data-lucide="keyboard"></i>Shortcuts</button>
         </nav>
         <div class="sbody">
           <div class="spage" data-spage="projects" hidden id="sProj"></div>
@@ -1713,9 +1767,21 @@ export function sumLines(lines: Line[]) {
           <!-- The user, 2026-11-24: two model settings and the rest automatic. "Ions think with" (Strongest, or your pick;
                ion chief and every project's ion; routine turns at Medium by themselves) and "Chats ions start run on"
                (Automatic, or your pick), each with its effort. Your own chats are set in the composer (it remembers your last
-               pick). The judge, Dream, the briefing, handoffs and fallbacks are automatic: no rows. -->
+               pick). The judge, tidying memory, the briefing, handoffs and fallbacks are automatic: no rows. -->
           <div><h4>Models</h4><div class="group" id="ionModels"></div></div>
           <div><h4>Coding agents</h4><div class="group" id="hList"></div></div>
+          <!-- Plan 21 Task 5: "Check the agents each night", off until you turn it on (its switch; quiet hours on hover); Check now (its icon), on or off. On:
+               each agent and what a night costs it (one that isn't free, Claude Code too, only once
+               you pick it; one you avoid or that's limited says so); the last checks in one line ("Checked last night:
+               all fine"), or one per agent that failed, which opens what failed. -->
+          <div class="group" id="hChecks">
+            <div class="srow"><div class="g">Check the agents each night<div class="s"><button class="lnk" type="button" aria-expanded="false" onclick="const d=document.getElementById('hChkDetails');d.hidden=!d.hidden;this.setAttribute('aria-expanded',String(!d.hidden))">Grok Build: 2 checks failed · last night</button></div></div><button class="ib" type="button" title="Check now" aria-label="Check now"><i data-lucide="rotate-cw"></i></button><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Check the agents each night" title="In quiet hours (22:00–08:00)"></button></div>
+            <div class="srow" id="hChkDetails" hidden><div class="g">Grok Build<div class="s chk"><i data-lucide="circle-check"></i>Signed in</div><div class="s chk"><i data-lucide="circle-check"></i>Starts</div><div class="s chk"><i data-lucide="circle-x" class="bad"></i>Answers · Said nothing</div><div class="s chk"><i data-lucide="circle-x" class="bad"></i>ion's tools · ion's word didn't come back</div></div></div>
+            <div class="srow"><div class="g s">opencode · Free</div></div>
+            <div class="srow"><div class="g s">Grok Build · A little of your plan</div><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="Grok Build: check each night"></button></div>
+            <div class="srow"><div class="g s">Claude Code · A little of your plan</div><button type="button" class="sw" role="switch" aria-checked="false" aria-label="Claude Code: check each night"></button></div>
+            <div class="srow"><div class="g s">Codex · Avoided</div></div>
+          </div>
           <!-- Under More: "Prefer in this order" (empty: Automatic decides; once set, Automatic follows it). -->
           <div><button class="more" type="button" aria-expanded="false" data-hmore="1">More<i data-lucide="chevron-down"></i></button>
             <div class="group" id="hPrefer" hidden>
@@ -1765,6 +1831,31 @@ export function sumLines(lines: Line[]) {
           <li><span class="n">4</span><span><b>Same job elsewhere?</b><span class="d">“Do the same on payments-api” copies the routine. Each project keeps its own memory.</span></span></li>
         </ol>
       </div>
+    </div>
+  </section>
+
+  <!-- Plan 21 (review of Task 2, 2026-11-23): the first run's other states, drawn with the window's own parts -->
+  <section class="sec" aria-labelledby="h-first">
+    <h2 id="h-first">First run: the other states</h2>
+    <div class="win" style="min-height:0;display:block;padding:20px 28px">
+      <div class="first" style="padding:0"><div class="inner">
+        <!-- a new chat with no agent ready: the agents above the box, with Check again (never a silent grey Send) -->
+        <div class="fstep">
+          <div class="fh2">No agent is ready<span class="sp"></span><button class="ib" type="button" title="Check again" aria-label="Check again"><i data-lucide="rotate-cw"></i></button></div>
+          <div class="fagents">
+            <div class="farow"><span class="nm">opencode</span><span class="g">Install:</span><code>npm i -g opencode-ai</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button></div>
+            <div class="farow"><span class="nm">Grok Build</span><span class="g">Sign in:</span><code>grok login</code><button class="ib" type="button" title="Copy" aria-label="Copy"><i data-lucide="copy"></i></button><span class="sp"></span><button class="btn" type="button">Sign in</button></div>
+          </div>
+        </div>
+        <!-- Pick a folder: ion asks before its git setup, then says it's working, then what went in and what was left out -->
+        <div class="hsign"><span class="g">Set up git here? ion makes a first commit of 12 files</span><button class="btn" type="button">Cancel</button><button class="btn pri" type="button">Set up git</button></div>
+        <div class="fwait"><i class="spin"></i>Setting up git…</div>
+        <div class="quiet"><i data-lucide="info"></i>Git set up: 12 files in its first commit, 3 left out (secrets, dependencies, build output, big files)</div>
+        <!-- after a first run's first answer, once: what ion remembers, linking to Settings → Memory -->
+        <div class="quiet"><i data-lucide="brain"></i>ion keeps notes as you work <button type="button" class="link" style="padding:0;color:var(--muted)">Memory</button></div>
+        <!-- the app starting ion itself (the browser build keeps "ion isn't running" with its command) -->
+        <h3 style="font-size:20px;display:inline-flex;align-items:center;gap:10px;justify-content:center"><i class="spin"></i> Starting ion…</h3>
+      </div></div>
     </div>
   </section>
 
@@ -2481,11 +2572,11 @@ export function sumLines(lines: Line[]) {
   <span class="t-w">●</span> mobile-app    App Store rejected 2 screenshots
   <span class="t-s">◐</span> payments-api  Webhook retry backoff             Opus 5.5 · High
 
-<span class="t-p">$</span> ion needs show mig
+<span class="t-p">$</span> ion questions show mig
 Approve migration 0042?  <span class="t-d">Release · payments-api</span>
   ALTER TABLE payments ADD COLUMN idempotency_key text UNIQUE;
   <span class="t-ok">✓</span> Dry run on staging: 0.4 s · no table locks · 0 rows changed
-<span class="t-p">$</span> ion needs resolve mig --approve
+<span class="t-p">$</span> ion questions resolve mig --approve
 <span class="t-ok">✓</span> Approved. Release resumed.  <span class="t-d">(cleared from app, sidebar and pins)</span>
 
 <span class="t-p">$</span> ion ask "do the same CI triage on payments-api"
@@ -2496,17 +2587,17 @@ Approve migration 0042?  <span class="t-d">Release · payments-api</span>
 <span class="t-p">$</span> ion run dependency-update -p storefront --now --effort low
 <span class="t-s">◐</span> storefront · Dependency update started  <span class="t-d">chat c_8f2 · ion logs -f --chat c_8f2</span>
 
-<span class="t-p">$</span> ion needs --json | jq -r '.[] | select(.urgent) | .title'
+<span class="t-p">$</span> ion questions --json | jq -r '.[] | select(.urgent) | .title'
 Approve migration 0042?</pre>
       </div>
 
       <div class="ecard">
         <h3><i data-lucide="square-terminal"></i>Commands</h3>
         <div class="cmds">
-          <div><h4>Attention</h4><code>ion status</code><code>ion needs [show|resolve &lt;id&gt;]</code><code>ion brief</code><code>ion suggestions [ls|keep|mute]</code><code>ion memory [ls|forget] [-p &lt;project&gt;]</code></div>
+          <div><h4>Attention</h4><code>ion status</code><code>ion questions [show|resolve &lt;id&gt;]</code><code>ion brief</code><code>ion suggestions [ls|keep|mute]</code><code>ion memory [ls|forget] [-p &lt;project&gt;]</code></div>
           <div><h4>Work</h4><code>ion ask "…"</code><code>ion chat [new|ls|open]</code><code>ion run &lt;routine&gt; [--now]</code><code>ion pause|resume [--all]</code></div>
           <div><h4>Projects and routines</h4><code>ion projects [ls|add|star|remove]</code><code>ion routines [ls|add|copy|edit]</code><code>ion routines [skip|effort]</code></div>
-          <div><h4>Harnesses</h4><code>ion harness [ls|connect &lt;name&gt;]</code><code>ion models &lt;harness&gt;</code><code>ion usage [--by model|ion]</code></div>
+          <div><h4>Agents</h4><code>ion agents [ls|connect &lt;name&gt;]</code><code>ion models &lt;agent&gt;</code><code>ion usage [--by model|ion]</code></div>
           <div><h4>Artifacts</h4><code>ion library [ls|open|free]</code><code>ion checks &lt;chat&gt; [--rerun]</code></div>
           <div><h4>Tools</h4><code>ion mcp [ls|add|remove]</code><code>ion hooks [ls|add|test]</code></div>
           <div><h4>System</h4><code>ion daemon [start|stop|status]</code><code>ion logs [-f]</code><code>ion config [get|set|edit]</code><code>ion doctor [--bundle]</code></div>
@@ -2604,8 +2695,8 @@ recordings_keep    = <span class="v">"30d"</span></pre>
       <h3><i data-lucide="sliders-horizontal"></i>Settings ↔ config</h3>
       <div class="rtab smap">
         <div class="rh"><span>Settings screen</span><span>Stored in</span><span>Example key</span><span>CLI</span></div>
-        <div><b>Harnesses: connect</b><span>The CLI’s own login, never ion</span><code>n/a</code><code>ion harness connect codex</code></div>
-        <div><b>Harnesses: ion thinks with</b><span>User config</span><code>ion.system1.model, ion.system2.effort, ion.system2.use</code><code>ion config set ion.system2.effort max</code></div>
+        <div><b>Agents: connect</b><span>The CLI’s own login, never ion</span><code>n/a</code><code>ion agents connect codex</code></div>
+        <div><b>Agents: ions think with</b><span>User config</span><code>ion.system1.model, ion.system2.effort, ion.system2.use</code><code>ion config set ion.system2.effort max</code></div>
         <div><b>Ions: a project ion’s brain, color, routines</b><span>ion’s database (events)</span><code>n/a</code><code>ion routines edit ci-triage -p storefront</code></div>
         <div><b>Projects: ask before merging</b><span>Project <code>ion.toml</code></span><code>rules.ask_before_merging</code><code>ion config set -p storefront rules.ask_before_merging true</code></div>
         <div><b>Ions: ion’s suggestions and budget</b><span>User config</span><code>ion.proactive.*</code><code>ion config set ion.proactive.suggestions few</code></div>
@@ -2989,7 +3080,7 @@ const effLabel=e=>EFF.find(x=>x[0]===e)[1];
 /* one place for connections: each harness signs in with its own CLI login; ion thinks with a connected harness */
 /* line: each ready agent's usage in one quiet line (Plan 20, the user 2026-11-21), the same in `ion status`; use: the
    window's percent when the agent reports one (a bar), lim: limited until its reset. Never a gauge ion made up. */
-const HCONN={claude:{st:'on',how:'Signed in',line:'limited until 16:00',lim:1,rules:3},grok:{st:'on',how:'Signed in',line:'Learned from errors'},codex:{st:'on',how:'Signed in',line:'62% of 5 h · resets 14:20',use:62},
+const HCONN={claude:{st:'on',how:'Signed in',line:'limited until 16:00',lim:1,rules:3},grok:{st:'on',how:'Signed in',line:'No usage info'},codex:{st:'on',how:'Signed in',line:'62% of 5 h · resets 14:20',use:62},
   gemini:{st:'on',how:'Signed in',line:'this week $4.20'},cursor:{st:'off',how:'Not signed in'},pi:{st:'missing',how:'Not installed'}};
 const IONBRAIN={fast:['claude','Haiku 5.5'],deep:['claude','Opus 5.5'],judge:null,eff:'high',when:'auto',use:4,week:1.8};
 const S2WHEN=[['auto','When needed'],['always','Always'],['never','Never']];
@@ -3098,16 +3189,16 @@ const MTYPE={preference:['heart','Preference'],fact:['lightbulb','Fact'],person:
 const MEMF=[
   {p:'you/tabs-not-spaces.md',sc:'you',t:'preference',n:'Tabs, not spaces',d:'Indent with tabs in every project',by:'You',at:'2h',see:'chats',text:'Indent with **tabs**, width 2.\n\nSpaces only where a file already uses them.',hist:[['You','2h'],['Docs pass','Mon'],['You','Sun',1],['You','Sat']]},
   {p:'you/short-replies.md',sc:'you',t:'preference',n:'Short replies',d:'Answers in a few lines, details on request',by:'Cart badge fix',at:'1h',see:'chats',sugg:'storefront',text:'Keep answers short. Offer details instead of writing them.',hist:[['Cart badge fix','1h']]},
-  {p:'you/sam.md',sc:'you',t:'person',n:'Sam',d:'Designer on the storefront; reviews UI changes',by:'ion chief',at:'Tue',see:'ions',text:'Sam reviews UI changes on storefront. Prefers screenshots in the PR.',hist:[['ion chief','Tue']]},
+  {p:'you/sam.md',sc:'you',t:'person',n:'Sam',d:'Designer on the storefront; reviews UI changes',by:'ion',at:'Tue',see:'ions',text:'Sam reviews UI changes on storefront. Prefers screenshots in the PR.',hist:[['ion','Tue']]},
   {p:'you/renew-passport.md',sc:'you',t:'todo',n:'Renew the passport',d:'Renew the passport',by:'You',at:'Mon',see:'ions',st:'open',due:'Due today',text:'Renew the passport.',hist:[['You','Mon']]},
-  {p:'you/node-version.md',sc:'you',t:'fact',n:'Node version',d:'Projects run Node 22',by:'ion (dream)',at:'5h',see:'ions',tidied:1,text:'Projects run Node 22 (was 18; a chat on Tue said it moved).',hist:[['ion (dream)','5h'],['ion chief','2 Nov']]},
+  {p:'you/node-version.md',sc:'you',t:'fact',n:'Node version',d:'Projects run Node 22',by:'ion (tidying)',at:'5h',see:'ions',tidied:1,text:'Projects run Node 22 (was 18; a chat on Tue said it moved).',hist:[['ion (tidying)','5h'],['ion','2 Nov']]},
   {p:'projects/storefront/deploy.md',sc:'storefront',t:'reference',n:'Deploy',d:'pnpm deploy from main; staging first',by:'storefront',at:'3 Nov',see:'chats',text:'Deploy with `pnpm deploy` from main. Staging first, then production.',hist:[['storefront','3 Nov']]},
   {p:'projects/storefront/check-headline.md',sc:'storefront',t:'todo',n:'Check the headline on mobile',d:'Check the headline on mobile',by:'Pricing headline',at:'now',see:'chats',st:'open',due:'Due Friday',text:'Check the headline on mobile.',hist:[['Pricing headline','now']]},
   {p:'you/book-dentist.md',sc:'you',t:'todo',n:'Book the dentist',d:'Book the dentist',by:'You',at:'Sun',see:'ions',st:'done',text:'Book the dentist.',hist:[['You','Sun']]}];
 const MBROKEN=['storefront/notes.md can’t be read'];
 /* ion's dream (Plan 19, Task 6): Off / Nightly / Weekly and its agent; what it forgot in the last day comes back
    with Restore; a file it changed says Tidied by ion for a day */
-let dreamMode='nightly'; const DREAM_GONE=[['you/old-launch.md','Old launch']], DREAM_NOTES=['“Sam” may be out of date: a chat said Sam moved to Porto.'];
+let MMORE=false, dreamMode='nightly'; const DREAM_GONE=[['you/old-launch.md','Old launch']], DREAM_NOTES=['“Sam” may be out of date: a chat said Sam moved to Porto.'];
 let memTab='all', memScope='you', memOpen=null, memHist=false, memAsk=null, memDoneOpen=false;
 /* Remember (the user, 2026-11-23): memory on or off everywhere (yours follow it), and per project in its view (absent:
    as everywhere). Off: agents and ions get none and nothing new is written; the files stay here. */
@@ -3149,14 +3240,18 @@ function renderMemory(){
     icons(el); return;
   }
   const scopes=[['you','You'],...PROJECTS.map(p=>[p,p])];
-  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Dream</span></div><span class="seg sm" role="group" aria-label="Dream">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
+  const dream=`<div class="group"><div class="srow"><div class="g"><span class="slot"><i data-lucide="moon"></i>Tidy memory</span></div><span class="seg sm" role="group" aria-label="Tidy memory">${[['off','Off'],['nightly','Nightly'],['weekly','Weekly']].map(([id,l])=>`<button type="button" class="${dreamMode===id?'on':''}" data-dream="${id}">${l}</button>`).join('')}</span></div></div>`
     +`<div class="group">${DREAM_GONE.map(([p,n])=>`<div class="srow"><div class="g">Forgot “${esc(n)}”</div><button class="btn" type="button">Restore</button></div>`).join('')}${DREAM_NOTES.map(n=>`<div class="srow"><div class="g s">${esc(n)}</div></div>`).join('')}</div>`;
-  el.innerHTML=`<div>${tabs}${broken}${remRow()}${dream}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div>${memScope==='you'?'':remRow(memScope)}<input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
+  /* Plan 21 Task 4: Tidy memory waits under More until it's on or has tidied once */
+  const tidyUsed=dreamMode!=='off'||DREAM_GONE.length||DREAM_NOTES.length;
+  const moreM=`<button class="more" type="button" aria-expanded="${MMORE}" data-mmore>More<i data-lucide="chevron-${MMORE?'up':'down'}"></i></button>`;
+  el.innerHTML=`<div>${tabs}${broken}${tidyUsed?remRow():remRow().replace(/<\/div>\s*$/,moreM+'</div>')}${tidyUsed||MMORE?dream:''}<div class="mscope" role="group" aria-label="Whose">${scopes.map(([id,l])=>`<button type="button" class="chip tog${memScope===id?' on':''}" data-mscope="${esc(id)}">${esc(l)}</button>`).join('')}</div>${memScope==='you'?'':remRow(memScope)}<input class="fin msearch" type="search" placeholder="Search" aria-label="Search memory"><div class="group">${MEMF.filter(x=>x.sc===memScope).sort((a,b)=>(b.st==='open')-(a.st==='open')).map(memRow).join('')||'<div class="srow"><div class="g s">No memory</div></div>'}</div></div>`;
   hydrate(el); icons(el);
 }
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-mtab]'); if(t){ memTab=t.dataset.mtab; renderMemory(); return; }
   const dm=e.target.closest('[data-dream]'); if(dm){ dreamMode=dm.dataset.dream; renderMemory(); return; }
+  const mm=e.target.closest('[data-mmore]'); if(mm){ MMORE=!MMORE; renderMemory(); return; }
   const gh=e.target.closest('[data-ghost]'); if(gh){ const on=gh.getAttribute('aria-pressed')!=='true'; gh.setAttribute('aria-pressed',on); gh.classList.toggle('on',on); return; }
   const rm=e.target.closest('[data-mrem]'); if(rm){ const p=rm.dataset.mrem; if(p){ const now=!(MEMPROJ[p]??memOn); if(now===memOn) delete MEMPROJ[p]; else MEMPROJ[p]=now; } else memOn=!memOn; renderMemory(); return; }
   const sc=e.target.closest('[data-mscope]'); if(sc){ memScope=sc.dataset.mscope; renderMemory(); return; }
@@ -3322,6 +3417,11 @@ function renderIon(k,ph){
 }
 paintWork(); buildIonNav(); renderIon(curIon);
 
+/* Settings' More (Plan 21 Task 4): opens the pages you haven't used */
+document.addEventListener('click',e=>{ const m=e.target.closest('[data-smore]'); if(!m) return;
+  const open=m.getAttribute('aria-expanded')!=='true'; m.setAttribute('aria-expanded',String(open));
+  m.querySelector('[data-lucide],svg')?.setAttribute('data-lucide',open?'chevron-up':'chevron-down');
+  document.querySelectorAll('.snav [data-tucked]').forEach(b=>b.hidden=!open); icons(m.parentElement); });
 /* settings: harnesses, ions list, ion detail */
 const sIons=document.getElementById('sIons'), sIon=document.getElementById('sIon');
 function showS(page){
@@ -3367,7 +3467,7 @@ function renderNotif(){
   hydrate(el); icons(el);
 }
 /* Settings → Shortcuts: the app's one table of hotkeys (apps/desktop/src/hotkeys.ts), in its order */
-const KEYS=[['Hide sidebar',['⌘','B']],['Next effort',['⌘','.']],['Send',['↵']],['Queue while it works',['↵']],['Send now',['⌘','↵']],['New line',['⇧','↵']],['Stop',['esc','esc']]];
+const KEYS=[['Hide sidebar',['⌘','B']],['Search',['⌘','K']],['Next effort',['⌘','.']],['Send',['↵']],['Queue while it works',['↵']],['Send now',['⌘','↵']],['New line',['⇧','↵']],['Stop',['esc','esc']]];
 function renderKeys(){
   const el=document.getElementById('sKeys');
   el.innerHTML=`<div class="group">${KEYS.map(([n,ks])=>`<div class="srow"><div class="g">${esc(n)}</div><span class="keys">${ks.map(k=>`<kbd>${esc(k)}</kbd>`).join('')}</span></div>`).join('')}</div>`;
@@ -3408,6 +3508,7 @@ function projRow(k,row){
     +(I.sugg?`<div class="srow"><i data-lucide="sparkles"></i><div class="g s">${esc(I.sugg)}</div><button class="ib" type="button" title="Dismiss" aria-label="Dismiss" data-psugg="${esc(k)}"><i data-lucide="x"></i></button><button class="ib" type="button" title="Accept" aria-label="Accept" data-psugg="${esc(k)}" data-ok="1"><i data-lucide="check"></i></button></div>`:'')
     +row('Ask before merging','',`<button type="button" class="sw${I.merge?' on':''}" role="switch" aria-checked="${!!I.merge}" aria-label="Ask before merging" data-pmerge="${esc(k)}"></button>`);
 }
+const IMORE={};
 function openIonSettings(k){
   const v=IONS[k], lead=k==='lead', sw=on=>`<span class="sw${on?' on':''}"></span>`;
   const row=(t,s,r)=>`<div class="srow"><div class="g">${t}${s?`<div class="s">${s}</div>`:''}</div>${r}</div>`;
@@ -3416,15 +3517,17 @@ function openIonSettings(k){
     ${statCard(k)}
     <div><h4>Setup</h4><div class="group">
       ${lead ? row('Thinks with','',`<button class="val" type="button" data-snav="harness"><i data-lucide="zap"></i>${IONBRAIN.brainPick?esc(LIB[IONBRAIN.brainPick].name):'Strongest'}<i data-lucide="chevron-right"></i></button>`)
-        : row('Its chats run on','',`<div class="hpick" role="radiogroup" aria-label="Harness">${HARNESSES.map(h=>`<button type="button" role="radio" aria-checked="${h===v.harness}" class="${h===v.harness?'on':''}" title="${esc(LIB[h].name)}" data-sethar="${h}" data-k="${k}"><canvas class="av" data-bot="${pv(k,h)}" aria-hidden="true"></canvas></button>`).join('')}</div>`)
-          + row('Color','',`<div class="sws" role="radiogroup" aria-label="Color">${Object.entries(PAL).map(([n,c])=>`<button type="button" role="radio" aria-checked="${c===v.color}" class="${c===v.color?'on':''}" title="${n}" style="--c:${c}" data-setcol="${c}" data-k="${k}"></button>`).join('')}</div>`)
+        : row('Color','',`<div class="sws" role="radiogroup" aria-label="Color">${Object.entries(PAL).map(([n,c])=>`<button type="button" role="radio" aria-checked="${c===v.color}" class="${c===v.color?'on':''}" title="${n}" style="--c:${c}" data-setcol="${c}" data-k="${k}"></button>`).join('')}</div>`)
+          /* Plan 21 Task 4: what its chats run on, and its routines, wait under More until it has them */
+          + `<button class="more" type="button" aria-expanded="${!!IMORE[k]}" data-imore="${k}">More<i data-lucide="chevron-${IMORE[k]?'up':'down'}"></i></button>`
+          + (!IMORE[k]?'':row('Its chats run on','',`<div class="hpick" role="radiogroup" aria-label="Agent">${HARNESSES.map(h=>`<button type="button" role="radio" aria-checked="${h===v.harness}" class="${h===v.harness?'on':''}" title="${esc(LIB[h].name)}" data-sethar="${h}" data-k="${k}"><canvas class="av" data-bot="${pv(k,h)}" aria-hidden="true"></canvas></button>`).join('')}</div>`)
           + row('Model','',`<div class="chips">${MODELS[v.harness].map(([m])=>`<button type="button" class="chip tog${m===roleModel(k)?' on':''}" data-rmodel="${esc(m)}" data-k="${k}">${m===roleModel(k)?'<i data-lucide="check"></i>':''}${esc(m)}</button>`).join('')}</div>`)
-          + row('Effort','',`<span class="seg sm">${EFF.map(([id,l])=>`<button type="button" class="${id===roleEffort(k)?'on':''}" data-reff="${id}" data-k="${k}"${ESUP[v.harness].includes(id)?'':' disabled'}>${l}</button>`).join('')}</span>`)}
+          + row('Effort','',`<span class="seg sm">${EFF.map(([id,l])=>`<button type="button" class="${id===roleEffort(k)?'on':''}" data-reff="${id}" data-k="${k}"${ESUP[v.harness].includes(id)?'':' disabled'}>${l}</button>`).join('')}</span>`))}
       ${projRow(k,row)}
     </div></div>
-    ${`<div><h4>Routines</h4><div class="group">${v.routines.length
+    ${lead||!(v.routines.length||IMORE[k])?'':`<div><h4>Routines</h4><div class="group">${v.routines.length
       ? v.routines.map((r,i)=>row(esc(r.n),esc(r.w)+(r.instr?`<div class="rin">${esc(r.instr)}</div>`:''),`${r.h?`<span class="rh2" title="Runs on ${esc(LIB[r.h].name)}">${hAv(r.h)}</span>`:''}<button class="val" type="button" title="Effort for this routine (click to change)" data-rteff="${k}" data-i="${i}">${ebars(r.effort||roleEffort(k))}${effLabel(r.effort||roleEffort(k))}</button><span class="nx">${r.on&&!pausedAll?(/^Next/.test(r.nx)?esc(r.nx):'Next: '+esc(r.nx)):'Paused'}</span><button type="button" class="sw${r.on?' on':''}" role="switch" aria-checked="${!!r.on}" aria-label="${esc(r.n)}" data-rtoggle="${k}" data-i="${i}"></button>`)).join('')
-      : row(`No routines`,`${esc(v.name)} works when you or ion ask`,'')}</div></div>`}
+      : ''}<button class="srow" type="button" style="width:100%;border:0;background:transparent;color:var(--muted);cursor:pointer;gap:8px"><i data-lucide="plus"></i>Add routine</button></div></div>`}
     ${lead?`<div><h4>Suggestions</h4><div class="group">
       ${row('How often','',`<span class="seg sm">${[['off','Off'],['few','1 a day'],['normal','3 a day']].map(([id,l])=>`<button type="button" class="${PROACT.level===id?'on':''}" data-pro="${id}">${l}</button>`).join('')}</span>`)}
       ${row('Max share of weekly limit','',`<div class="stepper"><button class="ib" type="button" title="Less" data-pbud="-1"><i data-lucide="minus"></i></button><span>${PROACT.budget}%</span><button class="ib" type="button" title="More" data-pbud="1"><i data-lucide="plus"></i></button></div>`)}
@@ -3448,6 +3551,7 @@ function openIonSettings(k){
 document.addEventListener('click',e=>{
   const sel=e.target.closest('[data-ionsel]'), ed=e.target.closest('[data-ionedit]'), act=e.target.closest('[data-ionact]'), sn=e.target.closest('[data-snav]');
   if(ed){ openIonSettings(ed.dataset.ionedit); return; }
+  const im=e.target.closest('[data-imore]'); if(im){ IMORE[im.dataset.imore]=!IMORE[im.dataset.imore]; openIonSettings(im.dataset.imore); return; }
   const pr=e.target.closest('[data-pro]'); if(pr){ PROACT.level=pr.dataset.pro; openIonSettings('lead'); return; }
   const pb=e.target.closest('[data-pbud]'); if(pb){ PROACT.budget=Math.max(0,Math.min(10,PROACT.budget+ +pb.dataset.pbud)); openIonSettings('lead'); return; }
   const ps=e.target.closest('[data-psrc]'); if(ps){ PROACT.src[ps.dataset.psrc]^=1; openIonSettings('lead'); return; }
@@ -3539,7 +3643,7 @@ function setProj(p){
 /* one project context for the whole app: the Chats and Ions switchers share it */
 const closeMenus=()=>document.querySelectorAll('.pmenu').forEach(m=>{ m.hidden=true; document.querySelector(`[data-pm="${m.id}"]`)?.setAttribute('aria-expanded','false'); });
 function renderPMenu(m,q=''){
-  if(!m.querySelector('.pmi')){ m.innerHTML=`<div class="pmi"><i data-lucide="search"></i><input type="text" placeholder="Find a project" aria-label="Find a project" autocomplete="off"></div><div class="pml"></div>`; icons(m);
+  if(!m.querySelector('.pmi')){ m.innerHTML=`<div class="pmi"><i data-lucide="search"></i><input type="text" placeholder="Find a project" aria-label="Find a project" autocomplete="off"></div><div class="pml"></div><button type="button" class="pnew"><i data-lucide="folder-plus"></i>New project</button><button type="button" class="pnew"><i data-lucide="folder-open"></i>Add folder</button>`; icons(m);
     const inp=m.querySelector('input'); inp.addEventListener('input',()=>renderPMenu(m,inp.value)); inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const b=m.querySelector('.pml [data-setproj]'); if(b) b.click(); } }); }
   const ql=q.trim().toLowerCase(), list=[...PROJECTS].sort((a,b)=>STARRED.has(b)-STARRED.has(a)).filter(p=>!ql||p.includes(ql));
   m.querySelector('.pml').innerHTML=(ql?'':`<button type="button" data-setproj="*" class="${curProj==='*'?'on':''}"><i data-lucide="layers"></i>All projects${curProj==='*'?'<i data-lucide="check" class="ck"></i>':''}</button>`)+
@@ -3752,12 +3856,12 @@ const BRAIN={new:{h:'claude',m:'Opus 5.5',e:'medium',src:'storefront default'},c
 const BDEF=JSON.parse(JSON.stringify(BRAIN));
 function brainPill(id){ if(id==='usage') return `<i data-lucide="gauge"></i><span>Automatic</span>${ebars('')}<i data-lucide="chevron-up" class="bchev"></i>`; const b=BRAIN[id]; return `<canvas class="av" data-bot="${b.h}" aria-hidden="true"></canvas><span>${esc(LIB[b.h].name)}</span><span class="bsep">·</span><span>${esc(b.m)}</span><span class="bsep">·</span>${ebars(b.e)}<span>${effLabel(b.e)}</span><i data-lucide="chevron-up" class="bchev"></i>`; }
 function paintPills(){ document.querySelectorAll('[data-brain]').forEach(p=>{ p.innerHTML=brainPill(p.dataset.brain); hydrate(p); icons(p); }); }
-const bpop=document.createElement('div'); bpop.className='bpop'; bpop.hidden=true; bpop.setAttribute('role','dialog'); bpop.setAttribute('aria-label','Harness, model and effort'); document.getElementById('win').append(bpop);
+const bpop=document.createElement('div'); bpop.className='bpop'; bpop.hidden=true; bpop.setAttribute('role','dialog'); bpop.setAttribute('aria-label','Agent, model and effort'); document.getElementById('win').append(bpop);
 let bpFor=null;
 function renderBpop(){
   const b=BRAIN[bpFor]||BRAIN.new, sup=ESUP[b.h];
   bpop.innerHTML=`<div class="bp-cols">
-    <div class="bp-col"><div class="bp-h">Harness</div>${HARNESSES.map(h=>`<button type="button" class="bp-row${h===b.h?' on':''}" data-bh="${h}"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas><span class="g">${esc(LIB[h].name)}<small class="${h==='grok'?'warn':''}">${esc(HUSE[h]||'')}</small></span></button>`).join('')}</div>
+    <div class="bp-col"><div class="bp-h">Agent</div>${HARNESSES.map(h=>`<button type="button" class="bp-row${h===b.h?' on':''}" data-bh="${h}"><canvas class="av" data-bot="${h}" aria-hidden="true"></canvas><span class="g">${esc(LIB[h].name)}<small class="${h==='grok'?'warn':''}">${esc(HUSE[h]||'')}</small></span></button>`).join('')}</div>
     <div class="bp-col"><div class="bp-h">Model</div>${MODELS[b.h].map(([m,d])=>`<button type="button" class="bp-row${m===b.m?' on':''}" data-bm="${esc(m)}"><span class="g">${esc(m)}<small>${esc(d)}</small></span>${m===b.m?'<i data-lucide="check" class="ck"></i>':''}</button>`).join('')}</div>
     <div class="bp-col"><div class="bp-h">Effort<span class="nat" title="What ${esc(LIB[b.h].name)} calls it">${esc(ENATIVE[b.h])}</span></div>${EFF.map(([id,l,hint])=>{ const ok=sup.includes(id); return `<button type="button" class="bp-row${id===b.e?' on':''}" data-be="${id}"${ok?'':' disabled title="Not supported by '+esc(LIB[b.h].name)+'"'}>${ebars(id)}<span class="g">${l}<small>${ok?hint:'Not supported'}</small></span></button>`; }).join('')}</div>
   </div>
@@ -3811,9 +3915,10 @@ function renderHarnesses(){
     /* Sign in and out of each agent (the user, 2026-11-23): Sign out (its icon) asks first under the row, since it signs the
        agent out on this Mac; Sign in runs the agent's own login and shows its page and code until it ends (c.cmd: an agent
        whose login needs a terminal shows its command to copy instead). */
-    const sw=`<span class="swl" title="Avoid unless I ask"><i data-lucide="circle-pause"></i><button type="button" class="sw${AVOID[h]?' on':''}" role="switch" aria-checked="${!!AVOID[h]}" aria-label="${esc(n)}: avoid unless I ask" data-avoid="${h}"></button></span><span class="swl" title="Use its own tools"><i data-lucide="wrench"></i><button type="button" class="sw${c.st==='on'?' on':''}" role="switch" aria-checked="${c.st==='on'}" aria-label="${esc(n)}: use its own tools"></button></span>`;
+    /* Plan 21 Task 4: each switch, Check as judge and "Uses its own trust" wait under More (shown once not as they start) */
+    const sw=(HMORE||AVOID[h]?`<span class="swl" title="Avoid unless I ask"><i data-lucide="circle-pause"></i><button type="button" class="sw${AVOID[h]?' on':''}" role="switch" aria-checked="${!!AVOID[h]}" aria-label="${esc(n)}: avoid unless I ask" data-avoid="${h}"></button></span>`:'')+(HMORE?`<span class="swl" title="Use its own tools"><i data-lucide="wrench"></i><button type="button" class="sw${c.st==='on'?' on':''}" role="switch" aria-checked="${c.st==='on'}" aria-label="${esc(n)}: use its own tools"></button></span>`:'');
     /* The judge is automatic (checked on your Mac): a quiet line, or a small "Check as judge" (free agents: by themselves). */
-    const jl=c.st!=='on'?'':JUDGE_CHECKED[h]?'<div class="s">Checked as judge</div>':JCHECKING[h]?'<div class="s">Checking as judge…</div>':`<div class="s"><button class="lnk" type="button" data-jcheck="${h}" title="Runs ion's judge cases on its judge model; uses your plan">Check as judge</button></div>`;
+    const jl=c.st!=='on'?'':JUDGE_CHECKED[h]?'<div class="s">Checked as judge</div>':JCHECKING[h]?'<div class="s">Checking as judge…</div>':!HMORE?'':`<div class="s"><button class="lnk" type="button" data-jcheck="${h}" title="Runs ion's judge cases on its judge model; uses your plan">Check as judge</button></div>`;
     const act=c.st==='on'?`<button type="button" class="ib" data-hout="${h}" title="Sign out" aria-label="Sign out of ${esc(n)}"><i data-lucide="log-out"></i></button>`
       : c.st==='off'?`<button class="btn" type="button" data-hconnect="${h}">Sign in</button>`
       : c.st==='busy'?`<button class="ib" type="button" data-hno="${h}" title="Cancel" aria-label="Cancel sign-in"><i data-lucide="x"></i></button>`
@@ -3828,13 +3933,15 @@ function renderHarnesses(){
     /* "Use its own tools" (the user, 2026-11-21: on by default); Grok's own hooks have no switch, so it says so.
        c.nosb: on a computer without an OS sandbox (Plan 18 Task 12), each agent's chats run without one: "Not sandboxed".
        c.rules: its own allow/deny rules ion goes by in its chats (Plan 18 Task 14), with how many. */
-    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${h==='grok'||h==='codex'?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}${jl}</div>${right}</div>`; }).join('');
+    return `<div class="hrow"><canvas class="av" data-bot="${h}"></canvas><div>${esc(n)}${HMORE&&h==='grok'?'<span class="chip">Its own hooks run too</span>':''}<div class="s">${c.st==='on'?'<i class="okd"></i>':''}${esc(c.how)}</div>${HMORE&&(h==='grok'||h==='codex')?'<div class="s">Uses its own trust for project tools</div>':''}${c.nosb?'<div class="s">Not sandboxed</div>':''}${c.rules?`<div class="s">Uses its own allow/deny rules (${c.rules})</div>`:''}${jl}</div>${right}</div>`; }).join('');
   hydrate(el); icons(el); renderIonModels();
 }
 /* The two model settings (the user, 2026-11-24), as the app draws them: "Ions think with" (Strongest first, the
    daemon's strongest marked and named in the quiet line; then the agents, the model menu, the effort) and "Chats ions
    start run on" (Automatic first, then the agents, model, effort). No hints but the strongest's line, as in the app. */
 const JUDGE_CHECKED={grok:true}, JCHECKING={}, AVOID={};
+/* Plan 21 Task 4: Agents' More (each agent's switches, Check as judge, Prefer in this order) */
+let HMORE=false;
 function modelRows(label,icon,followLabel,followIcon,cur,now,note,effLabel2,eff){
   const on=HARNESSES.filter(h=>HCONN[h].st==='on'), follow=!cur;
   const pick=`<div class="hpick" role="radiogroup" aria-label="${label}"><button type="button" role="radio" aria-checked="${follow}" title="${followLabel}" class="${follow?'on':''}" data-mpick="${label}" data-h=""><i data-lucide="${followIcon}"></i></button>${on.map(h=>`<button type="button" role="radio" aria-checked="${cur===h}" title="${esc(LIB[h].name)}" class="${cur===h?'on':follow&&h===now?'now':''}" data-mpick="${label}" data-h="${h}"><canvas class="av" data-bot="${h}"></canvas></button>`).join('')}</div>`;
@@ -3856,7 +3963,7 @@ document.addEventListener('click',e=>{
   const m=e.target.closest('[data-mpick]'); if(m){ IONBRAIN[m.dataset.mpick==='Ions think with'?'brainPick':'chatsPick']=m.dataset.h||null; renderIonModels(); return; }
   const a=e.target.closest('[data-avoid]'); if(a){ AVOID[a.dataset.avoid]=!AVOID[a.dataset.avoid]; renderHarnesses(); return; }
   const j=e.target.closest('[data-jcheck]'); if(j){ const h=j.dataset.jcheck; JCHECKING[h]=1; renderHarnesses(); setTimeout(()=>{ delete JCHECKING[h]; JUDGE_CHECKED[h]=true; renderHarnesses(); },1800); return; }
-  const more=e.target.closest('[data-hmore]'); if(more){ const g=document.getElementById('hPrefer'); g.hidden=!g.hidden; more.setAttribute('aria-expanded',String(!g.hidden)); if(!g.hidden&&!g.dataset.filled){ g.dataset.filled=1; g.insertAdjacentHTML('beforeend',HARNESSES.map(h=>`<div class="hrow ord"><button type="button" class="ib grip" draggable="true" aria-label="Move ${esc(LIB[h].name)}" title="Drag to reorder"><i data-lucide="grip-vertical"></i></button><canvas class="av" data-bot="${h}"></canvas><div>${esc(LIB[h].name)}</div></div>`).join('')); hydrate(g); icons(g); } }
+  const more=e.target.closest('[data-hmore]'); if(more){ const g=document.getElementById('hPrefer'); g.hidden=!g.hidden; HMORE=!g.hidden; renderHarnesses(); more.setAttribute('aria-expanded',String(!g.hidden)); if(!g.hidden&&!g.dataset.filled){ g.dataset.filled=1; g.insertAdjacentHTML('beforeend',HARNESSES.map(h=>`<div class="hrow ord"><button type="button" class="ib grip" draggable="true" aria-label="Move ${esc(LIB[h].name)}" title="Drag to reorder"><i data-lucide="grip-vertical"></i></button><canvas class="av" data-bot="${h}"></canvas><div>${esc(LIB[h].name)}</div></div>`).join('')); hydrate(g); icons(g); } }
 });
 document.addEventListener('click',e=>{
   const c=e.target.closest('[data-hconnect]');
@@ -3886,7 +3993,7 @@ document.addEventListener('click',e=>{
 });
 
 /* navigation */
-const SCREEN_MODE={new:'chats',code:'chats',chat:'chats',ask:'chats',wary:'chats',start:'chats',byusage:'chats',queued:'chats',library:'chats',ions:'ions',settings:'settings'};
+const SCREEN_MODE={first:'chats',new:'chats',code:'chats',chat:'chats',ask:'chats',wary:'chats',start:'chats',byusage:'chats',queued:'chats',library:'chats',ions:'ions',settings:'settings'};
 function go(id){
   if(id==='start'&&curScreen!=='start') startFrom=Date.now(); curScreen=id;
   const mode=SCREEN_MODE[id]; railMode=mode;
@@ -3921,11 +4028,14 @@ const CHATS=[
   {t:'v2.3 changelog',p:'docs',ion:'docs',go:'code',code:1,tm:'Sun'}];
 const ACTIONS=[
   {t:'New chat',icon:'square-pen',k:['⌘','N'],run:()=>go('new')},
-  {t:'Open ions',icon:'orbit',run:()=>go('ions')},
-  {t:'Open library',icon:'images',run:()=>go('library')},
-  {t:'Ion settings',icon:'sliders-horizontal',run:()=>{ go('settings'); showS('ions'); }},
-  {t:'Harness usage',icon:'gauge',run:()=>{ go('settings'); showS('harness'); }},
-  {t:'Toggle tools panel',icon:'panel-right',run:()=>{ go('code'); pt.click(); }}];
+  {t:'Chats',icon:'message-square',run:()=>go('code')},
+  {t:'Ions',icon:'orbit',run:()=>go('ions')},
+  /* Plan 21 Task 4: every Settings page, so one tucked under More is one search away */
+  ...[['general','General','sliders-horizontal'],['harness','Agents','plug'],['memory','Memory','notebook-text'],['ions','Ions','orbit'],['tools','Tools','blocks'],['notif','Notifications','bell'],['keys','Shortcuts','keyboard']]
+    .map(([id,t,icon])=>({t,icon,sub:'Settings',run:()=>{ go('settings'); showS(id); }})),
+  /* Plan 21 Task 6: what waits inside a page (under its More, or low on it) is one search away too */
+  ...[['Check the agents each night','harness','Agents','plug'],['Check as judge','harness','Agents','plug'],['Prefer in this order','harness','Agents','plug'],['Tidy memory','memory','Memory','notebook-text']]
+    .map(([t,id,page,icon])=>({t,icon,sub:'Settings · '+page,run:()=>{ go('settings'); showS(id); }}))];
 const pal=document.getElementById('pal'), pq=document.getElementById('pq'), pres=document.getElementById('pres');
 let items=[], act=0, lastFocus=null;
 const hl=(s,q)=>{ const i=q?s.toLowerCase().indexOf(q):-1; return i<0?esc(s):esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+q.length))+'</mark>'+esc(s.slice(i+q.length)); };
@@ -3933,10 +4043,9 @@ function renderPal(){
   const q=pq.value.trim().toLowerCase(), m=s=>!q||s.toLowerCase().includes(q);
   const chats=CHATS.filter(c=>m(c.t)||m(c.p||'')).slice(0,q?6:4);
   const ions=live().filter(([,v])=>m(v.name)||m(v.role)||m(v.proj)).slice(0,q?5:3);
-  const acts=ACTIONS.filter(a=>m(a.t)).slice(0,q?4:3);
+  const acts=ACTIONS.filter(a=>m(a.t)||m(a.sub||'')).slice(0,q?8:3);
   items=[]; let h='';
   const add=(html,run)=>{ items.push(run); return html.replace('<button','<button data-pi="'+(items.length-1)+'"'); };
-  if(q) h+=add(`<button class="pr" type="button" role="option"><canvas class="av" data-ion="lead" aria-hidden="true"></canvas><span class="tt">Ask ion: “${esc(pq.value.trim())}”</span><span class="r2">↵</span></button>`,()=>{ go('ions'); renderIon('lead'); });
   if(chats.length){ h+=`<div class="pg">${q?'Chats':'Recent'}</div>`; chats.forEach(c=>{
     const ic=c.ion?`<canvas class="av" data-ion="${c.ion}" aria-hidden="true"></canvas>`:`<i data-lucide="${c.code?'code-xml':'message-square'}"></i>`;
     const r=c.wait?'<i class="wd"></i>':c.run?'<i class="spin"></i>':(c.tm||'');
@@ -3948,8 +4057,11 @@ function renderPal(){
   const med=q?Object.entries(MEDIA).filter(([,x])=>m(x.title)||m(x.sub)).slice(0,5):[];
   if(med.length){ h+=`<div class="pg">Files and media</div>`; med.forEach(([id,x])=>{ h+=add(`<button class="pr" type="button" role="option"><i data-lucide="${x.icon}"></i><span class="tt">${hl(x.title,q)}<small>${esc(x.proj)} · ${esc(x.sub)}</small></span><span class="r2"></span></button>`,()=>openViewer(id)); }); }
   if(acts.length){ h+=`<div class="pg">Actions</div>`; acts.forEach(a=>{
-    h+=add(`<button class="pr" type="button" role="option"><i data-lucide="${a.icon}"></i><span class="tt">${hl(a.t,q)}</span><span class="r2">${(a.k||[]).map(x=>`<kbd>${x}</kbd>`).join('')}</span></button>`,a.run);
+    h+=add(`<button class="pr" type="button" role="option"><i data-lucide="${a.icon}"></i><span class="tt">${hl(a.t,q)}${a.sub?`<small>${a.sub}</small>`:''}</span><span class="r2">${(a.k||[]).map(x=>`<kbd>${x}</kbd>`).join('')}</span></button>`,a.run);
   }); }
+  /* Review of Plan 21 Task 4: Ask ion is the last row; Enter opens the first match, and asks only when nothing else
+     matches (or ⌘↵) */
+  if(q) h+=add(`<button class="pr" type="button" role="option"><canvas class="av" data-ion="lead" aria-hidden="true"></canvas><span class="tt">Ask ion: “${esc(pq.value.trim())}”</span><span class="r2">${items.length?'⌘↵':'↵'}</span></button>`,()=>{ go('ions'); renderIon('lead'); });
   if(!items.length) h='<div class="pempty">Nothing found</div>';
   pres.innerHTML=h; act=Math.min(act,Math.max(0,items.length-1)); mark(); hydrate(pres); icons(pres);
 }
@@ -3968,7 +4080,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ e.preventDefault(); closePal(); }
   else if(e.key==='ArrowDown'){ e.preventDefault(); act=(act+1)%Math.max(1,items.length); mark(); }
   else if(e.key==='ArrowUp'){ e.preventDefault(); act=(act-1+items.length)%Math.max(1,items.length); mark(); }
-  else if(e.key==='Enter'){ e.preventDefault(); runPal(act); }
+  else if(e.key==='Enter'){ e.preventDefault(); if(e.metaKey||e.ctrlKey){ if(pq.value.trim()) runPal(items.length-1); } else runPal(act); }
 });
 
 /* below-window avatars */
@@ -4054,7 +4166,7 @@ function renderChatRows(){
     cg.innerHTML=groups.map(({p,rows})=>{
       const on=STARRED.has(p), folded=(watching&&!on)!==foldFlip.has(p), shown=showAll.has(p)?rows:rows.slice(0,5), more=rows.length-shown.length;
       const star=p==='default'?'':`<button type="button" class="ib star${on?' on':''}" title="${on?'Unstar':'Star'} ${esc(p)}" aria-label="${on?'Unstar':'Star'} ${esc(p)}" data-gstar="${esc(p)}"><i data-lucide="star"></i></button>`;
-      return `<div class="grp"><div class="gl"><button type="button" class="gfold" aria-expanded="${!folded}" data-gfold="${esc(p)}"><i data-lucide="chevron-${folded?'right':'down'}"></i>${esc(p)}</button>${star}</div>`+
+      return `<div class="grp"><div class="gl"><button type="button" class="gfold" aria-expanded="${!folded}" data-gfold="${esc(p)}"><i data-lucide="chevron-${folded?'right':'down'}"></i>${p==='default'?'No project':esc(p)}</button>${star}</div>`+
         (folded?'':shown.map(c=>rowHTML(c)).join('')+(more>0?`<button type="button" class="more-rows" data-gmore="${esc(p)}">${more} more</button>`:''))+'</div>';
     }).join('');
   }

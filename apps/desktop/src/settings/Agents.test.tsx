@@ -101,15 +101,23 @@ describe("Settings → Agents", () => {
   it("avoids an agent unless you ask, and checks one as judge", async () => {
     const c = client({ avoid: { opencode: true } });
     render(<Settings client={c} onOpenIon={() => {}} />);
+    // Plan 21 Task 4: the switches and Check as judge wait under More.
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
     const opencode = await screen.findByRole("switch", { name: "opencode: avoid unless I ask" });
     expect(opencode.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("switch", { name: "Codex: avoid unless I ask" }));
     patched(c, { avoid: { codex: true } });
     const codexRow = screen.getByRole("switch", { name: "Codex: avoid unless I ask" }).closest(".hrow")!;
-    fireEvent.click(within(codexRow as HTMLElement).getByRole("button", { name: "Check as judge" }));
+    const check = within(codexRow as HTMLElement).getByRole("button", { name: "Check as judge" });
+    expect(check.title).toMatch(/^The judge decides Auto's calls/);
+    fireEvent.click(check);
     expect(c.call).toHaveBeenCalledWith("judge.check", { harness: "codex" });
     const grokRow = screen.getByRole("switch", { name: "Grok Build: avoid unless I ask" }).closest(".hrow")!;
     expect(grokRow.textContent).toContain("Checked as judge");
+    // Plan 21 Task 3: "judge" is explained on hover, not in hint text.
+    expect(within(grokRow as HTMLElement).getByText("Checked as judge").title).toMatch(
+      /decides Auto's calls/,
+    );
   });
 
   // PR #36 final review, 2026-11-24: a check that failed for want of answers said "allowed 0".
@@ -123,6 +131,7 @@ describe("Settings → Agents", () => {
       },
     });
     render(<Settings client={c} onOpenIon={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
     const row = async (name: string) =>
       (await screen.findByRole("switch", { name: `${name}: avoid unless I ask` })).closest(".hrow")!
         .textContent;
@@ -137,6 +146,18 @@ describe("Settings → Agents", () => {
       "Avoid unless I ask",
       "Use its own tools",
     ]);
+  });
+
+  // Plan 21 Task 4 tour (a fresh home, 2026-11-28): the agents took ~20 s to be checked and "Coding agents" stood over an
+  // empty box with no sign anything was happening.
+  it("says the agents are being checked while they are", async () => {
+    const c = client();
+    const answer = c.call.getMockImplementation()!;
+    c.call.mockImplementation(((cmd: string) =>
+      cmd === "harnesses.list" ? new Promise(() => {}) : answer(cmd)) as never);
+    render(<Settings client={c} onOpenIon={() => {}} />);
+    const row = await screen.findByText("Checking your agents");
+    expect(row.closest(".srow")?.querySelector(".spin")).not.toBeNull();
   });
 
   // Plan 21, 2026-11-28: ion's own check of a free agent stops at its first limit and says so.
@@ -156,6 +177,8 @@ describe("Settings → Agents", () => {
       },
     });
     render(<Settings client={c} onOpenIon={() => {}} />);
+    // Plan 21 Task 4: each agent's switches wait under More.
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
     const row = async (name: string) =>
       (await screen.findByRole("switch", { name: `${name}: avoid unless I ask` })).closest(".hrow")!
         .textContent;
@@ -185,7 +208,7 @@ describe("Settings → Agents", () => {
     });
     render(<Settings client={c} onOpenIon={() => {}} />);
     expect(await screen.findByText("Judge: yours, Codex · luna · not checked")).toBeTruthy();
-    expect(screen.getByText("Dream: yours, opencode")).toBeTruthy();
+    expect(screen.getByText("Tidy memory: yours, opencode")).toBeTruthy();
     const back = screen.getAllByRole("button", { name: "Back to automatic" });
     fireEvent.click(back[0]!);
     patched(c, { judge: null });

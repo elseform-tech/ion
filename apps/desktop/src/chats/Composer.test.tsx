@@ -47,7 +47,7 @@ const chatClient = (call: (...a: never[]) => unknown) =>
       cmd === "queue.list" ? [] : (call as (c: string, a: unknown) => unknown)(cmd, a),
     subscribe: async () => () => {},
   }) as unknown as IonClient;
-const pill = () => screen.getByRole("button", { name: /Harness, model and effort/ });
+const pill = () => screen.getByRole("button", { name: /Agent, model and effort/ });
 
 describe("Composer", () => {
   // Final review M6: before the agents are known, nothing is sent (it would go to Claude Code and use its quota).
@@ -97,7 +97,7 @@ describe("Composer", () => {
     expect(p.textContent).toBe("Grok Build·grok-code");
     expect(p.querySelector(".ebars")).not.toBeNull();
     expect(p.getAttribute("aria-label")).toBe(
-      "Harness, model and effort: Grok Build · grok-code · Default effort",
+      "Agent, model and effort: Grok Build · grok-code · Default effort",
     );
   });
 

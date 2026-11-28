@@ -6,7 +6,19 @@ import { createFakeAdapter } from "@ion/adapter-fake";
 import type { HarnessAdapter, PickStyle } from "@ion/adapter-kit";
 import type { SkillWhose } from "@ion/schema";
 
-export type HarnessEntry = { adapter: HarnessAdapter; label: string; loginHint: string };
+/** An agent ion knows: its adapter, its name, and the commands that sign in and install it. */
+export type HarnessEntry = { adapter: HarnessAdapter; label: string; loginHint: string; install?: string };
+
+/**
+ * The command that installs each agent (Plan 21: a beginner without one is told how), checked on npm 2026-11-23:
+ * opencode-ai, @xai-official/grok (Grok Build's `grok`, the version ion runs), @openai/codex, @anthropic-ai/claude-code.
+ */
+const INSTALL: Record<string, string> = {
+  opencode: "npm i -g opencode-ai",
+  "grok-build": "npm i -g @xai-official/grok",
+  codex: "npm i -g @openai/codex",
+  "claude-code": "npm i -g @anthropic-ai/claude-code",
+};
 
 /** Where and how ion's checks of an agent open it; set once at the daemon's start (none: the temp folder, unsandboxed). */
 let probePlace: ProbePlace = {};
@@ -55,7 +67,8 @@ export function getHarness(id: string): HarnessEntry | null {
       label: "Fake",
       loginHint: "ion fake login",
     };
-  const e = ENTRIES[id]?.() ?? null;
+  const made = ENTRIES[id]?.();
+  const e = made ? { ...made, install: INSTALL[id] } : null;
   return e && realAgentsOff() ? { ...e, adapter: { ...e.adapter, start: refuseInTests } } : e;
 }
 

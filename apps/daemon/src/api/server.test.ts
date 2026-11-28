@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { connect as tcp, Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,7 +22,8 @@ const repo = (name: string) => {
   const git = (...a: string[]) => execFileSync("git", a, { cwd: p });
   git("init", "-q", "-b", "main");
   git("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init");
-  return p;
+  // ion keeps a folder's real path (review of Plan 21 Task 2, 2026-11-23): /tmp is /private/tmp on macOS.
+  return realpathSync.native(p);
 };
 
 describe("daemon api", () => {
@@ -289,10 +290,10 @@ describe("daemon api", () => {
     expect(readFileSync(join(home, "config.toml"), "utf8")).toContain(p);
   });
 
-  it("rejects a folder that isn't a git repo", async () => {
-    await expect(client.call("projects.add", { path: "/nope" })).rejects.toThrow(
-      "Not a git repository: /nope",
-    );
+  // Plan 21 audit, 2026-11-23: a folder that isn't a git repo gets ion's git setup now (start.test.ts); one that isn't
+  // there is still refused, plainly.
+  it("rejects a folder that isn't there", async () => {
+    await expect(client.call("projects.add", { path: "/nope" })).rejects.toThrow("No folder at /nope");
   });
 
   it("answers unknown commands with unknown_command", async () => {
@@ -306,6 +307,36 @@ describe("daemon api", () => {
       code: "invalid",
     });
     expect(await client.call("status", {})).toMatchObject({ projects: 0 });
+  });
+
+  // Plan 21 final review (2026-11-28, M1): adding a folder saved the config it read before ion's git setup, so a
+  // setting saved meanwhile was lost. The folder is added to the config as it is when the setup is done.
+  it("a setting saved while ion sets up git in a folder is kept", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), "ion-plain-")), "tip-calc");
+    mkdirSync(path);
+    for (let i = 0; i < 200; i++) writeFileSync(join(path, `f${i}.js`), `${i}\n`);
+    const adding = client.call("projects.add", { path, confirm: true });
+    await new Promise((r) => setTimeout(r, 5));
+    const cf = join(home, "config.toml");
+    const before = loadUserConfig(cf).config;
+    saveUserConfig(cf, { ...before, resources: { ...before.resources, max_runs: 3 } });
+    await adding;
+    const c = loadUserConfig(cf).config;
+    expect(c.projects.map((p) => p.id)).toContain("tip-calc");
+    expect(c.resources.max_runs).toBe(3);
+  });
+
+  // Plan 21 Task 6 tour (2026-11-28): after a chat in No project, `ion status` said "2 projects" for one folder: it
+  // counted ion's `default`. It counts your projects, as the first run does.
+  it("status counts your projects, not ion's own No project", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    await client.call("projects.add", { path: repo("app") });
+    const seen: IonEvent[] = [];
+    await client.subscribe({}, (e) => seen.push(e));
+    const { runId } = await client.call("ask", { text: "hello", harness: "fake" });
+    await until(() => seen.some((e) => e.runId === runId && e.type === "run.finished"));
+    expect(loadUserConfig(join(home, "config.toml")).config.projects.map((p) => p.id)).toContain("default");
+    expect(await client.call("status", {})).toMatchObject({ projects: 1 });
   });
 
   it("runs an ask end to end and keeps serving after a failed run", async () => {
@@ -408,10 +439,10 @@ describe("daemon api", () => {
     // The thread ends: app's ion says what came of it, and ion chief passes it on. PR #36 final review, 2026-11-24:
     // the thread changed nothing and said little, so that's its own reply, with no report turn.
     await until(() => ionSaid("app").length > 2, 15_000);
-    expect(ionSaid("app").at(-1)).toEqual({ text: "Hi from the fake harness." });
-    await until(() => ionSaid("chief").at(-1)?.text === "Hi from the fake harness.", 15_000);
+    expect(ionSaid("app").at(-1)).toEqual({ text: "Hi from the fake agent." });
+    await until(() => ionSaid("chief").at(-1)?.text === "Hi from the fake agent.", 15_000);
     const order = ionSaid("chief").map((m) => m.text);
-    expect(order.indexOf("Asked 1 project.")).toBeLessThan(order.indexOf("Hi from the fake harness."));
+    expect(order.indexOf("Asked 1 project.")).toBeLessThan(order.indexOf("Hi from the fake agent."));
   }, 20_000);
 
   // The user, 2026-11-19 (Settings): ion's quick model, and a project ion's setup.
@@ -475,6 +506,31 @@ describe("daemon api", () => {
       delete process.env.ION_FAKE_JUDGE;
     }
   }, 60_000);
+
+  // Plan 21 Task 5, 2026-11-28: "Check the agents each night" is off until you turn it on; Check now runs the same
+  // small check on the agents that are in (one that isn't free only when you pick it), through ion's own server.
+  it("checks the agents each night only once you turn it on, and now on request", async () => {
+    process.env.ION_ALLOW_FAKE = "1";
+    const first = await client.call("agents.checks", {});
+    expect(first).toMatchObject({ nightly: false, running: false, last: [] });
+    // Only the fake agent is checked here: the others are avoided (no real agent, nothing slow to ask).
+    const others = ["claude-code", "codex", "grok-build", "opencode"];
+    await client.call("settings.set", {
+      patch: { avoid: Object.fromEntries(others.map((id) => [id, true])) },
+    });
+    const on = await client.call("agents.checks", { nightly: true, pick: { fake: true } });
+    expect(on.nightly).toBe(true);
+    expect(on.agents.find((a) => a.agent === "fake")).toMatchObject({ picked: true, included: true });
+    const done = await client.call("agents.check", {});
+    const fake = done.last.find((r) => r.agent === "fake");
+    expect(fake?.checks.slice(0, 2)).toEqual([
+      { name: "Signed in", ok: true },
+      { name: "Starts", ok: true },
+    ]);
+    await expect(client.call("agents.checks", { pick: { nope: true } })).rejects.toThrow(
+      "Unknown agent: nope",
+    );
+  }, 120_000);
 
   // The user, 2026-11-18: the preview shows a chat's files and what's running in its worktree, with PIDs.
   it("previews a chat's file and lists its background tasks", async () => {
@@ -638,7 +694,7 @@ describe("daemon api", () => {
   });
 
   // Review, 2026-11-19: removing a project kept it in your config while its chats were archived, so a routine or an
-  // ion message in that time could start a thread in it.
+  // ion message in that time could start a chat in it.
   it("starts nothing in a project while it's being removed", async () => {
     process.env.ION_ALLOW_FAKE = "1";
     await client.call("projects.add", { path: repo("app") });

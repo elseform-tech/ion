@@ -26,6 +26,7 @@ import { brainArgs, registerChatsTool } from "./ion-chats-tool.js";
 import type { Confirm } from "../ions/confirms.js";
 import { guard, ok, q } from "./result.js";
 import { registerMemoryTools } from "./memory-tools.js";
+import { CHECK_ION, registerCheckTool } from "./check-tool.js";
 import { DREAM_ION } from "../memory/dream-rules.js";
 import { ionCaller, ionMemory, leastIonMemory } from "../memory/switch.js";
 import { type Deps, historyData, needsData, SEARCH_MAX, searchData } from "./tools.js";
@@ -100,6 +101,7 @@ function ionOf(scope: IonScope, d: IonDeps): Ion {
  * Everything they return is labelled as data.
  */
 export function registerIonTools(server: McpServer, scope: IonScope, d: IonDeps): void {
+  if (scope.ionId === CHECK_ION) return registerCheckTool(server, scope);
   const ion = ionOf(scope, d);
   if (scope.ionId === DREAM_ION) return dreamTools(server, ion);
   projectsTool(server, ion);
@@ -282,7 +284,7 @@ function threadTool(server: McpServer, ion: Ion): void {
   server.registerTool(
     "start_thread",
     {
-      description: `Start work in a project: a thread its agent runs, briefed with what to do there. To have it use a skill or a connection, name it in skills or mentions. Pass harness, model or effort only when the user asked for this chat to run on them (e.g. "use Codex for this, at low effort"); otherwise leave them out. At most ${PER_TURN} per turn.`,
+      description: `Start work in a project: a chat its agent works in, briefed with what to do there. To have it use a skill or a connection, name it in skills or mentions. Pass harness, model or effort only when the user asked for this chat to run on them (e.g. "use Codex for this, at low effort"); otherwise leave them out. At most ${PER_TURN} per turn.`,
       inputSchema: {
         projectId: z.string().min(1),
         brief: z.string().min(1).max(4000),
@@ -300,7 +302,7 @@ function threadTool(server: McpServer, ion: Ion): void {
       // A slot is taken before starting (two calls at once can't both take the 5th) and given back unless it started.
       if (d.grants.noteThread(scope.turnId) > PER_TURN) {
         d.grants.noteThread(scope.turnId, -1);
-        throw new UserError("That's enough threads for one turn");
+        throw new UserError("That's enough chats for one turn");
       }
       const r = await d.startThread(projectId, brief, scope.turnId, picks).catch((e: unknown) => {
         d.grants.noteThread(scope.turnId, -1);

@@ -41,7 +41,7 @@ const ION_TOOLS: Record<string, string> = {
   projects: "Projects",
   search_chats: "Search chats",
   chat_history: "Chat history",
-  open_needs: "Open needs",
+  open_needs: "Open questions",
   memory_list: "Memory",
   memory_index: "Memory",
   memory_search: "Search memory",
@@ -50,10 +50,21 @@ const ION_TOOLS: Record<string, string> = {
   memory_forget: "Forget",
   decisions: "Decisions",
   set_profile: "Suggest profile",
-  start_thread: "Start thread",
+  start_thread: "Start chat",
   ask: "Ask",
   report_outcome: "Report outcome",
   tools: "Your tools",
+};
+
+/** What one of ion's tools read, on hover, where its name alone says little (Plan 21 Task 4). */
+const ION_TOOL_HOVER: Record<string, string> = {
+  decisions: "Your past answers to agents, and what came of them",
+};
+
+/** A step's hover: what one of ion's tools read, else nothing. */
+const stepHover = (raw: string): string | undefined => {
+  const ion = /^(?:mcp__ion__|ion__)(.+)$/.exec(stripControl(raw))?.[1];
+  return ion ? ION_TOOL_HOVER[ion] : undefined;
 };
 
 /** Each agent's web tools (Claude Code, Grok and Codex, opencode), in words. */
@@ -114,7 +125,9 @@ const ToolRow = memo(function ToolRow({ s, live }: { s: ToolStep; live: boolean 
     <div className={`ws w-${state}`} onClick={() => setOpen(!open)}>
       <Icon />
       <div className="wl">
-        <b className={running ? "now" : undefined}>{name}</b>
+        <b className={running ? "now" : undefined} title={stepHover(s.name)}>
+          {name}
+        </b>
         {summary && (
           <>
             {" "}

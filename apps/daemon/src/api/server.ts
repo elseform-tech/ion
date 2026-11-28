@@ -27,6 +27,7 @@ import type { Decisions } from "../decisions/index.js";
 import type { Blocked } from "../decisions/blocked.js";
 import type { AskingRun } from "../runs/approvals.js";
 import { createGateHandler } from "../gate/index.js";
+import { agentChecking, checksBeside, checksGate } from "./agent-checks.js";
 import { createGrants, createMcpHandler, type Grants, type RunScope } from "../mcp/index.js";
 import { createGateway } from "../gateway/index.js";
 import { Ions } from "../ions/service.js";
@@ -190,7 +191,7 @@ function httpServer(ctx: Ctx, turns: IonTurns) {
     grants,
     decide: (scope, payload) => ctx.runs.gate(scope.runId, payload),
     // An ion's turn reports its tool calls here too: it may only read.
-    ion: (scope, payload) => turns.gate(scope, payload),
+    ion: checksGate(ctx.agentChecks, (scope, payload) => turns.gate(scope, payload)),
   });
   // Your remote MCP servers, through ion: each run's agent reaches only the ones given to it, with its own key.
   const gateway = createGateway({
@@ -377,6 +378,7 @@ async function stopWork(ctx: Ctx, turns: IonTurns): Promise<void> {
   ctx.handoffs?.stop();
   await ctx.oauth.close();
   await turns.shutdown();
+  await ctx.agentChecks?.checks.close();
   await ctx.runs.shutdown();
   ctx.hooks.stop();
 }
@@ -489,14 +491,14 @@ function openState(
   late.decisions = decisions;
   const { ions, turns, dreams } = startIons({ store, db, ...opts, runs, grants, base, ionServers, memory });
   // A routine's time came (or you ran it now): its ion starts its thread.
-  const routines = new Routines({
-    ...{ store, db, configFile: opts.configFile },
-    start: (projectId, r, by) => ions.routine(projectId, r, by),
-  });
+  const routines = new Routines({ store, db, configFile: opts.configFile, start: ions.routine.bind(ions) });
   const suggestions = chiefSuggestions({ store, db, configFile: opts.configFile, runs, routines, memory });
   const base0 = {
-    ...{ configFile: opts.configFile, startedAt: Date.now(), version: VERSION },
+    ...{ configFile: opts.configFile, dataDir: opts.dataDir, startedAt: Date.now(), version: VERSION },
     ...{ tools, oauth, unsure, ionServers, memory, dreams, handoffs, judges },
+    agentChecks: checksBeside(dreams, (tidying) =>
+      agentChecking({ store, db, ...opts, grants, base, judges, tidying }),
+    ),
   };
   const shared = { store, db, needs, decisions, grants, runs, ions, routines, suggestions, ...base0, ...cli };
   const ctx = { ...shared, hooks, skills, queue: promptQueue({ ...shared, hooks, skills }) };

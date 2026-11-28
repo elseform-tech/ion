@@ -218,8 +218,8 @@ describe("Settings → Memory", () => {
   it("a row shows who changed it and when", async () => {
     await openMemory();
     expect(rowOf("Tabs, not spaces").textContent).toContain("Docs pass · 2h");
-    // Tour, 2026-11-22: ion chief's name is "ion"; a row said "ion · now", read as ion itself.
-    expect(rowOf("Sam").textContent).toContain("ion chief · Tue");
+    // Plan 21 Task 3 (2026-11-24): ion chief is "ion" on every screen, Memory too (it said "ion chief" here only).
+    expect(rowOf("Sam").textContent).toContain("ion · Tue");
     expect(within(rowOf("Sam")).getByTitle("Person")).toBeTruthy();
   });
 
@@ -335,7 +335,7 @@ describe("Settings → Memory", () => {
 // update memory" → ion tidies memory overnight. Settings → Memory turns it on, marks what it changed for a day, and
 // brings back a file it forgot.
 describe("ion's dream in Memory", () => {
-  it("Dream turns on, a file it changed says so for a day, and a file it forgot comes back", async () => {
+  it("Tidy memory turns on, a file it changed says so for a day, and a file it forgot comes back", async () => {
     const tidied: DreamInfo = {
       ...{ at: ago(5), merged: 0, updated: 1, forgot: 1, moved: 0, notes: [] },
       forgotten: [{ path: "you/old-launch.md", name: "Old launch" }],
@@ -348,7 +348,7 @@ describe("ion's dream in Memory", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Nightly" }));
     expect(c.call).toHaveBeenCalledWith("settings.set", { patch: { dream: { mode: "nightly" } } });
     expect(within(rowOf("Node version")).getByText("Tidied by ion")).toBeTruthy();
-    expect(within(rowOf("Node version")).getByText(/ion \(dream\)/)).toBeTruthy();
+    expect(within(rowOf("Node version")).getByText(/ion \(tidying\)/)).toBeTruthy();
     expect(within(rowOf("Older tidy")).queryByText("Tidied by ion")).toBeNull();
     const gone = (await screen.findByText(/Old launch/)).closest(".srow") as HTMLElement;
     fireEvent.click(within(gone).getByRole("button", { name: "Restore" }));

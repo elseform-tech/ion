@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import { ApiCallError, type IonClient } from "@ion/client";
 import { ionPaths } from "@ion/config";
 import { type EffortLevel, EV, type IonEvent } from "@ion/schema";
@@ -9,6 +9,8 @@ import { createRenderer, type RunEnd } from "../render.js";
 type AskOpts = {
   project?: string;
   chat?: string;
+  agent?: string;
+  /** `--harness`: `--agent`'s old word, kept for one release, out of the help (Plan 21 Task 3). */
   harness?: string;
   model?: string;
   effort?: EffortLevel;
@@ -16,6 +18,9 @@ type AskOpts = {
   /** commander's `--no-memory`: false. */
   memory?: boolean;
 };
+
+/** How long `ion answer` waits for the chat to go on before it ends (ION_ANSWER_WAIT_MS: tests). */
+const NEXT_RUN_WAIT_MS = Number(process.env.ION_ANSWER_WAIT_MS) || 15_000;
 
 /** How long `ion ask` stays after a limit for ion's question about it. */
 const QUESTION_WAIT_MS = 10_000;
@@ -25,11 +30,12 @@ const QUESTION_WAIT_MS = 10_000;
  * another agent it follows that run, replaying what it already sent (its run starts just before ion's line).
  */
 class Watched {
-  runId: string;
+  /** Null: the chat's next run, whichever it is (after `ion answer`). */
+  runId: string | null;
   render = createRenderer();
   private readonly others = new Map<string, IonEvent[]>();
 
-  constructor(runId: string) {
+  constructor(runId: string | null) {
     this.runId = runId;
   }
 
@@ -38,6 +44,10 @@ class Watched {
 
   /** Whether to show this event now; another run's are kept, in case ion goes on with it. */
   mine(e: IonEvent): boolean {
+    // The chat's next run starts (review of Plan 21 Task 2, 2026-11-23: the old run's answered question was taken for it).
+    if (this.runId === null && e.runId && (e.type === EV.runQueued || e.type === EV.runStarted))
+      this.runId = e.runId;
+    if (this.runId === null) return false;
     if (e.runId === this.runId) {
       this.live = true;
       return true;
@@ -58,11 +68,15 @@ class Watched {
   }
 }
 
-/** Prints the run's events as they arrive and resolves when it finishes. */
-function follow(
+/**
+ * Prints the run's events as they arrive and resolves when it finishes. With no run yet (`runId` null), the chat's
+ * next one from now on, once `act` is done (`ion answer`: the answer it goes on with).
+ */
+export function follow(
   client: IonClient,
-  started: { chatId: string; runId: string },
+  started: { chatId: string; runId: string | null },
   json: boolean,
+  act?: () => Promise<unknown>,
 ): Promise<RunEnd> {
   const w = new Watched(started.runId);
   return new Promise((resolve) => {
@@ -75,7 +89,7 @@ function follow(
     };
     const lost = () => {
       if (done) return;
-      process.stderr.write("\nLost the connection to ion. The run may have stopped.\n");
+      process.stderr.write("\nLost the connection to ion. The agent may have stopped.\n");
       finish({ status: "failed", code: 1 });
     };
     const show = (e: IonEvent) => {
@@ -94,8 +108,18 @@ function follow(
     };
     client.onClose(lost);
     client
-      .subscribe({ chatId: started.chatId }, (e) => {
+      .subscribe({ chatId: started.chatId, ...(started.runId ? {} : { fromNow: true }) }, (e) => {
         if (!done && w.mine(e)) show(e);
+      })
+      .then(async () => {
+        if (!act) return;
+        await act();
+        // Nothing started (a wait until the agent's reset, say): `ion answer` ends instead of hanging.
+        setTimeout(() => {
+          if (w.runId !== null || done) return;
+          process.stdout.write("The chat goes on later.\n");
+          finish({ status: "done", code: 0 });
+        }, NEXT_RUN_WAIT_MS);
       })
       .catch(lost);
   });
@@ -107,7 +131,7 @@ async function start(client: IonClient, text: string, o: AskOpts) {
       text,
       ...(o.project ? { projectId: o.project } : {}),
       ...(o.chat ? { chatId: o.chat } : {}),
-      ...(o.harness ? { harness: o.harness } : {}),
+      ...((o.agent ?? o.harness) ? { harness: o.agent ?? o.harness } : {}),
       ...(o.model ? { model: o.model } : {}),
       ...(o.effort ? { effort: o.effort } : {}),
       ...(o.access === "auto" || o.access === "full" ? { access: o.access } : {}),
@@ -126,9 +150,10 @@ export function askCommand(program: Command, out: () => Out) {
     .option("-p, --project <id>", "Project")
     .option("--chat <id>", "Continue a chat")
     .option(
-      "--harness <id>",
+      "--agent <id>",
       "claude-code, codex, grok-build or opencode (default: the chat's, else one signed in)",
     )
+    .addOption(new Option("--harness <id>").hideHelp())
     .option("--model <model>", "Model")
     .option("--effort <level>", "low, medium, high or max")
     .option("--access <mode>", "auto (ion decides) or full")

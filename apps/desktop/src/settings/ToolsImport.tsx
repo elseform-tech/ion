@@ -3,6 +3,7 @@ import type { ImportableServer } from "@ion/schema";
 import type { Run } from "../callError.js";
 import type { ImportData } from "./tools-data.js";
 import { short, ToolRow } from "./tools-parts.js";
+import { projectsFile } from "../projectName.js";
 
 /** What both get: Import's state and calls, and how a call's failure is shown (one line under the tabs). */
 type Props = { data: ImportData; run: Run };
@@ -49,7 +50,7 @@ export function ImportLines({ data, run }: Props) {
 
 /** Where a server is from: your agent, or a project's own file (the repo wrote it, not you). */
 const sourceOf = (s: ImportableServer) =>
-  s.repo ? `From ${s.repo.project}'s ${s.repo.file}` : `From ${s.from}`;
+  s.repo ? `From ${projectsFile(s.repo.project, s.repo.file)}` : `From ${s.from}`;
 
 /** One server before it comes in: what it runs (or its host) and the keys it'll need; a repo's has its own Import. */
 function ShownRow({ s, data, run }: Props & { s: ImportableServer }) {

@@ -120,6 +120,11 @@ export class Holds {
     });
   }
 
+  /** Whether a call still waits for this answer (not yet answered, nor past the wait). */
+  waits(needId: string): boolean {
+    return this.waiting.has(needId);
+  }
+
   /** True when a call was still waiting for this answer. */
   release(needId: string, h: Held): boolean {
     const r = this.waiting.get(needId);

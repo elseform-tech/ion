@@ -30,7 +30,7 @@ describe("what an ion is told about to-dos", () => {
     for (const id of ["chief", "shop"]) {
       const told = ionInstructions(id);
       expect(told).toContain('"remind me to…", "later we need to…"');
-      expect(told).toContain("a thread you started ends listing what's still to do");
+      expect(told).toContain("a chat you started ends listing what's still to do");
       expect(told).toContain("memory_write with type todo");
       expect(told).toContain('"Added to your to-dos: <what> (<day>)"');
       // Task review, 2026-11-22: one wording, yours or a project's.

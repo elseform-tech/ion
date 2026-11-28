@@ -14,7 +14,7 @@ import { harnessInfos } from "./commands.js";
 const readyAgents = readyNow(harnessInfos);
 
 /** How an agent bills on this model: asked of the agent when it can say (opencode's prices), else its sign-in's. */
-async function billingOn(agent: string, model: string): Promise<Billing | null> {
+export async function billingOn(agent: string, model: string): Promise<Billing | null> {
   const a = getHarness(agent)?.adapter;
   if (a?.billingOf) return (await a.billingOf([model]).catch(() => undefined)) ?? null;
   return (await harnessInfos.one(agent).catch(() => undefined))?.billing ?? null;

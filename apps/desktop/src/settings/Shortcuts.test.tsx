@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEffortKey } from "../chats/BrainPopover.js";
 import { onEnter, type Queue, useDoubleEsc } from "../chats/Queue.js";
 import { useSidebar } from "../Frame.js";
+import { useSearchKey } from "../Search.js";
 import { HOTKEYS, hit } from "../hotkeys.js";
 import { Settings } from "./Settings.js";
-import { settingsClient } from "./testing.js";
+import { openPage, settingsClient } from "./testing.js";
 
 afterEach(cleanup);
 
@@ -34,7 +35,7 @@ const press = (key: string, mods: { metaKey?: boolean; ctrlKey?: boolean; shiftK
 describe("Settings → Shortcuts", () => {
   it("lists every hotkey the app handles", async () => {
     render(<Settings client={settingsClient()} onOpenIon={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+    await openPage("Shortcuts");
     expect(HOTKEYS.length).toBeGreaterThan(0);
     for (const k of HOTKEYS) {
       const row = (await screen.findByText(k.name)).closest(".srow");
@@ -61,6 +62,13 @@ describe("Settings → Shortcuts", () => {
     asked.clear();
     renderHook(() => useSidebar());
     fireEvent.keyDown(document, { key: "b", metaKey: true });
+    renderHook(() =>
+      useSearchKey(
+        () => {},
+        () => {},
+      ),
+    );
+    fireEvent.keyDown(document, { key: "k", metaKey: true });
     renderHook(() => useEffortKey({ harness: "fake", model: "", effort: "low" }, () => {}));
     fireEvent.keyDown(document, { key: ".", metaKey: true });
     renderHook(() => useDoubleEsc("r1", () => {}));

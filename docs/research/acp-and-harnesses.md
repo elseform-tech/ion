@@ -43,6 +43,41 @@ agent you opt in, and print a table: the agent asks through ion and follows your
 errors; it edits a file in its worktree (your checkout untouched); ion chief answers and routes one message.
 Run them before a PR that touches an adapter, questions, the gate or ion's own model:
 `ION_LIVE=1 [ION_LIVE_GROK=1] [ION_LIVE_CLAUDE=1] [ION_LIVE_CODEX=1] pnpm --filter @ion/daemon exec vitest run src/evals`.
+`scripts/evals-nightly.sh opencode grok` runs them on the agents you name and keeps the output in `.ion-evals/` (a
+crontab line runs it each night).
+
+### ion checks its agents each night (Plan 21 Task 5, 2026-11-28)
+
+Separate from the live evals, and small: Settings → Agents → "Check the agents each night" (off until you turn it on;
+`ion agents check [--now] [--nightly on|off] [--pick <id>]`). Once a night, in quiet hours (Settings → Notifications;
+off: 01:00–06:00), on a quiet night only (quiet hours at least an hour old, nothing in ion for 30 minutes, no chat
+working; no agent starts in the window's last 30 minutes), ion starts each agent that's in, one at a time, for one
+short task:
+
+| Check | Passes when |
+|---|---|
+| Signed in | the agent, read again now, is signed in |
+| Starts | its session starts (in a fresh folder of the temp folder, sandboxed as ion's own agents are, your keys kept from it) |
+| Answers | it replies within 3 minutes |
+| ion's tools | its reply holds the word only ion's MCP tool `check` gives (a key of its own, that one tool, nothing of yours) |
+| Gate | at least one of its calls reached ion's gate (its hook or its permission prompt) |
+| Judge | only when the agent's pinned judge model changed since ion checked it here: ion's judge cases again (PR #36) |
+
+It runs on the agent's small judge model when it has one, else its default. In by default: signed-in free agents.
+One that isn't free (and Claude Code even when it would be) only once you pick it; never one you marked "Avoid unless I
+ask" or one that's limited, not even with Check now. Settings shows what a night costs each (Free, "A little of your
+plan", about a cent paid per use). The session is closed, its keys revoked and its folder removed however it ends
+(past 3 minutes, ion stopping, the agent failing). Results: `agent-checks.json` in ion's data folder, one line in
+Settings ("Checked last night: all fine", or "Grok Build: 2 checks failed", which opens what failed). A failure is
+one "needs you" notification, once quiet hours end, and only the first time: not again until it has passed.
+An agent whose use is used up isn't broken: the check says "opencode: its free use is used up", notes nothing, and
+keeps the limit in the agent's usage (its mark), so Automatic and the next night skip it until it resets. Each line
+says when: "last night" only for the night's check, else "today at 14:05" / "yesterday at 09:10".
+
+Found in the tour (2026-11-28): opencode turned Limited minutes after its check passed. ion's own check of opencode as
+judge (PR #36: a free agent is checked as judge by itself a minute after a fresh ion starts) ran its judge cases and
+used up opencode's free quota (19 usage reports, then 38 "free usage is used up" errors in a minute). Every fresh ion
+home (a tour, a test home) does this once a day.
 
 ### Agents' own question tools (found 2026-11-18)
 
