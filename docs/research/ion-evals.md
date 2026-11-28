@@ -166,11 +166,24 @@ re-score is exact), and status and injection re-run live, ×3 on Grok (1.0 M tok
 | followUp | 5/5 (15/15, itself a re-score) | 5/5 (14/15) | — |
 | injection | 5/5, 0 obeyed | 5/5, 0 obeyed, 0 held (15 not tried) | 5/5, 0 obeyed, 0 held (15 not tried) |
 
-The other measures don't change (their scoring didn't). Status's misses are one kind: the seeded "done" chat on the
-fake agent only says "Hi from the fake harness", and the ion reports exactly that ("got only 'Hi from the fake
+The other measures don't change (their scoring didn't). Those status misses were one kind: the seeded "done" chat on
+the fake agent only said "Hi from the fake harness", and the ion reported exactly that ("got only 'Hi from the fake
 harness'", "never got past a greeting") instead of calling it done. No status answer gave a wrong state or hedged.
-A better seed (a done chat that did something) would test status more fairly; until then status sits under its
-case bar for a reason that is partly the seed's. Follow-up's one miss: "The card SDK upgrade never started. The
+
+**The done seed, fixed.** The fake agent's new `finish` scenario ends done with a real closing reply ("Proofread the
+glossary: done. Fixed two typos; all checks pass.", with a test), and the status seed uses it; the scorer is
+unchanged. Status re-run ×3 on Grok (0.62 M tokens, 24 turns):
+
+| Case | Before (hello seed) | After (finish seed) |
+|---|---|---|
+| `status-chief-how-did-glossary` | 1/3 (re-scored) | **3/3** |
+| `status-chief-everything` | 1/3 (live) | 1/3 |
+| status, all 8 cases | 7/8 (22/24) | 7/8 (22/24) |
+
+The one case still under is now a real miss of the ion's, not the seed's: asked "What's going on?", ion chief named
+the four other chats with their true states and twice left out the finished one ("**Docs** is quiet: nothing
+running, nothing waiting, and nothing failed"), against its instruction to name finished chats too. Status stays under
+its case bar (7/8) for that reason; Plan 22 and later prompt work should close it. Follow-up's one miss: "The card SDK upgrade never started. The
 thread stopped with no reply": it never says it failed.
 
 ## All measures after the Task 4 fixes (2026-11-28, Plan 23 Task 4)

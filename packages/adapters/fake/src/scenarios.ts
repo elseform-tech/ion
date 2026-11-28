@@ -267,6 +267,15 @@ export const SCENARIOS: Record<string, (s: Script) => Promise<"done" | "failed" 
     say(s, "Hi from the fake harness.");
     return "done";
   },
+  /**
+   * "finish <task>": ends done with the closing reply a real agent gives ("Proofread the glossary: done. Fixed two
+   * typos; all checks pass."), so a finished chat reads as finished (Plan 23's ion evals, 2026-11-28).
+   */
+  async finish(s) {
+    const task = ownText(s.text()).trim().split(/\s+/).slice(1).join(" ").split(/[.!]/)[0] || "The task";
+    say(s, `${task}: done. Fixed two typos; all checks pass.`);
+    return "done";
+  },
   async edit(s) {
     tool(s, {
       toolId: "t1",

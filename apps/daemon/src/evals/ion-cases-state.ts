@@ -15,7 +15,7 @@ const CHATS: SeedChat[] = [
   chat("storefront", "slow Rebuild the product carousel", "running"),
   chat("storefront", "asks Fix the cart drawer", "question"),
   chat("payments-api", "fail Upgrade the card SDK", "failed"),
-  chat("docs", "hello Proofread the glossary", "done"),
+  chat("docs", "finish Proofread the glossary", "done"),
   // Last: a limit's own mark is dated now, and a chat ending well after it would clear it (ion-seeds.ts fakeLimited).
   chat("payments-api", "limited Add refund reports", "limited"),
 ];
