@@ -363,13 +363,15 @@ describe("hooks before a tool runs", () => {
 
 // Plugins research, 2026-11-28 (docs/research/plugins-across-agents.md, "Where hooks run"): hooks ran in the
 // project's folder, so a rule a chat wrote in its worktree (hookify's `.claude/hookify.*.local.md`) went unseen.
-describe("a hook runs in the chat's worktree", () => {
-  it("before a tool runs, in the run's folder; on an event, in the chat's worktree; else the project's", async () => {
+// Automated scan, 2026-11-28 (after #56): a hook in the chat's worktree runs code the agent can plant there; with no
+// sandbox to hold it, a hook runs in the project's folder, with the worktree given as data (ION_WORKTREE).
+describe("a hook with no sandbox", () => {
+  it("runs in the project's folder, the chat's worktree given as ION_WORKTREE", async () => {
     const wt = realpathSync(mkdtempSync(join(tmpdir(), "ion-wt-")));
-    const out = join(home, "pwd.txt");
+    const out = join(home, "where.txt");
     await save([
-      { id: "g", name: "Where", event: "tool.before", run: `pwd >> ${out}` },
-      { id: "e", name: "Where", event: "run.finished", run: `pwd >> ${out}` },
+      { id: "g", name: "Where", event: "tool.before", run: `echo "$(pwd)|$ION_WORKTREE" >> ${out}` },
+      { id: "e", name: "Where", event: "run.finished", run: `echo "$(pwd)|$ION_WORKTREE" >> ${out}` },
     ]);
     const c = `c${++n}`;
     const data = { title: "Fix the cart", projectId: "app", worktree: wt, branch: "ion/x" };
@@ -377,10 +379,13 @@ describe("a hook runs in the chat's worktree", () => {
     await hooks.beforeTool({ ...runOf(c), cwd: wt }, call("ls"));
     finish(c);
     await hooks.idle();
-    // A plain chat with no worktree: the project's folder.
     finish(chat());
     await hooks.idle();
-    expect(readFileSync(out, "utf8").trim().split("\n")).toEqual([wt, wt, proj]);
+    expect(readFileSync(out, "utf8").trim().split("\n")).toEqual([
+      `${proj}|${wt}`,
+      `${proj}|${wt}`,
+      `${proj}|`,
+    ]);
   });
 });
 
@@ -396,6 +401,57 @@ describe.runIf(process.platform === "darwin")("a hook in a chat's worktree, sand
     await save([{ id: "g", name: "Touch", event: "tool.before", run: "touch here.txt" }]);
     expect(await boxed.beforeTool({ ...runOf(c), cwd: wt }, call("ls"))).toBeNull();
     expect(existsSync(join(wt, "here.txt"))).toBe(true);
+  });
+
+  // Automated scan, 2026-11-28 (after #56): a hook in the chat's worktree may run code the agent planted there, so its
+  // sandbox gives no more than the agent's own: no key the run leaves out, nothing written outside the worktree.
+  it("sees no key the run leaves out, writes nothing outside the worktree, and is told where it is", async () => {
+    const dataDir = join(home, "data");
+    const c = chat();
+    const wt = join(dataDir, "worktrees", c);
+    mkdirSync(wt, { recursive: true });
+    const outside = join(home, "outside");
+    mkdirSync(outside);
+    const name = ["ION", "TEST", "SERVICE", "TOKEN"].join("_");
+    process.env[name] = ["made", "up", "value", String(Date.now())].join("-");
+    try {
+      const sandbox = hookSandbox({ dataDir, configFile });
+      const boxed = new Hooks({ store, db, configFile, sign, limits: fast, ...(sandbox ? { sandbox } : {}) });
+      const run = `env > seen.env; touch here.txt; touch ${outside}/x; echo t > "$TMPDIR/t" && echo tmp-ok > tmp.txt`;
+      await save([{ id: "g", name: "Probe", event: "tool.before", run }]);
+      await boxed.beforeTool({ ...runOf(c), cwd: wt }, call("ls"));
+      const env = readFileSync(join(wt, "seen.env"), "utf8");
+      expect(env).not.toContain(name);
+      expect(env).toContain(`ION_WORKTREE=${realpathSync(wt)}`);
+      expect(existsSync(join(wt, "here.txt"))).toBe(true);
+      expect(existsSync(join(outside, "x"))).toBe(false);
+      expect(readFileSync(join(wt, "tmp.txt"), "utf8")).toBe("tmp-ok\n");
+    } finally {
+      delete process.env[name];
+    }
+  });
+
+  // Security look, 2026-11-28 (hook parity): a worktree that failed its check sent the hook to the project's folder in
+  // the ordinary, broader hook sandbox. It runs writing nothing but its own temp folder, and says so.
+  it("writes nothing when the chat's worktree was swapped for a link, and says so", async () => {
+    const dataDir = join(home, "data");
+    const c = chat();
+    const elsewhere = join(home, "elsewhere");
+    mkdirSync(elsewhere);
+    mkdirSync(join(dataDir, "worktrees"), { recursive: true });
+    const wt = join(dataDir, "worktrees", c);
+    symlinkSync(elsewhere, wt);
+    const sandbox = hookSandbox({ dataDir, configFile });
+    const boxed = new Hooks({ store, db, configFile, sign, limits: fast, ...(sandbox ? { sandbox } : {}) });
+    const run = `touch ${proj}/p.txt; touch ${home}/h.txt; touch here.txt; echo t > "$TMPDIR/t" && echo tmp-ok`;
+    await save([{ id: "g", name: "Probe", event: "tool.before", run }]);
+    await boxed.beforeTool({ ...runOf(c), cwd: wt }, call("ls"));
+    expect(existsSync(join(proj, "p.txt"))).toBe(false);
+    expect(existsSync(join(home, "h.txt"))).toBe(false);
+    expect(existsSync(join(elsewhere, "here.txt"))).toBe(false);
+    const tail = String((ran().at(-1) as { tail: string }).tail);
+    expect(tail.startsWith("ion: the chat's worktree isn't as ion made it")).toBe(true);
+    expect(tail).toContain("tmp-ok");
   });
 
   // Security review, 2026-11-28 (hooks fix, C1): a chat's agent can swap its worktree folder for a link; the hook's

@@ -23,11 +23,11 @@ export type HookResult = { code: number | null; ms: number; tail: string; stderr
 /**
  * A hook's environment: the variables any command needs to run (its PATH, home, user, shell, locale, temp folder,
  * proxy), which ion (`ION_HOME`, so `ion` in a hook reaches this daemon) and which event it runs on, for which
- * project and chat. The chat is `ION_EVENT_CHAT`, never `ION_CHAT` (a chat agent's marker: `ion` would refuse to
+ * project and chat (and the chat's worktree, `ION_WORKTREE`). The chat is `ION_EVENT_CHAT`, never `ION_CHAT` (a chat agent's marker: `ion` would refuse to
  * run). Nothing else of ion's: no key, no run's address.
  */
 export function hookEnv(
-  ion: { event: string; project?: string; chat?: string },
+  ion: { event: string; project?: string; chat?: string; worktree?: string },
   base: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   const std = Object.entries(base).filter(
@@ -39,6 +39,7 @@ export function hookEnv(
     ION_EVENT: ion.event,
     ...(ion.project ? { ION_PROJECT: ion.project } : {}),
     ...(ion.chat ? { ION_EVENT_CHAT: ion.chat } : {}),
+    ...(ion.worktree ? { ION_WORKTREE: ion.worktree } : {}),
   };
 }
 

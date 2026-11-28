@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { dirname } from "node:path";
 import { type HookEntry, loadUserConfig, type UserConfig } from "@ion/config";
 import { EV, type HookEvent, type HookLast, type IonEvent, stripControl } from "@ion/schema";
@@ -6,7 +6,7 @@ import type { Sign } from "../secrets/consent-key.js";
 import type { Db, EventStore } from "../store/index.js";
 import { chatsView } from "../views/chats.js";
 import { hookEnv, type HookResult, stopHooks } from "../workspace/hooks.js";
-import { ownWorktree } from "./folder.js";
+import { ownWorktree, worktreeSandbox } from "./folder.js";
 import { type HookBox, runBoxed } from "./reach.js";
 import { hookEventOf } from "./catalog.js";
 import { maskKeys } from "./mask.js";
@@ -26,6 +26,19 @@ const NOTIFY = "notify";
 export type BeforeAnswer = { reason: string } | { failed: true } | null;
 /** How much of a refusal's stderr the agent is told. */
 const REASON_MAX = 300;
+/** Said first in what's kept of a hook that ran writing nothing, its chat's worktree having failed its check. */
+const UNCHECKED = "ion: the chat's worktree isn't as ion made it, so this hook ran writing nothing\n";
+/** How much of a hook's output is kept. */
+const TAIL_MAX = 2000;
+/** Whether anything is at the path, a link included (followed or not). */
+const isThere = (p: string) => {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
 /** How many recent runs are read back at start, for each hook's last result. */
 const LAST_READ = 2000;
 
@@ -226,21 +239,30 @@ export class Hooks {
   ): Promise<HookResult> {
     const before = event === "tool.before";
     const folder = this.folderOf(w);
+    const sb = this.o.sandbox;
+    const box =
+      sb && (folder.worktree || folder.unchecked) ? worktreeSandbox(sb, folder.worktree ?? null) : null;
     const run = {
       live: this.live,
       run: h.run,
       stdin: JSON.stringify({ ...payload, project: w.project, chat: w.chat }),
-      env: hookEnv({
-        event,
-        ...(w.projectId ? { project: w.projectId } : {}),
-        ...(w.chatId ? { chat: w.chatId } : {}),
-      }),
+      env: {
+        ...hookEnv({
+          event,
+          ...(w.projectId ? { project: w.projectId } : {}),
+          ...(w.chatId ? { chat: w.chatId } : {}),
+          ...(folder.shown ? { worktree: folder.shown } : {}),
+        }),
+        ...(box ? { TMPDIR: box.tmp, TMP: box.tmp, TEMP: box.tmp } : {}),
+      },
       cwd: folder.cwd,
       limitMs: w.limitMs ?? this.limits.eventMs,
     };
-    const r = await runBoxed(this.boxFor(folder), run, w);
+    const r = await runBoxed(box ? { ...this.o, sandbox: box.sandbox } : this.o, run, w).finally(() =>
+      box?.done(),
+    );
     const ok = r.code === 0 || (before && r.code === 2);
-    const tail = await this.mask(r.tail);
+    const tail = `${folder.unchecked ? UNCHECKED : ""}${await this.mask(r.tail)}`.slice(0, TAIL_MAX);
     const at = this.now().toISOString();
     this.o.store.append({
       chatId: STREAM,
@@ -303,28 +325,27 @@ export class Hooks {
     return { projectId, project: p ? (p.name ?? p.id) : null, chatId, chat: chat?.title ?? null };
   }
 
-  /**
-   * The run's folder, else the chat's worktree, else the project's folder, else ion's home folder (plugins research,
-   * 2026-11-28: hooks ran in the project's folder, so a rule a chat wrote in its worktree went unseen). `worktree`:
-   * it's the chat's own worktree, checked (never one swapped for a link), by its real path, which its sandbox makes
-   * writable.
-   */
-  private folderOf(w: Where): { cwd: string; worktree?: true } {
-    const wt = w.cwd ?? (w.chatId ? chatsView.worktree(this.o.db, w.chatId) : null);
-    const own = wt ? ownWorktree(wt, w.chatId, this.o.sandbox) : null;
-    if (own) return { cwd: own, worktree: true };
-    const p = w.projectId ? this.config().projects.find((x) => x.id === w.projectId) : undefined;
-    return { cwd: p && existsSync(p.path) ? p.path : dirname(this.o.configFile) };
+  /** The project's folder, else ion's home folder. */
+  private projectFolder(projectId: string | null): string {
+    const p = projectId ? this.config().projects.find((x) => x.id === projectId) : undefined;
+    return p && existsSync(p.path) ? p.path : dirname(this.o.configFile);
   }
 
   /**
-   * The hook's sandbox, with the chat's worktree writable (it's in ion's data folder, denied otherwise). Nothing else
-   * is added (security review, 2026-11-28: a project's folder added after the deny opened ion's folders inside it;
-   * it was writable already).
+   * Where a hook runs: the chat's own worktree (checked, never one swapped for a link, by its real path) in a sandbox
+   * no broader than the agent's (`worktree`); with no sandbox to hold code the agent could plant there, the project's
+   * folder instead (automated scan, 2026-11-28); else ion's home folder. `shown`: the worktree, given to the hook as
+   * ION_WORKTREE, so it can go there itself. `unchecked`: something is where the worktree was, and it failed the check
+   * (a link put in its place): the hook runs in the project's folder writing nothing but its own temp folder.
    */
-  private boxFor(f: { cwd: string; worktree?: true }): HookBox {
+  private folderOf(w: Where): { cwd: string; worktree?: string; shown?: string; unchecked?: true } {
+    const wt = w.cwd ?? (w.chatId ? chatsView.worktree(this.o.db, w.chatId) : null);
     const sb = this.o.sandbox;
-    if (!sb || !f.worktree) return this.o;
-    return { ...this.o, sandbox: { ...sb, paths: { ...sb.paths, write: [...sb.paths.write, f.cwd] } } };
+    const own = wt && sb ? ownWorktree(wt, w.chatId, sb) : null;
+    if (own) return { cwd: own, worktree: own, shown: own };
+    const cwd = this.projectFolder(w.projectId);
+    // Something there that failed the check (a link put in its place): the hook writes nothing (security look).
+    if (wt && sb && isThere(wt)) return { cwd, unchecked: true };
+    return { cwd, ...(wt && !sb && existsSync(wt) ? { shown: wt } : {}) };
   }
 }
