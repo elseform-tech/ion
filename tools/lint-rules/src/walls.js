@@ -19,7 +19,7 @@ const ALLOW = {
 /** Extra packages a test file may use (e.g. the daemon's api tests drive it through the client). */
 /** The daemon loads adapters in exactly one file, so the set of harnesses is visible in one place. */
 const REGISTRY = "apps/daemon/src/adapters/registry.ts";
-const TEST_EXTRA = { "apps/daemon": ["client"], "apps/cli": ["daemon"] };
+const TEST_EXTRA = { "apps/daemon": ["client"], "apps/cli": ["daemon", "test-temp"] };
 
 /** "@ion/adapter-codex" → "adapters", "@ion/client" → "client", anything else → null. */
 function ionPackage(source) {
